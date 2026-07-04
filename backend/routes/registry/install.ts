@@ -224,22 +224,28 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
 
-    // #609 — cross-owner identity guard. Agent identity + memory key on
-    // (agentName, instanceId) with no owner dimension, so if two DIFFERENT
-    // users install a custom agent under the same (agentName, instanceId) the
-    // second would reuse the first's bot User row + memory (a private-memory
-    // leak). First-party AGENT_TYPES agents (commonly-bot, openclaw, …) are
-    // shared by design and exempt. For everyone else, refuse to bind a name
-    // any OTHER user already owns (any install status — an uninstalled agent
-    // keeps its bot User + memory under identity continuity, so reuse would
-    // still leak). The owner can always reinstall their own agent.
-    const isFirstPartyShared = AgentIdentityService.isKnownAgentType(safeAgentName);
-    if (!isFirstPartyShared) {
+    // #609 — cross-owner identity guard for SELF-SERVE BYO agents. Agent
+    // identity + memory key on (agentName, instanceId) with no owner dimension,
+    // so if two DIFFERENT users self-serve-install a custom agent under the
+    // same (agentName, instanceId) the second would reuse the first's bot User
+    // row + memory (a private-memory leak — reproduced live). Scope precisely:
+    //   - `agent.ephemeral` → only the self-serve BYO path (the live attack).
+    //     Published / marketplace agents are intentionally multi-installer and
+    //     must NOT be blocked (each installer needs their own instance — the
+    //     proper per-owner identity is a tracked follow-up, #609).
+    //   - first-party AGENT_TYPES agents are shared by design and exempt.
+    // Refuse to bind a name any OTHER user owns (any install status — an
+    // uninstalled agent keeps its bot User + memory under identity continuity,
+    // so reuse would still leak). The owner can always reinstall their own.
+    const isFirstPartyShared = !!AgentIdentityService.getAgentTypeConfig(safeAgentName);
+    if (!isFirstPartyShared && agent?.ephemeral) {
+      // Bare findOne (no .select/.lean chain) to mirror the existingInPod
+      // check above and stay compatible with route unit-test mocks.
       const foreignInstall = await AgentInstallation.findOne({
         agentName: safeAgentName,
         instanceId: normalizedInstanceId,
         installedBy: { $ne: userId },
-      }).select('_id').lean();
+      });
       if (foreignInstall) {
         return res.status(409).json({
           code: 'agent_name_taken',
