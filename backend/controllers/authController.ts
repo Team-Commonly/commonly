@@ -517,8 +517,14 @@ exports.verifyEmail = async (req: any, res: any) => {
 
 // 📌 Login User
 exports.login = async (req: any, res: any) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  // Coerce email to a string BEFORE it reaches Mongo. Without this a body like
+  // {"email":{"$ne":null}} is interpreted as a query operator and matches an
+  // arbitrary user (NoSQL injection → account enumeration). register/
+  // forgotPassword already normalize; login was the gap.
+  const email = normalizeEmail(req.body?.email);
   try {
+    if (!email) return res.status(400).json({ error: 'User not found' });
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: 'User not found' });
 

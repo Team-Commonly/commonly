@@ -53,9 +53,29 @@ const sendMessageRateLimit = rateLimit({
   },
 });
 
+// Reads are cheaper than writes but still hit the DB and (now clamped) can
+// return up to 200 rows — throttle so a leaked token can't spray unbounded
+// GETs. Same token/IP keying as the write limiter.
+const readMessageRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: RateLimitReq) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: RateLimitRes) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 240 message reads per 60s' });
+  },
+});
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.get('/:podId', auth, getMessages);
+router.get('/:podId', readMessageRateLimit, auth, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
 router.delete('/:id', auth, deleteMessage);
 

@@ -77,9 +77,14 @@ exports.searchPosts = async (req: any, res: any) => {
     const searchQuery: any = {};
 
     if (query) {
+      // Coerce to a bounded string and escape regex metacharacters before it
+      // reaches Mongo. Raw user input as a `$regex` value allowed both
+      // catastrophic-backtracking ReDoS (e.g. `(a+)+b`) and, if an object was
+      // passed, operator injection. Escaping makes it a literal substring match.
+      const term = String(query).slice(0, 200).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       searchQuery.$or = [
-        { content: { $regex: query, $options: 'i' } },
-        { 'comments.text': { $regex: query, $options: 'i' } },
+        { content: { $regex: term, $options: 'i' } },
+        { 'comments.text': { $regex: term, $options: 'i' } },
       ];
     }
 
@@ -105,7 +110,10 @@ exports.searchPosts = async (req: any, res: any) => {
       .populate('comments.userId', 'username profilePicture isBot botMetadata')
       .populate('podId', 'name type')
       .populate('likedBy', '_id')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      // Bound the result set — an unfiltered search previously loaded every
+      // matching post into memory.
+      .limit(100);
 
     res.json(posts);
   } catch (err: any) {
