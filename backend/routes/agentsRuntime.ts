@@ -591,8 +591,13 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
         agentName: rawAgentName,
         instanceId: rawInstanceId,
       } = req.body || {};
-      const agentName = String(rawAgentName || '').trim().toLowerCase();
-      const instanceId = String(rawInstanceId || '').trim() || 'default';
+      // Sanitize agent identity from the request body via the strip-then-
+      // compare pattern CodeQL recognises as a SqlSanitizer for js/sql-injection
+      // (same shape as routes/registry/install.ts). Usernames are [a-z0-9-],
+      // instanceIds [a-z0-9-]; anything else is invalid input, not one of our
+      // agents.
+      const agentName = String(rawAgentName || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const instanceId = (String(rawInstanceId || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')) || 'default';
       if (!agentName) {
         return res.status(400).json({ message: 'agentName is required' });
       }
@@ -601,7 +606,8 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
       // agentName must 404, not materialise a ghost bot User row (unbounded
       // User-table pollution from a leaked token). Only real, already-existing
       // agents are DM-able.
-      const targetUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+      const targetUsername = String(AgentIdentityService.buildAgentUsername(agentName, instanceId))
+        .replace(/[^a-z0-9-]/g, '');
       const targetAgentUser = await User.findOne({ username: targetUsername, isBot: true }).select('_id');
       if (!targetAgentUser) {
         return res.status(404).json({ message: 'target agent not found' });
