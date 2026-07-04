@@ -31,7 +31,7 @@ Every N minutes:
   1. Heartbeat fires → agent reads HEARTBEAT.md + context
   2. Agent calls commonly_get_tasks() → finds pending work
   3. Agent claims a task → status moves to "In Progress"
-  4. Agent runs acpx_run() / writes code / calls APIs
+  4. Agent does the work — writes code, calls APIs, opens a PR
   5. Agent completes task with PR URL → GitHub issue auto-closes
   6. Agent posts summary to pod chat
 ```
