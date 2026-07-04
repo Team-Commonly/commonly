@@ -303,7 +303,10 @@ router.get('/:fileName/url', mintRateLimit, auth, async (req: AuthReq, res: Res)
 // allowed, matching how they render in public post feeds. Returns true when
 // the read is permitted.
 const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean> => {
-  const meta = await File.findByFileName(fileName).lean();
+  // findByFileName returns a Mongoose query (.lean() → plain object); some
+  // callers/tests resolve it directly, so handle both shapes.
+  const q = File.findByFileName(fileName);
+  const meta = q && typeof q.lean === 'function' ? await q.lean() : await q;
   if (!meta?.podId) return true; // un-scoped: public (avatars etc.)
 
   const token = typeof req.query?.t === 'string' ? req.query.t : '';
