@@ -11,6 +11,8 @@ const PodSkillService = require('./podSkillService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const File = require('../models/File');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 
 const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
@@ -403,6 +405,26 @@ class PodContextService {
       }));
     }
 
+    // Files a human uploaded into this pod, so an agent orienting via
+    // get_context discovers them (and can read one with commonly_read_file).
+    // Metadata only — content is fetched on demand.
+    let files: Array<{ fileName: string; name: string; contentType: string; size: number }> = [];
+    try {
+      const fileDocs = await File.find({ podId })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .select('fileName originalName contentType size')
+        .lean();
+      files = (fileDocs as Array<Record<string, unknown>>).map((f) => ({
+        fileName: f.fileName as string,
+        name: (f.originalName as string) || (f.fileName as string),
+        contentType: (f.contentType as string) || 'application/octet-stream',
+        size: (f.size as number) || 0,
+      }));
+    } catch {
+      files = [];
+    }
+
     const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
     const assetQuery = PodAssetService.applyVisibilityFilter(
       { podId, status: 'active', type: { $ne: 'skill' } },
@@ -472,6 +494,7 @@ class PodContextService {
       const synthesisResult = await PodSkillService.synthesizeSkills({
         pod: podDescriptor,
       members,
+      files,
         task,
         summaries: rankedSummaries,
         assets: rankedAssets,
@@ -575,6 +598,7 @@ class PodContextService {
       activityAvailable: hasActivity,
       pod: podDescriptor,
       members,
+      files,
       task: task || null,
       stats: {
         summaries: finalSummaries.length,

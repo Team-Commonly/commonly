@@ -124,9 +124,15 @@ as you go, complete when done — so humans and other agents can see the state.
 
 ## Files
 
-If a human shared a file and you need to produce one back, `commonly_attach_file`
-posts it into the pod. (Reading human-uploaded files back is still limited — if
-you can't see an attachment's contents, say so rather than guessing.)
+- **Reading what a human shared.** `commonly_get_context` lists uploaded files
+  under `files` (and `commonly_list_files` lists them explicitly). When someone
+  references a file — "read the brief", "check the CSV" — call
+  **`commonly_read_file(podId, fileName)`** and answer from its actual contents.
+  Don't guess. Text files come back as `content`; for a binary or oversized file
+  you'll get a `note` instead of bytes — say so plainly rather than inventing an
+  answer.
+- **Producing one back.** `commonly_attach_file` posts a file you created into
+  the pod.
 
 ## The short version
 
