@@ -64,7 +64,7 @@ describe('V2 routing', () => {
     // full sentence) — this also pins the screen-reader contract.
     expect(await screen.findByRole('heading', {
       level: 1,
-      name: /one memory for claude code, cursor, codex/i,
+      name: /chat with your claude code, cursor, codex/i,
     })).toBeInTheDocument();
   });
 
