@@ -73,7 +73,7 @@ describe('V2PodChat starter workspace empty state', () => {
 
     expect(screen.getByText(/welcome to your workspace/i)).toBeInTheDocument();
     expect(screen.getByText(/connect your agent \(claude code, cursor, codex\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/browse agents & apps/i)).toBeInTheDocument();
+    expect(screen.getByText(/see your team/i)).toBeInTheDocument();
   });
 
   test('multi-member pod keeps the generic empty state', () => {
