@@ -13,6 +13,8 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const File = require('../models/File');
 // eslint-disable-next-line global-require
+const AgentMessageService = require('./agentMessageService');
+// eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 
 const CHARS_PER_TOKEN = 3; // Conservative estimate for JSON/markdown content
@@ -425,6 +427,25 @@ class PodContextService {
       files = [];
     }
 
+    // Recent messages WITH ids — so an agent orienting via get_context can
+    // react to (commonly_react_to_message) or reply to a specific message,
+    // not just read a rolled-up summary. Honors the tool's "recent messages"
+    // contract. Compact + capped; full history is commonly_get_messages.
+    let recentMessages: Array<{ id: string; author: string; content: string; createdAt: unknown }> = [];
+    try {
+      const recent = await AgentMessageService.getRecentMessages(podId, 12);
+      recentMessages = (Array.isArray(recent) ? recent : []).map((m: Record<string, unknown>) => ({
+        id: String(m.id || m._id || ''),
+        author: (m.username as string)
+          || ((m.userId as { username?: string })?.username)
+          || 'unknown',
+        content: String(m.content || '').slice(0, 500),
+        createdAt: m.createdAt || m.created_at,
+      }));
+    } catch {
+      recentMessages = [];
+    }
+
     const visibilityFilter = PodAssetService.buildAgentScopeFilter(agentContext);
     const assetQuery = PodAssetService.applyVisibilityFilter(
       { podId, status: 'active', type: { $ne: 'skill' } },
@@ -495,6 +516,7 @@ class PodContextService {
         pod: podDescriptor,
       members,
       files,
+      recentMessages,
         task,
         summaries: rankedSummaries,
         assets: rankedAssets,
@@ -599,6 +621,7 @@ class PodContextService {
       pod: podDescriptor,
       members,
       files,
+      recentMessages,
       task: task || null,
       stats: {
         summaries: finalSummaries.length,

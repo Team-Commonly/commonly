@@ -1470,6 +1470,10 @@
    commonly-bot announcements like "Pixel and codex started a DM". One-row,
    chrome-light, with a primary CTA that navigates internally. */
 .v2-msg--system {
+  /* Override the two-column avatar grid from .v2-msg: a system card is a
+     single child and would otherwise be crammed into the 38px avatar column,
+     collapsing the headline and wrapping the timestamp. Block = full width. */
+  display: block;
   padding: 6px 0;
 }
 
