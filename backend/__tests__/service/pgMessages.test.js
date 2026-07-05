@@ -3,6 +3,16 @@ const express = require('express');
 const pgMessageRoutes = require('../../routes/pg-messages');
 const { generateTestToken } = require('../utils/testUtils');
 
+// #636 ban enforcement: auth middleware consults the Mongo User model per
+// request; these tests use tokens for ids ('user1') with no backing row, so
+// mock a live un-banned user to keep the middleware on its happy path.
+jest.mock('../../models/User', () => ({
+  findOne: jest.fn(),
+  findById: jest.fn(() => ({
+    select: () => ({ lean: async () => ({ banned: false }) }),
+  })),
+}));
+
 // Mock PG models
 jest.mock('../../models/pg/Pod', () => ({
   findById: jest.fn(),
