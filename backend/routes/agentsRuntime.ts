@@ -1329,7 +1329,7 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
  * List files uploaded into this pod so an agent can discover what a human
  * shared (metadata only). Content is fetched via .../files/:fileName/content.
  */
-router.get('/pods/:podId/files', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/files', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
@@ -1364,9 +1364,16 @@ router.get('/pods/:podId/files', agentRuntimeAuth, async (req: any, res: any) =>
  * this prevents cross-pod reads via a guessed fileName.
  */
 const AGENT_FILE_TEXT_MAX = 256 * 1024; // 256 KB cap on inlined text
-router.get('/pods/:podId/files/:fileName/content', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
-    const { podId, fileName } = req.params;
+    const { podId } = req.params;
+    // Reject any fileName that isn't a plain stored name — no path separators
+    // or traversal reaches the object store (defense in depth beyond the
+    // pod-scoped File.findOne gate below).
+    const fileName = String(req.params.fileName || '');
+    if (!/^[A-Za-z0-9._-]+$/.test(fileName)) {
+      return res.status(400).json({ message: 'Invalid file name' });
+    }
     if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
