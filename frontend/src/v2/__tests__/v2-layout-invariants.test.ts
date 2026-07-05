@@ -65,4 +65,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // rule the showcase bug taught us; keep the known-good example pinned.
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
   });
+
+  test('the a2a-DM system card overrides the two-column message grid', () => {
+    // .v2-msg is `grid-template-columns: 38px minmax(0,1fr)` (avatar | body).
+    // A system notice has a single child (.v2-syscard); without this override
+    // it lands in the 38px avatar column, collapsing the headline and wrapping
+    // the timestamp (2026-07-05 a2a-DM preview glitch). Block = full width.
+    expect(ruleBody(v2, '.v2-msg--system')).toContain('display: block');
+  });
 });
