@@ -518,9 +518,16 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         const isMeaninglessBlurb = !blurb
           || normalizedBlurb === displayName.toLowerCase()
           || normalizedBlurb === agent.agentName.toLowerCase();
+        // The mention handle is the instanceId (what the UI dropdown inserts),
+        // NOT the registry agentName — a BYO user is told their agent's *name*
+        // is e.g. "sam-agent" but the way to mention it is "@scout". Say it in
+        // the intro so nobody has to guess (GH smoke finding 2026-07-05).
+        const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
+          ? normalizedInstanceId
+          : safeAgentName;
         const intro = isMeaninglessBlurb
-          ? `Hi all — I'm ${displayName}, just joined the pod.`
-          : `Hi all — I'm ${displayName}. ${blurb} Ping me when you need it.`;
+          ? `Hi all — I'm ${displayName}, just joined the pod. Mention me with @${handle}.`
+          : `Hi all — I'm ${displayName}. ${blurb} Mention me with @${handle} when you need me.`;
         await AgentMessageService.postMessage({
           agentName: agent.agentName,
           instanceId: normalizedInstanceId,

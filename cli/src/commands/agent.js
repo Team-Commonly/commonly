@@ -971,7 +971,11 @@ Docs:
           }
         }
 
-        console.log(`\n  Run with: commonly agent run ${opts.name}`);
+        // The mention handle is the instanceId (what the UI dropdown inserts),
+        // not the registry agentName — say it here so users know how to ping it.
+        const handle = instanceId && instanceId !== 'default' ? instanceId : installation.agentName;
+        console.log(`\n  Run with:    commonly agent run ${opts.name}`);
+        console.log(`  Mention as:  @${handle}`);
       } catch (err) {
         console.error(`Attach failed: ${err.message}`);
         process.exit(1);
