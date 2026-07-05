@@ -76,6 +76,7 @@ const AgentMemory = require('../models/AgentMemory');
 const {
   mirrorContentFromSections,
   stampSectionsForWrite,
+  decorateSectionsWithProvenance,
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
@@ -2077,7 +2078,17 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
     const hasOtherSections = sections !== undefined && Object.keys(sections).length > 0;
     if (hasOtherSections) {
       // Server-stamp byteSize + updatedAt so clients can't fabricate them.
-      const stamped = stampSectionsForWrite(sections);
+      let stamped = stampSectionsForWrite(sections);
+      // GH#632: stamp provenance + push the replaced version into the capped
+      // per-section history. Needs the prior doc — one indexed read on a
+      // low-frequency write path.
+      const priorDoc = await AgentMemory.findOne({ agentName, instanceId })
+        .select('sections').lean() as { sections?: any } | null;
+      stamped = decorateSectionsWithProvenance(
+        priorDoc?.sections,
+        stamped,
+        { runtime: sourceRuntime, via: 'memory-put' },
+      );
       // Per-key merge via dotted $set paths — preserves sibling sections the
       // caller didn't include in this write.
       for (const key of Object.keys(stamped)) {
@@ -2210,7 +2221,14 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       return res.json({ ok: true, deduped: true });
     }
 
-    const stamped = stampSectionsForWrite(sections, now);
+    // GH#632: stamp provenance + capped version history against the existing
+    // sections (already fetched above for the dedup check — no extra read).
+    const stamped = decorateSectionsWithProvenance(
+      existing?.sections as any,
+      stampSectionsForWrite(sections, now),
+      { runtime: sourceRuntime, via: 'memory-sync' },
+      now,
+    );
 
     let finalSections: any;
     if (mode === 'full') {

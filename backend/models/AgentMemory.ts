@@ -6,11 +6,37 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export type MemoryVisibility = 'private' | 'pod' | 'public';
 
+// Provenance stamp — where a section write came from. Captured AT WRITE TIME
+// (GH#632): back-trace / replay / audit can never be retrofitted onto writes
+// that didn't record their source. `runtime` mirrors the write's
+// sourceRuntime; `via` is the API surface ('memory-put' | 'memory-sync').
+export interface IMemoryWriteSource {
+  runtime?: string;
+  via?: string;
+  writtenAt?: Date;
+}
+
+// One superseded version of a section (GH#632 soft-delete / versioning
+// foundation). Newest first; capped at MEMORY_HISTORY_CAP per section so a
+// chatty agent can't grow the doc unboundedly.
+export interface IMemorySectionVersion {
+  content: string;
+  replacedAt: Date;
+  source?: IMemoryWriteSource;
+}
+
+// Versions kept per section. 10 balances undo / back-trace depth against doc
+// growth (sections are ≤ tens of KB; 10 versions stays well under Mongo's
+// 16MB doc cap even for the largest long_term blobs).
+export const MEMORY_HISTORY_CAP = 10;
+
 export interface IMemorySection {
   content: string;
   visibility: MemoryVisibility;
   updatedAt: Date;
   byteSize: number;
+  source?: IMemoryWriteSource;
+  history?: IMemorySectionVersion[];
 }
 
 export interface IDailySection {
@@ -146,12 +172,32 @@ export type AgentWritableSection = typeof AGENT_WRITABLE_SECTIONS[number];
 // small for fresh records and makes "section missing" distinguishable from
 // "section set to empty."
 
+const memoryWriteSourceSchema = new Schema<IMemoryWriteSource>(
+  {
+    runtime: { type: String },
+    via: { type: String },
+    writtenAt: { type: Date },
+  },
+  { _id: false },
+);
+
+const memorySectionVersionSchema = new Schema<IMemorySectionVersion>(
+  {
+    content: { type: String, default: '' },
+    replacedAt: { type: Date, default: Date.now },
+    source: { type: memoryWriteSourceSchema, required: false },
+  },
+  { _id: false },
+);
+
 const memorySectionSchema = new Schema<IMemorySection>(
   {
     content: { type: String, default: '' },
     visibility: { type: String, enum: VISIBILITY_VALUES, default: 'private' },
     updatedAt: { type: Date, default: Date.now },
     byteSize: { type: Number, default: 0 },
+    source: { type: memoryWriteSourceSchema, required: false },
+    history: { type: [memorySectionVersionSchema], required: false, default: undefined },
   },
   { _id: false },
 );
