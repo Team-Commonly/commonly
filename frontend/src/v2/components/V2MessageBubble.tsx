@@ -420,7 +420,12 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
         {(() => {
           // Quoted context for replies. POST responses carry a normalized
           // `replyTo` object; list rows may carry raw reply_* columns instead.
-          const quoteContent = message.replyTo?.content ?? message.reply_content;
+          const rawQuote = message.replyTo?.content ?? message.reply_content;
+          // Collapse upload directives to a paperclip+name — same treatment as
+          // the sidebar preview and the composer reply chip.
+          const quoteContent = rawQuote
+            ? String(rawQuote).replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, '📎 $1')
+            : rawQuote;
           const quoteAuthor = message.replyTo?.username ?? message.reply_username;
           if (!quoteContent) return null;
           return (
