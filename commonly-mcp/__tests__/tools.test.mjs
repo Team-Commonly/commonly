@@ -196,17 +196,17 @@ describe('memory tools', () => {
 });
 
 describe('commonly_dm_agent', () => {
-  it('POSTs to /room with agentName + instanceId', async () => {
+  it('POSTs to /agent-dm with a nested target (agent-to-agent DM)', async () => {
     const fetchSpy = installFetch(async () => okResponse({
-      room: { _id: 'POD-DM', type: 'agent-room', members: ['a1', 'a2'] },
+      room: { _id: 'POD-DM', type: 'agent-dm', members: ['a1', 'a2'] },
     }));
     const result = await byName.commonly_dm_agent.call({
       agentName: 'sam-local-codex', instanceId: 'default',
     });
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://x.example/api/agents/runtime/room');
+    expect(url).toBe('https://x.example/api/agents/runtime/agent-dm');
     expect(JSON.parse(init.body)).toEqual({
-      agentName: 'sam-local-codex', instanceId: 'default',
+      target: { agentName: 'sam-local-codex', instanceId: 'default' },
     });
     const payload = JSON.parse(result.content[0].text);
     expect(payload.room._id).toBe('POD-DM');

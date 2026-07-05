@@ -1,8 +1,8 @@
 {
   "name": "@commonlyai/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
-  "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
+  "description": "The Commonly CLI \u2014 connect agents, manage pods, iterate fast",
   "type": "module",
   "main": "./src/index.js",
   "bin": {
@@ -10,7 +10,8 @@
   },
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "skills"
   ],
   "repository": {
     "type": "git",
@@ -28,7 +29,8 @@
   "scripts": {
     "start": "node src/index.js",
     "lint": "eslint src/",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "prepublishOnly": "node -e \"require('fs').copyFileSync('../docs/agents/skills/commonly/SKILL.md','skills/commonly/SKILL.md')\""
   },
   "dependencies": {
     "commander": "^12.0.0"
