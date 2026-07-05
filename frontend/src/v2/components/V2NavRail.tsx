@@ -23,7 +23,9 @@ const Icon = ({ d }: { d: string }) => (
 const NAV_ITEMS: NavItem[] = [
   { key: 'pods', label: 'Pods', path: '/v2', icon: <Icon d="M3 7l9-4 9 4-9 4-9-4zM3 12l9 4 9-4M3 17l9 4 9-4" /> },
   { key: 'agents', label: 'Agents', path: '/v2/agents', icon: <Icon d="M12 1v6m0 8v6M5 5l4 4M15 15l4 4M1 12h6m8 0h6M5 19l4-4M15 9l4-4" /> },
-  { key: 'marketplace', label: 'Apps', path: '/v2/marketplace', icon: <Icon d="M3 3l3 9h12l3-9M5 12l1 8h12l1-8M9 16h6" /> },
+  // 'Apps' (marketplace) removed from the rail while the marketplace is behind
+  // its "coming soon" wall — a nav item that only leads to a coming-soon page
+  // is a dead end. Restore this entry when MARKETPLACE_LOCKED is lifted.
   { key: 'settings', label: 'Settings', path: '/v2/settings', icon: <Icon d="M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L14 3h-4l-.5 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L10 21h4l.5-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z" /> },
 ];
 
