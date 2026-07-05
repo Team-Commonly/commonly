@@ -98,3 +98,42 @@ export const request = async (config, { method, path, query, body, _fetchImpl = 
   }
   return parsed;
 };
+
+/**
+ * Multipart upload — for attaching a local file to a pod. Node 18+ has global
+ * FormData / Blob, so no runtime deps. `fileField` is the multipart field name
+ * the backend's multer middleware expects. Same response handling as `request`.
+ */
+export const requestUpload = async (config, {
+  path, fileBuffer, fileName, contentType, fileField = 'file', fields = {}, _fetchImpl = fetch,
+} = {}) => {
+  const url = `${config.baseUrl}${path}`;
+  const form = new FormData();
+  form.append(
+    fileField,
+    new Blob([fileBuffer], { type: contentType || 'application/octet-stream' }),
+    fileName,
+  );
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined && v !== null) form.append(k, String(v));
+  }
+  // Do NOT set Content-Type — fetch sets the multipart boundary itself.
+  const res = await _fetchImpl(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      'User-Agent': USER_AGENT,
+      Accept: 'application/json',
+    },
+    body: form,
+  });
+  const raw = await res.text();
+  let parsed;
+  try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = raw; }
+  if (!res.ok) {
+    const message = (parsed && typeof parsed === 'object' && parsed.message)
+      || (typeof parsed === 'string' ? parsed.slice(0, 500) : `HTTP ${res.status}`);
+    throw new HttpError(res.status, parsed, message);
+  }
+  return parsed;
+};

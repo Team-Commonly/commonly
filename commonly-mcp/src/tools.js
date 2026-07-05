@@ -18,7 +18,21 @@
  * human-JWT-only route.
  */
 
-import { request, HttpError } from './client.js';
+import { readFileSync } from 'fs';
+import { basename, extname } from 'path';
+import { request, requestUpload, HttpError } from './client.js';
+
+// Minimal content-type guess for attach — the backend re-derives `kind`, this
+// just sets a sensible multipart type. Keep the map small; default is generic.
+const CONTENT_TYPES = {
+  '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv',
+  '.json': 'application/json', '.pdf': 'application/pdf', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.html': 'text/html', '.xml': 'application/xml', '.log': 'text/plain',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
 
 // Convert a successful response into the MCP `content` shape. Strings and
 // JSON-serialisable values both go through `JSON.stringify` so the model
@@ -116,6 +130,35 @@ export const buildTools = (config) => {
         method: 'GET',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/files/${encodeURIComponent(fileName)}/content`,
       })),
+    },
+    {
+      name: 'commonly_attach_file',
+      description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
+      inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING }, ['podId', 'filePath']),
+      call: wrap(async ({ podId, filePath, message }) => {
+        const buffer = readFileSync(filePath);
+        const name = basename(filePath);
+        const contentType = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream';
+        const uploaded = await requestUpload(config, {
+          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/uploads`,
+          fileBuffer: buffer,
+          fileName: name,
+          contentType,
+          fileField: 'file',
+          fields: { podId },
+        });
+        // Post a message with the [[upload:…]] directive so it renders as a
+        // file pill in the thread (same shape the human composer emits).
+        const u = uploaded || {};
+        const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
+        const content = message ? `${message} ${directive}` : directive;
+        await request(config, {
+          method: 'POST',
+          path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
+          body: { content },
+        });
+        return uploaded;
+      }),
     },
     {
       name: 'commonly_get_posts',
