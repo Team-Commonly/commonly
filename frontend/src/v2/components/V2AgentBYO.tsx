@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 
 const DEFAULT_SCOPES = [
@@ -38,7 +39,19 @@ const V2AgentBYO: React.FC = () => {
   const navigate = useNavigate();
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [podId, setPodId] = useState<string>('');
-  const [name, setName] = useState<string>('my-mcp-agent');
+  // Personalized default: a global-namespace collision guard (#613) means a
+  // shared literal default ("my-mcp-agent") 409s for every user after the
+  // first one to accept it. Seed from the username so defaults never collide.
+  const { currentUser } = useAuth();
+  const defaultAgentName = (() => {
+    const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    return u ? `${u}-agent` : 'my-mcp-agent';
+  })();
+  const [name, setName] = useState<string>(defaultAgentName);
+  // currentUser can resolve after mount — refresh the default if untouched.
+  useEffect(() => {
+    setName((prev) => (prev === 'my-mcp-agent' && defaultAgentName !== 'my-mcp-agent' ? defaultAgentName : prev));
+  }, [defaultAgentName]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string } | null>(null);

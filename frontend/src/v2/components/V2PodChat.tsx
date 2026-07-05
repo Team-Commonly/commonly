@@ -777,13 +777,16 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                         >
                           Connect your agent (Claude Code, Cursor, Codex)
                         </button>
+                        {/* Points at Your Team (not the marketplace) while the
+                            marketplace sits behind its coming-soon wall — a
+                            fresh user's second CTA must not be a dead end. */}
                         <button
                           type="button"
                           role="listitem"
                           className="v2-empty__chip"
-                          onClick={() => navigate('/v2/marketplace')}
+                          onClick={() => navigate('/v2/agents')}
                         >
-                          Browse agents &amp; apps
+                          See your team
                         </button>
                       </div>
                     </>
