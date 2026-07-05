@@ -197,3 +197,24 @@
   .v2-aprofile__grid { grid-template-columns: 1fr; }
   .v2-aprofile__nav .v2-aprofile__navlink { display: none; }
 }
+
+/* Owner-only detach control on each pod row (V2AgentProfile). */
+.v2-aprofile__pod { position: relative; padding-right: 84px; }
+.v2-root button.v2-aprofile__pod-remove {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  background: transparent;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  cursor: pointer;
+}
+.v2-root button.v2-aprofile__pod-remove:hover:not(:disabled) {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+.v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }

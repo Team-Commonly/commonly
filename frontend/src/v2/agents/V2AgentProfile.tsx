@@ -137,6 +137,30 @@ const V2AgentProfile: React.FC = () => {
     }
   }, [agentName, instanceId]);
 
+  // Owner management: detach the agent from a pod. Identity + memory are kept
+  // (ADR-001 identity continuity) — it just leaves the pod. Owner-only; the
+  // remove control renders only when the private memory index loaded.
+  const [removing, setRemoving] = useState<string | null>(null);
+  const handleRemoveFromPod = useCallback(async (podId: string, podName: string) => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+    if (!token || !agentName) return;
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Remove ${agentName} from "${podName}"? Its memory and identity are kept — it just leaves this pod.`)) return;
+    setRemoving(podId);
+    try {
+      await getClient().delete(
+        `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      await Promise.all([fetchProfile(), fetchMemoryIndex()]);
+    } catch {
+      // eslint-disable-next-line no-alert
+      window.alert('Could not remove the agent from that pod.');
+    } finally {
+      setRemoving(null);
+    }
+  }, [agentName, fetchProfile, fetchMemoryIndex]);
+
   useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
 
   if (state === 'loading') {
@@ -218,6 +242,17 @@ const V2AgentProfile: React.FC = () => {
                       <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
                       {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
                       {p.lastActive && <span className="v2-aprofile__pod-when">active {timeAgo(p.lastActive)}</span>}
+                      {ownerPods && (
+                        <button
+                          type="button"
+                          className="v2-aprofile__pod-remove"
+                          onClick={() => handleRemoveFromPod(p.id, p.name)}
+                          disabled={removing === p.id}
+                          aria-label={`Remove ${agentName} from ${p.name}`}
+                        >
+                          {removing === p.id ? 'Removing…' : 'Remove'}
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
