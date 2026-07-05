@@ -15,13 +15,14 @@ const tools = buildTools(cfg);
 const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
 describe('tool registry shape', () => {
-  it('ships exactly the v1 surface (19 tools)', () => {
+  it('ships exactly the v1 surface (21 tools)', () => {
     // 14 tools (ADR-010 Phase 1) + 2 added in Phase 4 (commonly_save_my_memory,
     // commonly_log_cycle) so MCP-capable runtimes (Claude Code, Cursor, Codex
     // via wrapper) have the same memory write surface as the openclaw extension.
     // + 1 added by PR #389 (commonly_react_to_message).
     // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441).
-    expect(tools).toHaveLength(19);
+    // + 2 added for agent file access (commonly_list_files, commonly_read_file).
+    expect(tools).toHaveLength(21);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
@@ -98,6 +99,25 @@ describe('commonly_get_context', () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/pods/POD/context');
     expect(init.method).toBe('GET');
+  });
+});
+
+describe('commonly_list_files / commonly_read_file', () => {
+  it('list_files GETs the pod files endpoint', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ files: [] }));
+    await byName.commonly_list_files.call({ podId: 'POD' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/POD/files');
+    expect(init.method).toBe('GET');
+  });
+
+  it('read_file GETs the file content endpoint with an encoded fileName', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ content: 'BANANA-42' }));
+    const result = await byName.commonly_read_file.call({ podId: 'POD', fileName: 'a b.txt' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/POD/files/a%20b.txt/content');
+    expect(init.method).toBe('GET');
+    expect(JSON.parse(result.content[0].text)).toEqual({ content: 'BANANA-42' });
   });
 });
 
