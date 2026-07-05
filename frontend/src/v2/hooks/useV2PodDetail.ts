@@ -21,6 +21,13 @@ export interface V2Message {
     username?: string;
     profilePicture?: string | null;
   };
+  // Reply threading (PG reply_to_message_id). POST/GET responses carry either
+  // the normalized `replyTo` object or the raw reply_* columns; the bubble
+  // renders whichever is present.
+  replyTo?: { id: string; content: string; username: string; userId?: string } | null;
+  reply_msg_id?: string | null;
+  reply_content?: string | null;
+  reply_username?: string | null;
   // Sprint B5: per-message reactions, aggregated server-side.
   // Each entry is `{emoji, count, mine, users?}` — `users` is the
   // Google-Chat-style attribution list decorated by
@@ -89,7 +96,7 @@ export interface UseV2PodDetailResult {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  sendMessage: (content: string, messageType?: string) => Promise<V2Message | null>;
+  sendMessage: (content: string, messageType?: string, replyToMessageId?: string) => Promise<V2Message | null>;
 }
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -245,13 +252,13 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     };
   }, [podId, socket, connected, joinPod, leavePod]);
 
-  const sendMessage = useCallback(async (content: string, messageType = 'text'): Promise<V2Message | null> => {
+  const sendMessage = useCallback(async (content: string, messageType = 'text', replyToMessageId?: string): Promise<V2Message | null> => {
     if (!podId || !content.trim()) return null;
     try {
       setError(null);
       const created = await api.post<V2Message>(
         `/api/messages/${podId}`,
-        { content: content.trim(), messageType },
+        { content: content.trim(), messageType, ...(replyToMessageId ? { replyToMessageId } : {}) },
         { timeout: SEND_TIMEOUT_MS },
       );
       const normalized = normalizeMessage(created);
