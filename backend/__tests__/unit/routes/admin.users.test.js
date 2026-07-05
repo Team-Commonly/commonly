@@ -339,4 +339,63 @@ describe('admin users routes', () => {
     delete process.env.SMTP2GO_FROM_EMAIL;
     delete process.env.FRONTEND_URL;
   });
+
+  describe('PATCH /:userId/ban', () => {
+    it('bans a non-admin user with a reason', async () => {
+      const handler = getRouteHandler('/:userId/ban', 'patch');
+      const save = jest.fn().mockResolvedValue(undefined);
+      const target = { _id: 'u2', username: 'mallory', role: 'user', isBot: false, save };
+      User.findById.mockResolvedValue(target);
+      const req = { params: { userId: 'u2' }, body: { banned: true, reason: 'spam' }, user: { id: 'admin1' } };
+      const res = createRes();
+
+      await handler(req, res);
+
+      expect(target.banned).toBe(true);
+      expect(target.banReason).toBe('spam');
+      expect(target.bannedAt).toBeInstanceOf(Date);
+      expect(save).toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ ok: true, user: expect.objectContaining({ banned: true }) }),
+      );
+    });
+
+    it('unbans and clears the reason', async () => {
+      const handler = getRouteHandler('/:userId/ban', 'patch');
+      const save = jest.fn().mockResolvedValue(undefined);
+      const target = { _id: 'u2', username: 'mallory', role: 'user', isBot: false, banned: true, banReason: 'spam', save };
+      User.findById.mockResolvedValue(target);
+      const req = { params: { userId: 'u2' }, body: { banned: false }, user: { id: 'admin1' } };
+      const res = createRes();
+
+      await handler(req, res);
+
+      expect(target.banned).toBe(false);
+      expect(target.banReason).toBeUndefined();
+      expect(save).toHaveBeenCalled();
+    });
+
+    it('refuses to ban an admin account', async () => {
+      const handler = getRouteHandler('/:userId/ban', 'patch');
+      User.findById.mockResolvedValue({ _id: 'a2', role: 'admin', isBot: false, save: jest.fn() });
+      const req = { params: { userId: 'a2' }, body: { banned: true }, user: { id: 'admin1' } };
+      const res = createRes();
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('refuses self-ban', async () => {
+      const handler = getRouteHandler('/:userId/ban', 'patch');
+      const req = { params: { userId: 'admin1' }, body: { banned: true }, user: { id: 'admin1' } };
+      const res = createRes();
+
+      await handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(User.findById).not.toHaveBeenCalled();
+    });
+  });
+
 });

@@ -528,6 +528,11 @@ exports.login = async (req: any, res: any) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: 'User not found' });
 
+    // Admin moderation: banned accounts cannot start a session.
+    if (user.banned) {
+      return res.status(403).json({ error: 'This account has been suspended.' });
+    }
+
     // Check if the email is verified
     if (!user.verified) {
       return res

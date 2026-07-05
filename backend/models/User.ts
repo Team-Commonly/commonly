@@ -63,6 +63,11 @@ export interface IUser extends Document {
   password?: string;
   authProviders: IAuthProvider[];
   verified: boolean;
+  // Admin moderation (GH: admin user management). banned users cannot log in
+  // and existing sessions are refused by the auth middleware on next request.
+  banned: boolean;
+  bannedAt?: Date;
+  banReason?: string;
   profilePicture: string;
   role: UserRole;
   // Capability gate for hosted (cloud) agents. Defaults to false so opening
@@ -161,6 +166,9 @@ const userSchema = new Schema<IUser>({
     default: [],
   },
   verified: { type: Boolean, default: false },
+  banned: { type: Boolean, default: false },
+  bannedAt: { type: Date },
+  banReason: { type: String },
   profilePicture: { type: String, default: 'default' },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   // Hosted-agent entitlement gate (see IUser.entitlements). Default false;
