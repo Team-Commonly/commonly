@@ -179,7 +179,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const synthManifest = {
         name: String(agentName).toLowerCase(),
         version: String(version || '1.0.0'),
-        description: 'Self-serve agent installed via CAP (ADR-006).',
+        description: 'A connected agent.',
         capabilities: [],
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
