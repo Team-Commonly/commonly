@@ -1469,10 +1469,13 @@
 /* §3.8 system event card — replaces the regular author/avatar bubble for
    commonly-bot announcements like "Pixel and codex started a DM". One-row,
    chrome-light, with a primary CTA that navigates internally. */
-.v2-msg--system {
+.v2-msg.v2-msg--system {
   /* Override the two-column avatar grid from .v2-msg: a system card is a
      single child and would otherwise be crammed into the 38px avatar column,
-     collapsing the headline and wrapping the timestamp. Block = full width. */
+     collapsing the headline and wrapping the timestamp. Block = full width.
+     Selector MUST be `.v2-msg.v2-msg--system` (two classes): `.v2-msg` sets
+     `display: grid` LATER in this file, so an equal-specificity `.v2-msg--system`
+     loses on source order. Higher specificity wins regardless of order. */
   display: block;
   padding: 6px 0;
 }
