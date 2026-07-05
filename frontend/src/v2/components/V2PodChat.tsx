@@ -165,6 +165,13 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
   const [typingAgents, setTypingAgents] = useState<TypingAgentEntry[]>([]);
   const typingAgentTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // Reply threading: the message the next send responds to (backend
+  // replyToMessageId — agents already thread replies; this is the human side).
+  // MUST live above the `if (!pod)` early return with the other hooks —
+  // placing it after broke the hook order (React #310) and crashed the pod
+  // page on first load (caught in post-deploy browser verification).
+  const [replyTarget, setReplyTarget] = useState<import('../hooks/useV2PodDetail').V2Message | null>(null);
+
   // @-mention dropdown state. mentionStart is the index of the `@` in the
   // textarea so we know the slice to replace on select.
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -531,10 +538,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
   const botPair = isBotToBot
     ? botMembers.slice(0, 2).map((m) => m.username || 'Agent')
     : null;
-
-  // Reply threading: the message the next send responds to (backend
-  // replyToMessageId — agents already thread replies; this is the human side).
-  const [replyTarget, setReplyTarget] = useState<import('../hooks/useV2PodDetail').V2Message | null>(null);
 
   const handleSend = async (override?: string) => {
     const text = (override ?? draft).trim();
