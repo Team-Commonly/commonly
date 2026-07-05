@@ -68,9 +68,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('the a2a-DM system card overrides the two-column message grid', () => {
     // .v2-msg is `grid-template-columns: 38px minmax(0,1fr)` (avatar | body).
-    // A system notice has a single child (.v2-syscard); without this override
-    // it lands in the 38px avatar column, collapsing the headline and wrapping
-    // the timestamp (2026-07-05 a2a-DM preview glitch). Block = full width.
-    expect(ruleBody(v2, '.v2-msg--system')).toContain('display: block');
+    // A system notice has a single child (.v2-syscard); without the override it
+    // lands in the 38px avatar column, collapsing the headline and wrapping the
+    // timestamp (2026-07-05 a2a-DM preview glitch).
+    // MUST be the compound `.v2-msg.v2-msg--system` selector: `.v2-msg` sets
+    // `display: grid` LATER in the file, so a single-class `.v2-msg--system`
+    // ties on specificity and loses on source order (the first ship of this fix
+    // regressed on exactly that). Higher specificity wins regardless of order.
+    expect(v2).toContain('.v2-msg.v2-msg--system {');
+    expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
   });
 });
