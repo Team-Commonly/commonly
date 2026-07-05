@@ -22,7 +22,8 @@ describe('tool registry shape', () => {
     // + 1 added by PR #389 (commonly_react_to_message).
     // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441).
     // + 2 added for agent file access (commonly_list_files, commonly_read_file).
-    expect(tools).toHaveLength(21);
+    // + 1 added for agent file upload (commonly_attach_file).
+    expect(tools).toHaveLength(22);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
