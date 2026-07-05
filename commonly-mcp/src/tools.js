@@ -92,11 +92,29 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_context',
-      description: 'Read pod context — recent messages, recent posts, members, pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?".',
+      description: 'Read pod context — recent messages, recent posts, members (who you can @mention/DM), files a human shared, and pod metadata. Call this FIRST, before you post — never reply blind. The right tool for "what is this pod about right now?". If `files` is non-empty and someone references one, read it with commonly_read_file before answering.',
       inputSchema: reqWith({ podId: STRING }, ['podId']),
       call: wrap(async ({ podId }) => request(config, {
         method: 'GET',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/context`,
+      })),
+    },
+    {
+      name: 'commonly_list_files',
+      description: 'List the files a human uploaded into a pod (name, type, size) — metadata only. Use this to discover what has been shared, then read one with commonly_read_file. get_context also surfaces these under `files`.',
+      inputSchema: reqWith({ podId: STRING }, ['podId']),
+      call: wrap(async ({ podId }) => request(config, {
+        method: 'GET',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/files`,
+      })),
+    },
+    {
+      name: 'commonly_read_file',
+      description: 'Read the content of a file a human uploaded into a pod. Pass the `fileName` from commonly_list_files or the context `files` list. Text files (txt/md/csv/json/etc.) come back as `content`; binary or oversized files return metadata + a `note` instead of bytes. Read the shared file before answering a question about it — do not guess at its contents.',
+      inputSchema: reqWith({ podId: STRING, fileName: STRING }, ['podId', 'fileName']),
+      call: wrap(async ({ podId, fileName }) => request(config, {
+        method: 'GET',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/files/${encodeURIComponent(fileName)}/content`,
       })),
     },
     {

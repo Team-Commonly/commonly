@@ -23,6 +23,8 @@ const User = require('../models/User');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const File = require('../models/File');
+const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1319,6 +1321,105 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });
+  }
+});
+
+/**
+ * GET /pods/:podId/files
+ * List files uploaded into this pod so an agent can discover what a human
+ * shared (metadata only). Content is fetched via .../files/:fileName/content.
+ */
+router.get('/pods/:podId/files', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 50);
+    const files = await File.find({ podId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select('fileName originalName contentType size createdAt')
+      .lean();
+    return res.json({
+      files: (files || []).map((f: any) => ({
+        fileName: f.fileName,
+        name: f.originalName,
+        contentType: f.contentType,
+        size: f.size,
+        uploadedAt: f.createdAt,
+      })),
+    });
+  } catch (error: any) {
+    console.error('Error listing pod files:', error);
+    return res.status(500).json({ message: 'Failed to list files' });
+  }
+});
+
+/**
+ * GET /pods/:podId/files/:fileName/content
+ * Return a pod file's content so an agent can read what a human uploaded.
+ * Text-like files come back as UTF-8 in `content`; binary/oversized files
+ * return metadata + a note (no bytes). The file must belong to THIS pod —
+ * this prevents cross-pod reads via a guessed fileName.
+ */
+const AGENT_FILE_TEXT_MAX = 256 * 1024; // 256 KB cap on inlined text
+router.get('/pods/:podId/files/:fileName/content', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId, fileName } = req.params;
+    if (!ensurePodMatch(req.agentInstallations || req.agentInstallation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    const file = await File.findOne({ fileName, podId })
+      .select('fileName originalName contentType size')
+      .lean() as any;
+    if (!file) {
+      return res.status(404).json({ message: 'File not found in this pod' });
+    }
+
+    // Fetch bytes: object store first, legacy inline data as fallback.
+    let buffer: Buffer | null = null;
+    const store = getObjectStore();
+    const obj = await store.get(fileName);
+    if (obj && obj.stream) {
+      buffer = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        obj.stream.on('data', (c: Buffer) => chunks.push(c));
+        obj.stream.on('end', () => resolve(Buffer.concat(chunks)));
+        obj.stream.on('error', reject);
+      });
+    } else {
+      const legacy = await File.findByFileName(fileName);
+      if (legacy && legacy.data && legacy.data.length > 0) buffer = legacy.data;
+    }
+    if (!buffer) {
+      return res.status(404).json({ message: 'File content not found' });
+    }
+
+    const ct = String(file.contentType || '');
+    const isText = /^text\/|json|csv|xml|javascript|markdown|yaml|x-sh|html/.test(ct);
+    if (isText && buffer.length <= AGENT_FILE_TEXT_MAX) {
+      return res.json({
+        fileName: file.fileName,
+        name: file.originalName,
+        contentType: file.contentType,
+        size: file.size,
+        content: buffer.toString('utf8'),
+      });
+    }
+    return res.json({
+      fileName: file.fileName,
+      name: file.originalName,
+      contentType: file.contentType,
+      size: file.size,
+      content: null,
+      note: isText
+        ? `File is ${buffer.length} bytes, over the ${AGENT_FILE_TEXT_MAX}-byte inline text limit.`
+        : 'Binary file — content is not returned as text.',
+    });
+  } catch (error: any) {
+    console.error('Error reading pod file:', error);
+    return res.status(500).json({ message: 'Failed to read file' });
   }
 });
 
