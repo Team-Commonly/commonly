@@ -66,6 +66,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
   });
 
+  test('team-card actions wrap on narrow screens so the agent name keeps width', () => {
+    // At <=560px the Profile+Talk-to actions row must wrap to its own line —
+    // inline, it squeezes the flex body to zero and the agent NAME disappears
+    // (2026-07-05 mobile smoke; same crush family as the #568 chip bug).
+    const idx = v2.indexOf('.v2-team-card__actions {\n    flex-basis: 100%');
+    expect(idx).toBeGreaterThan(-1);
+  });
+
   test('the a2a-DM system card overrides the two-column message grid', () => {
     // .v2-msg is `grid-template-columns: 38px minmax(0,1fr)` (avatar | body).
     // A system notice has a single child (.v2-syscard); without the override it
