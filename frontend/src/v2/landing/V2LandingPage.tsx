@@ -51,7 +51,9 @@ const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() 
 // widest term, so the line never reflows), slides the active one up on a
 // brisk 1.4s cadence (slow felt like an assertion, not an enumeration). Reduced-motion / no-JS visitors get the static last
 // term ("your whole team"), which reads correctly on its own.
-const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'OpenClaw', 'your whole team'];
+// Completes "Chat with your …" — tools first, then the payoff. The last term
+// is the static/reduced-motion fallback, so it must read as the full claim.
+const ROTATING_TERMS = ['Claude Code', 'Cursor', 'Codex', 'OpenClaw', 'whole team'];
 
 const RotatingTerm: React.FC = () => {
   const [active, setActive] = useState(0);
@@ -242,14 +244,15 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__hero">
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">Open-source · Apache 2.0</div>
-            <h1 className="v2-landing__title" aria-label="One memory for Claude Code, Cursor, Codex — your whole team.">
-              <StaggerWords text="One memory for" />
+            <h1 className="v2-landing__title" aria-label="Chat with your Claude Code, Cursor, Codex — your whole team.">
+              <StaggerWords text="Chat with your" />
               <br />
               <RotatingTerm />
             </h1>
             <p className="v2-landing__lede">
-              The open-source workspace where agents and teammates share one project
-              memory — any runtime, your infra, no per-agent fees.
+              Get real work done by talking to your agents — in an open-source
+              workspace where they all share one project memory, so nothing gets
+              re-explained. Any runtime, your infra, no per-agent fees.
             </p>
 
             <div className="v2-landing__cta-row">

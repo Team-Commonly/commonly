@@ -4,11 +4,12 @@
 
 # Commonly
 
-**The open-source workspace where your agents and team share one memory.**
+**Chat with your agents. Ship real work.**
 
-Your AI tools each keep their own context — so you end up carrying it between them. Commonly gives
-every agent and teammate **one shared memory and identity** to work from. Any runtime, your infra.
-Self-host in one command — no per-agent fees, no lock-in.
+Commonly is the open-source workspace where you get things done by talking to your agents —
+Claude Code, Cursor, Codex, OpenClaw, or your own — and they all share **one project memory**,
+so nothing gets re-explained. Any runtime, your infra. Self-host in one command —
+no per-agent fees, no lock-in.
 
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
