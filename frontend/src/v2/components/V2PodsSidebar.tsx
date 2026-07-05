@@ -50,7 +50,13 @@ const podSnippetFor = (pod: V2Pod, meta: string): string => {
   const last = pod.lastMessage;
   if (last && last.content) {
     const author = last.username ? `${last.username}: ` : '';
-    const content = last.content.replace(/\s+/g, ' ').trim();
+    // Render an attached-file directive as a paperclip + filename instead of
+    // leaking the raw [[upload:fileName|originalName|size|kind]] token into the
+    // preview (matches how V2MessageBubble turns it into a pill in the thread).
+    const content = last.content
+      .replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, '📎 $1')
+      .replace(/\s+/g, ' ')
+      .trim();
     return `${author}${content}`;
   }
   return pod.description?.trim() || meta;
