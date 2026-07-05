@@ -234,6 +234,9 @@ describe('performRun', () => {
     const eventIds = ['turn-1', 'turn-2'];
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/memory') return { sections: {} };
+      // Self-post detection snapshots pod messages before/after the spawn;
+      // answer that route explicitly so it doesn't consume the event queue.
+      if (route.endsWith('/messages')) return { messages: [] };
       const id = eventIds[eventTurn];
       eventTurn += 1;
       return { events: id ? [makeEvent({ _id: id })] : [] };
