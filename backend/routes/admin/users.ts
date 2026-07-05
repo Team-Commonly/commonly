@@ -34,6 +34,9 @@ const sanitizeUser = (user: any) => ({
   email: user.email,
   role: user.role,
   verified: Boolean(user.verified),
+  banned: Boolean(user.banned),
+  bannedAt: user.bannedAt || null,
+  banReason: user.banReason || null,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 });
@@ -118,7 +121,7 @@ router.get('/', auth, adminAuth, async (req: any, res: any) => {
     }
 
     const users = await User.find(query)
-      .select('username email role verified createdAt updatedAt')
+      .select('username email role verified banned bannedAt banReason createdAt updatedAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -204,6 +207,45 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
 });
 
 // DELETE /api/admin/users/:userId
+// PATCH /api/admin/users/:userId/ban — suspend / unsuspend an account
+// (malicious-flagging moderation). Banned users cannot log in, and existing
+// sessions are refused by the auth middleware on their next request. Guards
+// mirror DELETE: no self-ban, no bot accounts, no banning admins (demote
+// first — prevents an admin-vs-admin lockout war).
+router.patch('/:userId/ban', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const { userId } = req.params;
+    const { banned, reason } = req.body || {};
+    if (typeof banned !== 'boolean') {
+      return res.status(400).json({ error: 'banned (boolean) is required' });
+    }
+    if (reason !== undefined && typeof reason !== 'string') {
+      return res.status(400).json({ error: 'reason must be a string' });
+    }
+    if (req.user?.id && String(req.user.id) === String(userId)) {
+      return res.status(400).json({ error: 'You cannot ban your own account' });
+    }
+    const target = await User.findById(userId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.isBot) {
+      return res.status(400).json({ error: 'Bot accounts cannot be banned from this endpoint' });
+    }
+    if (target.role === 'admin' && banned) {
+      return res.status(400).json({ error: 'Demote the admin role before banning this account' });
+    }
+
+    target.banned = banned;
+    target.bannedAt = banned ? new Date() : undefined;
+    target.banReason = banned ? (reason || '').slice(0, 500) : undefined;
+    await target.save();
+
+    return res.json({ ok: true, user: sanitizeUser(target) });
+  } catch (error) {
+    console.error('Failed to update ban state:', error);
+    return res.status(500).json({ error: 'Failed to update ban state' });
+  }
+});
+
 router.delete('/:userId', auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;

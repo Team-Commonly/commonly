@@ -13,10 +13,13 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
   if (token.startsWith('cm_')) {
     try {
       const user = await User.findOne({ apiToken: token }).select(
-        '_id username email role apiTokenScopes apiTokenCreatedAt',
+        '_id username email role apiTokenScopes apiTokenCreatedAt banned',
       );
 
       if (!user) return res.status(401).json({ msg: 'Invalid API token' });
+      if ((user as unknown as { banned?: boolean }).banned) {
+        return res.status(403).json({ msg: 'This account has been suspended.' });
+      }
 
       req.userId = user._id.toString();
       req.user = {
@@ -40,6 +43,12 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     const id = (decoded.id || (decoded.user as Record<string, unknown>)?.id) as string | undefined;
 
     if (!id) return res.status(401).json({ msg: 'Invalid token structure' });
+
+    // Admin moderation: one indexed read so a ban (or account deletion) takes
+    // effect on the NEXT request, not at JWT expiry days later.
+    const live = await User.findById(id).select('banned').lean() as { banned?: boolean } | null;
+    if (!live) return res.status(401).json({ msg: 'Account no longer exists' });
+    if (live.banned) return res.status(403).json({ msg: 'This account has been suspended.' });
 
     req.userId = id;
     req.user = { id };

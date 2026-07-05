@@ -5378,3 +5378,27 @@
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }
+
+/* Registered-users moderation (V2AdminUsers users section). */
+.v2-admin-users__search {
+  height: 34px;
+  padding: 0 12px;
+  min-width: 240px;
+  font-size: 13.5px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+.v2-admin-users__badge--banned {
+  background: #fdecea;
+  color: #c0392b;
+}
+.v2-root button.v2-admin-users__btn--danger {
+  color: #c0392b;
+  border-color: #e5b4ae;
+}
+.v2-root button.v2-admin-users__btn--danger:hover:not(:disabled) {
+  background: #fdecea;
+}
+.v2-admin-users__row-actions { display: flex; gap: 8px; }

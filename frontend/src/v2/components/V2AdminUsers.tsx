@@ -108,8 +108,79 @@ const errStatus = (err: unknown): number | undefined => {
   return e?.response?.status;
 };
 
+type RegisteredUser = {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  verified: boolean;
+  banned: boolean;
+  banReason?: string | null;
+  createdAt?: string;
+};
+
 const V2AdminUsers: React.FC = () => {
   const api = useV2Api();
+
+  // ---- Registered users state (moderation: ban / remove) ----
+  const [users, setUsers] = useState<RegisteredUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [userBusy, setUserBusy] = useState<string | null>(null);
+
+  const fetchUsers = useCallback(async (q: string) => {
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      const data = await api.get<{ users?: RegisteredUser[] }>(`/api/admin/users?${params.toString()}`);
+      setUsers(data.users || []);
+    } catch (err: unknown) {
+      setUsersError(errMessage(err, 'Failed to load users.'));
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => { fetchUsers(userSearch); }, 250);
+    return () => clearTimeout(handle);
+  }, [fetchUsers, userSearch]);
+
+  const handleBanToggle = async (u: RegisteredUser) => {
+    const banning = !u.banned;
+    // eslint-disable-next-line no-alert
+    const reason = banning ? window.prompt(`Ban ${u.username}? Optional reason:`, '') : null;
+    if (banning && reason === null) return; // prompt cancelled
+    setUserBusy(u.id);
+    try {
+      await api.patch(`/api/admin/users/${encodeURIComponent(u.id)}/ban`, {
+        banned: banning,
+        ...(banning && reason ? { reason } : {}),
+      });
+      await fetchUsers(userSearch);
+    } catch (err: unknown) {
+      setUsersError(errMessage(err, 'Failed to update ban state.'));
+    } finally {
+      setUserBusy(null);
+    }
+  };
+
+  const handleDeleteUser = async (u: RegisteredUser) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Permanently delete ${u.username} (${u.email})? This cannot be undone.`)) return;
+    setUserBusy(u.id);
+    try {
+      await api.del(`/api/admin/users/${encodeURIComponent(u.id)}`);
+      await fetchUsers(userSearch);
+    } catch (err: unknown) {
+      setUsersError(errMessage(err, 'Failed to delete user.'));
+    } finally {
+      setUserBusy(null);
+    }
+  };
 
   // ---- Waitlist state ----
   const [waitlist, setWaitlist] = useState<WaitlistRow[]>([]);
@@ -292,6 +363,84 @@ const V2AdminUsers: React.FC = () => {
 
   return (
     <div className="v2-admin-users">
+      {/* ---------------- Registered users ---------------- */}
+      <section className="v2-admin-users__section">
+        <div className="v2-admin-users__section-head">
+          <div>
+            <h2 className="v2-admin-users__section-title">Registered users</h2>
+            <p className="v2-admin-users__section-sub">
+              Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.
+            </p>
+          </div>
+          <input
+            className="v2-admin-users__search"
+            type="search"
+            placeholder="Search username or email…"
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+          />
+        </div>
+        {usersError && <div className="v2-admin-users__error" role="alert">{usersError}</div>}
+        {usersLoading ? (
+          <div className="v2-admin-users__empty">Loading users…</div>
+        ) : users.length === 0 ? (
+          <div className="v2-admin-users__empty">No users match.</div>
+        ) : (
+          <div className="v2-admin-users__table-wrap">
+            <table className="v2-admin-users__table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => {
+                  const busy = userBusy === u.id;
+                  return (
+                    <tr key={u.id}>
+                      <td>{u.username}</td>
+                      <td>{u.email}</td>
+                      <td>{u.role}</td>
+                      <td>
+                        {u.banned
+                          ? <span className="v2-admin-users__badge v2-admin-users__badge--banned" title={u.banReason || undefined}>banned</span>
+                          : (u.verified ? 'active' : 'unverified')}
+                      </td>
+                      <td>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                      <td className="v2-admin-users__row-actions">
+                        <button
+                          type="button"
+                          className="v2-admin-users__btn"
+                          disabled={busy || u.role === 'admin'}
+                          title={u.role === 'admin' ? 'Demote the admin role first' : undefined}
+                          onClick={() => handleBanToggle(u)}
+                        >
+                          {busy ? '…' : (u.banned ? 'Unban' : 'Ban')}
+                        </button>
+                        <button
+                          type="button"
+                          className="v2-admin-users__btn v2-admin-users__btn--danger"
+                          disabled={busy || u.role === 'admin'}
+                          title={u.role === 'admin' ? 'Demote the admin role first' : undefined}
+                          onClick={() => handleDeleteUser(u)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* ---------------- Waitlist ---------------- */}
       <section className="v2-admin-users__section">
         <div className="v2-admin-users__section-head">
