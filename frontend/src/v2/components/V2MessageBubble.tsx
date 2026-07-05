@@ -85,6 +85,9 @@ interface V2MessageBubbleProps {
   // Clicking a file pill routes to the inspector artifact preview by
   // ObjectStore filename (or originalName for static demo tokens).
   onOpenFile?: (fileName: string) => void;
+  // Sets this message as the composer's reply target (reply threading —
+  // backend replyToMessageId; agents already use it, this is the human side).
+  onReply?: (message: V2Message) => void;
 }
 
 interface ParsedFile {
@@ -282,7 +285,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
 // columns in mobile shells.
 const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const api = useV2Api();
@@ -403,7 +406,30 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           )}
           {isLead && <span className="v2-msg__lead-badge">Lead</span>}
           {time && <span className="v2-msg__time">{time}</span>}
+          {onReply && (
+            <button
+              type="button"
+              className="v2-msg__reply-btn"
+              aria-label={`Reply to ${author}`}
+              onClick={() => onReply(message)}
+            >
+              Reply
+            </button>
+          )}
         </div>
+        {(() => {
+          // Quoted context for replies. POST responses carry a normalized
+          // `replyTo` object; list rows may carry raw reply_* columns instead.
+          const quoteContent = message.replyTo?.content ?? message.reply_content;
+          const quoteAuthor = message.replyTo?.username ?? message.reply_username;
+          if (!quoteContent) return null;
+          return (
+            <div className="v2-msg__quote">
+              <span className="v2-msg__quote-author">{quoteAuthor || 'earlier message'}</span>
+              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 140)}</span>
+            </div>
+          );
+        })()}
         {imageUrl ? (
           <a href={imageUrl} target="_blank" rel="noreferrer" className="v2-msg__image-link">
             <img src={imageUrl} alt="Uploaded attachment" className="v2-msg__image" />

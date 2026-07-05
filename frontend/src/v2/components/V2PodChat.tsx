@@ -532,14 +532,21 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
     ? botMembers.slice(0, 2).map((m) => m.username || 'Agent')
     : null;
 
+  // Reply threading: the message the next send responds to (backend
+  // replyToMessageId — agents already thread replies; this is the human side).
+  const [replyTarget, setReplyTarget] = useState<import('../hooks/useV2PodDetail').V2Message | null>(null);
+
   const handleSend = async (override?: string) => {
     const text = (override ?? draft).trim();
     if (!text || sending) return;
     setSending(true);
     setComposerError(null);
     try {
-      const created = await sendMessage(text);
-      if (created) setDraft('');
+      const created = await sendMessage(text, 'text', replyTarget?.id || undefined);
+      if (created) {
+        setDraft('');
+        setReplyTarget(null);
+      }
     } finally {
       setSending(false);
     }
@@ -806,6 +813,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   agentAuthorKeys={agentAuthorKeys}
                   onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
                   onOpenFile={onOpenFile}
+                  onReply={setReplyTarget}
                 />
               ))}
               <div ref={messagesEndRef} />
@@ -832,6 +840,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
               </div>
             ) : (
             <div className="v2-chat__composer">
+              {replyTarget && (
+                <div className="v2-chat__reply-chip" role="status">
+                  <span className="v2-chat__reply-chip-label">
+                    Replying to <strong>{replyTarget.user?.username || 'message'}</strong>:{' '}
+                    {String(replyTarget.content || '').replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 80)}
+                  </span>
+                  <button
+                    type="button"
+                    className="v2-chat__reply-chip-cancel"
+                    aria-label="Cancel reply"
+                    onClick={() => setReplyTarget(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               <div className="v2-chat__composer-input-wrap">
                 <textarea
                   ref={composerInputRef}
