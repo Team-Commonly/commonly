@@ -385,15 +385,28 @@ const V2YourTeamPage: React.FC = () => {
                   {lastSeen}
                 </div>
               </div>
-              <button
-                type="button"
-                className="v2-team-card__talk"
-                onClick={(e) => handleTalkTo(a, e)}
-                disabled={isOpening}
-                aria-label={`Talk to ${display} one-to-one`}
-              >
-                {isOpening ? 'Opening…' : 'Talk to'}
-              </button>
+              <div className="v2-team-card__actions">
+                <button
+                  type="button"
+                  className="v2-team-card__profile"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/v2/agent/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`);
+                  }}
+                  aria-label={`View ${display}'s profile`}
+                >
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  className="v2-team-card__talk"
+                  onClick={(e) => handleTalkTo(a, e)}
+                  disabled={isOpening}
+                  aria-label={`Talk to ${display} one-to-one`}
+                >
+                  {isOpening ? 'Opening…' : 'Talk to'}
+                </button>
+              </div>
             </article>
           );
         })}

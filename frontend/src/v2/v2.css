@@ -4698,6 +4698,30 @@
   white-space: nowrap;
   transition: background 80ms ease, color 80ms ease;
 }
+
+.v2-team-card__actions {
+  align-self: center;
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.v2-root button.v2-team-card__profile {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  background: transparent;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  cursor: pointer;
+}
+.v2-root button.v2-team-card__profile:hover {
+  color: var(--v2-text-primary);
+  border-color: var(--v2-border);
+}
 .v2-root button.v2-team-card__talk:hover {
   background: var(--v2-accent);
   color: #fff;

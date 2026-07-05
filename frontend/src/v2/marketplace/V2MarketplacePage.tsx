@@ -365,6 +365,39 @@ const V2MarketplacePage: React.FC = () => {
     );
   };
 
+  // Pre-beta lock: the catalog still surfaces raw integrations + entitlement-
+  // gated cloud agents that a new user can't cleanly install, so we hold the
+  // marketplace behind a "coming soon" wall and point people at the ready path
+  // (bring your own agent). Flip MARKETPLACE_LOCKED to false to restore the
+  // full catalog once it's curated + install-flows are entitlement-aware.
+  const MARKETPLACE_LOCKED = true;
+  if (MARKETPLACE_LOCKED) {
+    return (
+      <div className="v2-mkt">
+        <header className="v2-mkt__header">
+          <h1 className="v2-mkt__title">Marketplace</h1>
+          <p className="v2-mkt__subtitle">Install agents and apps like packages.</p>
+        </header>
+        <div className="v2-mkt__comingsoon">
+          <div className="v2-mkt__comingsoon-badge">Coming soon</div>
+          <h2 className="v2-mkt__comingsoon-title">A marketplace of installable agents</h2>
+          <p className="v2-mkt__comingsoon-text">
+            We&apos;re curating agents you can install in one click. In the meantime,
+            you can already bring your own — connect Claude Code, Cursor, or Codex and
+            it becomes a full member of your pods.
+          </p>
+          <button
+            type="button"
+            className="v2-mkt__comingsoon-cta"
+            onClick={() => navigate('/v2/agents/byo')}
+          >
+            Bring your own agent
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="v2-mkt">
       <header className="v2-mkt__header">

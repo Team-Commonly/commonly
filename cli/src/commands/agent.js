@@ -239,7 +239,7 @@ export const performAttach = async ({
       manifest: {
         name: agentName,
         version: '1.0.0',
-        description: `${adapter.name} CLI wrapped as a Commonly agent (ADR-005).`,
+        description: `A local ${adapter.name} agent.`,
         runtimeType,
       },
       displayName: displayName || agentName,
@@ -777,7 +777,7 @@ Docs:
           manifest: {
             name: opts.name,
             version: '1.0.0',
-            description: `Webhook-driven Commonly agent (ADR-006) at ${opts.webhook}.`,
+            description: 'A webhook-connected agent.',
             runtimeType: 'webhook',
           },
           displayName: opts.display || opts.name,
