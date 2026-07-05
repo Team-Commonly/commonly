@@ -5402,3 +5402,18 @@
   background: #fdecea;
 }
 .v2-admin-users__row-actions { display: flex; gap: 8px; }
+
+/* Narrow screens: the team-card actions (Profile + Talk to) would otherwise
+   squeeze the body column to zero width — the agent NAME disappeared at 390px
+   (mobile smoke 2026-07-05, worsened by the added Profile button). Wrap the
+   actions onto their own full-width row instead of competing with the name. */
+@media (max-width: 560px) {
+  .v2-team-card {
+    flex-wrap: wrap;
+  }
+  .v2-team-card__actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+}
