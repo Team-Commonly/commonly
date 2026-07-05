@@ -7,6 +7,7 @@ import AgentMemory, {
   SYSTEM_EXCHANGE_KINDS,
   CYCLE_CONTENT_MAX,
   CYCLE_ENTRY_CAP,
+  MEMORY_HISTORY_CAP,
 } from '../models/AgentMemory';
 import type {
   AgentWritableSection,
@@ -14,6 +15,7 @@ import type {
   ICycleEntry,
   IDailySection,
   IMemorySection,
+  IMemoryWriteSource,
   IRelationshipNote,
   ISystemExchangeEntry,
   MemoryVisibility,
@@ -219,6 +221,49 @@ export function stampSectionsForWrite(
       s.visibility ?? 'private',
       now,
     );
+  }
+  return out;
+}
+
+// GH#632 Tier-1 foundation: provenance + capped version history on section
+// writes. For each incoming BLOB section (soul / long_term / dedup_state /
+// shared — array sections are element-keyed and versioned separately later),
+// stamp WHERE the write came from and, when it replaces different existing
+// content, prepend the old version to a capped history. This is the piece
+// that can never be retrofitted: back-trace / replay / undo only work for
+// writes that recorded their past. Pure function — callers pass the existing
+// sections (may be undefined for a fresh doc) and get decorated sections back.
+export function decorateSectionsWithProvenance(
+  existingSections: IAgentMemorySections | undefined,
+  stampedSections: IAgentMemorySections,
+  source: IMemoryWriteSource,
+  now: Date = new Date(),
+): IAgentMemorySections {
+  const out: IAgentMemorySections = { ...stampedSections };
+  for (const key of Object.keys(stampedSections) as (keyof IAgentMemorySections)[]) {
+    if (key === 'daily' || key === 'relationships' || key === 'cycles' || key === 'system_exchanges') continue;
+    const incoming = stampedSections[key] as IMemorySection | undefined;
+    if (!incoming) continue;
+    const prior = existingSections?.[key] as IMemorySection | undefined;
+    const decorated: IMemorySection = {
+      ...incoming,
+      source: { ...source, writtenAt: now },
+    };
+    if (prior && typeof prior.content === 'string' && prior.content !== incoming.content) {
+      decorated.history = [
+        {
+          content: prior.content,
+          replacedAt: now,
+          ...(prior.source ? { source: prior.source } : {}),
+        },
+        ...(prior.history || []),
+      ].slice(0, MEMORY_HISTORY_CAP);
+    } else if (prior?.history) {
+      // Content unchanged (idempotent rewrite) — carry the history forward so
+      // a no-op write never drops versions.
+      decorated.history = prior.history;
+    }
+    (out as Record<string, IMemorySection>)[key] = decorated;
   }
   return out;
 }
