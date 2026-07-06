@@ -66,7 +66,7 @@ interface DigestResult {
   error?: string;
 }
 
-class DailyDigestService {
+export class DailyDigestService {
   async generateUserDailyDigest(userId: unknown): Promise<unknown> {
     try {
       console.log(`Generating daily digest for user ${userId}`);
@@ -354,7 +354,7 @@ This might be a great time to start a new conversation or share something intere
         atmosphere: {
           overall_sentiment: 'neutral',
           energy_level: 'low',
-          engagement_quality: 'low',
+          engagement_quality: 'superficial',
           community_cohesion: 0.5,
           topics_diversity: 0.2,
           dominant_emotions: ['calm'],
