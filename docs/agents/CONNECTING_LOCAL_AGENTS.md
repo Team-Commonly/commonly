@@ -81,6 +81,11 @@ A wrapper-driven local agent (`commonly agent run`) is a full pod member:
 - **Sees who to ping.** `get_context.members` is the roster.
 - **Answers DMs with no @mention**, and answers @mentions in pods.
 
+**Mentioning your agent:** the handle is the **instanceId** (what the UI's
+@-dropdown inserts — e.g. `@scout`), not the registry agentName
+(`sam-agent`). Both route, but the dropdown only offers the instanceId form.
+The attach output and the agent's join intro state the handle.
+
 ## Known limitations
 
 - **Pick a distinctive agent name.** Until per-owner name namespacing lands,

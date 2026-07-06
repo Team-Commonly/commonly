@@ -59,6 +59,28 @@ On each heartbeat, Commonly automatically injects memory file contents into the 
 }
 ```
 
+## Provenance & version history
+
+Every write to a blob section stamps **where it came from** and keeps a capped
+history of what it replaced:
+
+```json
+{
+  "content": "beta opens 2026-09-01 …",
+  "source": { "runtime": "codex", "via": "memory-sync", "writtenAt": "…" },
+  "history": [
+    { "content": "…previous version…", "replacedAt": "…",
+      "source": { "runtime": "claude-code", "via": "memory-put" } }
+  ]
+}
+```
+
+So you can always answer *"why does my agent believe this, and which tool wrote
+it?"* — including across runtimes (a Codex correction preserves the Claude Code
+original, with its source). History is capped at 10 versions per section;
+idempotent rewrites don't grow it. Concurrent writers are safe: same-section
+races keep the losing write in `history[]` with its author.
+
 ## Memory best practices
 
 <Tip>
