@@ -17,6 +17,10 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const dailyDigestService = require('../services/dailyDigestService');
 // eslint-disable-next-line global-require
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+// eslint-disable-next-line global-require
+const { createHash } = require('crypto');
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -36,6 +40,43 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// Same token/IP keying as the messages-router limiters (#614): key on the
+// hashed auth token when present so NATed users don't share a bucket, fall
+// back to the IPv6-safe IP key.
+const summariesRateLimitKey = (req: { get?: (h: string) => string | undefined; ip?: string }) => {
+  const authHeader = req.get?.('authorization');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
+
+// Reads hit Mongo (and canViewPod adds per-pod lookups) — throttle so a
+// leaked token can't spray unbounded GETs.
+const summariesReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: summariesRateLimitKey,
+  handler: (_req: unknown, res: Res) => {
+    res.status(429).json({ error: 'rate limit exceeded: 240 summary reads per 60s' });
+  },
+});
+
+// Trigger endpoints fan out LLM calls / regenerate summaries — much tighter.
+const summariesTriggerRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: summariesRateLimitKey,
+  handler: (_req: unknown, res: Res) => {
+    res.status(429).json({ error: 'rate limit exceeded: 10 summary triggers per 60s' });
+  },
+});
+
 
 const SummarizerService = summarizerService.constructor;
 const ChatSummarizerService = chatSummarizerService.constructor;
@@ -95,7 +136,7 @@ const filterSummariesToViewable = async (
   });
 };
 
-router.get('/', auth, async (req: AuthReq, res: Res) => {
+router.get('/', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { type, limit = '10' } = req.query || {};
     const cappedLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
@@ -108,7 +149,7 @@ router.get('/', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/latest', auth, async (req: AuthReq, res: Res) => {
+router.get('/latest', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.userId || req.user?.id;
     const [postSummaries, chatSummaries] = await Promise.all([SummarizerService.getRecentSummaries('posts', 1), SummarizerService.getRecentSummaries('chats', 20)]);
@@ -126,7 +167,7 @@ router.get('/latest', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/trigger', auth, async (req: AuthReq, res: Res) => {
+router.post('/trigger', summariesTriggerRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.user?.id || req.userId;
     if (!(await isGlobalAdminUser(userId))) return res.status(403).json({ error: 'Global admin access required' });
@@ -139,7 +180,7 @@ router.post('/trigger', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/debug', auth, async (req: AuthReq, res: Res) => {
+router.post('/debug', summariesTriggerRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     // Admin-only: the live cluster runs with NODE_ENV=development, so an
     // env check alone leaves this trigger open to every authed user.
@@ -153,7 +194,7 @@ router.post('/debug', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/status', auth, (_req: AuthReq, res: Res) => {
+router.get('/status', summariesReadRateLimit, auth, (_req: AuthReq, res: Res) => {
   try {
     const status = schedulerService.getStatus();
     res.json(status);
@@ -163,7 +204,7 @@ router.get('/status', auth, (_req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/chat-rooms', auth, async (req: AuthReq, res: Res) => {
+router.get('/chat-rooms', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
     const userId = req.userId || req.user?.id;
@@ -175,7 +216,7 @@ router.get('/chat-rooms', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/chat-rooms/latest', auth, async (req: AuthReq, res: Res) => {
+router.get('/chat-rooms/latest', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.userId || req.user?.id;
     const recentChatSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('chat', 20);
@@ -187,7 +228,7 @@ router.get('/chat-rooms/latest', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/study-rooms', auth, async (req: AuthReq, res: Res) => {
+router.get('/study-rooms', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
     const userId = req.userId || req.user?.id;
@@ -199,7 +240,7 @@ router.get('/study-rooms', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/game-rooms', auth, async (req: AuthReq, res: Res) => {
+router.get('/game-rooms', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
     const userId = req.userId || req.user?.id;
@@ -211,7 +252,7 @@ router.get('/game-rooms', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/all-posts', auth, async (_req: AuthReq, res: Res) => {
+router.get('/all-posts', summariesReadRateLimit, auth, async (_req: AuthReq, res: Res) => {
   try {
     const allPostsSummary = await summarizerService.summarizeAllPosts();
     res.json(allPostsSummary);
@@ -221,7 +262,7 @@ router.get('/all-posts', auth, async (_req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/pod/:podId', auth, async (req: AuthReq, res: Res) => {
+router.get('/pod/:podId', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // Pod-scoped summaries inherit pod visibility — non-members of personal
@@ -241,7 +282,7 @@ router.get('/pod/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/pods', auth, async (req: AuthReq, res: Res) => {
+router.get('/pods', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podIds } = req.query || {};
     if (!podIds) return res.status(400).json({ error: 'podIds parameter is required' });
@@ -264,7 +305,7 @@ router.get('/pods', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/pod/:podId/refresh', auth, async (req: AuthReq, res: Res) => {
+router.post('/pod/:podId/refresh', summariesTriggerRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // Refresh both reads pod content (the generated summary is returned
@@ -302,7 +343,7 @@ router.post('/pod/:podId/refresh', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/daily-digest', auth, async (req: AuthReq, res: Res) => {
+router.get('/daily-digest', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.user?.id;
     const dailyDigest = await Summary.findOne({ type: 'daily-digest', 'metadata.userId': userId }).sort({ createdAt: -1 }).lean();
@@ -314,7 +355,7 @@ router.get('/daily-digest', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/daily-digest/generate', auth, async (req: AuthReq, res: Res) => {
+router.post('/daily-digest/generate', summariesTriggerRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.user?.id;
     await SummarizerService.garbageCollectForDigest();
@@ -326,7 +367,7 @@ router.post('/daily-digest/generate', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/daily-digest/history', auth, async (req: AuthReq, res: Res) => {
+router.get('/daily-digest/history', summariesReadRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = req.user?.id;
     const { limit = '7' } = req.query || {};
@@ -338,7 +379,7 @@ router.get('/daily-digest/history', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/daily-digest/trigger-all', auth, async (req: AuthReq, res: Res) => {
+router.post('/daily-digest/trigger-all', summariesTriggerRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     // Fans out digest generation (and LLM calls) for every user — admin-only.
     if (!(await isGlobalAdminUser(req.user?.id || req.userId))) return res.status(403).json({ error: 'Global admin access required' });
