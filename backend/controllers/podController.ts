@@ -86,7 +86,11 @@ const ensureDefaultAgentRegistryEntry = async (agentName: any) => {
 
 const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: any }) => {
   if (!pod?._id || !userId) return;
-  if (process.env.AUTO_INSTALL_DEFAULT_AGENT === '0') return;
+  // Opt-in only. Real users' pods must not get the summarizer bot in their
+  // member list (or a posting-authorized AgentInstallation) unless the
+  // instance explicitly turns this on. Default was ON pre-beta, which put
+  // commonly-bot into every UI-created pod.
+  if (process.env.AUTO_INSTALL_DEFAULT_AGENT !== '1') return;
 
   const agent = await ensureDefaultAgentRegistryEntry(DEFAULT_POD_AGENT);
   if (!agent) {
