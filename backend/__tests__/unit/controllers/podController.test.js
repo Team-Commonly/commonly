@@ -81,6 +81,8 @@ describe('podController', () => {
   });
 
   it('createPod accepts agent-ensemble type', async () => {
+    // Opt in to the default-agent auto-install for this test.
+    process.env.AUTO_INSTALL_DEFAULT_AGENT = '1';
     const savedPod = { _id: 'p1', populate: jest.fn().mockResolvedValue() };
     const save = jest.fn().mockResolvedValue(savedPod);
     Pod.mockImplementation(() => ({ save }));
@@ -104,7 +106,11 @@ describe('podController', () => {
     };
     const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
 
-    await podController.createPod(req, res);
+    try {
+      await podController.createPod(req, res);
+    } finally {
+      delete process.env.AUTO_INSTALL_DEFAULT_AGENT;
+    }
 
     expect(save).toHaveBeenCalled();
     expect(savedPod.populate).toHaveBeenCalledWith('createdBy', 'username profilePicture');
@@ -114,6 +120,28 @@ describe('podController', () => {
       instanceId: 'default',
     }));
     expect(AgentProfile.updateOne).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(savedPod);
+  });
+
+  it('createPod does NOT auto-install commonly-bot by default (opt-in via AUTO_INSTALL_DEFAULT_AGENT=1)', async () => {
+    // Regression: pre-beta this defaulted ON, which put the summarizer bot
+    // into the member list of every UI-created pod — including real users'
+    // private pods — with a posting-authorized AgentInstallation.
+    delete process.env.AUTO_INSTALL_DEFAULT_AGENT;
+    const savedPod = { _id: 'p1', populate: jest.fn().mockResolvedValue() };
+    const save = jest.fn().mockResolvedValue(savedPod);
+    Pod.mockImplementation(() => ({ save }));
+
+    const req = {
+      body: { name: 'User Pod', description: 'private', type: 'chat' },
+      userId: 'creator',
+    };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await podController.createPod(req, res);
+
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+    expect(AgentIdentityService.ensureAgentInPod).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(savedPod);
   });
 

@@ -64,27 +64,62 @@ const isGlobalAdminUser = async (userId: unknown): Promise<boolean> => {
   return Boolean(user && user.role === 'admin');
 };
 
+// Summaries inherit the visibility of the pod they describe (parity with
+// the /announcements + /files + /external-links gates on the pods router
+// and the canViewPod gate on GET /pod/:podId below). Given a mixed list
+// of Summary docs, keep only:
+//   - pod-scoped summaries whose pod the caller can view,
+//   - the caller's own daily-digest summaries,
+//   - global summaries (no podId, not a digest — e.g. all-posts).
+const filterSummariesToViewable = async (
+  userId: unknown,
+  summaries: unknown[],
+): Promise<unknown[]> => {
+  const list = (summaries || []).filter(Boolean) as Array<{
+    podId?: unknown;
+    type?: string;
+    metadata?: { userId?: string };
+  }>;
+  const podIds = [...new Set(list.filter((s) => s.podId).map((s) => String(s.podId)))];
+  const allowed = new Set<string>();
+  if (podIds.length > 0) {
+    const pods = await Pod.find({ _id: { $in: podIds } }).select('_id members type').lean() as Array<{ _id: unknown; members?: unknown[]; type?: string }>;
+    await Promise.all(pods.map(async (pod) => {
+      if (await DMService.canViewPod(userId, pod)) allowed.add(String(pod._id));
+    }));
+  }
+  return list.filter((s) => {
+    if (s.podId) return allowed.has(String(s.podId));
+    if (s.type === 'daily-digest') return String(s.metadata?.userId || '') === String(userId);
+    return true;
+  });
+};
+
 router.get('/', auth, async (req: AuthReq, res: Res) => {
   try {
     const { type, limit = '10' } = req.query || {};
-    const summaries = await SummarizerService.getRecentSummaries(type, parseInt(limit, 10));
-    res.json(summaries);
+    const cappedLimit = Math.max(1, Math.min(50, parseInt(limit, 10) || 10));
+    const userId = req.userId || req.user?.id;
+    const summaries = await SummarizerService.getRecentSummaries(type, cappedLimit);
+    res.json(await filterSummariesToViewable(userId, summaries));
   } catch (error) {
     console.error('Error fetching summaries:', error);
     res.status(500).json({ error: 'Failed to fetch summaries' });
   }
 });
 
-router.get('/latest', auth, async (_req: AuthReq, res: Res) => {
+router.get('/latest', auth, async (req: AuthReq, res: Res) => {
   try {
-    const [postSummaries, chatSummaries] = await Promise.all([SummarizerService.getRecentSummaries('posts', 1), SummarizerService.getRecentSummaries('chats', 1)]);
+    const userId = req.userId || req.user?.id;
+    const [postSummaries, chatSummaries] = await Promise.all([SummarizerService.getRecentSummaries('posts', 1), SummarizerService.getRecentSummaries('chats', 20)]);
     let posts = postSummaries[0] || null;
     if (!posts) {
       try { posts = await summarizerService.summarizeAllPosts(); } catch (allPostsError) {
         console.warn('Failed to build on-demand all-posts summary:', (allPostsError as Error).message);
       }
     }
-    res.json({ posts, chats: chatSummaries[0] || null });
+    const viewableChats = await filterSummariesToViewable(userId, chatSummaries);
+    res.json({ posts, chats: viewableChats[0] || null });
   } catch (error) {
     console.error('Error fetching latest summaries:', error);
     res.status(500).json({ error: 'Failed to fetch latest summaries' });
@@ -104,8 +139,11 @@ router.post('/trigger', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/debug', auth, async (_req: AuthReq, res: Res) => {
+router.post('/debug', auth, async (req: AuthReq, res: Res) => {
   try {
+    // Admin-only: the live cluster runs with NODE_ENV=development, so an
+    // env check alone leaves this trigger open to every authed user.
+    if (!(await isGlobalAdminUser(req.user?.id || req.userId))) return res.status(403).json({ error: 'Global admin access required' });
     if (process.env.NODE_ENV === 'production') return res.status(403).json({ error: 'Debug endpoints not available in production' });
     const result = await SchedulerService.triggerSummarizer();
     res.json({ message: 'Debug summarizer triggered successfully', result, timestamp: new Date().toISOString() });
@@ -128,18 +166,21 @@ router.get('/status', auth, (_req: AuthReq, res: Res) => {
 router.get('/chat-rooms', auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
-    const chatRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('chat', parseInt(limit, 10));
-    res.json(chatRoomSummaries);
+    const userId = req.userId || req.user?.id;
+    const chatRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('chat', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
+    res.json(await filterSummariesToViewable(userId, chatRoomSummaries));
   } catch (error) {
     console.error('Error fetching chat room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch chat room summaries' });
   }
 });
 
-router.get('/chat-rooms/latest', auth, async (_req: AuthReq, res: Res) => {
+router.get('/chat-rooms/latest', auth, async (req: AuthReq, res: Res) => {
   try {
-    const latestChatSummary = await ChatSummarizerService.getLatestChatSummary();
-    res.json(latestChatSummary);
+    const userId = req.userId || req.user?.id;
+    const recentChatSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('chat', 20);
+    const viewable = await filterSummariesToViewable(userId, recentChatSummaries);
+    res.json(viewable[0] || null);
   } catch (error) {
     console.error('Error fetching latest chat room summary:', error);
     res.status(500).json({ error: 'Failed to fetch latest chat room summary' });
@@ -149,8 +190,9 @@ router.get('/chat-rooms/latest', auth, async (_req: AuthReq, res: Res) => {
 router.get('/study-rooms', auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
-    const studyRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('study', parseInt(limit, 10));
-    res.json(studyRoomSummaries);
+    const userId = req.userId || req.user?.id;
+    const studyRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('study', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
+    res.json(await filterSummariesToViewable(userId, studyRoomSummaries));
   } catch (error) {
     console.error('Error fetching study room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch study room summaries' });
@@ -160,8 +202,9 @@ router.get('/study-rooms', auth, async (req: AuthReq, res: Res) => {
 router.get('/game-rooms', auth, async (req: AuthReq, res: Res) => {
   try {
     const { limit = '5' } = req.query || {};
-    const gameRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('games', parseInt(limit, 10));
-    res.json(gameRoomSummaries);
+    const userId = req.userId || req.user?.id;
+    const gameRoomSummaries = await ChatSummarizerService.getRecentChatSummariesByPodType('games', Math.max(1, Math.min(50, parseInt(limit, 10) || 5)));
+    res.json(await filterSummariesToViewable(userId, gameRoomSummaries));
   } catch (error) {
     console.error('Error fetching game room summaries:', error);
     res.status(500).json({ error: 'Failed to fetch game room summaries' });
@@ -202,8 +245,18 @@ router.get('/pods', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podIds } = req.query || {};
     if (!podIds) return res.status(400).json({ error: 'podIds parameter is required' });
-    const podIdArray = podIds.split(',').map((id) => id.trim());
-    const podSummaries = await chatSummarizerService.getMultiplePodSummaries(podIdArray);
+    const podIdArray = [...new Set(podIds.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 50);
+    // Same visibility rule as GET /pod/:podId — silently drop pods the
+    // caller can't view rather than 403ing the whole batch, so a mixed
+    // sidebar request still resolves for the viewable subset.
+    const userId = req.userId || req.user?.id;
+    const pods = await Pod.find({ _id: { $in: podIdArray } }).select('_id members type').lean() as Array<{ _id: unknown; members?: unknown[]; type?: string }>;
+    const viewablePodIds: string[] = [];
+    await Promise.all(pods.map(async (pod) => {
+      if (await DMService.canViewPod(userId, pod)) viewablePodIds.push(String(pod._id));
+    }));
+    if (viewablePodIds.length === 0) return res.json({});
+    const podSummaries = await chatSummarizerService.getMultiplePodSummaries(viewablePodIds);
     res.json(podSummaries);
   } catch (error) {
     console.error('Error fetching pod summaries:', error);
@@ -214,6 +267,13 @@ router.get('/pods', auth, async (req: AuthReq, res: Res) => {
 router.post('/pod/:podId/refresh', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
+    // Refresh both reads pod content (the generated summary is returned
+    // in the response) and burns LLM budget — gate it exactly like the
+    // GET /pod/:podId read above.
+    const pod = await Pod.findById(podId).select('_id members type').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    const callerId = req.userId || req.user?.id;
+    if (!(await DMService.canViewPod(callerId, pod))) return res.status(403).json({ error: 'Not authorized to refresh this pod summary' });
     const windowMinutes = Math.max(5, Math.min(240, parseInt((req.body?.windowMinutes as string) || '60', 10) || 60));
     const installations = await getActiveSummaryInstallationsForPod(podId || '') as Array<{ instanceId?: string }>;
     if (!installations.length) {
@@ -278,8 +338,10 @@ router.get('/daily-digest/history', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/daily-digest/trigger-all', auth, async (_req: AuthReq, res: Res) => {
+router.post('/daily-digest/trigger-all', auth, async (req: AuthReq, res: Res) => {
   try {
+    // Fans out digest generation (and LLM calls) for every user — admin-only.
+    if (!(await isGlobalAdminUser(req.user?.id || req.userId))) return res.status(403).json({ error: 'Global admin access required' });
     await SummarizerService.garbageCollectForDigest();
     const results = await dailyDigestService.generateAllDailyDigests() as Array<{ success: boolean }>;
     const successful = results.filter((r) => r.success).length;

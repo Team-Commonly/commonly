@@ -361,7 +361,10 @@ Focus on what people are actually talking about rather than just activity levels
         return cache.summary;
       }
 
-      const posts = await Post.find({})
+      // Global digest = global-feed posts only. Pod-scoped posts inherit
+      // pod visibility (canViewPod on the posts routes) and must not leak
+      // into an instance-wide summary any authed user can read.
+      const posts = await Post.find({ podId: null })
         .populate('userId', 'username')
         .sort({ createdAt: -1 })
         .limit(10)
