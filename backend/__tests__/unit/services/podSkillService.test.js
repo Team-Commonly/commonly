@@ -1,3 +1,9 @@
+// Hoisted mock — podSkillService destructures generateText at require time,
+// so a post-require spy on the module object would never be seen.
+jest.mock('../../../services/llmService', () => ({
+  generateText: jest.fn(),
+}));
+
 jest.mock('../../../services/podAssetService', () => ({
   extractKeywords: (text = '') => text
     .toLowerCase()
@@ -8,6 +14,7 @@ jest.mock('../../../services/podAssetService', () => ({
 
 const PodAssetService = require('../../../services/podAssetService');
 const PodSkillService = require('../../../services/podSkillService');
+const llmService = require('../../../services/llmService');
 
 describe('PodSkillService', () => {
   afterEach(() => {
@@ -78,5 +85,64 @@ describe('PodSkillService', () => {
     );
     expect(result.skills).toHaveLength(1);
     expect(result.warnings).toEqual([]);
+  });
+
+  // #651: a permanently-dead credential (Gemini 401) used to be retried on
+  // every context poll (~1,600 log lines/day). A 401/403 must disable
+  // synthesis for the process lifetime; transient errors must not.
+  describe('permanent credential failure guard', () => {
+    const baseArgs = {
+      pod: { id: 'pod-1', name: 'Pod', description: '' },
+      referenceEntries: [{
+        refId: 'S1', type: 'summary', id: 's1', title: 'T', createdAt: new Date(), tags: [], content: 'c',
+      }],
+      skillLimit: 4,
+    };
+
+    beforeEach(() => {
+      // The singleton's availability was computed from env at require time;
+      // force it on so the guard (not missing config) is what we exercise.
+      PodSkillService.available = true;
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      PodSkillService.available = true;
+    });
+
+    it('disables synthesis for the process lifetime after a Gemini-style 401', async () => {
+      llmService.generateText.mockRejectedValue(
+        new Error('[GoogleGenerativeAI Error]: Error fetching from https://...: [401 Unauthorized] API key not valid'),
+      );
+
+      const first = await PodSkillService.generateSkillsWithLLM(baseArgs);
+      expect(first.warnings).toEqual(['LLM skill synthesis disabled: credential rejected (401/403).']);
+      expect(PodSkillService.isAvailable()).toBe(false);
+
+      await PodSkillService.generateSkillsWithLLM(baseArgs);
+      expect(llmService.generateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables synthesis on a structured 401/403 status', async () => {
+      llmService.generateText.mockRejectedValue(
+        Object.assign(new Error('Request failed'), { response: { status: 401 } }),
+      );
+
+      await PodSkillService.generateSkillsWithLLM(baseArgs);
+      expect(PodSkillService.isAvailable()).toBe(false);
+    });
+
+    it('stays available after a transient (non-auth) failure', async () => {
+      llmService.generateText.mockRejectedValue(
+        new Error('timeout of 30000ms exceeded'),
+      );
+
+      const first = await PodSkillService.generateSkillsWithLLM(baseArgs);
+      expect(first.warnings).toEqual(['LLM skill synthesis failed.']);
+      expect(PodSkillService.isAvailable()).toBe(true);
+
+      await PodSkillService.generateSkillsWithLLM(baseArgs);
+      expect(llmService.generateText).toHaveBeenCalledTimes(2);
+    });
   });
 });

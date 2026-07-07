@@ -280,6 +280,18 @@ function buildSkillMarkdown(
   ].join('\n');
 }
 
+// A 401/403 from the LLM means the credential itself is rejected — retrying
+// won't change the answer until the key is fixed and the process restarts.
+// Matches both structured HTTP errors (axios-style status) and the
+// GoogleGenerativeAIError shape, whose message embeds "[401 Unauthorized]".
+const isPermanentAuthError = (error: unknown): boolean => {
+  const err = error as { status?: number; response?: { status?: number }; message?: unknown };
+  const status = err?.status ?? err?.response?.status;
+  if (status === 401 || status === 403) return true;
+  const message = typeof err?.message === 'string' ? err.message : String(error);
+  return /\b40[13]\b/.test(message) && /unauthorized|forbidden|api.?key/i.test(message);
+};
+
 class PodSkillService {
   private available: boolean;
 
@@ -315,6 +327,17 @@ class PodSkillService {
       }
       return { skills: parsed.skills as RawSkill[], warnings: [] };
     } catch (error) {
+      // #651: a dead credential used to be retried on every context poll
+      // (~1,600 log lines/day). Disable synthesis for the process lifetime
+      // and log once; a key fix + restart re-enables it.
+      if (isPermanentAuthError(error)) {
+        this.available = false;
+        console.error(
+          'Pod-skill synthesis LLM rejected its credential (401/403) — disabling synthesis until restart:',
+          error,
+        );
+        return { skills: [], warnings: ['LLM skill synthesis disabled: credential rejected (401/403).'] };
+      }
       console.error('Failed to synthesize pod skills with LLM:', error);
       return { skills: [], warnings: ['LLM skill synthesis failed.'] };
     }
