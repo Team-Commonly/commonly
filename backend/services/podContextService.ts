@@ -507,7 +507,7 @@ class PodContextService {
       && (taskTokens.size > 0 || skillAgeHours > refreshHours);
 
     if (skillModeUsed === 'llm' && !PodSkillService.isAvailable()) {
-      skillWarnings.push('LLM skill synthesis is unavailable (missing GEMINI_API_KEY).');
+      skillWarnings.push('LLM skill synthesis is unavailable (not configured, or disabled after a credential failure).');
       skillModeUsed = 'none';
     }
 
