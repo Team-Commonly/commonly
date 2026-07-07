@@ -38,6 +38,22 @@ describe('agentRateLimitKeyGenerator', () => {
     expect(k).toBe('ip:203.0.113.7');
   });
 
+  // #652 ERR_ERL_KEY_GEN_IPV6: two addresses inside the same IPv6 prefix must
+  // share one bucket, or a client rotating within its allocation bypasses the
+  // limit entirely.
+  it('collapses IPv6 addresses in the same prefix to one key', () => {
+    const a = agentRateLimitKeyGenerator({
+      headers: {},
+      ip: '2001:db8:85a3:8d3:1319:8a2e:370:7348',
+    });
+    const b = agentRateLimitKeyGenerator({
+      headers: {},
+      ip: '2001:db8:85a3:8d3:aaaa:bbbb:cccc:dddd',
+    });
+    expect(a).toBe(b);
+    expect(a).not.toBe('ip:2001:db8:85a3:8d3:1319:8a2e:370:7348');
+  });
+
   it('returns the same key for two requests with the same token', () => {
     const req = {
       agentTokenHash: 'same-hash',
