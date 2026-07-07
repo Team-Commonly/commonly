@@ -4,7 +4,7 @@
 // query only recognises the middleware on the SAME file as the route
 // registration (per the note in agentsRuntime.ts). Inlined here, with a
 // userId-keyed generator so per-user limits stay isolated.
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -35,14 +35,16 @@ const {
 const filesRouter = express.Router({ mergeParams: true });
 
 // Inline rate limiter for the inspector a2a-DM read surface. Per-user
-// (after auth middleware sets req.userId); IPv6-safe key generator using
-// `${req.userId || req.ip}`. 120/min mirrors the agentsRuntime phase4 cap.
+// (after auth middleware sets req.userId); the unauth fallback goes through
+// ipKeyGenerator so IPv6 clients can't rotate within their prefix
+// (ERR_ERL_KEY_GEN_IPV6, #652). 120/min mirrors the agentsRuntime phase4 cap.
 const inspectorRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: any) => String(req.userId || req.user?._id || req.ip || 'anon'),
+  keyGenerator: (req: any) =>
+    String(req.userId || req.user?._id || (req.ip ? ipKeyGenerator(req.ip) : 'anon')),
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 120 requests per 60s',
     code: 'rate_limited',

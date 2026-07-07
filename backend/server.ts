@@ -82,7 +82,17 @@ const app = express();
 // pod attachments) gets emitted as `http://api.commonly.me/...` and
 // triggers Mixed Content warnings in every page load. Trusting the proxy
 // makes Express honor X-Forwarded-Proto.
-app.set('trust proxy', true);
+//
+// Bounded, not `true` (#652): `true` trusts every hop in X-Forwarded-For, so
+// any client can spoof req.ip and bypass the IP-keyed rate limiters
+// (express-rate-limit ERR_ERL_PERMISSIVE_TRUST_PROXY). Every real hop in
+// front of us — cloudflared pod, nginx, docker-compose bridge, local dev —
+// sits on a loopback/private address, so trusting only those ranges walks
+// X-Forwarded-For from the right past our own infra and stops at the first
+// public address: the client IP as recorded by Cloudflare. A spoofed header
+// just gets the real client IP appended after it by the edge, so spoofing
+// can't reach req.ip.
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 const buildAllowedOrigins = () => {
   const raw = process.env.FRONTEND_URL;
   if (raw && raw.trim()) {

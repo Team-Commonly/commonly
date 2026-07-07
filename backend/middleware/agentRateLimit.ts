@@ -15,6 +15,7 @@
 
 import type { Request } from 'express';
 import { createHash } from 'crypto';
+import { ipKeyGenerator } from 'express-rate-limit';
 
 export const agentRateLimitKeyGenerator = (req: Request): string => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,7 +25,9 @@ export const agentRateLimitKeyGenerator = (req: Request): string => {
   if (typeof auth === 'string' && auth.length > 0) {
     return `hdr:${createHash('sha256').update(auth).digest('hex')}`;
   }
-  return `ip:${req.ip || 'unknown'}`;
+  // ipKeyGenerator collapses IPv6 to its prefix so a client can't rotate
+  // through its /64 to bypass the limit (ERR_ERL_KEY_GEN_IPV6, #652).
+  return `ip:${req.ip ? ipKeyGenerator(req.ip) : 'unknown'}`;
 };
 
 // CJS compat for the require()-style imports used elsewhere in backend/.
