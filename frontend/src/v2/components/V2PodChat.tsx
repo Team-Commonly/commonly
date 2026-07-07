@@ -952,7 +952,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                 <button
                   type="button"
                   className={`v2-chat__send v2-chat__send--${mode}`}
-                  onClick={handleSend}
+                  onClick={() => handleSend()}
                   disabled={sending || !draft.trim()}
                   title={sending ? 'Sending…' : 'Send message'}
                   aria-label={sending ? 'Sending…' : 'Send message'}
