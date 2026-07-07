@@ -9,6 +9,11 @@ jest.mock('../../../services/agentMentionService', () => ({
   enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
   enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
 }));
+jest.mock('../../../config/socket', () => ({
+  getIO: jest.fn(),
+}));
+
+const socketConfig = require('../../../config/socket');
 
 describe('messageController', () => {
   afterEach(() => {
@@ -94,6 +99,30 @@ describe('messageController', () => {
           userId: 'u1',
         }),
       );
+    });
+
+    // #646: the newMessage broadcast dropped replyTo, so live viewers saw
+    // replies without their quoted context until a reload re-fetched the
+    // joined row.
+    it('broadcasts replyTo on the newMessage socket emit', async () => {
+      const replyTo = {
+        id: 'm1', content: 'original message', username: 'bob', userId: 'u2',
+      };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue({ id: 'm9' });
+      PGMessage.findById.mockResolvedValue({ id: 'm9', content: 'a reply', replyTo });
+      const emit = jest.fn();
+      socketConfig.getIO.mockReturnValue({ to: jest.fn(() => ({ emit })) });
+
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: 'a reply', replyToMessageId: 'm1' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.createMessage(req, res);
+
+      expect(emit).toHaveBeenCalledWith('newMessage', expect.objectContaining({ replyTo }));
     });
   });
 

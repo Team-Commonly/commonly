@@ -290,6 +290,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
           profile_picture?: string;
           createdAt?: string;
           messageType?: string;
+          replyTo?: { id: string; content: string; username: string; userId: string } | null;
         };
         const formattedMessage = {
           _id: m._id || m.id,
@@ -302,6 +303,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
           username: m.username,
           profile_picture: m.profile_picture,
           createdAt: m.createdAt,
+          // Reply quote must ride the broadcast too — without it every live
+          // viewer renders the reply without its quoted context until a
+          // reload re-fetches the joined row (#646).
+          replyTo: m.replyTo ?? null,
         };
         io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
       }
