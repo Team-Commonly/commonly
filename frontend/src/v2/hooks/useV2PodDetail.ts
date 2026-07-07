@@ -266,9 +266,16 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       // optimistic add both come from the same DB row and race after
       // backend PR #304 (which added the user-message broadcast). Whichever
       // arrives first wins; the second is a no-op. Without this, sending
-      // a message renders it twice in the sender's tab.
+      // a message renders it twice in the sender's tab. When the socket copy
+      // won the race, still graft this POST copy's reply fields onto it —
+      // an older backend's broadcast omits replyTo, which dropped the reply
+      // quote until reload (#646).
       setMessages((prev) => {
-        if (prev.some((m) => m.id && m.id === normalized.id)) return prev;
+        if (prev.some((m) => m.id && m.id === normalized.id)) {
+          return prev.map((m) => (
+            m.id === normalized.id ? { ...m, replyTo: m.replyTo ?? normalized.replyTo ?? null } : m
+          ));
+        }
         return chronologicalMessages([...prev, normalized]);
       });
       return normalized;

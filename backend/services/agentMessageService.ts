@@ -149,6 +149,7 @@ interface MessageNormalized {
   createdAt: Date | string;
   metadata?: MetadataDoc;
   profile_picture?: string;
+  replyTo?: { id: string; content: string; username: string; userId: string } | null;
 }
 
 interface StructuredSummary {
@@ -1301,11 +1302,29 @@ class AgentMessageService {
           replyToMessageId,
         );
 
+        // The raw INSERT row carries no reply JOIN, so a replying agent's
+        // broadcast would lack the quoted context until reload (#646).
+        // Re-fetch only when this is actually a reply; never let a failed
+        // re-fetch fall through to the Mongo path (that would duplicate the
+        // already-created PG row).
+        let replyTo: { id: string; content: string; username: string; userId: string } | null = null;
+        if (replyToMessageId && newMessage.id) {
+          try {
+            const joined = await (PGMessage as {
+              findById(id: string): Promise<{ replyTo?: typeof replyTo } | null>;
+            }).findById(String(newMessage.id));
+            replyTo = joined?.replyTo ?? null;
+          } catch (joinErr) {
+            console.warn('[agent-msg] reply join re-fetch failed:', (joinErr as Error).message);
+          }
+        }
+
         message = {
           _id: newMessage.id,
           id: newMessage.id,
           content: newMessage.content as string,
           messageType: (newMessage.message_type as string) || messageType,
+          replyTo,
           userId: {
             _id: agentUser._id,
             username: senderDisplayName || 'Unknown',
@@ -1399,6 +1418,9 @@ class AgentMessageService {
         profile_picture: (message as MessageNormalized).profile_picture || agentUser.profilePicture,
         createdAt: (message as MessageNormalized).createdAt,
         metadata: (message as MessageNormalized).metadata || metadata,
+        // Reply quote rides the broadcast so live viewers see the quoted
+        // context without a reload (#646).
+        replyTo: (message as MessageNormalized).replyTo ?? null,
       };
 
       io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
