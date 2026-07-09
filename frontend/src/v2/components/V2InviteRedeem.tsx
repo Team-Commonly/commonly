@@ -1,8 +1,11 @@
 // Public-facing redeem page for pod invite links. Lives at
-// `/v2/invite/:token`. Logged-in users only — anonymous visitors are
-// redirected to login with the invite URL preserved as `?next=`.
+// `/v2/invite/:token`. Logged-in users resolve + join in one click.
+// Anonymous visitors see a minimal preview ("you've been invited to X")
+// with sign-up / log-in CTAs that carry this URL as `?next=`, so the
+// shared link is a registration funnel instead of a blank login wall.
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, Link } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import V2Avatar from './V2Avatar';
@@ -22,6 +25,11 @@ interface InviteResolveResponse {
   expiresAt?: string | null;
 }
 
+interface InvitePreviewResponse {
+  pod: { name?: string; memberCount?: number };
+  expiresAt?: string | null;
+}
+
 const V2InviteRedeem: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -29,20 +37,33 @@ const V2InviteRedeem: React.FC = () => {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const api = useV2Api();
   const [invite, setInvite] = useState<InviteResolveResponse | null>(null);
+  const [preview, setPreview] = useState<InvitePreviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redeeming, setRedeeming] = useState(false);
 
-  // Anonymous visitor → bounce through login, preserving the invite URL
-  // so they land back here after auth. Login page reads `?next=` and
-  // navigates there on success.
+  const nextParam = encodeURIComponent(location.pathname + location.search);
+
+  // Anonymous visitor → fetch the minimal preview (no auth required) so we
+  // can show what they were invited to before asking them to sign up.
   useEffect(() => {
-    if (authLoading) return;
-    if (!isAuthenticated) {
-      const next = encodeURIComponent(location.pathname + location.search);
-      navigate(`/v2/login?next=${next}`, { replace: true });
-    }
-  }, [authLoading, isAuthenticated, location, navigate]);
+    if (authLoading || isAuthenticated || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await axios.get<InvitePreviewResponse>(
+          `/api/invites/${encodeURIComponent(token)}/preview`,
+        );
+        if (!cancelled) setPreview(res.data);
+      } catch {
+        if (!cancelled) setError('This invite is no longer valid.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authLoading, isAuthenticated, token]);
 
   // Resolve the invite once auth is confirmed. Idempotent — server returns
   // alreadyMember=true if the user already belongs to the pod, and the UI
@@ -84,11 +105,50 @@ const V2InviteRedeem: React.FC = () => {
     }
   };
 
-  if (authLoading || (loading && isAuthenticated)) {
+  if (authLoading || loading) {
     return <div className="v2-invite-page"><div className="v2-invite-card v2-invite-card--loading">Loading invite…</div></div>;
   }
-  if (!isAuthenticated) return null; // redirect already in flight
 
+  // ---- anonymous: preview + signup funnel ----
+  if (!isAuthenticated) {
+    if (error || !preview) {
+      return (
+        <div className="v2-invite-page">
+          <div className="v2-invite-card">
+            <div className="v2-invite-card__title">Invite unavailable</div>
+            <div className="v2-invite-card__error">{error || 'This invite is no longer valid.'}</div>
+            <Link to="/v2" className="v2-invite-card__cta">What is Commonly?</Link>
+          </div>
+        </div>
+      );
+    }
+    const podName = preview.pod?.name || 'a pod';
+    const count = preview.pod?.memberCount ?? 0;
+    return (
+      <div className="v2-invite-page">
+        <div className="v2-invite-card">
+          <V2Avatar name={podName} size="lg" />
+          <div className="v2-invite-card__title">You&rsquo;ve been invited to {podName}</div>
+          <div className="v2-invite-card__meta">
+            {count} member{count === 1 ? '' : 's'} · humans and agents working together on Commonly
+          </div>
+          <button
+            type="button"
+            className="v2-invite-card__cta"
+            onClick={() => navigate(`/v2/register?next=${nextParam}`)}
+          >
+            Sign up to join
+          </button>
+          <div className="v2-invite-card__meta">
+            Already have an account?{' '}
+            <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link">Log in</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- authenticated ----
   if (error && !invite) {
     return (
       <div className="v2-invite-page">
