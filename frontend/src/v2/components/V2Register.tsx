@@ -29,6 +29,11 @@ const V2Register: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [invitationCode, setInvitationCode] = useState(searchParams.get('invite') || '');
+  // Deep-link context (e.g. a pod invite URL): thread through the whole
+  // signup flow so the user lands back where the share link pointed.
+  const rawNext = searchParams.get('next');
+  const nextPath = rawNext && rawNext.startsWith('/') ? rawNext : undefined;
+  const loginHref = nextPath ? `/v2/login?next=${encodeURIComponent(nextPath)}` : '/v2/login';
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -91,13 +96,13 @@ const V2Register: React.FC = () => {
             <p className="v2-login__hint">
               We sent a verification link to your email. Verify your address,
               then{' '}
-              <Link to="/v2/login" className="v2-login__link">sign in</Link>.
+              <Link to={loginHref} className="v2-login__link">sign in</Link>.
             </p>
           ) : (
             <button
               type="button"
               className="v2-login__submit"
-              onClick={() => navigate('/v2/login')}
+              onClick={() => navigate(loginHref)}
             >
               Continue to sign in
             </button>
@@ -184,7 +189,7 @@ const V2Register: React.FC = () => {
 
         {error && <div className="v2-login__error">{error}</div>}
 
-        <V2OAuthButtons invite={invitationCode || undefined} />
+        <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} />
 
         <div className="v2-login__hint">
           Already have an account?

@@ -1,15 +1,47 @@
-// Pod invite tokens — shareable URLs that let a logged-in user join a pod
-// without going through the invite-only joinPolicy gate. Tokens are random
+// Pod invite tokens — shareable URLs that let a user join a pod without
+// going through the invite-only joinPolicy gate. Tokens are random
 // (16-byte hex), DB-backed (PodInvite), and bound to a single pod by their
-// creator. Logged-in users only — no guest registration via invite.
+// creator. Authenticated users resolve + redeem; anonymous visitors get a
+// minimal PREVIEW (pod name + member count only) so a shared link can show
+// "you've been invited to X — sign up to join" instead of a blank login wall.
 import express from 'express';
-import crypto from 'crypto';
+import crypto, { createHash } from 'crypto';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
 const { PodInvite } = require('../models/PodInvite');
 
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
+
+// Same token/IP keying as the messages-router limiters (#614). The preview
+// endpoint is anonymous and DB-backed, so it gets a tight IP bucket — it's
+// also the token-enumeration surface, and the limiter is the brake on that.
+const inviteRateLimitKey = (req: any) => {
+  const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
+
+const inviteReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: inviteRateLimitKey,
+  handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 60 invite reads per 60s' }),
+});
+
+const inviteWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: inviteRateLimitKey,
+  handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 invite writes per 60s' }),
+});
 
 const isPodMember = (pod: any, userId: string) => {
   if (!pod || !userId) return false;
@@ -22,7 +54,7 @@ const isPodMember = (pod: any, userId: string) => {
 // POST /api/pods/:podId/invites — issue a fresh invite token. Caller must
 // be a member or creator. Body: { expiresInHours?, maxUses? } — both
 // optional; null = unlimited.
-router.post('/pods/:podId/invites', auth, async (req: any, res: any) => {
+router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
@@ -56,9 +88,41 @@ router.post('/pods/:podId/invites', auth, async (req: any, res: any) => {
   }
 });
 
+// GET /api/invites/:token/preview — ANONYMOUS, minimal disclosure. Lets the
+// redeem page show "you've been invited to <pod>" to logged-out visitors so
+// a shared link funnels into signup instead of a context-free login wall.
+// Returns pod NAME + member count only: no podId, no description, no member
+// identities. Invalid/expired/DM-pod invites all collapse to the same 404 so
+// the endpoint can't be used to probe which tokens exist for what.
+router.get('/invites/:token/preview', inviteReadRateLimit, async (req: any, res: any) => {
+  try {
+    const invite = await PodInvite.findOne({ token: req.params.token });
+    if (!invite || !invite.isUsable()) {
+      return res.status(404).json({ msg: 'Invite invalid or expired' });
+    }
+    const pod = await Pod.findById(invite.podId).select('_id name type members').lean();
+    if (!pod) return res.status(404).json({ msg: 'Invite invalid or expired' });
+    const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+    if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
+      // Not redeemable anyway — don't advertise the pod's existence.
+      return res.status(404).json({ msg: 'Invite invalid or expired' });
+    }
+    return res.json({
+      pod: {
+        name: pod.name,
+        memberCount: (pod.members || []).length,
+      },
+      expiresAt: invite.expiresAt,
+    });
+  } catch (err: any) {
+    console.error('Preview invite failed:', err.message);
+    return res.status(500).json({ msg: 'Failed to preview invite' });
+  }
+});
+
 // GET /api/invites/:token — resolve token to public pod info. Auth required
 // (we don't reveal pod existence to anonymous callers).
-router.get('/invites/:token', auth, async (req: any, res: any) => {
+router.get('/invites/:token', inviteReadRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
@@ -95,7 +159,7 @@ router.get('/invites/:token', auth, async (req: any, res: any) => {
 // Increments useCount. Bypasses the pod's invite-only joinPolicy because
 // the token IS the invite. DM pods (agent-room/agent-dm/agent-admin) are
 // strictly 1:1 and refuse — start a fresh DM instead, same rule as joinPod.
-router.post('/invites/:token/redeem', auth, async (req: any, res: any) => {
+router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
