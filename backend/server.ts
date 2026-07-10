@@ -48,6 +48,7 @@ const globalIntegrationsRoutes = require('./routes/admin/globalIntegrations');
 const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
 const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 const adminUsersRoutes = require('./routes/admin/users');
+const adminAnalyticsRoutes = require('./routes/admin/analytics');
 // Conditionally load PostgreSQL routes and models
 let pgPodRoutes: any;
 let pgMessageRoutes: any;
@@ -210,6 +211,7 @@ app.use('/api/admin/integrations/global', globalIntegrationsRoutes); // Admin gl
 app.use('/api/admin/agents/autonomy', agentAutonomyAdminRoutes); // Admin manual autonomy triggers
 app.use('/api/admin/agents/events', agentEventsAdminRoutes); // Admin agent event debug/queue visibility
 app.use('/api/admin/users', adminUsersRoutes); // Admin user + invitation management
+app.use('/api/admin/analytics', adminAnalyticsRoutes); // Admin activation-funnel analytics (GH#661)
 app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
 app.use('/api/stats', statsRoutes); // Public stats (no auth)
