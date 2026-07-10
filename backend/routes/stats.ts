@@ -29,9 +29,10 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
     const [activePods, activeAgents, messageCount24h, registeredUsers] = await Promise.all([
       Pod.countDocuments({ updatedAt: { $gte: sevenDaysAgo } }),
       AgentInstallation.distinct('agentName').then((names: string[]) => names.length),
-      pgMessageCount24h(oneDayAgo).catch(() =>
-        Message.countDocuments({ createdAt: { $gte: oneDayAgo } }),
-      ),
+      pgMessageCount24h(oneDayAgo).catch((err: { message?: string }) => {
+        console.warn('stats: PG message count failed, falling back to Mongo:', err?.message);
+        return Message.countDocuments({ createdAt: { $gte: oneDayAgo } });
+      }),
       User.countDocuments(),
     ]);
 
