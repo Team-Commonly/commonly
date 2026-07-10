@@ -33,6 +33,9 @@ export default defineConfig({
     // Keep the deployed short SHA available to in-app bug reports. Without an
     // explicit define, the broad process.env replacement below erases it.
     'process.env.REACT_APP_VERSION': JSON.stringify(process.env.REACT_APP_VERSION || ''),
+    // Error tracking is opt-in at build time. An empty value lets Rollup remove
+    // the guarded dynamic import, keeping the SDK out of self-hosted bundles.
+    'process.env.REACT_APP_SENTRY_DSN': JSON.stringify(process.env.REACT_APP_SENTRY_DSN || ''),
     'process.env': {},
   },
 });

@@ -4,6 +4,10 @@ import './utils/axiosConfig'; // Import axios configuration
 import App from './App';
 import './App.css'; // Ensure CSS is loaded
 
+if (process.env.REACT_APP_SENTRY_DSN) {
+  import('./sentry');
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
