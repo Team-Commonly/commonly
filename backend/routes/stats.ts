@@ -11,6 +11,16 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+const pgMessageCount24h = async (since: Date): Promise<number> => {
+  // eslint-disable-next-line global-require
+  const { pool } = require('../config/db-pg');
+  const result = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM messages WHERE created_at >= $1',
+    [since],
+  );
+  return result.rows[0].count;
+};
+
 router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; status: (n: number) => { json: (d: unknown) => void } }) => {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -19,7 +29,10 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
     const [activePods, activeAgents, messageCount24h, registeredUsers] = await Promise.all([
       Pod.countDocuments({ updatedAt: { $gte: sevenDaysAgo } }),
       AgentInstallation.distinct('agentName').then((names: string[]) => names.length),
-      Message.countDocuments({ createdAt: { $gte: oneDayAgo } }),
+      pgMessageCount24h(oneDayAgo).catch((err: { message?: string }) => {
+        console.warn('stats: PG message count failed, falling back to Mongo:', err?.message);
+        return Message.countDocuments({ createdAt: { $gte: oneDayAgo } });
+      }),
       User.countDocuments(),
     ]);
 
