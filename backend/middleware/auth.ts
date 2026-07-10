@@ -16,10 +16,16 @@ export function touchLastActive(id: string): void {
   const prev = lastActiveWrites.get(id);
   if (prev && now - prev < LAST_ACTIVE_INTERVAL_MS) return;
   lastActiveWrites.set(id, now);
-  User.updateOne({ _id: id }, { lastActive: new Date(now) }).catch(() => {
-    // Retry on the next request rather than silently going stale for 15 min.
+  try {
+    User.updateOne({ _id: id }, { lastActive: new Date(now) }).catch(() => {
+      // Retry on the next request rather than silently going stale for 15 min.
+      lastActiveWrites.delete(id);
+    });
+  } catch {
+    // Telemetry is fail-open: a throwing write path must never turn into a
+    // 401 for an otherwise-valid request.
     lastActiveWrites.delete(id);
-  });
+  }
 }
 
 export default async function auth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
