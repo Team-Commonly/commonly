@@ -35,6 +35,7 @@ import ApiDevPage from '../components/ApiDevPage';
 import PodContextDevPage from '../components/PodContextDevPage';
 import GlobalIntegrations from '../components/admin/GlobalIntegrations';
 import V2AdminUsers from './components/V2AdminUsers';
+import V2AdminAnalytics from './components/V2AdminAnalytics';
 import ProtectedRoute from '../components/ProtectedRoute';
 import './v2.css';
 
@@ -286,6 +287,15 @@ const V2App: React.FC = () => {
                     'User Admin',
                     'Review waitlist requests and manage invitation codes.',
                     <ProtectedRoute requireAdmin><V2AdminUsers /></ProtectedRoute>,
+                    false,
+                  )}
+                />
+                <Route
+                  path="admin/analytics"
+                  element={feature(
+                    'Usage Analytics',
+                    'Activation funnel, signups, messages, and active-user counts for this instance.',
+                    <ProtectedRoute requireAdmin><V2AdminAnalytics /></ProtectedRoute>,
                     false,
                   )}
                 />

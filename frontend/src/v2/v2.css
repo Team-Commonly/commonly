@@ -5474,3 +5474,88 @@
   color: var(--v2-text-secondary);
   cursor: pointer;
 }
+
+/* ============ Admin analytics (GH#662) ============ */
+.v2-admin-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1100px;
+}
+
+.v2-admin-analytics__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.v2-root a.v2-admin-analytics__crosslink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-accent-text);
+}
+
+.v2-admin-analytics__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.v2-admin-analytics__card {
+  padding: 14px 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+
+.v2-admin-analytics__card-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.v2-admin-analytics__card-label {
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+  margin-top: 2px;
+}
+
+.v2-admin-analytics__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.v2-admin-analytics__chart-card {
+  padding: 14px 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  min-width: 0;
+}
+
+.v2-admin-analytics__chart-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--v2-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.v2-admin-analytics__chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+.v2-admin-analytics__bar {
+  fill: var(--v2-accent);
+  opacity: 0.85;
+}
+
+.v2-admin-analytics__row--empty td {
+  color: var(--v2-text-tertiary);
+}

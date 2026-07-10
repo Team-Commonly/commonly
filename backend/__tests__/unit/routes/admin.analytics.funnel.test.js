@@ -20,8 +20,15 @@ jest.mock('../../../middleware/ipRateLimit', () => ({
 }));
 
 const mockUserFind = jest.fn();
+const mockCountDocuments = jest.fn();
 jest.mock('../../../models/User', () => ({
   find: (...args) => mockUserFind(...args),
+  countDocuments: (...args) => mockCountDocuments(...args),
+}));
+
+const mockPodAggregate = jest.fn();
+jest.mock('../../../models/Pod', () => ({
+  aggregate: (...args) => mockPodAggregate(...args),
 }));
 
 const mockDistinct = jest.fn();
@@ -38,6 +45,7 @@ const routes = require('../../../routes/admin/analytics');
 
 const DAY = 24 * 60 * 60 * 1000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY);
+const dayKey = (d) => d.toISOString().slice(0, 10);
 
 const userDoc = (id, createdDaysAgo, lastActiveDaysAgo) => ({
   _id: id,
@@ -109,5 +117,78 @@ describe('GET /api/admin/analytics/funnel', () => {
   it('403s non-admins', async () => {
     mockRole = 'user';
     await request(app).get('/api/admin/analytics/funnel').expect(403);
+  });
+});
+
+describe('GET /api/admin/analytics/usage', () => {
+  let app;
+  beforeEach(() => {
+    app = express();
+    app.use('/api/admin/analytics', routes);
+    jest.clearAllMocks();
+    mockRole = 'admin';
+  });
+
+  const chain = (docs) => ({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(docs) }) });
+
+  it('merges Mongo signups with PG message/poster counts per day', async () => {
+    mockUserFind.mockImplementation((q) => {
+      if (q && q['botMetadata.agentName']) return chain([{ _id: 'bot1' }]);
+      return chain([userDoc('u1', 3), userDoc('u2', 3), userDoc('u3', 0)]);
+    });
+    // dau, wau, totalUsers in Promise.all order
+    mockCountDocuments
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(5);
+    const d3 = dayKey(daysAgo(3));
+    mockPgQuery.mockResolvedValue({ rows: [{ day: d3, messages: 12, posters: 2 }] });
+
+    const res = await request(app).get('/api/admin/analytics/usage?days=7').expect(200);
+
+    expect(res.body.totals).toMatchObject({
+      signups: 3, messages: 12, dau: 1, wau: 2, totalUsers: 5,
+    });
+    const day3 = res.body.daily.find((r) => r.date === d3);
+    expect(day3).toMatchObject({ signups: 2, messages: 12, posters: 2 });
+    // Bot user ids are passed to PG so posters exclude agents
+    expect(mockPgQuery.mock.calls[0][1][1]).toEqual(['bot1']);
+    // Every day in range present (zeros, not gaps)
+    expect(res.body.daily.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('403s non-admins', async () => {
+    mockRole = 'user';
+    await request(app).get('/api/admin/analytics/usage').expect(403);
+  });
+});
+
+describe('GET /api/admin/analytics/lifecycle', () => {
+  let app;
+  beforeEach(() => {
+    app = express();
+    app.use('/api/admin/analytics', routes);
+    jest.clearAllMocks();
+    mockRole = 'admin';
+  });
+
+  it('merges pod counts (Mongo) with message counts (PG) keyed by user id', async () => {
+    mockPodAggregate.mockResolvedValue([
+      { _id: 'u1', pods: 3 },
+      { _id: 'u2', pods: 1 },
+    ]);
+    mockPgQuery.mockResolvedValue({ rows: [{ user_id: 'u1', messages: 42 }] });
+
+    const res = await request(app).get('/api/admin/analytics/lifecycle').expect(200);
+
+    expect(res.body.users).toEqual({
+      u1: { pods: 3, messages: 42 },
+      u2: { pods: 1, messages: 0 },
+    });
+  });
+
+  it('403s non-admins', async () => {
+    mockRole = 'user';
+    await request(app).get('/api/admin/analytics/lifecycle').expect(403);
   });
 });
