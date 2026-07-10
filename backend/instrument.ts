@@ -19,6 +19,8 @@ if (sentryDsn) {
         scrubbedEvent.request = { ...event.request };
         delete scrubbedEvent.request.headers;
         delete scrubbedEvent.request.cookies;
+        delete scrubbedEvent.request.data;
+        delete scrubbedEvent.request.query_string;
       }
 
       return scrubbedEvent;

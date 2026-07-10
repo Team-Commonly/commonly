@@ -62,6 +62,8 @@ describe('Sentry frontend instrumentation', () => {
         method: 'GET',
         headers: { authorization: 'Bearer private-token' },
         cookies: { session: 'private-cookie' },
+        data: { email: 'private@example.com', password: 'private-password' },
+        query_string: 'token=private-token',
       },
     };
     const scrubbed = options.beforeSend(event);
@@ -76,6 +78,8 @@ describe('Sentry frontend instrumentation', () => {
     expect(event.user).toBeDefined();
     expect(event.request.headers).toBeDefined();
     expect(event.request.cookies).toBeDefined();
+    expect(scrubbed.request.data).toBeUndefined();
+    expect(scrubbed.request.query_string).toBeUndefined();
   });
 
   it('loads the SDK only through the DSN-gated dynamic import', () => {

@@ -64,6 +64,8 @@ describe('Sentry backend instrumentation', () => {
         method: 'GET',
         headers: { authorization: 'Bearer private-token' },
         cookies: { session: 'private-cookie' },
+        data: { email: 'private@example.com', password: 'private-password' },
+        query_string: 'token=private-token',
       },
     };
     const scrubbed = options.beforeSend(event);
@@ -78,6 +80,8 @@ describe('Sentry backend instrumentation', () => {
     expect(event.user).toBeDefined();
     expect(event.request.headers).toBeDefined();
     expect(event.request.cookies).toBeDefined();
+    expect(scrubbed.request.data).toBeUndefined();
+    expect(scrubbed.request.query_string).toBeUndefined();
 
     const app = {};
     attachSentryErrorHandler(app);
