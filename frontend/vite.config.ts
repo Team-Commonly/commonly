@@ -30,6 +30,9 @@ export default defineConfig({
     // and the public "Watch a live room" CTA renders "This room isn't public".
     // CI passes REACT_APP_SHOWCASE_POD_ID as a build ENV; pass it through here.
     'process.env.REACT_APP_SHOWCASE_POD_ID': JSON.stringify(process.env.REACT_APP_SHOWCASE_POD_ID || ''),
+    // Keep the deployed short SHA available to in-app bug reports. Without an
+    // explicit define, the broad process.env replacement below erases it.
+    'process.env.REACT_APP_VERSION': JSON.stringify(process.env.REACT_APP_VERSION || ''),
     'process.env': {},
   },
 });

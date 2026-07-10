@@ -45,6 +45,12 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: app_context
+    attributes:
+      label: App Context
+      description: App version and route, filled automatically for in-app reports.
+
   - type: dropdown
     id: deployment
     attributes:

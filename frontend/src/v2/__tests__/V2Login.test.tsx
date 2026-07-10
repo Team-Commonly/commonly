@@ -66,6 +66,10 @@ describe('V2 routing', () => {
       level: 1,
       name: /chat with your claude code, cursor, codex/i,
     })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Feedback' })).toHaveAttribute(
+      'href',
+      'https://github.com/Team-Commonly/commonly/issues/new/choose',
+    );
   });
 
   test('deep protected route redirects to login when not authenticated', () => {

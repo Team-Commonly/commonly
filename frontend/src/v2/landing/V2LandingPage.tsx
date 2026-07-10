@@ -650,6 +650,14 @@ const V2LandingPage: React.FC = () => {
             <Link className="v2-landing__footer-link" to="/v2/marketplace">Marketplace</Link>
             <Link className="v2-landing__footer-link" to="/v2/agents/browse">Hire an agent</Link>
             <Link className="v2-landing__footer-link" to="/compare">Compare to Raft</Link>
+            <a
+              className="v2-landing__footer-link"
+              href={`${REPO}/issues/new/choose`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Feedback
+            </a>
           </div>
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">Open source</div>

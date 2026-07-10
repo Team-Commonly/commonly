@@ -86,4 +86,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-msg.v2-msg--system {');
     expect(ruleBody(v2, '.v2-msg.v2-msg--system')).toContain('display: block');
   });
+
+  test('the feedback popover overrides the legacy dark MUI paper theme', () => {
+    // body.modern-ui .MuiPaper-root has enough specificity to beat a two-class
+    // selector and turn portaled v2 popovers dark. Keep the compound Paper
+    // selector that won the real-browser specificity check.
+    const rule = ruleBody(v2, '.v2-root .v2-feedback-menu__popover.MuiPaper-root');
+    expect(rule).toContain('background: var(--v2-surface)');
+    expect(rule).toContain('border: 1px solid var(--v2-border)');
+  });
 });

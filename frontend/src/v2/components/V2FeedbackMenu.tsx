@@ -1,0 +1,87 @@
+import React, { useState } from 'react';
+import { Popover } from '@mui/material';
+import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
+import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
+import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
+import { useLocation } from 'react-router-dom';
+import {
+  buildBugReportUrl,
+  buildFeatureRequestUrl,
+  DISCUSSIONS_QA_URL,
+} from '../utils/feedbackLinks';
+
+const V2FeedbackMenu: React.FC = () => {
+  const location = useLocation();
+  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const v2Root = anchorEl?.closest('.v2-root') as HTMLElement | null;
+  const open = Boolean(anchorEl);
+
+  const handleOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="v2-rail__feedback"
+        aria-label="Feedback"
+        aria-expanded={open}
+        aria-controls={open ? 'v2-feedback-options' : undefined}
+        onClick={handleOpen}
+        title="Feedback"
+      >
+        <FeedbackOutlinedIcon aria-hidden="true" />
+      </button>
+      <Popover
+        open={open}
+        anchorEl={anchorEl}
+        onClose={handleClose}
+        container={v2Root || undefined}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        PaperProps={{ className: 'v2-feedback-menu__popover', elevation: 0 }}
+      >
+        <nav id="v2-feedback-options" className="v2-feedback-menu__list" aria-label="Feedback options">
+          <a
+            className="v2-feedback-menu__item"
+            href={buildBugReportUrl(location.pathname)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleClose}
+          >
+            <BugReportOutlinedIcon aria-hidden="true" />
+            <span>Report a bug</span>
+          </a>
+          <a
+            className="v2-feedback-menu__item"
+            href={buildFeatureRequestUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleClose}
+          >
+            <LightbulbOutlinedIcon aria-hidden="true" />
+            <span>Request a feature</span>
+          </a>
+          <a
+            className="v2-feedback-menu__item"
+            href={DISCUSSIONS_QA_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleClose}
+          >
+            <QuestionAnswerOutlinedIcon aria-hidden="true" />
+            <span>Ask a question</span>
+          </a>
+        </nav>
+      </Popover>
+    </>
+  );
+};
+
+export default V2FeedbackMenu;

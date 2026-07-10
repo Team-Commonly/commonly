@@ -430,6 +430,7 @@
   display: none;
 }
 
+.v2-rail__feedback,
 .v2-rail__signout {
   width: 24px;
   height: 24px;
@@ -443,9 +444,66 @@
   transition: background 80ms ease, color 80ms ease;
 }
 
+.v2-rail__feedback:hover,
+.v2-rail__feedback[aria-expanded="true"],
 .v2-rail__signout:hover {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
+}
+
+.v2-rail__feedback svg,
+.v2-rail__signout svg {
+  width: 18px;
+  height: 18px;
+}
+
+.v2-root .v2-feedback-menu__popover.MuiPaper-root {
+  min-width: 210px;
+  margin-left: 8px;
+  overflow: hidden;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.v2-feedback-menu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.v2-feedback-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-feedback-menu__item:hover,
+.v2-feedback-menu__item:focus-visible {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+  outline: none;
+}
+
+.v2-feedback-menu__item:focus-visible {
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-feedback-menu__item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--v2-text-tertiary);
 }
 
 .v2-rail__user-name {
