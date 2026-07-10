@@ -87,6 +87,7 @@ jobs:
           docker build frontend \
             --build-arg REACT_APP_API_URL=https://api.commonly.me \
             --build-arg REACT_APP_SHOWCASE_POD_ID=6a4394e5dd52c8ec8425ad69 \
+            --build-arg "REACT_APP_VERSION=$TAG" \
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 

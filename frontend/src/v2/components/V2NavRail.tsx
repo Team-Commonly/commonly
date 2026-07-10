@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
+import V2FeedbackMenu from './V2FeedbackMenu';
 import { useAuth } from '../../context/AuthContext';
 
 interface NavItem {
@@ -109,6 +110,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
               Online
             </div>
           </div>
+          <V2FeedbackMenu />
           <button
             type="button"
             className="v2-rail__signout"
