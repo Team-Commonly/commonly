@@ -10,6 +10,9 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({
     select: () => ({ lean: async () => ({ banned: false }) }),
   })),
+  // touchLastActive fires a throttled fire-and-forget write on every
+  // successful auth (GH#662 — lastActive was never updated after signup).
+  updateOne: jest.fn(() => Promise.resolve()),
 }));
 const User = require('../../../models/User');
 const authMiddleware = require('../../../middleware/auth');
@@ -246,6 +249,43 @@ describe('Auth Middleware Tests', () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // GH#662: lastActive must move with real traffic — it was only ever set at
+  // signup, which made the funnel's returned-D1/D7 a structural zero.
+  it('touches lastActive on successful auth, throttled per user', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const token = generateTestToken(userId);
+    const makeReq = () => ({
+      header: jest.fn((h) => (h === 'Authorization' ? `Bearer ${token}` : null)),
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    User.updateOne.mockClear();
+    await authMiddleware(makeReq(), res, jest.fn());
+    expect(User.updateOne).toHaveBeenCalledWith(
+      { _id: userId.toString() },
+      { lastActive: expect.any(Date) },
+    );
+
+    // Second request inside the 15-minute window: no second write.
+    await authMiddleware(makeReq(), res, jest.fn());
+    expect(User.updateOne).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fail the request when the lastActive write rejects', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const token = generateTestToken(userId);
+    User.updateOne.mockClear();
+    User.updateOne.mockReturnValueOnce(Promise.reject(new Error('db down')));
+    const req = { header: jest.fn((h) => (h === 'Authorization' ? `Bearer ${token}` : null)) };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
+
+    await authMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
   });
 
 });
