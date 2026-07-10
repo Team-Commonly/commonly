@@ -51,7 +51,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       req.authType = 'apiToken';
       req.apiTokenScopes = user.apiTokenScopes || [];
       req.apiTokenCreatedAt = user.apiTokenCreatedAt || null;
-      touchLastActive(req.userId);
+      touchLastActive(user._id.toString());
       return next();
     } catch (err: unknown) {
       console.error('API token validation error:', (err as Error).message);
