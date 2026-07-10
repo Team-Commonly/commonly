@@ -13,6 +13,11 @@ global:
 # otherwise both sides fight over the same namespace.
 createNamespace: true
 
+# Error tracking is opt-in. With this disabled and no frontend build-time DSN,
+# self-hosted deployments do not initialize or contact Sentry.
+errorTracking:
+  enabled: false
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true

@@ -82,12 +82,14 @@ jobs:
       - name: Build + push frontend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
+          REACT_APP_SENTRY_DSN: ${{ secrets.DEV_SENTRY_FRONTEND_DSN }}
         run: |
           REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
           docker build frontend \
             --build-arg REACT_APP_API_URL=https://api.commonly.me \
             --build-arg REACT_APP_SHOWCASE_POD_ID=6a4394e5dd52c8ec8425ad69 \
             --build-arg "REACT_APP_VERSION=$TAG" \
+            --build-arg "REACT_APP_SENTRY_DSN=$REACT_APP_SENTRY_DSN" \
             -t "$REPO:$TAG"
           docker push "$REPO:$TAG"
 

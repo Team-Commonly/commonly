@@ -1,3 +1,4 @@
+const { attachSentryErrorHandler } = require('./instrument');
 export {};
 const express = require('express');
 const cors = require('cors');
@@ -379,6 +380,10 @@ if (process.env.PG_HOST) {
     res.json({ available: false });
   });
 }
+
+// Sentry's Express error handler must be registered after application routes.
+// It is a no-op when SENTRY_DSN was absent during process startup.
+attachSentryErrorHandler(app);
 
 // Socket.io middleware for authentication
 io.use((socket: any, next: any) => {

@@ -5,6 +5,9 @@ global:
   namespace: commonly-dev
   environment: development
 
+errorTracking:
+  enabled: true
+
 agentProvisioning:
   enabled: true
   createWorkspacePvc: false
