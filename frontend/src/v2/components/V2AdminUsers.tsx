@@ -13,6 +13,7 @@
 //      once with copy-to-clipboard), revoke.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 
 interface AdminRef {
@@ -119,6 +120,20 @@ type RegisteredUser = {
   createdAt?: string;
 };
 
+// "joined 15d · 3 pods · 42 msgs" — compact per-user lifecycle summary
+// (GH#662). Counts come from /api/admin/analytics/lifecycle as a separate,
+// failure-isolated fetch so moderation keeps working if PostgreSQL is down.
+type LifecycleStats = Record<string, { pods: number; messages: number }>;
+
+const lifecycleLabel = (u: RegisteredUser, stats: LifecycleStats | null): string => {
+  const joined = u.createdAt
+    ? `joined ${Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (24 * 60 * 60 * 1000)))}d`
+    : 'joined —';
+  const s = stats?.[u.id];
+  if (!s) return joined;
+  return `${joined} · ${s.pods} pod${s.pods === 1 ? '' : 's'} · ${s.messages} msg${s.messages === 1 ? '' : 's'}`;
+};
+
 const V2AdminUsers: React.FC = () => {
   const api = useV2Api();
 
@@ -128,6 +143,20 @@ const V2AdminUsers: React.FC = () => {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [userSearch, setUserSearch] = useState('');
   const [userBusy, setUserBusy] = useState<string | null>(null);
+  const [lifecycle, setLifecycle] = useState<LifecycleStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<{ users?: LifecycleStats }>('/api/admin/analytics/lifecycle');
+        if (!cancelled) setLifecycle(data.users || {});
+      } catch {
+        // Column degrades to "joined Nd" — moderation stays fully usable.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [api]);
 
   const fetchUsers = useCallback(async (q: string) => {
     setUsersLoading(true);
@@ -369,7 +398,8 @@ const V2AdminUsers: React.FC = () => {
           <div>
             <h2 className="v2-admin-users__section-title">Registered users</h2>
             <p className="v2-admin-users__section-sub">
-              Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.
+              Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.{' '}
+              <Link to="/v2/admin/analytics" className="v2-admin-analytics__crosslink">Usage analytics →</Link>
             </p>
           </div>
           <input
@@ -394,7 +424,7 @@ const V2AdminUsers: React.FC = () => {
                   <th>Email</th>
                   <th>Role</th>
                   <th>Status</th>
-                  <th>Joined</th>
+                  <th>Lifecycle</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>
@@ -411,7 +441,9 @@ const V2AdminUsers: React.FC = () => {
                           ? <span className="v2-admin-users__badge v2-admin-users__badge--banned" title={u.banReason || undefined}>banned</span>
                           : (u.verified ? 'active' : 'unverified')}
                       </td>
-                      <td>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                      <td className="v2-admin-users__cell-muted" title={u.createdAt ? new Date(u.createdAt).toLocaleDateString() : undefined}>
+                        {lifecycleLabel(u, lifecycle)}
+                      </td>
                       <td className="v2-admin-users__row-actions">
                         <button
                           type="button"

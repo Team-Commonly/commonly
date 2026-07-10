@@ -131,5 +131,122 @@ router.get('/funnel', adminReadLimiter, auth, adminAuth, async (req: any, res: a
   }
 });
 
+const HUMAN_FILTER = {
+  $or: [
+    { botMetadata: { $exists: false } },
+    { 'botMetadata.agentName': { $exists: false } },
+  ],
+};
+
+// GET /api/admin/analytics/usage?days=30
+// Instance-level activity for the admin dashboard: signups/day (Mongo,
+// humans), messages/day + distinct human posters/day (PG), rolling DAU/WAU
+// cards (lastActive — any authenticated activity, broader than posting).
+router.get('/usage', adminReadLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const days = Math.max(7, Math.min(90, parseInt(req.query.days, 10) || 30));
+    const since = new Date(Date.now() - days * DAY_MS);
+
+    const [signupUsers, botUsers, dau, wau, totalUsers] = await Promise.all([
+      User.find({ createdAt: { $gte: since }, ...HUMAN_FILTER }).select('createdAt').lean(),
+      User.find({ 'botMetadata.agentName': { $exists: true } }).select('_id').lean(),
+      User.countDocuments({ lastActive: { $gte: new Date(Date.now() - DAY_MS) }, ...HUMAN_FILTER }),
+      User.countDocuments({ lastActive: { $gte: new Date(Date.now() - 7 * DAY_MS) }, ...HUMAN_FILTER }),
+      User.countDocuments(HUMAN_FILTER),
+    ]);
+    const botIds = botUsers.map((u: any) => String(u._id));
+
+    // eslint-disable-next-line global-require
+    const { pool } = require('../../config/db-pg');
+    const pgDaily = await pool.query(
+      `SELECT (created_at AT TIME ZONE 'UTC')::date::text AS day,
+              COUNT(*)::int AS messages,
+              COUNT(DISTINCT user_id) FILTER (WHERE NOT (user_id = ANY($2)))::int AS posters
+         FROM messages
+        WHERE created_at >= $1
+        GROUP BY 1`,
+      [since, botIds],
+    );
+
+    const byDay = new Map<string, { date: string; signups: number; messages: number; posters: number }>();
+    for (let t = since.getTime(); t <= Date.now(); t += DAY_MS) {
+      const key = dayKey(new Date(t));
+      byDay.set(key, { date: key, signups: 0, messages: 0, posters: 0 });
+    }
+    for (const u of signupUsers as any[]) {
+      const row = byDay.get(dayKey(new Date(u.createdAt)));
+      if (row) row.signups += 1;
+    }
+    for (const r of pgDaily.rows as Array<{ day: string; messages: number; posters: number }>) {
+      const row = byDay.get(r.day);
+      if (row) {
+        row.messages = r.messages;
+        row.posters = r.posters;
+      }
+    }
+
+    const daily = [...byDay.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+    return res.json({
+      days,
+      since: since.toISOString(),
+      daily,
+      totals: {
+        signups: signupUsers.length,
+        messages: daily.reduce((n, r) => n + r.messages, 0),
+        dau,
+        wau,
+        totalUsers,
+      },
+      notes: [
+        'dau/wau count humans with lastActive in the trailing 24h/7d (any authenticated activity)',
+        'messages counts every message (agents included); posters counts distinct human senders',
+      ],
+    });
+  } catch (err: any) {
+    console.error('Usage analytics failed:', err.message);
+    return res.status(500).json({ message: 'Failed to compute usage' });
+  }
+});
+
+// GET /api/admin/analytics/lifecycle
+// Per-user pod + message counts for the admin user list ("joined 15d ·
+// 3 pods · 42 msgs"). Kept out of /api/admin/users on purpose: moderation
+// must keep working when PostgreSQL is down, so the frontend merges this in
+// as a separate, failure-isolated fetch. Two grouped queries, no N+1.
+router.get('/lifecycle', adminReadLimiter, auth, adminAuth, async (_req: any, res: any) => {
+  try {
+    // eslint-disable-next-line global-require
+    const Pod = require('../../models/Pod');
+    const [podCounts, pgCounts] = await Promise.all([
+      Pod.aggregate([
+        { $unwind: '$members' },
+        { $group: { _id: '$members', pods: { $sum: 1 } } },
+      ]),
+      (async () => {
+        // eslint-disable-next-line global-require
+        const { pool } = require('../../config/db-pg');
+        const r = await pool.query('SELECT user_id, COUNT(*)::int AS messages FROM messages GROUP BY user_id');
+        return r.rows as Array<{ user_id: string; messages: number }>;
+      })(),
+    ]);
+
+    const users: Record<string, { pods: number; messages: number }> = {};
+    const entry = (id: string) => {
+      if (!users[id]) users[id] = { pods: 0, messages: 0 };
+      return users[id];
+    };
+    for (const row of podCounts as Array<{ _id: unknown; pods: number }>) {
+      entry(String(row._id)).pods = row.pods;
+    }
+    for (const row of pgCounts) {
+      entry(String(row.user_id)).messages = row.messages;
+    }
+    return res.json({ users });
+  } catch (err: any) {
+    console.error('Lifecycle analytics failed:', err.message);
+    return res.status(500).json({ message: 'Failed to compute lifecycle stats' });
+  }
+});
+
 module.exports = router;
 export {};
