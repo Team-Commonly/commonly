@@ -188,7 +188,9 @@ Start a temporary client pod from the same MongoDB image configured in Helm,
 copy the archive into it, and point the restore URI at an isolated database:
 
 ```bash
-export MONGO_IMAGE="mongo:latest"
+export MONGO_IMAGE="$(kubectl get cronjob mongodb-backup \
+  -n "${K8S_NAMESPACE}" \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.initContainers[?(@.name=="mongodb-dump")].image}')"
 kubectl run mongodb-restore -n "${K8S_NAMESPACE}" \
   --image="${MONGO_IMAGE}" --restart=Never --command -- sleep 3600
 kubectl wait --for=condition=Ready --timeout=120s \
@@ -196,11 +198,39 @@ kubectl wait --for=condition=Ready --timeout=120s \
 kubectl cp /tmp/mongodb-backup.archive.gz \
   "${K8S_NAMESPACE}/mongodb-restore:/tmp/backup.archive.gz"
 
+MONGO_SOURCE_URI="$(kubectl get secret database-credentials \
+  -n "${K8S_NAMESPACE}" -o jsonpath='{.data.mongo-uri}' | base64 --decode)"
+MONGO_SOURCE_DB="${MONGO_SOURCE_URI%%\?*}"
+MONGO_SOURCE_DB="${MONGO_SOURCE_DB##*/}"
+unset MONGO_SOURCE_URI
+if [[ ! "${MONGO_SOURCE_DB}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "Could not derive a safe source database name from mongo-uri" >&2
+  exit 1
+fi
+export MONGO_SOURCE_DB
+export MONGO_RESTORE_DB="commonly_restore"
 export MONGO_RESTORE_URI="<isolated-mongodb-uri-ending-in/commonly_restore>"
 kubectl exec mongodb-restore -n "${K8S_NAMESPACE}" -- \
-  env MONGO_URI="${MONGO_RESTORE_URI}" bash -c \
-  'mongorestore --uri="$MONGO_URI" --archive=/tmp/backup.archive.gz --gzip --drop'
+  env MONGO_URI="${MONGO_RESTORE_URI}" \
+  MONGO_SOURCE_DB="${MONGO_SOURCE_DB}" \
+  MONGO_RESTORE_DB="${MONGO_RESTORE_DB}" \
+  bash -c '
+    mongorestore \
+      --uri="$MONGO_URI" \
+      --archive=/tmp/backup.archive.gz \
+      --gzip \
+      --drop \
+      --nsInclude="${MONGO_SOURCE_DB}.*" \
+      --nsFrom="${MONGO_SOURCE_DB}.*" \
+      --nsTo="${MONGO_RESTORE_DB}.*"
+  '
 ```
+
+**Load-bearing safety warning:** an archive records its original namespaces,
+and `mongorestore --archive` ignores the database path in `--uri`. The
+`--nsInclude` / `--nsFrom` / `--nsTo` mapping above is mandatory. Removing it
+would make `--drop` target the live source database when the restore host is
+the in-cluster MongoDB.
 
 Inspect the restored collections, then delete the client pod:
 
@@ -208,7 +238,7 @@ Inspect the restored collections, then delete the client pod:
 kubectl exec mongodb-restore -n "${K8S_NAMESPACE}" -- \
   mongosh "${MONGO_RESTORE_URI}" --quiet \
   --eval 'db.getCollectionNames().sort()'
-unset MONGO_RESTORE_URI
+unset MONGO_RESTORE_URI MONGO_RESTORE_DB MONGO_SOURCE_DB MONGO_IMAGE
 kubectl delete pod mongodb-restore -n "${K8S_NAMESPACE}"
 ```
 
@@ -218,9 +248,13 @@ Start a temporary PostgreSQL client pod, copy the SQL archive, and load it into
 an empty isolated database:
 
 ```bash
-export POSTGRES_IMAGE="postgres:15"
+export POSTGRES_IMAGE="$(kubectl get cronjob postgres-backup \
+  -n "${K8S_NAMESPACE}" \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.initContainers[?(@.name=="postgresql-dump")].image}')"
 export PG_RESTORE_HOST="postgres.${K8S_NAMESPACE}.svc.cluster.local"
-export PG_RESTORE_USER="postgres"
+export PG_RESTORE_USER="$(kubectl get cronjob postgres-backup \
+  -n "${K8S_NAMESPACE}" \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.initContainers[?(@.name=="postgresql-dump")].env[?(@.name=="PG_USER")].value}')"
 export PG_RESTORE_DATABASE="commonly_restore"
 
 kubectl run postgresql-restore -n "${K8S_NAMESPACE}" \
