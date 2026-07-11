@@ -1,0 +1,79 @@
+# External uptime watch (GH#665, "See & Hear"). Sentry only reports errors
+# from a RUNNING app — a crash-looped backend, dead tunnel, or reclaimed node
+# is silent there. This cron probes from GitHub's side and opens an issue
+# (label: uptime) when a target stays down across the whole probe window, so
+# full-site-down produces an email instead of silence. The issue auto-closes
+# on recovery, leaving downtime duration in its timeline.
+#
+# Probe window: 3 attempts, 50s apart (~100s+ span) — sized to outlast the
+# ~90s backend Recreate window during Deploy Dev (#654) so routine deploys
+# don't page. GitHub cron is best-effort; expect a few minutes of jitter.
+name: Uptime Check
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe endpoints
+        id: probe
+        run: |
+          targets=(
+            "https://commonly.me"
+            "https://api.commonly.me/api/health"
+          )
+          failed=""
+          for target in "${targets[@]}"; do
+            ok=false
+            for attempt in 1 2 3; do
+              code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 \
+                -H "User-Agent: commonly-uptime-check/1.0" "$target" || echo "000")
+              echo "$target attempt $attempt -> $code"
+              if [ "$code" = "200" ]; then ok=true; break; fi
+              [ "$attempt" -lt 3 ] && sleep 50
+            done
+            if [ "$ok" = "false" ]; then
+              failed="$failed $target"
+            fi
+          done
+          echo "failed=${failed# }" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update outage issue
+        if: steps.probe.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ steps.probe.outputs.failed }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label uptime \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --label uptime \
+              --title "🔴 Uptime: $FAILED not responding" \
+              --body "$(printf 'External probe failed 3 consecutive attempts (~100s window) for:\n\n%s\n\nRun: %s/%s/actions/runs/%s\n\nThis issue auto-closes when the probe recovers.' "$FAILED" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          else
+            echo "Outage issue #$existing already open — not duplicating."
+          fi
+
+      - name: Close outage issue on recovery
+        if: steps.probe.outputs.failed == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label uptime \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
+              --comment "Probe recovered — both endpoints returning 200."
+          fi
