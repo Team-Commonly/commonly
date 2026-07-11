@@ -284,7 +284,16 @@ litellm:
       effect: "NoSchedule"
 
 backup:
+  # ADR-015: database dumps must stay on the on-demand pool; spot
+  # preemption can terminate a backup mid-dump and leave no usable artifact.
+  nodeSelector:
+    pool: dev
+  tolerations:
+    - key: "pool"
+      operator: "Equal"
+      value: "dev"
+      effect: "NoSchedule"
   mongodb:
-    enabled: false  # Enable after Phase 3
+    enabled: false  # Operator-private flag; enable only after bucket + WI setup.
   postgresql:
-    enabled: false  # Enable after Phase 3
+    enabled: false  # Operator-private flag; enable only after bucket + WI setup.

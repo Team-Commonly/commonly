@@ -10,10 +10,14 @@ metadata:
     database: postgresql
 spec:
   schedule: {{ .Values.backup.postgresql.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
       template:
         metadata:
           labels:
@@ -23,26 +27,19 @@ spec:
         spec:
           serviceAccountName: backup-sa
           restartPolicy: OnFailure
-          containers:
-          - name: postgres-backup
-            image: postgres:15
+          initContainers:
+          - name: postgresql-dump
+            image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+            imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
             command:
             - /bin/bash
             - -c
             - |
-              set -e
-              BACKUP_FILE="/tmp/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
+              set -euo pipefail
+              BACKUP_FILE="/backup/backup.sql.gz"
               echo "Starting PostgreSQL backup to $BACKUP_FILE"
-
               pg_dump -h "$PG_HOST" -U "$PG_USER" -d "$PG_DATABASE" | gzip > "$BACKUP_FILE"
-
-              GCS_PATH="gs://{{ .Values.backup.postgresql.gcs.bucket }}/{{ .Values.backup.postgresql.gcs.path }}/backup-$(date +%Y%m%d-%H%M%S).sql.gz"
-              echo "Uploading to $GCS_PATH"
-
-              gsutil cp "$BACKUP_FILE" "$GCS_PATH"
-
-              echo "Backup completed successfully"
-              rm "$BACKUP_FILE"
+              echo "PostgreSQL dump completed"
             env:
             - name: PG_HOST
               value: postgres.{{ include "commonly.namespace" . }}.svc.cluster.local
@@ -55,6 +52,9 @@ spec:
                 secretKeyRef:
                   name: database-credentials
                   key: postgres-password
+            volumeMounts:
+            - name: backup-data
+              mountPath: /backup
             resources:
               requests:
                 memory: "256Mi"
@@ -62,4 +62,71 @@ spec:
               limits:
                 memory: "1Gi"
                 cpu: "500m"
+          containers:
+          - name: backup-uploader
+            image: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+            imagePullPolicy: IfNotPresent
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              prune_backups() {
+                local prefix="$1"
+                local keep="$2"
+                local backups
+                local stale
+
+                backups="$(gsutil ls "${prefix}/backup-*" 2>/dev/null || true)"
+                if [ -z "$backups" ]; then
+                  return
+                fi
+
+                stale="$(printf '%s\n' "$backups" | sort | head -n "-${keep}")"
+                if [ -n "$stale" ]; then
+                  printf '%s\n' "$stale" | gsutil -m rm -I
+                fi
+              }
+
+              BACKUP_FILE="/backup/backup.sql.gz"
+              TIMESTAMP="$(date -u +%Y%m%d-%H%M%S)"
+              GCS_BASE="gs://{{ .Values.backup.postgresql.gcs.bucket }}/{{ .Values.backup.postgresql.gcs.path }}"
+              DAILY_PREFIX="${GCS_BASE}/daily"
+              DAILY_OBJECT="${DAILY_PREFIX}/backup-${TIMESTAMP}.sql.gz"
+
+              echo "Uploading PostgreSQL backup to $DAILY_OBJECT"
+              gsutil cp "$BACKUP_FILE" "$DAILY_OBJECT"
+              prune_backups "$DAILY_PREFIX" 7
+
+              if [ "$(date +%u)" = "7" ]; then
+                WEEKLY_PREFIX="${GCS_BASE}/weekly"
+                WEEKLY_OBJECT="${WEEKLY_PREFIX}/backup-${TIMESTAMP}.sql.gz"
+                gsutil cp "$DAILY_OBJECT" "$WEEKLY_OBJECT"
+                prune_backups "$WEEKLY_PREFIX" 4
+              fi
+
+              echo "PostgreSQL backup completed successfully"
+              rm -f "$BACKUP_FILE"
+            volumeMounts:
+            - name: backup-data
+              mountPath: /backup
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+          {{- if and .Values.backup.nodeSelector (gt (len .Values.backup.nodeSelector) 0) }}
+          nodeSelector:
+            {{- toYaml .Values.backup.nodeSelector | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.backup.tolerations (gt (len .Values.backup.tolerations) 0) }}
+          tolerations:
+            {{- toYaml .Values.backup.tolerations | nindent 12 }}
+          {{- end }}
+          volumes:
+          - name: backup-data
+            emptyDir: {}
 {{- end }}

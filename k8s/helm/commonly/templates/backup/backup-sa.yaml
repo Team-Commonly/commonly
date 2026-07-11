@@ -8,7 +8,8 @@ metadata:
   labels:
     {{- include "commonly.labels" . | nindent 4 }}
     component: backup
+  {{- with .Values.backup.gcpServiceAccount }}
   annotations:
-    # Workload Identity annotation for GCS access
-    iam.gke.io/gcp-service-account: commonly-backup-sa@PROJECT_ID.iam.gserviceaccount.com
+    iam.gke.io/gcp-service-account: {{ . | quote }}
+  {{- end }}
 {{- end }}

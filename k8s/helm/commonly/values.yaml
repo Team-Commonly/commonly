@@ -422,15 +422,18 @@ litellm:
 
 # Backup configuration
 backup:
+  gcpServiceAccount: ""
+  nodeSelector: {}
+  tolerations: []
   mongodb:
     enabled: false
     schedule: "0 2 * * *"
     gcs:
-      bucket: commonly-dev-backups
+      bucket: ""
       path: mongodb
   postgresql:
     enabled: false
     schedule: "0 2 * * *"
     gcs:
-      bucket: commonly-dev-backups
+      bucket: ""
       path: postgresql
