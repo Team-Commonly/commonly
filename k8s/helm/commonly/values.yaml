@@ -45,11 +45,15 @@ backend:
       cpu: "1000m"
   nodeSelector: {}
   tolerations: []
+  # Keep these probes deliberately different. Liveness must remain I/O-free so
+  # database or realtime dependency failures never restart a healthy process.
   livenessProbe:
     enabled: true
     path: /api/health/live
     initialDelaySeconds: 30
     periodSeconds: 10
+  # Readiness gates traffic on required Mongo/PG dependencies; Redis remains
+  # non-blocking because Socket.IO can fall back to its in-memory adapter.
   readinessProbe:
     enabled: true
     path: /api/health/ready
