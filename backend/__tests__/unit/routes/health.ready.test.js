@@ -49,6 +49,7 @@ describe('GET /api/health/ready', () => {
     const res = await request(buildApp()).get('/api/health/ready').expect(200);
 
     expect(res.body.status).toBe('ready');
+    expect(res.body.degraded).toBeUndefined();
     expect(mockPool.query).toHaveBeenCalledWith('SELECT 1');
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
@@ -63,12 +64,19 @@ describe('GET /api/health/ready', () => {
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
-  it('returns not ready when PostgreSQL cannot answer the readiness query', async () => {
+  it('stays ready with PostgreSQL marked degraded when the query fails', async () => {
     mockPool.query.mockRejectedValue(new Error('connection refused'));
 
-    const res = await request(buildApp()).get('/api/health/ready').expect(503);
+    const res = await request(buildApp()).get('/api/health/ready').expect(200);
 
-    expect(res.body).toEqual({ status: 'not_ready', reason: 'PostgreSQL not connected' });
+    expect(res.body).toEqual(expect.objectContaining({
+      status: 'ready',
+      degraded: ['postgresql'],
+    }));
+    expect(console.warn).toHaveBeenCalledWith(
+      'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
+      'connection refused',
+    );
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 });

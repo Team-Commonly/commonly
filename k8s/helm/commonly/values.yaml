@@ -52,8 +52,10 @@ backend:
     path: /api/health/live
     initialDelaySeconds: 30
     periodSeconds: 10
-  # Readiness gates traffic on required Mongo/PG dependencies; Redis remains
-  # non-blocking because Socket.IO can fall back to its in-memory adapter.
+  # Readiness gates only this pod's Mongo connection. PG and Redis are shared,
+  # deliberately non-fatal dependencies: the app falls back to Mongo/in-memory,
+  # and failing every pod's readiness would turn partial degradation into a
+  # full API outage.
   readinessProbe:
     enabled: true
     path: /api/health/ready

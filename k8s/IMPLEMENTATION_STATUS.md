@@ -215,10 +215,10 @@
 
 - **`GET /api/health/ready`**: Readiness probe
   - MongoDB connected (readyState === 1)
-  - PostgreSQL query success
-  - Redis is deliberately non-blocking because HTTP remains available when
-    Socket.IO falls back to its in-memory adapter
-  - Returns 200 (ready) or 503 (not ready)
+  - PostgreSQL is advisory: a failed query returns 200 with
+    `degraded: ['postgresql']` while messages fall back to MongoDB
+  - Redis is advisory because Socket.IO falls back to its in-memory adapter
+  - Returns 503 only when MongoDB is not connected
 
 - **`GET /api/health/clawdbot`**: Agent gateway status
   - Gateway reachability check

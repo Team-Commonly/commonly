@@ -170,8 +170,14 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     if (process.env.PG_HOST && pgPool) {
       try {
         await (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1');
-      } catch {
-        return res.status(503).json({ status: 'not_ready', reason: 'PostgreSQL not connected' });
+      } catch (error) {
+        const e = error as { message?: string };
+        console.warn('health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:', e.message);
+        return res.status(200).json({
+          status: 'ready',
+          degraded: ['postgresql'],
+          timestamp: new Date().toISOString(),
+        });
       }
     }
 
