@@ -18,6 +18,7 @@ const makeRedisClient = () => {
   const handlers = {};
   const client = {
     connect: jest.fn().mockResolvedValue(undefined),
+    disconnect: jest.fn().mockResolvedValue(undefined),
     duplicate: jest.fn(),
     on: jest.fn((event, handler) => {
       handlers[event] = handler;
@@ -58,8 +59,10 @@ describe('Socket.IO Redis adapter', () => {
     await expect(socketConfig.init(io)).resolves.toBeUndefined();
 
     expect(io.adapter).not.toHaveBeenCalled();
+    expect(pub.client.disconnect).toHaveBeenCalledTimes(1);
+    expect(sub.client.disconnect).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith(
-      '[socket.io] Continuing without Redis adapter (single-pod mode)',
+      '[socket.io] Continuing without Redis adapter; Redis will not be used until process restart',
     );
   });
 

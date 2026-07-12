@@ -11,6 +11,7 @@ interface SocketIO {
 
 interface RedisClient {
   connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
   duplicate: () => RedisClient;
   on: (event: string, callback: (...args: unknown[]) => void) => unknown;
 }
@@ -22,6 +23,9 @@ module.exports = {
     io = socketInstance;
 
     if (process.env.AGENT_PROVISIONER_K8S === '1') {
+      let pubClient: RedisClient | null = null;
+      let subClient: RedisClient | null = null;
+
       try {
         // eslint-disable-next-line global-require
         const { createAdapter } = require('@socket.io/redis-adapter');
@@ -34,14 +38,14 @@ module.exports = {
 
         console.log(`[socket.io] Connecting to Redis at ${redisUrl} for multi-pod broadcasting`);
 
-        const pubClient = createClient({
+        pubClient = createClient({
           url: redisUrl,
           socket: {
             reconnectStrategy: (retries: number) => Math.min(2 ** retries * 100, 10_000),
             connectTimeout: 5_000,
           },
         }) as RedisClient;
-        const subClient = pubClient.duplicate();
+        subClient = pubClient.duplicate();
 
         // node-redis can emit an error on every failed reconnect. Log only when
         // the Redis connection enters or leaves the error state.
@@ -74,7 +78,21 @@ module.exports = {
       } catch (error) {
         const e = error as { message?: string };
         console.error('[socket.io] Failed to initialize Redis adapter:', e.message);
-        console.warn('[socket.io] Continuing without Redis adapter (single-pod mode)');
+
+        // Stop node-redis's reconnect loop. quit() requires a live socket, but
+        // this path is specifically for clients that failed during connect.
+        for (const client of [pubClient, subClient]) {
+          if (client) {
+            try {
+              await client.disconnect();
+            } catch (cleanupError) {
+              const cleanup = cleanupError as { message?: string };
+              console.warn('[socket.io] Failed to stop Redis client after initialization error:', cleanup.message);
+            }
+          }
+        }
+
+        console.warn('[socket.io] Continuing without Redis adapter; Redis will not be used until process restart');
       }
     } else {
       console.log('[socket.io] Running in single-pod mode (Docker Compose)');

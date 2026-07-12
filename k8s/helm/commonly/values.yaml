@@ -52,7 +52,7 @@ backend:
     periodSeconds: 10
   readinessProbe:
     enabled: true
-    path: /api/health/live
+    path: /api/health/ready
     initialDelaySeconds: 10
     periodSeconds: 5
   env:

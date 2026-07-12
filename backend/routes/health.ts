@@ -175,21 +175,6 @@ router.get('/ready', async (_req: unknown, res: Res) => {
       }
     }
 
-    if (process.env.AGENT_PROVISIONER_K8S === '1') {
-      try {
-        // eslint-disable-next-line global-require
-        const { createClient } = require('redis');
-        const redisHost = process.env.REDIS_HOST || 'redis';
-        const redisPort = process.env.REDIS_PORT || 6379;
-        const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
-        await redisClient.connect();
-        await redisClient.ping();
-        await redisClient.disconnect();
-      } catch {
-        return res.status(503).json({ status: 'not_ready', reason: 'Redis not connected (required in K8s mode)' });
-      }
-    }
-
     return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
   } catch (error) {
     const e = error as { message?: string };
