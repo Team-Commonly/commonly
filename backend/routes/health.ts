@@ -170,23 +170,14 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     if (process.env.PG_HOST && pgPool) {
       try {
         await (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1');
-      } catch {
-        return res.status(503).json({ status: 'not_ready', reason: 'PostgreSQL not connected' });
-      }
-    }
-
-    if (process.env.AGENT_PROVISIONER_K8S === '1') {
-      try {
-        // eslint-disable-next-line global-require
-        const { createClient } = require('redis');
-        const redisHost = process.env.REDIS_HOST || 'redis';
-        const redisPort = process.env.REDIS_PORT || 6379;
-        const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
-        await redisClient.connect();
-        await redisClient.ping();
-        await redisClient.disconnect();
-      } catch {
-        return res.status(503).json({ status: 'not_ready', reason: 'Redis not connected (required in K8s mode)' });
+      } catch (error) {
+        const e = error as { message?: string };
+        console.warn('health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:', e.message);
+        return res.status(200).json({
+          status: 'ready',
+          degraded: ['postgresql'],
+          timestamp: new Date().toISOString(),
+        });
       }
     }
 

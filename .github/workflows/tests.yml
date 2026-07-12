@@ -150,6 +150,7 @@ jobs:
       # Update manually by running: gh api /repos/datreeio/CRDs-catalog/commits/main --jq .sha
       CRDS_CATALOG_SHA: 15e9b72701ce617b0ac15da611a7fb2e54b980dd
       KUBECONFORM_VERSION: v0.7.0
+      YQ_VERSION: v4.44.3
 
     steps:
       - name: Checkout code
@@ -166,14 +167,40 @@ jobs:
           sudo tar -xzf kc.tgz -C /usr/local/bin/ kubeconform
           kubeconform -v
 
-      - name: Render and lint dev chart
+      - name: Install yq
+        run: |
+          curl -sSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          chmod +x yq
+          sudo mv yq /usr/local/bin/yq
+          yq --version
+
+      - name: Render dev chart
         run: |
           helm template commonly-dev k8s/helm/commonly \
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-dev.yaml \
-          | kubeconform --strict --summary -output text \
-              --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
-              --schema-location default
+            > /tmp/dev-rendered.yaml
+
+      - name: Lint rendered dev chart
+        run: |
+          kubeconform --strict --summary -output text \
+            --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            --schema-location default \
+            /tmp/dev-rendered.yaml
+
+      - name: Assert reliability rollout and scheduling invariants
+        run: |
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.strategy.type' /tmp/dev-rendered.yaml)" = "RollingUpdate"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.strategy.rollingUpdate.maxUnavailable' /tmp/dev-rendered.yaml)" = "0"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.strategy.rollingUpdate.maxSurge' /tmp/dev-rendered.yaml)" = "1"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.volumes | map(select(has("persistentVolumeClaim"))) | length' /tmp/dev-rendered.yaml)" = "0"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "redis") | .spec.template.spec.nodeSelector.pool' /tmp/dev-rendered.yaml)" = "dev"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "redis") | .spec.template.spec.tolerations | map(select(.key == "workload-tier")) | length' /tmp/dev-rendered.yaml)" = "0"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "redis") | .spec.template.spec.tolerations | map(select(.key == "pool" and .value == "dev" and .effect == "NoSchedule")) | length' /tmp/dev-rendered.yaml)" = "1"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.minReadySeconds' /tmp/dev-rendered.yaml)" = "10"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.terminationGracePeriodSeconds' /tmp/dev-rendered.yaml)" = "30"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
+          test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
 
       - name: Render and lint prod chart (if values-prod.yaml exists)
         run: |

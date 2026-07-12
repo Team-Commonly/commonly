@@ -8,15 +8,14 @@ metadata:
     {{- include "commonly.backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.backend.replicaCount }}
-  # ADR-015 + task #64: backend mounts skills-catalog-pvc as ReadWriteOnce.
-  # The default RollingUpdate strategy tries to bring up the new pod before
-  # the old one terminates, but RWO disks can't bind to two nodes — the new
-  # pod hangs in Init:0/1 indefinitely with `Multi-Attach error`. Recreate
-  # forces the old pod to die first, then the new one mounts cleanly. Cost
-  # is ~30s of downtime per deploy. Acceptable for dev; if prod ever wants
-  # zero-downtime, the underlying PVC needs to be RWX (filestore).
+  # Overlap is safe: the catalog is ephemeral, ObjectStore defaults to Mongo,
+  # and request/session state is externalized to Mongo, PostgreSQL, and Redis.
+  minReadySeconds: 10
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       {{- include "commonly.backend.selectorLabels" . | nindent 6 }}
@@ -26,6 +25,7 @@ spec:
         {{- include "commonly.backend.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.rbac.serviceAccount.name }}
+      terminationGracePeriodSeconds: 30
       {{- if and .Values.skillsCatalogStorage.enabled .Values.skillsCatalogStorage.bootstrapFromImage }}
       initContainers:
       - name: skills-catalog-bootstrap
@@ -393,15 +393,20 @@ spec:
         - name: skills-catalog
           mountPath: /app/docs/skills
           # RW so backend/services/skillsRefreshService.ts can persist
-          # refreshed star counts back to the PVC. Writes are atomic
-          # (full-file writeFileSync) so a mid-write crash leaves the
-          # prior version intact.
+          # refreshed star counts until the next pod replacement. Writes are
+          # atomic (full-file writeFileSync), and the init container reseeds
+          # the catalog from the image on every start.
           readOnly: false
         {{- if and .Values.externalSecrets.enabled (not .Values.externalSecrets.workloadIdentity.enabled) }}
         - name: gcpsm-credentials
           mountPath: /app/gcp
           readOnly: true
         {{- end }}
+
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
 
         resources:
           {{- toYaml .Values.backend.resources | nindent 10 }}
@@ -450,8 +455,7 @@ spec:
       {{- end }}
       {{- if .Values.skillsCatalogStorage.enabled }}
       - name: skills-catalog
-        persistentVolumeClaim:
-          claimName: skills-catalog-pvc
+        emptyDir: {}
       {{- else }}
       - name: skills-catalog
         configMap:

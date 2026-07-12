@@ -39,14 +39,17 @@ on-demand pool, tainted so workloads must opt in.
 nodeSelector `workload-tier=spot`):
 - `backend` — stateless, rolling restart < 30s
 - `frontend` — static, even faster
-- `redis` — socket.io adapter, ephemeral by design (we don't
-  persist sessions in redis for longer than the next message)
 - `litellm` — proxy router; `auth.json` lives on a PVC that
   survives node reschedule, the rotator/codex-cli sidecars
   re-mount it on restart
 
 **Staying on the on-demand pool** (no toleration → spot node
 won't accept them):
+- `redis` — realtime broadcast is an availability dependency,
+  even though its data is ephemeral. Two user-visible 503s on
+  2026-07-11 showed that a spot reclamation can take the shell
+  offline while Redis reschedules, so Redis is pinned to the
+  on-demand `dev-pool`.
 - `clawdbot-gateway` — openclaw moltbot host. Agent sessions
   on `/state` PVC survive node reschedule, but the in-memory
   queue and any mid-turn LLM call are lost. The "agents are
@@ -62,13 +65,11 @@ won't accept them):
 ## Layout
 
 ```
-default-pool      n2-standard-2  on-demand   1 node   agent runtimes only
+default-pool      n2-standard-2  on-demand   1 node   agent runtimes
+dev-pool          n2-standard-2  on-demand   1 node   reliability dependencies
 spot-pool         n2-standard-2  spot        1-2 node stateless workloads
                                  autoscale
 ```
-
-(The legacy `dev-pool` is removed once spot-pool is verified to
-schedule everything that targets it.)
 
 ## Mechanism
 
@@ -99,7 +100,8 @@ Helm exposes per-component overrides via the existing
 `<component>.nodeSelector` / `<component>.tolerations` values
 already plumbed through every deployment template (see
 `cloudflared/deployment.yaml` for the pattern). The values-dev
-overlay sets these for backend / frontend / redis / litellm only.
+overlay opts eligible workloads into spot and explicitly pins
+Redis to the on-demand `dev-pool`.
 
 ## Failure modes + responses
 
@@ -112,9 +114,10 @@ overlay sets these for backend / frontend / redis / litellm only.
    automatically. If this becomes a real problem, add a second
    on-demand replica behind a PDB.
 
-2. **Backend rolling restart during an active request**: socket.io
-   reconnects automatically; HTTP requests get a 502 visible to
-   the user once. Acceptable for dev.
+2. **Backend spot reclamation during an active request**: socket.io
+   reconnects automatically, but an in-flight HTTP request may still
+   fail. Routine deploys use a readiness-gated rolling update with no
+   unavailable replicas so they do not create the same zero-pod window.
 
 3. **`auth.json` PVC mount delay during litellm reschedule**:
    ~30s outage on the LLM proxy. Rotator's `num_retries=1` +

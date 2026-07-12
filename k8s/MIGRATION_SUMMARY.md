@@ -80,7 +80,7 @@
 - Enhanced `backend/routes/health.js` with Redis check
 - `/api/health` - Comprehensive health check
 - `/api/health/live` - Liveness probe
-- `/api/health/ready` - Readiness probe (MongoDB + PostgreSQL + Redis)
+- `/api/health/ready` - Readiness probe (MongoDB only; PostgreSQL and Redis are advisory)
 - `/api/health/clawdbot` - Agent gateway status
 
 **Horizontal Pod Autoscaling** ✅
