@@ -195,19 +195,18 @@ externalSecrets:
 
 #### Skills Catalog Storage (Optional)
 
-By default, the skills catalog is mounted from a ConfigMap (metadata only). For
-the full `awesome-agent-skills-index.json`, enable PVC-backed storage:
+By default, the skills catalog is mounted from a ConfigMap (metadata only). To
+bootstrap the full `awesome-agent-skills-index.json` into ephemeral pod storage,
+enable catalog storage:
 
 ```yaml
 skillsCatalogStorage:
   enabled: true
-  size: 1Gi
-  storageClassName: standard-rwo
-  accessMode: ReadWriteOnce
+  bootstrapFromImage: true
 ```
 
-Note: `ReadWriteOnce` PVCs only attach to one node. For multi-replica backend
-deployments, use a RWX-capable storage class or scale backend replicas to 1.
+The backend refreshes star counts in that pod-local copy every six hours. A new
+pod starts again from the image-baked catalog until the next refresh.
 
 ## Upgrading
 

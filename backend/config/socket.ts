@@ -9,6 +9,12 @@ interface SocketIO {
   [key: string]: unknown;
 }
 
+interface RedisClient {
+  connect: () => Promise<void>;
+  duplicate: () => RedisClient;
+  on: (event: string, callback: (...args: unknown[]) => void) => unknown;
+}
+
 let io: SocketIO | null = null;
 
 module.exports = {
@@ -28,15 +34,39 @@ module.exports = {
 
         console.log(`[socket.io] Connecting to Redis at ${redisUrl} for multi-pod broadcasting`);
 
-        const pubClient = createClient({ url: redisUrl });
-        const subClient = (pubClient as { duplicate: () => unknown }).duplicate();
+        const pubClient = createClient({
+          url: redisUrl,
+          socket: {
+            reconnectStrategy: (retries: number) => Math.min(2 ** retries * 100, 10_000),
+            connectTimeout: 5_000,
+          },
+        }) as RedisClient;
+        const subClient = pubClient.duplicate();
 
-        (pubClient as { on: (event: string, cb: (err: unknown) => void) => void }).on('error', (err) => console.error('[socket.io] Redis pub client error:', err));
-        (subClient as { on: (event: string, cb: (err: unknown) => void) => void }).on('error', (err) => console.error('[socket.io] Redis sub client error:', err));
+        // node-redis can emit an error on every failed reconnect. Log only when
+        // the Redis connection enters or leaves the error state.
+        let redisErrorActive = false;
+        const handleRedisError = (err: unknown): void => {
+          if (!redisErrorActive) {
+            redisErrorActive = true;
+            console.error('[socket.io] Redis clients entered error state:', err);
+          }
+        };
+        const handleRedisReady = (): void => {
+          if (redisErrorActive) {
+            redisErrorActive = false;
+            console.log('[socket.io] Redis clients recovered');
+          }
+        };
+
+        pubClient.on('error', handleRedisError);
+        subClient.on('error', handleRedisError);
+        pubClient.on('ready', handleRedisReady);
+        subClient.on('ready', handleRedisReady);
 
         await Promise.all([
-          (pubClient as { connect: () => Promise<void> }).connect(),
-          (subClient as { connect: () => Promise<void> }).connect(),
+          pubClient.connect(),
+          subClient.connect(),
         ]);
 
         io.adapter(createAdapter(pubClient, subClient));

@@ -336,9 +336,6 @@ configMaps:
 # Skills catalog storage (optional)
 skillsCatalogStorage:
   enabled: true
-  size: 1Gi
-  storageClassName: standard-rwo
-  accessMode: ReadWriteOnce
   bootstrapFromImage: true
   downloadUrl: "https://storage.googleapis.com/YOUR_GCP_PROJECT_ID_cloudbuild/awesome-agent-skills-index.json"
 

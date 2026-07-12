@@ -101,15 +101,15 @@ postgresql:
 
 redis:
   enabled: true
-  # ADR-015: redis is the Socket.io adapter — ephemeral by design. Reschedule
-  # loses the in-memory pub/sub channel but socket clients reconnect within
-  # seconds. Safe on spot.
+  # ADR-015 amendment (2026-07-11): Redis is a realtime availability
+  # dependency. Two user-visible 503s showed that spot reclamation here takes
+  # the shell offline, so keep it on the on-demand dev pool.
   nodeSelector:
-    workload-tier: spot
+    pool: dev
   tolerations:
-    - key: "workload-tier"
+    - key: "pool"
       operator: "Equal"
-      value: "spot"
+      value: "dev"
       effect: "NoSchedule"
 
 externalSecrets:
@@ -208,9 +208,6 @@ configMaps:
 
 skillsCatalogStorage:
   enabled: true
-  size: 1Gi
-  storageClassName: standard-rwo
-  accessMode: ReadWriteOnce
   bootstrapFromImage: true
   downloadUrl: "https://storage.googleapis.com/YOUR_GCP_PROJECT_ID_cloudbuild/awesome-agent-skills-index.json"
 
