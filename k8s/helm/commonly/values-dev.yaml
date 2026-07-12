@@ -18,15 +18,18 @@ backend:
     repository: gcr.io/YOUR_GCP_PROJECT_ID/commonly-backend
     tag: "20260417214615-r4"
     pullPolicy: Always  # Always pull in dev
-  # ADR-015: backend is stateless and tolerates a 30s reschedule on spot
-  # reclaim — socket.io reconnects automatically, mid-flight HTTP gets one
-  # 502. Keeps the larger always-on cost off the dev cluster.
+  # ADR-015 amendment (2026-07-12): the backend serves the user-facing API and
+  # is the one workload a spot reclamation must never interrupt. It requests
+  # only 200m/512Mi and fits in existing dev-pool headroom, so pinning it to the
+  # on-demand pool closes the abrupt-reclamation gap for ~$0 (cheaper than a 2nd
+  # replica, which would also stay on spot). Spot stays for restartable/batch
+  # workloads (agents, LiteLLM); the user-facing API + Redis belong on dev-pool.
   nodeSelector:
-    workload-tier: spot
+    pool: dev
   tolerations:
-    - key: "workload-tier"
+    - key: "pool"
       operator: "Equal"
-      value: "spot"
+      value: "dev"
       effect: "NoSchedule"
   env:
     nodeEnv: development
