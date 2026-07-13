@@ -74,6 +74,40 @@ describe('V2OAuthButtons', () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/auth/oauth/providers'));
     expect(container).toBeEmptyDOMElement();
   });
+
+  test('falls back to cached providers when the fetch fails (no blank SSO on a blip)', async () => {
+    // Prior successful load cached the providers; this mount's fetch fails.
+    localStorage.setItem('v2:oauth-providers', JSON.stringify([{ id: 'github', label: 'GitHub' }]));
+    axios.get.mockRejectedValueOnce(new Error('network blip'));
+
+    render(
+      <MemoryRouter>
+        <V2OAuthButtons />
+      </MemoryRouter>,
+    );
+
+    // The button shows immediately from cache and is NOT blanked by the failure.
+    expect(await screen.findByRole('link', { name: /continue with github/i })).toBeInTheDocument();
+  });
+
+  test('retries a transient failure and shows buttons once it recovers', async () => {
+    localStorage.clear();
+    axios.get
+      .mockRejectedValueOnce(new Error('blip'))
+      .mockResolvedValue({ data: { providers: [{ id: 'google', label: 'Google' }] } });
+
+    render(
+      <MemoryRouter>
+        <V2OAuthButtons />
+      </MemoryRouter>,
+    );
+
+    // First attempt fails (no cache → nothing yet); the backoff retry (~800ms)
+    // succeeds. Allow headroom for the backoff delay.
+    expect(await screen.findByRole('link', { name: /continue with google/i }, { timeout: 3000 }))
+      .toBeInTheDocument();
+    expect(axios.get).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('V2OAuthComplete', () => {
