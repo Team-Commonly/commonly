@@ -37,17 +37,46 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
+// Last-known-good cache. The providers list is effectively static config
+// (which OAuth apps the instance has), so a stale value is safe and far better
+// than a blank login: a single failed /providers fetch used to set [] and
+// hide the buttons with no retry, so any transient (a deploy blip, a spot
+// reclaim, the user's own wifi) blanked SSO until a manual reload.
+const OAUTH_CACHE_KEY = 'v2:oauth-providers';
+const readProviderCache = (): OAuthProvider[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OAUTH_CACHE_KEY) || 'null');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
+
 const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
-  const [providers, setProviders] = useState<OAuthProvider[]>([]);
+  // Seed from cache so repeat visitors see the buttons instantly; the fetch
+  // below reconciles. A *successful* empty response (self-hosted w/o OAuth)
+  // correctly clears; only network failures fall back to the cached value.
+  const [providers, setProviders] = useState<OAuthProvider[]>(readProviderCache);
 
   useEffect(() => {
     let active = true;
-    axios.get('/api/auth/oauth/providers')
-      .then((res) => {
-        if (active) setProviders(Array.isArray(res.data?.providers) ? res.data.providers : []);
-      })
-      .catch(() => { if (active) setProviders([]); });
-    return () => { active = false; };
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const load = () => {
+      if (!active) return;
+      axios.get('/api/auth/oauth/providers')
+        .then((res) => {
+          if (!active) return;
+          const list = Array.isArray(res.data?.providers) ? res.data.providers : [];
+          setProviders(list);
+          try { localStorage.setItem(OAUTH_CACHE_KEY, JSON.stringify(list)); } catch { /* private mode */ }
+        })
+        .catch(() => {
+          // Transient failure: keep last-known-good (already in state), retry a
+          // few times with backoff. Never blank the buttons on a network blip.
+          if (active && attempt < 3) { attempt += 1; retryTimer = setTimeout(load, 800 * attempt); }
+        });
+    };
+    load();
+    return () => { active = false; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   if (!providers.length) return null;
