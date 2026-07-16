@@ -69,8 +69,17 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         auth: { token },
         transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 5,
+        // Eskiden 5 denemeydi (1sn arayla): laptop uykusu / ağ blip'i / backend
+        // deploy'u gibi ~5 saniyeden uzun her kesintide socket.io KALICI olarak
+        // pes ediyordu. Sayfa açık kalıyor, REST ile yüklenmiş eski mesajlar
+        // duruyor, yeni hiçbir şey gelmiyor — kullanıcı bayat veriye bakıp
+        // "mesajım gitmedi mi?" diyor (canlı gözlendi 2026-07-16: sekme ~1 saat
+        // açık kaldıktan sonra sessizce ölü). Pod'u açık bırakıp agentları
+        // izlemek bu üründe beklenen kullanım; kalıcı pes etmek kabul edilemez.
+        reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.5,
       });
 
       newSocket.on('connect', () => { setConnected(true); });
@@ -78,8 +87,25 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       newSocket.on('disconnect', (reason: string) => { console.log('Socket disconnected, reason:', reason); setConnected(false); });
       newSocket.on('error', (error: unknown) => { console.error('Socket error:', error); setConnected(false); });
 
+      // Backoff 30sn'ye kadar çıkabildiği için, kullanıcı sekmeye döndüğünde ya
+      // da ağ geri geldiğinde bir sonraki denemeyi beklemek yerine hemen bağlan.
+      // io.disconnect() sonrası (sunucu tarafı kapatma) otomatik yeniden bağlanma
+      // devreye girmez — bu iki olay o durumun da tek kurtarma yoludur.
+      const reconnectNow = (): void => {
+        if (!newSocket.connected) newSocket.connect();
+      };
+      const onVisible = (): void => { if (document.visibilityState === 'visible') reconnectNow(); };
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('online', reconnectNow);
+      window.addEventListener('focus', reconnectNow);
+
       setSocket(newSocket);
-      return () => { newSocket.disconnect(); };
+      return () => {
+        document.removeEventListener('visibilitychange', onVisible);
+        window.removeEventListener('online', reconnectNow);
+        window.removeEventListener('focus', reconnectNow);
+        newSocket.disconnect();
+      };
     }
   }, [token, currentUser?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
