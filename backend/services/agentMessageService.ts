@@ -1498,9 +1498,27 @@ class AgentMessageService {
       // join two silent blocks into "NO_REPLYNO_REPLY", which has no word
       // boundary between the runs and sailed through \bNO_REPLY\b verbatim
       // into live pods (2026-07-03).
-      .map((line) => line.replace(/\b(?:NO_REPLY)+\b/g, '').trim())
-      .filter(Boolean)
+      //
+      // Only the sentinel is removed — indentation and blank lines are NOT.
+      // The old form was `.map(l => l.replace(...).trim()).filter(Boolean)`,
+      // which per-line-trimmed every message and dropped every empty line.
+      // That is sentinel cleanup with a whitespace bulldozer attached: Python
+      // sent through an agent lost its indentation (`    y = x + 1` arrived as
+      // `y = x + 1`), so a task with one missing `:` reached the agent as code
+      // that also raised IndentationError, and agent-authored code blocks came
+      // out flattened. Whitespace-sensitive payloads (Python, YAML, diffs,
+      // markdown nesting) are normal traffic in an agent pod — verified live
+      // 2026-07-16 by posting identical text through both paths: the user path
+      // (messageController) kept indentation, this one destroyed it.
+      .map((line) => {
+        const withoutSentinel = line.replace(/\b(?:NO_REPLY)+\b/g, '');
+        // A line that was ONLY a sentinel (plus padding) becomes blank rather
+        // than lingering as stray spaces; genuine content keeps its indent.
+        return withoutSentinel.trim() ? withoutSentinel : '';
+      })
       .join('\n')
+      // Leading/trailing blank lines are still cosmetic noise — but interior
+      // structure now survives.
       .trim();
 
     return cleaned;
