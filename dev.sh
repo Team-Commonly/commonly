@@ -53,7 +53,10 @@ read_env_value() {
 }
 
 is_truthy_env_value() {
-    local value="${1,,}"
+    # NOTE: ${1,,} is a bash 4+ expansion; macOS ships bash 3.2 as /bin/bash,
+    # where it fails at runtime with "bad substitution". tr keeps this portable.
+    local value
+    value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     case "$value" in
         1|true|yes|on)
             return 0
