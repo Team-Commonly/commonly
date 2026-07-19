@@ -49,6 +49,8 @@ describe('firstContactService', () => {
     const [filter, update, options] = AgentFirstContact.findOneAndUpdate.mock.calls[0];
     expect(String(filter.userId)).toBe(USER_ID);
     expect(filter.agentName).toBe('openclaw');
+    expect(filter.instanceId).toBe('nova');
+    expect(update.$setOnInsert.instanceId).toBe('nova');
     expect(String(update.$setOnInsert.firstPodId)).toBe(POD_ID);
     expect(update.$setOnInsert.createdAt).toBeInstanceOf(Date);
     expect(options).toEqual(expect.objectContaining({
@@ -94,6 +96,17 @@ describe('firstContactService', () => {
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  test('concurrent upsert loser treats E11000 as an expected no-op', async () => {
+    AgentFirstContact.findOneAndUpdate.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), { code: 11000 }),
+    );
+
+    await expect(maybeFireFirstContact(baseOptions())).resolves.toBeUndefined();
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
   test('agent-to-agent install returns before marker write or enqueue', async () => {
     await maybeFireFirstContact(baseOptions({ installerIsAgent: true }));
 
@@ -113,7 +126,27 @@ describe('firstContactService', () => {
     const secondFilter = AgentFirstContact.findOneAndUpdate.mock.calls[1][0];
     expect(String(secondFilter.userId)).toBe(USER_ID);
     expect(secondFilter.agentName).toBe('openclaw');
+    expect(secondFilter.instanceId).toBe('nova');
     expect(secondFilter).not.toHaveProperty('firstPodId');
+  });
+
+  test('same user and agentName with different instanceIds both fire', async () => {
+    AgentFirstContact.findOneAndUpdate
+      .mockResolvedValueOnce(firstInsert())
+      .mockResolvedValueOnce(firstInsert());
+
+    await maybeFireFirstContact(baseOptions({ instanceId: 'Aria' }));
+    await maybeFireFirstContact(baseOptions({ instanceId: 'Pixel' }));
+
+    expect(AgentFirstContact.findOneAndUpdate).toHaveBeenCalledTimes(2);
+    expect(AgentFirstContact.findOneAndUpdate.mock.calls.map(([filter]) => filter.instanceId))
+      .toEqual(['aria', 'pixel']);
+    expect(AgentFirstContact.findOneAndUpdate.mock.calls.map(([, update]) => (
+      update.$setOnInsert.instanceId
+    ))).toEqual(['aria', 'pixel']);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);
+    expect(AgentEventService.enqueue.mock.calls.map(([event]) => event.instanceId))
+      .toEqual(['aria', 'pixel']);
   });
 
   test('enqueue failure is logged and swallowed after the marker wins', async () => {

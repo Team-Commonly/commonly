@@ -25,7 +25,7 @@ const FIRST_CONTACT_CUE =
   + 'One question mark, at the end.';
 
 /**
- * Enqueue onboarding exactly once for the lifetime of a human/agent
+ * Enqueue onboarding exactly once for the lifetime of a human/agent-identity
  * relationship. AgentFirstContact, rather than AgentInstallation, owns the
  * idempotency marker because installation rows can be recreated after an
  * uninstall.
@@ -53,27 +53,36 @@ export async function maybeFireFirstContact({
 
   const safeUserId = new mongoose.Types.ObjectId(String(installedByUserId));
   const safePodId = new mongoose.Types.ObjectId(String(podId));
-  const safeInstanceId = String(instanceId || 'default').trim() || 'default';
+  const safeInstanceId = String(instanceId || 'default').trim().toLowerCase() || 'default';
 
-  const result = await AgentFirstContact.findOneAndUpdate(
-    { userId: safeUserId, agentName: safeAgentName },
-    {
-      $setOnInsert: {
-        userId: safeUserId,
-        agentName: safeAgentName,
-        firstPodId: safePodId,
-        createdAt: new Date(),
+  let result: RawUpsertResult;
+  try {
+    result = await AgentFirstContact.findOneAndUpdate(
+      { userId: safeUserId, agentName: safeAgentName, instanceId: safeInstanceId },
+      {
+        $setOnInsert: {
+          userId: safeUserId,
+          agentName: safeAgentName,
+          instanceId: safeInstanceId,
+          firstPodId: safePodId,
+          createdAt: new Date(),
+        },
       },
-    },
-    {
-      upsert: true,
-      new: false,
-      // Mongoose 7 replacement for deprecated rawResult: true. We need the
-      // driver's updatedExisting flag to distinguish the winning insert.
-      includeResultMetadata: true,
-      setDefaultsOnInsert: true,
-    },
-  ) as unknown as RawUpsertResult;
+      {
+        upsert: true,
+        new: false,
+        // Mongoose 7 replacement for deprecated rawResult: true. We need the
+        // driver's updatedExisting flag to distinguish the winning insert.
+        includeResultMetadata: true,
+        setDefaultsOnInsert: true,
+      },
+    ) as unknown as RawUpsertResult;
+  } catch (error) {
+    // Two concurrent upserts can both miss before the unique index picks a
+    // winner. The loser is an expected no-op, not an install error.
+    if ((error as { code?: number })?.code === 11000) return;
+    throw error;
+  }
 
   if (result?.lastErrorObject?.updatedExisting === true || result?.value != null) {
     return;

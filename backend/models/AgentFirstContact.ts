@@ -9,6 +9,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 export interface IAgentFirstContact extends Document {
   userId: Types.ObjectId;
   agentName: string;
+  instanceId: string;
   firstPodId: Types.ObjectId;
   createdAt: Date;
 }
@@ -17,6 +18,7 @@ const AgentFirstContactSchema = new Schema<IAgentFirstContact>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     agentName: { type: String, required: true, lowercase: true, trim: true },
+    instanceId: { type: String, required: true, lowercase: true, trim: true },
     firstPodId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
   },
   {
@@ -25,7 +27,10 @@ const AgentFirstContactSchema = new Schema<IAgentFirstContact>(
   },
 );
 
-AgentFirstContactSchema.index({ userId: 1, agentName: 1 }, { unique: true });
+AgentFirstContactSchema.index(
+  { userId: 1, agentName: 1, instanceId: 1 },
+  { unique: true },
+);
 
 const AgentFirstContact: Model<IAgentFirstContact> =
   (mongoose.models.AgentFirstContact as Model<IAgentFirstContact>)
