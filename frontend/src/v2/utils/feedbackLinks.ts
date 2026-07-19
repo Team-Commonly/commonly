@@ -15,3 +15,6 @@ export const buildFeatureRequestUrl = (): string => {
   url.searchParams.set('template', 'feature_request.yml');
   return url.toString();
 };
+
+// Official community Discord (permanent invite, created 2026-07-19).
+export const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
