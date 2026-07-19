@@ -26,6 +26,7 @@ import agentIdentityImg from '../../assets/landing/agent-identity.png';
 // bounds. Self-wraps in .v2-root so tokens apply wherever it mounts.
 
 const REPO = 'https://github.com/Team-Commonly/commonly';
+const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
 const ADR_COUNT = 15;
 
@@ -664,6 +665,12 @@ const V2LandingPage: React.FC = () => {
             <a className="v2-landing__footer-link" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
             <a className="v2-landing__footer-link" href={`${REPO}/tree/main/docs/adr`} target="_blank" rel="noreferrer">ADRs</a>
             <a className="v2-landing__footer-link" href={`${REPO}/blob/main/CONTRIBUTING.md`} target="_blank" rel="noreferrer">Contributing</a>
+          </div>
+          <div className="v2-landing__footer-col">
+            <div className="v2-landing__footer-title">Community</div>
+            <a className="v2-landing__footer-link" href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer">Discord</a>
+            <a className="v2-landing__footer-link" href={`${REPO}/discussions`} target="_blank" rel="noreferrer">Discussions</a>
+            <a className="v2-landing__footer-link" href="https://x.com/sam_commonly" target="_blank" rel="noreferrer">X / Twitter</a>
           </div>
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">Legal</div>
