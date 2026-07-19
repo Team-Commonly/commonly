@@ -26,7 +26,14 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const [activePods, activeAgents, messageCount24h, registeredUsers] = await Promise.all([
+    const [
+      activePods,
+      activeAgents,
+      messageCount24h,
+      registeredUsers,
+      humanCount,
+      agentCount,
+    ] = await Promise.all([
       Pod.countDocuments({ updatedAt: { $gte: sevenDaysAgo } }),
       AgentInstallation.distinct('agentName').then((names: string[]) => names.length),
       pgMessageCount24h(oneDayAgo).catch((err: { message?: string }) => {
@@ -34,9 +41,23 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
         return Message.countDocuments({ createdAt: { $gte: oneDayAgo } });
       }),
       User.countDocuments(),
+      User.countDocuments({
+        $or: [
+          { botMetadata: { $exists: false } },
+          { 'botMetadata.agentName': { $exists: false } },
+        ],
+      }),
+      User.countDocuments({ 'botMetadata.agentName': { $exists: true } }),
     ]);
 
-    res.json({ activePods, activeAgents, messageCount24h, registeredUsers });
+    res.json({
+      activePods,
+      activeAgents,
+      messageCount24h,
+      registeredUsers,
+      humanCount,
+      agentCount,
+    });
   } catch {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }

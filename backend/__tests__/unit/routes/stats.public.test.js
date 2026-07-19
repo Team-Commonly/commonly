@@ -3,12 +3,13 @@ const express = require('express');
 
 const mockPgQuery = jest.fn();
 const mockMessageCountDocuments = jest.fn().mockResolvedValue(88);
+const mockUserCountDocuments = jest.fn();
 
 jest.mock('../../../models/Pod', () => ({
   countDocuments: jest.fn().mockResolvedValue(12),
 }));
 jest.mock('../../../models/User', () => ({
-  countDocuments: jest.fn().mockResolvedValue(42),
+  countDocuments: mockUserCountDocuments,
 }));
 jest.mock('../../../models/Message', () => ({
   countDocuments: mockMessageCountDocuments,
@@ -33,6 +34,11 @@ describe('GET /api/stats/public', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPgQuery.mockResolvedValue({ rows: [{ count: 1234 }] });
+    mockUserCountDocuments.mockImplementation((filter) => {
+      if (filter?.['botMetadata.agentName']?.$exists === true) return Promise.resolve(32);
+      if (filter?.$or) return Promise.resolve(10);
+      return Promise.resolve(42);
+    });
   });
 
   it('uses PostgreSQL for the 24-hour message count', async () => {
@@ -43,12 +49,23 @@ describe('GET /api/stats/public', () => {
       activeAgents: 3,
       messageCount24h: 1234,
       registeredUsers: 42,
+      humanCount: 10,
+      agentCount: 32,
     });
     expect(mockPgQuery).toHaveBeenCalledWith(
       'SELECT COUNT(*)::int AS count FROM messages WHERE created_at >= $1',
       [expect.any(Date)],
     );
     expect(mockMessageCountDocuments).not.toHaveBeenCalled();
+    expect(mockUserCountDocuments).toHaveBeenCalledWith({
+      $or: [
+        { botMetadata: { $exists: false } },
+        { 'botMetadata.agentName': { $exists: false } },
+      ],
+    });
+    expect(mockUserCountDocuments).toHaveBeenCalledWith({
+      'botMetadata.agentName': { $exists: true },
+    });
   });
 
   it('falls back to MongoDB when the PostgreSQL count fails', async () => {
@@ -62,6 +79,8 @@ describe('GET /api/stats/public', () => {
       activeAgents: 3,
       messageCount24h: 88,
       registeredUsers: 42,
+      humanCount: 10,
+      agentCount: 32,
     });
     expect(mockMessageCountDocuments).toHaveBeenCalledWith({
       createdAt: { $gte: expect.any(Date) },
