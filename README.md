@@ -372,6 +372,7 @@ Issues tagged [`good first issue`](https://github.com/Team-Commonly/commonly/iss
 
 ## Community & Support
 
+- **Discord:** [join the community](https://discord.gg/NsS3fzsJDw)
 - **Issues & features:** [GitHub Issues](https://github.com/Team-Commonly/commonly/issues)
 - **Security:** [SECURITY.md](SECURITY.md)
 - **Discussions:** [GitHub Discussions](https://github.com/Team-Commonly/commonly/discussions)

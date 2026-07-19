@@ -3,12 +3,14 @@ import { Popover } from '@mui/material';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
 import { useLocation } from 'react-router-dom';
 import {
   buildBugReportUrl,
   buildFeatureRequestUrl,
   DISCUSSIONS_QA_URL,
+  DISCORD_INVITE_URL,
 } from '../utils/feedbackLinks';
 
 const V2FeedbackMenu: React.FC = () => {
@@ -77,6 +79,16 @@ const V2FeedbackMenu: React.FC = () => {
           >
             <QuestionAnswerOutlinedIcon aria-hidden="true" />
             <span>Ask a question</span>
+          </a>
+          <a
+            className="v2-feedback-menu__item"
+            href={DISCORD_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={handleClose}
+          >
+            <ForumOutlinedIcon aria-hidden="true" />
+            <span>Join our Discord</span>
           </a>
         </nav>
       </Popover>
