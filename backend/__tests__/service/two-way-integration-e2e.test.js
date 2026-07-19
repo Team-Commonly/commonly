@@ -489,6 +489,7 @@ describe('Two-Way Integration E2E Tests', () => {
       const events = await AgentEvent.find({
         agentName: 'commonly-bot',
         podId: testPod._id,
+        type: 'integration.summary',
       });
 
       expect(events.length).toBe(1);
@@ -551,6 +552,7 @@ describe('Two-Way Integration E2E Tests', () => {
       const events = await AgentEvent.find({
         agentName: 'commonly-bot',
         podId: testPod._id,
+        type: 'discord.summary',
       });
 
       expect(events.length).toBe(1);
@@ -760,7 +762,10 @@ describe('Two-Way Integration E2E Tests', () => {
       await SchedulerService.summarizeIntegrationBuffers();
 
       // 5. Verify agent event created
-      const events = await AgentEvent.find({ agentName: 'commonly-bot' });
+      const events = await AgentEvent.find({
+        agentName: 'commonly-bot',
+        type: 'integration.summary',
+      });
       expect(events.length).toBe(1);
       expect(events[0].payload.summary.messageCount).toBe(3);
 
@@ -873,7 +878,10 @@ describe('Two-Way Integration E2E Tests', () => {
       await SchedulerService.summarizeIntegrationBuffers();
 
       // 5. Verify event created
-      const events = await AgentEvent.find({ agentName: 'commonly-bot' });
+      const events = await AgentEvent.find({
+        agentName: 'commonly-bot',
+        type: 'discord.summary',
+      });
       expect(events.length).toBe(1);
       expect(events[0].payload.source).toBe('discord');
 
@@ -1134,9 +1142,11 @@ describe('Two-Way Integration E2E Tests', () => {
           .set('Authorization', `Bearer ${clawdbotToken}`);
 
         expect(pollRes.status).toBe(200);
-        expect(pollRes.body.events.length).toBe(1);
-        expect(pollRes.body.events[0].type).toBe('integration.summary');
-        expect(pollRes.body.events[0].payload.source).toBe('groupme');
+        const summaryEvent = pollRes.body.events.find(
+          (event) => event.type === 'integration.summary',
+        );
+        expect(summaryEvent).toBeDefined();
+        expect(summaryEvent.payload.source).toBe('groupme');
       });
 
       test('should allow clawdbot to post AI-generated response to pod', async () => {
@@ -1272,12 +1282,15 @@ Based on the GroupMe activity, the team is discussing a PR review for the auth f
           .get('/api/agents/runtime/events')
           .set('Authorization', `Bearer ${clawdbotTokenRes.body.token}`);
 
-        expect(commonlyPoll.body.events.length).toBe(1);
-        expect(commonlyPoll.body.events[0].type).toBe('discord.summary');
-
-        expect(clawdbotPoll.body.events.length).toBe(1);
-        expect(clawdbotPoll.body.events[0].type).toBe('integration.summary');
-        expect(clawdbotPoll.body.events[0].payload.requiresAIResponse).toBe(true);
+        const commonlySummary = commonlyPoll.body.events.find(
+          (event) => event.type === 'discord.summary',
+        );
+        const clawdbotSummary = clawdbotPoll.body.events.find(
+          (event) => event.type === 'integration.summary',
+        );
+        expect(commonlySummary).toBeDefined();
+        expect(clawdbotSummary).toBeDefined();
+        expect(clawdbotSummary.payload.requiresAIResponse).toBe(true);
       });
 
       test('should allow agents to post different types of responses', async () => {
@@ -1386,9 +1399,11 @@ Would you like me to help debug this further?`,
           .get('/api/agents/runtime/events')
           .set('Authorization', `Bearer ${tokenRes.body.token}`);
 
-        expect(pollRes.body.events.length).toBe(1);
-        expect(pollRes.body.events[0].type).toBe('code.shared');
-        expect(pollRes.body.events[0].payload.language).toBe('javascript');
+        const codeEvent = pollRes.body.events.find(
+          (event) => event.type === 'code.shared',
+        );
+        expect(codeEvent).toBeDefined();
+        expect(codeEvent.payload.language).toBe('javascript');
       });
 
       test('should allow custom agent to post review feedback to pod', async () => {
@@ -1501,9 +1516,11 @@ const foo = (bar = 'default') => { return bar; }
           .get('/api/agents/runtime/events')
           .set('Authorization', `Bearer ${clawdbotToken}`);
 
-        expect(clawdbotPoll.body.events.length).toBe(1);
-        expect(clawdbotPoll.body.events[0].type).toBe('ai.analysis.request');
-        expect(clawdbotPoll.body.events[0].payload.triggeredBy).toBe('commonly-bot');
+        const analysisRequest = clawdbotPoll.body.events.find(
+          (event) => event.type === 'ai.analysis.request',
+        );
+        expect(analysisRequest).toBeDefined();
+        expect(analysisRequest.payload.triggeredBy).toBe('commonly-bot');
       });
     });
   });

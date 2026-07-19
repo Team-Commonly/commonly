@@ -100,10 +100,15 @@ export const listLocalAgents = () => {
     .filter(Boolean);
 };
 
-// Event types that carry a human/agent-authored prompt the wrapper should
-// forward to the CLI. Other event types (heartbeat, delivery, etc.) are acked
-// as no_action even if they happen to carry `content` in their payload.
-const CHAT_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
+// Event types that carry a prompt the wrapper should forward to the CLI.
+// Other event types (heartbeat, delivery, etc.) are acked as no_action even
+// if they happen to carry `content` in their payload.
+const PROMPT_EVENT_TYPES = new Set([
+  'chat.mention',
+  'message.posted',
+  'dm.message',
+  'first_contact',
+]);
 
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
@@ -366,7 +371,7 @@ export const runMemoryImport = async ({
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
 const extractPrompt = (event) => {
-  if (!CHAT_EVENT_TYPES.has(event.type)) return null;
+  if (!PROMPT_EVENT_TYPES.has(event.type)) return null;
   const p = event.payload || {};
   return p.content || p.prompt || p.text || null;
 };

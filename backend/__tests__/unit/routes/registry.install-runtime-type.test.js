@@ -51,12 +51,17 @@ jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock('../../../services/firstContactService', () => ({
+  maybeFireFirstContact: jest.fn().mockResolvedValue(undefined),
+}));
+
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentProfile = require('../../../models/AgentProfile');
 const Activity = require('../../../models/Activity');
 const AgentIdentityService = require('../../../services/agentIdentityService');
+const FirstContactService = require('../../../services/firstContactService');
 const installRouter = require('../../../routes/registry/install');
 
 const getInstallHandler = () => {
@@ -205,5 +210,48 @@ describe('registry install runtimeType fallback', () => {
       }),
     );
     expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  it('keeps install successful when the first-contact trigger fails', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent',
+      displayName: 'Sample Agent',
+      description: 'Community marketplace app',
+      latestVersion: '1.0.0',
+      manifest: {
+        context: { required: [] },
+        runtime: { type: 'standalone' },
+      },
+    });
+    FirstContactService.maybeFireFirstContact.mockRejectedValueOnce(new Error('marker unavailable'));
+
+    const req = {
+      body: {
+        agentName: 'sample-agent',
+        podId: 'pod-1',
+        version: '1.0.0',
+        config: {},
+        scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await installHandler(req, res);
+    await Promise.resolve();
+
+    expect(FirstContactService.maybeFireFirstContact).toHaveBeenCalledWith({
+      agentName: 'sample-agent',
+      instanceId: 'default',
+      podId: 'pod-1',
+      installedByUserId: 'user-1',
+      installerIsAgent: false,
+    });
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 });

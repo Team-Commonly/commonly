@@ -30,7 +30,7 @@ import axios, { AxiosError } from 'axios';
 // --- public surface --------------------------------------------------------
 
 export interface NativeRunTrigger {
-  type: 'mention' | 'heartbeat' | 'task.assigned' | 'chat.message' | 'pod.join' | 'manual';
+  type: 'mention' | 'heartbeat' | 'task.assigned' | 'chat.message' | 'pod.join' | 'first_contact' | 'manual';
   eventId?: string;
   payload?: unknown;
 }
@@ -378,6 +378,11 @@ function buildUserMessage(
     );
   }
 
+  if (trigger.type === 'first_contact') {
+    const content = String(payload.content || '').trim();
+    return content || 'A human just added you to this workspace. Post a short, warm greeting that ends with one specific question.';
+  }
+
   return (
     `Trigger: ${trigger.type}. Use commonly_read_context to understand what's happening, `
     + 'then respond or act as appropriate.'
@@ -424,6 +429,7 @@ function mapTriggerType(raw: string): NativeRunTrigger['type'] {
   if (raw === 'task.assigned') return 'task.assigned';
   if (raw === 'chat.message') return 'chat.message';
   if (raw === 'pod.join') return 'pod.join';
+  if (raw === 'first_contact') return 'first_contact';
   return 'manual';
 }
 

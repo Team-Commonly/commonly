@@ -10,6 +10,7 @@ const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentMessageService = require('../../services/agentMessageService');
+const FirstContactService = require('../../services/firstContactService');
 const {
   getUserId,
   normalizeInstanceId,
@@ -121,7 +122,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
 
     // Fetched once and reused for the #609 owner-scoping decision below and
     // the cloud-entitlement gate further down.
-    const installerUser = await User.findById(userId).select('role entitlements').lean();
+    const installerUser = await User.findById(userId).select('role entitlements isBot').lean();
     const isAdminInstaller = installerUser?.role === 'admin';
 
     const pod = await Pod.findById(podId).lean();
@@ -444,6 +445,24 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     } catch (identityError: unknown) {
       console.warn('Failed to provision agent user identity:', (identityError as Error).message);
     }
+
+    // First contact belongs to the durable human↔agent relationship, not the
+    // replaceable installation row. Best-effort by design: neither a marker
+    // write nor event enqueue failure may turn a successful install into 500.
+    void FirstContactService.maybeFireFirstContact({
+      agentName: agent.agentName,
+      instanceId: normalizedInstanceId,
+      podId,
+      installedByUserId: userId,
+      installerIsAgent: installerUser?.isBot === true,
+    }).catch((firstContactError: unknown) => {
+      console.warn('[first-contact] trigger failed after install', {
+        agent: agent.agentName,
+        instance: normalizedInstanceId,
+        pod: String(podId),
+        error: (firstContactError as Error).message,
+      });
+    });
 
     await AgentRegistry.incrementInstalls(agentName);
 
