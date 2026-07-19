@@ -56,6 +56,10 @@ jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock('../../../services/firstContactService', () => ({
+  maybeFireFirstContact: jest.fn().mockResolvedValue(undefined),
+}));
+
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');

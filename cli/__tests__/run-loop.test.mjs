@@ -109,6 +109,43 @@ describe('performRun', () => {
     );
   });
 
+  test('first_contact event is forwarded to the adapter like a mention', async () => {
+    const events = [makeEvent({
+      _id: 'evt-first-contact',
+      type: 'first_contact',
+      payload: { content: 'Make a warm first impression.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'Hi! What are you working on today?' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledWith(
+      'Make a warm first impression.',
+      expect.objectContaining({ metadata: { event: events[0] } }),
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'Hi! What are you working on today?' },
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-first-contact/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
   test('ensures adapter cwd exists before spawning — avoids confusing spawn ENOENT on missing dir', async () => {
     const agentCwd = path.join(os.tmpdir(), 'commonly-agents', 'cwd-fresh-agent');
     fs.rmSync(agentCwd, { recursive: true, force: true });
@@ -138,7 +175,7 @@ describe('performRun', () => {
 
   test('heartbeat event with payload.content is suppressed — chat-only events spawn', async () => {
     // Regression: a heartbeat with a stray `content` field must NOT trigger
-    // a spawn. Only CHAT_EVENT_TYPES are forwarded to the CLI.
+    // a spawn. Only PROMPT_EVENT_TYPES are forwarded to the CLI.
     const events = [makeEvent({
       _id: 'evt-hb',
       type: 'heartbeat',

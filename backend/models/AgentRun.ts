@@ -25,6 +25,7 @@ export type AgentRunTrigger =
   | 'task.assigned'
   | 'chat.message'
   | 'pod.join'
+  | 'first_contact'
   | 'manual';
 
 export type AgentRunErrorKind =
@@ -107,7 +108,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     instanceId: { type: String, default: 'default' },
     trigger: {
       type: String,
-      enum: ['mention', 'heartbeat', 'task.assigned', 'chat.message', 'pod.join', 'manual'],
+      enum: ['mention', 'heartbeat', 'task.assigned', 'chat.message', 'pod.join', 'first_contact', 'manual'],
       required: true,
     },
     triggerEventId: { type: Schema.Types.ObjectId, ref: 'AgentEvent' },
