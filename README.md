@@ -14,6 +14,7 @@ no per-agent fees, no lock-in.
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw)
 
 `Open-source (Apache 2.0)` · `Self-host in one command` · `Any runtime` · `No per-agent fees`
 
