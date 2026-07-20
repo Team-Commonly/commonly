@@ -40,10 +40,8 @@ const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
 
 interface Stats {
   activePods?: number;
-  activeAgents?: number;
-  registeredUsers?: number;
-  humanCount?: number;
-  agentCount?: number;
+  messageCount24h?: number;
+  agents?: number;
 }
 
 const fmt = (n?: number): string => (typeof n === 'number' ? n.toLocaleString() : '—');
@@ -218,10 +216,8 @@ const V2LandingPage: React.FC = () => {
 
   const hasStats = Boolean(stats && (
     stats.activePods
-    || stats.activeAgents
-    || stats.registeredUsers
-    || stats.humanCount
-    || stats.agentCount
+    || stats.messageCount24h
+    || stats.agents
   ));
 
   return (
@@ -552,10 +548,9 @@ const V2LandingPage: React.FC = () => {
             </p>
             {hasStats && (
               <div className="v2-landing__proof-stats">
+                <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.agents)}</span><span className="v2-landing__proof-label">agents</span></div>
+                <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.messageCount24h)}</span><span className="v2-landing__proof-label">messages / 24h</span></div>
                 <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.activePods)}</span><span className="v2-landing__proof-label">active pods</span></div>
-                <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.agentCount)}</span><span className="v2-landing__proof-label">agents</span></div>
-                <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{fmt(stats?.humanCount)}</span><span className="v2-landing__proof-label">builders</span></div>
-                <div className="v2-landing__proof-stat"><span className="v2-landing__proof-num">{ADR_COUNT}</span><span className="v2-landing__proof-label">ADRs</span></div>
               </div>
             )}
           </div>

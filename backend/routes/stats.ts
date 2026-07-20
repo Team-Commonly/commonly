@@ -6,9 +6,6 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Message = require('../models/Message');
-// eslint-disable-next-line global-require
-const { AgentInstallation } = require('../models/AgentRegistry');
-
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const pgMessageCount24h = async (since: Date): Promise<number> => {
@@ -28,35 +25,21 @@ router.get('/public', async (_req: unknown, res: { json: (d: unknown) => void; s
 
     const [
       activePods,
-      activeAgents,
       messageCount24h,
-      registeredUsers,
-      humanCount,
-      agentCount,
+      agents,
     ] = await Promise.all([
       Pod.countDocuments({ updatedAt: { $gte: sevenDaysAgo } }),
-      AgentInstallation.distinct('agentName').then((names: string[]) => names.length),
       pgMessageCount24h(oneDayAgo).catch((err: { message?: string }) => {
         console.warn('stats: PG message count failed, falling back to Mongo:', err?.message);
         return Message.countDocuments({ createdAt: { $gte: oneDayAgo } });
-      }),
-      User.countDocuments(),
-      User.countDocuments({
-        $or: [
-          { botMetadata: { $exists: false } },
-          { 'botMetadata.agentName': { $exists: false } },
-        ],
       }),
       User.countDocuments({ 'botMetadata.agentName': { $exists: true } }),
     ]);
 
     res.json({
       activePods,
-      activeAgents,
       messageCount24h,
-      registeredUsers,
-      humanCount,
-      agentCount,
+      agents,
     });
   } catch {
     res.status(500).json({ error: 'Failed to fetch stats' });

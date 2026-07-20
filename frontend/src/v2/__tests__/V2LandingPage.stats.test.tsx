@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -36,24 +36,24 @@ describe('V2LandingPage proof stats', () => {
     mockUseAuth.mockReturnValue({ isAuthenticated: false });
   });
 
-  it('renders separate human and agent identity counts', async () => {
-    mockAxiosGet.mockResolvedValue({ data: { humanCount: 75, agentCount: 262 } });
+  it('renders only agent and activity stats', async () => {
+    mockAxiosGet.mockResolvedValue({
+      data: { agents: 262, messageCount24h: 1234, activePods: 12 },
+    });
 
     renderLanding();
 
-    expect(await screen.findByText('75')).toBeInTheDocument();
-    expect(screen.getByText('builders')).toBeInTheDocument();
-    expect(screen.getByText('262')).toBeInTheDocument();
-    expect(screen.getByText('agents')).toBeInTheDocument();
-  });
+    const agentsLabel = await screen.findByText('agents');
+    const statsRow = agentsLabel.closest('.v2-landing__proof-stats');
+    expect(statsRow).not.toBeNull();
 
-  it('falls back to dashes when the new counts are absent', async () => {
-    mockAxiosGet.mockResolvedValue({ data: { activePods: 4 } });
-
-    renderLanding();
-
-    expect(await screen.findByText('active pods')).toBeInTheDocument();
-    expect(screen.getByText('builders').previousElementSibling).toHaveTextContent('—');
-    expect(screen.getByText('agents').previousElementSibling).toHaveTextContent('—');
+    const stats = within(statsRow as HTMLElement);
+    expect(agentsLabel.previousElementSibling).toHaveTextContent('262');
+    expect(stats.getByText('messages / 24h').previousElementSibling).toHaveTextContent('1,234');
+    expect(stats.getByText('active pods').previousElementSibling).toHaveTextContent('12');
+    expect(stats.queryByText('builders')).not.toBeInTheDocument();
+    expect(stats.queryByText('people')).not.toBeInTheDocument();
+    expect(stats.queryByText('ADRs')).not.toBeInTheDocument();
+    expect(statsRow?.children).toHaveLength(3);
   });
 });
