@@ -38,7 +38,12 @@ describe('V2LandingPage proof stats', () => {
 
   it('renders only agent and activity stats', async () => {
     mockAxiosGet.mockResolvedValue({
-      data: { agents: 262, messageCount24h: 1234, activePods: 12 },
+      data: {
+        activePods: 12,
+        activeAgents: 3,
+        messageCount24h: 1234,
+        agentCount: 262,
+      },
     });
 
     renderLanding();

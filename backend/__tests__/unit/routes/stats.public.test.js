@@ -14,6 +14,11 @@ jest.mock('../../../models/User', () => ({
 jest.mock('../../../models/Message', () => ({
   countDocuments: mockMessageCountDocuments,
 }));
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentInstallation: {
+    distinct: jest.fn().mockResolvedValue(['openclaw', 'moltbot', 'clawdbot']),
+  },
+}));
 jest.mock('../../../config/db-pg', () => ({
   pool: { query: mockPgQuery },
 }));
@@ -36,8 +41,9 @@ describe('GET /api/stats/public', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       activePods: 12,
+      activeAgents: 3,
       messageCount24h: 1234,
-      agents: 262,
+      agentCount: 262,
     });
     expect(mockPgQuery).toHaveBeenCalledWith(
       'SELECT COUNT(*)::int AS count FROM messages WHERE created_at >= $1',
@@ -60,8 +66,9 @@ describe('GET /api/stats/public', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       activePods: 12,
+      activeAgents: 3,
       messageCount24h: 88,
-      agents: 262,
+      agentCount: 262,
     });
     expect(mockMessageCountDocuments).toHaveBeenCalledWith({
       createdAt: { $gte: expect.any(Date) },
