@@ -66,6 +66,40 @@ function hasValidRuntimeToken(user: { agentRuntimeTokens?: Array<{ expiresAt?: D
 }
 
 /**
+ * Returns true if any of the user's runtime tokens was actually USED since
+ * `cutoff`.
+ *
+ * Why this exists: `hasValidRuntimeToken` only asks "is a token unexpired?",
+ * and deliberately treats a null `expiresAt` as invalid. That is right for
+ * abandoned stragglers, but it misreads long-lived file-based tokens (the
+ * Telegram bridge's `~/.commonly/tokens/<name>.json`), which legitimately
+ * carry no expiry. The AgentEvent check doesn't rescue them either: posting a
+ * message emits NO AgentEvent, so a send-only integration looks dead no
+ * matter how much traffic it pushes.
+ *
+ * Measured 2026-07-18: telegram-app and yunus were both marked stale by this
+ * cron while actively relaying, which 403'd every send
+ * ("Agent token not authorized for this pod") because pod authorization
+ * requires status 'active'. Both were ~10 days from outright deletion by
+ * pruneStaleInstallations.
+ *
+ * `lastUsedAt` is the honest liveness signal: agentRuntimeAuth writes it on
+ * EVERY authenticated request. The user doc is already loaded here, so this
+ * costs no extra query — we were holding the answer and not reading it.
+ */
+function hasRecentTokenUse(
+  user: { agentRuntimeTokens?: Array<{ lastUsedAt?: Date | null }> } | null,
+  cutoff: Date,
+): boolean {
+  if (!user || !Array.isArray(user.agentRuntimeTokens)) return false;
+  return user.agentRuntimeTokens.some((t) => {
+    if (!t || !t.lastUsedAt) return false;
+    const used = t.lastUsedAt instanceof Date ? t.lastUsedAt.getTime() : new Date(t.lastUsedAt as any).getTime();
+    return Number.isFinite(used) && used > cutoff.getTime();
+  });
+}
+
+/**
  * Scan every active AgentInstallation and mark it stale when the owning agent
  * user has no valid runtime tokens AND the latest AgentEvent for
  * (agentName, instanceId) is older than `daysSinceLastEvent` (or no events
@@ -119,6 +153,13 @@ export async function markStaleInstallations(
         continue;
       }
 
+      // Token has no future expiry — but was it recently USED? Send-only
+      // integrations (Telegram bridge) hold non-expiring tokens and emit no
+      // AgentEvents, so this is the only signal that they're alive.
+      if (hasRecentTokenUse(user, cutoff)) {
+        continue;
+      }
+
       // Check most recent AgentEvent for this (agentName, instanceId)
       const latestEvent = await AgentEvent.findOne({ agentName, instanceId })
         .select('createdAt')
@@ -152,8 +193,16 @@ export async function markStaleInstallations(
     return { agentName, instanceId };
   });
 
+  // Never mark an installation younger than the staleness window. Without this
+  // floor, a freshly provisioned agent is stale on the very first nightly run:
+  // its token has never been used and it has emitted no events, so both
+  // liveness checks read "dead" purely because it hasn't been given work yet.
+  // That is a normal state — departments get provisioned before anyone
+  // @-mentions them, and lazily-started daemons don't run until mentioned.
+  // Observed 2026-07-18: dev-jr, installed the same afternoon, was marked
+  // stale minutes later and would have been deleted 14 days on.
   const result = await AgentInstallation.updateMany(
-    { status: 'active', $or: orClauses },
+    { status: 'active', createdAt: { $lt: cutoff }, $or: orClauses },
     { $set: { status: 'stale', staleSince: now } },
   );
 
