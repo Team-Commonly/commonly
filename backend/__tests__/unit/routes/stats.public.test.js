@@ -3,12 +3,13 @@ const express = require('express');
 
 const mockPgQuery = jest.fn();
 const mockMessageCountDocuments = jest.fn().mockResolvedValue(88);
+const mockUserCountDocuments = jest.fn().mockResolvedValue(262);
 
 jest.mock('../../../models/Pod', () => ({
   countDocuments: jest.fn().mockResolvedValue(12),
 }));
 jest.mock('../../../models/User', () => ({
-  countDocuments: jest.fn().mockResolvedValue(42),
+  countDocuments: mockUserCountDocuments,
 }));
 jest.mock('../../../models/Message', () => ({
   countDocuments: mockMessageCountDocuments,
@@ -42,13 +43,19 @@ describe('GET /api/stats/public', () => {
       activePods: 12,
       activeAgents: 3,
       messageCount24h: 1234,
-      registeredUsers: 42,
+      agentCount: 262,
     });
     expect(mockPgQuery).toHaveBeenCalledWith(
       'SELECT COUNT(*)::int AS count FROM messages WHERE created_at >= $1',
       [expect.any(Date)],
     );
     expect(mockMessageCountDocuments).not.toHaveBeenCalled();
+    expect(mockUserCountDocuments).toHaveBeenCalledWith({
+      'botMetadata.agentName': { $exists: true },
+    });
+    expect(mockUserCountDocuments).toHaveBeenCalledTimes(1);
+    expect(res.body).not.toHaveProperty('humanCount');
+    expect(res.body).not.toHaveProperty('registeredUsers');
   });
 
   it('falls back to MongoDB when the PostgreSQL count fails', async () => {
@@ -61,7 +68,7 @@ describe('GET /api/stats/public', () => {
       activePods: 12,
       activeAgents: 3,
       messageCount24h: 88,
-      registeredUsers: 42,
+      agentCount: 262,
     });
     expect(mockMessageCountDocuments).toHaveBeenCalledWith({
       createdAt: { $gte: expect.any(Date) },
