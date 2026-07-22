@@ -28,6 +28,8 @@ interface Pod {
   name: string;
 }
 
+const DEFAULT_INSTALLABLE_KIND = 'app';
+
 const CATEGORIES = [
   { id: 'all', labelKey: 'marketplace.categories.all' },
   { id: 'productivity', labelKey: 'marketplace.categories.productivity' },
@@ -303,7 +305,7 @@ const V2MarketplacePage: React.FC = () => {
         </div>
         <p className="v2-mkt-card__desc">{app.description || t('marketplace.card.noDescription')}</p>
         <div className="v2-mkt-card__meta">
-          <span className="v2-mkt-card__chip">{String(app.kind || 'app')}</span>
+          <span className="v2-mkt-card__chip">{String(app.kind || DEFAULT_INSTALLABLE_KIND)}</span>
           <span className="v2-mkt-card__stat">{t('marketplace.card.installsCount', { count: Number(app.installs || 0) })}</span>
         </div>
         <div className="v2-mkt-card__actions">

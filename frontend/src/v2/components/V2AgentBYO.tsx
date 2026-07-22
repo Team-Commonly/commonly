@@ -27,6 +27,12 @@ const DEFAULT_SCOPES = [
   'context:read', 'summaries:read', 'messages:write', 'messages:read',
   'posts:write', 'posts:read', 'memory:read', 'memory:write',
 ];
+const DEFAULT_AGENT_NAME = 'my-mcp-agent';
+const DEFAULT_POD_TYPE = 'chat';
+const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli';
+const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
+const MEMORY_FILE_NAME = 'MEMORY.md';
+const CLAUDE_FILE_NAME = 'CLAUDE.md';
 
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
@@ -47,12 +53,12 @@ const V2AgentBYO: React.FC = () => {
   const { currentUser } = useAuth();
   const defaultAgentName = (() => {
     const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-    return u ? `${u}-agent` : 'my-mcp-agent';
+    return u ? `${u}-agent` : DEFAULT_AGENT_NAME;
   })();
   const [name, setName] = useState<string>(defaultAgentName);
   // currentUser can resolve after mount — refresh the default if untouched.
   useEffect(() => {
-    setName((prev) => (prev === 'my-mcp-agent' && defaultAgentName !== 'my-mcp-agent' ? defaultAgentName : prev));
+    setName((prev) => (prev === DEFAULT_AGENT_NAME && defaultAgentName !== DEFAULT_AGENT_NAME ? defaultAgentName : prev));
   }, [defaultAgentName]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +241,7 @@ const V2AgentBYO: React.FC = () => {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="my-mcp-agent"
+              placeholder={DEFAULT_AGENT_NAME}
               className="v2-byo__input"
             />
             <span className="v2-byo__hint">
@@ -251,7 +257,7 @@ const V2AgentBYO: React.FC = () => {
             >
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
               {pods.map((p) => (
-                <option key={p._id} value={p._id}>{p.name} ({p.type || 'chat'})</option>
+                <option key={p._id} value={p._id}>{p.name} ({p.type || DEFAULT_POD_TYPE})</option>
               ))}
             </select>
             <span className="v2-byo__hint">
@@ -268,8 +274,8 @@ const V2AgentBYO: React.FC = () => {
             {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
           </button>
           <p className="v2-byo__footnote">
-            {t('agentByo.footnote.preferCli')} <code>npm i -g @commonlyai/cli</code>, {t('agentByo.footnote.then')}{' '}
-            <code>commonly agent init --name &lt;n&gt; --pod &lt;podId&gt;</code>.{' '}
+            {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}
+            <code>{CLI_INIT_COMMAND}</code>.{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
@@ -326,7 +332,7 @@ const V2AgentBYO: React.FC = () => {
             ) : (
               <div className="v2-byo__memory">
                 <p className="v2-byo__hint">
-                  {t('agentByo.memory.pasteLead')} <code>MEMORY.md</code> {t('agentByo.memory.pasteOr')} <code>CLAUDE.md</code> {t('agentByo.memory.pasteRest')}
+                  {t('agentByo.memory.pasteLead')} <code>{MEMORY_FILE_NAME}</code> {t('agentByo.memory.pasteOr')} <code>{CLAUDE_FILE_NAME}</code> {t('agentByo.memory.pasteRest')}
                 </p>
                 <textarea
                   className="v2-byo__input v2-byo__memory-text"

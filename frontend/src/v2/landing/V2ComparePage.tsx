@@ -13,6 +13,7 @@ import './v2-landing.css';
 // ownership", generous to Raft, grounded in what anyone can verify.
 
 const REPO = 'https://github.com/Team-Commonly/commonly';
+const GITHUB_BRAND = 'GitHub';
 
 const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
   <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
@@ -56,11 +57,11 @@ const V2ComparePage: React.FC = () => {
     <header className="v2-landing__bar">
       <Link className="v2-landing__brand" to="/v2/landing" style={{ textDecoration: 'none' }}>
         <span className="v2-landing__mark"><Mark size={26} /></span>
-        <span className="v2-landing__brand-name">Commonly</span>
+        <span className="v2-landing__brand-name">{t('common.brandName')}</span>
       </Link>
       <nav className="v2-landing__nav" aria-label={t('compare.nav.primaryLabel')}>
         <Link className="v2-landing__navlink" to="/v2/landing">{t('compare.nav.home')}</Link>
-        <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
+        <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{GITHUB_BRAND}</a>
         {!isAuthenticated && (
           <Link className="v2-landing__navlink" to="/v2/login">{t('compare.nav.signIn')}</Link>
         )}
@@ -123,7 +124,7 @@ const V2ComparePage: React.FC = () => {
     <footer className="v2-landing__footer">
       <div className="v2-landing__footer-brand">
         <span className="v2-landing__mark"><Mark size={22} /></span>
-        <span className="v2-landing__brand-name">Commonly</span>
+        <span className="v2-landing__brand-name">{t('common.brandName')}</span>
       </div>
       <div className="v2-landing__footer-cols">
         <div className="v2-landing__footer-col">
@@ -133,7 +134,7 @@ const V2ComparePage: React.FC = () => {
         </div>
         <div className="v2-landing__footer-col">
           <div className="v2-landing__footer-title">{t('compare.footer.openSource')}</div>
-          <a className="v2-landing__footer-link" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
+          <a className="v2-landing__footer-link" href={REPO} target="_blank" rel="noreferrer">{GITHUB_BRAND}</a>
           <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">{t('compare.footer.license')}</a>
         </div>
       </div>

@@ -77,6 +77,12 @@ interface TaskApiResponse {
   tasks: TaskItem[];
 }
 
+const TASK_PILL_CLASS = {
+  complete: 'v2-inspector__pill v2-inspector__pill--complete',
+  blocked: 'v2-inspector__pill v2-inspector__pill--blocked',
+  progress: 'v2-inspector__pill v2-inspector__pill--progress',
+} as const;
+
 interface AnnouncementItem {
   _id: string;
   title?: string;
@@ -1413,10 +1419,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 const isDone = task.status === 'done' || task.status === 'completed';
                 const isBlocked = task.status === 'blocked';
                 const pillClass = isDone
-                  ? 'v2-inspector__pill v2-inspector__pill--complete'
+                  ? TASK_PILL_CLASS.complete
                   : isBlocked
-                    ? 'v2-inspector__pill v2-inspector__pill--blocked'
-                    : 'v2-inspector__pill v2-inspector__pill--progress';
+                    ? TASK_PILL_CLASS.blocked
+                    : TASK_PILL_CLASS.progress;
                 const pillLabel = isDone ? t('inspector.taskPill.done') : isBlocked ? t('inspector.taskPill.blocked') : t('inspector.taskPill.active');
                 const assignee = task.assignee ? `@${task.assignee}` : null;
                 return (

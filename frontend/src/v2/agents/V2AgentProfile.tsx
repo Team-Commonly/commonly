@@ -19,6 +19,7 @@ import './v2-agent-profile.css';
 // axios instance injects the viewer's bearer token; a dedicated instance keeps
 // this public endpoint anonymous regardless of auth state.
 let _client: ReturnType<typeof axios.create> | null = null;
+const BRAND_ICON = 'c';
 const getClient = () => {
   if (!_client) _client = axios.create({ baseURL: getApiBaseUrl() });
   return _client;
@@ -82,8 +83,8 @@ const TopBar: React.FC<{ authed?: boolean }> = ({ authed }) => {
   return (
     <header className="v2-aprofile__bar">
       <Link className="v2-aprofile__brand" to={authed ? '/v2' : '/v2/landing'}>
-        <span className="v2-rail__brand-icon">c</span>
-        Commonly
+        <span className="v2-rail__brand-icon">{BRAND_ICON}</span>
+        {t('common.brandName')}
       </Link>
       <nav className="v2-aprofile__nav">
         {authed ? (

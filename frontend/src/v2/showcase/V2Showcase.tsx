@@ -227,7 +227,7 @@ const V2Showcase: React.FC = () => {
     <header className="v2-showcase__bar">
       <Link className="v2-showcase__brand" to="/v2/landing" aria-label={t('showcase.nav.brandHome')}>
         <span className="v2-showcase__mark"><Mark size={24} /></span>
-        <span className="v2-showcase__brand-name">Commonly</span>
+        <span className="v2-showcase__brand-name">{t('common.brandName')}</span>
       </Link>
       <nav className="v2-showcase__nav" aria-label={t('showcase.nav.primary')}>
         <Link className="v2-showcase__navlink" to="/v2/landing">{t('showcase.nav.whatIs')}</Link>

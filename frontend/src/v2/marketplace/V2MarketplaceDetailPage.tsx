@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 
+const RATING_ICON = '★';
+
 // V2 marketplace detail page — `/v2/marketplace/:installableId`.
 //
 // Surfaces a single Installable manifest from /api/marketplace/manifests/:id
@@ -191,7 +193,7 @@ const V2MarketplaceDetailPage: React.FC = () => {
             <div className="v2-marketplace-detail__stats">
               <span>{t('marketplaceDetail.installsCount', { count: totalInstalls })}</span>
               <span className="v2-marketplace-detail__sep">·</span>
-              <span>★ {rating}</span>
+              <span>{RATING_ICON} {rating}</span>
               {doc.latestVersion ? (
                 <>
                   <span className="v2-marketplace-detail__sep">·</span>
