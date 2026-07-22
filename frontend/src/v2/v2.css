@@ -139,6 +139,38 @@
   text-decoration: none;
 }
 
+/* ---------- Language switch ---------- */
+
+.v2-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-bg-subtle);
+}
+
+.v2-lang-switch__option {
+  min-width: 30px;
+  min-height: 24px;
+  padding: 0 7px;
+  border-radius: var(--v2-radius-pill);
+  color: var(--v2-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-lang-switch__option:hover {
+  color: var(--v2-text-primary);
+}
+
+.v2-lang-switch__option--active {
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+}
+
 /* ---------- Shared filter grammar ---------- */
 
 .v2-filter-bar {
@@ -309,6 +341,17 @@
   flex-direction: column;
   gap: 8px;
   justify-content: space-between;
+}
+
+.v2-rail__language {
+  display: flex;
+  justify-content: center;
+}
+
+.v2-rail__language .v2-lang-switch__option {
+  min-width: 24px;
+  padding: 0 4px;
+  font-size: 9px;
 }
 
 .v2-rail__brand {
