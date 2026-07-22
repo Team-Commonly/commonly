@@ -8,6 +8,13 @@ const {
   redeemInvitationCode,
   createDefaultWorkspacePod,
 } = require('./authController');
+const { ensureUserInCommunityPod } = require('../services/communityPodService');
+
+const joinCommunityPodBestEffort = (userId: any) => {
+  void ensureUserInCommunityPod(userId).catch((err: Error) => {
+    console.warn('[community-pod] background join failed after OAuth transition:', err.message);
+  });
+};
 
 // Social login (GitHub + Google) for HUMAN accounts. Deliberately framework-
 // free: two provider entries, an authorization-code flow, and a one-time
@@ -263,6 +270,7 @@ exports.oauthCallback = async (req: any, res: any) => {
         // The provider verified this email even if our SMTP loop never did.
         user.verified = true;
         await user.save();
+        joinCommunityPodBestEffort(user._id);
       }
     }
 
@@ -295,6 +303,7 @@ exports.oauthCallback = async (req: any, res: any) => {
       });
       await user.save();
       await createDefaultWorkspacePod(user._id);
+      joinCommunityPodBestEffort(user._id);
     }
 
     const exchangeCode = crypto.randomBytes(24).toString('hex');

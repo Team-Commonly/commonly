@@ -146,6 +146,10 @@ spec:
               key: BACKEND_URL
               optional: true
         {{- end }}
+        {{- if .Values.backend.env.communityPodId }}
+        - name: COMMUNITY_POD_ID
+          value: {{ .Values.backend.env.communityPodId | quote }}
+        {{- end }}
 
         # Email Configuration (SMTP2GO)
         - name: SMTP2GO_API_KEY

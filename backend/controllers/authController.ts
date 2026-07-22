@@ -6,6 +6,13 @@ const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
+const { ensureUserInCommunityPod } = require('../services/communityPodService');
+
+const joinCommunityPodBestEffort = (userId: any) => {
+  void ensureUserInCommunityPod(userId).catch((err: Error) => {
+    console.warn('[community-pod] background join failed after auth transition:', err.message);
+  });
+};
 
 const parseBooleanEnv = (value: any) => {
   if (value === undefined || value === null || value === '') return null;
@@ -237,6 +244,8 @@ exports.register = async (req: any, res: any) => {
     await user.save();
 
     await createDefaultWorkspacePod(user._id);
+
+    if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
     if (hasEmailConfig) {
       // Generate email verification token
@@ -479,6 +488,7 @@ exports.resetPassword = async (req: any, res: any) => {
     // accounts that never finished the signup verification email.
     user.verified = true;
     await user.save();
+    joinCommunityPodBestEffort(user._id);
 
     return res.json({ message: 'Password updated. You can sign in now.' });
   } catch (err: any) {
@@ -499,6 +509,8 @@ exports.verifyEmail = async (req: any, res: any) => {
       { new: true },
     );
     if (!user) return res.status(400).json({ error: 'Invalid token' });
+
+    joinCommunityPodBestEffort(user._id);
 
     res.json({ message: 'Email verified successfully' });
   } catch (err) {

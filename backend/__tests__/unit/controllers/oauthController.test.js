@@ -3,6 +3,11 @@ const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
 const OAuthLoginState = require('../../../models/OAuthLoginState');
 const InvitationCode = require('../../../models/InvitationCode');
+
+jest.mock('../../../services/communityPodService', () => ({
+  ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
+}));
+const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const oauthController = require('../../../controllers/oauthController');
 const authController = require('../../../controllers/authController');
 const {
@@ -166,6 +171,7 @@ describe('OAuth Controller', () => {
       expect(user.username).toBe('octo-dev');
       expect(user.authProviders).toHaveLength(1);
       expect(user.authProviders[0]).toMatchObject({ provider: 'github', providerId: '4242' });
+      expect(ensureUserInCommunityPod).toHaveBeenCalledWith(user._id);
 
       const redirectUrl = new URL(res.redirect.mock.calls[0][0]);
       expect(redirectUrl.origin).toBe('https://app.test.local');
@@ -195,6 +201,7 @@ describe('OAuth Controller', () => {
       expect(user.authProviders[0].providerId).toBe('4242');
       expect(user.verified).toBe(true); // provider-asserted
       expect(await User.countDocuments({})).toBe(1); // linked, not duplicated
+      expect(ensureUserInCommunityPod).toHaveBeenCalledWith(existing._id);
     });
 
     it('enforces the invite gate for brand-new signups', async () => {
