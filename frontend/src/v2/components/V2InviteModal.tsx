@@ -5,6 +5,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 interface V2InviteModalProps {
   open: boolean;
@@ -24,39 +26,44 @@ interface ManagedInvite {
 
 type ExpiryPreset = 'never' | '24' | '168' | '720';
 type MaxUsesPreset = 'unlimited' | '1' | '10' | '25';
+const CLOSE_MARK = '×';
 
 const inviteUrlFor = (token: string): string => (
   `${window.location.origin}/v2/invite/${token}`
 );
 
-const creatorName = (invite: ManagedInvite): string => (
+const creatorName = (invite: ManagedInvite, t: TFunction): string => (
   typeof invite.createdBy === 'object' && invite.createdBy?.username
     ? invite.createdBy.username
-    : 'Pod member'
+    : t('inviteModal.podMember')
 );
 
-const relativeCreatedAt = (value: string): string => {
+const relativeCreatedAt = (value: string, t: TFunction, locale: string): string => {
   const created = new Date(value).getTime();
   const elapsed = Date.now() - created;
-  if (!Number.isFinite(created) || elapsed < 0) return 'Recently';
+  if (!Number.isFinite(created) || elapsed < 0) return t('inviteModal.time.recently');
   const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t('inviteModal.time.justNow');
+  const format = (count: number) => new Intl.NumberFormat(locale).format(count);
+  if (minutes < 60) return t('inviteModal.time.minutesAgo', { count: minutes, formattedCount: format(minutes) });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('inviteModal.time.hoursAgo', { count: hours, formattedCount: format(hours) });
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(value).toLocaleDateString();
+  if (days < 7) return t('inviteModal.time.daysAgo', { count: days, formattedCount: format(days) });
+  return new Date(value).toLocaleDateString(locale);
 };
 
-const expiryLabel = (value?: string | null): string => {
-  if (!value) return 'Never expires';
+const expiryLabel = (value: string | null | undefined, t: TFunction, locale: string): string => {
+  if (!value) return t('inviteModal.expiry.neverExpires');
   const expiry = new Date(value);
-  if (!Number.isFinite(expiry.getTime())) return 'Expiry unavailable';
-  return `Expires ${expiry.toLocaleDateString()}`;
+  if (!Number.isFinite(expiry.getTime())) return t('inviteModal.expiry.unavailable');
+  return t('inviteModal.expiry.expiresOn', { date: expiry.toLocaleDateString(locale) });
 };
 
 const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onClose }) => {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
+  const numberFormatter = new Intl.NumberFormat(locale);
   const api = useV2Api();
   const navigate = useNavigate();
   const [tab, setTab] = useState<'people' | 'agent'>('people');
@@ -80,11 +87,11 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
       setInvites(Array.isArray(data) ? data : []);
     } catch (err) {
       const e = err as { response?: { data?: { msg?: string } }; message?: string };
-      setListError(e.response?.data?.msg || e.message || 'Could not load invite links.');
+      setListError(e.response?.data?.msg || e.message || t('inviteModal.errors.loadFailed'));
     } finally {
       setListLoading(false);
     }
-  }, [api, podId]);
+  }, [api, podId, t]);
 
   // Reset transient state when the modal closes or switches pods — otherwise
   // an old invite URL can flash before the next pod's links load.
@@ -122,11 +129,11 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
       await loadInvites();
     } catch (err) {
       const e = err as { response?: { data?: { msg?: string } }; message?: string };
-      setError(e.response?.data?.msg || e.message || 'Could not generate invite.');
+      setError(e.response?.data?.msg || e.message || t('inviteModal.errors.generateFailed'));
     } finally {
       setBusy(false);
     }
-  }, [api, expiry, loadInvites, maxUses, podId]);
+  }, [api, expiry, loadInvites, maxUses, podId, t]);
 
   const handleCopy = useCallback(async (link: string, token: string) => {
     if (!link) return;
@@ -149,11 +156,11 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
       if (url === inviteUrlFor(token)) setUrl('');
     } catch (err) {
       const e = err as { response?: { data?: { msg?: string } }; message?: string };
-      setListError(e.response?.data?.msg || e.message || 'Could not revoke invite.');
+      setListError(e.response?.data?.msg || e.message || t('inviteModal.errors.revokeFailed'));
     } finally {
       setRevokingToken(null);
     }
-  }, [api, url]);
+  }, [api, t, url]);
 
   if (!open) return null;
 
@@ -162,13 +169,13 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
       className="v2-modal__overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="Invite to pod"
+      aria-label={t('inviteModal.dialogLabel')}
       onClick={onClose}
     >
       <div className="v2-modal" onClick={(e) => e.stopPropagation()}>
         <div className="v2-modal__head">
-          <div className="v2-modal__title">Invite to {podName}</div>
-          <button type="button" className="v2-modal__close" aria-label="Close" onClick={onClose}>×</button>
+          <div className="v2-modal__title">{t('inviteModal.title', { podName })}</div>
+          <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={onClose}>{CLOSE_MARK}</button>
         </div>
         <div className="v2-modal__tabs" role="tablist">
           <button
@@ -178,7 +185,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
             aria-selected={tab === 'people'}
             onClick={() => setTab('people')}
           >
-            Invite people
+            {t('inviteModal.tabs.people')}
           </button>
           <button
             type="button"
@@ -187,42 +194,42 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
             aria-selected={tab === 'agent'}
             onClick={() => setTab('agent')}
           >
-            Add agent
+            {t('inviteModal.tabs.agent')}
           </button>
         </div>
         <div className="v2-modal__body">
           {tab === 'people' && (
             <>
               <p className="v2-modal__hint">
-                Create a link anyone with a Commonly account can use to join this pod.
+                {t('inviteModal.peopleHint')}
               </p>
               <div className="v2-invite-options">
                 <label className="v2-invite-options__field">
-                  <span>Expires after</span>
+                  <span>{t('inviteModal.options.expiresAfter')}</span>
                   <select
                     className="v2-invite-options__select"
-                    aria-label="Invite expiry"
+                    aria-label={t('inviteModal.options.expiryLabel')}
                     value={expiry}
                     onChange={(event) => setExpiry(event.target.value as ExpiryPreset)}
                   >
-                    <option value="never">Never</option>
-                    <option value="24">24 hours</option>
-                    <option value="168">7 days</option>
-                    <option value="720">30 days</option>
+                    <option value="never">{t('inviteModal.options.never')}</option>
+                    <option value="24">{t('inviteModal.options.hours24')}</option>
+                    <option value="168">{t('inviteModal.options.days7')}</option>
+                    <option value="720">{t('inviteModal.options.days30')}</option>
                   </select>
                 </label>
                 <label className="v2-invite-options__field">
-                  <span>Maximum uses</span>
+                  <span>{t('inviteModal.options.maximumUses')}</span>
                   <select
                     className="v2-invite-options__select"
-                    aria-label="Invite maximum uses"
+                    aria-label={t('inviteModal.options.maximumUsesLabel')}
                     value={maxUses}
                     onChange={(event) => setMaxUses(event.target.value as MaxUsesPreset)}
                   >
-                    <option value="unlimited">Unlimited</option>
-                    <option value="1">1 use</option>
-                    <option value="10">10 uses</option>
-                    <option value="25">25 uses</option>
+                    <option value="unlimited">{t('inviteModal.options.unlimited')}</option>
+                    <option value="1">{t('inviteModal.options.uses', { count: 1, formattedCount: numberFormatter.format(1) })}</option>
+                    <option value="10">{t('inviteModal.options.uses', { count: 10, formattedCount: numberFormatter.format(10) })}</option>
+                    <option value="25">{t('inviteModal.options.uses', { count: 25, formattedCount: numberFormatter.format(25) })}</option>
                   </select>
                 </label>
               </div>
@@ -232,7 +239,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
                 onClick={handleGenerate}
                 disabled={busy}
               >
-                {busy ? 'Generating…' : 'Generate invite link'}
+                {busy ? t('inviteModal.generating') : t('inviteModal.generate')}
               </button>
               {url && (
                 <>
@@ -240,7 +247,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
                     <input
                       type="text"
                       className="v2-invite-link"
-                      aria-label="New invite link"
+                      aria-label={t('inviteModal.newLinkLabel')}
                       readOnly
                       value={url}
                       onFocus={(e) => e.currentTarget.select()}
@@ -250,41 +257,49 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
                       className="v2-invite-card__cta v2-invite-card__cta--secondary"
                       onClick={() => handleCopy(url, 'new')}
                     >
-                      {copiedToken === 'new' ? 'Copied!' : 'Copy'}
+                      {copiedToken === 'new' ? t('common.copied') : t('common.copy')}
                     </button>
                   </div>
                   <p className="v2-modal__hint v2-modal__hint--muted">
-                    The new link also appears under Active links below.
+                    {t('inviteModal.newLinkHint')}
                   </p>
                 </>
               )}
               {error && <div className="v2-modal__error">{error}</div>}
 
               <section className="v2-invite-manage" aria-labelledby="active-invite-links">
-                <div className="v2-modal__section-title" id="active-invite-links">Active links</div>
-                {listLoading && <div className="v2-invite-manage__empty">Loading links…</div>}
+                <div className="v2-modal__section-title" id="active-invite-links">{t('inviteModal.activeLinks')}</div>
+                {listLoading && <div className="v2-invite-manage__empty">{t('inviteModal.loadingLinks')}</div>}
                 {!listLoading && invites.length === 0 && !listError && (
-                  <div className="v2-invite-manage__empty">No active invite links.</div>
+                  <div className="v2-invite-manage__empty">{t('inviteModal.noActiveLinks')}</div>
                 )}
                 {!listLoading && invites.length > 0 && (
                   <div className="v2-invite-manage__list">
                     {invites.map((invite) => {
                       const link = inviteUrlFor(invite.token);
-                      const creator = creatorName(invite);
+                      const creator = creatorName(invite, t);
                       return (
                         <div className="v2-invite-manage__item" key={invite.token}>
                           <div className="v2-invite-manage__summary">
                             <strong>{creator}</strong>
-                            <span>{relativeCreatedAt(invite.createdAt)}</span>
+                            <span>{relativeCreatedAt(invite.createdAt, t, locale)}</span>
                           </div>
                           <div className="v2-invite-manage__meta">
-                            <span>{invite.maxUses == null ? `${invite.uses} uses · unlimited` : `${invite.uses} of ${invite.maxUses} uses`}</span>
-                            <span>{expiryLabel(invite.expiresAt)}</span>
+                            <span>{invite.maxUses == null
+                              ? t('inviteModal.usage.unlimited', {
+                                count: invite.uses,
+                                formattedCount: numberFormatter.format(invite.uses),
+                              })
+                              : t('inviteModal.usage.limited', {
+                                uses: numberFormatter.format(invite.uses),
+                                maxUses: numberFormatter.format(invite.maxUses),
+                              })}</span>
+                            <span>{expiryLabel(invite.expiresAt, t, locale)}</span>
                           </div>
                           <input
                             type="text"
                             className="v2-invite-manage__url"
-                            aria-label={`Invite link created by ${creator}`}
+                            aria-label={t('inviteModal.createdByLabel', { creator })}
                             readOnly
                             value={link}
                             onFocus={(event) => event.currentTarget.select()}
@@ -295,16 +310,16 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
                               className="v2-invite-manage__action"
                               onClick={() => handleCopy(link, invite.token)}
                             >
-                              {copiedToken === invite.token ? 'Copied!' : 'Copy'}
+                              {copiedToken === invite.token ? t('common.copied') : t('common.copy')}
                             </button>
                             <button
                               type="button"
                               className="v2-invite-manage__action v2-invite-manage__action--danger"
                               onClick={() => handleRevoke(invite.token)}
                               disabled={revokingToken === invite.token}
-                              aria-label={`Revoke invite created by ${creator}`}
+                              aria-label={t('inviteModal.revokeLabel', { creator })}
                             >
-                              {revokingToken === invite.token ? 'Revoking…' : 'Revoke'}
+                              {revokingToken === invite.token ? t('inviteModal.revoking') : t('inviteModal.revoke')}
                             </button>
                           </div>
                         </div>
@@ -319,7 +334,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
           {tab === 'agent' && (
             <>
               <p className="v2-modal__hint">
-                Pick an agent from the catalog to install into this pod.
+                {t('inviteModal.agentHint')}
               </p>
               <button
                 type="button"
@@ -329,7 +344,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
                   navigate(`/v2/agents/browse?podId=${podId}`);
                 }}
               >
-                Browse agents →
+                {t('inviteModal.browseAgents')}
               </button>
             </>
           )}

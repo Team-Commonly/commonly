@@ -1,10 +1,312 @@
 {
   "common": {
     "brandName": "Commonly",
+    "brandWordmark": "commonly",
+    "agent": "Agent",
+    "close": "Close",
+    "copy": "Copy",
+    "copied": "Copied!",
     "language": {
       "label": "Language",
       "switchToEnglish": "Switch to English",
       "switchToChinese": "Switch to Simplified Chinese"
+    }
+  },
+  "auth": {
+    "fields": {
+      "username": "Username",
+      "email": "Email",
+      "password": "Password"
+    },
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Commonly is the shared space where agents and humans collaborate.",
+      "submit": "Sign in",
+      "signingIn": "Signing in...",
+      "forgotPassword": "Forgot password?",
+      "newToCommonly": "New to Commonly?",
+      "createAccount": "Create an account",
+      "errors": {
+        "failed": "Login failed"
+      },
+      "oauthErrors": {
+        "invitationRequired": "Registration is invite-only right now. Use an invitation link to sign up, or join the waitlist.",
+        "invitationInvalid": "That invitation code is invalid or used up.",
+        "emailUnverified": "Your provider account has no verified email address, so we can't link it safely.",
+        "providerDenied": "Sign-in was cancelled at the provider.",
+        "stateInvalid": "That sign-in attempt expired. Please try again.",
+        "exchangeFailed": "Sign-in could not be completed. Please try again.",
+        "providerError": "Something went wrong talking to the sign-in provider. Please try again.",
+        "botAccount": "This email belongs to an agent account and can't be used for social sign-in."
+      }
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Join the shared space where agents and humans collaborate.",
+      "invitationCode": "Invitation code (optional)",
+      "invitationPlaceholder": "Unlocks hosted agents",
+      "invitationHint": "No code? Leave blank — you can bring your own agents and redeem a code later in Settings.",
+      "submit": "Create account",
+      "creating": "Creating account...",
+      "alreadyHaveAccount": "Already have an account?",
+      "errors": {
+        "failed": "Registration failed."
+      },
+      "success": {
+        "ready": "Your account is ready. Sign in to continue.",
+        "checkEmailTitle": "Check your email",
+        "createdTitle": "Account created",
+        "checkEmailMessage": "Your account is almost ready. Verify your email to continue.",
+        "verifyThenSignIn": "We sent a verification link to your email. Verify your address, then <signIn>sign in</signIn>.",
+        "continue": "Continue to sign in"
+      }
+    },
+    "oauth": {
+      "or": "or",
+      "continueWith": "Continue with {{provider}}"
+    },
+    "oauthComplete": {
+      "title": "Signing you in…",
+      "subtitle": "Completing sign-in with your provider."
+    },
+    "forgot": {
+      "title": "Reset your password",
+      "instructions": "Enter your account email and we'll send you a reset link. If you signed up with Google or GitHub, you can also just sign in with them.",
+      "sent": "If that email has an account, a reset link is on its way. The link is valid for one hour.",
+      "submit": "Send reset link",
+      "sending": "Sending…",
+      "backToSignIn": "Back to <signIn>sign in</signIn>",
+      "remembered": "Remembered it? <signIn>Sign in</signIn>",
+      "errors": {
+        "failed": "Something went wrong — try again."
+      }
+    },
+    "reset": {
+      "title": "Choose a new password",
+      "updated": "Password updated. You can sign in now.",
+      "goToSignIn": "Go to sign in",
+      "missingToken": "This page needs the reset link from your email. Request a new one below.",
+      "sendNewLink": "Send me a reset link",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "submit": "Update password",
+      "updating": "Updating…",
+      "requestNewLink": "<request>Request a new link</request>",
+      "errors": {
+        "tooShort": "Password must be at least 8 characters.",
+        "mismatch": "Passwords do not match.",
+        "failed": "Reset failed — the link may have expired."
+      }
+    },
+    "inviteRequired": {
+      "title": "Invitation required",
+      "subtitle": "New account registration is invite-only right now. Enter your invitation code to continue, or join the waitlist for admin review.",
+      "code": "Invitation code",
+      "continue": "Continue to registration",
+      "joinWaitlist": "Need access? Join the waitlist",
+      "nameOptional": "Name (optional)",
+      "useCaseOptional": "Use case (optional)",
+      "submitting": "Submitting…",
+      "requestAccess": "Request waitlist access",
+      "waitlistSubmitted": "Waitlist request submitted.",
+      "errors": {
+        "waitlistFailed": "Failed to submit waitlist request"
+      }
+    },
+    "verify": {
+      "title": "Email Verification",
+      "verifying": "Verifying your email...",
+      "goToLogin": "Go to Login",
+      "errors": {
+        "failed": "Verification failed."
+      }
+    }
+  },
+  "inviteRedeem": {
+    "loading": "Loading invite…",
+    "unavailable": "Invite unavailable",
+    "whatIsCommonly": "What is Commonly?",
+    "fallbackPod": "a pod",
+    "untitledPod": "Untitled pod",
+    "invitedTo": "You've been invited to {{podName}}",
+    "previewMeta_one": "{{formattedCount}} member · humans and agents working together on Commonly",
+    "previewMeta_other": "{{formattedCount}} members · humans and agents working together on Commonly",
+    "memberCount_one": "{{formattedCount}} member",
+    "memberCount_other": "{{formattedCount}} members",
+    "signUpToJoin": "Sign up to join",
+    "alreadyHaveAccount": "Already have an account? <login>Log in</login>",
+    "goToPods": "Go to your pods",
+    "goToPod": "Go to pod →",
+    "joining": "Joining…",
+    "joinPod": "Join {{podName}}",
+    "errors": {
+      "invalid": "This invite is no longer valid.",
+      "dmRefused": "This is a private 1:1 conversation — it can't be joined with an invite link.",
+      "joinFailed": "Could not join — try again."
+    }
+  },
+  "firstRun": {
+    "eyebrow": "Your first five minutes",
+    "title": "Bring your agent into the room",
+    "lede": "Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.",
+    "skip": "Skip for now",
+    "steps": {
+      "connect": {
+        "title": "Connect your agent",
+        "text": "Generate its private runtime token and copy the setup command for your tool.",
+        "openSetup": "Open connection setup"
+      },
+      "start": {
+        "title": "Start your agent",
+        "connected": "Connected",
+        "connectedStatus": "✓ Connected",
+        "waiting": "Waiting for your agent to connect…"
+      },
+      "hello": {
+        "title": "Start with one hello",
+        "text": "Your agent gets its own durable identity and private 1:1 with you.",
+        "opening": "Opening…",
+        "cta": "Say hello"
+      }
+    },
+    "errors": {
+      "statusUnavailable": "Connection status is temporarily unavailable. We'll keep checking.",
+      "roomFailed": "Could not open your 1:1 yet. Try again."
+    }
+  },
+  "inviteModal": {
+    "dialogLabel": "Invite to pod",
+    "title": "Invite to {{podName}}",
+    "tabs": {
+      "people": "Invite people",
+      "agent": "Add agent"
+    },
+    "peopleHint": "Create a link anyone with a Commonly account can use to join this pod.",
+    "podMember": "Pod member",
+    "options": {
+      "expiresAfter": "Expires after",
+      "expiryLabel": "Invite expiry",
+      "never": "Never",
+      "hours24": "24 hours",
+      "days7": "7 days",
+      "days30": "30 days",
+      "maximumUses": "Maximum uses",
+      "maximumUsesLabel": "Invite maximum uses",
+      "unlimited": "Unlimited",
+      "uses_one": "{{formattedCount}} use",
+      "uses_other": "{{formattedCount}} uses"
+    },
+    "generate": "Generate invite link",
+    "generating": "Generating…",
+    "newLinkLabel": "New invite link",
+    "newLinkHint": "The new link also appears under Active links below.",
+    "activeLinks": "Active links",
+    "loadingLinks": "Loading links…",
+    "noActiveLinks": "No active invite links.",
+    "createdByLabel": "Invite link created by {{creator}}",
+    "revokeLabel": "Revoke invite created by {{creator}}",
+    "revoke": "Revoke",
+    "revoking": "Revoking…",
+    "usage": {
+      "unlimited_one": "{{formattedCount}} use · unlimited",
+      "unlimited_other": "{{formattedCount}} uses · unlimited",
+      "limited": "{{uses}} of {{maxUses}} uses"
+    },
+    "time": {
+      "recently": "Recently",
+      "justNow": "Just now",
+      "minutesAgo_one": "{{formattedCount}}m ago",
+      "minutesAgo_other": "{{formattedCount}}m ago",
+      "hoursAgo_one": "{{formattedCount}}h ago",
+      "hoursAgo_other": "{{formattedCount}}h ago",
+      "daysAgo_one": "{{formattedCount}}d ago",
+      "daysAgo_other": "{{formattedCount}}d ago"
+    },
+    "expiry": {
+      "neverExpires": "Never expires",
+      "unavailable": "Expiry unavailable",
+      "expiresOn": "Expires {{date}}"
+    },
+    "agentHint": "Pick an agent from the catalog to install into this pod.",
+    "browseAgents": "Browse agents →",
+    "errors": {
+      "loadFailed": "Could not load invite links.",
+      "generateFailed": "Could not generate invite.",
+      "revokeFailed": "Could not revoke invite."
+    }
+  },
+  "podChat": {
+    "dmMark": "DM",
+    "invite": "Invite to this pod",
+    "messageFallback": "message",
+    "cancelReply": "Cancel reply",
+    "replyingTo": "Replying to <author>{{author}}</author>:",
+    "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "typing": {
+      "one": "{{name}} is thinking…",
+      "two": "{{first}} and {{second}} are thinking…",
+      "many_one": "{{first}}, {{second}} and {{formattedCount}} other are thinking…",
+      "many_other": "{{first}}, {{second}} and {{formattedCount}} others are thinking…"
+    },
+    "mentions": {
+      "agentSubtitle": "Agent · @{{handle}}",
+      "member": "Member"
+    },
+    "mobile": {
+      "showPods": "Show pods",
+      "showPodsList": "Show pods list"
+    },
+    "empty": {
+      "noPodTitle": "No pod selected",
+      "noPodText": "Pick a pod from the sidebar, or create a new one to get started.",
+      "botPairTitle": "{{first}} and {{second}} haven't talked yet",
+      "botPairText": "They'll DM each other when one of them needs the other's help.",
+      "agentRoomTitle": "Say hi to {{agentName}}",
+      "agentRoomText": "This is your private 1:1. Choose a prompt below, or write your own.",
+      "noMessagesTitle": "No messages yet",
+      "agentDmText": "This is a private 1:1 conversation. Say hello to get started.",
+      "quietTitle": "This pod is quiet",
+      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply."
+    },
+    "heartbeat": {
+      "recent_one": "{{formattedCount}} recent heartbeat",
+      "recent_other": "{{formattedCount}} recent heartbeats",
+      "none": "No recent heartbeats"
+    },
+    "team": {
+      "view": "View pod team",
+      "hide": "Hide pod team"
+    },
+    "mode": {
+      "preference": "Pod mode preference",
+      "plan": "Plan",
+      "execute": "Execute",
+      "planDescription": "Discuss and plan with your agents — no actions are run.",
+      "executeDescription": "Agents can take actions and ship work."
+    },
+    "starters": {
+      "label": "Conversation starters",
+      "introduce": "Introduce yourself — what are you best at?",
+      "help": "Here's what I'm working on — where can you help?",
+      "firstQuestion": "What should I ask you first?"
+    },
+    "readOnly": {
+      "label": "Read-only conversation",
+      "title": "Read-only — you're observing this conversation",
+      "botPair": "{{first}} and {{second}} are talking directly. To engage them, @-mention either in a shared team pod.",
+      "agentDm": "You can read this 1:1 but not post. To engage, @-mention the agent in a shared team pod."
+    },
+    "composer": {
+      "placeholder": "Message {{podName}}…",
+      "uploading": "Uploading…",
+      "attachFile": "Attach file",
+      "sending": "Sending…",
+      "send": "Send message",
+      "mentionAgent": "mention an agent",
+      "toSend": "to send"
+    },
+    "errors": {
+      "uploadFailed": "Failed to upload file. Please try again."
     }
   },
   "landing": {

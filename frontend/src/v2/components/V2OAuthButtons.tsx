@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from '../../utils/axiosConfig';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
+import { useTranslation } from 'react-i18next';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
 // until /api/auth/oauth/providers confirms a provider is configured, so
@@ -51,6 +52,7 @@ const readProviderCache = (): OAuthProvider[] => {
 };
 
 const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
+  const { t } = useTranslation();
   // Seed from cache so repeat visitors see the buttons instantly; the fetch
   // below reconciles. A *successful* empty response (self-hosted w/o OAuth)
   // correctly clears; only network failures fall back to the cached value.
@@ -91,12 +93,12 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
 
   return (
     <>
-      <div className="v2-login__or"><span>or</span></div>
+      <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
       <div className="v2-login__oauth">
         {providers.map((p) => (
           <a key={p.id} className="v2-login__oauth-btn" href={startUrl(p.id)}>
             {PROVIDER_ICONS[p.id]}
-            Continue with {p.label}
+            {t('auth.oauth.continueWith', { provider: p.label })}
           </a>
         ))}
       </div>

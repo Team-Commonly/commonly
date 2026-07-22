@@ -10,20 +10,25 @@ import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
+import { Trans, useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 
-const STARTER_PROMPTS = [
-  'Introduce yourself — what are you best at?',
-  "Here's what I'm working on — where can you help?",
-  'What should I ask you first?',
+const STARTER_PROMPT_KEYS = [
+  'podChat.starters.introduce',
+  'podChat.starters.help',
+  'podChat.starters.firstQuestion',
 ] as const;
+const CLOSE_MARK = '×';
+const COMMAND_KEY = '⌘';
+const ENTER_KEY = '↵';
 
 type PodMode = 'plan' | 'execute';
 
-const podMarkFor = (name: string, type?: string): string => (
-  type === 'agent-room' ? 'DM' : initialsFor(name).slice(0, 2)
+const podMarkFor = (name: string, type: string | undefined, dmLabel: string): string => (
+  type === 'agent-room' ? dmLabel : initialsFor(name).slice(0, 2)
 );
 
 const normalizeAgentSegment = (value: string | undefined): string =>
@@ -75,13 +80,20 @@ interface TypingAgentEntry {
 }
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
+  const { t, i18n } = useTranslation();
   if (!agents || agents.length === 0) return null;
   const names = agents.map((a) => a.displayName);
   const label = names.length === 1
-    ? `${names[0]} is thinking…`
+    ? t('podChat.typing.one', { name: names[0] })
     : names.length === 2
-      ? `${names[0]} and ${names[1]} are thinking…`
-      : `${names[0]}, ${names[1]} and ${names.length - 2} other${names.length - 2 === 1 ? '' : 's'} are thinking…`;
+      ? t('podChat.typing.two', { first: names[0], second: names[1] })
+      : t('podChat.typing.many', {
+        first: names[0],
+        second: names[1],
+        count: names.length - 2,
+        formattedCount: new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en')
+          .format(names.length - 2),
+      });
   return (
     <div className="v2-chat__typing" aria-live="polite">
       <div className="v2-chat__typing-avatars">
@@ -97,10 +109,10 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
   );
 };
 
-const modeCopy = (mode: PodMode) => (
+const modeCopy = (mode: PodMode, t: TFunction) => (
   mode === 'plan'
-    ? 'Discuss and plan with your agents — no actions are run.'
-    : 'Agents can take actions and ship work.'
+    ? t('podChat.mode.planDescription')
+    : t('podChat.mode.executeDescription')
 );
 
 const readMode = (podId: string): PodMode => {
@@ -155,6 +167,8 @@ const Icon = ({ d }: { d: string }) => (
 );
 
 const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
+  const { t, i18n } = useTranslation();
+  const numberFormatter = new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en');
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const api = useV2Api();
   const { socket, connected } = useSocket();
@@ -304,7 +318,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
         id: username,
         label: display,
         labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
-        subtitle: `Agent · @${mentionValue}`,
+        subtitle: t('podChat.mentions.agentSubtitle', { handle: mentionValue }),
         avatar,
         isAgent: true,
         value: mentionValue,
@@ -327,7 +341,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
         id: m._id || username,
         label: username,
         labelLower: username.toLowerCase(),
-        subtitle: 'Member',
+        subtitle: t('podChat.mentions.member'),
         avatar: m.profilePicture || null,
         isAgent: false,
         value: username,
@@ -346,7 +360,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
     });
 
     return items;
-  }, [members, agents]);
+  }, [members, agents, t]);
 
   const filteredMentions: MentionItem[] = useMemo(() => {
     if (!mentionOpen) return [];
@@ -512,8 +526,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
       type="button"
       className="v2-chat__mobile-nav-btn"
       onClick={onOpenMobileNav}
-      title="Show pods"
-      aria-label="Show pods list"
+      title={t('podChat.mobile.showPods')}
+      aria-label={t('podChat.mobile.showPodsList')}
     >
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M3 6h18M3 12h18M3 18h18" />
@@ -530,8 +544,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
           </div>
         )}
         <div className="v2-empty">
-          <div className="v2-empty__title">No pod selected</div>
-          <div className="v2-empty__text">Pick a pod from the sidebar, or create a new one to get started.</div>
+          <div className="v2-empty__title">{t('podChat.empty.noPodTitle')}</div>
+          <div className="v2-empty__text">{t('podChat.empty.noPodText')}</div>
         </div>
       </main>
     );
@@ -555,7 +569,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
   const botMembers = (members || []).filter((m) => m?.isBot);
   const isBotToBot = isAgentDm && botMembers.length >= 2 && botMembers.length === (members || []).length;
   const botPair = isBotToBot
-    ? botMembers.slice(0, 2).map((m) => m.username || 'Agent')
+    ? botMembers.slice(0, 2).map((m) => m.username || t('common.agent'))
     : null;
 
   const handleSend = async (override?: string) => {
@@ -648,7 +662,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
       }
     } catch (err) {
       const e = err as { response?: { data?: { msg?: string } } };
-      setComposerError(e.response?.data?.msg || 'Failed to upload file. Please try again.');
+      setComposerError(e.response?.data?.msg || t('podChat.errors.uploadFailed'));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -671,8 +685,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
     !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
   )).length;
   const liveState = onlineAgentCount > 0
-    ? `${onlineAgentCount} recent heartbeat${onlineAgentCount === 1 ? '' : 's'}`
-    : 'No recent heartbeats';
+    ? t('podChat.heartbeat.recent', {
+      count: onlineAgentCount,
+      formattedCount: numberFormatter.format(onlineAgentCount),
+    })
+    : t('podChat.heartbeat.none');
+  const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
 
   return (
     <main className="v2-pane v2-pane--main">
@@ -681,7 +699,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
           <div className="v2-chat__header-row">
             {mobileNavButton}
             <div className="v2-chat__title">
-              <span className="v2-chat__title-mark">{podMarkFor(pod.name, pod.type)}</span>
+              <span className="v2-chat__title-mark">{podMarkFor(pod.name, pod.type, t('podChat.dmMark'))}</span>
               <span className="v2-chat__title-text">{pod.name}</span>
             </div>
 
@@ -690,8 +708,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 type="button"
                 className={`v2-chat__avatars v2-chat__avatars--button${inspectorCollapsed ? '' : ' v2-chat__avatars--active'}`}
                 onClick={onToggleInspector}
-                title={inspectorCollapsed ? 'View pod team' : 'Hide pod team'}
-                aria-label={inspectorCollapsed ? 'View pod team' : 'Hide pod team'}
+                title={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
+                aria-label={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
                 aria-pressed={!inspectorCollapsed}
               >
                 {visibleMembers.map((m) => (
@@ -719,26 +737,26 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 the user. Re-enable when the mode actually drives behavior
                 (agent autonomy gating, suggestion ranking, etc.). */}
             {false && (
-              <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label="Pod mode preference">
+              <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label={t('podChat.mode.preference')}>
                 <button
                   type="button"
                   className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
                   onClick={() => handleSetMode('plan')}
                   aria-pressed={mode === 'plan'}
-                  title={modeCopy('plan')}
+                  title={modeCopy('plan', t)}
                 >
                   <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                  Plan
+                  {t('podChat.mode.plan')}
                 </button>
                 <button
                   type="button"
                   className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
                   onClick={() => handleSetMode('execute')}
                   aria-pressed={mode === 'execute'}
-                  title={modeCopy('execute')}
+                  title={modeCopy('execute', t)}
                 >
                   <Icon d="M5 3l14 9-14 9V3z" />
-                  Execute
+                  {t('podChat.mode.execute')}
                 </button>
               </div>
             )}
@@ -748,8 +766,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 type="button"
                 className="v2-chat__icon-btn"
                 onClick={onOpenInvite}
-                title="Invite to this pod"
-                aria-label="Invite to this pod"
+                title={t('podChat.invite')}
+                aria-label={t('podChat.invite')}
               >
                 <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6" />
               </button>
@@ -779,34 +797,34 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>
-                      <div className="v2-empty__title">{botPair[0]} and {botPair[1]} haven&apos;t talked yet</div>
-                      <div className="v2-empty__text">They&apos;ll DM each other when one of them needs the other&apos;s help.</div>
+                      <div className="v2-empty__title">{t('podChat.empty.botPairTitle', { first: botPair[0], second: botPair[1] })}</div>
+                      <div className="v2-empty__text">{t('podChat.empty.botPairText')}</div>
                     </>
                   ) : isAgentRoom && botMembers.length === 1 ? (
                     (() => {
                       const rawUsername = botMembers[0]?.username || '';
                       const agentName = agentDisplayNames.get(rawUsername.toLowerCase())
                         || rawUsername
-                        || 'agent';
+                        || t('common.agent');
                       return (
                         <>
-                          <div className="v2-empty__title">Say hi to {agentName}</div>
+                          <div className="v2-empty__title">{t('podChat.empty.agentRoomTitle', { agentName })}</div>
                           <div className="v2-empty__text">
-                            This is your private 1:1. Choose a prompt below, or write your own.
+                            {t('podChat.empty.agentRoomText')}
                           </div>
                         </>
                       );
                     })()
                   ) : isAgentDm ? (
                     <>
-                      <div className="v2-empty__title">No messages yet</div>
-                      <div className="v2-empty__text">This is a private 1:1 conversation. Say hello to get started.</div>
+                      <div className="v2-empty__title">{t('podChat.empty.noMessagesTitle')}</div>
+                      <div className="v2-empty__text">{t('podChat.empty.agentDmText')}</div>
                     </>
                   ) : (
                     <>
-                      <div className="v2-empty__title">This pod is quiet</div>
+                      <div className="v2-empty__title">{t('podChat.empty.quietTitle')}</div>
                       <div className="v2-empty__text">
-                        Use @ to mention an agent or teammate—everyone in the member list can see and reply.
+                        {t('podChat.empty.quietText')}
                       </div>
                     </>
                   )}
@@ -824,8 +842,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                   />
                   {agentDeliveryHint?.messageId === m.id && (
                     <div className="v2-chat__delivery-hint" role="status">
-                      No agent was notified — @mention one to get a reply. Try{' '}
-                      <strong>@{agentDeliveryHint.mentionHandle}</strong>.
+                      <Trans
+                        i18nKey="podChat.deliveryHint"
+                        values={{ handle: agentDeliveryHint.mentionHandle }}
+                        components={{ handle: <strong /> }}
+                      />
                     </div>
                   )}
                 </React.Fragment>
@@ -841,8 +862,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
               && messages.length === 0
               && !firstRunVisible
               && !draft.trim() && (
-                <div className="v2-chat__starter-prompts" role="group" aria-label="Conversation starters">
-                  {STARTER_PROMPTS.map((prompt) => (
+                <div className="v2-chat__starter-prompts" role="group" aria-label={t('podChat.starters.label')}>
+                  {starterPrompts.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
@@ -856,7 +877,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
             )}
 
             {isReadOnly ? (
-              <div className="v2-chat__readonly" role="note" aria-label="Read-only conversation">
+              <div className="v2-chat__readonly" role="note" aria-label={t('podChat.readOnly.label')}>
                 <div className="v2-chat__readonly-icon" aria-hidden="true">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -864,11 +885,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                   </svg>
                 </div>
                 <div className="v2-chat__readonly-body">
-                  <div className="v2-chat__readonly-title">Read-only — you&apos;re observing this conversation</div>
+                  <div className="v2-chat__readonly-title">{t('podChat.readOnly.title')}</div>
                   <div className="v2-chat__readonly-text">
                     {isBotToBot && botPair
-                      ? `${botPair[0]} and ${botPair[1]} are talking directly. To engage them, @-mention either in a shared team pod.`
-                      : 'You can read this 1:1 but not post. To engage, @-mention the agent in a shared team pod.'}
+                      ? t('podChat.readOnly.botPair', { first: botPair[0], second: botPair[1] })
+                      : t('podChat.readOnly.agentDm')}
                   </div>
                 </div>
               </div>
@@ -877,16 +898,20 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
               {replyTarget && (
                 <div className="v2-chat__reply-chip" role="status">
                   <span className="v2-chat__reply-chip-label">
-                    Replying to <strong>{replyTarget.user?.username || 'message'}</strong>:{' '}
+                    <Trans
+                      i18nKey="podChat.replyingTo"
+                      values={{ author: replyTarget.user?.username || t('podChat.messageFallback') }}
+                      components={{ author: <strong /> }}
+                    />{' '}
                     {String(replyTarget.content || '').replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 80)}
                   </span>
                   <button
                     type="button"
                     className="v2-chat__reply-chip-cancel"
-                    aria-label="Cancel reply"
+                    aria-label={t('podChat.cancelReply')}
                     onClick={() => setReplyTarget(null)}
                   >
-                    ×
+                    {CLOSE_MARK}
                   </button>
                 </div>
               )}
@@ -894,7 +919,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 <textarea
                   ref={composerInputRef}
                   className="v2-chat__composer-input"
-                  placeholder={`Message ${pod.name}…`}
+                  placeholder={t('podChat.composer.placeholder', { podName: pod.name })}
                   value={draft}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -972,8 +997,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                   <button
                     type="button"
                     className="v2-chat__composer-icon-btn"
-                    title={uploading ? 'Uploading…' : 'Attach file'}
-                    aria-label="Attach file"
+                    title={uploading ? t('podChat.composer.uploading') : t('podChat.composer.attachFile')}
+                    aria-label={t('podChat.composer.attachFile')}
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
                   >
@@ -985,8 +1010,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                   className={`v2-chat__send v2-chat__send--${mode}`}
                   onClick={() => handleSend()}
                   disabled={sending || !draft.trim()}
-                  title={sending ? 'Sending…' : 'Send message'}
-                  aria-label={sending ? 'Sending…' : 'Send message'}
+                  title={sending ? t('podChat.composer.sending') : t('podChat.composer.send')}
+                  aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.send')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d="M2.5 11.4 21.2 3.1c.6-.3 1.2.3.9.9L13.8 22.7c-.3.6-1.2.6-1.4-.1l-2.7-7.4-7.4-2.7c-.7-.2-.7-1.1.2-1.1z" />
@@ -999,8 +1024,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 </div>
               )}
               <div className="v2-chat__composer-hint">
-                <span><kbd>@</kbd> mention an agent</span>
-                <span><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
+                <span><kbd>@</kbd> {t('podChat.composer.mentionAgent')}</span>
+                <span><kbd>{COMMAND_KEY}</kbd><kbd>{ENTER_KEY}</kbd> {t('podChat.composer.toSend')}</span>
               </div>
             </div>
             )}

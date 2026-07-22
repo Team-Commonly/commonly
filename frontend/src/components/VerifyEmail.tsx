@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 
 const VerifyEmail: React.FC = () => {
+  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
@@ -15,10 +17,10 @@ const VerifyEmail: React.FC = () => {
         .then((res) => setMessage(res.data.message))
         .catch((err: unknown) => {
           const e = err as { response?: { data?: { error?: string } } };
-          setMessage(e.response?.data?.error || 'Verification failed.');
+          setMessage(e.response?.data?.error || t('auth.verify.errors.failed'));
         });
     }
-  }, [token]);
+  }, [t, token]);
 
   return (
     <Box
@@ -43,14 +45,14 @@ const VerifyEmail: React.FC = () => {
         }}
       >
         <Typography variant="h5" sx={{ color: '#e2e8f0', mb: 2, fontWeight: 700 }}>
-          Email Verification
+          {t('auth.verify.title')}
         </Typography>
         <Typography variant="body1" sx={{ color: '#cbd5e1', mb: 3 }}>
-          {message || 'Verifying your email...'}
+          {message || t('auth.verify.verifying')}
         </Typography>
         {Boolean(message) && (
           <Button component="a" href="/login" variant="contained" sx={{ fontWeight: 600 }}>
-            Go to Login
+            {t('auth.verify.goToLogin')}
           </Button>
         )}
       </Box>

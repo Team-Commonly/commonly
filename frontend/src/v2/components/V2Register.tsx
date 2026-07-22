@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
+import { Trans, useTranslation } from 'react-i18next';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -23,6 +24,7 @@ const Brand: React.FC = () => (
 );
 
 const V2Register: React.FC = () => {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -66,7 +68,7 @@ const V2Register: React.FC = () => {
         invitationCode: invitationCode.trim(),
       });
       const data = res.data as { message?: string };
-      const message = data?.message || 'Your account is ready. Sign in to continue.';
+      const message = data?.message || t('auth.register.success.ready');
       // The backend only sends a verification email (and withholds a usable
       // session) when SMTP is configured — its message says to check email in
       // that case. When auto-verified, no email is sent and sign-in works
@@ -77,7 +79,7 @@ const V2Register: React.FC = () => {
       setDone(message);
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } } };
-      setError(e1.response?.data?.error || e1.response?.data?.msg || 'Registration failed.');
+      setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -89,14 +91,17 @@ const V2Register: React.FC = () => {
         <div className="v2-login__card">
           <Brand />
           <h1 className="v2-login__title">
-            {verifyPending ? 'Check your email' : 'Account created'}
+            {verifyPending ? t('auth.register.success.checkEmailTitle') : t('auth.register.success.createdTitle')}
           </h1>
-          <p className="v2-login__subtitle">{done}</p>
+          <p className="v2-login__subtitle">
+            {verifyPending ? t('auth.register.success.checkEmailMessage') : t('auth.register.success.ready')}
+          </p>
           {verifyPending ? (
             <p className="v2-login__hint">
-              We sent a verification link to your email. Verify your address,
-              then{' '}
-              <Link to={loginHref} className="v2-login__link">sign in</Link>.
+              <Trans
+                i18nKey="auth.register.success.verifyThenSignIn"
+                components={{ signIn: <Link to={loginHref} className="v2-login__link" /> }}
+              />
             </p>
           ) : (
             <button
@@ -104,7 +109,7 @@ const V2Register: React.FC = () => {
               className="v2-login__submit"
               onClick={() => navigate(loginHref)}
             >
-              Continue to sign in
+              {t('auth.register.success.continue')}
             </button>
           )}
         </div>
@@ -116,13 +121,13 @@ const V2Register: React.FC = () => {
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
         <Brand />
-        <h1 className="v2-login__title">Create your account</h1>
+        <h1 className="v2-login__title">{t('auth.register.title')}</h1>
         <p className="v2-login__subtitle">
-          Join the shared space where agents and humans collaborate.
+          {t('auth.register.subtitle')}
         </p>
 
         <label className="v2-login__field">
-          <span className="v2-login__label">Username</span>
+          <span className="v2-login__label">{t('auth.fields.username')}</span>
           <input
             className="v2-login__input"
             type="text"
@@ -134,7 +139,7 @@ const V2Register: React.FC = () => {
         </label>
 
         <label className="v2-login__field">
-          <span className="v2-login__label">Email</span>
+          <span className="v2-login__label">{t('auth.fields.email')}</span>
           <input
             className="v2-login__input"
             type="email"
@@ -146,7 +151,7 @@ const V2Register: React.FC = () => {
         </label>
 
         <label className="v2-login__field">
-          <span className="v2-login__label">Password</span>
+          <span className="v2-login__label">{t('auth.fields.password')}</span>
           <input
             className="v2-login__input"
             type="password"
@@ -162,19 +167,19 @@ const V2Register: React.FC = () => {
             unless a code arrived via the URL, so the field stays hidden. */}
         {policy.loaded && !policy.inviteOnly && (
           <label className="v2-login__field">
-            <span className="v2-login__label">Invitation code (optional)</span>
+            <span className="v2-login__label">{t('auth.register.invitationCode')}</span>
             <input
               className="v2-login__input"
               type="text"
               autoComplete="off"
-              placeholder="Unlocks hosted agents"
+              placeholder={t('auth.register.invitationPlaceholder')}
               value={invitationCode}
               onChange={(e) => setInvitationCode(e.target.value)}
             />
             {/* The full explanation lives below the field, not in the
                 placeholder — placeholders clip at the input's width. */}
             <span className="v2-login__field-hint">
-              No code? Leave blank — you can bring your own agents and redeem a code later in Settings.
+              {t('auth.register.invitationHint')}
             </span>
           </label>
         )}
@@ -184,7 +189,7 @@ const V2Register: React.FC = () => {
           className="v2-login__submit"
           disabled={submitting}
         >
-          {submitting ? 'Creating account...' : 'Create account'}
+          {submitting ? t('auth.register.creating') : t('auth.register.submit')}
         </button>
 
         {error && <div className="v2-login__error">{error}</div>}
@@ -192,9 +197,9 @@ const V2Register: React.FC = () => {
         <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} />
 
         <div className="v2-login__hint">
-          Already have an account?
+          {t('auth.register.alreadyHaveAccount')}
           {' '}
-          <Link to="/v2/login" className="v2-login__link">Sign in</Link>
+          <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>
         </div>
       </form>
     </div>

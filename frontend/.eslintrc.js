@@ -35,13 +35,26 @@ module.exports = {
       version: 'detect',
     },
   },
-  // Phase 1A zh-CN manifest. Later phases extend this exact list as each
-  // surface migrates, so translated components cannot regress to JSX literals.
+  // Phase 1 zh-CN manifest. Extend this exact list only as each surface
+  // migrates, so translated components cannot regress to JSX literals.
   overrides: [
     {
       files: [
         'src/v2/landing/V2LandingPage.tsx',
         'src/v2/components/V2LangSwitch.tsx',
+        'src/v2/components/V2AuthBrand.tsx',
+        'src/v2/components/V2Login.tsx',
+        'src/v2/components/V2Register.tsx',
+        'src/v2/components/V2ForgotPassword.tsx',
+        'src/v2/components/V2ResetPassword.tsx',
+        'src/v2/components/V2OAuthButtons.tsx',
+        'src/v2/components/V2OAuthComplete.tsx',
+        'src/v2/components/V2InviteRedeem.tsx',
+        'src/components/RegistrationInviteRequired.tsx',
+        'src/components/VerifyEmail.tsx',
+        'src/v2/components/V2PodChat.tsx',
+        'src/v2/components/V2FirstRunHero.tsx',
+        'src/v2/components/V2InviteModal.tsx',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {
