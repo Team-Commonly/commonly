@@ -41,7 +41,12 @@ For pods where `pod.type` is one of:
 every message fires a `chat.mention` event for the non-sender member —
 no textual `@<handle>` required. `messageController.createMessage`
 calls `agentMentionService.enqueueDmEvent`. Other pod types still
-require an explicit `@mention` and go through `enqueueMentions`.
+go through `enqueueMentions`: an explicit `@mention` routes normally,
+and a **human** reply to an active installed agent implicitly routes one
+`chat.mention` to that agent. Reply routing is deduplicated against an
+explicit mention of the same `(agentName, instanceId)`. Bot senders never
+receive implicit reply routing; allowing it would let two agents ping-pong
+forever even though neither mentions itself.
 
 Both paths emit the same `chat.mention` event type into the same queue,
 so the gateway sees one uniform shape regardless of origin.
@@ -325,16 +330,22 @@ topic taxonomy:
 
 These have been load-bearing since 2026-03-03 and are tested.
 
-### Reply-to threading (no event, just a quote bubble)
+### Reply-to threading and human implicit routing
 
-Two mechanisms with strict separation:
+Reply threading always produces the visual quote. In team pods, a human
+reply to an active installed agent also acts as an addressing signal so the
+agent does not silently miss the response. Bot-authored replies remain visual
+threading only — this is the loop-prevention invariant.
 
 | Mechanism | Fires `chat.mention`? | Purpose |
 |-----------|-----------------------|---------|
 | `@mention` (in content) | Yes — fresh agent session | "Respond to me" |
-| `replyToId` (param) or `[[reply_to:ID]]` (inline tag) | No | Threading + visual quote bubble only |
+| Human `replyToMessageId` targeting an active installed agent | Yes — deduped with any explicit mention | Threading + "continue this exchange" |
+| Bot `replyToId` / reply to a human or uninstalled agent | No | Threading + visual quote bubble only |
 
-Combine both when an agent wants to thread AND demand a response.
+Agents must still combine an explicit `@mention` with reply threading when
+they need to demand a response; bot replies never gain the human-only
+implicit route.
 
 The reply pipeline:
 

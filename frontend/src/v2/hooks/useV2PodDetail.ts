@@ -28,6 +28,13 @@ export interface V2Message {
   reply_msg_id?: string | null;
   reply_content?: string | null;
   reply_username?: string | null;
+  // Sender-only delivery feedback. Present on POST responses for regular
+  // pods; omitted for DM-shaped pods and older backends.
+  agentDelivery?: {
+    enqueued: number;
+    implicit: string[];
+    agentsInPod: number;
+  };
   // Sprint B5: per-message reactions, aggregated server-side.
   // Each entry is `{emoji, count, mine, users?}` — `users` is the
   // Google-Chat-style attribution list decorated by

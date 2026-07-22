@@ -2,12 +2,16 @@ const messageController = require('../../../controllers/messageController');
 const Pod = require('../../../models/Pod');
 const PGMessage = require('../../../models/pg/Message');
 const AgentMentionService = require('../../../services/agentMentionService');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/pg/Message');
 jest.mock('../../../services/agentMentionService', () => ({
-  enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+  enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], implicit: [], skipped: [] }),
   enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+}));
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentInstallation: { countDocuments: jest.fn() },
 }));
 jest.mock('../../../config/socket', () => ({
   getIO: jest.fn(),
@@ -16,6 +20,10 @@ jest.mock('../../../config/socket', () => ({
 const socketConfig = require('../../../config/socket');
 
 describe('messageController', () => {
+  beforeEach(() => {
+    AgentInstallation.countDocuments.mockResolvedValue(0);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -67,6 +75,7 @@ describe('messageController', () => {
       const mockMessage = { id: 1, content: 'test' };
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
       PGMessage.create.mockResolvedValue(mockMessage);
+      AgentInstallation.countDocuments.mockResolvedValueOnce(2);
       const req = {
         params: { podId: 'p1' },
         body: { content: 'test' },
@@ -74,9 +83,41 @@ describe('messageController', () => {
       };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await messageController.createMessage(req, res);
-      expect(res.json).toHaveBeenCalledWith(mockMessage);
+      expect(res.json).toHaveBeenCalledWith({
+        ...mockMessage,
+        agentDelivery: { enqueued: 0, implicit: [], agentsInPod: 2 },
+      });
       expect(AgentMentionService.enqueueMentions).toHaveBeenCalled();
       expect(AgentMentionService.enqueueDmEvent).not.toHaveBeenCalled();
+    });
+
+    it('reports mention delivery and active-agent count for a regular pod', async () => {
+      const mockMessage = { id: 3, content: '@aria can you help?' };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue(mockMessage);
+      AgentMentionService.enqueueMentions.mockResolvedValueOnce({
+        enqueued: ['openclaw'], implicit: [], skipped: [],
+      });
+      AgentInstallation.countDocuments.mockResolvedValueOnce(2);
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: '@aria can you help?', replyToMessageId: 'm1' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        replyToMessageId: 'm1',
+      }));
+      expect(AgentInstallation.countDocuments).toHaveBeenCalledWith({
+        podId: 'p1', status: 'active',
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        ...mockMessage,
+        agentDelivery: { enqueued: 1, implicit: [], agentsInPod: 2 },
+      });
     });
 
     it('enqueues dm.message events for agent-admin pods', async () => {
@@ -99,6 +140,26 @@ describe('messageController', () => {
           userId: 'u1',
         }),
       );
+      const response = res.json.mock.calls[0][0];
+      expect(response).not.toHaveProperty('agentDelivery');
+      expect(AgentInstallation.countDocuments).not.toHaveBeenCalled();
+    });
+
+    it.each(['agent-room', 'agent-dm'])('omits agentDelivery for %s pods', async (type) => {
+      const mockMessage = { id: 4, content: 'hello dm' };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type });
+      PGMessage.create.mockResolvedValue(mockMessage);
+      const req = {
+        params: { podId: 'p2' },
+        body: { content: 'hello dm' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(res.json.mock.calls[0][0]).not.toHaveProperty('agentDelivery');
+      expect(AgentInstallation.countDocuments).not.toHaveBeenCalled();
     });
 
     // #646: the newMessage broadcast dropped replyTo, so live viewers saw

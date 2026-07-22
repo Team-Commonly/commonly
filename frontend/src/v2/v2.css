@@ -1279,6 +1279,21 @@
   gap: 0;
 }
 
+/* Sender-only teaching cue shown once per pod/session when a message reaches
+   a pod with agents but addresses none of them. Aligns with message text,
+   stays quiet/secondary, and disappears naturally with transcript scroll. */
+.v2-chat__delivery-hint {
+  margin: -4px 0 8px 50px;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-chat__delivery-hint strong {
+  color: var(--v2-accent-text);
+  font-weight: 650;
+}
+
 /* First-run attach card lives inside the selected pod transcript instead of
    replacing the pod shell. That keeps the workspace, composer, and mobile
    drawer reachable while the agent connection status updates live. */

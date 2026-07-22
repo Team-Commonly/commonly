@@ -38,6 +38,7 @@ interface MentionMapEntry {
 
 interface EnqueueMentionsOptions {
   podId: string;
+  replyToMessageId?: string | null;
   message: {
     content?: string;
     text?: string;
@@ -49,6 +50,7 @@ interface EnqueueMentionsOptions {
     createdAt?: unknown;
     created_at?: unknown;
     thread?: unknown;
+    replyTo?: { userId?: unknown } | null;
   };
   userId: string;
   username: string;
@@ -63,6 +65,7 @@ interface EnqueueDmOptions {
 
 interface EnqueueResult {
   enqueued: string[];
+  implicit: string[];
   skipped: string[];
 }
 
@@ -549,11 +552,63 @@ const buildContentForTarget = (
   return `${frames.join('\n')}\n\n${rawContent}`;
 };
 
+const normalizeUserId = (value: unknown): string | null => {
+  if (!value) return null;
+  if (typeof value === 'object') {
+    const nestedId = (value as { _id?: unknown })._id;
+    return nestedId ? String(nestedId) : null;
+  }
+  return String(value);
+};
+
+const resolveImplicitReplyTarget = async (
+  replyToMessageId: string,
+  message: EnqueueMentionsOptions['message'],
+  installations: Array<Record<string, unknown>>,
+): Promise<MentionTarget | null> => {
+  let replyAuthorUserId = normalizeUserId(message.replyTo?.userId);
+
+  // The controller normally passes the populated PG row, whose replyTo
+  // already carries the author id. Keep a lookup fallback for other callers
+  // and older response shapes that only pass replyToMessageId.
+  if (!replyAuthorUserId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const PGMessage = require('../models/pg/Message') as {
+      findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown } | null>;
+    };
+    const repliedMessage = await PGMessage.findById(replyToMessageId);
+    replyAuthorUserId = normalizeUserId(repliedMessage?.user_id || repliedMessage?.userId);
+  }
+  if (!replyAuthorUserId) return null;
+
+  const replyAuthor = await User.findById(replyAuthorUserId)
+    .select('isBot botMetadata')
+    .lean() as SenderRow | null;
+  const agentName = replyAuthor?.isBot
+    ? replyAuthor.botMetadata?.agentName?.toLowerCase()
+    : null;
+  const instanceId = replyAuthor?.isBot
+    ? (replyAuthor.botMetadata?.instanceId || 'default').toLowerCase()
+    : null;
+  if (!agentName || !instanceId) return null;
+
+  const activeInstallation = installations.find((installation) => (
+    String(installation.agentName || '').toLowerCase() === agentName
+    && String(installation.instanceId || 'default').toLowerCase() === instanceId
+  ));
+  if (!activeInstallation) return null;
+  return {
+    agentName: String(activeInstallation.agentName || agentName),
+    instanceId: String(activeInstallation.instanceId || instanceId),
+  };
+};
+
 const enqueueMentions = async ({
   podId,
   message,
   userId,
   username,
+  replyToMessageId,
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
@@ -563,12 +618,21 @@ const enqueueMentions = async ({
   // enqueue site below passes its own `targetAgentName` so the cue
   // composition is correct for that target's runtime.
   const rawMentions = extractMentions(rawContent);
-  if (!podId || rawMentions.length === 0) {
-    return { enqueued: [], skipped: [] };
+  if (!podId || (rawMentions.length === 0 && !replyToMessageId)) {
+    return { enqueued: [], implicit: [], skipped: [] };
   }
 
   const enqueued: string[] = [];
+  const implicit: string[] = [];
   const skipped: string[] = [];
+  const enqueuedIdentityKeys = new Set<string>();
+  const identityKey = (target: MentionTarget): string => (
+    `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`
+  );
+  const recordEnqueued = (target: MentionTarget, resultLabel = target.agentName): void => {
+    enqueuedIdentityKeys.add(identityKey(target));
+    enqueued.push(resultLabel);
+  };
 
   let installations: Array<Record<string, unknown>> = [];
   let profiles: Array<Record<string, unknown>> = [];
@@ -678,7 +742,7 @@ const enqueueMentions = async ({
               summary: summary as Record<string, unknown> | null,
               pod: pod as Record<string, unknown> | null,
             });
-            enqueued.push(directMatch.agentName);
+            recordEnqueued(directMatch);
             return;
           }
           await AgentEventService.enqueue({
@@ -700,7 +764,7 @@ const enqueueMentions = async ({
               thread: message?.thread || null,
             },
           });
-          enqueued.push(directMatch.agentName);
+          recordEnqueued(directMatch);
         } catch (error) {
           console.warn('Failed to enqueue agent mention:', (error as Error).message);
         }
@@ -749,7 +813,10 @@ const enqueueMentions = async ({
                   autoJoined: true,
                 },
               });
-              enqueued.push(`${resolved.agentName}:autoJoined`);
+              recordEnqueued(
+                { agentName: resolved.agentName, instanceId: resolved.instanceId },
+                `${resolved.agentName}:autoJoined`,
+              );
               return;
             }
             skipped.push(`${normalized}:auth-refused`);
@@ -790,7 +857,7 @@ const enqueueMentions = async ({
                   summary: summary as Record<string, unknown> | null,
                   pod: pod as Record<string, unknown> | null,
                 });
-                enqueued.push(agentType);
+                recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
                 return;
               }
               await AgentEventService.enqueue({
@@ -812,7 +879,7 @@ const enqueueMentions = async ({
                   thread: message?.thread || null,
                 },
               });
-              enqueued.push(agentType);
+              recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
             } catch (error) {
               console.warn('Failed to enqueue agent mention:', (error as Error).message);
             }
@@ -825,7 +892,53 @@ const enqueueMentions = async ({
     }),
   );
 
-  return { enqueued, skipped };
+  // Human replies to an agent are an addressing signal even when the human
+  // does not repeat an @mention. Bot replies are deliberately excluded: if
+  // A's reply to B implicitly notified B (and vice versa), two agents could
+  // ping-pong forever despite the existing self-mention guard.
+  if (replyToMessageId && sender?.isBot === false) {
+    try {
+      const target = await resolveImplicitReplyTarget(replyToMessageId, message, installations);
+      if (target && !enqueuedIdentityKeys.has(identityKey(target))) {
+        await AgentEventService.enqueue({
+          agentName: target.agentName,
+          instanceId: target.instanceId || 'default',
+          podId,
+          type: 'chat.mention',
+          payload: {
+            messageId: message?._id || message?.id
+              ? String(message?._id || message?.id)
+              : undefined,
+            content: buildContentForTarget(
+              podId,
+              rawContent,
+              'chat.mention',
+              target.agentName,
+              collaborativePod,
+            ),
+            userId,
+            username,
+            mentions: rawMentions,
+            source,
+            messageType: message?.messageType || message?.message_type || 'text',
+            createdAt: message?.createdAt || message?.created_at || new Date(),
+            thread: message?.thread || null,
+            replyToMessageId,
+            implicitReply: true,
+          },
+        });
+        recordEnqueued(target);
+        implicit.push(target.agentName);
+      }
+    } catch (error) {
+      // Reply routing is best-effort, like explicit mention routing. The
+      // message is already persisted, so lookup/enqueue failure must not
+      // turn a successful human send into a 500.
+      console.warn('Failed to enqueue implicit reply mention:', (error as Error).message);
+    }
+  }
+
+  return { enqueued, implicit, skipped };
 };
 
 // Pod types that auto-route every message to non-sender members as a

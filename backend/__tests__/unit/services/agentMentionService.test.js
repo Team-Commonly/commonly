@@ -166,6 +166,167 @@ describe('AgentMentionService', () => {
     expect(res.enqueued).toEqual(['openclaw']);
   });
 
+  describe('implicit reply mentions', () => {
+    const setupReplyTarget = ({ installed = true } = {}) => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue(installed ? [
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ] : []),
+      });
+      AgentProfile.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      });
+      Pod.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-reply', type: 'chat' }),
+      });
+    };
+
+    const asHumanReplyingTo = (replyAuthor) => {
+      User.findById.mockImplementation((id) => ({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(
+          id === 'reply-author'
+            ? replyAuthor
+            : { _id: 'human-1', isBot: false },
+        ),
+      }));
+    };
+
+    test('bot sender replying to an agent does not implicitly enqueue (loop guard)', async () => {
+      setupReplyTarget();
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: 'agent-sender',
+          isBot: true,
+          botMetadata: { agentName: 'openclaw', instanceId: 'theo' },
+        }),
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        message: {
+          id: 'bot-reply',
+          content: 'Following up',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'agent-sender',
+        username: 'theo',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(User.findById).toHaveBeenCalledTimes(1);
+      expect(result.implicit).toEqual([]);
+    });
+
+    test('human reply to an active agent enqueues exactly one implicit mention', async () => {
+      setupReplyTarget();
+      asHumanReplyingTo({
+        _id: 'reply-author',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        message: {
+          id: 'human-reply',
+          content: 'That sounds good',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        agentName: 'openclaw',
+        instanceId: 'aria',
+        podId: 'pod-reply',
+        type: 'chat.mention',
+        payload: expect.objectContaining({
+          messageId: 'human-reply',
+          replyToMessageId: 'message-from-aria',
+          implicitReply: true,
+        }),
+      }));
+      expect(result.enqueued).toEqual(['openclaw']);
+      expect(result.implicit).toEqual(['openclaw']);
+    });
+
+    test('explicit mention plus reply to the same agent enqueues only once', async () => {
+      setupReplyTarget();
+      asHumanReplyingTo({
+        _id: 'reply-author',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        message: {
+          id: 'human-reply',
+          content: '@aria thanks',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(result.enqueued).toEqual(['openclaw']);
+      expect(result.implicit).toEqual([]);
+    });
+
+    test('reply to a human does not enqueue an implicit mention', async () => {
+      setupReplyTarget();
+      asHumanReplyingTo({ _id: 'reply-author', isBot: false });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'human-message',
+        message: {
+          id: 'human-reply',
+          content: 'Thanks',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(result.implicit).toEqual([]);
+    });
+
+    test('reply to an uninstalled agent does not enqueue an implicit mention', async () => {
+      setupReplyTarget({ installed: false });
+      asHumanReplyingTo({
+        _id: 'reply-author',
+        isBot: true,
+        botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+      });
+
+      const result = await AgentMentionService.enqueueMentions({
+        podId: 'pod-reply',
+        replyToMessageId: 'message-from-aria',
+        message: {
+          id: 'human-reply',
+          content: 'Are you there?',
+          replyTo: { userId: 'reply-author' },
+        },
+        userId: 'human-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(result.implicit).toEqual([]);
+    });
+  });
+
   test('enqueueDmEvent enqueues dm.message for bot members in agent-admin pod', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
