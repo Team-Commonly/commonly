@@ -6,6 +6,20 @@ jest.mock('../../config/db', () => jest.fn());
 jest.mock('../../models/Pod', () => ({
   findById: jest.fn(),
 }));
+jest.mock('../../middleware/auth', () => (req, res, next) => {
+  req.user = { id: 'user1' };
+  req.userId = 'user1';
+  next();
+});
+
+const mockInviteFind = jest.fn();
+jest.mock('../../models/PodInvite', () => ({
+  PodInvite: {
+    find: (...args) => mockInviteFind(...args),
+    findOne: jest.fn(),
+    create: jest.fn(),
+  },
+}));
 
 const mockConnectPG = jest.fn().mockResolvedValue(null);
 jest.mock('../../config/db-pg', () => ({ connectPG: mockConnectPG }));
@@ -93,6 +107,50 @@ describe('server pg status route', () => {
     });
     const res = await request(app).get('/api/pg/status');
     expect(res.body).toEqual({ available: false });
+  });
+});
+
+describe('server route precedence', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  it('routes pod invite lists before the pods catch-all route', async () => {
+    const podId = '507f1f77bcf86cd799439011';
+    const token = 'a'.repeat(32);
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const Pod = require('../../models/Pod');
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: 'owner',
+      members: ['user1'],
+    });
+    mockInviteFind.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([{
+            token,
+            createdBy: { _id: 'user1', username: 'member' },
+            createdAt: new Date('2026-07-22T12:00:00Z'),
+            expiresAt: null,
+            maxUses: null,
+            useCount: 0,
+          }]),
+        }),
+      }),
+    });
+
+    // Requiring the real app is load-bearing: both pod routers are mounted in
+    // server.ts order, so this test catches the production-only shadowing bug.
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { app } = require('../../server');
+    const res = await request(app).get(`/api/pods/${podId}/invites`).expect(200);
+
+    expect(mockInviteFind).toHaveBeenCalledWith({ podId, revokedAt: null });
+    expect(res.body).toEqual([
+      expect.objectContaining({ token, uses: 0 }),
+    ]);
   });
 });
 
