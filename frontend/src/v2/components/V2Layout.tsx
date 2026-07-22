@@ -5,6 +5,7 @@ import V2PodsSidebar from './V2PodsSidebar';
 import V2PodChat from './V2PodChat';
 import V2PodInspector from './V2PodInspector';
 import V2InviteModal from './V2InviteModal';
+import V2FirstRunHero from './V2FirstRunHero';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
@@ -58,6 +59,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // instead of a grid column; this owns its open/closed state. Desktop ignores
   // it entirely (the sidebar is always a visible column there).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Assume visible until the ownership-status probe resolves. This prevents
+  // the legacy empty-state copy flashing underneath the onboarding card; an
+  // established/dismissed user flips it off as soon as the hero resolves.
+  const [firstRunVisible, setFirstRunVisible] = useState(true);
   const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
@@ -150,6 +155,8 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       <V2PodChat
         detail={detail}
         podsState={podsState}
+        firstRunHero={<V2FirstRunHero onVisibilityChange={setFirstRunVisible} />}
+        firstRunVisible={firstRunVisible}
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
         onOpenMember={openInspectorMember}

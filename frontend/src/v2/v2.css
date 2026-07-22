@@ -1240,6 +1240,152 @@
   gap: 0;
 }
 
+/* First-run attach card lives inside the selected pod transcript instead of
+   replacing the pod shell. That keeps the workspace, composer, and mobile
+   drawer reachable while the agent connection status updates live. */
+.v2-first-run {
+  width: min(720px, 100%);
+  margin: 24px auto 16px;
+  padding: 28px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-first-run__eyebrow {
+  margin-bottom: 8px;
+  color: var(--v2-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.v2-first-run__heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.v2-first-run__title {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+.v2-first-run__lede {
+  max-width: 560px;
+  margin: 10px 0 0;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.v2-root button.v2-first-run__skip {
+  flex-shrink: 0;
+  padding: 4px 0;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-first-run__skip:hover {
+  color: var(--v2-text-primary);
+}
+
+.v2-first-run__steps {
+  display: grid;
+  gap: 14px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v2-first-run__step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border-radius: var(--v2-radius);
+  background: var(--v2-bg-subtle);
+}
+
+.v2-first-run__step-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--v2-border);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-first-run__step-mark--done {
+  border-color: var(--v2-accent-soft);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent);
+}
+
+.v2-first-run__step-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.v2-first-run__step-body strong {
+  color: var(--v2-text-primary);
+  font-size: 14px;
+}
+
+.v2-root a.v2-first-run__setup,
+.v2-root button.v2-first-run__hello {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.v2-root a.v2-first-run__setup:hover,
+.v2-root button.v2-first-run__hello:hover:not(:disabled) {
+  background: var(--v2-accent-strong);
+  color: #fff;
+}
+
+.v2-root button.v2-first-run__hello:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.v2-first-run__connected {
+  color: var(--v2-success);
+  font-weight: 700;
+}
+
+.v2-first-run__error {
+  color: var(--v2-danger);
+  font-size: 12px;
+}
+
 .v2-chat__error {
   padding: 9px 12px;
   border-radius: 8px;
@@ -4391,6 +4537,24 @@
   .v2-shell--no-inspector,
   .v2-shell--feature {
     grid-template-columns: var(--v2-rail-w) minmax(0, 1fr);
+  }
+
+  .v2-chat__messages {
+    padding-inline: 14px;
+  }
+
+  .v2-first-run {
+    margin-top: 14px;
+    padding: 20px 16px;
+  }
+
+  .v2-first-run__heading-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .v2-root button.v2-first-run__skip {
+    align-self: flex-start;
   }
 
   /* Hide secondary panes (e.g. the inspector) — but NOT the pods sidebar,
