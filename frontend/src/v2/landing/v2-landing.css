@@ -1011,15 +1011,33 @@
    at a calm 2.6s cadence (see the marketing-motion carve-out). Cobalt is
    the page's one accent; the rotating term is the hero's one accent use. */
 .v2-landing__rotator {
-  display: inline-grid;
+  position: relative;
+  display: inline-block;
   overflow: hidden;
   vertical-align: bottom;
   color: var(--v2-accent);
   padding-bottom: 0.06em; /* keep descenders (y, p) out of the clip */
+  /* Width tracks the active term (via the sizer) — smooth the resize so the
+     suffix glides rather than jumps when a shorter/longer term rotates in. */
+  transition: width 350ms ease-out;
+}
+
+/* In-flow, invisible: defines the slot's width + height from the active term. */
+.v2-landing__rotator-sizer {
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+/* Animated terms sit on top of the sizer, filling it. */
+.v2-landing__rotator-stack {
+  position: absolute;
+  inset: 0;
 }
 
 .v2-landing__rotator-term {
-  grid-area: 1 / 1;
+  position: absolute;
+  left: 0;
+  top: 0;
   opacity: 0;
   transform: translateY(0.55em);
   white-space: nowrap;
