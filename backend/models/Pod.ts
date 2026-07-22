@@ -63,6 +63,12 @@ export interface IPod extends Document {
   // personal pod type (agent-dm / agent-room / agent-admin); the admin
   // toggle rejects those. Defaults false so every existing pod is private.
   publicRead: boolean;
+  // Community-tab listing is OPT-IN and separate from readability: publicRead
+  // grants anonymous/showcase READ access; communityListed additionally puts
+  // the pod on the Community discovery surface. Showcase rooms (Eng Milestone
+  // etc.) stay publicRead but unlisted. Listing is admin-curated for now; an
+  // owner-side "request listing" flow is the planned phase 2 (Sam 2026-07-22).
+  communityListed: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -131,6 +137,7 @@ const PodSchema = new Schema<IPod>(
     // Admin-set only; never on personal pod types. Gates the anonymous
     // /api/showcase read path. See backend/routes/showcase.ts.
     publicRead: { type: Boolean, default: false },
+    communityListed: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
   },
