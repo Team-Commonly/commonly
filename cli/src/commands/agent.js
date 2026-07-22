@@ -113,12 +113,13 @@ const PROMPT_EVENT_TYPES = new Set([
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
 // Adapters that can consume `mcp[]` from the resolved environment spec.
-// `claude` reads it via --mcp-config (see adapters/claude.js). `codex` and
-// `stub` do not (codex uses ~/.codex/config.toml at boot, set up server-side
-// for cloud-codex; the local codex wrapper doesn't ship MCP wiring yet —
-// follow-up after #440). Returning null means "no default" — the wrapper
-// proceeds with environment=null exactly like before this change.
-const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude']);
+// `claude` reads it via --mcp-config (see adapters/claude.js); `codex` via
+// `-c mcp_servers.*` config overrides (see adapters/codex.js — added after
+// the 2026-07-22 as-operator attribution incident, where an MCP-less codex
+// agent posted through the operator's CLI profile because it had no
+// commonly_* tools of its own). `stub` does not. Returning null means "no
+// default" — the wrapper proceeds with environment=null exactly like before.
+const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex']);
 
 // The commonly behavior skill ships inside this package (cli/skills/commonly)
 // so a fresh attach can mount it into the agent without a network fetch.

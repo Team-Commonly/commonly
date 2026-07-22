@@ -71,10 +71,64 @@ const buildPrompt = (prompt, memoryLongTerm) => {
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
 };
 
+// ── MCP wiring — codex consumes MCP servers via `-c mcp_servers.*` overrides ─
+//
+// Same substitution contract as claude.js (see that file for the placeholder
+// rationale): ${COMMONLY_AGENT_TOKEN} / ${COMMONLY_API_URL} in the declared
+// env spec are replaced with the wrapper's per-(agent, pod) runtime values at
+// spawn time. Before this block the codex adapter silently ignored
+// `environment.mcp`, so a codex agent had NO sanctioned posting tool — the
+// 2026-07-22 as-operator attribution incident was a codex agent falling back
+// to the operator's CLI profile because commonly_* tools were never wired.
+//
+// Codex-specific constraints:
+//   - stdio/command servers only (no url transport here); url-only entries
+//     are skipped rather than half-wired.
+//   - Declared env MUST ride inside the mcp_servers.<name>.env table — codex
+//     does not pass its parent env to the MCP child it spawns (the PR #398
+//     cloud-codex lesson; same failure mode locally).
+const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
+const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
+
+const substitutePlaceholders = (value, ctx) => {
+  if (typeof value !== 'string') return value;
+  if (!value.includes('${COMMONLY_')) return value;
+  const subs = {
+    COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
+    COMMONLY_API_URL: ctx.instanceUrl || '',
+    COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
+  };
+  return value.replace(PLACEHOLDER_RE, (whole, key) => (
+    SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole
+  ));
+};
+
+// JSON string escaping is a valid subset of TOML basic-string escaping, so
+// JSON.stringify doubles as the TOML quoter for command/args/env values.
+const toml = (s) => JSON.stringify(String(s));
+
+const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
+  const flags = [];
+  for (const server of mcpServers || []) {
+    if (!server?.name || !Array.isArray(server.command) || !server.command.length) continue;
+    const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
+    flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
+    if (rest.length) {
+      flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
+    }
+    const envEntries = Object.entries(server.env || {})
+      .map(([k, v]) => `${k} = ${toml(substitutePlaceholders(v, ctx))}`);
+    if (envEntries.length) {
+      flags.push('-c', `mcp_servers.${server.name}.env={${envEntries.join(', ')}}`);
+    }
+  }
+  return flags;
+};
+
 // Build the argv after the `codex` binary. Resume vs new turn is a
 // subcommand-level distinction in modern codex, not an option flag — keep
 // that detail isolated here so the spawn path stays linear.
-const buildArgs = ({ sessionId, prompt, outputFile }) => {
+const buildArgs = ({ sessionId, prompt, outputFile, mcpFlags = [] }) => {
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
   // bubblewrap (bwrap) sandbox + approval prompts. bwrap needs CAP_SYS_ADMIN
   // or unprivileged user-namespaces — neither available to standard k8s
@@ -90,6 +144,7 @@ const buildArgs = ({ sessionId, prompt, outputFile }) => {
     '--json',
     '--skip-git-repo-check',
     '--dangerously-bypass-approvals-and-sandbox',
+    ...mcpFlags,
     '-o',
     outputFile,
   ];
@@ -219,6 +274,10 @@ export default {
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
         outputFile,
+        mcpFlags: buildMcpOverrideArgs(ctx.environment?.mcp, {
+          runtimeToken: ctx.runtimeToken,
+          instanceUrl: ctx.instanceUrl,
+        }),
       });
 
       const { threadId } = await runCodex({

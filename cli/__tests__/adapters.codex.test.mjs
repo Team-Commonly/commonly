@@ -133,6 +133,61 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args[calls[0].args.length - 1]).toBe('hi');
   });
 
+  test('environment.mcp servers become -c mcp_servers.* overrides with substituted token/env', async () => {
+    // Regression for the 2026-07-22 as-operator attribution incident: the
+    // adapter used to silently ignore environment.mcp, so a codex agent had
+    // no commonly_* tools and fell back to posting via the operator's CLI
+    // profile (misattributing its words to the human).
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"turn.completed"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('hi', {
+      sessionId: null,
+      _spawnImpl: impl,
+      runtimeToken: 'cm_agent_secret',
+      instanceUrl: 'https://api.example.test',
+      environment: {
+        mcp: [
+          {
+            name: 'commonly',
+            transport: 'stdio',
+            command: ['npx', '-y', '@commonlyai/mcp@latest'],
+            env: {
+              COMMONLY_API_URL: '${COMMONLY_API_URL}',
+              COMMONLY_AGENT_TOKEN: '${COMMONLY_AGENT_TOKEN}',
+            },
+          },
+          // url-only server: codex has no url transport — must be skipped.
+          { name: 'remote-only', transport: 'http', url: 'https://mcp.example.test' },
+        ],
+      },
+    });
+
+    const args = calls[0].args;
+    const cFlags = args
+      .map((a, i) => (a === '-c' ? args[i + 1] : null))
+      .filter(Boolean);
+    expect(cFlags).toEqual([
+      'mcp_servers.commonly.command="npx"',
+      'mcp_servers.commonly.args=["-y","@commonlyai/mcp@latest"]',
+      'mcp_servers.commonly.env={COMMONLY_API_URL = "https://api.example.test", COMMONLY_AGENT_TOKEN = "cm_agent_secret"}',
+    ]);
+    // Overrides must precede the prompt (last arg) and not disturb -o pairing.
+    expect(findOutputFile(args)).toBeTruthy();
+    expect(args[args.length - 1]).toBe('hi');
+  });
+
+  test('no environment.mcp → no -c flags (argv unchanged for MCP-less agents)', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"turn.completed"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    expect(calls[0].args).not.toContain('-c');
+  });
+
   test('spawn opts force stdin to ignore — regression for codex blocking on piped stdin', async () => {
     // Without this, codex 0.125.0 blocks on "Reading additional input from
     // stdin..." when spawned from a non-TTY parent (e.g. the run loop).
