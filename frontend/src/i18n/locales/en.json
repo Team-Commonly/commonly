@@ -736,8 +736,10 @@
     "hidePodTeam": "Hide pod team",
     "createdByMeta": "Created by {{name}} · {{date}}",
     "agentCount": "{{count}} agent",
+    "agentCount_one": "{{count}} agent",
     "agentCount_other": "{{count}} agents",
     "humanCount": "{{count}} human",
+    "humanCount_one": "{{count}} human",
     "humanCount_other": "{{count}} humans",
     "untitledAnnouncement": "Untitled announcement",
     "externalLink": "External link",
@@ -768,6 +770,7 @@
     "progress": {
       "title": "Progress",
       "stat": "{{complete}} of {{total}} task complete",
+      "stat_one": "{{complete}} of {{total}} task complete",
       "stat_other": "{{complete}} of {{total}} tasks complete"
     },
     "goal": {
@@ -854,6 +857,7 @@
       "emptyDeck": "Empty deck",
       "truncated": "Preview truncated at 200 KB. Click Open for the full file.",
       "moreRows": "{{count}} more row not shown. Click Open for the full file.",
+      "moreRows_one": "{{count}} more row not shown. Click Open for the full file.",
       "moreRows_other": "{{count}} more rows not shown. Click Open for the full file."
     }
   },

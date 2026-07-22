@@ -4,6 +4,7 @@ import path from 'path';
 type TranslationTree = { [key: string]: string | TranslationTree };
 
 const eslintConfig = require('../../../.eslintrc.js');
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
 const flattenKeys = (tree: TranslationTree, prefix = ''): string[] => (
   Object.entries(tree).flatMap(([key, value]) => {
@@ -40,11 +41,23 @@ describe('i18n migration manifest', () => {
   const enKeys = new Set(flattenKeys(readJson('en.json')));
   const zhKeys = new Set(flattenKeys(readJson('zh-CN.json')));
   const hasKey = (keys: Set<string>, key: string): boolean => (
-    keys.has(key) || keys.has(`${key}_one`) || keys.has(`${key}_other`)
+    keys.has(key) || [...keys].some((candidate) => candidate.replace(PLURAL_SUFFIX, '') === key)
   );
 
-  it('keeps English and Simplified Chinese key paths identical', () => {
-    expect([...zhKeys].sort()).toEqual([...enKeys].sort());
+  it('keeps English and Simplified Chinese base key paths identical', () => {
+    const normalize = (keys: Set<string>) => [...new Set([...keys].map((key) => key.replace(PLURAL_SUFFIX, '')))];
+    expect(normalize(zhKeys).sort()).toEqual(normalize(enKeys).sort());
+  });
+
+  it('provides every CLDR plural form required by each language', () => {
+    const pluralBases = new Set([...enKeys, ...zhKeys].filter((key) => PLURAL_SUFFIX.test(key)).map((key) => key.replace(PLURAL_SUFFIX, '')));
+    const missing = (language: string, keys: Set<string>) => [...pluralBases].flatMap((base) => (
+      new Intl.PluralRules(language).resolvedOptions().pluralCategories
+        .filter((category) => !keys.has(`${base}_${category}`))
+        .map((category) => `${language}:${base}_${category}`)
+    ));
+
+    expect([...missing('en', enKeys), ...missing('zh-CN', zhKeys)]).toEqual([]);
   });
 
   it('resolves every literal translation key used by a migrated component', () => {
