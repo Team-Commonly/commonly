@@ -13,6 +13,10 @@ regexes = [
   '''<your[_-]''',
   # nip.io test/local URLs (not secrets)
   '''\.nip\.io''',
+  # The Commonly HQ community invite token — a DELIBERATELY PUBLIC value
+  # (shared on the landing page, README, and Discord). Tests pin it as the
+  # REACT_APP_COMMUNITY_INVITE_TOKEN fixture; it is not a secret.
+  '''7b91255f18ae3c0ae3721707a6613731''',
 ]
 
 paths = [
