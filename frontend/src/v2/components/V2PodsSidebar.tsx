@@ -6,15 +6,17 @@ import { groupPods, formatRelativeTime } from '../utils/grouping';
 import { initialsFor } from '../utils/avatars';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useV2Unread } from '../hooks/useV2Unread';
+import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 
-type Filter = 'all' | 'team' | 'private';
+type Filter = 'all' | 'team' | 'private' | 'community';
 
 const FILTERS: Array<{ key: Filter; labelKey: string }> = [
   { key: 'all', labelKey: 'filters.all' },
   { key: 'team', labelKey: 'filters.team' },
   { key: 'private', labelKey: 'filters.private' },
+  { key: 'community', labelKey: 'filters.community' },
 ];
 
 // Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
@@ -23,6 +25,7 @@ const FILTERS: Array<{ key: Filter; labelKey: string }> = [
 // that no human is in the conversation.
 const isDmPod = (pod: V2Pod): boolean => pod.type === 'agent-room' || pod.type === 'agent-dm';
 const podKind = (pod: V2Pod): 'team' | 'private' => (isDmPod(pod) ? 'private' : 'team');
+const isPersonalPod = (pod: V2Pod): boolean => isDmPod(pod) || pod.type === 'agent-admin';
 
 const isAgentToAgent = (pod: V2Pod): boolean => {
   if (pod.type !== 'agent-dm') return false;
@@ -63,13 +66,14 @@ const podSnippetFor = (pod: V2Pod, meta: string): string => {
   return pod.description?.trim() || meta;
 };
 
-const matchesFilter = (pod: V2Pod, filter: Filter): boolean => {
+const matchesPersonalFilter = (pod: V2Pod, filter: Filter): boolean => {
   switch (filter) {
     // "Team" is the strictest pod-type filter — only pods explicitly typed
     // as team (multi-human collaborative). "Private" is 1:1 DMs.
     // "All" covers everything (the redundant "Pod" filter was removed).
     case 'team': return pod.type === 'team';
     case 'private': return podKind(pod) === 'private';
+    case 'community': return false;
     case 'all':
     default:
       return true;
@@ -92,12 +96,36 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const api = useV2Api();
   const ownPodsState = useV2Pods();
   const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
   const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
   const { socket, connected, joinPod } = useSocket();
   const { currentUser } = useAuth();
   const { isUnread, bumpLatest, seedFromExisting } = useV2Unread(selectedPodId);
+  const [communityPods, setCommunityPods] = useState<V2Pod[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(true);
+
+  // Discovery is intentionally fetched into separate state. Merging these
+  // rows into `pods` would make non-member public pods leak into All/Team,
+  // undoing the membership-only sidebar invariant from #375.
+  useEffect(() => {
+    let active = true;
+    setCommunityLoading(true);
+    api.get<V2Pod[]>('/api/pods?scope=community')
+      .then((data) => {
+        if (active) setCommunityPods(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (active) setCommunityPods([]);
+      })
+      .finally(() => {
+        if (active) setCommunityLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
 
   // Seed lastSeen for any pod we've never observed before, using its current
   // newest-message timestamp. Without this, the very first load badges every
@@ -236,21 +264,36 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     };
   }, [socket, connected]);
 
+  const communityPodIds = useMemo(
+    () => new Set(communityPods.map((pod) => pod._id)),
+    [communityPods],
+  );
+  const communityCandidates = useMemo(() => {
+    const byId = new Map<string, V2Pod>();
+    communityPods.forEach((pod) => byId.set(pod._id, pod));
+    // Prefer the membership-list row when both endpoints return a pod; it is
+    // the row socket/unread state already knows about.
+    pods.forEach((pod) => byId.set(pod._id, pod));
+    return Array.from(byId.values()).filter((pod) => {
+      if (isPersonalPod(pod)) return false;
+      const isPublicMembership = memberPodIds.includes(pod._id) && pod.publicRead === true;
+      return communityPodIds.has(pod._id)
+        || isPublicMembership
+        || (Boolean(communityPodId) && pod._id === communityPodId);
+    });
+  }, [communityPods, communityPodIds, pods, memberPodIds, communityPodId]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return pods
-      .filter((pod) => matchesFilter(pod, filter))
+    const candidates = filter === 'community' ? communityCandidates : pods;
+    return candidates
+      .filter((pod) => filter === 'community' || matchesPersonalFilter(pod, filter))
       .filter((pod) => !term
         || (pod.name || '').toLowerCase().includes(term)
         || (pod.description || '').toLowerCase().includes(term));
-  }, [pods, filter, search]);
+  }, [communityCandidates, pods, filter, search]);
 
-  const filterCounts = useMemo(() => (
-    FILTERS.reduce<Record<Filter, number>>((counts, item) => {
-      counts[item.key] = pods.filter((pod) => matchesFilter(pod, item.key)).length;
-      return counts;
-    }, { all: 0, team: 0, private: 0 })
-  ), [pods]);
+  const visibleLoading = loading || (filter === 'community' && communityLoading);
 
   // Default grouping is chronological (Pinned / Today / Yesterday / This week
   // / Earlier). When the user filters down to Private, recency buckets stop
@@ -417,21 +460,20 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
               aria-pressed={filter === f.key}
             >
               {t(`podsSidebar.${f.labelKey}`)}
-              <span className="v2-filter-count">{filterCounts[f.key]}</span>
             </button>
           ))}
         </div>
 
         <div className="v2-pods__list">
-          {loading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
-          {!loading && error && <div className="v2-pods__empty">{error}</div>}
-          {!loading && !error && filtered.length === 0 && (
+          {visibleLoading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
+          {!visibleLoading && error && <div className="v2-pods__empty">{error}</div>}
+          {!visibleLoading && !error && filtered.length === 0 && (
             <div className="v2-pods__empty">
               {search ? t('podsSidebar.empty.noMatch') : t('podsSidebar.empty.noPods')}
             </div>
           )}
 
-          {!loading && grouped.map((group) => (
+          {!visibleLoading && grouped.map((group) => (
             <div key={group.label}>
               <div className="v2-pods__group-label">{group.label}</div>
               {group.items.map((pod) => {

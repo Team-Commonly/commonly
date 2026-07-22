@@ -1,12 +1,20 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import i18n, { i18nReady } from '../../i18n';
 import V2PodsSidebar from '../components/V2PodsSidebar';
 
 const COMMUNITY_POD_ID = 'community-pod';
 const mockJoinPod = jest.fn();
 const mockSeedFromExisting = jest.fn();
+const mockApiGet = jest.fn();
+const mockApi = {
+  get: mockApiGet,
+  post: jest.fn(),
+  patch: jest.fn(),
+  del: jest.fn(),
+};
 
 jest.mock('../hooks/useV2Pods', () => ({
   useV2Pods: () => ({
@@ -24,6 +32,10 @@ jest.mock('../hooks/useV2Pinned', () => ({
     toggle: jest.fn(),
     isPinned: () => false,
   }),
+}));
+
+jest.mock('../hooks/useV2Api', () => ({
+  useV2Api: () => mockApi,
 }));
 
 jest.mock('../hooks/useV2Unread', () => ({
@@ -44,13 +56,14 @@ jest.mock('../../context/AuthContext', () => ({
 
 const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}</div>;
 
-const makePod = (id: string, memberIds: string[]) => ({
+const makePod = (id: string, memberIds: string[], overrides = {}) => ({
   _id: id,
   name: id === COMMUNITY_POD_ID ? 'Commonly HQ' : 'My Workspace',
   type: 'team',
   members: memberIds.map((_id) => ({ _id, username: _id, isBot: false })),
   createdAt: '2026-07-21T12:00:00.000Z',
   updatedAt: '2026-07-21T12:00:00.000Z',
+  ...overrides,
 });
 
 const renderSidebar = (pods) => {
@@ -72,17 +85,26 @@ const renderSidebar = (pods) => {
 describe('V2PodsSidebar Community offer', () => {
   const originalCommunityPodId = process.env.REACT_APP_COMMUNITY_POD_ID;
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
+  beforeAll(async () => {
+    await i18nReady;
   });
 
-  afterAll(() => {
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockApiGet.mockResolvedValue([]);
+    process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
+  });
+
+  afterAll(async () => {
     if (originalCommunityPodId === undefined) {
       delete process.env.REACT_APP_COMMUNITY_POD_ID;
     } else {
       process.env.REACT_APP_COMMUNITY_POD_ID = originalCommunityPodId;
     }
+    await i18n.changeLanguage('en');
   });
 
   test('shows for a configured Community pod the human has not joined and navigates to the redirect', () => {
@@ -107,5 +129,39 @@ describe('V2PodsSidebar Community offer', () => {
     renderSidebar([makePod('workspace', ['human-1'])]);
 
     expect(screen.queryByRole('button', { name: 'Join HQ' })).not.toBeInTheDocument();
+  });
+
+  test('Community shows public discovery and HQ, excludes personal pods, and leaves All personal', async () => {
+    mockApiGet.mockResolvedValue([
+      makePod('public-space', [], { name: 'Open Builders', publicRead: true }),
+      makePod(COMMUNITY_POD_ID, [], { publicRead: true }),
+      makePod('forced-public-dm', [], {
+        name: 'Private agent room',
+        type: 'agent-room',
+        publicRead: true,
+      }),
+    ]);
+    renderSidebar([makePod('workspace', ['human-1'])]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }));
+    expect(await screen.findByText('Open Builders')).toBeInTheDocument();
+    expect(screen.getByText('Commonly HQ')).toBeInTheDocument();
+    expect(screen.queryByText('Private agent room')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByText('My Workspace')).toBeInTheDocument();
+    expect(screen.queryByText('Open Builders')).not.toBeInTheDocument();
+    expect(screen.queryByText('Commonly HQ')).not.toBeInTheDocument();
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalledWith('/api/pods?scope=community'));
+  });
+
+  test('renders the Community tab from both locale catalogs', async () => {
+    renderSidebar([makePod('workspace', ['human-1'])]);
+    expect(screen.getByRole('button', { name: 'Community' })).toBeInTheDocument();
+
+    await act(async () => {
+      await i18n.changeLanguage('zh-CN');
+    });
+    expect(screen.getByRole('button', { name: '社区' })).toBeInTheDocument();
   });
 });

@@ -780,22 +780,25 @@
 }
 
 .v2-pods__filters {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.7fr);
+  gap: 4px;
   padding: 0;
   margin-bottom: 18px;
   flex-shrink: 0;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .v2-pods__filter {
   height: 32px;
-  padding: 0 9px;
-  font-size: 13px;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 12px;
   font-weight: 500;
   color: #4b5563;
   border-radius: var(--v2-radius-sm);
   text-align: center;
+  white-space: nowrap;
   transition: background 80ms ease, color 80ms ease;
 }
 

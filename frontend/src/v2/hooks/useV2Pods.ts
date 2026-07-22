@@ -20,6 +20,7 @@ export interface V2Pod {
   description?: string;
   type?: string;
   joinPolicy?: string;
+  publicRead?: boolean;
   members?: (V2PodMember | string)[];
   createdBy?: { _id?: string; username?: string };
   createdAt?: string;

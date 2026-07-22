@@ -124,6 +124,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-pods__community')).toContain('flex-shrink: 0');
   });
 
+  test('the four pod filters stay on one row in the narrow sidebar', () => {
+    // The desktop sidebar leaves only ~240px inside its gutter (less than the
+    // mobile drawer). A four-column grid keeps Community beside the existing
+    // filters without horizontal scrolling or wrapping in either locale.
+    const rule = ruleBody(v2, '.v2-pods__filters');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.7fr)');
+    expect(rule).toContain('overflow: visible');
+  });
+
   test('starter prompts wrap within the mobile chat pane', () => {
     // At 390px the rail leaves a narrow main pane. Both the row and each chip
     // need explicit shrink/wrap rules or the longest prompt creates horizontal
