@@ -1,0 +1,96 @@
+// @ts-nocheck
+import React from 'react';
+import { render, screen } from '@testing-library/react';
+import {
+  MemoryRouter, Route, Routes, useLocation,
+} from 'react-router-dom';
+import axios from 'axios';
+import V2CommunityRedirect from '../components/V2CommunityRedirect';
+import V2NavRail from '../components/V2NavRail';
+
+const mockLogout = jest.fn();
+const mockAxiosGet = axios.get as jest.Mock;
+
+jest.mock('axios');
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    currentUser: { _id: 'user-1', username: 'Sam' },
+    logout: mockLogout,
+  }),
+}));
+
+const COMMUNITY_POD_ID = '6a5fe677306155f677c26abf';
+const COMMUNITY_INVITE_TOKEN = '7b91255f18ae3c0ae3721707a6613731';
+
+const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}</div>;
+
+const renderRail = () => render(
+  <MemoryRouter initialEntries={['/v2/agents']}>
+    <div className="v2-root">
+      <V2NavRail />
+    </div>
+  </MemoryRouter>,
+);
+
+const renderRedirect = () => render(
+  <MemoryRouter initialEntries={['/v2/community']}>
+    <CurrentPath />
+    <Routes>
+      <Route path="/v2/community" element={<V2CommunityRedirect />} />
+      <Route path="/v2/pods/:podId" element={<div>Community pod</div>} />
+      <Route path="/v2/invite/:token" element={<div>Community invite</div>} />
+    </Routes>
+  </MemoryRouter>,
+);
+
+describe('Community navigation', () => {
+  const originalPodId = process.env.REACT_APP_COMMUNITY_POD_ID;
+  const originalInviteToken = process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
+
+  beforeEach(() => {
+    process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
+    process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = COMMUNITY_INVITE_TOKEN;
+    jest.clearAllMocks();
+  });
+
+  afterAll(() => {
+    if (originalPodId === undefined) {
+      delete process.env.REACT_APP_COMMUNITY_POD_ID;
+    } else {
+      process.env.REACT_APP_COMMUNITY_POD_ID = originalPodId;
+    }
+    if (originalInviteToken === undefined) {
+      delete process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
+    } else {
+      process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = originalInviteToken;
+    }
+  });
+
+  test('shows the rail entry only when a community pod is configured', () => {
+    const { unmount } = renderRail();
+    expect(screen.getByRole('button', { name: 'Community' })).toBeInTheDocument();
+    unmount();
+
+    delete process.env.REACT_APP_COMMUNITY_POD_ID;
+    renderRail();
+    expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
+  });
+
+  test('sends members to the Community pod', async () => {
+    mockAxiosGet.mockResolvedValue({ data: { _id: COMMUNITY_POD_ID } });
+    renderRedirect();
+
+    expect(await screen.findByText('Community pod')).toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent(`/v2/pods/${COMMUNITY_POD_ID}`);
+    expect(mockAxiosGet).toHaveBeenCalledWith(`/api/pods/${COMMUNITY_POD_ID}`);
+  });
+
+  test('sends non-members to the invite redeem route', async () => {
+    mockAxiosGet.mockRejectedValue({ response: { status: 404 } });
+    renderRedirect();
+
+    expect(await screen.findByText('Community invite')).toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent(`/v2/invite/${COMMUNITY_INVITE_TOKEN}`);
+    expect(mockAxiosGet).toHaveBeenCalledWith(`/api/pods/${COMMUNITY_POD_ID}`);
+  });
+});

@@ -5,6 +5,7 @@ import V2Login from './components/V2Login';
 import V2FeaturePage from './components/V2FeaturePage';
 import V2YourTeamPage from './components/V2YourTeamPage';
 import V2InviteRedeem from './components/V2InviteRedeem';
+import V2CommunityRedirect from './components/V2CommunityRedirect';
 import { useAuth } from '../context/AuthContext';
 import V2Register from './components/V2Register';
 import V2OAuthComplete from './components/V2OAuthComplete';
@@ -185,6 +186,7 @@ const V2App: React.FC = () => {
               <V2RequireAuth>
                 <Routes>
                 <Route path="/" element={<V2Layout selectionMode="auto" />} />
+                <Route path="community" element={<V2CommunityRedirect />} />
                 <Route
                   path="dashboard"
                   element={feature('Dashboard', 'Your dashboard tools, kept inside the v2 shell.', <Dashboard />)}
