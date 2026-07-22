@@ -42,6 +42,7 @@ backend:
     agentProvisionerNodePool: "dev"
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
+    communityPodId: "6a5fe677306155f677c26abf"
     # Must match the callback URL registered on the GitHub/Google OAuth apps.
     oauthCallbackBaseUrl: "https://api.commonly.me"
     commonlyApiUrl: ""

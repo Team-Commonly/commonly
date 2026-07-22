@@ -2,6 +2,11 @@ const User = require('../../../models/User');
 const InvitationCode = require('../../../models/InvitationCode');
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
+
+jest.mock('../../../services/communityPodService', () => ({
+  ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
+}));
+const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -104,6 +109,8 @@ describe('Invitation → cloudAgents entitlement', () => {
       expect(res.status).toHaveBeenCalledWith(201);
       const user = await User.findOne({ email: 'newbie@example.com' });
       expect(user.entitlements.cloudAgents).toBe(false);
+      expect(user.verified).toBe(true);
+      expect(ensureUserInCommunityPod).toHaveBeenCalledWith(user._id);
     });
 
     it('fails loudly on a provided-but-invalid code even though registration is open', async () => {
@@ -180,6 +187,7 @@ describe('Invitation → cloudAgents entitlement', () => {
       const fresh = await User.findById(user._id);
       expect(fresh.verified).toBe(true);
       expect(fresh.password).not.toBe('old-hashed');
+      expect(ensureUserInCommunityPod).toHaveBeenCalledWith(user._id);
     });
 
     it('rejects tokens with the wrong purpose and short passwords', async () => {

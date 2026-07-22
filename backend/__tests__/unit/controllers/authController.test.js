@@ -3,6 +3,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
 const WaitlistRequest = require('../../../models/WaitlistRequest');
+
+jest.mock('../../../services/communityPodService', () => ({
+  ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
+}));
+const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -405,10 +410,31 @@ describe('Auth Controller Tests', () => {
 
       await authController.verifyEmail(req, res);
 
+      expect(ensureUserInCommunityPod).toHaveBeenCalledWith(userId);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Email verified successfully'),
         }),
+      );
+    });
+
+    it('still verifies successfully when the background community join rejects', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      jwt.verify.mockReturnValueOnce({ id: userId });
+      User.findByIdAndUpdate = jest.fn().mockResolvedValueOnce({ _id: userId, verified: true });
+      ensureUserInCommunityPod.mockRejectedValueOnce(new Error('community unavailable'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const req = { query: { token: 'valid-token' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.verifyEmail(req, res);
+      await Promise.resolve();
+
+      expect(res.json).toHaveBeenCalledWith({ message: 'Email verified successfully' });
+      expect(res.status).not.toHaveBeenCalledWith(500);
+      expect(warn).toHaveBeenCalledWith(
+        '[community-pod] background join failed after auth transition:',
+        'community unavailable',
       );
     });
 
