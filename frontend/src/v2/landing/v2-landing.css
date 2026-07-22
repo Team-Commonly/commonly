@@ -466,10 +466,11 @@
 .v2-landing__step-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--v2-text-secondary); }
 
 /* Adapters */
-.v2-landing__adapters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.v2-landing__adapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .v2-landing__adapter {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   padding: 18px;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border-soft);

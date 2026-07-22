@@ -18,6 +18,7 @@ module.exports = {
   plugins: [
     'react',
     'react-hooks',
+    'i18next',
   ],
   rules: {
     // More lenient rules for development to reduce CPU usage
@@ -34,4 +35,29 @@ module.exports = {
       version: 'detect',
     },
   },
-}; 
+  // Phase 1A zh-CN manifest. Later phases extend this exact list as each
+  // surface migrates, so translated components cannot regress to JSX literals.
+  overrides: [
+    {
+      files: [
+        'src/v2/landing/V2LandingPage.tsx',
+        'src/v2/components/V2LangSwitch.tsx',
+      ],
+      rules: {
+        'i18next/no-literal-string': ['error', {
+          mode: 'jsx-only',
+          'jsx-attributes': {
+            exclude: [
+              'className', 'styleName', 'style', 'type', 'key', 'id',
+              'width', 'height', 'to', 'href', 'src', 'rel', 'target',
+              'variant', 'size', 'component', 'role', 'name', 'autoComplete',
+              'inputMode', 'accept', 'd', 'viewBox', 'fill', 'fontSize', 'stroke',
+              'sx', 'value', 'aria-hidden', 'anchorOrigin', 'transformOrigin',
+              'PaperProps',
+            ],
+          },
+        }],
+      },
+    },
+  ],
+};

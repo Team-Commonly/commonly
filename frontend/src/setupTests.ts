@@ -1,5 +1,6 @@
 // Import jest-dom matchers
 import '@testing-library/jest-dom';
+import './i18n';
 
 // Mock axios
 jest.mock('axios', () => ({

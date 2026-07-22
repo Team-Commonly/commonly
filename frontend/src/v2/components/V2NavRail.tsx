@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2FeedbackMenu from './V2FeedbackMenu';
+import V2LangSwitch from './V2LangSwitch';
 import { useAuth } from '../../context/AuthContext';
 
 interface NavItem {
@@ -70,6 +71,9 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   return (
     <aside className="v2-pane v2-pane--rail">
       <div className="v2-rail">
+        <div className="v2-rail__language">
+          <V2LangSwitch />
+        </div>
         <div className="v2-rail__brand">
           <span className="v2-rail__brand-icon" aria-label="Commonly">
             <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">

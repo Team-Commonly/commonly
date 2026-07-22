@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './utils/axiosConfig'; // Import axios configuration
+import './i18n';
 import App from './App';
 import './App.css'; // Ensure CSS is loaded
 

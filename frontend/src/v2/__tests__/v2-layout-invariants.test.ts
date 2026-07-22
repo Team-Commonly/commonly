@@ -166,4 +166,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(reduced).toContain("animation: none");
     expect(reduced).toContain(".v2-landing__trusted-set[aria-hidden='true']");
   });
+
+  test('landing adapter code scrolls inside its card instead of widening the page', () => {
+    // Preformatted adapter commands have a wide min-content size. Without a
+    // zero-width grid minimum + shrinkable card, the mobile landing page grows
+    // wider than the viewport even though the <pre> itself scrolls.
+    expect(ruleBody(landing, '.v2-landing__adapters')).toContain('minmax(0, 1fr)');
+    expect(ruleBody(landing, '.v2-landing__adapter')).toContain('min-width: 0');
+  });
 });
