@@ -268,6 +268,22 @@
       "quietTitle": "This pod is quiet",
       "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply."
     },
+    "newPod": {
+      "label": "New Pod starter actions",
+      "title": "Your Pod is ready",
+      "text": "Bring in people or an agent, or start the conversation yourself.",
+      "dismiss": "Dismiss starter actions",
+      "inviteTitle": "Invite people",
+      "inviteText": "Share this link to bring teammates in.",
+      "preparingInvite": "Creating invite link…",
+      "inviteLinkLabel": "Invite link for this Pod",
+      "inviteError": "The invite link could not be created.",
+      "tryAgain": "Try again",
+      "addAgentTitle": "Add an agent",
+      "addAgentText": "Choose an agent to add to this Pod.",
+      "messageTitle": "Write the first message",
+      "messageText": "Start the conversation in the composer."
+    },
     "heartbeat": {
       "recent_one": "{{formattedCount}} recent heartbeat",
       "recent_other": "{{formattedCount}} recent heartbeats",
@@ -1251,9 +1267,8 @@
       "betweenAgents": "Between agents · {{count}}"
     },
     "create": {
-      "teamOption": "Create Team Pod",
-      "privateOption": "Start Private Pod",
-      "privateHint": "Start a Private pod from an agent row or existing private conversation.",
+      "teamOption": "Team Pod",
+      "privateOption": "Private Pod",
       "namePlaceholder": "Pod name",
       "goalPlaceholder": "Goal or description",
       "cancel": "Cancel",

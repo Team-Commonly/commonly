@@ -17,10 +17,16 @@ jest.mock('../hooks/useV2Api', () => ({
   useV2Api: () => mockApi,
 }));
 
-const renderModal = () => render(
+const renderModal = (initialTab = 'people') => render(
   <MemoryRouter>
     <div className="v2-root">
-      <V2InviteModal open podId="pod-1" podName="Launch room" onClose={jest.fn()} />
+      <V2InviteModal
+        open
+        podId="pod-1"
+        podName="Launch room"
+        initialTab={initialTab}
+        onClose={jest.fn()}
+      />
     </div>
   </MemoryRouter>,
 );
@@ -72,5 +78,13 @@ describe('V2InviteModal', () => {
 
     await waitFor(() => expect(mockApi.del).toHaveBeenCalledWith(`/api/invites/${token}`));
     await waitFor(() => expect(screen.queryByText('Aria')).not.toBeInTheDocument());
+  });
+
+  test('opens directly on the agent tab when requested by the starter panel', () => {
+    renderModal('agent');
+
+    expect(screen.getByRole('tab', { name: 'Add agent' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Browse agents →' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Generate invite link' })).not.toBeInTheDocument();
   });
 });

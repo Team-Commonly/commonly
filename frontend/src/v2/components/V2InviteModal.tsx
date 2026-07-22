@@ -12,6 +12,7 @@ interface V2InviteModalProps {
   open: boolean;
   podId: string;
   podName: string;
+  initialTab?: V2InviteTab;
   onClose: () => void;
 }
 
@@ -26,6 +27,7 @@ interface ManagedInvite {
 
 type ExpiryPreset = 'never' | '24' | '168' | '720';
 type MaxUsesPreset = 'unlimited' | '1' | '10' | '25';
+export type V2InviteTab = 'people' | 'agent';
 const CLOSE_MARK = '×';
 
 const inviteUrlFor = (token: string): string => (
@@ -60,13 +62,15 @@ const expiryLabel = (value: string | null | undefined, t: TFunction, locale: str
   return t('inviteModal.expiry.expiresOn', { date: expiry.toLocaleDateString(locale) });
 };
 
-const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onClose }) => {
+const V2InviteModal: React.FC<V2InviteModalProps> = ({
+  open, podId, podName, initialTab = 'people', onClose,
+}) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language || 'en';
   const numberFormatter = new Intl.NumberFormat(locale);
   const api = useV2Api();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'people' | 'agent'>('people');
+  const [tab, setTab] = useState<V2InviteTab>(initialTab);
   const [url, setUrl] = useState<string>('');
   const [expiry, setExpiry] = useState<ExpiryPreset>('168');
   const [maxUses, setMaxUses] = useState<MaxUsesPreset>('unlimited');
@@ -96,7 +100,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
   // Reset transient state when the modal closes or switches pods — otherwise
   // an old invite URL can flash before the next pod's links load.
   useEffect(() => {
-    setTab('people');
+    setTab(initialTab);
     setUrl('');
     setExpiry('168');
     setMaxUses('unlimited');
@@ -106,7 +110,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({ open, podId, podName, onC
     setBusy(false);
     setRevokingToken(null);
     if (!open) setInvites([]);
-  }, [open, podId]);
+  }, [open, podId, initialTab]);
 
   useEffect(() => {
     if (!open || !podId) return;

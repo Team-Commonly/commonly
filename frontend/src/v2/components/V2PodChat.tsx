@@ -12,9 +12,11 @@ import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
 import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import type { V2InviteTab } from './V2InviteModal';
 
 const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
+const JUST_CREATED_POD_KEY = 'v2.justCreated';
 
 const STARTER_PROMPT_KEYS = [
   'podChat.starters.introduce',
@@ -149,7 +151,7 @@ interface V2PodChatProps {
   // Opens the shared invite modal (rendered by V2Layout). The header
   // invite icon delegates to this so the chat path matches the inspector
   // path and a single modal instance handles both surfaces.
-  onOpenInvite?: () => void;
+  onOpenInvite?: (initialTab?: V2InviteTab) => void;
   // Click on an in-message file pill routes here. Passed straight through
   // to V2MessageBubble → FilePill so the click opens the inspector
   // artifact preview instead of window.open()'ing a raw file in a new tab.
@@ -177,6 +179,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [justCreatedPodId, setJustCreatedPodId] = useState<string | null>(null);
+  const [starterInviteUrl, setStarterInviteUrl] = useState('');
+  const [starterInviteLoading, setStarterInviteLoading] = useState(false);
+  const [starterInviteError, setStarterInviteError] = useState<string | null>(null);
+  const [starterInviteCopied, setStarterInviteCopied] = useState(false);
   const [agentDeliveryHint, setAgentDeliveryHint] = useState<{
     messageId: string;
     mentionHandle: string;
@@ -187,6 +194,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
+  const starterInviteRequestedPodRef = useRef<string | null>(null);
+  const starterInviteActivePodRef = useRef<string | null>(null);
 
   // Agent typing indicator state. Backend already emits agent_typing_start/
   // agent_typing_stop via agentTypingService — this just listens and renders.
@@ -215,6 +224,84 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
   useEffect(() => {
     setAgentDeliveryHint(null);
   }, [pod?._id]);
+
+  useEffect(() => {
+    const podId = pod?._id || null;
+    starterInviteActivePodRef.current = podId;
+    starterInviteRequestedPodRef.current = null;
+    setStarterInviteUrl('');
+    setStarterInviteError(null);
+    setStarterInviteLoading(false);
+    setStarterInviteCopied(false);
+    if (!podId) {
+      setJustCreatedPodId(null);
+      return;
+    }
+    try {
+      setJustCreatedPodId(
+        sessionStorage.getItem(`${JUST_CREATED_POD_KEY}.${podId}`) === '1' ? podId : null,
+      );
+    } catch {
+      setJustCreatedPodId(null);
+    }
+  }, [pod?._id]);
+
+  const clearJustCreatedPod = useCallback((podId: string) => {
+    try {
+      sessionStorage.removeItem(`${JUST_CREATED_POD_KEY}.${podId}`);
+    } catch {
+      // State still clears for this mount when sessionStorage is unavailable.
+    }
+    setJustCreatedPodId((current) => (current === podId ? null : current));
+  }, []);
+
+  useEffect(() => {
+    if (!pod?._id || messages.length === 0 || justCreatedPodId !== pod._id) return;
+    clearJustCreatedPod(pod._id);
+  }, [clearJustCreatedPod, justCreatedPodId, messages.length, pod?._id]);
+
+  const generateStarterInvite = useCallback(async (podId: string) => {
+    starterInviteRequestedPodRef.current = podId;
+    setStarterInviteLoading(true);
+    setStarterInviteError(null);
+    setStarterInviteCopied(false);
+    try {
+      const data = await api.post<{ token?: string }>(`/api/pods/${podId}/invites`, {});
+      if (!data?.token) throw new Error('missing invite token');
+      if (starterInviteActivePodRef.current !== podId) return;
+      setStarterInviteUrl(`${window.location.origin}/v2/invite/${data.token}`);
+    } catch {
+      if (starterInviteActivePodRef.current !== podId) return;
+      starterInviteRequestedPodRef.current = null;
+      setStarterInviteError(t('podChat.newPod.inviteError'));
+    } finally {
+      if (starterInviteActivePodRef.current === podId) setStarterInviteLoading(false);
+    }
+  }, [api, t]);
+
+  const starterPanelVisible = Boolean(
+    pod
+    && justCreatedPodId === pod._id
+    && messages.length === 0
+    && !loading
+    && !firstRunVisible,
+  );
+
+  useEffect(() => {
+    if (!starterPanelVisible || !pod?._id || starterInviteUrl) return;
+    if (starterInviteRequestedPodRef.current === pod._id) return;
+    void generateStarterInvite(pod._id);
+  }, [generateStarterInvite, pod?._id, starterInviteUrl, starterPanelVisible]);
+
+  const handleStarterInviteCopy = useCallback(async () => {
+    if (!starterInviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(starterInviteUrl);
+      setStarterInviteCopied(true);
+    } catch {
+      // The read-only field remains selectable for manual copy.
+    }
+  }, [starterInviteUrl]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -765,7 +852,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
               <button
                 type="button"
                 className="v2-chat__icon-btn"
-                onClick={onOpenInvite}
+                onClick={() => onOpenInvite()}
                 title={t('podChat.invite')}
                 aria-label={t('podChat.invite')}
               >
@@ -793,7 +880,82 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
               {loading && messages.length === 0 && (
                 <div className="v2-empty"><span className="v2-spinner" /></div>
               )}
-              {!firstRunVisible && !loading && messages.length === 0 && (
+              {starterPanelVisible && pod && (
+                <section className="v2-chat__new-pod" aria-label={t('podChat.newPod.label')}>
+                  <div className="v2-chat__new-pod-head">
+                    <div>
+                      <div className="v2-chat__new-pod-title">{t('podChat.newPod.title')}</div>
+                      <div className="v2-chat__new-pod-text">{t('podChat.newPod.text')}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="v2-chat__new-pod-dismiss"
+                      aria-label={t('podChat.newPod.dismiss')}
+                      onClick={() => clearJustCreatedPod(pod._id)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="v2-chat__new-pod-actions">
+                    <div className="v2-chat__new-pod-action v2-chat__new-pod-action--invite">
+                      <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
+                      <div className="v2-chat__new-pod-action-text">{t('podChat.newPod.inviteText')}</div>
+                      {starterInviteLoading && (
+                        <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>
+                      )}
+                      {starterInviteUrl && (
+                        <div className="v2-invite-link-row">
+                          <input
+                            type="text"
+                            className="v2-invite-link"
+                            aria-label={t('podChat.newPod.inviteLinkLabel')}
+                            readOnly
+                            value={starterInviteUrl}
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                          <button
+                            type="button"
+                            className="v2-chat__new-pod-copy"
+                            onClick={() => { void handleStarterInviteCopy(); }}
+                          >
+                            {starterInviteCopied ? t('common.copied') : t('common.copy')}
+                          </button>
+                        </div>
+                      )}
+                      {starterInviteError && (
+                        <div className="v2-chat__new-pod-error">
+                          <span>{starterInviteError}</span>
+                          <button
+                            type="button"
+                            onClick={() => { void generateStarterInvite(pod._id); }}
+                          >
+                            {t('podChat.newPod.tryAgain')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="v2-chat__new-pod-action"
+                      onClick={() => onOpenInvite?.('agent')}
+                    >
+                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.addAgentTitle')}</span>
+                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.addAgentText')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="v2-chat__new-pod-action"
+                      onClick={() => composerInputRef.current?.focus()}
+                    >
+                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.messageTitle')}</span>
+                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.messageText')}</span>
+                    </button>
+                  </div>
+                </section>
+              )}
+              {!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 && (
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>

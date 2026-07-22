@@ -33,7 +33,12 @@ export interface UseV2PodsResult {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  createPod: (name: string, description?: string, type?: 'team' | 'chat') => Promise<V2Pod | null>;
+  createPod: (
+    name: string,
+    description?: string,
+    type?: 'team' | 'chat',
+    joinPolicy?: 'open' | 'invite-only',
+  ) => Promise<V2Pod | null>;
   deletePod: (podId: string) => Promise<boolean>;
   patchLastMessage: (podId: string, last: V2PodLastMessage) => void;
 }
@@ -62,13 +67,14 @@ export const useV2Pods = (): UseV2PodsResult => {
     name: string,
     description?: string,
     type: 'team' | 'chat' = 'team',
+    joinPolicy: 'open' | 'invite-only' = 'open',
   ): Promise<V2Pod | null> => {
     try {
       const pod = await api.post<V2Pod>('/api/pods', {
         name,
         description: description || '',
         type,
-        joinPolicy: 'open',
+        joinPolicy,
       });
       setPods((prev) => [pod, ...prev]);
       return pod;

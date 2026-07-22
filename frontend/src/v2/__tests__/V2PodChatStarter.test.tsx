@@ -4,6 +4,7 @@ import {
   fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import axios from 'axios';
 import V2PodChat from '../components/V2PodChat';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -23,6 +24,10 @@ jest.mock('../components/V2MessageBubble', () => {
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: jest.fn().mockResolvedValue(undefined) },
+  });
 });
 
 // Same mock surface as V2Login.test.tsx — axiosConfig assigns
@@ -86,6 +91,12 @@ const makeAgentRoom = (overrides = {}) => makeDetail({
 });
 
 describe('V2PodChat teaching empty states', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    axios.post.mockResolvedValue({ data: {} });
+  });
+
   test('regular empty pods teach visible membership and @-mentions', () => {
     renderChat(makeDetail());
 
@@ -120,6 +131,12 @@ describe('V2PodChat teaching empty states', () => {
 });
 
 describe('V2PodChat starter prompts', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    axios.post.mockResolvedValue({ data: {} });
+  });
+
   test('render for an empty agent room after first-run and never auto-send', async () => {
     const detail = makeAgentRoom();
     renderChat(detail);
@@ -162,5 +179,87 @@ describe('V2PodChat starter prompts', () => {
       firstRunHero: <div>First-run guide</div>,
     });
     expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
+  });
+});
+
+describe('V2PodChat just-created Pod starter panel', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    axios.post.mockResolvedValue({ data: {} });
+  });
+
+  test('pre-generates a copyable invite and offers agent and composer actions', async () => {
+    const token = 'd'.repeat(32);
+    const onOpenInvite = jest.fn();
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    axios.post.mockResolvedValueOnce({ data: { token } });
+    renderChat(makeDetail(), { onOpenInvite });
+
+    expect(await screen.findByText('Your Pod is ready')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/pods/p1/invites',
+        {},
+        expect.objectContaining({ headers: expect.any(Object) }),
+      );
+    });
+
+    const inviteUrl = `${window.location.origin}/v2/invite/${token}`;
+    expect(await screen.findByLabelText('Invite link for this Pod')).toHaveValue(inviteUrl);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(inviteUrl));
+
+    fireEvent.click(screen.getByRole('button', { name: /^Add an agent/ }));
+    expect(onOpenInvite).toHaveBeenCalledWith('agent');
+
+    const composer = screen.getByPlaceholderText('Message My Workspace…');
+    fireEvent.click(screen.getByRole('button', { name: /^Write the first message/ }));
+    expect(composer).toHaveFocus();
+  });
+
+  test('stays absent without the flag or after messages arrive', async () => {
+    const noFlag = renderChat(makeDetail());
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    noFlag.unmount();
+
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    const withMessage = renderChat(makeDetail({
+      messages: [{ id: 'm1', content: 'First!', user: { username: 'solo-user' } }],
+    }));
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    await waitFor(() => expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull());
+    withMessage.unmount();
+  });
+
+  test('keeps the first-run guide above the starter panel', () => {
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    renderChat(makeDetail(), {
+      firstRunVisible: true,
+      firstRunHero: <div>First-run guide</div>,
+    });
+    expect(screen.getByText('First-run guide')).toBeInTheDocument();
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+  });
+
+  test('does not mint an invite when the starter panel does not render', () => {
+    renderChat(makeDetail());
+
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('dismisses explicitly and clears the session flag', async () => {
+    sessionStorage.setItem('v2.justCreated.p1', '1');
+    axios.post.mockResolvedValueOnce({ data: { token: 'e'.repeat(32) } });
+    renderChat(makeDetail());
+
+    expect(await screen.findByText('Your Pod is ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss starter actions' }));
+
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull();
   });
 });
