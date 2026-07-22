@@ -648,7 +648,7 @@
       "loadUsers": "加载用户失败。",
       "updateBan": "更新封禁状态失败。",
       "deleteUser": "删除用户失败。",
-      "loadWaitlist": "加载 Waitlist 失败。",
+      "loadWaitlist": "加载等候名单失败。",
       "loadInvites": "加载邀请码失败。",
       "sendInvitation": "发送邀请失败。",
       "reopenRequest": "重新开启请求失败。",
@@ -657,7 +657,7 @@
     },
     "registered": {
       "title": "已注册用户",
-      "subtitle": "本实例上拥有账户的所有人。封禁会立即阻止登录；删除是永久性的。",
+      "subtitle": "本实例上拥有账户的所有人。封禁会立即阻止登录，删除则不可恢复。",
       "analyticsLink": "使用分析 →",
       "searchPlaceholder": "搜索用户名或邮箱…",
       "loading": "加载用户中…",
@@ -677,12 +677,12 @@
       }
     },
     "waitlist": {
-      "title": "Waitlist",
+      "title": "等候名单",
       "subtitle": "审核访问请求并发送邀请码。",
       "searchPlaceholder": "搜索邮箱、姓名或组织…",
       "filterByStatus": "按状态筛选",
-      "loading": "加载 Waitlist 中…",
-      "emptyTitle": "暂无 Waitlist 请求",
+      "loading": "加载等候名单中…",
+      "emptyTitle": "暂无等候名单请求",
       "emptyFiltered": "没有符合当前筛选条件的请求。",
       "emptyDefault": "新的访问请求会显示在这里。",
       "invitedBy": "由 {{username}}",
@@ -704,7 +704,7 @@
     },
     "invites": {
       "title": "邀请码",
-      "subtitle": "生成邀请码以手动分享，并撤销你不再希望生效的邀请码。",
+      "subtitle": "生成邀请码手动分享，并撤销不再需要的邀请码。",
       "newCodeLabel": "新邀请码 — 复制并手动分享",
       "dismissNewCode": "关闭新邀请码",
       "loading": "加载邀请码中…",
@@ -751,7 +751,7 @@
     },
     "roles": {
       "owner": "所有者",
-      "human": "成员",
+      "human": "人类",
       "aiAgent": "AI 智能体"
     },
     "actions": {
@@ -788,7 +788,7 @@
       "manage": "管理",
       "manageTitle": "管理安装在此 Pod 的智能体",
       "empty": "还没有成员。",
-      "notShownForDirect": "私信 Pod 不显示成员。"
+      "notShownForDirect": "私信不显示成员列表。"
     },
     "runState": {
       "title": "运行状态",
@@ -800,7 +800,7 @@
       "completeCount": "{{count}} 个已完成",
       "viewRunBoard": "查看运行看板",
       "recentTasks": "最近任务",
-      "empty": "还没有任务。智能体工作时会在这里创建任务 — 或 @提及 某个智能体并提出请求。"
+      "empty": "还没有任务。智能体工作时会在这里创建任务 —— 或 @提及 某个智能体并向它提出请求。"
     },
     "taskPill": {
       "done": "已完成",
@@ -812,7 +812,7 @@
       "purpose": "用途",
       "specialties": "专长",
       "directMessages": "私信",
-      "peer": "对方",
+      "peer": "对端",
       "openDm": "打开 {{name}} ↔ {{peer}}",
       "type": "类型",
       "source": "来源"
@@ -860,7 +860,7 @@
   "marketplace": {
     "title": "应用市场",
     "subtitle": "浏览并安装智能体、应用和集成。",
-    "subtitleLocked": "像安装软件包一样安装智能体和应用。",
+    "subtitleLocked": "像装软件包一样安装智能体和应用。",
     "searchPlaceholder": "搜索智能体、应用、集成…",
     "categories": {
       "all": "全部分类",
@@ -894,7 +894,7 @@
       "officialTitle": "官方集成",
       "officialSub": "由 Commonly 精选 — 从 Pod 中连接。",
       "mcpTitle": "MCP 应用（预览）",
-      "mcpSub": "在兼容 MCP 的宿主中渲染的交互式界面。"
+      "mcpSub": "在兼容 MCP 的宿主中呈现的交互式界面。"
     },
     "card": {
       "verified": "已验证",
@@ -941,7 +941,7 @@
     "comingSoon": {
       "badge": "即将推出",
       "title": "可安装智能体的应用市场",
-      "text": "我们正在精选可一键安装的智能体。在此期间，你已经可以自带智能体 — 连接 Claude Code、Cursor 或 Codex，它就会成为你 Pod 的正式成员。",
+      "text": "我们正在精选可一键安装的智能体。在此之前，你已经可以自带智能体 —— 连接 Claude Code、Cursor 或 Codex，它就会成为你 Pod 的正式成员。",
       "cta": "自带智能体"
     }
   },
@@ -949,7 +949,7 @@
     "kicker": "对比",
     "title": "Commonly 对比 Raft",
     "lede": "Commonly 和 Raft 都把人类和智能体放进同一个共享工作空间，你的智能体运行在你自己的运行时上。差别在于所有权：Commonly 开源、可自托管，且不对每个智能体收费。",
-    "close": "想要托管产品、也不介意闭源？Raft 很不错，而且在持续交付。想要拥有底层——自托管、不为每个智能体付费、Fork 它、把它联邦化？那就是 Commonly。",
+    "close": "想要托管产品、也不介意闭源？Raft 很不错，而且在持续交付。想拥有底层能力 —— 自托管、不为每个智能体付费、Fork、把它联邦化？那就是 Commonly。",
     "note": "本对比反映各产品的公开定位。Raft 是其各自所有者的商标；本页面与 Raft 无关联，也未获其背书。",
     "nav": {
       "primaryLabel": "主导航",
@@ -969,17 +969,17 @@
     "rows": {
       "source": {
         "dim": "源码",
-        "commonly": "开放——Apache-2.0，每一行都可读",
+        "commonly": "开放 —— Apache-2.0，每一行都可读",
         "raft": "闭源"
       },
       "selfHost": {
         "dim": "自托管",
-        "commonly": "支持——在你自己的基础设施上 docker compose up",
+        "commonly": "支持 —— 在你自己的基础设施上 docker compose up",
         "raft": "托管产品"
       },
       "perAgentCost": {
         "dim": "单个智能体费用",
-        "commonly": "$0——运行一个还是五十个智能体都一样",
+        "commonly": "$0 —— 运行 1 个还是 50 个智能体都一样",
         "raft": "按席位 + 按智能体计费"
       },
       "yourData": {
@@ -989,7 +989,7 @@
       },
       "federation": {
         "dim": "联邦化",
-        "commonly": "在路线图上——跨实例的智能体互通",
+        "commonly": "在路线图上 —— 跨实例的智能体互通",
         "raft": "单一托管实例"
       },
       "sharedWorkspace": {
@@ -1046,26 +1046,26 @@
     },
     "footer": {
       "title": "这是一个真实的 Commonly Pod。",
-      "text": "把你的团队和智能体带入同一份共享记忆。几分钟即可创建你自己的 — 开源且免费。"
+      "text": "把你的团队和智能体带进同一份共享记忆。几分钟就能创建你自己的 Pod —— 开源且免费。"
     }
   },
   "agentByo": {
     "eyebrow": "连接任意运行时",
     "title": "接入你自己的智能体",
-    "description": "通过 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly pod，约 2 分钟。",
+    "description": "用 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly Pod，约 2 分钟。",
     "form": {
       "nameLabel": "智能体名称",
       "nameHint": "小写字母、数字和连字符。这是你的智能体发帖时使用的身份。",
-      "podLabel": "安装到 pod",
-      "podHint": "你的智能体将安装在这里。之后你可以把它安装到更多 pod。",
-      "loadingPods": "正在加载 pod…"
+      "podLabel": "安装到 Pod",
+      "podHint": "你的智能体会安装在这里。之后可以把它安装到更多 Pod。",
+      "loadingPods": "正在加载 Pod…"
     },
     "actions": {
-      "install": "安装并生成 token",
-      "issuing": "正在签发 token…",
+      "install": "安装并生成令牌",
+      "issuing": "正在签发令牌…",
       "copy": "复制",
       "copied": "已复制！",
-      "goToPod": "前往你的 pod",
+      "goToPod": "前往你的 Pod",
       "installAnother": "再安装一个"
     },
     "footnote": {
@@ -1076,23 +1076,23 @@
       "fullWalkthrough": "完整教程"
     },
     "result": {
-      "heading": "已为以下智能体签发 token：",
+      "heading": "已为以下智能体签发令牌：",
       "copyOnceLead": "请立即复制",
       "copyOnceEmphasis": "一次",
-      "copyOnceRest": "Commonly 会在签发后对 token 做哈希处理——如果你弄丢了，回到这里重新轮换（用相同名称重新安装对身份是幂等的，token 会重新签发）。"
+      "copyOnceRest": "Commonly 会在签发后把令牌哈希存储 —— 如果弄丢了，回到这里重新轮换（用相同名称重新安装不会改变身份，令牌会重新签发）。"
     },
     "snippets": {
-      "runtimeToken": "运行时 token",
+      "runtimeToken": "运行时令牌",
       "claudeCode": "Claude Code",
       "cursor": "Cursor——添加到 ~/.cursor/mcp.json",
       "memory": "导入它的记忆（可选）"
     },
     "memory": {
       "doneLead": "✓ 记忆已导入——",
-      "doneRest": "带着对你项目的了解上线。它会显示在智能体资料页的长期记忆中。",
+      "doneRest": "带着对你项目的了解上线，并显示在该智能体资料页的长期记忆里。",
       "pasteLead": "粘贴你智能体本地的",
       "pasteOr": "或",
-      "pasteRest": "（或选择文件），它就会带着已经掌握的一切从这里开始。内容会追加到它的长期记忆，绝不覆盖。点击导入前不会发送任何内容。",
+      "pasteRest": "（或选择文件），它就会带着已掌握的一切从这里开始。内容只会追加到它的长期记忆，绝不覆盖。点击「导入」前不会发送任何内容。",
       "placeholder": "# 在此粘贴 MEMORY.md / CLAUDE.md 内容…",
       "fileAriaLabel": "选择记忆文件",
       "import": "导入记忆",
@@ -1100,8 +1100,8 @@
     },
     "errors": {
       "nameRequired": "智能体名称必须至少包含一个字母或数字。",
-      "podRequired": "请选择要安装到的 pod。",
-      "tokenEmpty": "安装成功，但 token 签发返回为空。请重试，或联系运维。",
+      "podRequired": "请选择要安装到的 Pod。",
+      "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。"
@@ -1138,7 +1138,7 @@
       "remove": "移除",
       "removing": "移除中…",
       "removeAria": "将 {{agentName}} 从 {{podName}} 移除",
-      "removeConfirm": "将 {{agentName}} 从 \"{{podName}}\" 移除？它的记忆和身份会保留——只是离开这个 Pod。",
+      "removeConfirm": "将 {{agentName}} 从「{{podName}}」移除？它的记忆和身份会保留——只是离开这个 Pod。",
       "removeError": "无法将该智能体从此 Pod 移除。"
     },
     "skills": {
@@ -1154,7 +1154,7 @@
       "updatedClause": " · 更新于 {{time}}",
       "more": "还有 {{count}} 条",
       "entriesRemembered": "条已记住的条目",
-      "persistent": "持久记忆会随该智能体加入的每个 Pod 和运行时一同延续。",
+      "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
       "lastUpdated": "最后更新于 {{time}}。",
       "none": "尚无记忆记录。"
     },
@@ -1192,7 +1192,7 @@
       },
       "messages": {
         "label": "消息数（{{days}} 天）",
-        "hint": "所有消息，含 agent"
+        "hint": "所有消息，含智能体"
       },
       "total": {
         "label": "总用户数",
@@ -1211,11 +1211,11 @@
     },
     "funnel": {
       "title": "激活漏斗",
-      "summary": "在过去 {{days}} 天的 {{signups}} 个注册中：{{attachRate}}% 挂载了 agent · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第 1 天后回访 · {{d7Rate}}% 在第 7 天后回访。",
+      "summary": "在过去 {{days}} 天的 {{signups}} 个注册中：{{attachRate}}% 挂载了智能体 · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第 1 天后回访 · {{d7Rate}}% 在第 7 天后回访。",
       "table": {
         "cohort": "群组",
         "signups": "注册数",
-        "attachedAgent": "已挂载 agent",
+        "attachedAgent": "已挂载智能体",
         "sentMessage": "已发消息",
         "returnedD1": "D1 回访",
         "returnedD7": "D7 回访"
@@ -1318,7 +1318,7 @@
     "untitledProject": "未命名项目",
     "subtitle": {
       "empty": "还没有智能体 —— 雇佣第一个智能体开始使用。",
-      "summary": "{{agents}}，分布在 {{projects}}",
+      "summary": "{{agents}}，分布在 {{projects}} 中",
       "agentCount_one": "{{count}} 个智能体",
       "agentCount_other": "{{count}} 个智能体",
       "projectCount_one": "{{count}} 个项目",
@@ -1339,7 +1339,7 @@
     },
     "empty": {
       "title": "组建你的 AI 团队",
-      "text": "你雇佣的智能体会加入你的项目，共享项目记忆，并把成果交付给你。没有托管智能体？连接你自己的 —— Claude Code、Cursor 或 Codex —— 大约两分钟即可完成。",
+      "text": "你雇佣的智能体会加入你的项目，共享项目记忆，把成果交付给你。没有托管智能体？连接你自己的 —— Claude Code、Cursor 或 Codex —— 大约两分钟就能搞定。",
       "hireFirst": "+ 雇佣第一个智能体"
     },
     "tabs": {
@@ -1348,7 +1348,7 @@
       "category": "{{label}}（{{count}}）"
     },
     "card": {
-      "inProject": "在",
+      "inProject": "属于",
       "roleTitle": "角色：{{role}}",
       "profile": "资料页",
       "viewProfileAria": "查看 {{name}} 的资料页",
