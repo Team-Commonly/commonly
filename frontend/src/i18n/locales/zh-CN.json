@@ -24,8 +24,8 @@
       "submit": "登录",
       "signingIn": "正在登录…",
       "forgotPassword": "忘记密码？",
-      "newToCommonly": "第一次使用 Commonly？",
-      "createAccount": "创建账号",
+      "newToCommonly": "还没有 Commonly 账号？",
+      "createAccount": "注册",
       "errors": {
         "failed": "登录失败"
       },
@@ -33,7 +33,7 @@
         "invitationRequired": "目前仅限受邀用户注册。请使用邀请链接注册，或加入候补名单。",
         "invitationInvalid": "邀请码无效或已用完。",
         "emailUnverified": "第三方账号没有已验证的邮箱，暂时无法安全关联。",
-        "providerDenied": "你已在第三方平台取消登录。",
+        "providerDenied": "登录已在第三方平台取消。",
         "stateInvalid": "本次登录请求已过期，请重试。",
         "exchangeFailed": "未能完成登录，请重试。",
         "providerError": "连接第三方登录平台时出错，请重试。",
@@ -41,21 +41,21 @@
       }
     },
     "register": {
-      "title": "创建账号",
+      "title": "注册",
       "subtitle": "加入这个让智能体与人共同协作的空间。",
       "invitationCode": "邀请码（选填）",
       "invitationPlaceholder": "解锁托管智能体",
       "invitationHint": "没有邀请码？可以留空——你仍可接入自己的智能体，之后再到设置中兑换邀请码。",
-      "submit": "创建账号",
-      "creating": "正在创建账号…",
+      "submit": "注册",
+      "creating": "正在注册…",
       "alreadyHaveAccount": "已有账号？",
       "errors": {
         "failed": "注册失败。"
       },
       "success": {
-        "ready": "账号已创建，可以登录了。",
+        "ready": "注册完成，可以登录了。",
         "checkEmailTitle": "查看邮箱",
-        "createdTitle": "账号已创建",
+        "createdTitle": "注册完成",
         "checkEmailMessage": "账号即将就绪，请先验证邮箱。",
         "verifyThenSignIn": "验证链接已发送到你的邮箱。验证邮箱后即可<signIn>登录</signIn>。",
         "continue": "继续登录"
@@ -78,7 +78,7 @@
       "backToSignIn": "返回<signIn>登录</signIn>",
       "remembered": "想起密码了？<signIn>登录</signIn>",
       "errors": {
-        "failed": "出了点问题，请重试。"
+        "failed": "出错了，请重试。"
       }
     },
     "reset": {
@@ -129,8 +129,6 @@
     "fallbackPod": "一个 Pod",
     "untitledPod": "未命名 Pod",
     "invitedTo": "你受邀加入 {{podName}}",
-    "previewMeta": "{{formattedCount}} 位成员 · 人与智能体在 Commonly 中共同协作",
-    "memberCount": "{{formattedCount}} 位成员",
     "signUpToJoin": "注册并加入",
     "alreadyHaveAccount": "已有账号？<login>登录</login>",
     "goToPods": "前往你的 Pod",
@@ -139,14 +137,18 @@
     "joinPod": "加入 {{podName}}",
     "errors": {
       "invalid": "该邀请已失效。",
-      "dmRefused": "这是一对一私密对话，无法使用邀请链接加入。",
+      "dmRefused": "这是一对一私信，无法使用邀请链接加入。",
       "joinFailed": "加入失败，请重试。"
-    }
+    },
+    "memberCount_one": "{{formattedCount}} 位成员",
+    "memberCount_other": "{{formattedCount}} 位成员",
+    "previewMeta_one": "{{formattedCount}} 位成员 · 人与智能体在 Commonly 中共同协作",
+    "previewMeta_other": "{{formattedCount}} 位成员 · 人与智能体在 Commonly 中共同协作"
   },
   "firstRun": {
-    "eyebrow": "开始使用的前五分钟",
-    "title": "把你的智能体带进来",
-    "lede": "接入 Claude Code、Cursor 或 Codex，然后直接在工作空间中开始一对一私聊。",
+    "eyebrow": "最初的五分钟",
+    "title": "把你的智能体请进房间",
+    "lede": "接入 Claude Code、Cursor 或 Codex，然后直接在工作空间中开始一对一私信。",
     "skip": "暂时跳过",
     "steps": {
       "connect": {
@@ -162,14 +164,14 @@
       },
       "hello": {
         "title": "先打声招呼",
-        "text": "你的智能体会获得持久身份，并拥有与你的一对一私聊。",
+        "text": "你的智能体会获得持久身份，并拥有与你的一对一私信。",
         "opening": "正在打开…",
         "cta": "打个招呼"
       }
     },
     "errors": {
       "statusUnavailable": "暂时无法查看连接状态，我们会继续检查。",
-      "roomFailed": "暂时无法打开一对一私聊，请重试。"
+      "roomFailed": "暂时无法打开一对一私信，请重试。"
     }
   },
   "inviteModal": {
@@ -191,7 +193,8 @@
       "maximumUses": "最多使用次数",
       "maximumUsesLabel": "邀请最多使用次数",
       "unlimited": "不限次数",
-      "uses": "{{formattedCount}} 次"
+      "uses_one": "{{formattedCount}} 次",
+      "uses_other": "{{formattedCount}} 次"
     },
     "generate": "生成邀请链接",
     "generating": "正在生成…",
@@ -205,15 +208,19 @@
     "revoke": "撤销",
     "revoking": "正在撤销…",
     "usage": {
-      "unlimited": "已使用 {{formattedCount}} 次 · 不限次数",
-      "limited": "已使用 {{uses}} / {{maxUses}} 次"
+      "limited": "已使用 {{uses}} / {{maxUses}} 次",
+      "unlimited_one": "已使用 {{formattedCount}} 次 · 不限次数",
+      "unlimited_other": "已使用 {{formattedCount}} 次 · 不限次数"
     },
     "time": {
-      "recently": "最近创建",
+      "recently": "最近",
       "justNow": "刚刚",
-      "minutesAgo": "{{formattedCount}} 分钟前",
-      "hoursAgo": "{{formattedCount}} 小时前",
-      "daysAgo": "{{formattedCount}} 天前"
+      "daysAgo_one": "{{formattedCount}} 天前",
+      "daysAgo_other": "{{formattedCount}} 天前",
+      "hoursAgo_one": "{{formattedCount}} 小时前",
+      "hoursAgo_other": "{{formattedCount}} 小时前",
+      "minutesAgo_one": "{{formattedCount}} 分钟前",
+      "minutesAgo_other": "{{formattedCount}} 分钟前"
     },
     "expiry": {
       "neverExpires": "永不过期",
@@ -238,7 +245,8 @@
     "typing": {
       "one": "{{name}} 正在思考…",
       "two": "{{first}} 和 {{second}} 正在思考…",
-      "many": "{{first}}、{{second}} 和另外 {{formattedCount}} 个智能体正在思考…"
+      "many_one": "{{first}}、{{second}} 和另外 {{formattedCount}} 个智能体正在思考…",
+      "many_other": "{{first}}、{{second}} 和另外 {{formattedCount}} 个智能体正在思考…"
     },
     "mentions": {
       "agentSubtitle": "智能体 · @{{handle}}",
@@ -254,15 +262,16 @@
       "botPairTitle": "{{first}} 和 {{second}} 还没有聊过",
       "botPairText": "需要彼此协助时，它们会互发私信。",
       "agentRoomTitle": "向 {{agentName}} 打个招呼",
-      "agentRoomText": "这是你们的一对一私聊。选择下方提示语，或自己输入消息。",
+      "agentRoomText": "这是你们的一对一私信。选择下方提示语，或自己输入消息。",
       "noMessagesTitle": "暂无消息",
-      "agentDmText": "这是一对一私聊。打个招呼，开始对话。",
+      "agentDmText": "这是一对一私信。打个招呼，开始对话。",
       "quietTitle": "这个 Pod 还很安静",
       "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
     },
     "heartbeat": {
-      "recent": "最近收到 {{formattedCount}} 次心跳",
-      "none": "最近没有收到心跳"
+      "none": "最近没有收到心跳",
+      "recent_one": "最近收到 {{formattedCount}} 次心跳",
+      "recent_other": "最近收到 {{formattedCount}} 次心跳"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -285,7 +294,7 @@
       "label": "只读对话",
       "title": "只读模式——你正在旁观这场对话",
       "botPair": "{{first}} 和 {{second}} 正在直接对话。若要与它们交流，请在共享团队 Pod 中 @提及其中一个。",
-      "agentDm": "你可以阅读这场一对一对话，但不能发消息。若要与该智能体交流，请在共享团队 Pod 中 @提及它。"
+      "agentDm": "你可以阅读这场一对一私信，但不能发消息。若要与该智能体交流，请在共享团队 Pod 中 @提及它。"
     },
     "composer": {
       "placeholder": "发消息到 {{podName}}…",
