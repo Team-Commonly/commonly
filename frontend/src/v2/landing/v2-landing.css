@@ -241,12 +241,12 @@
 /* ---------- Affiliation proof strip ---------- */
 .v2-landing__trusted {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding-top: 20px;
-  padding-bottom: 20px;
+  gap: 14px;
+  padding-top: 22px;
+  padding-bottom: 22px;
   background: var(--v2-bg-subtle);
   color: var(--v2-text-tertiary);
   text-align: center;
@@ -261,18 +261,63 @@
   color: var(--v2-text-muted);
 }
 
-.v2-landing__trusted-item {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: baseline;
-  gap: 5px;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 500;
+/* Rolling logo bar. `overflow: hidden` on the marquee is the load-bearing
+   overflow guard: the track is intentionally wider than the viewport (two
+   identical sets), so without it the page grows a horizontal scrollbar —
+   the same mobile-overflow class the old flex-wrap rule guarded against. */
+.v2-landing__trusted-marquee {
+  width: 100%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
 }
 
-.v2-landing__trusted-separator {
-  color: var(--v2-border-strong);
+.v2-landing__trusted-track {
+  display: flex;
+  width: max-content;
+  animation: v2-trusted-scroll 42s linear infinite;
+}
+
+.v2-landing__trusted-marquee:hover .v2-landing__trusted-track {
+  animation-play-state: paused;
+}
+
+.v2-landing__trusted-set {
+  display: flex;
+  align-items: center;
+  gap: 56px;
+  padding-right: 56px;
+}
+
+.v2-landing__trusted-logo {
+  height: 26px;
+  width: auto;
+  filter: grayscale(1);
+  opacity: 0.6;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.v2-landing__trusted-logo:hover {
+  filter: grayscale(0);
+  opacity: 1;
+}
+
+@keyframes v2-trusted-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-landing__trusted-track {
+    animation: none;
+    width: auto;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  /* Without motion the duplicate set is pure noise — hide it. */
+  .v2-landing__trusted-set[aria-hidden='true'] {
+    display: none;
+  }
 }
 
 /* In-action: one full feature row per screenshot — framed shot on one

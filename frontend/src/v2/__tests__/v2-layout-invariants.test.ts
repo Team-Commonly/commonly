@@ -146,12 +146,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-root .v2-invite-link-row button.v2-invite-card__cta,');
   });
 
-  test('landing trusted-by affiliations wrap instead of overflowing on phones', () => {
-    // Eleven provenance-backed names fit one line on desktop but need several
-    // lines at 390px. The flex-wrap rule is the load-bearing overflow guard.
-    const trusted = ruleBody(landing, '.v2-landing__trusted');
-    expect(trusted).toContain('display: flex');
-    expect(trusted).toContain('flex-wrap: wrap');
-    expect(trusted).toContain('justify-content: center');
+  test('landing trusted-by marquee cannot widen the page', () => {
+    // The rolling logo track is INTENTIONALLY wider than the viewport (two
+    // identical sets for a seamless loop). `overflow: hidden` on the marquee
+    // wrapper is the load-bearing guard — without it the landing page grows
+    // a horizontal scrollbar on every device (the mobile-overflow class).
+    const marquee = ruleBody(landing, '.v2-landing__trusted-marquee');
+    expect(marquee).toContain('overflow: hidden');
+    // The track must scroll by exactly half its width (two identical sets),
+    // or the loop visibly jumps.
+    expect(landing).toContain('translateX(-50%)');
+  });
+
+  test('landing trusted-by marquee falls back to a static wrap under reduced motion', () => {
+    // prefers-reduced-motion users get the old wrapping strip: animation off,
+    // wrap on, duplicate set hidden (it exists only for the seamless loop).
+    const reduced = landing.slice(landing.indexOf('prefers-reduced-motion'));
+    expect(reduced).toContain('flex-wrap: wrap');
+    expect(reduced).toContain("animation: none");
+    expect(reduced).toContain(".v2-landing__trusted-set[aria-hidden='true']");
   });
 });

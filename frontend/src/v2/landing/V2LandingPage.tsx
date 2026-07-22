@@ -29,20 +29,23 @@ const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
 const ADR_COUNT = 15;
-// Issue #708 records the provenance for every affiliation. Keep this ordered
-// list config-shaped so additions require an explicit, reviewable data change.
+// Issue #708 records the provenance for every affiliation AND the source +
+// license of every logo file (Wikimedia PD-textlogo / official brand assets).
+// Keep this ordered list config-shaped so additions require an explicit,
+// reviewable data change. Logos live in public/logos/ and render grayscale
+// at 26px on the rolling bar.
 const TRUSTED_AFFILIATIONS = [
-  'Arista',
-  'UCLA',
-  'Rice University',
-  'Peking University',
-  'University of Pennsylvania',
-  'Yale University',
-  'Columbia University',
-  'McMaster University',
-  'ByteDance',
-  'Microsoft',
-  'Ajaib',
+  { name: 'Arista', logo: '/logos/arista.svg' },
+  { name: 'UCLA', logo: '/logos/ucla.svg' },
+  { name: 'Rice University', logo: '/logos/rice.svg' },
+  { name: 'Peking University', logo: '/logos/pku.png' },
+  { name: 'University of Pennsylvania', logo: '/logos/upenn.svg' },
+  { name: 'Yale University', logo: '/logos/yale.svg' },
+  { name: 'Columbia University', logo: '/logos/columbia.svg' },
+  { name: 'McMaster University', logo: '/logos/mcmaster.svg' },
+  { name: 'ByteDance', logo: '/logos/bytedance.svg' },
+  { name: 'Microsoft', logo: '/logos/microsoft.svg' },
+  { name: 'Ajaib', logo: '/logos/ajaib.svg' },
 ] as const;
 
 const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
@@ -323,21 +326,40 @@ const V2LandingPage: React.FC = () => {
         </section>
 
         {/* Individual affiliations, not organizational endorsements. The
-            provenance for every entry is recorded in issue #708. */}
+            provenance for every entry — and the source/license of every logo
+            file — is recorded in issue #708. */}
         <section
           className="v2-landing__trusted"
           data-reveal
-          aria-label={`Trusted by users from ${TRUSTED_AFFILIATIONS.join(', ')}`}
+          aria-label={`Trusted by users from ${TRUSTED_AFFILIATIONS.map((a) => a.name).join(', ')}`}
         >
           <span className="v2-landing__trusted-label">Trusted by users from</span>
-          {TRUSTED_AFFILIATIONS.map((affiliation, index) => (
-            <span className="v2-landing__trusted-item" key={affiliation}>
-              {affiliation}
-              {index < TRUSTED_AFFILIATIONS.length - 1 && (
-                <span className="v2-landing__trusted-separator" aria-hidden="true">·</span>
-              )}
-            </span>
-          ))}
+          {/* Rolling logo bar: the track holds two identical sets and the
+              keyframe slides -50% for a seamless loop. The second set is
+              purely decorative — aria-hidden with empty alts so screen
+              readers hear each name exactly once. */}
+          <div className="v2-landing__trusted-marquee">
+            <div className="v2-landing__trusted-track">
+              {[0, 1].map((set) => (
+                <div
+                  className="v2-landing__trusted-set"
+                  key={set}
+                  aria-hidden={set === 1}
+                >
+                  {TRUSTED_AFFILIATIONS.map((affiliation) => (
+                    <img
+                      key={`${set}-${affiliation.name}`}
+                      className="v2-landing__trusted-logo"
+                      src={affiliation.logo}
+                      alt={set === 0 ? affiliation.name : ''}
+                      loading="lazy"
+                      height={26}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* ---- Wedge band ---- */}
