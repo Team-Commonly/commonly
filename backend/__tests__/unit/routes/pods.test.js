@@ -42,6 +42,22 @@ describe('pods routes', () => {
     expect(controllers.joinPod).toHaveBeenCalled();
   });
 
+  it('rate-limits direct join attempts to 20 per token per minute', async () => {
+    const authorization = 'Bearer join-rate-limit-test';
+    for (let index = 0; index < 20; index += 1) {
+      await request(app)
+        .post('/api/pods/123/join')
+        .set('Authorization', authorization)
+        .expect(200);
+    }
+
+    const limited = await request(app)
+      .post('/api/pods/123/join')
+      .set('Authorization', authorization)
+      .expect(429);
+    expect(limited.body.msg).toMatch(/20 pod joins per 60s/);
+  });
+
   it('DELETE /api/pods/123/members/456 calls removeMember', async () => {
     await request(app).delete('/api/pods/123/members/456').expect(200);
     expect(controllers.removeMember).toHaveBeenCalled();

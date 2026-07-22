@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
 const Message = require('../models/Message');
 const Post = require('../models/Post');
@@ -159,13 +160,33 @@ exports.getAllPods = async (req: any, res: any) => {
     const { type } = req.query;
     const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isCommunityScope = scope === 'community';
+    const isDiscoverScope = scope === 'discover';
+    let discoverCallerId = null;
+    if (isDiscoverScope) {
+      const rawCallerId = String(req.userId || req.user?.id || '');
+      if (!mongoose.Types.ObjectId.isValid(rawCallerId)) {
+        return res.status(401).json({ error: 'User authentication failed' });
+      }
+      discoverCallerId = new mongoose.Types.ObjectId(rawCallerId);
+    }
     // Exclude agent-admin DM pods from default listing; only show when
     // explicitly requested and the caller is a member.
-    // Community is an explicit, additive discovery scope. Personal pod types
-    // stay excluded even if a malformed/admin-created row has publicRead=true.
+    // Community and Discover are explicit, additive discovery scopes. Personal
+    // pod types stay excluded even if a malformed/admin-created row has the
+    // listing/read flags forced true.
     // Keep the default query semantically identical to the privacy-hardened
     // membership listing below.
-    const query = isCommunityScope
+    const query = isDiscoverScope
+      ? {
+        publicRead: true,
+        communityListed: true,
+        joinPolicy: { $ne: 'invite-only' },
+        members: { $ne: discoverCallerId },
+        type: type
+          ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
+          : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
+      }
+      : isCommunityScope
       ? {
         // Listed is opt-in and distinct from readable: showcase rooms keep
         // publicRead for anonymous viewing without appearing in Community.
@@ -202,7 +223,7 @@ exports.getAllPods = async (req: any, res: any) => {
     // private DM in the instance leaks into their sidebar (which made
     // xcjsam see — and try to post into — sam-demo's agent-rooms).
     const isPersonal = type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm';
-    if (req.userId && !isCommunityScope) {
+    if (req.userId && !isCommunityScope && !isDiscoverScope) {
       const wantsAll = scope === 'all';
       const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
       const filterToMine = isPersonal || !wantsAll || !isAdmin;
@@ -423,11 +444,6 @@ exports.createPod = async (req: any, res: any) => {
 // Join a pod
 exports.joinPod = async (req: any, res: any) => {
   try {
-    console.log('Join pod request received:', {
-      params: req.params,
-      body: req.body,
-    });
-
     const { id } = req.params;
 
     if (!id) {
@@ -435,31 +451,16 @@ exports.joinPod = async (req: any, res: any) => {
     }
 
     // Access the user ID safely
-    const userId = req.userId || req.user.id;
-    console.log('User ID from request:', userId);
+    const userId = req.userId || req.user?.id || req.user?._id;
 
     if (!userId) {
       return res.status(401).json({ msg: 'User authentication failed' });
     }
 
-    // Check if pod exists
-    console.log('Finding pod with ID:', id);
     const pod = await Pod.findById(id);
 
     if (!pod) {
       return res.status(404).json({ msg: 'Pod not found' });
-    }
-
-    console.log('Pod found:', { podId: pod._id, members: pod.members });
-
-    // Check if user is already a member
-    const isMember = pod.members.some(
-      (member: any) => member.toString() === userId.toString(),
-    );
-    console.log('Is user already a member?', isMember);
-
-    if (isMember) {
-      return res.status(400).json({ msg: 'Already a member of this pod' });
     }
 
     // Agent DMs are strictly 1:1 (ADR-001 §3.10). The pod is created with
@@ -482,44 +483,45 @@ exports.joinPod = async (req: any, res: any) => {
       });
     }
 
-    // Enforce invite-only policy
-    if (pod.joinPolicy === 'invite-only') {
+    const isMember = (pod.members || []).some(
+      (member: any) => String(member?._id || member) === String(userId),
+    );
+
+    // Repeated self-join requests are successful and side-effect free. This
+    // keeps optimistic clients and retried requests idempotent.
+    if (!isMember) {
       const isAdmin = await isGlobalAdminRequest(req);
-      const isCreator = pod.createdBy.toString() === userId.toString();
-      if (!isAdmin && !isCreator) {
-        return res.status(403).json({ msg: 'This pod is invite-only. Ask the pod creator to add you.' });
+      const isJoinable = pod.communityListed === true && pod.joinPolicy !== 'invite-only';
+      if (!isAdmin && !isJoinable) {
+        return res.status(403).json({
+          code: 'join_refused',
+          msg: 'This pod cannot be joined directly. Ask a member for an invite link.',
+        });
       }
+
+      await Pod.updateOne(
+        { _id: pod._id },
+        {
+          $addToSet: { members: userId },
+          $set: { updatedAt: new Date() },
+        },
+      );
     }
 
-    // Add user to pod members
-    console.log('Adding user to pod members');
-    pod.members.push(userId);
-    pod.updatedAt = Date.now();
-
-    console.log('Saving pod with new member');
-    await pod.save();
-
-    // Return the updated pod with populated data
-    console.log('Retrieving updated pod with populated data');
     const updatedPod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture isBot');
 
-    console.log('Join pod successful, returning updated pod');
-    res.json(updatedPod);
+    return res.json(updatedPod);
   } catch (err: any) {
     console.error('Error in joinPod:', err.message);
-    console.error('Full error:', err);
 
     if (err.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'Pod not found' });
     }
 
-    // Return more specific error information to help with debugging
     return res.status(500).json({
       msg: 'Server Error',
-      error: err.message,
-      stack: process.env.NODE_ENV === 'production' ? null : err.stack,
     });
   }
 };

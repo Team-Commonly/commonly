@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
-import rateLimit from 'express-rate-limit';
+import { createHash } from 'crypto';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -40,6 +41,14 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+const podJoinRateLimitKey = (req: any) => {
+  const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
 
 const storage = multer.diskStorage({
   destination: (req: unknown, file: unknown, cb: (err: Error | null, dir: string) => void) => {
@@ -284,7 +293,14 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:id/join', auth, joinPod);
+router.post('/:id/join', rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: podJoinRateLimitKey,
+  handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
+}), auth, joinPod);
 router.post('/:id/leave', auth, leavePod);
 router.delete('/:id/members/:memberId', auth, removeMember);
 
