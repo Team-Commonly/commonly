@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import Papa from 'papaparse';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
@@ -75,6 +76,12 @@ interface TaskItem {
 interface TaskApiResponse {
   tasks: TaskItem[];
 }
+
+const TASK_PILL_CLASS = {
+  complete: 'v2-inspector__pill v2-inspector__pill--complete',
+  blocked: 'v2-inspector__pill v2-inspector__pill--blocked',
+  progress: 'v2-inspector__pill v2-inspector__pill--progress',
+} as const;
 
 interface AnnouncementItem {
   _id: string;
@@ -248,6 +255,7 @@ const useTextPreview = (signedUrl: string | null): {
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(!!signedUrl);
+  const { t } = useTranslation();
   useEffect(() => {
     if (!signedUrl) { setText(null); setLoading(false); return; }
     let cancelled = false;
@@ -280,12 +288,12 @@ const useTextPreview = (signedUrl: string | null): {
         setLoading(false);
       } catch (e) {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Could not load file');
+        setError(e instanceof Error ? e.message : t('inspector.preview.couldNotLoadFile'));
         setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [signedUrl]);
+  }, [signedUrl, t]);
   return { text, truncated, error, loading };
 };
 
@@ -314,8 +322,9 @@ const PreviewMute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const ImagePreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const { url, loading } = useSignedFileUrl(artifact.fileName);
-  if (loading) return <PreviewBox><PreviewMute>Loading…</PreviewMute></PreviewBox>;
+  if (loading) return <PreviewBox><PreviewMute>{t('inspector.preview.loading')}</PreviewMute></PreviewBox>;
   if (!url) return null;
   return (
     <PreviewBox>
@@ -325,8 +334,9 @@ const ImagePreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => 
 };
 
 const PdfPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const { url, loading } = useSignedFileUrl(artifact.fileName);
-  if (loading) return <PreviewBox><PreviewMute>Loading PDF…</PreviewMute></PreviewBox>;
+  if (loading) return <PreviewBox><PreviewMute>{t('inspector.preview.loadingPdf')}</PreviewMute></PreviewBox>;
   if (!url) return null;
   return (
     <PreviewBox>
@@ -340,10 +350,11 @@ const PdfPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
 };
 
 const TextPreview: React.FC<{ artifact: PreviewArtifact; markdown?: boolean; pretty?: boolean }> = ({ artifact, markdown, pretty }) => {
+  const { t } = useTranslation();
   const { url } = useSignedFileUrl(artifact.fileName);
   const { text, truncated, error, loading } = useTextPreview(url);
-  if (loading) return <PreviewBox><PreviewMute>Loading…</PreviewMute></PreviewBox>;
-  if (error) return <PreviewBox><PreviewMute>Could not load: {error}</PreviewMute></PreviewBox>;
+  if (loading) return <PreviewBox><PreviewMute>{t('inspector.preview.loading')}</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>{t('inspector.preview.couldNotLoad', { error })}</PreviewMute></PreviewBox>;
   if (text == null) return null;
   // For JSON, try to pretty-print; on parse failure fall through to raw.
   let body = text;
@@ -363,23 +374,24 @@ const TextPreview: React.FC<{ artifact: PreviewArtifact; markdown?: boolean; pre
           fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
         }}>{body}</pre>
       )}
-      {truncated && <PreviewMute>Preview truncated at 200 KB. Click Open for the full file.</PreviewMute>}
+      {truncated && <PreviewMute>{t('inspector.preview.truncated')}</PreviewMute>}
     </PreviewBox>
   );
 };
 
 const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const { url } = useSignedFileUrl(artifact.fileName);
   const { text, truncated, error, loading } = useTextPreview(url);
-  if (loading) return <PreviewBox><PreviewMute>Loading CSV…</PreviewMute></PreviewBox>;
-  if (error) return <PreviewBox><PreviewMute>Could not load: {error}</PreviewMute></PreviewBox>;
+  if (loading) return <PreviewBox><PreviewMute>{t('inspector.preview.loadingCsv')}</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>{t('inspector.preview.couldNotLoad', { error })}</PreviewMute></PreviewBox>;
   if (!text) return null;
   // RFC 4180 parsing via papaparse — handles quoted commas, escaped quotes,
   // and multi-line cells. The hand-roll we shipped previously broke on real
   // spreadsheet exports.
   const parsed = Papa.parse<string[]>(text, { skipEmptyLines: true });
   const rows = parsed.data;
-  if (rows.length === 0) return <PreviewBox><PreviewMute>Empty file</PreviewMute></PreviewBox>;
+  if (rows.length === 0) return <PreviewBox><PreviewMute>{t('inspector.preview.emptyFile')}</PreviewMute></PreviewBox>;
   const PREVIEW_ROW_CAP = 20;
   const [headerRow, ...allBodyRows] = rows;
   const bodyRows = allBodyRows.slice(0, PREVIEW_ROW_CAP);
@@ -409,8 +421,8 @@ const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
       {(truncated || moreRows > 0) && (
         <PreviewMute>
           {truncated
-            ? 'Preview truncated at 200 KB. Click Open for the full file.'
-            : `${moreRows} more row${moreRows === 1 ? '' : 's'} not shown. Click Open for the full file.`}
+            ? t('inspector.preview.truncated')
+            : t('inspector.preview.moreRows', { count: moreRows })}
         </PreviewMute>
       )}
     </PreviewBox>
@@ -423,6 +435,7 @@ const CsvPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
 // (headings, lists, tables, bold/italic) and skips rare inline shapes. For
 // pixel-faithful render the user clicks Open and uses Word / Office Online.
 const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const { url, loading: urlLoading } = useSignedFileUrl(artifact.fileName);
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -464,19 +477,19 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
         setHtml(result.value || '');
       } catch (e) {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Could not load document');
+        setError(e instanceof Error ? e.message : t('inspector.preview.couldNotLoadDocument'));
       } finally {
         if (!cancelled) setBusy(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [url]);
-  if (urlLoading || busy) return <PreviewBox><PreviewMute>Rendering Word document…</PreviewMute></PreviewBox>;
-  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  }, [url, t]);
+  if (urlLoading || busy) return <PreviewBox><PreviewMute>{t('inspector.preview.renderingWord')}</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>{t('inspector.preview.couldNotPreview', { error })}</PreviewMute></PreviewBox>;
   // mammoth returns "" (not null) when the docx body has no paragraphs/runs,
   // so html=="" is the empty-document signal. Surface a placeholder rather
   // than rendering nothing — matches the XlsxPreview empty-sheet UX.
-  if (html === '') return <PreviewBox><PreviewMute>Empty document</PreviewMute></PreviewBox>;
+  if (html === '') return <PreviewBox><PreviewMute>{t('inspector.preview.emptyDocument')}</PreviewMute></PreviewBox>;
   if (!html) return null;
   return (
     <PreviewBox>
@@ -498,6 +511,7 @@ const DocxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
 // SheetJS produces a <table> for each sheet; we wrap it in our scroll
 // container and add light styling so it doesn't dump unstyled rows.
 const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const { url, loading: urlLoading } = useSignedFileUrl(artifact.fileName);
   const [sheets, setSheets] = useState<{ name: string; html: string }[] | null>(null);
   const [activeSheet, setActiveSheet] = useState(0);
@@ -529,7 +543,7 @@ const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
           // and fall back to a placeholder for genuinely empty sheets.
           const cellKeys = Object.keys(ws || {}).filter((k) => !k.startsWith('!'));
           if (cellKeys.length === 0) {
-            return { name, html: '<p style="color:#888;font-style:italic">Empty sheet</p>' };
+            return { name, html: `<p style="color:#888;font-style:italic">${t('inspector.preview.emptySheet')}</p>` };
           }
           if (!ws['!ref']) {
             try {
@@ -550,22 +564,22 @@ const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
           try {
             return { name, html: XLSX.utils.sheet_to_html(ws, { header: '', footer: '' }) };
           } catch (cellErr) {
-            return { name, html: `<p style="color:#888;font-style:italic">Could not render sheet: ${(cellErr as Error).message}</p>` };
+            return { name, html: `<p style="color:#888;font-style:italic">${t('inspector.preview.couldNotRenderSheet', { error: (cellErr as Error).message })}</p>` };
           }
         });
         if (cancelled) return;
         setSheets(out);
       } catch (e) {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Could not load workbook');
+        setError(e instanceof Error ? e.message : t('inspector.preview.couldNotLoadWorkbook'));
       } finally {
         if (!cancelled) setBusy(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [url]);
-  if (urlLoading || busy) return <PreviewBox><PreviewMute>Rendering Excel workbook…</PreviewMute></PreviewBox>;
-  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  }, [url, t]);
+  if (urlLoading || busy) return <PreviewBox><PreviewMute>{t('inspector.preview.renderingExcel')}</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>{t('inspector.preview.couldNotPreview', { error })}</PreviewMute></PreviewBox>;
   if (!sheets || sheets.length === 0) return null;
   const current = sheets[Math.min(activeSheet, sheets.length - 1)];
   return (
@@ -615,6 +629,7 @@ const XlsxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
 // we sandbox it inside an iframe via srcdoc so its scripts (three.js loader)
 // can't touch the host page.
 const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
+  const { t } = useTranslation();
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -652,18 +667,18 @@ const PptxPreview: React.FC<{ artifact: PreviewArtifact }> = ({ artifact }) => {
         }
       } catch (e) {
         if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Could not render preview');
+        setError(e instanceof Error ? e.message : t('inspector.preview.couldNotRenderPreview'));
       } finally {
         if (!cancelled) setBusy(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [artifact.fileName]);
-  if (busy) return <PreviewBox><PreviewMute>Rendering PowerPoint deck…</PreviewMute></PreviewBox>;
-  if (error) return <PreviewBox><PreviewMute>Could not preview: {error}</PreviewMute></PreviewBox>;
+  }, [artifact.fileName, t]);
+  if (busy) return <PreviewBox><PreviewMute>{t('inspector.preview.renderingPowerpoint')}</PreviewMute></PreviewBox>;
+  if (error) return <PreviewBox><PreviewMute>{t('inspector.preview.couldNotPreview', { error })}</PreviewMute></PreviewBox>;
   // Empty string == zero-slide deck (set above); render the same placeholder
   // shape DocxPreview/XlsxPreview use for genuinely-empty deliverables.
-  if (html === '') return <PreviewBox><PreviewMute>Empty deck</PreviewMute></PreviewBox>;
+  if (html === '') return <PreviewBox><PreviewMute>{t('inspector.preview.emptyDeck')}</PreviewMute></PreviewBox>;
   if (!html) return null;
   return (
     <PreviewBox>
@@ -762,20 +777,21 @@ const resolveRuntimeBadge = (
   return { ...identity, isByo: isByo || type === 'local-cli' };
 };
 
-const memberRoleLabel = (
+const memberRoleKey = (
   member: { _id?: string; isBot?: boolean },
   ownerId: string | undefined,
   isAgent: boolean,
-): 'Owner' | 'Human' | 'AI Agent' => {
-  if (ownerId && member._id === ownerId) return 'Owner';
-  if (isAgent || member.isBot) return 'AI Agent';
-  return 'Human';
+): 'owner' | 'human' | 'aiAgent' => {
+  if (ownerId && member._id === ownerId) return 'owner';
+  if (isAgent || member.isBot) return 'aiAgent';
+  return 'human';
 };
 
 const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   detail, podsState, view, onClose, onOpenMember, onOpenArtifact, onBack, onOpenInvite,
   pendingOpenFileName, onPendingOpenFileNameConsumed,
 }) => {
+  const { t } = useTranslation();
   const { pod, members, agents } = detail;
   const api = useV2Api();
   const navigate = useNavigate();
@@ -837,8 +853,8 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     // memo doesn't throw before render. (The Inspector renders a loading
     // shell when `pod` is null; we just need the memo to not crash.)
     const raw = pod?.createdBy?.username || '';
-    return agentDisplayByUsername.get(raw.toLowerCase()) || raw || 'unknown';
-  }, [pod?.createdBy?.username, agentDisplayByUsername]);
+    return agentDisplayByUsername.get(raw.toLowerCase()) || raw || t('inspector.unknown');
+  }, [pod?.createdBy?.username, agentDisplayByUsername, t]);
 
   // Set of usernames that map to an installed agent — used to filter the
   // members[] list down to actual humans. The backend's `User.isBot` flag
@@ -1028,7 +1044,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const agentCount = agents.length;
   const created = pod.createdAt ? new Date(pod.createdAt).toLocaleDateString([], {
     month: 'short', day: 'numeric',
-  }) : 'unknown';
+  }) : t('inspector.unknown');
   const ownerId = pod.createdBy?._id;
 
   const openPrivatePod = async (agent: V2Agent) => {
@@ -1041,16 +1057,16 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       });
       const roomId = data.room?._id;
       if (roomId) navigate(`/v2/pods/${roomId}`);
-      else setPrivateError('Private pod could not be opened for this agent.');
+      else setPrivateError(t('inspector.errors.privatePodNotOpenedForAgent'));
     } catch (err) {
       const e = err as { response?: { data?: { message?: string; error?: string; msg?: string } }; message?: string };
-      setPrivateError(e.response?.data?.message || e.response?.data?.error || e.response?.data?.msg || e.message || 'Private pod could not be opened.');
+      setPrivateError(e.response?.data?.message || e.response?.data?.error || e.response?.data?.msg || e.message || t('inspector.errors.privatePodNotOpened'));
     }
   };
 
   const handleDeletePod = async () => {
     if (!podsState || !pod) return;
-    const confirmed = window.confirm(`Delete "${pod.name}"? This removes the pod and its messages.`);
+    const confirmed = window.confirm(t('inspector.confirmDeletePod', { name: pod.name }));
     if (!confirmed) return;
     const deleted = await podsState.deletePod(pod._id);
     if (deleted) navigate('/v2', { replace: true });
@@ -1067,7 +1083,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const nowSection = nowAgent && nowTask && (
     <section className="v2-inspector__section">
       <div className="v2-inspector__now">
-        <div className="v2-inspector__now-eyebrow">NOW</div>
+        <div className="v2-inspector__now-eyebrow">{t('inspector.now')}</div>
         <div className="v2-inspector__now-title">
           <span className="v2-inspector__now-pulse" />
           {(nowAgent.profile?.displayName || nowAgent.displayName || nowAgent.agentName)}
@@ -1075,7 +1091,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           {nowTask.title}
         </div>
         <div className="v2-inspector__now-meta">
-          Status: {nowTask.status.replace('_', ' ')}
+          {t('inspector.statusLabel', { status: nowTask.status.replace('_', ' ') })}
         </div>
       </div>
     </section>
@@ -1089,10 +1105,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const progressPct = totalTasks > 0 ? Math.round((runState.complete / totalTasks) * 100) : 0;
   const progressSection = totalTasks > 0 && (
     <section className="v2-inspector__section">
-      <div className="v2-inspector__section-title">Progress</div>
+      <div className="v2-inspector__section-title">{t('inspector.progress.title')}</div>
       <div className="v2-inspector__progress-row">
         <span className="v2-inspector__progress-stat">
-          {runState.complete} of {totalTasks} task{totalTasks === 1 ? '' : 's'} complete
+          {t('inspector.progress.stat', { complete: runState.complete, total: totalTasks, count: totalTasks })}
         </span>
         <span className="v2-inspector__progress-pct">{progressPct}%</span>
       </div>
@@ -1107,9 +1123,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   // ------------------------------------------------------------------
   const goalSection = (
     <section className="v2-inspector__section">
-      <div className="v2-inspector__section-title">Goal</div>
+      <div className="v2-inspector__section-title">{t('inspector.goal.title')}</div>
       <div className="v2-inspector__goal-text">
-        {pod.description?.trim() || <span className="v2-mute">No goal set yet.</span>}
+        {pod.description?.trim() || <span className="v2-mute">{t('inspector.goal.empty')}</span>}
       </div>
     </section>
   );
@@ -1122,12 +1138,12 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     ...announcements.map((a) => ({
       id: `ann-${a._id}`,
       kind: 'Announcement',
-      title: a.title || a.content || 'Untitled announcement',
+      title: a.title || a.content || t('inspector.untitledAnnouncement'),
     })),
     ...externalLinks.map((l) => ({
       id: `link-${l._id}`,
       kind: l.type || 'other_link',
-      title: l.name || l.url || 'External link',
+      title: l.name || l.url || t('inspector.externalLink'),
       subtitle: l.url,
       url: l.url,
     })),
@@ -1158,7 +1174,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       setAddLinkOpen(false);
     } catch (err) {
       const e = err as { response?: { data?: { message?: string } }; message?: string };
-      setAddLinkError(e.response?.data?.message || e.message || 'Could not add link.');
+      setAddLinkError(e.response?.data?.message || e.message || t('inspector.errors.couldNotAddLink'));
     } finally {
       setAddLinkBusy(false);
     }
@@ -1167,7 +1183,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const artifactsSection = (
     <section className="v2-inspector__section">
       <div className="v2-inspector__section-head">
-        <div className="v2-inspector__section-title">Artifacts</div>
+        <div className="v2-inspector__section-title">{t('inspector.artifacts.title')}</div>
         <button
           type="button"
           className="v2-inspector__link"
@@ -1177,7 +1193,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           }}
           aria-expanded={addLinkOpen}
         >
-          {addLinkOpen ? 'Cancel' : '+ Add'}
+          {addLinkOpen ? t('inspector.actions.cancel') : t('inspector.artifacts.add')}
         </button>
       </div>
       {addLinkOpen && (
@@ -1197,7 +1213,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 void handleAddLinkSubmit();
               }
             }}
-            placeholder="Paste a Notion, Google Doc, Figma, GitHub, Zoom URL…"
+            placeholder={t('inspector.artifacts.urlPlaceholder')}
             autoFocus
             disabled={addLinkBusy}
             style={{
@@ -1230,7 +1246,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 cursor: 'pointer',
               }}
             >
-              Cancel
+              {t('inspector.actions.cancel')}
             </button>
             <button
               type="button"
@@ -1247,13 +1263,13 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 cursor: addLinkBusy || !addLinkUrl.trim() ? 'not-allowed' : 'pointer',
               }}
             >
-              {addLinkBusy ? 'Adding…' : 'Add'}
+              {addLinkBusy ? t('inspector.artifacts.adding') : t('inspector.artifacts.addShort')}
             </button>
           </div>
         </div>
       )}
       {artifactItems.length === 0 && !addLinkOpen ? (
-        <div className="v2-inspector__empty">No artifacts yet — share Notion, Sheets, or Figma links and they&apos;ll appear here.</div>
+        <div className="v2-inspector__empty">{t('inspector.artifacts.empty')}</div>
       ) : artifactItems.length > 0 && (
         <div className="v2-inspector__artifacts">
           {artifactItems.map((a) => {
@@ -1286,25 +1302,25 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             type="button"
             className="v2-inspector__action v2-inspector__action--primary"
             onClick={onOpenInvite}
-            title="Invite people or add an agent to this pod"
+            title={t('inspector.members.inviteTitle')}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M12 5v14M5 12h14" />
             </svg>
-            Invite
+            {t('inspector.members.invite')}
           </button>
         )}
         <button
           type="button"
           className="v2-inspector__action"
           onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
-          title="Manage agents installed in this pod"
+          title={t('inspector.members.manageTitle')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
           </svg>
-          Manage
+          {t('inspector.members.manage')}
         </button>
       </div>
       {privateError && <div className="v2-chat__error" style={{ marginBottom: 8 }}>{privateError}</div>}
@@ -1330,17 +1346,17 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             <span className="v2-inspector__member-meta">
               <span className="v2-inspector__member-name">{name}</span>
               <span className="v2-inspector__member-role">
-                {agent.category ? `${agent.category} · AI Agent` : 'AI Agent'}
+                {agent.category ? `${agent.category} · ${t('inspector.aiAgent')}` : t('inspector.aiAgent')}
               </span>
             </span>
             {badge && (
               <span
                 className="v2-runtime-row"
-                title={`${badge.label}${badge.isByo ? ' · BYO (you run it)' : ''}`}
-                aria-label={`${badge.label} runtime${badge.isByo ? ', BYO' : ''}`}
+                title={badge.isByo ? t('inspector.runtime.rowTitleByo', { label: badge.label }) : badge.label}
+                aria-label={badge.isByo ? t('inspector.runtime.rowAriaByo', { label: badge.label }) : t('inspector.runtime.rowAria', { label: badge.label })}
               >
                 <span className="v2-runtime-row__label">{badge.label}</span>
-                {badge.isByo && <span className="v2-runtime-row__byo" aria-hidden>BYO</span>}
+                {badge.isByo && <span className="v2-runtime-row__byo" aria-hidden>{t('inspector.runtime.byo')}</span>}
               </span>
             )}
             {isOnline && <span className="v2-online-dot" style={{ background: 'var(--v2-success)' }} />}
@@ -1348,38 +1364,38 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         );
       })}
       {humanMembers.map((member) => {
-        const role = memberRoleLabel(member, ownerId, false);
+        const roleKey = memberRoleKey(member, ownerId, false);
         return (
           <div key={`human-${member._id}`} className="v2-inspector__member-row v2-inspector__member-row--static">
-            <V2Avatar name={member.username || 'Unknown'} src={member.profilePicture || undefined} size="md" />
+            <V2Avatar name={member.username || t('inspector.unknownUser')} src={member.profilePicture || undefined} size="md" />
             <span className="v2-inspector__member-meta">
               <span className="v2-inspector__member-name">{member.username}</span>
-              <span className="v2-inspector__member-role">{role}</span>
+              <span className="v2-inspector__member-role">{t(`inspector.roles.${roleKey}`)}</span>
             </span>
           </div>
         );
       })}
       {agents.length === 0 && humanCount === 0 && (
-        <div className="v2-inspector__empty">No members yet.</div>
+        <div className="v2-inspector__empty">{t('inspector.members.empty')}</div>
       )}
     </section>
   );
 
   const runStateSection = (
     <section className="v2-inspector__section">
-      <div className="v2-inspector__section-title">Run state</div>
+      <div className="v2-inspector__section-title">{t('inspector.runState.title')}</div>
       <div className="v2-inspector__runstate">
         <div className="v2-inspector__runstate-row">
-          <span className="v2-inspector__runstate-label">{runState.blocked} blocked</span>
-          <span className="v2-inspector__pill v2-inspector__pill--blocked">Blocked</span>
+          <span className="v2-inspector__runstate-label">{t('inspector.runState.blockedCount', { count: runState.blocked })}</span>
+          <span className="v2-inspector__pill v2-inspector__pill--blocked">{t('inspector.runState.blocked')}</span>
         </div>
         <div className="v2-inspector__runstate-row">
-          <span className="v2-inspector__runstate-label">{runState.inProgress + runState.pending} in progress</span>
-          <span className="v2-inspector__pill v2-inspector__pill--progress">In Progress</span>
+          <span className="v2-inspector__runstate-label">{t('inspector.runState.inProgressCount', { count: runState.inProgress + runState.pending })}</span>
+          <span className="v2-inspector__pill v2-inspector__pill--progress">{t('inspector.runState.inProgress')}</span>
         </div>
         <div className="v2-inspector__runstate-row">
-          <span className="v2-inspector__runstate-label">{runState.complete} complete</span>
-          <span className="v2-inspector__pill v2-inspector__pill--complete">Complete</span>
+          <span className="v2-inspector__runstate-label">{t('inspector.runState.completeCount', { count: runState.complete })}</span>
+          <span className="v2-inspector__pill v2-inspector__pill--complete">{t('inspector.runState.complete')}</span>
         </div>
       </div>
       {(runState.blocked + runState.inProgress + runState.pending + runState.complete) > 0 ? (
@@ -1394,24 +1410,24 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             className="v2-inspector__link v2-inspector__link--block"
             onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
           >
-            View run board
+            {t('inspector.runState.viewRunBoard')}
           </button>
           {recentTasks.length > 0 && (
             <div className="v2-inspector__task-list">
-              <div className="v2-inspector__section-subtitle">Recent tasks</div>
-              {recentTasks.map((t) => {
-                const isDone = t.status === 'done' || t.status === 'completed';
-                const isBlocked = t.status === 'blocked';
+              <div className="v2-inspector__section-subtitle">{t('inspector.runState.recentTasks')}</div>
+              {recentTasks.map((task) => {
+                const isDone = task.status === 'done' || task.status === 'completed';
+                const isBlocked = task.status === 'blocked';
                 const pillClass = isDone
-                  ? 'v2-inspector__pill v2-inspector__pill--complete'
+                  ? TASK_PILL_CLASS.complete
                   : isBlocked
-                    ? 'v2-inspector__pill v2-inspector__pill--blocked'
-                    : 'v2-inspector__pill v2-inspector__pill--progress';
-                const pillLabel = isDone ? 'Done' : isBlocked ? 'Blocked' : 'Active';
-                const assignee = t.assignee ? `@${t.assignee}` : null;
+                    ? TASK_PILL_CLASS.blocked
+                    : TASK_PILL_CLASS.progress;
+                const pillLabel = isDone ? t('inspector.taskPill.done') : isBlocked ? t('inspector.taskPill.blocked') : t('inspector.taskPill.active');
+                const assignee = task.assignee ? `@${task.assignee}` : null;
                 return (
-                  <div key={t.taskId} className="v2-inspector__task-row">
-                    <div className="v2-inspector__task-title" title={t.title}>{t.title}</div>
+                  <div key={task.taskId} className="v2-inspector__task-row">
+                    <div className="v2-inspector__task-title" title={task.title}>{task.title}</div>
                     <div className="v2-inspector__task-meta">
                       {assignee && <span className="v2-inspector__task-assignee">{assignee}</span>}
                       <span className={pillClass}>{pillLabel}</span>
@@ -1424,7 +1440,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         </>
       ) : (
         <div className="v2-inspector__empty" style={{ marginTop: 12 }}>
-          No tasks yet. Agents will create tasks here as they work — or @-mention one with a request.
+          {t('inspector.runState.empty')}
         </div>
       )}
     </section>
@@ -1438,7 +1454,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     const agent = agentByKey.get(agentKey);
     if (!agent) {
       return (
-        <div className="v2-inspector__empty">Member not found.</div>
+        <div className="v2-inspector__empty">{t('inspector.memberNotFound')}</div>
       );
     }
     const name = agent.profile?.displayName || agent.displayName || agent.agentName;
@@ -1461,17 +1477,17 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <div className="v2-inspector__detail-name">{name}</div>
           <div className="v2-inspector__detail-sub">
             <span className="v2-online-dot" style={{ background: isOnline ? 'var(--v2-success)' : 'var(--v2-text-muted)' }} />
-            {isOnline ? 'Online' : 'Idle'} · {agent.category ? `${agent.category} · AI Agent` : 'AI Agent'}
+            {isOnline ? t('inspector.online') : t('inspector.idle')} · {agent.category ? `${agent.category} · ${t('inspector.aiAgent')}` : t('inspector.aiAgent')}
           </div>
           {badge && (
             <div className="v2-inspector__detail-runtime">
-              <span className="v2-runtime-pill" aria-label={`${badge.label} runtime${badge.isByo ? ', BYO' : ''}`}>
+              <span className="v2-runtime-pill" aria-label={badge.isByo ? t('inspector.runtime.rowAriaByo', { label: badge.label }) : t('inspector.runtime.rowAria', { label: badge.label })}>
                 <span className="v2-runtime-pill__mono">{badge.mono}</span>
                 <span className="v2-runtime-pill__label">{badge.label}</span>
               </span>
               {badge.isByo && (
-                <span className="v2-runtime-host" title="BYO — you run this agent (laptop, server, anywhere)">
-                  BYO
+                <span className="v2-runtime-host" title={t('inspector.runtime.byoHostTitle')}>
+                  {t('inspector.runtime.byo')}
                 </span>
               )}
             </div>
@@ -1484,7 +1500,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               className="v2-inspector__btn v2-inspector__btn--primary"
               onClick={() => openPrivatePod(agent)}
             >
-              Talk to {name}
+              {t('inspector.talkTo', { name })}
             </button>
           )}
           <button
@@ -1492,25 +1508,25 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
             className="v2-inspector__btn"
             onClick={() => navigate(`/v2/agents?podId=${pod._id}&agent=${encodeURIComponent(agentKeyOf(agent))}`)}
           >
-            Manage
+            {t('inspector.members.manage')}
           </button>
         </div>
         {privateError && <div className="v2-chat__error" style={{ marginTop: 8 }}>{privateError}</div>}
         {task && (
           <div className="v2-inspector__detail-card">
-            <div className="v2-inspector__detail-kicker">Working on</div>
+            <div className="v2-inspector__detail-kicker">{t('inspector.detail.workingOn')}</div>
             <div className="v2-inspector__detail-body">{task.title}</div>
           </div>
         )}
         {purpose && (
           <div className="v2-inspector__detail-card">
-            <div className="v2-inspector__detail-kicker">Purpose</div>
+            <div className="v2-inspector__detail-kicker">{t('inspector.detail.purpose')}</div>
             <div className="v2-inspector__detail-body">{purpose}</div>
           </div>
         )}
         {specialties.length > 0 && (
           <div className="v2-inspector__detail-card">
-            <div className="v2-inspector__detail-kicker">Specialties</div>
+            <div className="v2-inspector__detail-kicker">{t('inspector.detail.specialties')}</div>
             <div className="v2-inspector__chip-row">
               {specialties.map((s) => <span key={s} className="v2-inspector__chip">{s}</span>)}
             </div>
@@ -1522,17 +1538,17 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           if (list.length === 0) return null;
           return (
             <div className="v2-inspector__detail-card">
-              <div className="v2-inspector__detail-kicker">Direct messages</div>
+              <div className="v2-inspector__detail-kicker">{t('inspector.detail.directMessages')}</div>
               <div className="v2-inspector__dm-list">
                 {list.map((dm) => {
-                  const peer = dm.otherMember?.displayName || 'peer';
+                  const peer = dm.otherMember?.displayName || t('inspector.detail.peer');
                   return (
                     <button
                       key={dm.podId}
                       type="button"
                       className="v2-inspector__dm-row"
                       onClick={() => navigate(`/v2/pods/${dm.podId}`)}
-                      title={`Open ${name} ↔ ${peer}`}
+                      title={t('inspector.detail.openDm', { name, peer })}
                     >
                       <span className="v2-inspector__dm-name">{name} ↔ {peer}</span>
                       <span className="v2-inspector__dm-arrow" aria-hidden="true">→</span>
@@ -1566,7 +1582,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const renderArtifactDetail = (artifactId: string) => {
     const found = artifactItems.find((a) => a.id === artifactId);
     if (!found) {
-      return <div className="v2-inspector__empty">Artifact not found.</div>;
+      return <div className="v2-inspector__empty">{t('inspector.artifactNotFound')}</div>;
     }
     const meta = artifactMeta(found.kind);
     const openable = !!found.fileName || !!safeHref(found.url);
@@ -1594,13 +1610,13 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               className="v2-inspector__btn v2-inspector__btn--primary"
               onClick={() => { void handleOpenArtifact(found); }}
             >
-              Open
+              {t('inspector.actions.open')}
             </button>
           </div>
         )}
         {found.subtitle && (
           <div className="v2-inspector__detail-card">
-            <div className="v2-inspector__detail-kicker">{found.fileName ? 'Type' : 'Source'}</div>
+            <div className="v2-inspector__detail-kicker">{found.fileName ? t('inspector.detail.type') : t('inspector.detail.source')}</div>
             <div className="v2-inspector__detail-body" style={{ wordBreak: 'break-all' }}>{found.subtitle}</div>
           </div>
         )}
@@ -1615,8 +1631,8 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const heading = isOverview
     ? pod.name
     : view.kind === 'member'
-      ? 'Member'
-      : 'Artifact';
+      ? t('inspector.heading.member')
+      : t('inspector.heading.artifact');
 
   return (
     <aside className="v2-pane v2-pane--inspector">
@@ -1627,10 +1643,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               type="button"
               className="v2-inspector__back"
               onClick={onBack}
-              aria-label="Back to overview"
+              aria-label={t('inspector.backToOverview')}
             >
               <Icon d="M15 18l-6-6 6-6" size={16} />
-              Back
+              {t('inspector.back')}
             </button>
           )}
           {isOverview && (
@@ -1639,10 +1655,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               <div className="v2-inspector__pod-block">
                 <div className="v2-inspector__pod-name" title={pod.name}>{pod.name}</div>
                 <div className="v2-inspector__pod-meta">
-                  Created by {createdByDisplay} · {created}
+                  {t('inspector.createdByMeta', { name: createdByDisplay, date: created })}
                 </div>
                 <div className="v2-inspector__pod-meta">
-                  {!isPrivatePod && <>{agentCount} agent{agentCount === 1 ? '' : 's'} · </>}{humanCount} human{humanCount === 1 ? '' : 's'}
+                  {!isPrivatePod && <>{t('inspector.agentCount', { count: agentCount })} · </>}{t('inspector.humanCount', { count: humanCount })}
                 </div>
               </div>
             </div>
@@ -1655,8 +1671,8 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               type="button"
               className="v2-inspector__close"
               onClick={onClose}
-              title="Hide pod team"
-              aria-label="Hide pod team"
+              title={t('inspector.hidePodTeam')}
+              aria-label={t('inspector.hidePodTeam')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -1668,7 +1684,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         <div className="v2-inspector__body">
           {view.kind === 'overview' && (
             <>
-              <div className="v2-inspector__tabs" role="tablist" aria-label="Inspector sections">
+              <div className="v2-inspector__tabs" role="tablist" aria-label={t('inspector.tabs.ariaLabel')}>
                 <button
                   type="button"
                   role="tab"
@@ -1676,7 +1692,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   className={`v2-inspector__tab${tab === 'overview' ? ' v2-inspector__tab--active' : ''}`}
                   onClick={() => setTab('overview')}
                 >
-                  Overview
+                  {t('inspector.tabs.overview')}
                 </button>
                 {!isPrivatePod && (
                   <button
@@ -1686,7 +1702,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                     className={`v2-inspector__tab${tab === 'members' ? ' v2-inspector__tab--active' : ''}`}
                     onClick={() => setTab('members')}
                   >
-                    Members
+                    {t('inspector.tabs.members')}
                     <span className="v2-inspector__tab-count">{agentCount + humanCount}</span>
                   </button>
                 )}
@@ -1697,7 +1713,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   className={`v2-inspector__tab${tab === 'tasks' ? ' v2-inspector__tab--active' : ''}`}
                   onClick={() => setTab('tasks')}
                 >
-                  Tasks
+                  {t('inspector.tabs.tasks')}
                   {(runState.blocked + runState.inProgress + runState.pending) > 0 && (
                     <span className="v2-inspector__tab-count">
                       {runState.blocked + runState.inProgress + runState.pending}
@@ -1711,7 +1727,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   className={`v2-inspector__tab${tab === 'manage' ? ' v2-inspector__tab--active' : ''}`}
                   onClick={() => setTab('manage')}
                 >
-                  Manage
+                  {t('inspector.tabs.manage')}
                 </button>
               </div>
 
@@ -1724,23 +1740,23 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 </>
               )}
               {tab === 'members' && (
-                <>{membersSection || <div className="v2-inspector__empty">Members are not shown for direct pods.</div>}</>
+                <>{membersSection || <div className="v2-inspector__empty">{t('inspector.members.notShownForDirect')}</div>}</>
               )}
               {tab === 'tasks' && runStateSection}
               {tab === 'manage' && (
                 <>
                   {podsState && (
                     <section className="v2-inspector__section v2-inspector__danger">
-                      <div className="v2-inspector__danger-title">Danger zone</div>
+                      <div className="v2-inspector__danger-title">{t('inspector.danger.title')}</div>
                       <div className="v2-inspector__danger-text">
-                        Deleting this pod removes all messages, tasks, and artifacts. This cannot be undone.
+                        {t('inspector.danger.text')}
                       </div>
                       <button
                         type="button"
                         className="v2-inspector__btn v2-inspector__btn--danger"
                         onClick={handleDeletePod}
                       >
-                        Delete pod
+                        {t('inspector.danger.deletePod')}
                       </button>
                     </section>
                   )}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { UseV2PodsResult, V2Pod, useV2Pods } from '../hooks/useV2Pods';
 import { groupPods, formatRelativeTime } from '../utils/grouping';
@@ -10,10 +11,10 @@ import { useAuth } from '../../context/AuthContext';
 
 type Filter = 'all' | 'team' | 'private';
 
-const FILTERS: Array<{ key: Filter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'team', label: 'Team' },
-  { key: 'private', label: 'Private' },
+const FILTERS: Array<{ key: Filter; labelKey: string }> = [
+  { key: 'all', labelKey: 'filters.all' },
+  { key: 'team', labelKey: 'filters.team' },
+  { key: 'private', labelKey: 'filters.private' },
 ];
 
 // Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
@@ -89,6 +90,7 @@ interface V2PodsSidebarProps {
 const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   selectedPodId, podsState, mobileOpen = false, onMobileClose,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const ownPodsState = useV2Pods();
   const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
@@ -271,11 +273,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const a2a = rest.filter((p) => isAgentToAgent(p));
     const dms = rest.filter((p) => !isAgentToAgent(p));
     const buckets: Array<{ label: string; items: typeof filtered }> = [];
-    if (pinnedItems.length) buckets.push({ label: 'Pinned', items: sortByRecency(pinnedItems) });
-    if (dms.length) buckets.push({ label: 'Direct messages', items: sortByRecency(dms) });
-    if (a2a.length) buckets.push({ label: `Between agents · ${a2a.length}`, items: sortByRecency(a2a) });
+    if (pinnedItems.length) buckets.push({ label: t('podsSidebar.groups.pinned'), items: sortByRecency(pinnedItems) });
+    if (dms.length) buckets.push({ label: t('podsSidebar.groups.directMessages'), items: sortByRecency(dms) });
+    if (a2a.length) buckets.push({ label: t('podsSidebar.groups.betweenAgents', { count: a2a.length }), items: sortByRecency(a2a) });
     return buckets;
-  }, [filter, filtered, pinned]);
+  }, [filter, filtered, pinned, t]);
 
   // Navigate to a pod and, on mobile, dismiss the slide-over drawer so the
   // user lands directly in the chat instead of behind the overlay.
@@ -298,7 +300,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         setShowCreate(false);
         selectPod(pod._id);
       } else {
-        setCreateError('Unable to create pod. Check that you are signed in and try again.');
+        setCreateError(t('podsSidebar.errors.createFailed'));
       }
     } finally {
       setCreating(false);
@@ -310,13 +312,13 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       <div className="v2-pods">
         <div className="v2-pods__header">
           <div className="v2-pods__title">
-            Pods
+            {t('podsSidebar.title')}
             <button
               type="button"
               className="v2-pods__mobile-close"
               onClick={() => onMobileClose?.()}
-              title="Close pods"
-              aria-label="Close pods list"
+              title={t('podsSidebar.closeTitle')}
+              aria-label={t('podsSidebar.closeAriaLabel')}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M18 6L6 18M6 6l12 12" />
@@ -335,20 +337,20 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 5v14M5 12h14" />
             </svg>
-            New Pod
+            {t('podsSidebar.newPod')}
           </button>
           {showCreate && (
             <form className="v2-pods__create" onSubmit={handleCreatePod}>
               <div className="v2-pods__create-options">
                 <button type="button" className="v2-pods__create-option v2-pods__create-option--active">
-                  Create Team Pod
+                  {t('podsSidebar.create.teamOption')}
                 </button>
                 <button
                   type="button"
                   className="v2-pods__create-option"
-                  onClick={() => setCreateError('Start a Private pod from an agent row or existing private conversation.')}
+                  onClick={() => setCreateError(t('podsSidebar.create.privateHint'))}
                 >
-                  Start Private Pod
+                  {t('podsSidebar.create.privateOption')}
                 </button>
               </div>
               <input
@@ -356,7 +358,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                 type="text"
                 value={newPodName}
                 onChange={(e) => setNewPodName(e.target.value)}
-                placeholder="Pod name"
+                placeholder={t('podsSidebar.create.namePlaceholder')}
                 autoFocus
               />
               <input
@@ -364,7 +366,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                 type="text"
                 value={newPodGoal}
                 onChange={(e) => setNewPodGoal(e.target.value)}
-                placeholder="Goal or description"
+                placeholder={t('podsSidebar.create.goalPlaceholder')}
               />
               {createError && <div className="v2-pods__create-error">{createError}</div>}
               <div className="v2-pods__create-actions">
@@ -376,14 +378,14 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                     setCreateError(null);
                   }}
                 >
-                  Cancel
+                  {t('podsSidebar.create.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="v2-pods__create-submit"
                   disabled={creating || !newPodName.trim()}
                 >
-                  {creating ? 'Creating...' : 'Create'}
+                  {creating ? t('podsSidebar.create.creating') : t('podsSidebar.create.submit')}
                 </button>
               </div>
             </form>
@@ -398,14 +400,14 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             <input
               type="text"
               className="v2-pods__search-input"
-              placeholder="Search pods..."
+              placeholder={t('podsSidebar.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="v2-pods__filters v2-filter-segment" aria-label="Pod filters">
+        <div className="v2-pods__filters v2-filter-segment" aria-label={t('podsSidebar.filtersAriaLabel')}>
           {FILTERS.map((f) => (
             <button
               key={f.key}
@@ -414,7 +416,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
               onClick={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
             >
-              {f.label}
+              {t(`podsSidebar.${f.labelKey}`)}
               <span className="v2-filter-count">{filterCounts[f.key]}</span>
             </button>
           ))}
@@ -425,7 +427,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           {!loading && error && <div className="v2-pods__empty">{error}</div>}
           {!loading && !error && filtered.length === 0 && (
             <div className="v2-pods__empty">
-              {search ? 'No pods match your search.' : 'No pods yet. Create one to get started.'}
+              {search ? t('podsSidebar.empty.noMatch') : t('podsSidebar.empty.noPods')}
             </div>
           )}
 
@@ -438,10 +440,10 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                 const time = formatRelativeTime(pod.lastMessage?.createdAt || pod.updatedAt || pod.createdAt);
                 const active = pod._id === selectedPodId;
                 const meta = podKind(pod) === 'private'
-                  ? 'Direct message'
+                  ? t('podsSidebar.meta.directMessage')
                   : (agentCount > 0
-                    ? `${agentCount} agent${agentCount === 1 ? '' : 's'}`
-                    : `${memberCount} member${memberCount === 1 ? '' : 's'}`);
+                    ? t('podsSidebar.meta.agentCount', { count: agentCount })
+                    : t('podsSidebar.meta.memberCount', { count: memberCount }));
                 const snippet = podSnippetFor(pod, meta);
                 const pinnedNow = isPinned(pod._id);
                 const typing = typingPods.has(pod._id);
@@ -462,11 +464,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                       <span className="v2-pods__item-body">
                         <span className="v2-pods__item-title-row">
                           <span className="v2-pods__item-title">{pod.name}</span>
-                          {unread && <span className="v2-pods__item-dot" aria-label="Unread messages" />}
+                          {unread && <span className="v2-pods__item-dot" aria-label={t('podsSidebar.unreadAriaLabel')} />}
                           <span className="v2-pods__item-time">{time}</span>
                         </span>
                         <span className={`v2-pods__item-snippet${typing ? ' v2-pods__item-snippet--typing' : ''}`}>
-                          {typing ? 'typing…' : snippet}
+                          {typing ? t('podsSidebar.typing') : snippet}
                         </span>
                       </span>
                     </button>
@@ -474,8 +476,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                       type="button"
                       className={`v2-pods__pin${pinnedNow ? ' v2-pods__pin--active' : ''}`}
                       onClick={() => togglePin(pod._id)}
-                      title={pinnedNow ? 'Unpin' : 'Pin'}
-                      aria-label={pinnedNow ? 'Unpin pod' : 'Pin pod'}
+                      title={pinnedNow ? t('podsSidebar.unpinTitle') : t('podsSidebar.pinTitle')}
+                      aria-label={pinnedNow ? t('podsSidebar.unpinAriaLabel') : t('podsSidebar.pinAriaLabel')}
                       aria-pressed={pinnedNow}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill={pinnedNow ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -492,10 +494,10 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         {showCommunityOffer && (
           <section className="v2-pods__community" aria-labelledby="v2-community-offer-title">
             <div id="v2-community-offer-title" className="v2-pods__community-title">
-              Join Commonly HQ
+              {t('podsSidebar.community.title')}
             </div>
             <div className="v2-pods__community-copy">
-              Meet the builders and their agents.
+              {t('podsSidebar.community.copy')}
             </div>
             <button
               type="button"
@@ -505,7 +507,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                 onMobileClose?.();
               }}
             >
-              Join HQ
+              {t('podsSidebar.community.button')}
             </button>
           </section>
         )}

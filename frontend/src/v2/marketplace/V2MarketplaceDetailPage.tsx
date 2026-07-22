@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+
+const RATING_ICON = '★';
 
 // V2 marketplace detail page — `/v2/marketplace/:installableId`.
 //
@@ -68,8 +71,12 @@ const formatNumber = (n: number | undefined): string => {
   return String(v);
 };
 
-const formatRating = (r: number | undefined, count: number | undefined): string => {
-  if (!r) return 'unrated';
+const formatRating = (
+  r: number | undefined,
+  count: number | undefined,
+  unratedLabel: string,
+): string => {
+  if (!r) return unratedLabel;
   const fixed = r.toFixed(1);
   return count ? `${fixed} (${count})` : fixed;
 };
@@ -77,13 +84,14 @@ const formatRating = (r: number | undefined, count: number | undefined): string 
 const V2MarketplaceDetailPage: React.FC = () => {
   const { installableId } = useParams<{ installableId: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [doc, setDoc] = useState<Installable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!installableId) {
-      setError('No installable specified');
+      setError(t('marketplaceDetail.errors.noInstallable'));
       setLoading(false);
       return;
     }
@@ -101,41 +109,41 @@ const V2MarketplaceDetailPage: React.FC = () => {
         // Other failures show a generic error; the network details are in the
         // console for operators.
         if (err?.response?.status === 404) {
-          setError('Manifest not found');
+          setError(t('marketplaceDetail.errors.manifestNotFound'));
         } else {
-          setError('Failed to load marketplace entry');
+          setError(t('marketplaceDetail.errors.loadFailed'));
           // eslint-disable-next-line no-console
           console.error('[v2-marketplace-detail] fetch error:', err?.message || err);
         }
       })
       .finally(() => setLoading(false));
-  }, [installableId]);
+  }, [installableId, t]);
 
   if (loading) {
     return (
       <div className="v2-marketplace-detail v2-marketplace-detail--loading">
-        Loading…
+        {t('marketplaceDetail.loading')}
       </div>
     );
   }
   if (error || !doc) {
     return (
       <div className="v2-marketplace-detail v2-marketplace-detail--error">
-        <div className="v2-empty__title">{error || 'Not found'}</div>
+        <div className="v2-empty__title">{error || t('marketplaceDetail.errors.notFound')}</div>
         <div className="v2-empty__text">
-          <Link to="/v2/marketplace">← Back to marketplace</Link>
+          <Link to="/v2/marketplace">{t('marketplaceDetail.backToMarketplace')}</Link>
         </div>
       </div>
     );
   }
 
-  const display = doc.marketplace?.displayName || doc.name || doc.installableId || 'Untitled';
-  const category = doc.marketplace?.category || 'other';
-  const kind = doc.kind || 'app';
+  const display = doc.marketplace?.displayName || doc.name || doc.installableId || t('marketplaceDetail.untitled');
+  const category = doc.marketplace?.category || t('marketplaceDetail.categoryOther');
+  const kind = doc.kind || t('marketplaceDetail.kindApp');
   const verified = Boolean(doc.marketplace?.verified);
-  const publisher = doc.marketplace?.publisher?.name || 'unknown';
+  const publisher = doc.marketplace?.publisher?.name || t('marketplaceDetail.unknownPublisher');
   const totalInstalls = formatNumber(doc.stats?.totalInstalls);
-  const rating = formatRating(doc.marketplace?.rating, doc.marketplace?.ratingCount);
+  const rating = formatRating(doc.marketplace?.rating, doc.marketplace?.ratingCount, t('marketplaceDetail.unrated'));
   const components = Array.isArray(doc.components) ? doc.components : [];
   const requires = Array.isArray(doc.requires) ? doc.requires : [];
 
@@ -150,7 +158,7 @@ const V2MarketplaceDetailPage: React.FC = () => {
     <div className="v2-marketplace-detail">
       <div className="v2-marketplace-detail__header">
         <Link to="/v2/marketplace" className="v2-marketplace-detail__back">
-          ← Back to marketplace
+          {t('marketplaceDetail.backToMarketplace')}
         </Link>
 
         <div className="v2-marketplace-detail__identity">
@@ -170,8 +178,8 @@ const V2MarketplaceDetailPage: React.FC = () => {
             <h1 className="v2-marketplace-detail__title">
               {display}
               {verified ? (
-                <span className="v2-marketplace-detail__badge" title="Verified by Commonly">
-                  ✓ Verified
+                <span className="v2-marketplace-detail__badge" title={t('marketplaceDetail.verifiedTitle')}>
+                  {t('marketplaceDetail.verifiedBadge')}
                 </span>
               ) : null}
             </h1>
@@ -180,22 +188,22 @@ const V2MarketplaceDetailPage: React.FC = () => {
               <span className="v2-marketplace-detail__sep">·</span>
               <span className="v2-marketplace-detail__category">{category}</span>
               <span className="v2-marketplace-detail__sep">·</span>
-              <span className="v2-marketplace-detail__publisher">by {publisher}</span>
+              <span className="v2-marketplace-detail__publisher">{t('marketplaceDetail.byPublisher', { publisher })}</span>
             </div>
             <div className="v2-marketplace-detail__stats">
-              <span>{totalInstalls} installs</span>
+              <span>{t('marketplaceDetail.installsCount', { count: totalInstalls })}</span>
               <span className="v2-marketplace-detail__sep">·</span>
-              <span>★ {rating}</span>
+              <span>{RATING_ICON} {rating}</span>
               {doc.latestVersion ? (
                 <>
                   <span className="v2-marketplace-detail__sep">·</span>
-                  <span>v{doc.latestVersion}</span>
+                  <span>{t('marketplaceDetail.version', { version: doc.latestVersion })}</span>
                 </>
               ) : null}
             </div>
           </div>
           <button type="button" className="v2-marketplace-detail__install" onClick={handleInstall}>
-            Install
+            {t('marketplaceDetail.install')}
           </button>
         </div>
       </div>
@@ -207,11 +215,11 @@ const V2MarketplaceDetailPage: React.FC = () => {
 
         {components.length > 0 ? (
           <section className="v2-marketplace-detail__section">
-            <h2>Components</h2>
+            <h2>{t('marketplaceDetail.sections.components')}</h2>
             <ul className="v2-marketplace-detail__components">
               {components.map((c, i) => (
                 <li key={`${c.type}-${c.name}-${i}`}>
-                  <span className="v2-marketplace-detail__component-type">{c.type || 'component'}</span>
+                  <span className="v2-marketplace-detail__component-type">{c.type || t('marketplaceDetail.componentFallback')}</span>
                   <span className="v2-marketplace-detail__component-name">{c.name || ''}</span>
                 </li>
               ))}
@@ -221,7 +229,7 @@ const V2MarketplaceDetailPage: React.FC = () => {
 
         {requires.length > 0 ? (
           <section className="v2-marketplace-detail__section">
-            <h2>Required scopes</h2>
+            <h2>{t('marketplaceDetail.sections.requiredScopes')}</h2>
             <ul className="v2-marketplace-detail__requires">
               {requires.map((s) => (
                 <li key={s} className="v2-marketplace-detail__scope">{s}</li>
@@ -232,7 +240,7 @@ const V2MarketplaceDetailPage: React.FC = () => {
 
         {doc.readme ? (
           <section className="v2-marketplace-detail__section">
-            <h2>About</h2>
+            <h2>{t('marketplaceDetail.sections.about')}</h2>
             <div className="v2-marketplace-detail__readme">
               <ReactMarkdown>{doc.readme}</ReactMarkdown>
             </div>

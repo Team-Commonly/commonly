@@ -5,6 +5,7 @@
 // (see V2App.tsx). Charts are plain inline SVG — no chart library.
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 
 interface UsageDaily {
@@ -55,7 +56,8 @@ const errMessage = (err: unknown, fallback: string): string => {
 
 // Compact bar chart. Bars scale to the series max; a max of 0 renders an
 // empty (but stable-height) chart, so zero-data instances degrade gracefully.
-const Bars: React.FC<{ data: UsageDaily[]; field: 'signups' | 'messages'; label: string }> = ({ data, field, label }) => {
+const Bars: React.FC<{ data: UsageDaily[]; field: 'signups' | 'messages'; label: string; unit: string }> = ({ data, field, label, unit }) => {
+  const { t } = useTranslation();
   const W = 600;
   const H = 120;
   const max = Math.max(1, ...data.map((d) => d[field]));
@@ -66,7 +68,7 @@ const Bars: React.FC<{ data: UsageDaily[]; field: 'signups' | 'messages'; label:
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
       role="img"
-      aria-label={`${label} per day`}
+      aria-label={t('adminAnalytics.charts.perDayAria', { label })}
     >
       {data.map((d, i) => {
         const h = Math.round((d[field] / max) * (H - 4));
@@ -80,7 +82,7 @@ const Bars: React.FC<{ data: UsageDaily[]; field: 'signups' | 'messages'; label:
             rx={1.5}
             className="v2-admin-analytics__bar"
           >
-            <title>{`${d.date}: ${d[field]} ${label.toLowerCase()}`}</title>
+            <title>{t('adminAnalytics.charts.barTitle', { date: d.date, value: d[field], unit })}</title>
           </rect>
         );
       })}
@@ -89,6 +91,7 @@ const Bars: React.FC<{ data: UsageDaily[]; field: 'signups' | 'messages'; label:
 };
 
 const V2AdminAnalytics: React.FC = () => {
+  const { t } = useTranslation();
   const api = useV2Api();
   const [days, setDays] = useState(30);
   const [usage, setUsage] = useState<UsageResponse | null>(null);
@@ -111,7 +114,7 @@ const V2AdminAnalytics: React.FC = () => {
           setFunnel(f);
         }
       } catch (err) {
-        if (!cancelled) setError(errMessage(err, 'Failed to load analytics.'));
+        if (!cancelled) setError(errMessage(err, t('adminAnalytics.errors.loadFailed')));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -120,11 +123,11 @@ const V2AdminAnalytics: React.FC = () => {
   }, [api, days]);
 
   const cards = usage ? [
-    { key: 'dau', label: 'Active today', value: usage.totals.dau, hint: 'humans active in the last 24h' },
-    { key: 'wau', label: 'Active this week', value: usage.totals.wau, hint: 'humans active in the last 7 days' },
-    { key: 'signups', label: `Signups (${usage.days}d)`, value: usage.totals.signups, hint: 'new human accounts in range' },
-    { key: 'messages', label: `Messages (${usage.days}d)`, value: usage.totals.messages, hint: 'all messages, agents included' },
-    { key: 'total', label: 'Total users', value: usage.totals.totalUsers, hint: 'human accounts, all time' },
+    { key: 'dau', label: t('adminAnalytics.cards.dau.label'), value: usage.totals.dau, hint: t('adminAnalytics.cards.dau.hint') },
+    { key: 'wau', label: t('adminAnalytics.cards.wau.label'), value: usage.totals.wau, hint: t('adminAnalytics.cards.wau.hint') },
+    { key: 'signups', label: t('adminAnalytics.cards.signups.label', { days: usage.days }), value: usage.totals.signups, hint: t('adminAnalytics.cards.signups.hint') },
+    { key: 'messages', label: t('adminAnalytics.cards.messages.label', { days: usage.days }), value: usage.totals.messages, hint: t('adminAnalytics.cards.messages.hint') },
+    { key: 'total', label: t('adminAnalytics.cards.total.label'), value: usage.totals.totalUsers, hint: t('adminAnalytics.cards.total.hint') },
   ] : [];
 
   // Newest cohorts first; the table is the drill-down under the charts.
@@ -134,13 +137,13 @@ const V2AdminAnalytics: React.FC = () => {
     <div className="v2-admin-analytics">
       <div className="v2-admin-users__section-head">
         <div>
-          <h2 className="v2-admin-users__section-title">Usage</h2>
+          <h2 className="v2-admin-users__section-title">{t('adminAnalytics.title')}</h2>
           <p className="v2-admin-users__section-sub">
-            First-party numbers from this instance&rsquo;s own database — nothing is sent to third parties.
+            {t('adminAnalytics.subtitle')}
           </p>
         </div>
         <div className="v2-admin-analytics__head-actions">
-          <div className="v2-admin-users__tabs" role="tablist" aria-label="Time range">
+          <div className="v2-admin-users__tabs" role="tablist" aria-label={t('adminAnalytics.timeRangeAria')}>
             {RANGES.map((r) => (
               <button
                 key={r}
@@ -150,18 +153,18 @@ const V2AdminAnalytics: React.FC = () => {
                 className={`v2-admin-users__tab${days === r ? ' v2-admin-users__tab--active' : ''}`}
                 onClick={() => setDays(r)}
               >
-                {r}d
+                {t('adminAnalytics.rangeDays', { days: r })}
               </button>
             ))}
           </div>
-          <Link to="/v2/admin/users" className="v2-admin-analytics__crosslink">User admin →</Link>
+          <Link to="/v2/admin/users" className="v2-admin-analytics__crosslink">{t('adminAnalytics.userAdminLink')}</Link>
         </div>
       </div>
 
       {error && <div className="v2-admin-users__error" role="alert">{error}</div>}
 
       {loading ? (
-        <div className="v2-admin-users__loading"><span className="v2-spinner" /> Loading analytics…</div>
+        <div className="v2-admin-users__loading"><span className="v2-spinner" /> {t('adminAnalytics.loading')}</div>
       ) : (
         <>
           <div className="v2-admin-analytics__cards">
@@ -176,12 +179,12 @@ const V2AdminAnalytics: React.FC = () => {
           {usage && (
             <div className="v2-admin-analytics__charts">
               <div className="v2-admin-analytics__chart-card">
-                <div className="v2-admin-analytics__chart-title">Signups / day</div>
-                <Bars data={usage.daily} field="signups" label="Signups" />
+                <div className="v2-admin-analytics__chart-title">{t('adminAnalytics.charts.signupsPerDay')}</div>
+                <Bars data={usage.daily} field="signups" label={t('adminAnalytics.charts.signupsLabel')} unit={t('adminAnalytics.charts.signupsUnit')} />
               </div>
               <div className="v2-admin-analytics__chart-card">
-                <div className="v2-admin-analytics__chart-title">Messages / day</div>
-                <Bars data={usage.daily} field="messages" label="Messages" />
+                <div className="v2-admin-analytics__chart-title">{t('adminAnalytics.charts.messagesPerDay')}</div>
+                <Bars data={usage.daily} field="messages" label={t('adminAnalytics.charts.messagesLabel')} unit={t('adminAnalytics.charts.messagesUnit')} />
               </div>
             </div>
           )}
@@ -189,23 +192,28 @@ const V2AdminAnalytics: React.FC = () => {
           {funnel && (
             <section className="v2-admin-users__section">
               <div>
-                <h2 className="v2-admin-users__section-title">Activation funnel</h2>
+                <h2 className="v2-admin-users__section-title">{t('adminAnalytics.funnel.title')}</h2>
                 <p className="v2-admin-users__section-sub">
-                  Of {funnel.totals.signups} signups in the last {funnel.days} days:{' '}
-                  {funnel.totals.attachRatePct}% attached an agent · {funnel.totals.messageRatePct}% sent a message ·{' '}
-                  {funnel.totals.d1ReturnPct}% returned after day 1 · {funnel.totals.d7ReturnPct}% after day 7.
+                  {t('adminAnalytics.funnel.summary', {
+                    signups: funnel.totals.signups,
+                    days: funnel.days,
+                    attachRate: funnel.totals.attachRatePct,
+                    messageRate: funnel.totals.messageRatePct,
+                    d1Rate: funnel.totals.d1ReturnPct,
+                    d7Rate: funnel.totals.d7ReturnPct,
+                  })}
                 </p>
               </div>
               <div className="v2-admin-users__table-wrap">
                 <table className="v2-admin-users__table">
                   <thead>
                     <tr>
-                      <th>Cohort</th>
-                      <th>Signups</th>
-                      <th>Attached agent</th>
-                      <th>Sent message</th>
-                      <th>Returned D1</th>
-                      <th>Returned D7</th>
+                      <th>{t('adminAnalytics.funnel.table.cohort')}</th>
+                      <th>{t('adminAnalytics.funnel.table.signups')}</th>
+                      <th>{t('adminAnalytics.funnel.table.attachedAgent')}</th>
+                      <th>{t('adminAnalytics.funnel.table.sentMessage')}</th>
+                      <th>{t('adminAnalytics.funnel.table.returnedD1')}</th>
+                      <th>{t('adminAnalytics.funnel.table.returnedD7')}</th>
                     </tr>
                   </thead>
                   <tbody>

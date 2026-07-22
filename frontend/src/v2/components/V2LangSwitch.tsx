@@ -7,6 +7,8 @@ const LANGUAGES = [
   { code: 'en' as const, label: 'English', short: 'EN' },
   { code: 'zh-CN' as const, label: '中文', short: '中文' },
 ];
+const CARET_ICON = '▾';
+const CHECK_ICON = '✓';
 
 // Dropdown language menu (Sam's call 2026-07-22: reads like the other nav
 // options, not a two-button pill). Trigger shows the active language; the
@@ -50,7 +52,7 @@ const V2LangSwitch: React.FC = () => {
         onClick={() => setOpen((v) => !v)}
       >
         {active.short}
-        <span className="v2-lang-switch__caret" aria-hidden="true">▾</span>
+        <span className="v2-lang-switch__caret" aria-hidden="true">{CARET_ICON}</span>
       </button>
       {open && (
         <ul className="v2-lang-switch__menu" role="listbox" aria-label={t('common.language.label')}>
@@ -63,7 +65,7 @@ const V2LangSwitch: React.FC = () => {
               >
                 <span>{lang.label}</span>
                 {lang.code === active.code && (
-                  <span className="v2-lang-switch__check" aria-hidden="true">✓</span>
+                  <span className="v2-lang-switch__check" aria-hidden="true">{CHECK_ICON}</span>
                 )}
               </button>
             </li>

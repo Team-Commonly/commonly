@@ -35,13 +35,14 @@ module.exports = {
       version: 'detect',
     },
   },
-  // Phase 1 zh-CN manifest. Extend this exact list only as each surface
+  // zh-CN migration manifest. Extend this exact list only as each surface
   // migrates, so translated components cannot regress to JSX literals.
   overrides: [
     {
       files: [
         'src/v2/landing/V2LandingPage.tsx',
         'src/v2/components/V2LangSwitch.tsx',
+        // Phase 1B — auth + first-run + invite + pod-chat (#716)
         'src/v2/components/V2AuthBrand.tsx',
         'src/v2/components/V2Login.tsx',
         'src/v2/components/V2Register.tsx',
@@ -55,6 +56,19 @@ module.exports = {
         'src/v2/components/V2PodChat.tsx',
         'src/v2/components/V2FirstRunHero.tsx',
         'src/v2/components/V2InviteModal.tsx',
+        // Phase 2 — the v2 shell (#719)
+        'src/v2/agents/V2AgentProfile.tsx',
+        'src/v2/components/V2AdminAnalytics.tsx',
+        'src/v2/components/V2AdminUsers.tsx',
+        'src/v2/components/V2AgentBYO.tsx',
+        'src/v2/components/V2FeedbackMenu.tsx',
+        'src/v2/components/V2PodInspector.tsx',
+        'src/v2/components/V2PodsSidebar.tsx',
+        'src/v2/components/V2YourTeamPage.tsx',
+        'src/v2/landing/V2ComparePage.tsx',
+        'src/v2/marketplace/V2MarketplaceDetailPage.tsx',
+        'src/v2/marketplace/V2MarketplacePage.tsx',
+        'src/v2/showcase/V2Showcase.tsx',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {
@@ -64,6 +78,7 @@ module.exports = {
               'className', 'styleName', 'style', 'type', 'key', 'id',
               'width', 'height', 'to', 'href', 'src', 'rel', 'target',
               'variant', 'size', 'component', 'role', 'name', 'autoComplete',
+              'field',
               'inputMode', 'accept', 'd', 'viewBox', 'fill', 'fontSize', 'stroke',
               'sx', 'value', 'aria-hidden', 'anchorOrigin', 'transformOrigin',
               'PaperProps',

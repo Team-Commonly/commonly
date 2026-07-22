@@ -599,5 +599,781 @@
       "license": "License (Apache-2.0)",
       "copyright": "© {{year}} Commonly. Code licensed under Apache-2.0; the Commonly name and logo are trademarks of the Commonly project."
     }
+  },
+  "adminUsers": {
+    "columns": {
+      "actions": "Actions"
+    },
+    "statusFilters": {
+      "all": "All",
+      "pending": "Pending",
+      "invited": "Invited",
+      "closed": "Closed"
+    },
+    "lifecycle": {
+      "joinedDays_one": "joined {{count}}d",
+      "joinedDays_other": "joined {{count}}d",
+      "joinedUnknown": "joined —",
+      "pods_one": "{{count}} pod",
+      "pods_other": "{{count}} pods",
+      "messages_one": "{{count}} msg",
+      "messages_other": "{{count}} msgs"
+    },
+    "actions": {
+      "ban": "Ban",
+      "unban": "Unban",
+      "delete": "Delete",
+      "refresh": "Refresh",
+      "reopen": "Reopen",
+      "working": "Working…",
+      "sendInvitation": "Send invitation",
+      "sending": "Sending…",
+      "generateCode": "Generate code",
+      "generating": "Generating…",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "dismiss": "Dismiss",
+      "revoke": "Revoke",
+      "revoking": "Revoking…"
+    },
+    "prompts": {
+      "ban": "Ban {{username}}? Optional reason:",
+      "deleteUser": "Permanently delete {{username}} ({{email}})? This cannot be undone.",
+      "revokeCode": "Revoke invitation code {{code}}? This cannot be undone."
+    },
+    "notices": {
+      "smtpNotConfigured": "SMTP not configured — generate a code below and share it manually instead."
+    },
+    "errors": {
+      "loadUsers": "Failed to load users.",
+      "updateBan": "Failed to update ban state.",
+      "deleteUser": "Failed to delete user.",
+      "loadWaitlist": "Failed to load waitlist.",
+      "loadInvites": "Failed to load invitation codes.",
+      "sendInvitation": "Failed to send invitation.",
+      "reopenRequest": "Failed to reopen request.",
+      "generateCode": "Failed to generate invitation code.",
+      "revokeCode": "Failed to revoke invitation code."
+    },
+    "registered": {
+      "title": "Registered users",
+      "subtitle": "Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.",
+      "analyticsLink": "Usage analytics →",
+      "searchPlaceholder": "Search username or email…",
+      "loading": "Loading users…",
+      "noMatch": "No users match.",
+      "demoteAdminFirst": "Demote the admin role first",
+      "columns": {
+        "username": "Username",
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "lifecycle": "Lifecycle"
+      },
+      "userStatus": {
+        "banned": "banned",
+        "active": "active",
+        "unverified": "unverified"
+      }
+    },
+    "waitlist": {
+      "title": "Waitlist",
+      "subtitle": "Review access requests and send invitation codes.",
+      "searchPlaceholder": "Search email, name, or organization…",
+      "filterByStatus": "Filter by status",
+      "loading": "Loading waitlist…",
+      "emptyTitle": "No waitlist requests",
+      "emptyFiltered": "No requests match the current filters.",
+      "emptyDefault": "New access requests will appear here.",
+      "invitedBy": "by {{username}}",
+      "invitedCode": "code {{code}}",
+      "columns": {
+        "email": "Email",
+        "name": "Name",
+        "organization": "Organization",
+        "useCase": "Use case",
+        "status": "Status",
+        "requested": "Requested",
+        "invited": "Invited"
+      },
+      "status": {
+        "pending": "pending",
+        "invited": "invited",
+        "closed": "closed"
+      }
+    },
+    "invites": {
+      "title": "Invitation codes",
+      "subtitle": "Generate codes to share manually, and revoke codes you no longer want active.",
+      "newCodeLabel": "New code — copy and share it manually",
+      "dismissNewCode": "Dismiss new code",
+      "loading": "Loading invitation codes…",
+      "emptyTitle": "No invitation codes",
+      "emptyText": "Generate a code to get started.",
+      "columns": {
+        "code": "Code",
+        "uses": "Uses",
+        "status": "Status",
+        "expires": "Expires",
+        "created": "Created"
+      },
+      "codeStatus": {
+        "active": "active",
+        "revoked": "revoked"
+      }
+    }
+  },
+  "inspector": {
+    "now": "NOW",
+    "statusLabel": "Status: {{status}}",
+    "unknown": "unknown",
+    "unknownUser": "Unknown",
+    "aiAgent": "AI Agent",
+    "online": "Online",
+    "idle": "Idle",
+    "back": "Back",
+    "backToOverview": "Back to overview",
+    "hidePodTeam": "Hide pod team",
+    "createdByMeta": "Created by {{name}} · {{date}}",
+    "agentCount": "{{count}} agent",
+    "agentCount_other": "{{count}} agents",
+    "humanCount": "{{count}} human",
+    "humanCount_other": "{{count}} humans",
+    "untitledAnnouncement": "Untitled announcement",
+    "externalLink": "External link",
+    "memberNotFound": "Member not found.",
+    "artifactNotFound": "Artifact not found.",
+    "talkTo": "Talk to {{name}}",
+    "confirmDeletePod": "Delete \"{{name}}\"? This removes the pod and its messages.",
+    "heading": {
+      "member": "Member",
+      "artifact": "Artifact"
+    },
+    "roles": {
+      "owner": "Owner",
+      "human": "Human",
+      "aiAgent": "AI Agent"
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "open": "Open"
+    },
+    "tabs": {
+      "ariaLabel": "Inspector sections",
+      "overview": "Overview",
+      "members": "Members",
+      "tasks": "Tasks",
+      "manage": "Manage"
+    },
+    "progress": {
+      "title": "Progress",
+      "stat": "{{complete}} of {{total}} task complete",
+      "stat_other": "{{complete}} of {{total}} tasks complete"
+    },
+    "goal": {
+      "title": "Goal",
+      "empty": "No goal set yet."
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "add": "+ Add",
+      "addShort": "Add",
+      "adding": "Adding…",
+      "urlPlaceholder": "Paste a Notion, Google Doc, Figma, GitHub, Zoom URL…",
+      "empty": "No artifacts yet — share Notion, Sheets, or Figma links and they'll appear here."
+    },
+    "members": {
+      "invite": "Invite",
+      "inviteTitle": "Invite people or add an agent to this pod",
+      "manage": "Manage",
+      "manageTitle": "Manage agents installed in this pod",
+      "empty": "No members yet.",
+      "notShownForDirect": "Members are not shown for direct pods."
+    },
+    "runState": {
+      "title": "Run state",
+      "blocked": "Blocked",
+      "blockedCount": "{{count}} blocked",
+      "inProgress": "In Progress",
+      "inProgressCount": "{{count}} in progress",
+      "complete": "Complete",
+      "completeCount": "{{count}} complete",
+      "viewRunBoard": "View run board",
+      "recentTasks": "Recent tasks",
+      "empty": "No tasks yet. Agents will create tasks here as they work — or @-mention one with a request."
+    },
+    "taskPill": {
+      "done": "Done",
+      "blocked": "Blocked",
+      "active": "Active"
+    },
+    "detail": {
+      "workingOn": "Working on",
+      "purpose": "Purpose",
+      "specialties": "Specialties",
+      "directMessages": "Direct messages",
+      "peer": "peer",
+      "openDm": "Open {{name}} ↔ {{peer}}",
+      "type": "Type",
+      "source": "Source"
+    },
+    "runtime": {
+      "byo": "BYO",
+      "byoHostTitle": "BYO — you run this agent (laptop, server, anywhere)",
+      "rowAria": "{{label}} runtime",
+      "rowAriaByo": "{{label}} runtime, BYO",
+      "rowTitleByo": "{{label}} · BYO (you run it)"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "text": "Deleting this pod removes all messages, tasks, and artifacts. This cannot be undone.",
+      "deletePod": "Delete pod"
+    },
+    "errors": {
+      "couldNotAddLink": "Could not add link.",
+      "privatePodNotOpened": "Private pod could not be opened.",
+      "privatePodNotOpenedForAgent": "Private pod could not be opened for this agent."
+    },
+    "preview": {
+      "loading": "Loading…",
+      "loadingPdf": "Loading PDF…",
+      "loadingCsv": "Loading CSV…",
+      "renderingWord": "Rendering Word document…",
+      "renderingExcel": "Rendering Excel workbook…",
+      "renderingPowerpoint": "Rendering PowerPoint deck…",
+      "couldNotLoad": "Could not load: {{error}}",
+      "couldNotPreview": "Could not preview: {{error}}",
+      "couldNotLoadFile": "Could not load file",
+      "couldNotLoadDocument": "Could not load document",
+      "couldNotLoadWorkbook": "Could not load workbook",
+      "couldNotRenderPreview": "Could not render preview",
+      "couldNotRenderSheet": "Could not render sheet: {{error}}",
+      "emptyFile": "Empty file",
+      "emptySheet": "Empty sheet",
+      "emptyDocument": "Empty document",
+      "emptyDeck": "Empty deck",
+      "truncated": "Preview truncated at 200 KB. Click Open for the full file.",
+      "moreRows": "{{count}} more row not shown. Click Open for the full file.",
+      "moreRows_other": "{{count}} more rows not shown. Click Open for the full file."
+    }
+  },
+  "marketplace": {
+    "title": "Marketplace",
+    "subtitle": "Browse and install agents, apps, and integrations.",
+    "subtitleLocked": "Install agents and apps like packages.",
+    "searchPlaceholder": "Search agents, apps, integrations…",
+    "categories": {
+      "all": "All categories",
+      "productivity": "Productivity",
+      "development": "Development",
+      "analytics": "Analytics",
+      "support": "Support",
+      "communication": "Communication",
+      "other": "Other"
+    },
+    "kinds": {
+      "all": "All kinds",
+      "agent": "Agents",
+      "app": "Apps",
+      "skill": "Skills",
+      "bundle": "Bundles"
+    },
+    "filters": {
+      "kindLabel": "Kind",
+      "categoryLabel": "Category",
+      "installToPodLabel": "Install to pod"
+    },
+    "tabs": {
+      "discover": "Discover",
+      "installed": "Installed",
+      "installedWithCount": "Installed ({{count}})"
+    },
+    "sections": {
+      "results": "Results",
+      "allListings": "All listings",
+      "officialTitle": "Official integrations",
+      "officialSub": "Curated by Commonly — connect from a pod.",
+      "mcpTitle": "MCP apps (preview)",
+      "mcpSub": "Interactive UI rendered inside MCP-compatible hosts."
+    },
+    "card": {
+      "verified": "Verified",
+      "verifiedTooltip": "Verified by Commonly",
+      "noDescription": "No description provided.",
+      "installsCount": "{{count}} installs"
+    },
+    "actions": {
+      "install": "Install",
+      "installing": "Installing…",
+      "remove": "Remove",
+      "removing": "Removing…"
+    },
+    "official": {
+      "mcpApp": "MCP app",
+      "integration": "integration",
+      "mcpHostRequired": "MCP host required",
+      "connectInPod": "Connect in pod",
+      "docs": "Docs"
+    },
+    "empty": {
+      "noListingsTitle": "No listings yet",
+      "noListingsText": "Nothing matches your filters. Try a broader search, or publish the first one.",
+      "pickPodText": "Pick a pod to see what's installed.",
+      "nothingInstalledTitle": "Nothing installed here yet",
+      "nothingInstalledText": "Browse Discover and install your first one."
+    },
+    "status": {
+      "pickPodToInstall": "Pick a pod above to install into.",
+      "installed": "Installed {{name}} into {{pod}}.",
+      "podFallback": "pod",
+      "removed": "Removed {{name}}.",
+      "openPodToConnect": "Open a pod to connect {{name}}."
+    },
+    "errors": {
+      "loadFailed": "Failed to load the marketplace.",
+      "installFailed": "Could not install — try again.",
+      "removeFailed": "Could not remove — try again."
+    },
+    "gate": {
+      "cloudAgentsNotEntitled": "Hosted agents require an upgrade or admin — connect your own agent instead.",
+      "connectYourOwnAgent": "Connect your own agent"
+    },
+    "comingSoon": {
+      "badge": "Coming soon",
+      "title": "A marketplace of installable agents",
+      "text": "We're curating agents you can install in one click. In the meantime, you can already bring your own — connect Claude Code, Cursor, or Codex and it becomes a full member of your pods.",
+      "cta": "Bring your own agent"
+    }
+  },
+  "compare": {
+    "kicker": "Compare",
+    "title": "Commonly vs Raft",
+    "lede": "Commonly and Raft both put humans and agents in one shared workspace, with your agents running on your own runtime. The difference is ownership: Commonly is open-source and self-hostable, with no per-agent tax.",
+    "close": "Want a hosted product and don't mind closed-source? Raft is good, and shipping. Want to own the substrate — self-host it, pay no per-agent tax, fork it, and federate it? That's Commonly.",
+    "note": "Comparison reflects each product's public positioning. Raft is a trademark of its respective owner; this page is not affiliated with or endorsed by Raft.",
+    "nav": {
+      "primaryLabel": "Primary",
+      "home": "Home",
+      "signIn": "Sign in"
+    },
+    "actions": {
+      "openApp": "Open the app",
+      "getStarted": "Get started",
+      "starOnGithub": "Star on GitHub"
+    },
+    "table": {
+      "ariaLabel": "Commonly compared with Raft",
+      "commonly": "Commonly",
+      "raft": "Raft"
+    },
+    "rows": {
+      "source": {
+        "dim": "Source",
+        "commonly": "Open — Apache-2.0, every line readable",
+        "raft": "Closed source"
+      },
+      "selfHost": {
+        "dim": "Self-host",
+        "commonly": "Yes — docker compose up on your own infra",
+        "raft": "Hosted product"
+      },
+      "perAgentCost": {
+        "dim": "Per-agent cost",
+        "commonly": "$0 — run one agent or fifty",
+        "raft": "Per-seat + per-agent pricing"
+      },
+      "yourData": {
+        "dim": "Your data",
+        "commonly": "On your machines when self-hosted",
+        "raft": "On their cloud"
+      },
+      "federation": {
+        "dim": "Federation",
+        "commonly": "On the roadmap — agents across instances",
+        "raft": "Single hosted instance"
+      },
+      "sharedWorkspace": {
+        "dim": "Shared workspace",
+        "commonly": "Humans + agents in one set of pods",
+        "raft": "Humans + agents in one workspace"
+      },
+      "byoRuntime": {
+        "dim": "Bring your own runtime",
+        "commonly": "Native, OpenClaw, Codex, Claude Code, webhook",
+        "raft": "Bring your own agent daemon"
+      }
+    },
+    "footer": {
+      "product": "Product",
+      "openSource": "Open source",
+      "license": "License (Apache-2.0)"
+    }
+  },
+  "showcase": {
+    "nav": {
+      "brandHome": "Commonly home",
+      "primary": "Primary",
+      "whatIs": "What is Commonly?",
+      "signIn": "Sign in",
+      "signUpToJoin": "Sign up to join"
+    },
+    "actions": {
+      "startYourOwnRoom": "Start your own room"
+    },
+    "banner": {
+      "regionLabel": "Sign up to join Commonly",
+      "text": "A live look inside a Commonly room — sign up to start your own."
+    },
+    "unavailable": {
+      "errorTitle": "This room couldn't be loaded",
+      "privateTitle": "This room isn't public",
+      "errorText": "Something went wrong loading this conversation. Try again in a moment.",
+      "privateText": "It may have been made private or removed. Explore what Commonly is, or start your own room."
+    },
+    "room": {
+      "defaultName": "Commonly room",
+      "memberCount_one": "{{count}} member",
+      "memberCount_other": "{{count}} members",
+      "agentCount_one": "{{count}} agent",
+      "agentCount_other": "{{count}} agents",
+      "readOnlyView": "Read-only view",
+      "agentsLabel": "Agents in this room"
+    },
+    "messages": {
+      "olderHidden": "Earlier messages are hidden in this public view.",
+      "emptyTitle": "No messages yet",
+      "emptyText": "This room is quiet right now. Check back soon."
+    },
+    "footer": {
+      "title": "This is a real Commonly room.",
+      "text": "Bring your team and your agents into one shared memory. Start your own in minutes — it's open-source and free."
+    }
+  },
+  "agentByo": {
+    "eyebrow": "Connect any runtime",
+    "title": "Bring your own agent",
+    "description": "Connect Claude Code, Cursor, or Codex to your Commonly pods via MCP. ~2 minutes.",
+    "form": {
+      "nameLabel": "Agent name",
+      "nameHint": "Lower-case letters, digits, and dashes. This is the identity your agent posts as.",
+      "podLabel": "Install into pod",
+      "podHint": "Your agent will be installed here. You can install it into more pods later.",
+      "loadingPods": "Loading pods…"
+    },
+    "actions": {
+      "install": "Install + generate token",
+      "issuing": "Issuing token…",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "goToPod": "Go to your pod",
+      "installAnother": "Install another"
+    },
+    "footnote": {
+      "preferCli": "Prefer the CLI?",
+      "then": "then",
+      "notSure": "Not sure which path?",
+      "mcpVsCli": "MCP vs CLI vs SDK",
+      "fullWalkthrough": "full walkthrough"
+    },
+    "result": {
+      "heading": "Token issued for",
+      "copyOnceLead": "Copy this",
+      "copyOnceEmphasis": "once",
+      "copyOnceRest": "Commonly hashes the token after issuance — if you lose it, come back here and rotate (re-running install with the same name is idempotent on identity; the token is reissued fresh)."
+    },
+    "snippets": {
+      "runtimeToken": "Runtime token",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor — add to ~/.cursor/mcp.json",
+      "memory": "Bring its memory (optional)"
+    },
+    "memory": {
+      "doneLead": "✓ Memory imported —",
+      "doneRest": "arrives knowing your project. It shows up in the agent's profile under long-term memory.",
+      "pasteLead": "Paste your agent's local",
+      "pasteOr": "or",
+      "pasteRest": "(or pick the file) and it starts here with everything it already knows. Appends to its long-term memory; never overwrites. Nothing is sent until you click import.",
+      "placeholder": "# Paste MEMORY.md / CLAUDE.md content here…",
+      "fileAriaLabel": "Choose a memory file",
+      "import": "Import memory",
+      "importing": "Importing…"
+    },
+    "errors": {
+      "nameRequired": "Agent name must contain at least one letter or digit.",
+      "podRequired": "Pick a pod to install into.",
+      "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
+      "installFailed": "Install failed.",
+      "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
+      "importFailed": "Import failed."
+    }
+  },
+  "agentProfile": {
+    "loading": "Loading…",
+    "nav": {
+      "backToCommonly": "Back to Commonly",
+      "whatIsCommonly": "What is Commonly?",
+      "signIn": "Sign in",
+      "signUp": "Sign up"
+    },
+    "notFound": {
+      "title": "Agent not found",
+      "body": "This agent may not exist. Explore what Commonly is, or start your own team."
+    },
+    "actions": {
+      "startYourOwnTeam": "Start your own team"
+    },
+    "hero": {
+      "official": "Official",
+      "activeInPods_one": "Active in {{count}} pod",
+      "activeInPods_other": "Active in {{count}} pods",
+      "memories_one": "{{count}} memory",
+      "memories_other": "{{count}} memories",
+      "talkTo": "Talk to {{name}}"
+    },
+    "pods": {
+      "title": "Pods",
+      "publicTitle": "Public pods",
+      "allPods": "all pods",
+      "activeAgo": "active {{time}}",
+      "remove": "Remove",
+      "removing": "Removing…",
+      "removeAria": "Remove {{agentName}} from {{podName}}",
+      "removeConfirm": "Remove {{agentName}} from \"{{podName}}\"? Its memory and identity are kept — it just leaves this pod.",
+      "removeError": "Could not remove the agent from that pod."
+    },
+    "skills": {
+      "title": "Installed skills"
+    },
+    "memory": {
+      "title": "Memory layer",
+      "roleOwner": "owner",
+      "roleAdmin": "admin",
+      "viewTag": "{{role}} view · private",
+      "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
+      "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
+      "updatedClause": " · updated {{time}}",
+      "more": "+{{count}} more",
+      "entriesRemembered": "entries remembered",
+      "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
+      "lastUpdated": "Last updated {{time}}.",
+      "none": "No memory recorded yet."
+    },
+    "activity": {
+      "title": "Recent activity",
+      "turnsAgo_one": "{{count}} turn · {{time}}",
+      "turnsAgo_other": "{{count}} turns · {{time}}"
+    },
+    "footer": {
+      "tagline": "Every agent on Commonly keeps one identity and memory — across any runtime."
+    }
+  },
+  "adminAnalytics": {
+    "title": "Usage",
+    "subtitle": "First-party numbers from this instance's own database — nothing is sent to third parties.",
+    "timeRangeAria": "Time range",
+    "rangeDays": "{{days}}d",
+    "userAdminLink": "User admin →",
+    "loading": "Loading analytics…",
+    "errors": {
+      "loadFailed": "Failed to load analytics."
+    },
+    "cards": {
+      "dau": {
+        "label": "Active today",
+        "hint": "humans active in the last 24h"
+      },
+      "wau": {
+        "label": "Active this week",
+        "hint": "humans active in the last 7 days"
+      },
+      "signups": {
+        "label": "Signups ({{days}}d)",
+        "hint": "new human accounts in range"
+      },
+      "messages": {
+        "label": "Messages ({{days}}d)",
+        "hint": "all messages, agents included"
+      },
+      "total": {
+        "label": "Total users",
+        "hint": "human accounts, all time"
+      }
+    },
+    "charts": {
+      "signupsPerDay": "Signups / day",
+      "messagesPerDay": "Messages / day",
+      "signupsLabel": "Signups",
+      "messagesLabel": "Messages",
+      "signupsUnit": "signups",
+      "messagesUnit": "messages",
+      "perDayAria": "{{label}} per day",
+      "barTitle": "{{date}}: {{value}} {{unit}}"
+    },
+    "funnel": {
+      "title": "Activation funnel",
+      "summary": "Of {{signups}} signups in the last {{days}} days: {{attachRate}}% attached an agent · {{messageRate}}% sent a message · {{d1Rate}}% returned after day 1 · {{d7Rate}}% after day 7.",
+      "table": {
+        "cohort": "Cohort",
+        "signups": "Signups",
+        "attachedAgent": "Attached agent",
+        "sentMessage": "Sent message",
+        "returnedD1": "Returned D1",
+        "returnedD7": "Returned D7"
+      }
+    }
+  },
+  "podsSidebar": {
+    "title": "Pods",
+    "newPod": "New Pod",
+    "closeTitle": "Close pods",
+    "closeAriaLabel": "Close pods list",
+    "searchPlaceholder": "Search pods...",
+    "filtersAriaLabel": "Pod filters",
+    "unreadAriaLabel": "Unread messages",
+    "typing": "typing…",
+    "pinTitle": "Pin",
+    "unpinTitle": "Unpin",
+    "pinAriaLabel": "Pin pod",
+    "unpinAriaLabel": "Unpin pod",
+    "filters": {
+      "all": "All",
+      "team": "Team",
+      "private": "Private"
+    },
+    "groups": {
+      "pinned": "Pinned",
+      "directMessages": "Direct messages",
+      "betweenAgents": "Between agents · {{count}}"
+    },
+    "create": {
+      "teamOption": "Create Team Pod",
+      "privateOption": "Start Private Pod",
+      "privateHint": "Start a Private pod from an agent row or existing private conversation.",
+      "namePlaceholder": "Pod name",
+      "goalPlaceholder": "Goal or description",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "submit": "Create"
+    },
+    "empty": {
+      "noMatch": "No pods match your search.",
+      "noPods": "No pods yet. Create one to get started."
+    },
+    "meta": {
+      "directMessage": "Direct message",
+      "agentCount_one": "{{count}} agent",
+      "agentCount_other": "{{count}} agents",
+      "memberCount_one": "{{count}} member",
+      "memberCount_other": "{{count}} members"
+    },
+    "errors": {
+      "createFailed": "Unable to create pod. Check that you are signed in and try again."
+    },
+    "community": {
+      "title": "Join Commonly HQ",
+      "copy": "Meet the builders and their agents.",
+      "button": "Join HQ"
+    }
+  },
+  "feedbackMenu": {
+    "button": "Feedback",
+    "optionsLabel": "Feedback options",
+    "actions": {
+      "reportBug": "Report a bug",
+      "requestFeature": "Request a feature",
+      "askQuestion": "Ask a question",
+      "joinDiscord": "Join our Discord"
+    }
+  },
+  "marketplaceDetail": {
+    "loading": "Loading…",
+    "backToMarketplace": "← Back to marketplace",
+    "install": "Install",
+    "untitled": "Untitled",
+    "categoryOther": "other",
+    "kindApp": "app",
+    "unknownPublisher": "unknown",
+    "unrated": "unrated",
+    "componentFallback": "component",
+    "byPublisher": "by {{publisher}}",
+    "installsCount": "{{count}} installs",
+    "version": "v{{version}}",
+    "verifiedBadge": "✓ Verified",
+    "verifiedTitle": "Verified by Commonly",
+    "sections": {
+      "components": "Components",
+      "requiredScopes": "Required scopes",
+      "about": "About"
+    },
+    "errors": {
+      "noInstallable": "No installable specified",
+      "manifestNotFound": "Manifest not found",
+      "loadFailed": "Failed to load marketplace entry",
+      "notFound": "Not found"
+    }
+  },
+  "yourTeam": {
+    "title": "Your Team",
+    "loading": "Loading…",
+    "untitledProject": "Untitled project",
+    "subtitle": {
+      "empty": "No agents yet — hire your first one to get started.",
+      "summary": "{{agents}} working across {{projects}}",
+      "agentCount_one": "{{count}} agent",
+      "agentCount_other": "{{count}} agents",
+      "projectCount_one": "{{count}} project",
+      "projectCount_other": "{{count}} projects"
+    },
+    "actions": {
+      "hire": "+ Hire an agent",
+      "connectOwn": "Connect your own agent",
+      "cancel": "Cancel"
+    },
+    "redeem": {
+      "placeholder": "Invitation code",
+      "unlock": "Unlock",
+      "unlocking": "Unlocking…",
+      "gated": "Hosted agents are invite-gated during beta.",
+      "haveCode": "Have an invitation code?",
+      "success": "Hosted agents unlocked — hire your first one from the catalog."
+    },
+    "empty": {
+      "title": "Build your AI team",
+      "text": "Agents you hire join your projects, share your project memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.",
+      "hireFirst": "+ Hire your first agent"
+    },
+    "tabs": {
+      "ariaLabel": "Filter by role",
+      "all": "All ({{count}})",
+      "category": "{{label}} ({{count}})"
+    },
+    "card": {
+      "inProject": "in",
+      "roleTitle": "Role: {{role}}",
+      "profile": "Profile",
+      "viewProfileAria": "View {{name}}'s profile",
+      "talkTo": "Talk to",
+      "talkToAria": "Talk to {{name}} one-to-one",
+      "opening": "Opening…"
+    },
+    "activity": {
+      "noRecent": "No recent activity",
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "runtime": {
+      "native": "Native",
+      "openclaw": "OpenClaw",
+      "webhook": "Webhook",
+      "cli": "CLI wrapper",
+      "cloudSandbox": "Cloud sandbox"
+    },
+    "errors": {
+      "loadFailed": "Could not load your team.",
+      "redeemFailed": "Could not redeem that code.",
+      "openRoomFailed": "Could not open a 1:1 with this agent — try again."
+    }
   }
 }
