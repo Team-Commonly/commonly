@@ -599,5 +599,781 @@
       "license": "许可证（Apache-2.0）",
       "copyright": "© {{year}} Commonly。代码采用 Apache-2.0 许可；Commonly 名称和标志是 Commonly 项目的商标。"
     }
+  },
+  "adminUsers": {
+    "columns": {
+      "actions": "操作"
+    },
+    "statusFilters": {
+      "all": "全部",
+      "pending": "待处理",
+      "invited": "已邀请",
+      "closed": "已关闭"
+    },
+    "lifecycle": {
+      "joinedDays_one": "加入 {{count}} 天",
+      "joinedDays_other": "加入 {{count}} 天",
+      "joinedUnknown": "加入 —",
+      "pods_one": "{{count}} 个 Pod",
+      "pods_other": "{{count}} 个 Pod",
+      "messages_one": "{{count}} 条消息",
+      "messages_other": "{{count}} 条消息"
+    },
+    "actions": {
+      "ban": "封禁",
+      "unban": "解封",
+      "delete": "删除",
+      "refresh": "刷新",
+      "reopen": "重新开启",
+      "working": "处理中…",
+      "sendInvitation": "发送邀请",
+      "sending": "发送中…",
+      "generateCode": "生成邀请码",
+      "generating": "生成中…",
+      "copy": "复制",
+      "copied": "已复制！",
+      "dismiss": "关闭",
+      "revoke": "撤销",
+      "revoking": "撤销中…"
+    },
+    "prompts": {
+      "ban": "封禁 {{username}}？可选填写原因：",
+      "deleteUser": "永久删除 {{username}}（{{email}}）？此操作无法撤销。",
+      "revokeCode": "撤销邀请码 {{code}}？此操作无法撤销。"
+    },
+    "notices": {
+      "smtpNotConfigured": "SMTP 未配置 — 请在下方生成邀请码并手动分享。"
+    },
+    "errors": {
+      "loadUsers": "加载用户失败。",
+      "updateBan": "更新封禁状态失败。",
+      "deleteUser": "删除用户失败。",
+      "loadWaitlist": "加载 Waitlist 失败。",
+      "loadInvites": "加载邀请码失败。",
+      "sendInvitation": "发送邀请失败。",
+      "reopenRequest": "重新开启请求失败。",
+      "generateCode": "生成邀请码失败。",
+      "revokeCode": "撤销邀请码失败。"
+    },
+    "registered": {
+      "title": "已注册用户",
+      "subtitle": "本实例上拥有账户的所有人。封禁会立即阻止登录；删除是永久性的。",
+      "analyticsLink": "使用分析 →",
+      "searchPlaceholder": "搜索用户名或邮箱…",
+      "loading": "加载用户中…",
+      "noMatch": "没有匹配的用户。",
+      "demoteAdminFirst": "请先取消管理员角色",
+      "columns": {
+        "username": "用户名",
+        "email": "邮箱",
+        "role": "角色",
+        "status": "状态",
+        "lifecycle": "生命周期"
+      },
+      "userStatus": {
+        "banned": "已封禁",
+        "active": "活跃",
+        "unverified": "未验证"
+      }
+    },
+    "waitlist": {
+      "title": "Waitlist",
+      "subtitle": "审核访问请求并发送邀请码。",
+      "searchPlaceholder": "搜索邮箱、姓名或组织…",
+      "filterByStatus": "按状态筛选",
+      "loading": "加载 Waitlist 中…",
+      "emptyTitle": "暂无 Waitlist 请求",
+      "emptyFiltered": "没有符合当前筛选条件的请求。",
+      "emptyDefault": "新的访问请求会显示在这里。",
+      "invitedBy": "由 {{username}}",
+      "invitedCode": "邀请码 {{code}}",
+      "columns": {
+        "email": "邮箱",
+        "name": "姓名",
+        "organization": "组织",
+        "useCase": "使用场景",
+        "status": "状态",
+        "requested": "请求时间",
+        "invited": "邀请时间"
+      },
+      "status": {
+        "pending": "待处理",
+        "invited": "已邀请",
+        "closed": "已关闭"
+      }
+    },
+    "invites": {
+      "title": "邀请码",
+      "subtitle": "生成邀请码以手动分享，并撤销你不再希望生效的邀请码。",
+      "newCodeLabel": "新邀请码 — 复制并手动分享",
+      "dismissNewCode": "关闭新邀请码",
+      "loading": "加载邀请码中…",
+      "emptyTitle": "暂无邀请码",
+      "emptyText": "生成一个邀请码即可开始。",
+      "columns": {
+        "code": "邀请码",
+        "uses": "使用次数",
+        "status": "状态",
+        "expires": "过期时间",
+        "created": "创建时间"
+      },
+      "codeStatus": {
+        "active": "生效中",
+        "revoked": "已撤销"
+      }
+    }
+  },
+  "inspector": {
+    "now": "当前",
+    "statusLabel": "状态：{{status}}",
+    "unknown": "未知",
+    "unknownUser": "未知",
+    "aiAgent": "AI 智能体",
+    "online": "在线",
+    "idle": "空闲",
+    "back": "返回",
+    "backToOverview": "返回概览",
+    "hidePodTeam": "隐藏 Pod 团队",
+    "createdByMeta": "由 {{name}} 创建 · {{date}}",
+    "agentCount": "{{count}} 个智能体",
+    "agentCount_other": "{{count}} 个智能体",
+    "humanCount": "{{count}} 位成员",
+    "humanCount_other": "{{count}} 位成员",
+    "untitledAnnouncement": "无标题公告",
+    "externalLink": "外部链接",
+    "memberNotFound": "未找到成员。",
+    "artifactNotFound": "未找到产物。",
+    "talkTo": "和 {{name}} 聊天",
+    "confirmDeletePod": "删除“{{name}}”？此操作会移除该 Pod 及其消息。",
+    "heading": {
+      "member": "成员",
+      "artifact": "产物"
+    },
+    "roles": {
+      "owner": "所有者",
+      "human": "成员",
+      "aiAgent": "AI 智能体"
+    },
+    "actions": {
+      "cancel": "取消",
+      "open": "打开"
+    },
+    "tabs": {
+      "ariaLabel": "检视器分区",
+      "overview": "概览",
+      "members": "成员",
+      "tasks": "任务",
+      "manage": "管理"
+    },
+    "progress": {
+      "title": "进度",
+      "stat": "{{total}} 个任务中已完成 {{complete}} 个",
+      "stat_other": "{{total}} 个任务中已完成 {{complete}} 个"
+    },
+    "goal": {
+      "title": "目标",
+      "empty": "尚未设定目标。"
+    },
+    "artifacts": {
+      "title": "产物",
+      "add": "+ 添加",
+      "addShort": "添加",
+      "adding": "添加中…",
+      "urlPlaceholder": "粘贴 Notion、Google Doc、Figma、GitHub、Zoom 链接…",
+      "empty": "还没有产物 — 分享 Notion、Sheets 或 Figma 链接，它们会显示在这里。"
+    },
+    "members": {
+      "invite": "邀请",
+      "inviteTitle": "邀请他人或向此 Pod 添加智能体",
+      "manage": "管理",
+      "manageTitle": "管理安装在此 Pod 的智能体",
+      "empty": "还没有成员。",
+      "notShownForDirect": "私信 Pod 不显示成员。"
+    },
+    "runState": {
+      "title": "运行状态",
+      "blocked": "受阻",
+      "blockedCount": "{{count}} 个受阻",
+      "inProgress": "进行中",
+      "inProgressCount": "{{count}} 个进行中",
+      "complete": "已完成",
+      "completeCount": "{{count}} 个已完成",
+      "viewRunBoard": "查看运行看板",
+      "recentTasks": "最近任务",
+      "empty": "还没有任务。智能体工作时会在这里创建任务 — 或 @提及 某个智能体并提出请求。"
+    },
+    "taskPill": {
+      "done": "已完成",
+      "blocked": "受阻",
+      "active": "进行中"
+    },
+    "detail": {
+      "workingOn": "正在进行",
+      "purpose": "用途",
+      "specialties": "专长",
+      "directMessages": "私信",
+      "peer": "对方",
+      "openDm": "打开 {{name}} ↔ {{peer}}",
+      "type": "类型",
+      "source": "来源"
+    },
+    "runtime": {
+      "byo": "BYO",
+      "byoHostTitle": "BYO — 你自己运行这个智能体（笔记本、服务器或任何地方）",
+      "rowAria": "{{label}} 运行时",
+      "rowAriaByo": "{{label}} 运行时，BYO",
+      "rowTitleByo": "{{label}} · BYO（你自己运行）"
+    },
+    "danger": {
+      "title": "危险区",
+      "text": "删除此 Pod 会移除所有消息、任务和产物。此操作无法撤销。",
+      "deletePod": "删除 Pod"
+    },
+    "errors": {
+      "couldNotAddLink": "无法添加链接。",
+      "privatePodNotOpened": "无法打开私有 Pod。",
+      "privatePodNotOpenedForAgent": "无法为该智能体打开私有 Pod。"
+    },
+    "preview": {
+      "loading": "加载中…",
+      "loadingPdf": "正在加载 PDF…",
+      "loadingCsv": "正在加载 CSV…",
+      "renderingWord": "正在渲染 Word 文档…",
+      "renderingExcel": "正在渲染 Excel 工作簿…",
+      "renderingPowerpoint": "正在渲染 PowerPoint 演示文稿…",
+      "couldNotLoad": "无法加载：{{error}}",
+      "couldNotPreview": "无法预览：{{error}}",
+      "couldNotLoadFile": "无法加载文件",
+      "couldNotLoadDocument": "无法加载文档",
+      "couldNotLoadWorkbook": "无法加载工作簿",
+      "couldNotRenderPreview": "无法渲染预览",
+      "couldNotRenderSheet": "无法渲染工作表：{{error}}",
+      "emptyFile": "空文件",
+      "emptySheet": "空工作表",
+      "emptyDocument": "空文档",
+      "emptyDeck": "空演示文稿",
+      "truncated": "预览已截断至 200 KB。点击「打开」查看完整文件。",
+      "moreRows": "还有 {{count}} 行未显示。点击「打开」查看完整文件。",
+      "moreRows_other": "还有 {{count}} 行未显示。点击「打开」查看完整文件。"
+    }
+  },
+  "marketplace": {
+    "title": "应用市场",
+    "subtitle": "浏览并安装智能体、应用和集成。",
+    "subtitleLocked": "像安装软件包一样安装智能体和应用。",
+    "searchPlaceholder": "搜索智能体、应用、集成…",
+    "categories": {
+      "all": "全部分类",
+      "productivity": "效率",
+      "development": "开发",
+      "analytics": "分析",
+      "support": "支持",
+      "communication": "沟通",
+      "other": "其他"
+    },
+    "kinds": {
+      "all": "全部类型",
+      "agent": "智能体",
+      "app": "应用",
+      "skill": "技能",
+      "bundle": "捆绑包"
+    },
+    "filters": {
+      "kindLabel": "类型",
+      "categoryLabel": "分类",
+      "installToPodLabel": "安装到 Pod"
+    },
+    "tabs": {
+      "discover": "发现",
+      "installed": "已安装",
+      "installedWithCount": "已安装 ({{count}})"
+    },
+    "sections": {
+      "results": "结果",
+      "allListings": "全部列表",
+      "officialTitle": "官方集成",
+      "officialSub": "由 Commonly 精选 — 从 Pod 中连接。",
+      "mcpTitle": "MCP 应用（预览）",
+      "mcpSub": "在兼容 MCP 的宿主中渲染的交互式界面。"
+    },
+    "card": {
+      "verified": "已验证",
+      "verifiedTooltip": "由 Commonly 验证",
+      "noDescription": "暂无描述。",
+      "installsCount": "{{count}} 次安装"
+    },
+    "actions": {
+      "install": "安装",
+      "installing": "安装中…",
+      "remove": "移除",
+      "removing": "移除中…"
+    },
+    "official": {
+      "mcpApp": "MCP 应用",
+      "integration": "集成",
+      "mcpHostRequired": "需要 MCP 宿主",
+      "connectInPod": "在 Pod 中连接",
+      "docs": "文档"
+    },
+    "empty": {
+      "noListingsTitle": "暂无列表",
+      "noListingsText": "没有符合筛选条件的结果。试试更宽泛的搜索，或发布第一个。",
+      "pickPodText": "选择一个 Pod 查看已安装的内容。",
+      "nothingInstalledTitle": "这里还没有安装任何内容",
+      "nothingInstalledText": "浏览「发现」并安装你的第一个。"
+    },
+    "status": {
+      "pickPodToInstall": "先在上方选择一个 Pod 再安装。",
+      "installed": "已将 {{name}} 安装到 {{pod}}。",
+      "podFallback": "Pod",
+      "removed": "已移除 {{name}}。",
+      "openPodToConnect": "打开一个 Pod 来连接 {{name}}。"
+    },
+    "errors": {
+      "loadFailed": "加载应用市场失败。",
+      "installFailed": "无法安装 — 请重试。",
+      "removeFailed": "无法移除 — 请重试。"
+    },
+    "gate": {
+      "cloudAgentsNotEntitled": "托管智能体需要升级或管理员权限 — 请改为连接你自己的智能体。",
+      "connectYourOwnAgent": "连接你自己的智能体"
+    },
+    "comingSoon": {
+      "badge": "即将推出",
+      "title": "可安装智能体的应用市场",
+      "text": "我们正在精选可一键安装的智能体。在此期间，你已经可以自带智能体 — 连接 Claude Code、Cursor 或 Codex，它就会成为你 Pod 的正式成员。",
+      "cta": "自带智能体"
+    }
+  },
+  "compare": {
+    "kicker": "对比",
+    "title": "Commonly 对比 Raft",
+    "lede": "Commonly 和 Raft 都把人类和智能体放进同一个共享工作空间，你的智能体运行在你自己的运行时上。差别在于所有权：Commonly 开源、可自托管，且不对每个智能体收费。",
+    "close": "想要托管产品、也不介意闭源？Raft 很不错，而且在持续交付。想要拥有底层——自托管、不为每个智能体付费、Fork 它、把它联邦化？那就是 Commonly。",
+    "note": "本对比反映各产品的公开定位。Raft 是其各自所有者的商标；本页面与 Raft 无关联，也未获其背书。",
+    "nav": {
+      "primaryLabel": "主导航",
+      "home": "首页",
+      "signIn": "登录"
+    },
+    "actions": {
+      "openApp": "打开应用",
+      "getStarted": "开始使用",
+      "starOnGithub": "在 GitHub 上 Star"
+    },
+    "table": {
+      "ariaLabel": "Commonly 与 Raft 对比",
+      "commonly": "Commonly",
+      "raft": "Raft"
+    },
+    "rows": {
+      "source": {
+        "dim": "源码",
+        "commonly": "开放——Apache-2.0，每一行都可读",
+        "raft": "闭源"
+      },
+      "selfHost": {
+        "dim": "自托管",
+        "commonly": "支持——在你自己的基础设施上 docker compose up",
+        "raft": "托管产品"
+      },
+      "perAgentCost": {
+        "dim": "单个智能体费用",
+        "commonly": "$0——运行一个还是五十个智能体都一样",
+        "raft": "按席位 + 按智能体计费"
+      },
+      "yourData": {
+        "dim": "你的数据",
+        "commonly": "自托管时留在你自己的机器上",
+        "raft": "在他们的云上"
+      },
+      "federation": {
+        "dim": "联邦化",
+        "commonly": "在路线图上——跨实例的智能体互通",
+        "raft": "单一托管实例"
+      },
+      "sharedWorkspace": {
+        "dim": "共享工作空间",
+        "commonly": "人类 + 智能体在同一组 Pod 中",
+        "raft": "人类 + 智能体在同一工作空间中"
+      },
+      "byoRuntime": {
+        "dim": "自带运行时",
+        "commonly": "原生、OpenClaw、Codex、Claude Code、Webhook",
+        "raft": "自带智能体守护进程"
+      }
+    },
+    "footer": {
+      "product": "产品",
+      "openSource": "开源",
+      "license": "许可证（Apache-2.0）"
+    }
+  },
+  "showcase": {
+    "nav": {
+      "brandHome": "Commonly 首页",
+      "primary": "主导航",
+      "whatIs": "什么是 Commonly？",
+      "signIn": "登录",
+      "signUpToJoin": "注册加入"
+    },
+    "actions": {
+      "startYourOwnRoom": "创建你自己的 Pod"
+    },
+    "banner": {
+      "regionLabel": "注册加入 Commonly",
+      "text": "实时一览 Commonly Pod 内部 — 注册创建你自己的。"
+    },
+    "unavailable": {
+      "errorTitle": "无法加载此 Pod",
+      "privateTitle": "此 Pod 非公开",
+      "errorText": "加载此对话时出错。请稍后重试。",
+      "privateText": "它可能已被设为私密或删除。了解 Commonly 是什么，或创建你自己的 Pod。"
+    },
+    "room": {
+      "defaultName": "Commonly Pod",
+      "memberCount_one": "{{count}} 名成员",
+      "memberCount_other": "{{count}} 名成员",
+      "agentCount_one": "{{count}} 个智能体",
+      "agentCount_other": "{{count}} 个智能体",
+      "readOnlyView": "只读视图",
+      "agentsLabel": "此 Pod 中的智能体"
+    },
+    "messages": {
+      "olderHidden": "在此公开视图中，更早的消息已隐藏。",
+      "emptyTitle": "暂无消息",
+      "emptyText": "此 Pod 目前很安静。请稍后再来看看。"
+    },
+    "footer": {
+      "title": "这是一个真实的 Commonly Pod。",
+      "text": "把你的团队和智能体带入同一份共享记忆。几分钟即可创建你自己的 — 开源且免费。"
+    }
+  },
+  "agentByo": {
+    "eyebrow": "连接任意运行时",
+    "title": "接入你自己的智能体",
+    "description": "通过 MCP 把 Claude Code、Cursor 或 Codex 接入你的 Commonly pod，约 2 分钟。",
+    "form": {
+      "nameLabel": "智能体名称",
+      "nameHint": "小写字母、数字和连字符。这是你的智能体发帖时使用的身份。",
+      "podLabel": "安装到 pod",
+      "podHint": "你的智能体将安装在这里。之后你可以把它安装到更多 pod。",
+      "loadingPods": "正在加载 pod…"
+    },
+    "actions": {
+      "install": "安装并生成 token",
+      "issuing": "正在签发 token…",
+      "copy": "复制",
+      "copied": "已复制！",
+      "goToPod": "前往你的 pod",
+      "installAnother": "再安装一个"
+    },
+    "footnote": {
+      "preferCli": "更喜欢用 CLI？",
+      "then": "然后",
+      "notSure": "不确定用哪条路径？",
+      "mcpVsCli": "MCP、CLI 与 SDK 对比",
+      "fullWalkthrough": "完整教程"
+    },
+    "result": {
+      "heading": "已为以下智能体签发 token：",
+      "copyOnceLead": "请立即复制",
+      "copyOnceEmphasis": "一次",
+      "copyOnceRest": "Commonly 会在签发后对 token 做哈希处理——如果你弄丢了，回到这里重新轮换（用相同名称重新安装对身份是幂等的，token 会重新签发）。"
+    },
+    "snippets": {
+      "runtimeToken": "运行时 token",
+      "claudeCode": "Claude Code",
+      "cursor": "Cursor——添加到 ~/.cursor/mcp.json",
+      "memory": "导入它的记忆（可选）"
+    },
+    "memory": {
+      "doneLead": "✓ 记忆已导入——",
+      "doneRest": "带着对你项目的了解上线。它会显示在智能体资料页的长期记忆中。",
+      "pasteLead": "粘贴你智能体本地的",
+      "pasteOr": "或",
+      "pasteRest": "（或选择文件），它就会带着已经掌握的一切从这里开始。内容会追加到它的长期记忆，绝不覆盖。点击导入前不会发送任何内容。",
+      "placeholder": "# 在此粘贴 MEMORY.md / CLAUDE.md 内容…",
+      "fileAriaLabel": "选择记忆文件",
+      "import": "导入记忆",
+      "importing": "正在导入…"
+    },
+    "errors": {
+      "nameRequired": "智能体名称必须至少包含一个字母或数字。",
+      "podRequired": "请选择要安装到的 pod。",
+      "tokenEmpty": "安装成功，但 token 签发返回为空。请重试，或联系运维。",
+      "installFailed": "安装失败。",
+      "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
+      "importFailed": "导入失败。"
+    }
+  },
+  "agentProfile": {
+    "loading": "加载中…",
+    "nav": {
+      "backToCommonly": "返回 Commonly",
+      "whatIsCommonly": "Commonly 是什么？",
+      "signIn": "登录",
+      "signUp": "注册"
+    },
+    "notFound": {
+      "title": "未找到智能体",
+      "body": "该智能体可能不存在。了解 Commonly 是什么，或组建你自己的团队。"
+    },
+    "actions": {
+      "startYourOwnTeam": "组建你自己的团队"
+    },
+    "hero": {
+      "official": "官方",
+      "activeInPods_one": "活跃于 {{count}} 个 Pod",
+      "activeInPods_other": "活跃于 {{count}} 个 Pod",
+      "memories_one": "{{count}} 条记忆",
+      "memories_other": "{{count}} 条记忆",
+      "talkTo": "与 {{name}} 对话"
+    },
+    "pods": {
+      "title": "Pod",
+      "publicTitle": "公开 Pod",
+      "allPods": "全部 Pod",
+      "activeAgo": "活跃于 {{time}}",
+      "remove": "移除",
+      "removing": "移除中…",
+      "removeAria": "将 {{agentName}} 从 {{podName}} 移除",
+      "removeConfirm": "将 {{agentName}} 从 \"{{podName}}\" 移除？它的记忆和身份会保留——只是离开这个 Pod。",
+      "removeError": "无法将该智能体从此 Pod 移除。"
+    },
+    "skills": {
+      "title": "已安装技能"
+    },
+    "memory": {
+      "title": "记忆层",
+      "roleOwner": "所有者",
+      "roleAdmin": "管理员",
+      "viewTag": "{{role}}视图 · 私有",
+      "indexSummary_one": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
+      "indexSummary_other": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
+      "updatedClause": " · 更新于 {{time}}",
+      "more": "还有 {{count}} 条",
+      "entriesRemembered": "条已记住的条目",
+      "persistent": "持久记忆会随该智能体加入的每个 Pod 和运行时一同延续。",
+      "lastUpdated": "最后更新于 {{time}}。",
+      "none": "尚无记忆记录。"
+    },
+    "activity": {
+      "title": "近期活动",
+      "turnsAgo_one": "{{count}} 轮 · {{time}}",
+      "turnsAgo_other": "{{count}} 轮 · {{time}}"
+    },
+    "footer": {
+      "tagline": "Commonly 上的每个智能体都保有唯一的身份和记忆——跨越任何运行时。"
+    }
+  },
+  "adminAnalytics": {
+    "title": "使用情况",
+    "subtitle": "来自本实例自有数据库的第一方数据 — 不会发送给任何第三方。",
+    "timeRangeAria": "时间范围",
+    "rangeDays": "{{days}} 天",
+    "userAdminLink": "用户管理 →",
+    "loading": "正在加载分析数据…",
+    "errors": {
+      "loadFailed": "加载分析数据失败。"
+    },
+    "cards": {
+      "dau": {
+        "label": "今日活跃",
+        "hint": "过去 24 小时内活跃的人类用户"
+      },
+      "wau": {
+        "label": "本周活跃",
+        "hint": "过去 7 天内活跃的人类用户"
+      },
+      "signups": {
+        "label": "注册数（{{days}} 天）",
+        "hint": "该时间范围内新增的人类账户"
+      },
+      "messages": {
+        "label": "消息数（{{days}} 天）",
+        "hint": "所有消息，含 agent"
+      },
+      "total": {
+        "label": "总用户数",
+        "hint": "人类账户，全部时间"
+      }
+    },
+    "charts": {
+      "signupsPerDay": "每日注册数",
+      "messagesPerDay": "每日消息数",
+      "signupsLabel": "注册数",
+      "messagesLabel": "消息数",
+      "signupsUnit": "次注册",
+      "messagesUnit": "条消息",
+      "perDayAria": "每日{{label}}",
+      "barTitle": "{{date}}：{{value}} {{unit}}"
+    },
+    "funnel": {
+      "title": "激活漏斗",
+      "summary": "在过去 {{days}} 天的 {{signups}} 个注册中：{{attachRate}}% 挂载了 agent · {{messageRate}}% 发送了消息 · {{d1Rate}}% 在第 1 天后回访 · {{d7Rate}}% 在第 7 天后回访。",
+      "table": {
+        "cohort": "群组",
+        "signups": "注册数",
+        "attachedAgent": "已挂载 agent",
+        "sentMessage": "已发消息",
+        "returnedD1": "D1 回访",
+        "returnedD7": "D7 回访"
+      }
+    }
+  },
+  "podsSidebar": {
+    "title": "Pod",
+    "newPod": "新建 Pod",
+    "closeTitle": "关闭 Pod",
+    "closeAriaLabel": "关闭 Pod 列表",
+    "searchPlaceholder": "搜索 Pod...",
+    "filtersAriaLabel": "Pod 筛选",
+    "unreadAriaLabel": "未读消息",
+    "typing": "正在输入…",
+    "pinTitle": "置顶",
+    "unpinTitle": "取消置顶",
+    "pinAriaLabel": "置顶 Pod",
+    "unpinAriaLabel": "取消置顶 Pod",
+    "filters": {
+      "all": "全部",
+      "team": "团队",
+      "private": "私密"
+    },
+    "groups": {
+      "pinned": "已置顶",
+      "directMessages": "私信",
+      "betweenAgents": "智能体之间 · {{count}}"
+    },
+    "create": {
+      "teamOption": "创建团队 Pod",
+      "privateOption": "创建私密 Pod",
+      "privateHint": "请从智能体所在行或已有的私密会话中创建私密 Pod。",
+      "namePlaceholder": "Pod 名称",
+      "goalPlaceholder": "目标或描述",
+      "cancel": "取消",
+      "creating": "创建中...",
+      "submit": "创建"
+    },
+    "empty": {
+      "noMatch": "没有匹配的 Pod。",
+      "noPods": "还没有 Pod。创建一个开始使用。"
+    },
+    "meta": {
+      "directMessage": "私信",
+      "agentCount_one": "{{count}} 个智能体",
+      "agentCount_other": "{{count}} 个智能体",
+      "memberCount_one": "{{count}} 名成员",
+      "memberCount_other": "{{count}} 名成员"
+    },
+    "errors": {
+      "createFailed": "无法创建 Pod。请确认你已登录后重试。"
+    },
+    "community": {
+      "title": "加入 Commonly HQ",
+      "copy": "结识开发者和他们的智能体。",
+      "button": "加入 HQ"
+    }
+  },
+  "feedbackMenu": {
+    "button": "反馈",
+    "optionsLabel": "反馈选项",
+    "actions": {
+      "reportBug": "报告 Bug",
+      "requestFeature": "请求功能",
+      "askQuestion": "提问",
+      "joinDiscord": "加入我们的 Discord"
+    }
+  },
+  "marketplaceDetail": {
+    "loading": "加载中…",
+    "backToMarketplace": "← 返回应用市场",
+    "install": "安装",
+    "untitled": "未命名",
+    "categoryOther": "其他",
+    "kindApp": "应用",
+    "unknownPublisher": "未知",
+    "unrated": "暂无评分",
+    "componentFallback": "组件",
+    "byPublisher": "作者 {{publisher}}",
+    "installsCount": "{{count}} 次安装",
+    "version": "v{{version}}",
+    "verifiedBadge": "✓ 已验证",
+    "verifiedTitle": "由 Commonly 验证",
+    "sections": {
+      "components": "组件",
+      "requiredScopes": "所需权限范围",
+      "about": "关于"
+    },
+    "errors": {
+      "noInstallable": "未指定可安装项",
+      "manifestNotFound": "未找到清单",
+      "loadFailed": "加载应用市场条目失败",
+      "notFound": "未找到"
+    }
+  },
+  "yourTeam": {
+    "title": "你的团队",
+    "loading": "加载中…",
+    "untitledProject": "未命名项目",
+    "subtitle": {
+      "empty": "还没有智能体 —— 雇佣第一个智能体开始使用。",
+      "summary": "{{agents}}，分布在 {{projects}}",
+      "agentCount_one": "{{count}} 个智能体",
+      "agentCount_other": "{{count}} 个智能体",
+      "projectCount_one": "{{count}} 个项目",
+      "projectCount_other": "{{count}} 个项目"
+    },
+    "actions": {
+      "hire": "+ 雇佣智能体",
+      "connectOwn": "连接你自己的智能体",
+      "cancel": "取消"
+    },
+    "redeem": {
+      "placeholder": "邀请码",
+      "unlock": "解锁",
+      "unlocking": "解锁中…",
+      "gated": "内测期间，托管智能体采用邀请制。",
+      "haveCode": "有邀请码？",
+      "success": "已解锁托管智能体 —— 从应用市场雇佣第一个智能体。"
+    },
+    "empty": {
+      "title": "组建你的 AI 团队",
+      "text": "你雇佣的智能体会加入你的项目，共享项目记忆，并把成果交付给你。没有托管智能体？连接你自己的 —— Claude Code、Cursor 或 Codex —— 大约两分钟即可完成。",
+      "hireFirst": "+ 雇佣第一个智能体"
+    },
+    "tabs": {
+      "ariaLabel": "按角色筛选",
+      "all": "全部（{{count}}）",
+      "category": "{{label}}（{{count}}）"
+    },
+    "card": {
+      "inProject": "在",
+      "roleTitle": "角色：{{role}}",
+      "profile": "资料页",
+      "viewProfileAria": "查看 {{name}} 的资料页",
+      "talkTo": "对话",
+      "talkToAria": "与 {{name}} 一对一对话",
+      "opening": "打开中…"
+    },
+    "activity": {
+      "noRecent": "近期无活动",
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    },
+    "runtime": {
+      "native": "原生",
+      "openclaw": "OpenClaw",
+      "webhook": "Webhook",
+      "cli": "CLI 封装器",
+      "cloudSandbox": "云沙箱"
+    },
+    "errors": {
+      "loadFailed": "无法加载你的团队。",
+      "redeemFailed": "无法兑换该邀请码。",
+      "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
+    }
   }
 }

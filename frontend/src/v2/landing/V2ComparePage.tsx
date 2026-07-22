@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
@@ -23,10 +24,10 @@ const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
 );
 
 interface Row {
-  dim: string;
-  commonly: string;
+  // Stable key into the `compare.rows.<key>` translation group. User-facing
+  // copy (dim / commonly / raft) is resolved via t() inside the component.
+  key: string;
   commonlyWin: boolean;
-  raft: string;
   // Parity dimensions — both products offer it. Rendered as a check on BOTH sides
   // (Raft's in a neutral tone) rather than a misleading dash, keeping the page
   // "generous + factual".
@@ -34,21 +35,22 @@ interface Row {
 }
 
 const ROWS: Row[] = [
-  { dim: 'Source', commonly: 'Open — Apache-2.0, every line readable', commonlyWin: true, raft: 'Closed source' },
-  { dim: 'Self-host', commonly: 'Yes — docker compose up on your own infra', commonlyWin: true, raft: 'Hosted product' },
-  { dim: 'Per-agent cost', commonly: '$0 — run one agent or fifty', commonlyWin: true, raft: 'Per-seat + per-agent pricing' },
-  { dim: 'Your data', commonly: 'On your machines when self-hosted', commonlyWin: true, raft: 'On their cloud' },
-  { dim: 'Federation', commonly: 'On the roadmap — agents across instances', commonlyWin: true, raft: 'Single hosted instance' },
-  { dim: 'Shared workspace', commonly: 'Humans + agents in one set of pods', commonlyWin: false, parity: true, raft: 'Humans + agents in one workspace' },
-  { dim: 'Bring your own runtime', commonly: 'Native, OpenClaw, Codex, Claude Code, webhook', commonlyWin: false, parity: true, raft: 'Bring your own agent daemon' },
+  { key: 'source', commonlyWin: true },
+  { key: 'selfHost', commonlyWin: true },
+  { key: 'perAgentCost', commonlyWin: true },
+  { key: 'yourData', commonlyWin: true },
+  { key: 'federation', commonlyWin: true },
+  { key: 'sharedWorkspace', commonlyWin: false, parity: true },
+  { key: 'byoRuntime', commonlyWin: false, parity: true },
 ];
 
 const V2ComparePage: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   // Signed-out visitors get routed to /v2/register (invite-code + waitlist),
   // not the /v2/login dead-end. Returning users use the "Sign in" nav link.
   const appHref = isAuthenticated ? '/v2' : '/v2/register';
-  const primaryLabel = isAuthenticated ? 'Open the app' : 'Get started';
+  const primaryLabel = isAuthenticated ? t('compare.actions.openApp') : t('compare.actions.getStarted');
   return (
   <div className="v2-root v2-landing">
     <header className="v2-landing__bar">
@@ -56,68 +58,64 @@ const V2ComparePage: React.FC = () => {
         <span className="v2-landing__mark"><Mark size={26} /></span>
         <span className="v2-landing__brand-name">Commonly</span>
       </Link>
-      <nav className="v2-landing__nav" aria-label="Primary">
-        <Link className="v2-landing__navlink" to="/v2/landing">Home</Link>
+      <nav className="v2-landing__nav" aria-label={t('compare.nav.primaryLabel')}>
+        <Link className="v2-landing__navlink" to="/v2/landing">{t('compare.nav.home')}</Link>
         <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
         {!isAuthenticated && (
-          <Link className="v2-landing__navlink" to="/v2/login">Sign in</Link>
+          <Link className="v2-landing__navlink" to="/v2/login">{t('compare.nav.signIn')}</Link>
         )}
         <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}>
-          {isAuthenticated ? 'Open the app' : 'Get started'}
+          {isAuthenticated ? t('compare.actions.openApp') : t('compare.actions.getStarted')}
         </Link>
       </nav>
     </header>
 
     <main>
       <section className="v2-landing__section v2-compare__head">
-        <div className="v2-landing__kicker">Compare</div>
-        <h1 className="v2-compare__title">Commonly vs Raft</h1>
+        <div className="v2-landing__kicker">{t('compare.kicker')}</div>
+        <h1 className="v2-compare__title">{t('compare.title')}</h1>
         <p className="v2-compare__lede">
-          Commonly and Raft both put humans and agents in one shared workspace, with your agents running on
-          your own runtime. The difference is ownership: Commonly is open-source and self-hostable, with no
-          per-agent tax.
+          {t('compare.lede')}
         </p>
 
-        <div className="v2-compare__table" role="table" aria-label="Commonly compared with Raft">
+        <div className="v2-compare__table" role="table" aria-label={t('compare.table.ariaLabel')}>
           <div className="v2-compare__row v2-compare__row--head" role="row">
             <div className="v2-compare__cell v2-compare__cell--dim" role="columnheader" />
             <div className="v2-compare__cell v2-compare__cell--us" role="columnheader">
-              <span className="v2-landing__mark"><Mark size={18} /></span> Commonly
+              <span className="v2-landing__mark"><Mark size={18} /></span> {t('compare.table.commonly')}
             </div>
-            <div className="v2-compare__cell" role="columnheader">Raft</div>
+            <div className="v2-compare__cell" role="columnheader">{t('compare.table.raft')}</div>
           </div>
           {ROWS.map((r) => (
-            <div className="v2-compare__row" role="row" key={r.dim}>
-              <div className="v2-compare__cell v2-compare__cell--dim" role="rowheader">{r.dim}</div>
+            <div className="v2-compare__row" role="row" key={r.key}>
+              <div className="v2-compare__cell v2-compare__cell--dim" role="rowheader">{t(`compare.rows.${r.key}.dim`)}</div>
               <div className="v2-compare__cell v2-compare__cell--us" role="cell">
                 {(r.commonlyWin || r.parity) && <CheckCircleOutlineIcon className="v2-compare__ic v2-compare__ic--yes" fontSize="inherit" />}
-                <span>{r.commonly}</span>
+                <span>{t(`compare.rows.${r.key}.commonly`)}</span>
               </div>
               <div className="v2-compare__cell" role="cell">
                 {r.parity
                   ? <CheckCircleOutlineIcon className="v2-compare__ic v2-compare__ic--muted" fontSize="inherit" />
                   : <RemoveCircleOutlineIcon className="v2-compare__ic v2-compare__ic--muted" fontSize="inherit" />}
-                <span>{r.raft}</span>
+                <span>{t(`compare.rows.${r.key}.raft`)}</span>
               </div>
             </div>
           ))}
         </div>
 
         <p className="v2-compare__close">
-          Want a hosted product and don&apos;t mind closed-source? Raft is good, and shipping. Want to own the
-          substrate — self-host it, pay no per-agent tax, fork it, and federate it? That&apos;s Commonly.
+          {t('compare.close')}
         </p>
 
         <div className="v2-landing__cta-row v2-compare__cta">
           <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
           <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
             <span className="v2-landing__btn-mark"><Mark size={18} /></span>
-            Star on GitHub
+            {t('compare.actions.starOnGithub')}
           </a>
         </div>
         <p className="v2-compare__note">
-          Comparison reflects each product&apos;s public positioning. Raft is a trademark of its respective owner;
-          this page is not affiliated with or endorsed by Raft.
+          {t('compare.note')}
         </p>
       </section>
     </main>
@@ -129,14 +127,14 @@ const V2ComparePage: React.FC = () => {
       </div>
       <div className="v2-landing__footer-cols">
         <div className="v2-landing__footer-col">
-          <div className="v2-landing__footer-title">Product</div>
-          <Link className="v2-landing__footer-link" to="/v2/landing">Home</Link>
+          <div className="v2-landing__footer-title">{t('compare.footer.product')}</div>
+          <Link className="v2-landing__footer-link" to="/v2/landing">{t('compare.nav.home')}</Link>
           <Link className="v2-landing__footer-link" to={appHref}>{primaryLabel}</Link>
         </div>
         <div className="v2-landing__footer-col">
-          <div className="v2-landing__footer-title">Open source</div>
+          <div className="v2-landing__footer-title">{t('compare.footer.openSource')}</div>
           <a className="v2-landing__footer-link" href={REPO} target="_blank" rel="noreferrer">GitHub</a>
-          <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">License (Apache-2.0)</a>
+          <a className="v2-landing__footer-link" href={`${REPO}/blob/main/LICENSE`} target="_blank" rel="noreferrer">{t('compare.footer.license')}</a>
         </div>
       </div>
     </footer>

@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
 import { useV2Api } from '../hooks/useV2Api';
@@ -35,6 +36,7 @@ const sanitizeAgentName = (raw: string): string => raw
   .slice(0, 64);
 
 const V2AgentBYO: React.FC = () => {
+  const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   const [pods, setPods] = useState<V2Pod[]>([]);
@@ -83,11 +85,11 @@ const V2AgentBYO: React.FC = () => {
     setError(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
-      setError('Agent name must contain at least one letter or digit.');
+      setError(t('agentByo.errors.nameRequired'));
       return;
     }
     if (!podId) {
-      setError('Pick a pod to install into.');
+      setError(t('agentByo.errors.podRequired'));
       return;
     }
     setSubmitting(true);
@@ -120,7 +122,7 @@ const V2AgentBYO: React.FC = () => {
       );
       const tok = tokenRes?.token;
       if (!tok) {
-        setError('Install succeeded but token issuance returned empty. Retry, or contact ops.');
+        setError(t('agentByo.errors.tokenEmpty'));
       } else {
         setIssued({ token: tok, agentName: cleanName, podId });
         setMemoryText('');
@@ -129,7 +131,7 @@ const V2AgentBYO: React.FC = () => {
       }
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.message || e.message || 'Install failed.');
+      setError(e.response?.data?.error || e.response?.data?.message || e.message || t('agentByo.errors.installFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -150,7 +152,7 @@ const V2AgentBYO: React.FC = () => {
   const onMemoryFile = async (file: File | undefined) => {
     if (!file) return;
     if (file.size > 256 * 1024) {
-      setMemoryError('That file is over the 256KB import ceiling — trim it or paste the relevant part.');
+      setMemoryError(t('agentByo.errors.fileTooLarge'));
       return;
     }
     setMemoryError(null);
@@ -182,7 +184,7 @@ const V2AgentBYO: React.FC = () => {
       setMemoryDone(true);
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
-      setMemoryError(e.response?.data?.error || e.message || 'Import failed.');
+      setMemoryError(e.response?.data?.error || e.message || t('agentByo.errors.importFailed'));
     } finally {
       setMemoryBusy(false);
     }
@@ -220,15 +222,15 @@ const V2AgentBYO: React.FC = () => {
 
   return (
     <V2FeaturePage
-      eyebrow="Connect any runtime"
-      title="Bring your own agent"
-      description="Connect Claude Code, Cursor, or Codex to your Commonly pods via MCP. ~2 minutes."
+      eyebrow={t('agentByo.eyebrow')}
+      title={t('agentByo.title')}
+      description={t('agentByo.description')}
       showPodsSidebar={false}
     >
       {!issued && (
         <div className="v2-byo__form">
           <label className="v2-byo__field">
-            <span className="v2-byo__label">Agent name</span>
+            <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
               type="text"
               value={name}
@@ -237,23 +239,23 @@ const V2AgentBYO: React.FC = () => {
               className="v2-byo__input"
             />
             <span className="v2-byo__hint">
-              Lower-case letters, digits, and dashes. This is the identity your agent posts as.
+              {t('agentByo.form.nameHint')}
             </span>
           </label>
           <label className="v2-byo__field">
-            <span className="v2-byo__label">Install into pod</span>
+            <span className="v2-byo__label">{t('agentByo.form.podLabel')}</span>
             <select
               value={podId}
               onChange={(e) => setPodId(e.target.value)}
               className="v2-byo__input"
             >
-              {pods.length === 0 && <option value="">Loading pods…</option>}
+              {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
               {pods.map((p) => (
                 <option key={p._id} value={p._id}>{p.name} ({p.type || 'chat'})</option>
               ))}
             </select>
             <span className="v2-byo__hint">
-              Your agent will be installed here. You can install it into more pods later.
+              {t('agentByo.form.podHint')}
             </span>
           </label>
           {error && <div className="v2-byo__error">{error}</div>}
@@ -263,33 +265,31 @@ const V2AgentBYO: React.FC = () => {
             disabled={submitting || !podId}
             className="v2-byo__submit"
           >
-            {submitting ? 'Issuing token…' : 'Install + generate token'}
+            {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
           </button>
           <p className="v2-byo__footnote">
-            Prefer the CLI? <code>npm i -g @commonlyai/cli</code>, then{' '}
+            {t('agentByo.footnote.preferCli')} <code>npm i -g @commonlyai/cli</code>, {t('agentByo.footnote.then')}{' '}
             <code>commonly agent init --name &lt;n&gt; --pod &lt;podId&gt;</code>.{' '}
-            Not sure which path?{' '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">MCP vs CLI vs SDK</a>
+            {t('agentByo.footnote.notSure')}{' '}
+            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">full walkthrough</a>.
+            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
         </div>
       )}
 
       {issued && (
         <div className="v2-byo__result">
-          <h2>Token issued for <code>{issued.agentName}</code></h2>
+          <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
           <p>
-            Copy this <strong>once</strong>. Commonly hashes the token after issuance — if you lose
-            it, come back here and rotate (re-running install with the same name is idempotent on
-            identity; the token is reissued fresh).
+            {t('agentByo.result.copyOnceLead')} <strong>{t('agentByo.result.copyOnceEmphasis')}</strong>. {t('agentByo.result.copyOnceRest')}
           </p>
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
-              <span>Runtime token</span>
+              <span>{t('agentByo.snippets.runtimeToken')}</span>
               <button type="button" onClick={() => copy('tok', issued.token)} className="v2-byo__copy">
-                {copied === 'tok' ? 'Copied!' : 'Copy'}
+                {copied === 'tok' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
             <pre className="v2-byo__pre">{issued.token}</pre>
@@ -297,9 +297,9 @@ const V2AgentBYO: React.FC = () => {
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
-              <span>Claude Code</span>
+              <span>{t('agentByo.snippets.claudeCode')}</span>
               <button type="button" onClick={() => copy('claude', claudeSnippet)} className="v2-byo__copy">
-                {copied === 'claude' ? 'Copied!' : 'Copy'}
+                {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
             <pre className="v2-byo__pre">{claudeSnippet}</pre>
@@ -307,9 +307,9 @@ const V2AgentBYO: React.FC = () => {
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
-              <span>Cursor — add to ~/.cursor/mcp.json</span>
+              <span>{t('agentByo.snippets.cursor')}</span>
               <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
-                {copied === 'cursor' ? 'Copied!' : 'Copy'}
+                {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
               </button>
             </div>
             <pre className="v2-byo__pre">{cursorSnippet}</pre>
@@ -317,24 +317,21 @@ const V2AgentBYO: React.FC = () => {
 
           <div className="v2-byo__snippet">
             <div className="v2-byo__snippet-head">
-              <span>Bring its memory (optional)</span>
+              <span>{t('agentByo.snippets.memory')}</span>
             </div>
             {memoryDone ? (
               <p className="v2-byo__memory-done">
-                ✓ Memory imported — <code>{issued.agentName}</code> arrives knowing your project.
-                It shows up in the agent&apos;s profile under long-term memory.
+                {t('agentByo.memory.doneLead')} <code>{issued.agentName}</code> {t('agentByo.memory.doneRest')}
               </p>
             ) : (
               <div className="v2-byo__memory">
                 <p className="v2-byo__hint">
-                  Paste your agent&apos;s local <code>MEMORY.md</code> or <code>CLAUDE.md</code> (or
-                  pick the file) and it starts here with everything it already knows. Appends to its
-                  long-term memory; never overwrites. Nothing is sent until you click import.
+                  {t('agentByo.memory.pasteLead')} <code>MEMORY.md</code> {t('agentByo.memory.pasteOr')} <code>CLAUDE.md</code> {t('agentByo.memory.pasteRest')}
                 </p>
                 <textarea
                   className="v2-byo__input v2-byo__memory-text"
                   rows={6}
-                  placeholder="# Paste MEMORY.md / CLAUDE.md content here…"
+                  placeholder={t('agentByo.memory.placeholder')}
                   value={memoryText}
                   onChange={(e) => setMemoryText(e.target.value)}
                 />
@@ -342,7 +339,7 @@ const V2AgentBYO: React.FC = () => {
                   <input
                     type="file"
                     accept=".md,text/markdown,text/plain"
-                    aria-label="Choose a memory file"
+                    aria-label={t('agentByo.memory.fileAriaLabel')}
                     onChange={(e) => onMemoryFile(e.target.files?.[0])}
                   />
                   <button
@@ -351,7 +348,7 @@ const V2AgentBYO: React.FC = () => {
                     disabled={memoryBusy || !memoryText.trim()}
                     onClick={importMemory}
                   >
-                    {memoryBusy ? 'Importing…' : 'Import memory'}
+                    {memoryBusy ? t('agentByo.memory.importing') : t('agentByo.memory.import')}
                   </button>
                 </div>
                 {memoryError && <div className="v2-byo__error">{memoryError}</div>}
@@ -365,14 +362,14 @@ const V2AgentBYO: React.FC = () => {
               onClick={() => navigate(`/v2/pods/${issued.podId}`)}
               className="v2-byo__submit"
             >
-              Go to your pod
+              {t('agentByo.actions.goToPod')}
             </button>
             <button
               type="button"
               onClick={() => { setIssued(null); }}
               className="v2-byo__secondary"
             >
-              Install another
+              {t('agentByo.actions.installAnother')}
             </button>
           </div>
         </div>

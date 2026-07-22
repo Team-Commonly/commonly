@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
@@ -76,30 +77,34 @@ const timeAgo = (iso?: string | null): string => {
 // Auth-aware chrome: anonymous visitors get the conversion nav (What is Commonly? /
 // Sign in / Sign up); a signed-in viewer gets a link back into the app instead —
 // the sign-up CTAs don't belong once you're logged in.
-const TopBar: React.FC<{ authed?: boolean }> = ({ authed }) => (
-  <header className="v2-aprofile__bar">
-    <Link className="v2-aprofile__brand" to={authed ? '/v2' : '/v2/landing'}>
-      <span className="v2-rail__brand-icon">c</span>
-      Commonly
-    </Link>
-    <nav className="v2-aprofile__nav">
-      {authed ? (
-        <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/agents">Back to Commonly</Link>
-      ) : (
-        <>
-          <Link className="v2-aprofile__navlink" to="/v2/landing">What is Commonly?</Link>
-          <Link className="v2-aprofile__navlink" to="/v2/login">Sign in</Link>
-          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Sign up</Link>
-        </>
-      )}
-    </nav>
-  </header>
-);
+const TopBar: React.FC<{ authed?: boolean }> = ({ authed }) => {
+  const { t } = useTranslation();
+  return (
+    <header className="v2-aprofile__bar">
+      <Link className="v2-aprofile__brand" to={authed ? '/v2' : '/v2/landing'}>
+        <span className="v2-rail__brand-icon">c</span>
+        Commonly
+      </Link>
+      <nav className="v2-aprofile__nav">
+        {authed ? (
+          <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/agents">{t('agentProfile.nav.backToCommonly')}</Link>
+        ) : (
+          <>
+            <Link className="v2-aprofile__navlink" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
+            <Link className="v2-aprofile__navlink" to="/v2/login">{t('agentProfile.nav.signIn')}</Link>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.nav.signUp')}</Link>
+          </>
+        )}
+      </nav>
+    </header>
+  );
+};
 
 const isAuthed = (): boolean =>
   typeof window !== 'undefined' && !!window.localStorage.getItem('token');
 
 const V2AgentProfile: React.FC = () => {
+  const { t } = useTranslation();
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
   const [data, setData] = useState<AgentProfile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -145,7 +150,7 @@ const V2AgentProfile: React.FC = () => {
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
     if (!token || !agentName) return;
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Remove ${agentName} from "${podName}"? Its memory and identity are kept — it just leaves this pod.`)) return;
+    if (!window.confirm(t('agentProfile.pods.removeConfirm', { agentName, podName }))) return;
     setRemoving(podId);
     try {
       await getClient().delete(
@@ -155,11 +160,11 @@ const V2AgentProfile: React.FC = () => {
       await Promise.all([fetchProfile(), fetchMemoryIndex()]);
     } catch {
       // eslint-disable-next-line no-alert
-      window.alert('Could not remove the agent from that pod.');
+      window.alert(t('agentProfile.pods.removeError'));
     } finally {
       setRemoving(null);
     }
-  }, [agentName, fetchProfile, fetchMemoryIndex]);
+  }, [t, agentName, fetchProfile, fetchMemoryIndex]);
 
   useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
 
@@ -167,7 +172,7 @@ const V2AgentProfile: React.FC = () => {
     return (
       <div className="v2-root v2-aprofile">
         <TopBar authed={isAuthed()} />
-        <div className="v2-aprofile__center"><div className="v2-aprofile__muted">Loading…</div></div>
+        <div className="v2-aprofile__center"><div className="v2-aprofile__muted">{t('agentProfile.loading')}</div></div>
       </div>
     );
   }
@@ -176,11 +181,11 @@ const V2AgentProfile: React.FC = () => {
       <div className="v2-root v2-aprofile">
         <TopBar authed={isAuthed()} />
         <div className="v2-aprofile__center">
-          <h1 className="v2-aprofile__empty-title">Agent not found</h1>
-          <p className="v2-aprofile__muted">This agent may not exist. Explore what Commonly is, or start your own team.</p>
+          <h1 className="v2-aprofile__empty-title">{t('agentProfile.notFound.title')}</h1>
+          <p className="v2-aprofile__muted">{t('agentProfile.notFound.body')}</p>
           <div className="v2-aprofile__cta-row">
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
-            <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/landing">What is Commonly?</Link>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.actions.startYourOwnTeam')}</Link>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
           </div>
         </div>
       </div>
@@ -203,12 +208,12 @@ const V2AgentProfile: React.FC = () => {
             <div className="v2-aprofile__name-row">
               <h1 className="v2-aprofile__name">{agent.displayName}</h1>
               {runtimeLabel && <span className="v2-aprofile__runtime">{runtimeLabel}</span>}
-              {agent.officialAgent && <span className="v2-aprofile__badge">Official</span>}
+              {agent.officialAgent && <span className="v2-aprofile__badge">{t('agentProfile.hero.official')}</span>}
             </div>
             {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
             <div className="v2-aprofile__meta">
-              <span>Active in {pods.count} pod{pods.count === 1 ? '' : 's'}</span>
-              {memory.has && <span>· {memory.entryCount} memories</span>}
+              <span>{t('agentProfile.hero.activeInPods', { count: pods.count })}</span>
+              {memory.has && <span>· {t('agentProfile.hero.memories', { count: memory.entryCount })}</span>}
               {agent.personality?.tone && <span>· {agent.personality.tone}</span>}
             </div>
             {(agent.capabilities.length > 0 || (agent.personality?.interests?.length || 0) > 0) && (
@@ -218,7 +223,7 @@ const V2AgentProfile: React.FC = () => {
               </div>
             )}
           </div>
-          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to={authed ? '/v2/agents' : '/v2/register'}>Talk to {firstName}</Link>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to={authed ? '/v2/agents' : '/v2/register'}>{t('agentProfile.hero.talkTo', { name: firstName })}</Link>
         </section>
 
         <div className="v2-aprofile__grid">
@@ -233,24 +238,24 @@ const V2AgentProfile: React.FC = () => {
             return (
               <section className="v2-aprofile__card">
                 <h2 className="v2-aprofile__card-title">
-                  {ownerPods ? 'Pods' : 'Public pods'} <span className="v2-aprofile__count">{ownerPods ? pods.count : list.length}</span>
-                  {ownerPods && pods.count > list.length && <span className="v2-aprofile__owner-tag">all pods</span>}
+                  {ownerPods ? t('agentProfile.pods.title') : t('agentProfile.pods.publicTitle')} <span className="v2-aprofile__count">{ownerPods ? pods.count : list.length}</span>
+                  {ownerPods && pods.count > list.length && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.allPods')}</span>}
                 </h2>
                 <ul className="v2-aprofile__list v2-aprofile__scroll">
                   {list.map((p) => (
                     <li key={p.id} className="v2-aprofile__pod">
                       <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
                       {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
-                      {p.lastActive && <span className="v2-aprofile__pod-when">active {timeAgo(p.lastActive)}</span>}
+                      {p.lastActive && <span className="v2-aprofile__pod-when">{t('agentProfile.pods.activeAgo', { time: timeAgo(p.lastActive) })}</span>}
                       {ownerPods && (
                         <button
                           type="button"
                           className="v2-aprofile__pod-remove"
                           onClick={() => handleRemoveFromPod(p.id, p.name)}
                           disabled={removing === p.id}
-                          aria-label={`Remove ${agentName} from ${p.name}`}
+                          aria-label={t('agentProfile.pods.removeAria', { agentName, podName: p.name })}
                         >
-                          {removing === p.id ? 'Removing…' : 'Remove'}
+                          {removing === p.id ? t('agentProfile.pods.removing') : t('agentProfile.pods.remove')}
                         </button>
                       )}
                     </li>
@@ -265,7 +270,7 @@ const V2AgentProfile: React.FC = () => {
               carry the "what it does" story otherwise. */}
           {skills.length > 0 && (
             <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">Installed skills <span className="v2-aprofile__count">{skills.length}</span></h2>
+              <h2 className="v2-aprofile__card-title">{t('agentProfile.skills.title')} <span className="v2-aprofile__count">{skills.length}</span></h2>
               <ul className="v2-aprofile__list">
                 {skills.slice(0, 12).map((s) => (
                   <li key={s.name} className="v2-aprofile__skill">
@@ -281,14 +286,27 @@ const V2AgentProfile: React.FC = () => {
               index (section headers + snippets), fetched with their token. */}
           <section className={`v2-aprofile__card${memIndex && memIndex.sections.length > 0 ? ' v2-aprofile__card--wide' : ''}`}>
             <h2 className="v2-aprofile__card-title">
-              Memory layer
-              {memIndex && <span className="v2-aprofile__owner-tag">{memIndex.viewerRole} view · private</span>}
+              {t('agentProfile.memory.title')}
+              {memIndex && (
+                <span className="v2-aprofile__owner-tag">
+                  {t('agentProfile.memory.viewTag', {
+                    role: memIndex.viewerRole === 'admin'
+                      ? t('agentProfile.memory.roleAdmin')
+                      : t('agentProfile.memory.roleOwner'),
+                  })}
+                </span>
+              )}
             </h2>
             {memIndex && memIndex.sections.length > 0 ? (
               <div className="v2-aprofile__memidx">
                 <p className="v2-aprofile__muted">
-                  {memIndex.totalEntries} notes across {memIndex.sections.length} section{memIndex.sections.length === 1 ? '' : 's'}
-                  {memIndex.updatedAt ? ` · updated ${timeAgo(memIndex.updatedAt)}` : ''}. Visible to you; hidden from the public profile.
+                  {t('agentProfile.memory.indexSummary', {
+                    notes: memIndex.totalEntries,
+                    count: memIndex.sections.length,
+                    updated: memIndex.updatedAt
+                      ? t('agentProfile.memory.updatedClause', { time: timeAgo(memIndex.updatedAt) })
+                      : '',
+                  })}
                 </p>
                 <div className="v2-aprofile__memcols v2-aprofile__scroll">
                   {memIndex.sections.map((sec) => (
@@ -302,7 +320,7 @@ const V2AgentProfile: React.FC = () => {
                           </li>
                         ))}
                       </ul>
-                      {sec.notes.length > 5 && <span className="v2-aprofile__more">+{sec.notes.length - 5} more</span>}
+                      {sec.notes.length > 5 && <span className="v2-aprofile__more">{t('agentProfile.memory.more', { count: sec.notes.length - 5 })}</span>}
                     </div>
                   ))}
                 </div>
@@ -311,28 +329,28 @@ const V2AgentProfile: React.FC = () => {
               <div className="v2-aprofile__memory">
                 <div className="v2-aprofile__stat">
                   <span className="v2-aprofile__stat-num">{memory.entryCount}</span>
-                  <span className="v2-aprofile__stat-label">entries remembered</span>
+                  <span className="v2-aprofile__stat-label">{t('agentProfile.memory.entriesRemembered')}</span>
                 </div>
                 <p className="v2-aprofile__muted">
-                  Persistent memory carried across every pod and runtime this agent joins.
-                  {memory.updatedAt && ` Last updated ${timeAgo(memory.updatedAt)}.`}
+                  {t('agentProfile.memory.persistent')}
+                  {memory.updatedAt && ` ${t('agentProfile.memory.lastUpdated', { time: timeAgo(memory.updatedAt) })}`}
                 </p>
               </div>
             ) : (
-              <p className="v2-aprofile__muted">No memory recorded yet.</p>
+              <p className="v2-aprofile__muted">{t('agentProfile.memory.none')}</p>
             )}
           </section>
 
           {/* Recent activity */}
           {activity.length > 0 && (
             <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">Recent activity</h2>
+              <h2 className="v2-aprofile__card-title">{t('agentProfile.activity.title')}</h2>
               <ul className="v2-aprofile__list">
                 {activity.map((a, i) => (
                   <li key={i} className="v2-aprofile__run">
                     <span className={`v2-aprofile__run-dot v2-aprofile__run-dot--${a.errorKind ? 'err' : a.status}`} />
                     <span className="v2-aprofile__run-label">{a.trigger || a.status}</span>
-                    <span className="v2-aprofile__muted">{a.turns} turn{a.turns === 1 ? '' : 's'} · {timeAgo(a.startedAt)}</span>
+                    <span className="v2-aprofile__muted">{t('agentProfile.activity.turnsAgo', { count: a.turns, time: timeAgo(a.startedAt) })}</span>
                   </li>
                 ))}
               </ul>
@@ -342,8 +360,8 @@ const V2AgentProfile: React.FC = () => {
 
         {!authed && (
           <div className="v2-aprofile__footer-cta">
-            <span>Every agent on Commonly keeps one identity and memory — across any runtime.</span>
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">Start your own team</Link>
+            <span>{t('agentProfile.footer.tagline')}</span>
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.actions.startYourOwnTeam')}</Link>
           </div>
         )}
       </main>

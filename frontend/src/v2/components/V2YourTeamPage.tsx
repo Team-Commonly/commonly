@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
@@ -24,31 +25,35 @@ interface AgentInstallationSummary {
   podName?: string;
 }
 
-const RUNTIME_LABEL: Record<string, string> = {
-  internal: 'Native',
-  moltbot: 'OpenClaw',
-  webhook: 'Webhook',
-  cli: 'CLI wrapper',
-  managed: 'Cloud sandbox',
+const RUNTIME_LABEL_KEY: Record<string, string> = {
+  internal: 'yourTeam.runtime.native',
+  moltbot: 'yourTeam.runtime.openclaw',
+  webhook: 'yourTeam.runtime.webhook',
+  cli: 'yourTeam.runtime.cli',
+  managed: 'yourTeam.runtime.cloudSandbox',
 };
 
-const formatRuntime = (a: AgentInstallationSummary): string => {
-  const t = a.runtime?.runtimeType;
-  if (!t) return 'Native';
-  return RUNTIME_LABEL[t] || t;
+const formatRuntime = (a: AgentInstallationSummary, t: (key: string) => string): string => {
+  const rt = a.runtime?.runtimeType;
+  if (!rt) return t('yourTeam.runtime.native');
+  const key = RUNTIME_LABEL_KEY[rt];
+  return key ? t(key) : rt;
 };
 
-const formatRelative = (iso?: string | null): string => {
-  if (!iso) return 'No recent activity';
+const formatRelative = (
+  iso: string | null | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string => {
+  if (!iso) return t('yourTeam.activity.noRecent');
   const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return 'No recent activity';
+  if (Number.isNaN(ms)) return t('yourTeam.activity.noRecent');
   const min = Math.floor(ms / 60000);
-  if (min < 1) return 'Just now';
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t('yourTeam.activity.justNow');
+  if (min < 60) return t('yourTeam.activity.minutesAgo', { count: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return t('yourTeam.activity.hoursAgo', { count: hr });
   const d = Math.floor(hr / 24);
-  return `${d}d ago`;
+  return t('yourTeam.activity.daysAgo', { count: d });
 };
 
 const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSummary[] => {
@@ -69,6 +74,7 @@ const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSumm
 
 const V2YourTeamPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { user } = useAuth();
   // Hosted (cloud) agents require an entitlement the open-registration tier
   // doesn't have. Until the user payload carries an explicit `entitlements`
@@ -118,7 +124,7 @@ const V2YourTeamPage: React.FC = () => {
       setRedeemOpen(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setRedeemError(msg || 'Could not redeem that code.');
+      setRedeemError(msg || t('yourTeam.errors.redeemFailed'));
     } finally {
       setRedeeming(false);
     }
@@ -148,7 +154,7 @@ const V2YourTeamPage: React.FC = () => {
             return (r.data?.agents || []).map((a) => ({
               ...a,
               podId: p._id,
-              podName: p.name || p.title || 'Untitled project',
+              podName: p.name || p.title || t('yourTeam.untitledProject'),
             }));
           } catch {
             return [];
@@ -159,7 +165,7 @@ const V2YourTeamPage: React.FC = () => {
         setAgents(dedupeAgents(flat));
       } catch (e: unknown) {
         if (cancelled) return;
-        const msg = (e as { message?: string })?.message || 'Could not load your team.';
+        const msg = (e as { message?: string })?.message || t('yourTeam.errors.loadFailed');
         setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
@@ -213,7 +219,7 @@ const V2YourTeamPage: React.FC = () => {
       navigate(`/v2/pods/${roomId}`);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { message?: string } } })?.response;
-      setError(resp?.data?.message || 'Could not open a 1:1 with this agent — try again.');
+      setError(resp?.data?.message || t('yourTeam.errors.openRoomFailed'));
       setOpening(null);
     }
   };
@@ -222,13 +228,16 @@ const V2YourTeamPage: React.FC = () => {
     <div className="v2-team">
       <header className="v2-team__header">
         <div>
-          <h1 className="v2-team__title">Your Team</h1>
+          <h1 className="v2-team__title">{t('yourTeam.title')}</h1>
           <p className="v2-team__subtitle">
             {loading
-              ? 'Loading…'
+              ? t('yourTeam.loading')
               : sortedAgents.length === 0
-                ? 'No agents yet — hire your first one to get started.'
-                : `${sortedAgents.length} agent${sortedAgents.length === 1 ? '' : 's'} working across ${pods.length} project${pods.length === 1 ? '' : 's'}`}
+                ? t('yourTeam.subtitle.empty')
+                : t('yourTeam.subtitle.summary', {
+                    agents: t('yourTeam.subtitle.agentCount', { count: sortedAgents.length }),
+                    projects: t('yourTeam.subtitle.projectCount', { count: pods.length }),
+                  })}
           </p>
         </div>
         <div className="v2-team__actions">
@@ -237,14 +246,14 @@ const V2YourTeamPage: React.FC = () => {
             className="v2-team__hire-cta"
             onClick={() => navigate(primaryHirePath)}
           >
-            + Hire an agent
+            {t('yourTeam.actions.hire')}
           </button>
           <button
             type="button"
             className="v2-team__byo-cta"
             onClick={() => navigate('/v2/agents/byo')}
           >
-            Connect your own agent
+            {t('yourTeam.actions.connectOwn')}
           </button>
         </div>
       </header>
@@ -256,25 +265,25 @@ const V2YourTeamPage: React.FC = () => {
               <input
                 className="v2-login__input"
                 type="text"
-                placeholder="Invitation code"
+                placeholder={t('yourTeam.redeem.placeholder')}
                 value={redeemCode}
                 onChange={(e) => setRedeemCode(e.target.value)}
                 autoFocus
               />
               <button type="submit" className="v2-team__hire-cta" disabled={redeeming || !redeemCode.trim()}>
-                {redeeming ? 'Unlocking…' : 'Unlock'}
+                {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
               </button>
               <button type="button" className="v2-team__byo-cta" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
-                Cancel
+                {t('yourTeam.actions.cancel')}
               </button>
               {redeemError && <span className="v2-team__redeem-error">{redeemError}</span>}
             </form>
           ) : (
             <span>
-              Hosted agents are invite-gated during beta.
+              {t('yourTeam.redeem.gated')}
               {' '}
               <button type="button" className="v2-team__redeem-link" onClick={() => setRedeemOpen(true)}>
-                Have an invitation code?
+                {t('yourTeam.redeem.haveCode')}
               </button>
             </span>
           )}
@@ -282,7 +291,7 @@ const V2YourTeamPage: React.FC = () => {
       )}
       {redeemed && (
         <div className="v2-team__redeem v2-team__redeem--success">
-          Hosted agents unlocked — hire your first one from the catalog.
+          {t('yourTeam.redeem.success')}
         </div>
       )}
 
@@ -292,10 +301,9 @@ const V2YourTeamPage: React.FC = () => {
 
       {!loading && sortedAgents.length === 0 && !error && (
         <div className="v2-team__empty">
-          <div className="v2-team__empty-title">Build your AI team</div>
+          <div className="v2-team__empty-title">{t('yourTeam.empty.title')}</div>
           <div className="v2-team__empty-text">
-            Agents you hire join your projects, share your project memory, and ship work back to you.
-            Don&apos;t have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.
+            {t('yourTeam.empty.text')}
           </div>
           <div className="v2-team__empty-actions">
             <button
@@ -303,21 +311,21 @@ const V2YourTeamPage: React.FC = () => {
               className="v2-team__hire-cta"
               onClick={() => navigate(primaryHirePath)}
             >
-              + Hire your first agent
+              {t('yourTeam.empty.hireFirst')}
             </button>
             <button
               type="button"
               className="v2-team__byo-cta"
               onClick={() => navigate('/v2/agents/byo')}
             >
-              Connect your own agent
+              {t('yourTeam.actions.connectOwn')}
             </button>
           </div>
         </div>
       )}
 
       {categories.length > 1 && (
-        <div className="v2-team__tabs" role="tablist" aria-label="Filter by role">
+        <div className="v2-team__tabs" role="tablist" aria-label={t('yourTeam.tabs.ariaLabel')}>
           <button
             type="button"
             role="tab"
@@ -325,7 +333,7 @@ const V2YourTeamPage: React.FC = () => {
             aria-selected={filter === 'all'}
             onClick={() => setFilter('all')}
           >
-            All ({sortedAgents.length})
+            {t('yourTeam.tabs.all', { count: sortedAgents.length })}
           </button>
           {categories.map((cat) => {
             const count = sortedAgents.filter((a) => a.category === cat).length;
@@ -338,7 +346,7 @@ const V2YourTeamPage: React.FC = () => {
                 aria-selected={filter === cat}
                 onClick={() => setFilter(cat)}
               >
-                {cat} ({count})
+                {t('yourTeam.tabs.category', { label: cat, count })}
               </button>
             );
           })}
@@ -348,9 +356,9 @@ const V2YourTeamPage: React.FC = () => {
       <div className="v2-team__grid">
         {filteredAgents.map((a) => {
           const display = a.displayName || a.name;
-          const podLabel = a.podName || 'Untitled project';
-          const runtimeLabel = formatRuntime(a);
-          const lastSeen = formatRelative(a.lastHeartbeatAt);
+          const podLabel = a.podName || t('yourTeam.untitledProject');
+          const runtimeLabel = formatRuntime(a, t);
+          const lastSeen = formatRelative(a.lastHeartbeatAt, t);
           const cardKey = `${a.name}:${a.instanceId}`;
           const isOpening = opening === cardKey;
           const onCardClick = () => {
@@ -375,11 +383,11 @@ const V2YourTeamPage: React.FC = () => {
                 <div className="v2-team-card__name-row">
                   <span className="v2-team-card__name">{display}</span>
                   {a.category && (
-                    <span className="v2-role-chip" title={`Role: ${a.category}`}>{a.category}</span>
+                    <span className="v2-role-chip" title={t('yourTeam.card.roleTitle', { role: a.category })}>{a.category}</span>
                   )}
                   <span className="v2-team-card__runtime">{runtimeLabel}</span>
                 </div>
-                <div className="v2-team-card__pod">in <em>{podLabel}</em></div>
+                <div className="v2-team-card__pod">{t('yourTeam.card.inProject')} <em>{podLabel}</em></div>
                 <div className="v2-team-card__activity">
                   <span className="v2-team-card__dot" data-active={a.status === 'active'} />
                   {lastSeen}
@@ -393,18 +401,18 @@ const V2YourTeamPage: React.FC = () => {
                     e.stopPropagation();
                     navigate(`/v2/agent/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`);
                   }}
-                  aria-label={`View ${display}'s profile`}
+                  aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
                 >
-                  Profile
+                  {t('yourTeam.card.profile')}
                 </button>
                 <button
                   type="button"
                   className="v2-team-card__talk"
                   onClick={(e) => handleTalkTo(a, e)}
                   disabled={isOpening}
-                  aria-label={`Talk to ${display} one-to-one`}
+                  aria-label={t('yourTeam.card.talkToAria', { name: display })}
                 >
-                  {isOpening ? 'Opening…' : 'Talk to'}
+                  {isOpening ? t('yourTeam.card.opening') : t('yourTeam.card.talkTo')}
                 </button>
               </div>
             </article>

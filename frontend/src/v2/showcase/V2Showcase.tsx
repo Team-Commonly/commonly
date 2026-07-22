@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
@@ -145,6 +146,7 @@ const toV2Message = (m: ShowcaseMessage): V2Message => {
 type LoadState = 'loading' | 'ready' | 'not-public' | 'error';
 
 const V2Showcase: React.FC = () => {
+  const { t } = useTranslation();
   const { podId: podIdParam } = useParams<{ podId: string }>();
   const podId = podIdParam || DEFAULT_SHOWCASE_POD_ID;
 
@@ -223,15 +225,15 @@ const V2Showcase: React.FC = () => {
 
   const topBar = (
     <header className="v2-showcase__bar">
-      <Link className="v2-showcase__brand" to="/v2/landing" aria-label="Commonly home">
+      <Link className="v2-showcase__brand" to="/v2/landing" aria-label={t('showcase.nav.brandHome')}>
         <span className="v2-showcase__mark"><Mark size={24} /></span>
         <span className="v2-showcase__brand-name">Commonly</span>
       </Link>
-      <nav className="v2-showcase__nav" aria-label="Primary">
-        <Link className="v2-showcase__navlink" to="/v2/landing">What is Commonly?</Link>
-        <Link className="v2-showcase__navlink" to="/v2/login">Sign in</Link>
+      <nav className="v2-showcase__nav" aria-label={t('showcase.nav.primary')}>
+        <Link className="v2-showcase__navlink" to="/v2/landing">{t('showcase.nav.whatIs')}</Link>
+        <Link className="v2-showcase__navlink" to="/v2/login">{t('showcase.nav.signIn')}</Link>
         <Link className="v2-showcase__btn v2-showcase__btn--primary v2-showcase__btn--sm" to="/v2/register">
-          Sign up to join
+          {t('showcase.nav.signUpToJoin')}
         </Link>
       </nav>
     </header>
@@ -256,16 +258,16 @@ const V2Showcase: React.FC = () => {
         <div className="v2-showcase__center">
           <div className="v2-showcase__empty">
             <div className="v2-showcase__empty-title">
-              {isError ? "This room couldn't be loaded" : "This room isn't public"}
+              {isError ? t('showcase.unavailable.errorTitle') : t('showcase.unavailable.privateTitle')}
             </div>
             <div className="v2-showcase__empty-text">
               {isError
-                ? 'Something went wrong loading this conversation. Try again in a moment.'
-                : 'It may have been made private or removed. Explore what Commonly is, or start your own room.'}
+                ? t('showcase.unavailable.errorText')
+                : t('showcase.unavailable.privateText')}
             </div>
             <div className="v2-showcase__empty-cta">
-              <Link className="v2-showcase__btn v2-showcase__btn--primary" to="/v2/register">Start your own room</Link>
-              <Link className="v2-showcase__btn v2-showcase__btn--ghost" to="/v2/landing">What is Commonly?</Link>
+              <Link className="v2-showcase__btn v2-showcase__btn--primary" to="/v2/register">{t('showcase.actions.startYourOwnRoom')}</Link>
+              <Link className="v2-showcase__btn v2-showcase__btn--ghost" to="/v2/landing">{t('showcase.nav.whatIs')}</Link>
             </div>
           </div>
         </div>
@@ -282,17 +284,17 @@ const V2Showcase: React.FC = () => {
 
       {/* Sticky conversion banner — the load-bearing CTA. Makes it obvious this
           is a real, live room and that the visitor can have one too. */}
-      <div className="v2-showcase__banner" role="region" aria-label="Sign up to join Commonly">
+      <div className="v2-showcase__banner" role="region" aria-label={t('showcase.banner.regionLabel')}>
         <span className="v2-showcase__banner-text">
           <span aria-hidden="true">👀 </span>
-          A live look inside a Commonly room — sign up to start your own.
+          {t('showcase.banner.text')}
         </span>
         <span className="v2-showcase__banner-cta">
           <Link className="v2-showcase__btn v2-showcase__btn--primary v2-showcase__btn--sm" to="/v2/register">
-            Sign up to join
+            {t('showcase.nav.signUpToJoin')}
           </Link>
           <Link className="v2-showcase__btn v2-showcase__btn--ghost v2-showcase__btn--sm" to="/v2/landing">
-            What is Commonly?
+            {t('showcase.nav.whatIs')}
           </Link>
         </span>
       </div>
@@ -305,20 +307,20 @@ const V2Showcase: React.FC = () => {
               {(pod?.name || '?').slice(0, 2).toUpperCase()}
             </span>
             <div>
-              <h1 className="v2-showcase__room-name">{pod?.name || 'Commonly room'}</h1>
+              <h1 className="v2-showcase__room-name">{pod?.name || t('showcase.room.defaultName')}</h1>
               <div className="v2-showcase__room-meta">
                 {typeof pod?.memberCount === 'number' && (
-                  <span>{pod.memberCount} member{pod.memberCount === 1 ? '' : 's'}</span>
+                  <span>{t('showcase.room.memberCount', { count: pod.memberCount })}</span>
                 )}
                 {agents.length > 0 && (
-                  <span>· {agents.length} agent{agents.length === 1 ? '' : 's'}</span>
+                  <span>· {t('showcase.room.agentCount', { count: agents.length })}</span>
                 )}
-                <span className="v2-showcase__room-live">· Read-only view</span>
+                <span className="v2-showcase__room-live">· {t('showcase.room.readOnlyView')}</span>
               </div>
             </div>
           </div>
           {agents.length > 0 && (
-            <div className="v2-showcase__agents" aria-label="Agents in this room">
+            <div className="v2-showcase__agents" aria-label={t('showcase.room.agentsLabel')}>
               {agents.slice(0, 6).map((a) => (
                 <V2Avatar
                   key={`${a.agentName}:${a.instanceId || ''}`}
@@ -343,12 +345,12 @@ const V2Showcase: React.FC = () => {
             no identity inspector. V2MessageBubble with no handlers is inert. */}
         <section className="v2-showcase__messages">
           {hasMore && (
-            <div className="v2-showcase__older-note">Earlier messages are hidden in this public view.</div>
+            <div className="v2-showcase__older-note">{t('showcase.messages.olderHidden')}</div>
           )}
           {messages.length === 0 ? (
             <div className="v2-showcase__empty">
-              <div className="v2-showcase__empty-title">No messages yet</div>
-              <div className="v2-showcase__empty-text">This room is quiet right now. Check back soon.</div>
+              <div className="v2-showcase__empty-title">{t('showcase.messages.emptyTitle')}</div>
+              <div className="v2-showcase__empty-text">{t('showcase.messages.emptyText')}</div>
             </div>
           ) : (
             messages.map((m) => (
@@ -360,13 +362,13 @@ const V2Showcase: React.FC = () => {
 
         {/* Footer conversion card — reinforce that this is a real, ownable room. */}
         <section className="v2-showcase__footer-cta">
-          <div className="v2-showcase__footer-title">This is a real Commonly room.</div>
+          <div className="v2-showcase__footer-title">{t('showcase.footer.title')}</div>
           <div className="v2-showcase__footer-text">
-            Bring your team and your agents into one shared memory. Start your own in minutes — it&apos;s open-source and free.
+            {t('showcase.footer.text')}
           </div>
           <div className="v2-showcase__empty-cta">
-            <Link className="v2-showcase__btn v2-showcase__btn--primary" to="/v2/register">Sign up to join</Link>
-            <Link className="v2-showcase__btn v2-showcase__btn--ghost" to="/v2/landing">What is Commonly?</Link>
+            <Link className="v2-showcase__btn v2-showcase__btn--primary" to="/v2/register">{t('showcase.nav.signUpToJoin')}</Link>
+            <Link className="v2-showcase__btn v2-showcase__btn--ghost" to="/v2/landing">{t('showcase.nav.whatIs')}</Link>
           </div>
         </section>
       </main>

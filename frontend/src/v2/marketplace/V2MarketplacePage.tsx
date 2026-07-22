@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import './V2MarketplacePage.css';
 
@@ -28,21 +29,21 @@ interface Pod {
 }
 
 const CATEGORIES = [
-  { id: 'all', label: 'All categories' },
-  { id: 'productivity', label: 'Productivity' },
-  { id: 'development', label: 'Development' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'support', label: 'Support' },
-  { id: 'communication', label: 'Communication' },
-  { id: 'other', label: 'Other' },
+  { id: 'all', labelKey: 'marketplace.categories.all' },
+  { id: 'productivity', labelKey: 'marketplace.categories.productivity' },
+  { id: 'development', labelKey: 'marketplace.categories.development' },
+  { id: 'analytics', labelKey: 'marketplace.categories.analytics' },
+  { id: 'support', labelKey: 'marketplace.categories.support' },
+  { id: 'communication', labelKey: 'marketplace.categories.communication' },
+  { id: 'other', labelKey: 'marketplace.categories.other' },
 ];
 
 const KINDS = [
-  { id: 'all', label: 'All kinds' },
-  { id: 'agent', label: 'Agents' },
-  { id: 'app', label: 'Apps' },
-  { id: 'skill', label: 'Skills' },
-  { id: 'bundle', label: 'Bundles' },
+  { id: 'all', labelKey: 'marketplace.kinds.all' },
+  { id: 'agent', labelKey: 'marketplace.kinds.agent' },
+  { id: 'app', labelKey: 'marketplace.kinds.app' },
+  { id: 'skill', labelKey: 'marketplace.kinds.skill' },
+  { id: 'bundle', labelKey: 'marketplace.kinds.bundle' },
 ];
 
 const authHeaders = (): Record<string, string> => ({
@@ -100,6 +101,7 @@ const toInstalledLegacyApp = (app: any): App => ({
 const initial = (s?: string): string => (s || '?').trim().charAt(0).toUpperCase() || '?';
 
 const V2MarketplacePage: React.FC = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [apps, setApps] = useState<App[]>([]);
   const [official, setOfficial] = useState<any[]>([]);
@@ -148,7 +150,7 @@ const V2MarketplacePage: React.FC = () => {
         setApps((((res.data as any)?.items) || []).map(toMarketplaceApp));
       } catch {
         if (cancelled) return;
-        setError('Failed to load the marketplace.');
+        setError(t('marketplace.errors.loadFailed'));
         setApps([]);
       } finally {
         if (!cancelled) setLoading(false);
@@ -216,7 +218,7 @@ const V2MarketplacePage: React.FC = () => {
 
   const install = async (app: App, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!selectedPodId) { setStatus('Pick a pod above to install into.'); return; }
+    if (!selectedPodId) { setStatus(t('marketplace.status.pickPodToInstall')); return; }
     setBusyId(app.id);
     setStatus(null);
     setGate(null);
@@ -228,14 +230,17 @@ const V2MarketplacePage: React.FC = () => {
         displayName: app.displayName || undefined,
         scopes: Array.isArray(app.scopes) ? app.scopes : [],
       }, { headers: authHeaders() });
-      setStatus(`Installed ${app.displayName || app.name} into ${pods.find((p) => p._id === selectedPodId)?.name || 'pod'}.`);
+      setStatus(t('marketplace.status.installed', {
+        name: app.displayName || app.name,
+        pod: pods.find((p) => p._id === selectedPodId)?.name || t('marketplace.status.podFallback'),
+      }));
       fetchInstalled();
     } catch (err: any) {
       const data = err?.response?.data;
       if (data?.code === 'cloud_agents_not_entitled') {
-        setGate(data.message || 'Hosted agents require an upgrade or admin — connect your own agent instead.');
+        setGate(data.message || t('marketplace.gate.cloudAgentsNotEntitled'));
       } else {
-        setStatus(data?.error || 'Could not install — try again.');
+        setStatus(data?.error || t('marketplace.errors.installFailed'));
       }
     } finally {
       setBusyId('');
@@ -256,17 +261,17 @@ const V2MarketplacePage: React.FC = () => {
       } else {
         await axios.delete(`/api/apps/pods/${selectedPodId}/apps/${app.installationId}`, { headers: authHeaders() });
       }
-      setStatus(`Removed ${app.displayName || app.name}.`);
+      setStatus(t('marketplace.status.removed', { name: app.displayName || app.name }));
       fetchInstalled();
     } catch {
-      setStatus('Could not remove — try again.');
+      setStatus(t('marketplace.errors.removeFailed'));
     } finally {
       setBusyId('');
     }
   };
 
   const connect = (entry: any) => {
-    setStatus(`Open a pod to connect ${entry.name}.`);
+    setStatus(t('marketplace.status.openPodToConnect', { name: entry.name }));
     navigate('/v2');
   };
 
@@ -291,15 +296,15 @@ const V2MarketplacePage: React.FC = () => {
           <div className="v2-mkt-card__id">
             <div className="v2-mkt-card__name-row">
               <span className="v2-mkt-card__name">{app.displayName}</span>
-              {app.verified ? <span className="v2-mkt-card__badge" title="Verified by Commonly">Verified</span> : null}
+              {app.verified ? <span className="v2-mkt-card__badge" title={t('marketplace.card.verifiedTooltip')}>{t('marketplace.card.verified')}</span> : null}
             </div>
             <span className="v2-mkt-card__handle">@{app.name}</span>
           </div>
         </div>
-        <p className="v2-mkt-card__desc">{app.description || 'No description provided.'}</p>
+        <p className="v2-mkt-card__desc">{app.description || t('marketplace.card.noDescription')}</p>
         <div className="v2-mkt-card__meta">
           <span className="v2-mkt-card__chip">{String(app.kind || 'app')}</span>
-          <span className="v2-mkt-card__stat">{Number(app.installs || 0)} installs</span>
+          <span className="v2-mkt-card__stat">{t('marketplace.card.installsCount', { count: Number(app.installs || 0) })}</span>
         </div>
         <div className="v2-mkt-card__actions">
           {installedNow ? (
@@ -309,7 +314,7 @@ const V2MarketplacePage: React.FC = () => {
               disabled={busy}
               onClick={(ev) => remove(app, ev)}
             >
-              {busy ? 'Removing…' : 'Remove'}
+              {busy ? t('marketplace.actions.removing') : t('marketplace.actions.remove')}
             </button>
           ) : (
             <button
@@ -318,7 +323,7 @@ const V2MarketplacePage: React.FC = () => {
               disabled={busy}
               onClick={(ev) => install(app, ev)}
             >
-              {busy ? 'Installing…' : 'Install'}
+              {busy ? t('marketplace.actions.installing') : t('marketplace.actions.install')}
             </button>
           )}
         </div>
@@ -339,7 +344,7 @@ const V2MarketplacePage: React.FC = () => {
           )}
           <div className="v2-mkt-card__id">
             <span className="v2-mkt-card__name">{entry.name}</span>
-            <span className="v2-mkt-card__handle">{isMcp ? 'MCP app' : entry.type || 'integration'}{entry.category ? ` · ${entry.category}` : ''}</span>
+            <span className="v2-mkt-card__handle">{isMcp ? t('marketplace.official.mcpApp') : entry.type || t('marketplace.official.integration')}{entry.category ? ` · ${entry.category}` : ''}</span>
           </div>
         </div>
         <p className="v2-mkt-card__desc">{entry.description || ''}</p>
@@ -355,10 +360,10 @@ const V2MarketplacePage: React.FC = () => {
             disabled={isMcp}
             onClick={() => (isMcp ? undefined : connect(entry))}
           >
-            {isMcp ? 'MCP host required' : 'Connect in pod'}
+            {isMcp ? t('marketplace.official.mcpHostRequired') : t('marketplace.official.connectInPod')}
           </button>
           {entry.docsUrl && (
-            <a className="v2-mkt-card__btn v2-mkt-card__btn--ghost" href={entry.docsUrl} target="_blank" rel="noreferrer">Docs</a>
+            <a className="v2-mkt-card__btn v2-mkt-card__btn--ghost" href={entry.docsUrl} target="_blank" rel="noreferrer">{t('marketplace.official.docs')}</a>
           )}
         </div>
       </article>
@@ -375,23 +380,19 @@ const V2MarketplacePage: React.FC = () => {
     return (
       <div className="v2-mkt">
         <header className="v2-mkt__header">
-          <h1 className="v2-mkt__title">Marketplace</h1>
-          <p className="v2-mkt__subtitle">Install agents and apps like packages.</p>
+          <h1 className="v2-mkt__title">{t('marketplace.title')}</h1>
+          <p className="v2-mkt__subtitle">{t('marketplace.subtitleLocked')}</p>
         </header>
         <div className="v2-mkt__comingsoon">
-          <div className="v2-mkt__comingsoon-badge">Coming soon</div>
-          <h2 className="v2-mkt__comingsoon-title">A marketplace of installable agents</h2>
-          <p className="v2-mkt__comingsoon-text">
-            We&apos;re curating agents you can install in one click. In the meantime,
-            you can already bring your own — connect Claude Code, Cursor, or Codex and
-            it becomes a full member of your pods.
-          </p>
+          <div className="v2-mkt__comingsoon-badge">{t('marketplace.comingSoon.badge')}</div>
+          <h2 className="v2-mkt__comingsoon-title">{t('marketplace.comingSoon.title')}</h2>
+          <p className="v2-mkt__comingsoon-text">{t('marketplace.comingSoon.text')}</p>
           <button
             type="button"
             className="v2-mkt__comingsoon-cta"
             onClick={() => navigate('/v2/agents/byo')}
           >
-            Bring your own agent
+            {t('marketplace.comingSoon.cta')}
           </button>
         </div>
       </div>
@@ -401,26 +402,26 @@ const V2MarketplacePage: React.FC = () => {
   return (
     <div className="v2-mkt">
       <header className="v2-mkt__header">
-        <h1 className="v2-mkt__title">Marketplace</h1>
-        <p className="v2-mkt__subtitle">Browse and install agents, apps, and integrations.</p>
+        <h1 className="v2-mkt__title">{t('marketplace.title')}</h1>
+        <p className="v2-mkt__subtitle">{t('marketplace.subtitle')}</p>
       </header>
 
       <div className="v2-mkt__filterbar">
         <input
           className="v2-mkt__search"
           type="search"
-          placeholder="Search agents, apps, integrations…"
+          placeholder={t('marketplace.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select className="v2-mkt__control" value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind">
-          {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+        <select className="v2-mkt__control" value={kind} onChange={(e) => setKind(e.target.value)} aria-label={t('marketplace.filters.kindLabel')}>
+          {KINDS.map((k) => <option key={k.id} value={k.id}>{t(k.labelKey)}</option>)}
         </select>
-        <select className="v2-mkt__control" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
-          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        <select className="v2-mkt__control" value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t('marketplace.filters.categoryLabel')}>
+          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{t(c.labelKey)}</option>)}
         </select>
         {pods.length > 0 && (
-          <select className="v2-mkt__control" value={selectedPodId} onChange={(e) => setSelectedPodId(e.target.value)} aria-label="Install to pod">
+          <select className="v2-mkt__control" value={selectedPodId} onChange={(e) => setSelectedPodId(e.target.value)} aria-label={t('marketplace.filters.installToPodLabel')}>
             {pods.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
           </select>
         )}
@@ -428,10 +429,10 @@ const V2MarketplacePage: React.FC = () => {
 
       <div className="v2-mkt__tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'discover'} className={`v2-mkt__tab${tab === 'discover' ? ' v2-mkt__tab--active' : ''}`} onClick={() => setTab('discover')}>
-          Discover
+          {t('marketplace.tabs.discover')}
         </button>
         <button type="button" role="tab" aria-selected={tab === 'installed'} className={`v2-mkt__tab${tab === 'installed' ? ' v2-mkt__tab--active' : ''}`} onClick={() => setTab('installed')}>
-          Installed{installed.length ? ` (${installed.length})` : ''}
+          {installed.length ? t('marketplace.tabs.installedWithCount', { count: installed.length }) : t('marketplace.tabs.installed')}
         </button>
       </div>
 
@@ -444,7 +445,7 @@ const V2MarketplacePage: React.FC = () => {
             className="v2-mkt__gate-btn"
             onClick={() => navigate('/v2/agents/byo')}
           >
-            Connect your own agent
+            {t('marketplace.gate.connectYourOwnAgent')}
           </button>
         </div>
       )}
@@ -453,15 +454,15 @@ const V2MarketplacePage: React.FC = () => {
       {tab === 'discover' ? (
         <>
           <section className="v2-mkt__section">
-            <h2 className="v2-mkt__section-title">{search || kind !== 'all' || category !== 'all' ? 'Results' : 'All listings'}</h2>
+            <h2 className="v2-mkt__section-title">{search || kind !== 'all' || category !== 'all' ? t('marketplace.sections.results') : t('marketplace.sections.allListings')}</h2>
             {loading ? (
               <div className="v2-mkt__grid">
                 {[0, 1, 2, 3].map((i) => <div key={i} className="v2-mkt-card v2-mkt-card--skeleton" />)}
               </div>
             ) : apps.length === 0 ? (
               <div className="v2-mkt__empty">
-                <div className="v2-mkt__empty-title">No listings yet</div>
-                <div className="v2-mkt__empty-text">Nothing matches your filters. Try a broader search, or publish the first one.</div>
+                <div className="v2-mkt__empty-title">{t('marketplace.empty.noListingsTitle')}</div>
+                <div className="v2-mkt__empty-text">{t('marketplace.empty.noListingsText')}</div>
               </div>
             ) : (
               <div className="v2-mkt__grid">{apps.map(renderListingCard)}</div>
@@ -470,16 +471,16 @@ const V2MarketplacePage: React.FC = () => {
 
           {officialIntegrations.length > 0 && (
             <section className="v2-mkt__section">
-              <h2 className="v2-mkt__section-title">Official integrations</h2>
-              <p className="v2-mkt__section-sub">Curated by Commonly — connect from a pod.</p>
+              <h2 className="v2-mkt__section-title">{t('marketplace.sections.officialTitle')}</h2>
+              <p className="v2-mkt__section-sub">{t('marketplace.sections.officialSub')}</p>
               <div className="v2-mkt__grid">{officialIntegrations.map(renderOfficialCard)}</div>
             </section>
           )}
 
           {mcpListings.length > 0 && (
             <section className="v2-mkt__section">
-              <h2 className="v2-mkt__section-title">MCP apps (preview)</h2>
-              <p className="v2-mkt__section-sub">Interactive UI rendered inside MCP-compatible hosts.</p>
+              <h2 className="v2-mkt__section-title">{t('marketplace.sections.mcpTitle')}</h2>
+              <p className="v2-mkt__section-sub">{t('marketplace.sections.mcpSub')}</p>
               <div className="v2-mkt__grid">{mcpListings.map(renderOfficialCard)}</div>
             </section>
           )}
@@ -487,11 +488,11 @@ const V2MarketplacePage: React.FC = () => {
       ) : (
         <section className="v2-mkt__section">
           {!selectedPodId ? (
-            <div className="v2-mkt__empty"><div className="v2-mkt__empty-text">Pick a pod to see what&apos;s installed.</div></div>
+            <div className="v2-mkt__empty"><div className="v2-mkt__empty-text">{t('marketplace.empty.pickPodText')}</div></div>
           ) : installed.length === 0 ? (
             <div className="v2-mkt__empty">
-              <div className="v2-mkt__empty-title">Nothing installed here yet</div>
-              <div className="v2-mkt__empty-text">Browse Discover and install your first one.</div>
+              <div className="v2-mkt__empty-title">{t('marketplace.empty.nothingInstalledTitle')}</div>
+              <div className="v2-mkt__empty-text">{t('marketplace.empty.nothingInstalledText')}</div>
             </div>
           ) : (
             <div className="v2-mkt__grid">{installed.map(renderListingCard)}</div>

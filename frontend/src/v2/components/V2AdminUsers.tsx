@@ -14,6 +14,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 
 interface AdminRef {
@@ -79,12 +80,7 @@ interface InvitationMutationResponse {
   invitation?: InvitationRow;
 }
 
-const STATUS_FILTERS: Array<{ value: 'all' | WaitlistStatus; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'invited', label: 'Invited' },
-  { value: 'closed', label: 'Closed' },
-];
+const STATUS_FILTER_VALUES: Array<'all' | WaitlistStatus> = ['all', 'pending', 'invited', 'closed'];
 
 const formatDate = (value: string | null): string => {
   if (!value) return '—';
@@ -125,17 +121,26 @@ type RegisteredUser = {
 // failure-isolated fetch so moderation keeps working if PostgreSQL is down.
 type LifecycleStats = Record<string, { pods: number; messages: number }>;
 
-const lifecycleLabel = (u: RegisteredUser, stats: LifecycleStats | null): string => {
+const lifecycleLabel = (
+  u: RegisteredUser,
+  stats: LifecycleStats | null,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string => {
   const joined = u.createdAt
-    ? `joined ${Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (24 * 60 * 60 * 1000)))}d`
-    : 'joined —';
+    ? t('adminUsers.lifecycle.joinedDays', {
+        count: Math.max(0, Math.floor((Date.now() - new Date(u.createdAt).getTime()) / (24 * 60 * 60 * 1000))),
+      })
+    : t('adminUsers.lifecycle.joinedUnknown');
   const s = stats?.[u.id];
   if (!s) return joined;
-  return `${joined} · ${s.pods} pod${s.pods === 1 ? '' : 's'} · ${s.messages} msg${s.messages === 1 ? '' : 's'}`;
+  const podsLabel = t('adminUsers.lifecycle.pods', { count: s.pods });
+  const messagesLabel = t('adminUsers.lifecycle.messages', { count: s.messages });
+  return `${joined} · ${podsLabel} · ${messagesLabel}`;
 };
 
 const V2AdminUsers: React.FC = () => {
   const api = useV2Api();
+  const { t } = useTranslation();
 
   // ---- Registered users state (moderation: ban / remove) ----
   const [users, setUsers] = useState<RegisteredUser[]>([]);
@@ -167,11 +172,11 @@ const V2AdminUsers: React.FC = () => {
       const data = await api.get<{ users?: RegisteredUser[] }>(`/api/admin/users?${params.toString()}`);
       setUsers(data.users || []);
     } catch (err: unknown) {
-      setUsersError(errMessage(err, 'Failed to load users.'));
+      setUsersError(errMessage(err, t('adminUsers.errors.loadUsers')));
     } finally {
       setUsersLoading(false);
     }
-  }, [api]);
+  }, [api, t]);
 
   useEffect(() => {
     const handle = setTimeout(() => { fetchUsers(userSearch); }, 250);
@@ -181,7 +186,7 @@ const V2AdminUsers: React.FC = () => {
   const handleBanToggle = async (u: RegisteredUser) => {
     const banning = !u.banned;
     // eslint-disable-next-line no-alert
-    const reason = banning ? window.prompt(`Ban ${u.username}? Optional reason:`, '') : null;
+    const reason = banning ? window.prompt(t('adminUsers.prompts.ban', { username: u.username }), '') : null;
     if (banning && reason === null) return; // prompt cancelled
     setUserBusy(u.id);
     try {
@@ -191,7 +196,7 @@ const V2AdminUsers: React.FC = () => {
       });
       await fetchUsers(userSearch);
     } catch (err: unknown) {
-      setUsersError(errMessage(err, 'Failed to update ban state.'));
+      setUsersError(errMessage(err, t('adminUsers.errors.updateBan')));
     } finally {
       setUserBusy(null);
     }
@@ -199,13 +204,13 @@ const V2AdminUsers: React.FC = () => {
 
   const handleDeleteUser = async (u: RegisteredUser) => {
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Permanently delete ${u.username} (${u.email})? This cannot be undone.`)) return;
+    if (!window.confirm(t('adminUsers.prompts.deleteUser', { username: u.username, email: u.email }))) return;
     setUserBusy(u.id);
     try {
       await api.del(`/api/admin/users/${encodeURIComponent(u.id)}`);
       await fetchUsers(userSearch);
     } catch (err: unknown) {
-      setUsersError(errMessage(err, 'Failed to delete user.'));
+      setUsersError(errMessage(err, t('adminUsers.errors.deleteUser')));
     } finally {
       setUserBusy(null);
     }
@@ -242,12 +247,12 @@ const V2AdminUsers: React.FC = () => {
       const data = await api.get<WaitlistResponse>(`/api/admin/users/waitlist?${params.toString()}`);
       setWaitlist(Array.isArray(data?.requests) ? data.requests : []);
     } catch (err) {
-      setWaitlistError(errMessage(err, 'Failed to load waitlist.'));
+      setWaitlistError(errMessage(err, t('adminUsers.errors.loadWaitlist')));
       setWaitlist([]);
     } finally {
       setWaitlistLoading(false);
     }
-  }, [api, search, statusFilter]);
+  }, [api, search, statusFilter, t]);
 
   const loadInvites = useCallback(async () => {
     setInvitesLoading(true);
@@ -256,12 +261,12 @@ const V2AdminUsers: React.FC = () => {
       const data = await api.get<InvitationsResponse>('/api/admin/users/invitations?limit=100');
       setInvites(Array.isArray(data?.invitations) ? data.invitations : []);
     } catch (err) {
-      setInvitesError(errMessage(err, 'Failed to load invitation codes.'));
+      setInvitesError(errMessage(err, t('adminUsers.errors.loadInvites')));
       setInvites([]);
     } finally {
       setInvitesLoading(false);
     }
-  }, [api]);
+  }, [api, t]);
 
   // Debounce waitlist reloads on search/filter changes so each keystroke
   // doesn't fire a request.
@@ -300,10 +305,10 @@ const V2AdminUsers: React.FC = () => {
       if (errStatus(err) === 503) {
         setRowNotice((prev) => ({
           ...prev,
-          [row.id]: 'SMTP not configured — generate a code below and share it manually instead.',
+          [row.id]: t('adminUsers.notices.smtpNotConfigured'),
         }));
       } else {
-        setRowNotice((prev) => ({ ...prev, [row.id]: errMessage(err, 'Failed to send invitation.') }));
+        setRowNotice((prev) => ({ ...prev, [row.id]: errMessage(err, t('adminUsers.errors.sendInvitation')) }));
       }
     } finally {
       setRowBusy(null);
@@ -324,7 +329,7 @@ const V2AdminUsers: React.FC = () => {
         await loadWaitlist();
       }
     } catch (err) {
-      setRowNotice((prev) => ({ ...prev, [row.id]: errMessage(err, 'Failed to reopen request.') }));
+      setRowNotice((prev) => ({ ...prev, [row.id]: errMessage(err, t('adminUsers.errors.reopenRequest')) }));
     } finally {
       setRowBusy(null);
     }
@@ -340,7 +345,7 @@ const V2AdminUsers: React.FC = () => {
       setNewCode(code);
       await loadInvites();
     } catch (err) {
-      setGenerateError(errMessage(err, 'Failed to generate invitation code.'));
+      setGenerateError(errMessage(err, t('adminUsers.errors.generateCode')));
     } finally {
       setGenerating(false);
     }
@@ -348,7 +353,7 @@ const V2AdminUsers: React.FC = () => {
 
   const revoke = async (invite: InvitationRow) => {
     // eslint-disable-next-line no-alert
-    if (typeof window !== 'undefined' && !window.confirm(`Revoke invitation code ${invite.code}? This cannot be undone.`)) {
+    if (typeof window !== 'undefined' && !window.confirm(t('adminUsers.prompts.revokeCode', { code: invite.code }))) {
       return;
     }
     setInviteBusy(invite.id);
@@ -363,7 +368,7 @@ const V2AdminUsers: React.FC = () => {
         await loadInvites();
       }
     } catch (err) {
-      setInvitesError(errMessage(err, 'Failed to revoke invitation code.'));
+      setInvitesError(errMessage(err, t('adminUsers.errors.revokeCode')));
     } finally {
       setInviteBusy(null);
     }
@@ -385,10 +390,20 @@ const V2AdminUsers: React.FC = () => {
     return 'v2-admin-users__badge v2-admin-users__badge--warn';
   };
 
+  const waitlistStatusLabel = (status: string): string => {
+    if (status === 'pending' || status === 'invited' || status === 'closed') {
+      return t(`adminUsers.waitlist.status.${status}`);
+    }
+    return status;
+  };
+
   const waitlistEmpty = !waitlistLoading && !waitlistError && waitlist.length === 0;
   const invitesEmpty = !invitesLoading && !invitesError && invites.length === 0;
 
-  const filterTabs = useMemo(() => STATUS_FILTERS, []);
+  const filterTabs = useMemo(
+    () => STATUS_FILTER_VALUES.map((value) => ({ value, label: t(`adminUsers.statusFilters.${value}`) })),
+    [t],
+  );
 
   return (
     <div className="v2-admin-users">
@@ -396,36 +411,36 @@ const V2AdminUsers: React.FC = () => {
       <section className="v2-admin-users__section">
         <div className="v2-admin-users__section-head">
           <div>
-            <h2 className="v2-admin-users__section-title">Registered users</h2>
+            <h2 className="v2-admin-users__section-title">{t('adminUsers.registered.title')}</h2>
             <p className="v2-admin-users__section-sub">
-              Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.{' '}
-              <Link to="/v2/admin/analytics" className="v2-admin-analytics__crosslink">Usage analytics →</Link>
+              {t('adminUsers.registered.subtitle')}{' '}
+              <Link to="/v2/admin/analytics" className="v2-admin-analytics__crosslink">{t('adminUsers.registered.analyticsLink')}</Link>
             </p>
           </div>
           <input
             className="v2-admin-users__search"
             type="search"
-            placeholder="Search username or email…"
+            placeholder={t('adminUsers.registered.searchPlaceholder')}
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
           />
         </div>
         {usersError && <div className="v2-admin-users__error" role="alert">{usersError}</div>}
         {usersLoading ? (
-          <div className="v2-admin-users__empty">Loading users…</div>
+          <div className="v2-admin-users__empty">{t('adminUsers.registered.loading')}</div>
         ) : users.length === 0 ? (
-          <div className="v2-admin-users__empty">No users match.</div>
+          <div className="v2-admin-users__empty">{t('adminUsers.registered.noMatch')}</div>
         ) : (
           <div className="v2-admin-users__table-wrap">
             <table className="v2-admin-users__table">
               <thead>
                 <tr>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Lifecycle</th>
-                  <th aria-label="Actions" />
+                  <th>{t('adminUsers.registered.columns.username')}</th>
+                  <th>{t('adminUsers.registered.columns.email')}</th>
+                  <th>{t('adminUsers.registered.columns.role')}</th>
+                  <th>{t('adminUsers.registered.columns.status')}</th>
+                  <th>{t('adminUsers.registered.columns.lifecycle')}</th>
+                  <th aria-label={t('adminUsers.columns.actions')} />
                 </tr>
               </thead>
               <tbody>
@@ -438,30 +453,30 @@ const V2AdminUsers: React.FC = () => {
                       <td>{u.role}</td>
                       <td>
                         {u.banned
-                          ? <span className="v2-admin-users__badge v2-admin-users__badge--banned" title={u.banReason || undefined}>banned</span>
-                          : (u.verified ? 'active' : 'unverified')}
+                          ? <span className="v2-admin-users__badge v2-admin-users__badge--banned" title={u.banReason || undefined}>{t('adminUsers.registered.userStatus.banned')}</span>
+                          : (u.verified ? t('adminUsers.registered.userStatus.active') : t('adminUsers.registered.userStatus.unverified'))}
                       </td>
                       <td className="v2-admin-users__cell-muted" title={u.createdAt ? new Date(u.createdAt).toLocaleDateString() : undefined}>
-                        {lifecycleLabel(u, lifecycle)}
+                        {lifecycleLabel(u, lifecycle, t)}
                       </td>
                       <td className="v2-admin-users__row-actions">
                         <button
                           type="button"
                           className="v2-admin-users__btn"
                           disabled={busy || u.role === 'admin'}
-                          title={u.role === 'admin' ? 'Demote the admin role first' : undefined}
+                          title={u.role === 'admin' ? t('adminUsers.registered.demoteAdminFirst') : undefined}
                           onClick={() => handleBanToggle(u)}
                         >
-                          {busy ? '…' : (u.banned ? 'Unban' : 'Ban')}
+                          {busy ? '…' : (u.banned ? t('adminUsers.actions.unban') : t('adminUsers.actions.ban'))}
                         </button>
                         <button
                           type="button"
                           className="v2-admin-users__btn v2-admin-users__btn--danger"
                           disabled={busy || u.role === 'admin'}
-                          title={u.role === 'admin' ? 'Demote the admin role first' : undefined}
+                          title={u.role === 'admin' ? t('adminUsers.registered.demoteAdminFirst') : undefined}
                           onClick={() => handleDeleteUser(u)}
                         >
-                          Delete
+                          {t('adminUsers.actions.delete')}
                         </button>
                       </td>
                     </tr>
@@ -477,9 +492,9 @@ const V2AdminUsers: React.FC = () => {
       <section className="v2-admin-users__section">
         <div className="v2-admin-users__section-head">
           <div>
-            <h2 className="v2-admin-users__section-title">Waitlist</h2>
+            <h2 className="v2-admin-users__section-title">{t('adminUsers.waitlist.title')}</h2>
             <p className="v2-admin-users__section-sub">
-              Review access requests and send invitation codes.
+              {t('adminUsers.waitlist.subtitle')}
             </p>
           </div>
           <button
@@ -488,7 +503,7 @@ const V2AdminUsers: React.FC = () => {
             onClick={() => loadWaitlist()}
             disabled={waitlistLoading}
           >
-            Refresh
+            {t('adminUsers.actions.refresh')}
           </button>
         </div>
 
@@ -496,11 +511,11 @@ const V2AdminUsers: React.FC = () => {
           <input
             type="search"
             className="v2-admin-users__input"
-            placeholder="Search email, name, or organization…"
+            placeholder={t('adminUsers.waitlist.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <div className="v2-admin-users__tabs" role="tablist" aria-label="Filter by status">
+          <div className="v2-admin-users__tabs" role="tablist" aria-label={t('adminUsers.waitlist.filterByStatus')}>
             {filterTabs.map((tab) => (
               <button
                 key={tab.value}
@@ -522,15 +537,15 @@ const V2AdminUsers: React.FC = () => {
 
         {waitlistLoading ? (
           <div className="v2-admin-users__loading">
-            <span className="v2-spinner" /> Loading waitlist…
+            <span className="v2-spinner" /> {t('adminUsers.waitlist.loading')}
           </div>
         ) : waitlistEmpty ? (
           <div className="v2-empty">
-            <div className="v2-empty__title">No waitlist requests</div>
+            <div className="v2-empty__title">{t('adminUsers.waitlist.emptyTitle')}</div>
             <div className="v2-empty__text">
               {search || statusFilter !== 'all'
-                ? 'No requests match the current filters.'
-                : 'New access requests will appear here.'}
+                ? t('adminUsers.waitlist.emptyFiltered')
+                : t('adminUsers.waitlist.emptyDefault')}
             </div>
           </div>
         ) : (
@@ -538,14 +553,14 @@ const V2AdminUsers: React.FC = () => {
             <table className="v2-admin-users__table">
               <thead>
                 <tr>
-                  <th>Email</th>
-                  <th>Name</th>
-                  <th>Organization</th>
-                  <th>Use case</th>
-                  <th>Status</th>
-                  <th>Requested</th>
-                  <th>Invited</th>
-                  <th aria-label="Actions" />
+                  <th>{t('adminUsers.waitlist.columns.email')}</th>
+                  <th>{t('adminUsers.waitlist.columns.name')}</th>
+                  <th>{t('adminUsers.waitlist.columns.organization')}</th>
+                  <th>{t('adminUsers.waitlist.columns.useCase')}</th>
+                  <th>{t('adminUsers.waitlist.columns.status')}</th>
+                  <th>{t('adminUsers.waitlist.columns.requested')}</th>
+                  <th>{t('adminUsers.waitlist.columns.invited')}</th>
+                  <th aria-label={t('adminUsers.columns.actions')} />
                 </tr>
               </thead>
               <tbody>
@@ -564,7 +579,7 @@ const V2AdminUsers: React.FC = () => {
                           {row.note && <span className="v2-admin-users__note">{row.note}</span>}
                         </td>
                         <td>
-                          <span className={statusBadgeClass(row.status)}>{row.status}</span>
+                          <span className={statusBadgeClass(row.status)}>{waitlistStatusLabel(row.status)}</span>
                         </td>
                         <td className="v2-admin-users__cell-muted">{formatDate(row.createdAt)}</td>
                         <td className="v2-admin-users__cell-muted">
@@ -572,10 +587,10 @@ const V2AdminUsers: React.FC = () => {
                             <>
                               {formatDate(row.invitationSentAt || row.invitedAt)}
                               {row.invitedBy?.username && (
-                                <span className="v2-admin-users__note">by {row.invitedBy.username}</span>
+                                <span className="v2-admin-users__note">{t('adminUsers.waitlist.invitedBy', { username: row.invitedBy.username })}</span>
                               )}
                               {row.invitationCode?.code && (
-                                <span className="v2-admin-users__note">code {row.invitationCode.code}</span>
+                                <span className="v2-admin-users__note">{t('adminUsers.waitlist.invitedCode', { code: row.invitationCode.code })}</span>
                               )}
                             </>
                           ) : '—'}
@@ -588,7 +603,7 @@ const V2AdminUsers: React.FC = () => {
                               onClick={() => reopen(row)}
                               disabled={busy}
                             >
-                              {busy ? 'Working…' : 'Reopen'}
+                              {busy ? t('adminUsers.actions.working') : t('adminUsers.actions.reopen')}
                             </button>
                           ) : row.status === 'closed' ? (
                             <button
@@ -597,7 +612,7 @@ const V2AdminUsers: React.FC = () => {
                               onClick={() => reopen(row)}
                               disabled={busy}
                             >
-                              {busy ? 'Working…' : 'Reopen'}
+                              {busy ? t('adminUsers.actions.working') : t('adminUsers.actions.reopen')}
                             </button>
                           ) : (
                             <button
@@ -606,7 +621,7 @@ const V2AdminUsers: React.FC = () => {
                               onClick={() => sendInvitation(row)}
                               disabled={busy}
                             >
-                              {busy ? 'Sending…' : 'Send invitation'}
+                              {busy ? t('adminUsers.actions.sending') : t('adminUsers.actions.sendInvitation')}
                             </button>
                           )}
                         </td>
@@ -631,9 +646,9 @@ const V2AdminUsers: React.FC = () => {
       <section className="v2-admin-users__section">
         <div className="v2-admin-users__section-head">
           <div>
-            <h2 className="v2-admin-users__section-title">Invitation codes</h2>
+            <h2 className="v2-admin-users__section-title">{t('adminUsers.invites.title')}</h2>
             <p className="v2-admin-users__section-sub">
-              Generate codes to share manually, and revoke codes you no longer want active.
+              {t('adminUsers.invites.subtitle')}
             </p>
           </div>
           <button
@@ -642,7 +657,7 @@ const V2AdminUsers: React.FC = () => {
             onClick={generateCode}
             disabled={generating}
           >
-            {generating ? 'Generating…' : 'Generate code'}
+            {generating ? t('adminUsers.actions.generating') : t('adminUsers.actions.generateCode')}
           </button>
         </div>
 
@@ -650,22 +665,22 @@ const V2AdminUsers: React.FC = () => {
 
         {newCode && (
           <div className="v2-admin-users__newcode">
-            <div className="v2-admin-users__newcode-label">New code — copy and share it manually</div>
+            <div className="v2-admin-users__newcode-label">{t('adminUsers.invites.newCodeLabel')}</div>
             <code className="v2-admin-users__newcode-value">{newCode}</code>
             <button
               type="button"
               className="v2-admin-users__btn v2-admin-users__btn--ghost"
               onClick={() => copy(`new:${newCode}`, newCode)}
             >
-              {copied === `new:${newCode}` ? 'Copied!' : 'Copy'}
+              {copied === `new:${newCode}` ? t('adminUsers.actions.copied') : t('adminUsers.actions.copy')}
             </button>
             <button
               type="button"
               className="v2-admin-users__btn v2-admin-users__btn--ghost"
               onClick={() => setNewCode(null)}
-              aria-label="Dismiss new code"
+              aria-label={t('adminUsers.invites.dismissNewCode')}
             >
-              Dismiss
+              {t('adminUsers.actions.dismiss')}
             </button>
           </div>
         )}
@@ -674,24 +689,24 @@ const V2AdminUsers: React.FC = () => {
 
         {invitesLoading ? (
           <div className="v2-admin-users__loading">
-            <span className="v2-spinner" /> Loading invitation codes…
+            <span className="v2-spinner" /> {t('adminUsers.invites.loading')}
           </div>
         ) : invitesEmpty ? (
           <div className="v2-empty">
-            <div className="v2-empty__title">No invitation codes</div>
-            <div className="v2-empty__text">Generate a code to get started.</div>
+            <div className="v2-empty__title">{t('adminUsers.invites.emptyTitle')}</div>
+            <div className="v2-empty__text">{t('adminUsers.invites.emptyText')}</div>
           </div>
         ) : (
           <div className="v2-admin-users__table-wrap">
             <table className="v2-admin-users__table">
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Uses</th>
-                  <th>Status</th>
-                  <th>Expires</th>
-                  <th>Created</th>
-                  <th aria-label="Actions" />
+                  <th>{t('adminUsers.invites.columns.code')}</th>
+                  <th>{t('adminUsers.invites.columns.uses')}</th>
+                  <th>{t('adminUsers.invites.columns.status')}</th>
+                  <th>{t('adminUsers.invites.columns.expires')}</th>
+                  <th>{t('adminUsers.invites.columns.created')}</th>
+                  <th aria-label={t('adminUsers.columns.actions')} />
                 </tr>
               </thead>
               <tbody>
@@ -706,7 +721,7 @@ const V2AdminUsers: React.FC = () => {
                           className="v2-admin-users__inline-copy"
                           onClick={() => copy(`code:${invite.id}`, invite.code)}
                         >
-                          {copied === `code:${invite.id}` ? 'Copied!' : 'Copy'}
+                          {copied === `code:${invite.id}` ? t('adminUsers.actions.copied') : t('adminUsers.actions.copy')}
                         </button>
                       </td>
                       <td className="v2-admin-users__cell-muted">
@@ -717,7 +732,7 @@ const V2AdminUsers: React.FC = () => {
                           ? 'v2-admin-users__badge v2-admin-users__badge--ok'
                           : 'v2-admin-users__badge v2-admin-users__badge--muted'}
                         >
-                          {invite.isActive ? 'active' : 'revoked'}
+                          {invite.isActive ? t('adminUsers.invites.codeStatus.active') : t('adminUsers.invites.codeStatus.revoked')}
                         </span>
                       </td>
                       <td className="v2-admin-users__cell-muted">{formatDate(invite.expiresAt)}</td>
@@ -730,7 +745,7 @@ const V2AdminUsers: React.FC = () => {
                             onClick={() => revoke(invite)}
                             disabled={busy}
                           >
-                            {busy ? 'Revoking…' : 'Revoke'}
+                            {busy ? t('adminUsers.actions.revoking') : t('adminUsers.actions.revoke')}
                           </button>
                         )}
                       </td>
