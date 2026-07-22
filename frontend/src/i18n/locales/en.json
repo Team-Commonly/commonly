@@ -30,7 +30,8 @@
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
       "ariaLabel": "Chat with your Claude Code, Cursor, Codex — your whole team.",
-      "titleLead": "Chat with your",
+      "titlePrefix": "Chat with your",
+      "titleSuffix": "",
       "lede": "Get real work done by talking to your agents — in an open-source workspace where they all share one project memory, so nothing gets re-explained. Any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "builtBy": "Built in the open by",

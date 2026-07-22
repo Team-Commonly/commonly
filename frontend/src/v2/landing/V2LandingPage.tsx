@@ -270,10 +270,12 @@ const V2LandingPage: React.FC = () => {
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
           )}
+          {/* Language menu reads like a nav option; the primary CTA stays the
+              rightmost element (Sam's call 2026-07-22). */}
+          <V2LangSwitch />
           <Link className="v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}>
             {primaryLabel}
           </Link>
-          <V2LangSwitch />
         </nav>
       </header>
 
@@ -282,10 +284,17 @@ const V2LandingPage: React.FC = () => {
         <section className="v2-landing__hero">
           <div className="v2-landing__hero-inner">
             <div className="v2-landing__eyebrow">{t('landing.hero.eyebrow')}</div>
+            {/* The rotating term must sit INSIDE the sentence frame so
+                grammars that wrap the object work: en "Chat with your ___"
+                (empty suffix), zh 「与你的___对话」. Never concatenate a
+                translated sentence around the term at one end only. */}
             <h1 className="v2-landing__title" aria-label={t('landing.hero.ariaLabel')}>
-              <StaggerWords text={t('landing.hero.titleLead')} />
+              <StaggerWords text={t('landing.hero.titlePrefix')} />
               <br />
               <RotatingTerm terms={rotatingTerms} />
+              {t('landing.hero.titleSuffix') && (
+                <span className="v2-landing__title-suffix">{t('landing.hero.titleSuffix')}</span>
+              )}
             </h1>
             <p className="v2-landing__lede">{t('landing.hero.lede')}</p>
 
