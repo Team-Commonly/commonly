@@ -183,8 +183,9 @@ app.use('/api/posts', postRoutes);
 app.use('/api/users', userRoutes);
 // Pod invite tokens — both `/api/pods/:podId/invites` (create) and
 // `/api/invites/:token` (resolve / redeem) live in the same router.
-// Keep this before `/api/pods`: that router's `/:type/:id` catch-all would
-// otherwise consume `/api/pods/:podId/invites` as a pod lookup.
+// Route-order hazard: any bare-`/api` router with a two-segment `/pods/*`
+// GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
+// otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
 app.use('/api/pods', podRoutes);
 app.use('/api/messages', messageRoutes);

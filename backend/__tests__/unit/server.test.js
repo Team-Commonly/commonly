@@ -11,6 +11,16 @@ jest.mock('../../middleware/auth', () => (req, res, next) => {
   req.userId = 'user1';
   next();
 });
+jest.mock('../../controllers/podController', () => ({
+  getAllPods: jest.fn((req, res) => res.status(200).end()),
+  getPodsByType: jest.fn((req, res) => res.status(200).end()),
+  getPodById: jest.fn((req, res) => res.status(404).json({ error: 'Pod not found' })),
+  createPod: jest.fn((req, res) => res.status(201).end()),
+  joinPod: jest.fn((req, res) => res.status(200).end()),
+  leavePod: jest.fn((req, res) => res.status(200).end()),
+  removeMember: jest.fn((req, res) => res.status(200).end()),
+  deletePod: jest.fn((req, res) => res.status(200).end()),
+}));
 
 const mockInviteFind = jest.fn();
 jest.mock('../../models/PodInvite', () => ({
@@ -121,6 +131,8 @@ describe('server route precedence', () => {
     const token = 'a'.repeat(32);
     // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
     const Pod = require('../../models/Pod');
+    // eslint-disable-next-line global-require, import/no-unresolved, import/extensions
+    const { getPodById } = require('../../controllers/podController');
     Pod.findById.mockResolvedValue({
       _id: podId,
       createdBy: 'owner',
@@ -148,6 +160,7 @@ describe('server route precedence', () => {
     const res = await request(app).get(`/api/pods/${podId}/invites`).expect(200);
 
     expect(mockInviteFind).toHaveBeenCalledWith({ podId, revokedAt: null });
+    expect(getPodById).not.toHaveBeenCalled();
     expect(res.body).toEqual([
       expect.objectContaining({ token, uses: 0 }),
     ]);
