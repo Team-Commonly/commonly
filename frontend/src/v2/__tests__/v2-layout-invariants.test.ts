@@ -115,4 +115,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('background: var(--v2-accent)');
     expect(rule).toContain('color: #fff');
   });
+
+  test('the Community offer stays visible below the independently scrolling pod list', () => {
+    // The list owns overflow-y; the offer is its flex sibling. Preventing the
+    // card from shrinking is what keeps the Join HQ action reachable when the
+    // sidebar contains many pods.
+    expect(ruleBody(v2, '.v2-pods__community')).toContain('flex-shrink: 0');
+  });
+
+  test('starter prompts wrap within the mobile chat pane', () => {
+    // At 390px the rail leaves a narrow main pane. Both the row and each chip
+    // need explicit shrink/wrap rules or the longest prompt creates horizontal
+    // overflow and pushes the composer action off-screen.
+    const row = ruleBody(v2, '.v2-chat__starter-prompts');
+    const chip = ruleBody(v2, '.v2-root button.v2-chat__starter-prompt');
+    expect(row).toContain('flex-wrap: wrap');
+    expect(row).toContain('max-width: 100%');
+    expect(chip).toContain('max-width: 100%');
+    expect(chip).toContain('white-space: normal');
+  });
 });
