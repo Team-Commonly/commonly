@@ -146,6 +146,22 @@ export class DigestEmailService {
           await user.save();
         }
 
+        // Claim before crossing the SMTP boundary. Email has no transactional
+        // acknowledgement we can coordinate with MongoDB, so at-most-once is
+        // the safer failure mode: a crash can drop one digest, but can never
+        // deliver the same digest twice on a retry or concurrent cron run.
+        const emailedAt = new Date();
+        const claim = await Summary.updateOne(
+          { _id: summary._id, 'metadata.emailedAt': { $exists: false } },
+          { $set: { 'metadata.emailedAt': emailedAt } },
+        );
+        const claimed = Number(claim?.modifiedCount ?? claim?.nModified ?? 0) === 1;
+        if (!claimed) {
+          result.skipped += 1;
+          continue;
+        }
+        if (summary.metadata) summary.metadata.emailedAt = emailedAt;
+
         const bodies = buildEmailBodies(summary, unsubscribeToken);
         await sendEmail({
           to: user.email,
@@ -154,12 +170,6 @@ export class DigestEmailService {
           htmlBody: bodies.htmlBody,
         });
 
-        const emailedAt = new Date();
-        await Summary.updateOne(
-          { _id: summary._id, 'metadata.emailedAt': { $exists: false } },
-          { $set: { 'metadata.emailedAt': emailedAt } },
-        );
-        if (summary.metadata) summary.metadata.emailedAt = emailedAt;
         result.sent += 1;
       } catch (error) {
         result.failed += 1;

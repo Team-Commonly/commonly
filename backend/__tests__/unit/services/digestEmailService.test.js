@@ -139,7 +139,7 @@ describe('digestEmailService', () => {
     expect((await Summary.findById(currentDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
   });
 
-  it('continues to later users when one email fails', async () => {
+  it('claims before SMTP and continues when one email fails without retrying it', async () => {
     const firstUser = await createUser();
     const secondUser = await createUser();
     const firstDigest = await createDigest(firstUser);
@@ -157,8 +157,14 @@ describe('digestEmailService', () => {
 
     expect(result).toEqual(expect.objectContaining({ sent: 1, failed: 1 }));
     expect(mockSendEmail).toHaveBeenCalledTimes(2);
-    expect((await Summary.findById(firstDigest._id)).metadata.emailedAt).toBeUndefined();
+    expect((await Summary.findById(firstDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
     expect((await Summary.findById(secondDigest._id)).metadata.emailedAt).toBeInstanceOf(Date);
+
+    await digestEmailService.sendDigestEmails([
+      runEntry(firstDigest),
+      runEntry(secondDigest),
+    ]);
+    expect(mockSendEmail).toHaveBeenCalledTimes(2);
   });
 
   it('logs once and skips the entire run when SMTP is unconfigured', async () => {
