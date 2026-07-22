@@ -42,6 +42,7 @@ const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
 const healthRoutes = require('./routes/health');
 const statsRoutes = require('./routes/stats');
+const emailRoutes = require('./routes/email');
 const showcaseRoutes = require('./routes/showcase');
 const adminPodsRoutes = require('./routes/admin/pods');
 const agentEnsembleRoutes = require('./routes/agentEnsemble');
@@ -216,6 +217,7 @@ app.use('/api/admin/analytics', adminAnalyticsRoutes); // Admin activation-funne
 app.use('/api/dev', devRoutes); // Dev tooling (LLM status, etc.)
 app.use('/api/health', healthRoutes); // Health check endpoints
 app.use('/api/stats', statsRoutes); // Public stats (no auth)
+app.use('/api/email', emailRoutes); // Public digest unsubscribe links
 // Public read-only showcase (no auth — handlers self-gate on pod.publicRead).
 // SECURITY-CRITICAL: the only anonymous read path; serves only flagged pods.
 app.use('/api/showcase', showcaseRoutes);

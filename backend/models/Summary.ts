@@ -27,6 +27,7 @@ export interface ISummary extends Document {
     source?: string;
     sources?: string[];
     eventId?: string;
+    emailedAt?: Date;
   };
   analytics: {
     timeline: Array<{
@@ -96,6 +97,7 @@ const summarySchema = new Schema<ISummary>({
     source: { type: String },
     sources: [{ type: String }],
     eventId: { type: String },
+    emailedAt: { type: Date },
   },
   analytics: {
     timeline: [

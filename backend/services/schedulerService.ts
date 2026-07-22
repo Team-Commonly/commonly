@@ -38,6 +38,8 @@ const SummarizerService = summarizerService.constructor;
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require
 const dailyDigestService = require('./dailyDigestService');
+// eslint-disable-next-line global-require
+const digestEmailService = require('./digestEmailService');
 
 interface CronJob {
   start(): void;
@@ -170,7 +172,8 @@ class SchedulerService {
       async () => {
         console.log('Running daily digest generation...');
         try {
-          await dailyDigestService.generateAllDailyDigests();
+          const digestResults = await dailyDigestService.generateAllDailyDigests();
+          await digestEmailService.sendDigestEmails(digestResults);
         } catch (error) {
           console.error('Error in scheduled daily digest generation:', error);
         }
