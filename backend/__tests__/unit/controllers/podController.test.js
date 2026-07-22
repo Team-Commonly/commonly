@@ -246,10 +246,10 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ msg: expect.stringMatching(/1:1.*third-person/i) }),
     );
-    expect(pod.save).not.toHaveBeenCalled();
+    expect(Pod.updateOne).not.toHaveBeenCalled();
   });
 
-  it('joinPod still works on regular chat pods (regression guard)', async () => {
+  it('joinPod atomically joins a listed, open chat pod', async () => {
     const pod = {
       _id: 'chat-1',
       type: 'chat',
@@ -258,7 +258,7 @@ describe('podController', () => {
       ],
       createdBy: { toString: () => 'creator-id' },
       joinPolicy: 'open',
-      save: jest.fn().mockResolvedValue(undefined),
+      communityListed: true,
     };
     Pod.findById
       .mockResolvedValueOnce(pod)
@@ -270,7 +270,13 @@ describe('podController', () => {
     const req = { params: { id: 'chat-1' }, userId: 'new-user-id', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.joinPod(req, res);
-    expect(pod.save).toHaveBeenCalled();
+    expect(Pod.updateOne).toHaveBeenCalledWith(
+      { _id: 'chat-1' },
+      {
+        $addToSet: { members: 'new-user-id' },
+        $set: { updatedAt: expect.any(Date) },
+      },
+    );
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 
@@ -328,9 +334,51 @@ describe('podController', () => {
     const req = { query: {}, userId: 'admin-id', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
+    expect(Pod.find).toHaveBeenCalledWith({ type: { $ne: 'agent-admin' } });
     // Default scope=mine: admin is filtered to their own pods, NOT every
     // chat pod in the instance.
     expect(res.json).toHaveBeenCalledWith([myPod]);
+  });
+
+  it('getAllPods keeps the existing community query exact', async () => {
+    const sort = jest.fn().mockResolvedValue([]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    const req = { query: { scope: 'community' }, userId: 'me', user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    expect(Pod.find).toHaveBeenCalledWith({
+      publicRead: true,
+      communityListed: true,
+      type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
+    });
+  });
+
+  it('getAllPods discover scope requires listed, readable, joinable non-member pods', async () => {
+    const sort = jest.fn().mockResolvedValue([]);
+    const populateThird = jest.fn(() => ({ sort }));
+    const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    const discoverUserId = '507f1f77bcf86cd799439011';
+    const req = { query: { scope: 'discover' }, userId: discoverUserId, user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getAllPods(req, res);
+
+    expect(Pod.find).toHaveBeenCalledWith({
+      publicRead: true,
+      communityListed: true,
+      joinPolicy: { $ne: 'invite-only' },
+      members: { $ne: expect.anything() },
+      type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
+    });
+    const [query] = Pod.find.mock.calls[0];
+    expect(String(query.members.$ne)).toBe(discoverUserId);
   });
 
   it('getAllPods scope=all returns everything for admins (explicit moderation view)', async () => {

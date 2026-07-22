@@ -28,6 +28,10 @@ describe('GET /api/pods community scope', () => {
   let viewerToken;
   let memberPod;
   let communityPod;
+  let studyCommunityPod;
+  let joinedCommunityPod;
+  let inviteOnlyPod;
+  let nonPublicListedPod;
   let showcasePod;
   let privatePod;
   let forcedPersonalPods;
@@ -67,6 +71,43 @@ describe('GET /api/pods community scope', () => {
       members: [otherUser._id],
       publicRead: true,
       communityListed: true,
+      joinPolicy: 'open',
+    });
+    studyCommunityPod = await Pod.create({
+      name: 'Public study community pod',
+      type: 'study',
+      createdBy: otherUser._id,
+      members: [otherUser._id],
+      publicRead: true,
+      communityListed: true,
+      joinPolicy: 'open',
+    });
+    joinedCommunityPod = await Pod.create({
+      name: 'Already joined community pod',
+      type: 'team',
+      createdBy: otherUser._id,
+      members: [otherUser._id, viewer._id],
+      publicRead: true,
+      communityListed: true,
+      joinPolicy: 'open',
+    });
+    inviteOnlyPod = await Pod.create({
+      name: 'Invite-only community pod',
+      type: 'team',
+      createdBy: otherUser._id,
+      members: [otherUser._id],
+      publicRead: true,
+      communityListed: true,
+      joinPolicy: 'invite-only',
+    });
+    nonPublicListedPod = await Pod.create({
+      name: 'Listed but not publicly readable',
+      type: 'team',
+      createdBy: otherUser._id,
+      members: [otherUser._id],
+      publicRead: false,
+      communityListed: true,
+      joinPolicy: 'open',
     });
     // Readable but NOT listed — the showcase-room shape (Eng Milestone etc.):
     // anonymous read access stays, Community tab must not surface it.
@@ -112,13 +153,50 @@ describe('GET /api/pods community scope', () => {
 
     expect(res.status).toBe(200);
     const ids = res.body.map((pod) => pod._id);
-    expect(ids).toEqual([communityPod._id.toString()]);
+    expect(ids).toEqual(expect.arrayContaining([
+      communityPod._id.toString(),
+      studyCommunityPod._id.toString(),
+      joinedCommunityPod._id.toString(),
+      inviteOnlyPod._id.toString(),
+    ]));
+    expect(ids).toHaveLength(4);
     expect(ids).not.toContain(privatePod._id.toString());
+    expect(ids).not.toContain(nonPublicListedPod._id.toString());
     // Readable-but-unlisted showcase rooms must stay OFF the Community tab.
     expect(ids).not.toContain(showcasePod._id.toString());
     forcedPersonalPods.forEach((pod) => {
       expect(ids).not.toContain(pod._id.toString());
     });
+  });
+
+  it('discovers only listed, readable, joinable pods the caller has not joined', async () => {
+    const res = await request(app)
+      .get('/api/pods?scope=discover')
+      .set('Authorization', `Bearer ${viewerToken}`);
+
+    expect(res.status).toBe(200);
+    const ids = res.body.map((pod) => pod._id);
+    expect(ids).toEqual(expect.arrayContaining([
+      communityPod._id.toString(),
+      studyCommunityPod._id.toString(),
+    ]));
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain(joinedCommunityPod._id.toString());
+    expect(ids).not.toContain(inviteOnlyPod._id.toString());
+    expect(ids).not.toContain(showcasePod._id.toString());
+    expect(ids).not.toContain(nonPublicListedPod._id.toString());
+    forcedPersonalPods.forEach((pod) => {
+      expect(ids).not.toContain(pod._id.toString());
+    });
+  });
+
+  it('honors the optional type filter in discover scope', async () => {
+    const res = await request(app)
+      .get('/api/pods?scope=discover&type=study')
+      .set('Authorization', `Bearer ${viewerToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((pod) => pod._id)).toEqual([studyCommunityPod._id.toString()]);
   });
 
   it('keeps the default listing membership-only for the same fixtures', async () => {
@@ -127,7 +205,11 @@ describe('GET /api/pods community scope', () => {
       .set('Authorization', `Bearer ${viewerToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.map((pod) => pod._id)).toEqual([memberPod._id.toString()]);
+    expect(res.body.map((pod) => pod._id)).toEqual(expect.arrayContaining([
+      memberPod._id.toString(),
+      joinedCommunityPod._id.toString(),
+    ]));
+    expect(res.body).toHaveLength(2);
     expect(res.body.map((pod) => pod._id)).not.toContain(communityPod._id.toString());
   });
 
