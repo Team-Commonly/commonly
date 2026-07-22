@@ -30,6 +30,8 @@ interface InvitePreviewResponse {
   expiresAt?: string | null;
 }
 
+const DM_INVITE_REFUSAL = 'This is a private 1:1 conversation — it can\'t be joined with an invite link.';
+
 const V2InviteRedeem: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -98,8 +100,12 @@ const V2InviteRedeem: React.FC = () => {
       );
       if (data?.pod?._id) navigate(`/v2/pods/${data.pod._id}`, { replace: true });
     } catch (err) {
-      const e = err as { response?: { data?: { msg?: string } }; message?: string };
-      setError(e.response?.data?.msg || e.message || 'Could not join — try again.');
+      const e = err as { response?: { data?: { code?: string; msg?: string } }; message?: string };
+      setError(
+        e.response?.data?.code === 'dm_membership_refused'
+          ? DM_INVITE_REFUSAL
+          : (e.response?.data?.msg || e.message || 'Could not join — try again.'),
+      );
     } finally {
       setRedeeming(false);
     }
