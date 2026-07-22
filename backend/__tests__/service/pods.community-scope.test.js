@@ -28,6 +28,7 @@ describe('GET /api/pods community scope', () => {
   let viewerToken;
   let memberPod;
   let communityPod;
+  let showcasePod;
   let privatePod;
   let forcedPersonalPods;
 
@@ -65,6 +66,17 @@ describe('GET /api/pods community scope', () => {
       createdBy: otherUser._id,
       members: [otherUser._id],
       publicRead: true,
+      communityListed: true,
+    });
+    // Readable but NOT listed — the showcase-room shape (Eng Milestone etc.):
+    // anonymous read access stays, Community tab must not surface it.
+    showcasePod = await Pod.create({
+      name: 'Showcase room (readable, unlisted)',
+      type: 'team',
+      createdBy: otherUser._id,
+      members: [otherUser._id],
+      publicRead: true,
+      communityListed: false,
     });
     privatePod = await Pod.create({
       name: 'Other private team',
@@ -80,8 +92,10 @@ describe('GET /api/pods community scope', () => {
         createdBy: otherUser._id,
         members: [otherUser._id],
         // These rows bypass the admin toggle deliberately. The discovery
-        // query must remain safe even if legacy/manual data is malformed.
+        // query must remain safe even if legacy/manual data is malformed —
+        // even when BOTH flags are (wrongly) set on a personal pod type.
         publicRead: true,
+        communityListed: true,
       })
     )));
   });
@@ -100,6 +114,8 @@ describe('GET /api/pods community scope', () => {
     const ids = res.body.map((pod) => pod._id);
     expect(ids).toEqual([communityPod._id.toString()]);
     expect(ids).not.toContain(privatePod._id.toString());
+    // Readable-but-unlisted showcase rooms must stay OFF the Community tab.
+    expect(ids).not.toContain(showcasePod._id.toString());
     forcedPersonalPods.forEach((pod) => {
       expect(ids).not.toContain(pod._id.toString());
     });

@@ -167,7 +167,10 @@ exports.getAllPods = async (req: any, res: any) => {
     // membership listing below.
     const query = isCommunityScope
       ? {
+        // Listed is opt-in and distinct from readable: showcase rooms keep
+        // publicRead for anonymous viewing without appearing in Community.
         publicRead: true,
+        communityListed: true,
         type: type
           ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
           : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
