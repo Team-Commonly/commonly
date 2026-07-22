@@ -1,7 +1,6 @@
 export {};
 const express = require('express');
 const crypto = require('crypto');
-const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
@@ -9,6 +8,7 @@ const User = require('../../models/User');
 const InvitationCode = require('../../models/InvitationCode');
 const WaitlistRequest = require('../../models/WaitlistRequest');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+const { sendEmail } = require('../../services/emailService');
 
 const router = express.Router();
 
@@ -88,8 +88,6 @@ const sanitizeWaitlist = (request: any) => ({
 });
 
 const generateInvitationCode = () => `CM-${(crypto as any).randomBytes(4).toString('hex').toUpperCase()}`;
-const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
-const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
 
 const getPrimaryFrontendUrl = () => {
   const raw = String(process.env.FRONTEND_URL || '').trim();
@@ -557,15 +555,12 @@ router.post('/waitlist/:requestId/send-invitation', auth, adminAuth, async (req:
       `<p><a href="${registerUrl}">Complete registration</a></p>`,
     ].join('');
 
-    await axios.post(SMTP2GO_SEND_URL, {
-      api_key: process.env.SMTP2GO_API_KEY,
-      to: [waitlistRequest.email],
-      sender: process.env.SMTP2GO_FROM_EMAIL,
-      from_name: process.env.SMTP2GO_FROM_NAME || 'Commonly',
+    await sendEmail({
+      to: waitlistRequest.email,
       subject,
-      text_body: textBody,
-      html_body: htmlBody,
-    }, { timeout: 30000 });
+      textBody,
+      htmlBody,
+    });
 
     waitlistRequest.status = 'invited';
     waitlistRequest.invitationCode = invitation._id;

@@ -1,14 +1,11 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const axios = require('axios');
 const User = require('../models/User');
 const Pod = require('../models/Pod');
 const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
-
-const SMTP2GO_BASE_URL = process.env.SMTP2GO_BASE_URL || 'https://api.smtp2go.com/v3';
-const SMTP2GO_SEND_URL = `${SMTP2GO_BASE_URL.replace(/\/$/, '')}/email/send`;
+const { sendEmail } = require('../services/emailService');
 
 const parseBooleanEnv = (value: any) => {
   if (value === undefined || value === null || value === '') return null;
@@ -258,15 +255,12 @@ exports.register = async (req: any, res: any) => {
           sender: process.env.SMTP2GO_FROM_EMAIL,
           fromName: process.env.SMTP2GO_FROM_NAME,
         });
-        const smtpRes = await axios.post(SMTP2GO_SEND_URL, {
-          api_key: process.env.SMTP2GO_API_KEY,
-          to: [email],
-          sender: process.env.SMTP2GO_FROM_EMAIL,
-          from_name: process.env.SMTP2GO_FROM_NAME || 'Commonly',
+        const smtpRes = await sendEmail({
+          to: email,
           subject: 'Verify Your Email - Commonly',
-          text_body: text,
-          html_body: html,
-        }, { timeout: 30000 });
+          textBody: text,
+          htmlBody: html,
+        });
         console.log('SMTP2GO send response:', smtpRes?.data);
       } catch (sendError: any) {
         console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
@@ -439,15 +433,12 @@ exports.forgotPassword = async (req: any, res: any) => {
     );
     const resetUrl = `${process.env.FRONTEND_URL}/v2/reset-password?token=${token}`;
     try {
-      await axios.post(SMTP2GO_SEND_URL, {
-        api_key: process.env.SMTP2GO_API_KEY,
-        to: [user.email],
-        sender: process.env.SMTP2GO_FROM_EMAIL,
-        from_name: process.env.SMTP2GO_FROM_NAME || 'Commonly',
+      await sendEmail({
+        to: user.email,
         subject: 'Reset your password - Commonly',
-        text_body: `Reset your Commonly password (link valid for 1 hour): ${resetUrl}\n\nIf you didn't request this, ignore this email — your password is unchanged.`,
-        html_body: `<p>Reset your Commonly password (link valid for 1 hour):</p><a href="${resetUrl}">Reset password</a><p>If you didn't request this, ignore this email — your password is unchanged.</p>`,
-      }, { timeout: 30000 });
+        textBody: `Reset your Commonly password (link valid for 1 hour): ${resetUrl}\n\nIf you didn't request this, ignore this email — your password is unchanged.`,
+        htmlBody: `<p>Reset your Commonly password (link valid for 1 hour):</p><a href="${resetUrl}">Reset password</a><p>If you didn't request this, ignore this email — your password is unchanged.</p>`,
+      });
     } catch (sendError: any) {
       console.error('SMTP2GO error during password reset:', sendError?.response?.data || sendError.message);
     }

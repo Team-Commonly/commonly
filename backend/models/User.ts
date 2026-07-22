@@ -132,6 +132,10 @@ export interface IUser extends Document {
     includeTimeline: boolean;
     minActivityLevel: ActivityLevel;
   };
+  emailPreferences: {
+    dailyDigest: boolean;
+  };
+  digestUnsubscribeToken?: string;
   lastActive: Date;
   lastDigestSent?: Date;
   createdAt: Date;
@@ -139,6 +143,7 @@ export interface IUser extends Document {
   comparePassword(password: string): Promise<boolean>;
   generateApiToken(): string;
   revokeApiToken(): void;
+  getOrCreateDigestUnsubscribeToken(): string;
 }
 
 export interface IUserModel extends Model<IUser> {}
@@ -291,6 +296,12 @@ const userSchema = new Schema<IUser>({
     includeTimeline: { type: Boolean, default: true },
     minActivityLevel: { type: String, enum: ['low', 'medium', 'high'], default: 'low' },
   },
+  emailPreferences: {
+    dailyDigest: { type: Boolean, default: true },
+  },
+  // Capability token: it can only disable digest mail. Hidden from normal
+  // User projections and generated lazily when the first email is sent.
+  digestUnsubscribeToken: { type: String, select: false },
   lastActive: { type: Date, default: Date.now },
   lastDigestSent: { type: Date },
   createdAt: { type: Date, default: Date.now },
@@ -298,6 +309,13 @@ const userSchema = new Schema<IUser>({
 
 // OAuth callback looks users up by (provider, providerId) on every social login.
 userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 });
+userSchema.index(
+  { digestUnsubscribeToken: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { digestUnsubscribeToken: { $type: 'string' } },
+  },
+);
 
 userSchema.pre<IUser>('save', async function (next) {
   if (!this.isModified('password') || !this.password) return next();
@@ -319,6 +337,13 @@ userSchema.methods.generateApiToken = function (): string {
 userSchema.methods.revokeApiToken = function (): void {
   this.apiToken = undefined;
   this.apiTokenCreatedAt = undefined;
+};
+
+userSchema.methods.getOrCreateDigestUnsubscribeToken = function (): string {
+  if (!this.digestUnsubscribeToken) {
+    this.digestUnsubscribeToken = crypto.randomBytes(24).toString('hex');
+  }
+  return this.digestUnsubscribeToken;
 };
 
 export default mongoose.model<IUser, IUserModel>('User', userSchema);
