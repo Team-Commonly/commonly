@@ -10,6 +10,8 @@ const PGMessage = require('../models/pg/Message');
 const PGPod = require('../models/pg/Pod');
 // eslint-disable-next-line global-require
 const AgentMentionService = require('../services/agentMentionService');
+// eslint-disable-next-line global-require
+const { AgentInstallation } = require('../models/AgentRegistry');
 const DMService = require('../services/dmService');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
@@ -262,10 +264,36 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // updating this allow-list silently drops every message; see
     // docs/agents/AGENT_RUNTIME.md "Routing Invariants" for the canonical
     // version of this rule.
-    if (pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm') {
+    const isDmPod = pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm';
+    let responseMessage: NormalizedMessage | (NormalizedMessage & {
+      agentDelivery: { enqueued: number; implicit: string[]; agentsInPod: number };
+    }) = message;
+    if (isDmPod) {
       await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
     } else {
-      await AgentMentionService.enqueueMentions({ podId, message, userId, username });
+      const mentionResult = await AgentMentionService.enqueueMentions({
+        podId,
+        message,
+        userId,
+        username,
+        replyToMessageId: replyToMessageId || null,
+      });
+      let agentsInPod = 0;
+      try {
+        agentsInPod = await AgentInstallation.countDocuments({ podId, status: 'active' });
+      } catch (countErr) {
+        // Delivery metadata is advisory UI feedback. A count failure must
+        // never turn an already-persisted message into a failed send.
+        console.warn('[messageController] active-agent delivery count failed:', (countErr as Error).message);
+      }
+      responseMessage = {
+        ...message,
+        agentDelivery: {
+          enqueued: mentionResult.enqueued.length,
+          implicit: mentionResult.implicit || [],
+          agentsInPod,
+        },
+      };
     }
 
     // Live-broadcast the new message to every connected client in this pod's
@@ -314,7 +342,7 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       console.warn('[messageController] socket emit failed:', (socketErr as Error).message);
     }
 
-    res.json(message);
+    res.json(responseMessage);
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in createMessage:', e.message);

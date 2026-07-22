@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
 
 const PLAN_MODE_KEY = 'v2.podMode';
+const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 
 const STARTER_PROMPTS = [
   'Introduce yourself — what are you best at?',
@@ -162,6 +163,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [agentDeliveryHint, setAgentDeliveryHint] = useState<{
+    messageId: string;
+    mentionHandle: string;
+  } | null>(null);
+  const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const [mode, setMode] = useState<PodMode>(pod ? readMode(pod._id) : 'plan');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -190,6 +196,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
 
   useEffect(() => {
     if (pod) setMode(readMode(pod._id));
+  }, [pod?._id]);
+
+  useEffect(() => {
+    setAgentDeliveryHint(null);
   }, [pod?._id]);
 
   useEffect(() => {
@@ -556,6 +566,36 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
     try {
       const created = await sendMessage(text, 'text', replyTarget?.id || undefined);
       if (created) {
+        const delivery = created.agentDelivery;
+        const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
+        const rawMentionHandle = exampleAgent?.instanceId
+          && exampleAgent.instanceId.toLowerCase() !== 'default'
+          ? exampleAgent.instanceId
+          : exampleAgent?.agentName;
+        const mentionHandle = normalizeAgentSegment(rawMentionHandle);
+        if (
+          delivery
+          && delivery.enqueued === 0
+          && delivery.agentsInPod > 0
+          && mentionHandle
+        ) {
+          const storageKey = `${AGENT_DELIVERY_HINT_KEY}.${pod._id}`;
+          let alreadyShown = deliveryHintShownPodsRef.current.has(pod._id);
+          try {
+            alreadyShown = alreadyShown || sessionStorage.getItem(storageKey) === '1';
+          } catch {
+            // In-memory guard still prevents repeat hints in this mount.
+          }
+          if (!alreadyShown) {
+            deliveryHintShownPodsRef.current.add(pod._id);
+            try {
+              sessionStorage.setItem(storageKey, '1');
+            } catch {
+              // sessionStorage unavailable; the in-memory guard still works.
+            }
+            setAgentDeliveryHint({ messageId: created.id, mentionHandle });
+          }
+        }
         setDraft('');
         setReplyTarget(null);
       }
@@ -773,15 +813,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                 </div>
               )}
               {messages.map((m) => (
-                <V2MessageBubble
-                  key={m.id}
-                  message={m}
-                  agentDisplayNames={agentDisplayNames}
-                  agentAuthorKeys={agentAuthorKeys}
-                  onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-                  onOpenFile={onOpenFile}
-                  onReply={setReplyTarget}
-                />
+                <React.Fragment key={m.id}>
+                  <V2MessageBubble
+                    message={m}
+                    agentDisplayNames={agentDisplayNames}
+                    agentAuthorKeys={agentAuthorKeys}
+                    onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                    onOpenFile={onOpenFile}
+                    onReply={setReplyTarget}
+                  />
+                  {agentDeliveryHint?.messageId === m.id && (
+                    <div className="v2-chat__delivery-hint" role="status">
+                      No agent was notified — @mention one to get a reply. Try{' '}
+                      <strong>@{agentDeliveryHint.mentionHandle}</strong>.
+                    </div>
+                  )}
+                </React.Fragment>
               ))}
               <div ref={messagesEndRef} />
             </div>
