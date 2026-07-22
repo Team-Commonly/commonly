@@ -2,6 +2,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 import V2App from '../V2App';
 
@@ -75,5 +76,34 @@ describe('V2 routing', () => {
   test('deep protected route redirects to login when not authenticated', () => {
     renderAt('/v2/agents');
     expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
+  });
+
+  test('logged-out Community visitors reach the public invite preview', async () => {
+    const originalPodId = process.env.REACT_APP_COMMUNITY_POD_ID;
+    const originalInviteToken = process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
+    (axios.get as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/pods/6a5fe677306155f677c26abf') {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      if (url === '/api/invites/7b91255f18ae3c0ae3721707a6613731/preview') {
+        return Promise.resolve({ data: { pod: { name: 'Commonly HQ', memberCount: 12 } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    process.env.REACT_APP_COMMUNITY_POD_ID = '6a5fe677306155f677c26abf';
+    process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = '7b91255f18ae3c0ae3721707a6613731';
+
+    try {
+      renderAt('/v2/community');
+
+      expect(await screen.findByText(/invited to Commonly HQ/)).toBeInTheDocument();
+      expect(axios.get).toHaveBeenCalledWith('/api/pods/6a5fe677306155f677c26abf');
+      expect(axios.get).toHaveBeenCalledWith('/api/invites/7b91255f18ae3c0ae3721707a6613731/preview');
+    } finally {
+      if (originalPodId === undefined) delete process.env.REACT_APP_COMMUNITY_POD_ID;
+      else process.env.REACT_APP_COMMUNITY_POD_ID = originalPodId;
+      if (originalInviteToken === undefined) delete process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
+      else process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = originalInviteToken;
+    }
   });
 });

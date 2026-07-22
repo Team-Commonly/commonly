@@ -175,6 +175,10 @@ const V2App: React.FC = () => {
           <Route path="discord/callback" element={<DiscordCallback />} />
           <Route path="discord/success" element={<DiscordCallback type="success" />} />
           <Route path="discord/error" element={<DiscordCallback type="error" />} />
+          {/* Community access is resolved by the membership-gated pod probe.
+              Keep this outside V2RequireAuth so an anonymous 401 can fall
+              through to the public invite preview instead of the login wall. */}
+          <Route path="community" element={<V2CommunityRedirect />} />
           {/* Pod invite redeem — handles its own auth gate (redirects to
               /v2/login?next=... when anonymous). Must sit OUTSIDE the
               V2RequireAuth wrapper so an anonymous click on the share link
@@ -186,7 +190,6 @@ const V2App: React.FC = () => {
               <V2RequireAuth>
                 <Routes>
                 <Route path="/" element={<V2Layout selectionMode="auto" />} />
-                <Route path="community" element={<V2CommunityRedirect />} />
                 <Route
                   path="dashboard"
                   element={feature('Dashboard', 'Your dashboard tools, kept inside the v2 shell.', <Dashboard />)}
