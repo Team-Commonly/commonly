@@ -4,7 +4,7 @@ import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2PodChat from './V2PodChat';
 import V2PodInspector from './V2PodInspector';
-import V2InviteModal from './V2InviteModal';
+import V2InviteModal, { type V2InviteTab } from './V2InviteModal';
 import V2FirstRunHero from './V2FirstRunHero';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
@@ -54,7 +54,11 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // invite icon and the inspector "+ Invite" button can both open it. The
   // modal itself is V2InviteModal — this component just owns open/close.
   const [inviteOpen, setInviteOpen] = useState(false);
-  const openInvite = useCallback(() => setInviteOpen(true), []);
+  const [inviteInitialTab, setInviteInitialTab] = useState<V2InviteTab>('people');
+  const openInvite = useCallback((initialTab: V2InviteTab = 'people') => {
+    setInviteInitialTab(initialTab);
+    setInviteOpen(true);
+  }, []);
   const closeInvite = useCallback(() => setInviteOpen(false), []);
   // Mobile (<=760px) pods drawer. The sidebar is a fixed slide-over on phones
   // instead of a grid column; this owns its open/closed state. Desktop ignores
@@ -181,7 +185,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onOpenMember={openInspectorMember}
           onOpenArtifact={openInspectorArtifact}
           onBack={resetInspectorView}
-          onOpenInvite={inviteEnabled ? openInvite : undefined}
+          onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
           pendingOpenFileName={pendingOpenFileName}
           onPendingOpenFileNameConsumed={clearPendingOpenFileName}
         />
@@ -191,6 +195,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           open={inviteOpen}
           podId={detail.pod._id}
           podName={detail.pod.name || 'pod'}
+          initialTab={inviteInitialTab}
           onClose={closeInvite}
         />
       )}

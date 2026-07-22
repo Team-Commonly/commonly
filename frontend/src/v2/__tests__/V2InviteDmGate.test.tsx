@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2Layout from '../components/V2Layout';
 
@@ -34,10 +34,21 @@ jest.mock('../hooks/useV2PodDetail', () => ({
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../components/V2PodsSidebar', () => () => null);
 jest.mock('../components/V2PodInspector', () => () => null);
-jest.mock('../components/V2InviteModal', () => () => null);
+jest.mock('../components/V2InviteModal', () => function MockV2InviteModal({ open, initialTab }) {
+  return open ? <div data-testid="invite-modal-tab">{initialTab}</div> : null;
+});
 jest.mock('../components/V2FirstRunHero', () => () => null);
 jest.mock('../components/V2PodChat', () => function MockV2PodChat({ onOpenInvite }) {
-  return <div>{onOpenInvite && <button type="button">Invite</button>}</div>;
+  return (
+    <div>
+      {onOpenInvite && (
+        <>
+          <button type="button" onClick={() => onOpenInvite()}>Invite</button>
+          <button type="button" onClick={() => onOpenInvite('agent')}>Add agent</button>
+        </>
+      )}
+    </div>
+  );
 });
 
 const renderLayout = () => render(
@@ -63,5 +74,13 @@ describe('V2 invite affordance gating', () => {
     mockPodType = podType;
     renderLayout();
     expect(screen.getByRole('button', { name: 'Invite' })).toBeInTheDocument();
+  });
+
+  test('passes the starter action through to the modal agent tab', () => {
+    mockPodType = 'chat';
+    renderLayout();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
+    expect(screen.getByTestId('invite-modal-tab')).toHaveTextContent('agent');
   });
 });

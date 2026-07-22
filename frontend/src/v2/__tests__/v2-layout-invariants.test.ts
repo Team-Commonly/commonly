@@ -146,6 +146,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(chip).toContain('white-space: normal');
   });
 
+  test('the new-pod starter panel shrinks and stacks inside the mobile chat pane', () => {
+    const panel = ruleBody(v2, '.v2-chat__new-pod');
+    const actions = ruleBody(v2, '.v2-chat__new-pod-actions');
+    expect(panel).toContain('width: min(720px, 100%)');
+    expect(actions).toContain('repeat(2, minmax(0, 1fr))');
+    expect(v2).toContain('.v2-chat__new-pod-actions {\n    grid-template-columns: minmax(0, 1fr)');
+  });
+
   test('invite management controls collapse to one column on phones', () => {
     // The modal is wider than the mobile shell and carries two selects plus a
     // URL/copy row. At <=480px both must wrap or the link input pushes the
