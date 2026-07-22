@@ -1238,7 +1238,8 @@
     "filters": {
       "all": "全部",
       "team": "团队",
-      "private": "私密"
+      "private": "私密",
+      "community": "社区"
     },
     "groups": {
       "pinned": "已置顶",

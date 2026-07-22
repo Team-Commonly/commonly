@@ -17,6 +17,7 @@ if (process.env.PG_HOST) {
 }
 
 const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'];
+const COMMUNITY_EXCLUDED_POD_TYPES = ['agent-room', 'agent-dm', 'agent-admin'];
 const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
 const DEFAULT_POD_AGENT_SCOPES = [
   'context:read',
@@ -156,9 +157,22 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 exports.getAllPods = async (req: any, res: any) => {
   try {
     const { type } = req.query;
+    const scope = String(req.query?.scope || 'mine').toLowerCase();
+    const isCommunityScope = scope === 'community';
     // Exclude agent-admin DM pods from default listing; only show when
     // explicitly requested and the caller is a member.
-    const query = type ? { type } : { type: { $ne: 'agent-admin' } };
+    // Community is an explicit, additive discovery scope. Personal pod types
+    // stay excluded even if a malformed/admin-created row has publicRead=true.
+    // Keep the default query semantically identical to the privacy-hardened
+    // membership listing below.
+    const query = isCommunityScope
+      ? {
+        publicRead: true,
+        type: type
+          ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
+          : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
+      }
+      : (type ? { type } : { type: { $ne: 'agent-admin' } });
 
     let pods = await Pod.find(query)
       .populate('createdBy', 'username profilePicture')
@@ -184,9 +198,8 @@ exports.getAllPods = async (req: any, res: any) => {
     // their own pod list must be their own pods, otherwise every
     // private DM in the instance leaks into their sidebar (which made
     // xcjsam see — and try to post into — sam-demo's agent-rooms).
-    const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isPersonal = type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm';
-    if (req.userId) {
+    if (req.userId && !isCommunityScope) {
       const wantsAll = scope === 'all';
       const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
       const filterToMine = isPersonal || !wantsAll || !isAdmin;

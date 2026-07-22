@@ -1242,7 +1242,8 @@
     "filters": {
       "all": "All",
       "team": "Team",
-      "private": "Private"
+      "private": "Private",
+      "community": "Community"
     },
     "groups": {
       "pinned": "Pinned",
