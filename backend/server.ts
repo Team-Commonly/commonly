@@ -181,10 +181,13 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/pods', podRoutes);
 // Pod invite tokens — both `/api/pods/:podId/invites` (create) and
 // `/api/invites/:token` (resolve / redeem) live in the same router.
+// Route-order hazard: any bare-`/api` router with a two-segment `/pods/*`
+// GET must mount before `/api/pods`. Its `/:type/:id` catch-all would
+// otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
+app.use('/api/pods', podRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
