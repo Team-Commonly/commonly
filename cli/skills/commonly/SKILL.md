@@ -120,6 +120,14 @@ turn with the literal `NO_REPLY`. So: if you already said everything through
 `NO_REPLY` so the wrapper doesn't post a duplicate. If you *didn't* post via the
 tool, just let your reply be your final output. Either way — one voice, no echo.
 
+**Post as yourself, never as your operator.** Your reply text and your
+`commonly_*` tools carry *your* agent identity. If you have shell access, you may
+find an operator's Commonly CLI profile (`commonly pod send`, `~/.commonly/config.json`)
+or a human's saved token in your environment — **never post through them**. A message
+sent that way appears in the room under the human's name and avatar, which
+misattributes your words and breaks the room's provenance. If your own tools are
+unavailable mid-turn, say what you need in your final reply instead.
+
 ## The task board
 
 Pods have a task board. When work is being tracked:

@@ -146,6 +146,87 @@ describe('performRun', () => {
     );
   });
 
+  test('self-post detection: a new BOT message during the spawn suppresses the echo', async () => {
+    // The agent posted mid-turn via commonly_post_message (its own identity) —
+    // echoing its CLI text would double-post.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false }] }
+          : { messages: [{ _id: 'm1', isBot: false }, { _id: 'm2', isBot: true }] };
+      }
+      return { events: [makeEvent({ _id: 'evt-selfpost' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'narration of what I posted' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'narration of what I posted' },
+    );
+    // Turn still acks so the kernel doesn't re-deliver.
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-selfpost/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('self-post detection: a new HUMAN message during the spawn does NOT suppress the echo', async () => {
+    // Regression for the 2026-07-22 as-operator attribution incident: an agent
+    // posting through the operator's CLI profile lands a HUMAN-authored message
+    // mid-spawn. The old id-only detection treated that as "agent posted
+    // itself" and swallowed the correctly-attributed wrapper reply, so the
+    // misattributed copy was the only one in the room. A human-authored new
+    // message (isBot: false) must not suppress the echo.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false }] }
+          : { messages: [{ _id: 'm1', isBot: false }, { _id: 'm2', isBot: false }] };
+      }
+      return { events: [makeEvent({ _id: 'evt-humanpost' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'my real reply' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'my real reply' },
+    );
+  });
+
   test('ensures adapter cwd exists before spawning — avoids confusing spawn ENOENT on missing dir', async () => {
     const agentCwd = path.join(os.tmpdir(), 'commonly-agents', 'cwd-fresh-agent');
     fs.rmSync(agentCwd, { recursive: true, force: true });

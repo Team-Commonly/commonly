@@ -178,14 +178,17 @@ describe('performAttach', () => {
 });
 
 describe('buildDefaultEnvironment', () => {
-  test('returns null for adapters that do not consume --mcp-config (codex, stub)', () => {
-    expect(buildDefaultEnvironment('codex')).toBeNull();
+  test('returns null for adapters with no MCP consumption path (stub)', () => {
     expect(buildDefaultEnvironment('stub')).toBeNull();
     expect(buildDefaultEnvironment('does-not-exist')).toBeNull();
   });
 
-  test('returns a single mcp entry for claude with placeholder env values', () => {
-    const env = buildDefaultEnvironment('claude');
+  test.each(['claude', 'codex'])('returns a single mcp entry for %s with placeholder env values', (adapterName) => {
+    // codex joined the set after the 2026-07-22 as-operator attribution
+    // incident: an MCP-less codex agent has no sanctioned posting tool and
+    // falls back to whatever it finds in the shell (the operator's CLI
+    // profile — posting AS the human).
+    const env = buildDefaultEnvironment(adapterName);
     expect(env.mcp).toHaveLength(1);
     expect(env.mcp[0].name).toBe('commonly');
     expect(env.mcp[0].transport).toBe('stdio');
