@@ -6,6 +6,7 @@
 // "you've been invited to X — sign up to join" instead of a blank login wall.
 import express from 'express';
 import crypto, { createHash } from 'crypto';
+import mongoose from 'mongoose';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -88,6 +89,74 @@ router.post('/pods/:podId/invites', inviteWriteRateLimit, auth, async (req: any,
   }
 });
 
+// GET /api/pods/:podId/invites — list the active invite links a pod member
+// can manage. Revoked rows stay in the database for auditability but never
+// return to the shell.
+router.get('/pods/:podId/invites', inviteReadRateLimit, auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
+    const rawPodId = String(req.params.podId || '');
+    if (!mongoose.Types.ObjectId.isValid(rawPodId)) {
+      return res.status(404).json({ msg: 'Pod not found' });
+    }
+    const podId = new mongoose.Types.ObjectId(rawPodId);
+    const pod = await Pod.findById(podId);
+    if (!pod) return res.status(404).json({ msg: 'Pod not found' });
+    if (!isPodMember(pod, userId)) {
+      return res.status(403).json({ msg: 'Only pod members can manage invites' });
+    }
+    const invites = await PodInvite.find({ podId: pod._id, revokedAt: null })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'username profilePicture')
+      .lean();
+    return res.json(invites.map((invite: any) => ({
+      token: invite.token,
+      createdBy: invite.createdBy,
+      createdAt: invite.createdAt,
+      expiresAt: invite.expiresAt,
+      maxUses: invite.maxUses,
+      uses: Number(invite.useCount) || 0,
+    })));
+  } catch (err: any) {
+    console.error('List invites failed:', err.message);
+    return res.status(500).json({ msg: err.message || 'Failed to list invites' });
+  }
+});
+
+// DELETE /api/invites/:token — revoke an invite without deleting its audit
+// row. Any pod member may revoke any link, matching the existing member-level
+// permission to create links for that pod.
+router.delete('/invites/:token', inviteWriteRateLimit, auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
+    const rawToken = req.params.token;
+    if (typeof rawToken !== 'string') {
+      return res.status(404).json({ msg: 'Invite not found' });
+    }
+    const safeToken = String(rawToken).toLowerCase().replace(/[^a-f0-9]/g, '');
+    if (!safeToken || safeToken !== rawToken.toLowerCase() || !/^[a-f0-9]{32}$/.test(safeToken)) {
+      return res.status(404).json({ msg: 'Invite not found' });
+    }
+    const invite = await PodInvite.findOne({ token: safeToken });
+    if (!invite) return res.status(404).json({ msg: 'Invite not found' });
+    const pod = await Pod.findById(invite.podId);
+    if (!pod) return res.status(404).json({ msg: 'Pod not found' });
+    if (!isPodMember(pod, userId)) {
+      return res.status(403).json({ msg: 'Only pod members can manage invites' });
+    }
+    if (!invite.revokedAt) {
+      invite.revokedAt = new Date();
+      await invite.save();
+    }
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error('Revoke invite failed:', err.message);
+    return res.status(500).json({ msg: err.message || 'Failed to revoke invite' });
+  }
+});
+
 // GET /api/invites/:token/preview — ANONYMOUS, minimal disclosure. Lets the
 // redeem page show "you've been invited to <pod>" to logged-out visitors so
 // a shared link funnels into signup instead of a context-free login wall.
@@ -157,8 +226,8 @@ router.get('/invites/:token', inviteReadRateLimit, auth, async (req: any, res: a
 
 // POST /api/invites/:token/redeem — add caller to pod members (idempotent).
 // Increments useCount. Bypasses the pod's invite-only joinPolicy because
-// the token IS the invite. DM pods (agent-room/agent-dm/agent-admin) are
-// strictly 1:1 and refuse — start a fresh DM instead, same rule as joinPod.
+// the token IS the invite. Personal DM pods (agent-room/agent-dm) are
+// strictly 1:1 and refuse — agent-admin stays invitable by design.
 router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
@@ -172,6 +241,7 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
     const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
     if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
       return res.status(403).json({
+        code: 'dm_membership_refused',
         msg: 'DM pods are 1:1 — invite links cannot grant third-party access. Start a new DM instead.',
       });
     }

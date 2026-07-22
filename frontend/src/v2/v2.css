@@ -33,6 +33,7 @@
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
   --v2-danger: #ef4444;
+  --v2-danger-soft: rgba(239, 68, 68, 0.10);
 
   /* Agent role colors */
   --v2-pink: #f472b6;
@@ -3354,7 +3355,7 @@
 }
 
 .v2-modal {
-  width: min(440px, 100%);
+  width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
   background: var(--v2-surface);
@@ -3455,6 +3456,46 @@
   margin-top: 4px;
 }
 
+.v2-modal__section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+}
+
+.v2-invite-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.v2-invite-options__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+
+.v2-invite-options__select {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+}
+
+.v2-invite-options__select:focus {
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
 .v2-invite-link-row {
   display: flex;
   gap: 6px;
@@ -3466,6 +3507,7 @@
  * primary CTAs). Inside the row it needs to stay sized to its content so
  * the URL input gets the remaining flex space. Without this override the
  * input collapses to ~20px and the URL is invisible. */
+.v2-root .v2-invite-link-row button.v2-invite-card__cta,
 .v2-invite-link-row .v2-invite-card__cta {
   width: auto;
   flex-shrink: 0;
@@ -3488,6 +3530,148 @@
 
 .v2-invite-link:focus {
   border-color: var(--v2-accent);
+}
+
+.v2-invite-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-invite-manage__empty {
+  padding: 12px;
+  border: 1px dashed var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.v2-invite-manage__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v2-invite-manage__item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+}
+
+.v2-invite-manage__summary,
+.v2-invite-manage__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-invite-manage__summary {
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-invite-manage__summary strong {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-invite-manage__meta {
+  flex-wrap: wrap;
+  margin-top: 3px;
+  color: var(--v2-text-secondary);
+  font-size: 10px;
+}
+
+.v2-invite-manage__url {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 6px;
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font-mono);
+  font-size: 10px;
+  outline: none;
+}
+
+.v2-invite-manage__url:focus {
+  border-color: var(--v2-accent);
+}
+
+.v2-invite-manage__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.v2-root button.v2-invite-manage__action,
+.v2-invite-manage__action {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.v2-root button.v2-invite-manage__action:hover,
+.v2-invite-manage__action:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-invite-manage__action--danger,
+.v2-invite-manage__action--danger {
+  border-color: var(--v2-danger-soft);
+  color: var(--v2-danger);
+}
+
+.v2-root button.v2-invite-manage__action--danger:hover,
+.v2-invite-manage__action--danger:hover {
+  background: var(--v2-danger-soft);
+}
+
+.v2-root button.v2-invite-manage__action:disabled,
+.v2-invite-manage__action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .v2-modal__overlay {
+    padding: 12px;
+  }
+
+  .v2-invite-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v2-invite-link-row {
+    flex-wrap: wrap;
+  }
+
+  .v2-root .v2-invite-link-row button.v2-invite-card__cta,
+  .v2-invite-link-row .v2-invite-card__cta {
+    width: 100%;
+    height: 34px;
+  }
 }
 
 /* Standalone redeem page — `/v2/invite/:token`. Centered card so the

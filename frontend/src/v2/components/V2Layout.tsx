@@ -20,6 +20,7 @@ export type InspectorView =
   | { kind: 'artifact'; artifactId: string };
 
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
+const INVITE_BLOCKED_POD_TYPES = new Set(['agent-room', 'agent-dm']);
 
 const readInspectorCollapsed = (): boolean => {
   try {
@@ -128,6 +129,13 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
+  // Personal DMs are strictly 1:1. Keep agent-admin out of this set: it is
+  // intentionally N:1 and remains invitable (ADR-001 §3.10).
+  const inviteEnabled = Boolean(
+    selectedPodId
+    && detail.pod
+    && !INVITE_BLOCKED_POD_TYPES.has(String(detail.pod.type)),
+  );
 
   // The inspector is a separate column only when expanded. When collapsed,
   // it's not rendered at all and the chat extends to the right edge — the
@@ -160,7 +168,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
         onOpenMember={openInspectorMember}
-        onOpenInvite={selectedPodId ? openInvite : undefined}
+        onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openInspectorByFileName}
         onOpenMobileNav={openMobileNav}
       />
@@ -173,12 +181,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onOpenMember={openInspectorMember}
           onOpenArtifact={openInspectorArtifact}
           onBack={resetInspectorView}
-          onOpenInvite={openInvite}
+          onOpenInvite={inviteEnabled ? openInvite : undefined}
           pendingOpenFileName={pendingOpenFileName}
           onPendingOpenFileNameConsumed={clearPendingOpenFileName}
         />
       )}
-      {selectedPodId && detail.pod && (
+      {inviteEnabled && detail.pod && (
         <V2InviteModal
           open={inviteOpen}
           podId={detail.pod._id}

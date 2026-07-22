@@ -18,13 +18,16 @@ jest.mock('../../../models/PodInvite', () => ({
   PodInvite: { findOne: (...args) => mockFindOne(...args), create: jest.fn() },
 }));
 
+// eslint-disable-next-line import/no-unresolved, import/extensions
 const Pod = require('../../../models/Pod');
+
 jest.mock('../../../models/Pod');
 
 jest.mock('../../../services/agentIdentityService', () => ({
-  DM_POD_TYPES_GUARD: new Set(['agent-room', 'agent-dm', 'agent-admin']),
+  DM_POD_TYPES_GUARD: new Set(['agent-room', 'agent-dm']),
 }));
 
+// eslint-disable-next-line import/no-unresolved, import/extensions
 const routes = require('../../../routes/podInvites');
 
 const leanChain = (value) => ({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(value) }) });
@@ -75,9 +78,21 @@ describe('GET /api/invites/:token/preview (anonymous)', () => {
 
   it('404s DM-pod invites with the same message as unknown tokens', async () => {
     mockFindOne.mockResolvedValue(usableInvite());
-    Pod.findById.mockReturnValue(leanChain({ _id: 'p1', name: 'Admin: solo', type: 'agent-admin', members: ['a', 'b'] }));
+    Pod.findById.mockReturnValue(leanChain({
+      _id: 'p1', name: 'Aria and Pixel', type: 'agent-dm', members: ['a', 'b'],
+    }));
 
     const res = await request(app).get('/api/invites/tok123/preview').expect(404);
     expect(res.body.msg).toBe('Invite invalid or expired');
+  });
+
+  it('keeps agent-admin pods invitable because they are N:1, not personal DMs', async () => {
+    mockFindOne.mockResolvedValue(usableInvite());
+    Pod.findById.mockReturnValue(leanChain({
+      _id: 'p1', name: 'Admin room', type: 'agent-admin', members: ['a', 'b'],
+    }));
+
+    const res = await request(app).get('/api/invites/tok123/preview').expect(200);
+    expect(res.body.pod.name).toBe('Admin room');
   });
 });

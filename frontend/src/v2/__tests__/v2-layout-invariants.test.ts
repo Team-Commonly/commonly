@@ -134,4 +134,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(chip).toContain('max-width: 100%');
     expect(chip).toContain('white-space: normal');
   });
+
+  test('invite management controls collapse to one column on phones', () => {
+    // The modal is wider than the mobile shell and carries two selects plus a
+    // URL/copy row. At <=480px both must wrap or the link input pushes the
+    // Copy action beyond the viewport.
+    expect(ruleBody(v2, '.v2-invite-options')).toContain('repeat(2, minmax(0, 1fr))');
+    expect(v2).toContain('.v2-invite-options {\n    grid-template-columns: minmax(0, 1fr)');
+    expect(v2).toContain('.v2-invite-link-row {\n    flex-wrap: wrap');
+    expect(v2).toContain('.v2-root .v2-invite-link-row button.v2-invite-card__cta,');
+  });
 });
