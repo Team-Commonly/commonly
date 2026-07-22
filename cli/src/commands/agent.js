@@ -21,7 +21,13 @@ import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
-import { getSession, setSession, clearSessions } from '../lib/session-store.js';
+import {
+  getSession,
+  setSession,
+  clearSessions,
+  wasEventHandled,
+  recordHandledEvent,
+} from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
@@ -542,13 +548,23 @@ export const performRun = ({
       for (const event of events) {
         if (!running) break;
         let result;
-        try {
-          result = await processEvent(event);
-        } catch (err) {
-          // Spawn failed — skip ack, let kernel re-deliver (ADR-005).
-          log(`[${event.type}] spawn error: ${err.message}`);
-          onError?.(err);
-          continue;
+        if (wasEventHandled(agentName, event._id)) {
+          result = { outcome: 'no_action', reason: 'duplicate-delivery' };
+          log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
+        } else {
+          try {
+            result = await processEvent(event);
+          } catch (err) {
+            // Spawn failed — do not record or ack, so the kernel can re-deliver
+            // the event after the local runtime recovers (ADR-005).
+            log(`[${event.type}] spawn error: ${err.message}`);
+            onError?.(err);
+            continue;
+          }
+          // Record after successful processing but before ack. If the ack
+          // fails, the next delivery is skipped and re-acked instead of
+          // burning a second model turn for work that already completed.
+          recordHandledEvent(agentName, event._id);
         }
         try {
           await client.post(`/api/agents/runtime/events/${event._id}/ack`, { result });
@@ -703,7 +719,8 @@ export const performInit = async ({
  *      7 days after all installs go inactive — we don't force-revoke here
  *      because the token may legitimately still be in use for another pod.
  *   2. Local token file at ~/.commonly/tokens/<name>.json
- *   3. Local session store at ~/.commonly/sessions/<name>.json
+ *   3. Local session + handled-event stores at
+ *      ~/.commonly/sessions/<name>{,.events}.json
  *
  * Idempotent: if the backend returns 404 (already uninstalled elsewhere), we
  * still clean up local files so the CLI state stays in sync with reality.
