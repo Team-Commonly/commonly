@@ -9,6 +9,7 @@
 // `mock` (Jest's hoisting-safety allow-list), so every mock binding here is
 // prefixed accordingly.
 
+jest.mock('../../../middleware/auth', () => ({ touchLastActive: jest.fn() }));
 const mockSecret = { hash: jest.fn(), randomSecret: jest.fn() };
 jest.mock('../../../utils/secret', () => mockSecret);
 

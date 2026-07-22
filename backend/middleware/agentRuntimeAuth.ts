@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
 import User, { IUser } from '../models/User';
+// Throttled fail-open lastActive writer (shared with human auth — see #668).
+// Without this, every runtime-token agent's User.lastActive stays frozen at
+// its creation date, so profiles/rosters show working agents as never active.
+import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 
 // eslint-disable-next-line global-require
@@ -92,6 +96,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       const authorizedPodIds = Array.from(new Set([...installationPodIds, ...dmPodIds]));
 
       req.agentUser = agentUser;
+      touchLastActive(String(agentUser._id));
       req.agentInstallations = installations as never[];
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
@@ -157,6 +162,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       });
       if (botUser) {
         req.agentUser = botUser;
+        touchLastActive(String(botUser._id));
       }
     } catch (err: unknown) {
       console.warn('[agentRuntimeAuth] failed to resolve bot user for legacy token path:', (err as Error).message);
