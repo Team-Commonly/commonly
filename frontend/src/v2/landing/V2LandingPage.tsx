@@ -94,16 +94,26 @@ const RotatingTerm: React.FC<{ terms: string[] }> = ({ terms }) => {
 
   // Static fallback shows the closing term — the sentence must stand alone.
   const staticIndex = terms.length - 1;
+  const shownIndex = rotating ? active : staticIndex;
   return (
+    // The sizer holds ONLY the active term in normal flow, so the slot width
+    // tracks that term instead of the widest one. Critical for suffixed
+    // grammars (zh 「与你的___对话」): a fixed widest-term slot would strand
+    // the suffix far to the right on short terms. English has no suffix, so
+    // this is invisible there. Animated terms are absolutely positioned over
+    // the sizer.
     <span className="v2-landing__rotator" aria-hidden="true">
-      {terms.map((term, i) => (
-        <span
-          key={term}
-          className={`v2-landing__rotator-term${(rotating ? i === active : i === staticIndex) ? ' v2-landing__rotator-term--active' : ''}`}
-        >
-          {term}
-        </span>
-      ))}
+      <span className="v2-landing__rotator-sizer">{terms[shownIndex]}</span>
+      <span className="v2-landing__rotator-stack">
+        {terms.map((term, i) => (
+          <span
+            key={term}
+            className={`v2-landing__rotator-term${i === shownIndex ? ' v2-landing__rotator-term--active' : ''}`}
+          >
+            {term}
+          </span>
+        ))}
+      </span>
     </span>
   );
 };
