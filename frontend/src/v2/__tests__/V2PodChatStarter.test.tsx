@@ -1,6 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import {
+  fireEvent, render, screen, waitFor,
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2PodChat from '../components/V2PodChat';
 import { AuthContext } from '../../context/AuthContext';
@@ -11,6 +13,12 @@ import { AuthContext } from '../../context/AuthContext';
 jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false }),
 }));
+
+jest.mock('../components/V2MessageBubble', () => {
+  const MockV2MessageBubble = () => <div>Rendered message</div>;
+  MockV2MessageBubble.displayName = 'MockV2MessageBubble';
+  return MockV2MessageBubble;
+});
 
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
 beforeAll(() => {
@@ -59,24 +67,34 @@ const makeDetail = (overrides = {}) => ({
   ...overrides,
 });
 
-const renderChat = (detail) => render(
+const renderChat = (detail, props = {}) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
-      <V2PodChat detail={detail} />
+      <V2PodChat detail={detail} {...props} />
     </MemoryRouter>
   </AuthContext.Provider>,
 );
 
-describe('V2PodChat starter workspace empty state', () => {
-  test('solo empty pod shows the getting-started onboarding', () => {
+const makeAgentRoom = (overrides = {}) => makeDetail({
+  pod: { _id: 'agent-room-1', name: 'Aria', type: 'agent-room' },
+  members: [
+    { _id: 'u1', username: 'solo-user', isBot: false },
+    { _id: 'agent-1', username: 'openclaw-aria', isBot: true },
+  ],
+  agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' }],
+  ...overrides,
+});
+
+describe('V2PodChat teaching empty states', () => {
+  test('regular empty pods teach visible membership and @-mentions', () => {
     renderChat(makeDetail());
 
-    expect(screen.getByText(/welcome to your workspace/i)).toBeInTheDocument();
-    expect(screen.getByText(/connect your agent \(claude code, cursor, codex\)/i)).toBeInTheDocument();
-    expect(screen.getByText(/see your team/i)).toBeInTheDocument();
+    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+    expect(screen.getByText(/use @ to mention an agent or teammate/i)).toBeInTheDocument();
+    expect(screen.getByText(/everyone in the member list can see and reply/i)).toBeInTheDocument();
   });
 
-  test('multi-member pod keeps the generic empty state', () => {
+  test('multi-member regular pods use the same teaching state', () => {
     renderChat(makeDetail({
       members: [
         { _id: 'u1', username: 'solo-user', isBot: false },
@@ -84,7 +102,65 @@ describe('V2PodChat starter workspace empty state', () => {
       ],
     }));
 
-    expect(screen.getByText(/talk to your team/i)).toBeInTheDocument();
-    expect(screen.queryByText(/welcome to your workspace/i)).not.toBeInTheDocument();
+    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
+  });
+
+  test('keeps the agent-to-agent empty state unchanged', () => {
+    renderChat(makeDetail({
+      pod: { _id: 'agent-dm-1', name: 'Aria and Pixel', type: 'agent-dm' },
+      members: [
+        { _id: 'agent-1', username: 'Aria', isBot: true },
+        { _id: 'agent-2', username: 'Pixel', isBot: true },
+      ],
+    }));
+
+    expect(screen.getByText("Aria and Pixel haven't talked yet")).toBeInTheDocument();
+    expect(screen.getByText("They'll DM each other when one of them needs the other's help.")).toBeInTheDocument();
+  });
+});
+
+describe('V2PodChat starter prompts', () => {
+  test('render for an empty agent room after first-run and never auto-send', async () => {
+    const detail = makeAgentRoom();
+    renderChat(detail);
+
+    const prompt = screen.getByRole('button', {
+      name: 'Introduce yourself — what are you best at?',
+    });
+    expect(screen.getByRole('group', { name: 'Conversation starters' })).toBeInTheDocument();
+    expect(screen.getByRole('button', {
+      name: "Here's what I'm working on — where can you help?",
+    })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'What should I ask you first?' })).toBeInTheDocument();
+
+    fireEvent.click(prompt);
+
+    const composer = screen.getByPlaceholderText('Message Aria…');
+    expect(composer).toHaveValue('Introduce yourself — what are you best at?');
+    await waitFor(() => expect(composer).toHaveFocus());
+    expect(detail.sendMessage).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
+  });
+
+  test('also render for a writable human-agent DM', () => {
+    renderChat(makeAgentRoom({
+      pod: { _id: 'agent-dm-1', name: 'Aria DM', type: 'agent-dm' },
+    }));
+
+    expect(screen.getByRole('group', { name: 'Conversation starters' })).toBeInTheDocument();
+  });
+
+  test('hide after a message exists or while the first-run hero is visible', () => {
+    const withMessage = renderChat(makeAgentRoom({
+      messages: [{ id: 'm1', content: 'Hello', user: { username: 'Aria' } }],
+    }));
+    expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
+    withMessage.unmount();
+
+    renderChat(makeAgentRoom(), {
+      firstRunVisible: true,
+      firstRunHero: <div>First-run guide</div>,
+    });
+    expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
   });
 });

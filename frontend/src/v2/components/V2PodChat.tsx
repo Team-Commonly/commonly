@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2MessageBubble from './V2MessageBubble';
 import {
@@ -13,6 +12,12 @@ import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
 
 const PLAN_MODE_KEY = 'v2.podMode';
+
+const STARTER_PROMPTS = [
+  'Introduce yourself — what are you best at?',
+  "Here's what I'm working on — where can you help?",
+  'What should I ask you first?',
+] as const;
 
 type PodMode = 'plan' | 'execute';
 
@@ -150,7 +155,6 @@ const Icon = ({ d }: { d: string }) => (
 
 const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
-  const navigate = useNavigate();
   const api = useV2Api();
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
@@ -560,6 +564,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
     }
   };
 
+  const handleStarterPrompt = (prompt: string) => {
+    setDraft(prompt);
+    setMentionOpen(false);
+    requestAnimationFrame(() => {
+      const input = composerInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(prompt.length, prompt.length);
+    });
+  };
+
   // Composer attach: handles both images (sends as standalone image message,
   // legacy v2 behavior) and other file kinds (PDF / md / txt / csv / json,
   // inserts an [[upload:fileName|originalName|size|kind]] directive into the
@@ -728,39 +743,16 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                       <div className="v2-empty__text">They&apos;ll DM each other when one of them needs the other&apos;s help.</div>
                     </>
                   ) : isAgentRoom && botMembers.length === 1 ? (
-                    // Sprint B4: first-message coaching for the 60s "install
-                    // your first agent → talk to it" wedge. Shows the agent's
-                    // display name + 3 generic suggestion chips that pre-fill
-                    // the composer. Pod-summarizer agent-rooms ride this same
-                    // branch — generic chips degrade gracefully for those.
                     (() => {
                       const rawUsername = botMembers[0]?.username || '';
                       const agentName = agentDisplayNames.get(rawUsername.toLowerCase())
                         || rawUsername
                         || 'agent';
-                      const suggestions = [
-                        `Hey ${agentName}, what can you do for me?`,
-                        'What are you working on right now?',
-                        'Help me get started — what should I try first?',
-                      ];
                       return (
                         <>
                           <div className="v2-empty__title">Say hi to {agentName}</div>
                           <div className="v2-empty__text">
-                            This is your 1:1 with {agentName}. Try one of these, or write your own:
-                          </div>
-                          <div className="v2-empty__chips" role="list">
-                            {suggestions.map((s) => (
-                              <button
-                                key={s}
-                                type="button"
-                                role="listitem"
-                                className="v2-empty__chip"
-                                onClick={() => handleSend(s)}
-                              >
-                                {s}
-                              </button>
-                            ))}
+                            This is your private 1:1. Choose a prompt below, or write your own.
                           </div>
                         </>
                       );
@@ -770,46 +762,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
                       <div className="v2-empty__title">No messages yet</div>
                       <div className="v2-empty__text">This is a private 1:1 conversation. Say hello to get started.</div>
                     </>
-                  ) : (members || []).length <= 1 && botMembers.length === 0 ? (
-                    // Starter workspace: the user is alone in an empty pod
-                    // (the default "My Workspace" every signup gets, or any
-                    // solo pod). Scripted onboarding — the checklist tasks
-                    // seeded at signup live on the board; this points the
-                    // way to the first one.
-                    <>
-                      <div className="v2-empty__title">Welcome to your workspace</div>
-                      <div className="v2-empty__text">
-                        This is where you and your agents work together. Agents you
-                        connect keep their memory here — everything they learn stays
-                        with them. Start with the checklist on your task board, or
-                        jump straight in:
-                      </div>
-                      <div className="v2-empty__chips" role="list">
-                        <button
-                          type="button"
-                          role="listitem"
-                          className="v2-empty__chip"
-                          onClick={() => navigate('/v2/agents/byo')}
-                        >
-                          Connect your agent (Claude Code, Cursor, Codex)
-                        </button>
-                        {/* Points at Your Team (not the marketplace) while the
-                            marketplace sits behind its coming-soon wall — a
-                            fresh user's second CTA must not be a dead end. */}
-                        <button
-                          type="button"
-                          role="listitem"
-                          className="v2-empty__chip"
-                          onClick={() => navigate('/v2/agents')}
-                        >
-                          See your team
-                        </button>
-                      </div>
-                    </>
                   ) : (
                     <>
-                      <div className="v2-empty__title">Talk to your team</div>
-                      <div className="v2-empty__text">Type a message, or @-mention an agent to direct your first task.</div>
+                      <div className="v2-empty__title">This pod is quiet</div>
+                      <div className="v2-empty__text">
+                        Use @ to mention an agent or teammate—everyone in the member list can see and reply.
+                      </div>
                     </>
                   )}
                 </div>
@@ -829,6 +787,26 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVis
             </div>
 
             <TypingIndicator agents={typingAgents} />
+
+            {!isReadOnly
+              && (isAgentRoom || isAgentDm)
+              && !loading
+              && messages.length === 0
+              && !firstRunVisible
+              && !draft.trim() && (
+                <div className="v2-chat__starter-prompts" role="group" aria-label="Conversation starters">
+                  {STARTER_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      className="v2-chat__starter-prompt"
+                      onClick={() => handleStarterPrompt(prompt)}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+            )}
 
             {isReadOnly ? (
               <div className="v2-chat__readonly" role="note" aria-label="Read-only conversation">

@@ -974,6 +974,45 @@
   font-size: 13px;
 }
 
+.v2-pods__community {
+  flex-shrink: 0;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+}
+
+.v2-pods__community-title {
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.v2-pods__community-copy {
+  margin-top: 3px;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-root button.v2-pods__community-button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 10px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-root button.v2-pods__community-button:hover {
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+}
+
 /* ---------- Pod chat (main) ---------- */
 
 .v2-chat {
@@ -1476,6 +1515,38 @@
   border-top: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
   flex-shrink: 0;
+}
+
+.v2-chat__starter-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  padding: 10px 24px 0;
+  background: var(--v2-surface);
+  flex-shrink: 0;
+}
+
+.v2-root button.v2-chat__starter-prompt {
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 11px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+
+.v2-root button.v2-chat__starter-prompt:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
 }
 
 .v2-chat__composer-input-wrap {
@@ -4431,37 +4502,6 @@
   font-size: 13px;
   text-align: center;
   max-width: 360px;
-}
-
-/* Sprint B4 — first-message coaching chips in agent-room empty state.
- * Clickable suggestions that pre-fill the composer; same border-not-shadow
- * aesthetic as the rest of the v2 inspector cards. Wraps so the row fits
- * narrow side-panel layouts. */
-.v2-empty__chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  max-width: 480px;
-}
-
-.v2-root button.v2-empty__chip {
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
-}
-
-.v2-root button.v2-empty__chip:hover {
-  background: var(--v2-surface-hover);
-  border-color: var(--v2-accent-subtle);
-  color: var(--v2-text-primary);
 }
 
 .v2-spinner {

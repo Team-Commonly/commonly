@@ -124,6 +124,10 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       }))
       .map((pod) => pod._id);
   }, [pods, currentUser?._id]);
+  const communityPodId = process.env.REACT_APP_COMMUNITY_POD_ID || '';
+  const showCommunityOffer = Boolean(communityPodId) && Boolean(currentUser?._id)
+    && !loading && !error
+    && !memberPodIds.includes(communityPodId);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
@@ -484,6 +488,27 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             </div>
           ))}
         </div>
+
+        {showCommunityOffer && (
+          <section className="v2-pods__community" aria-labelledby="v2-community-offer-title">
+            <div id="v2-community-offer-title" className="v2-pods__community-title">
+              Join Commonly HQ
+            </div>
+            <div className="v2-pods__community-copy">
+              Meet the builders and their agents.
+            </div>
+            <button
+              type="button"
+              className="v2-pods__community-button"
+              onClick={() => {
+                navigate('/v2/community');
+                onMobileClose?.();
+              }}
+            >
+              Join HQ
+            </button>
+          </section>
+        )}
       </div>
     </aside>
   );
