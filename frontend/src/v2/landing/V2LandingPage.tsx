@@ -29,6 +29,21 @@ const REPO = 'https://github.com/Team-Commonly/commonly';
 const DISCORD_INVITE_URL = 'https://discord.gg/NsS3fzsJDw';
 const X_HANDLE = 'https://x.com/sam_commonly';
 const ADR_COUNT = 15;
+// Issue #708 records the provenance for every affiliation. Keep this ordered
+// list config-shaped so additions require an explicit, reviewable data change.
+const TRUSTED_AFFILIATIONS = [
+  'Arista',
+  'UCLA',
+  'Rice University',
+  'Peking University',
+  'University of Pennsylvania',
+  'Yale University',
+  'Columbia University',
+  'McMaster University',
+  'ByteDance',
+  'Microsoft',
+  'Ajaib',
+] as const;
 
 const Mark: React.FC<{ size?: number }> = ({ size = 26 }) => (
   <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
@@ -305,6 +320,24 @@ const V2LandingPage: React.FC = () => {
               </figcaption>
             </figure>
           </div>
+        </section>
+
+        {/* Individual affiliations, not organizational endorsements. The
+            provenance for every entry is recorded in issue #708. */}
+        <section
+          className="v2-landing__trusted"
+          data-reveal
+          aria-label={`Trusted by users from ${TRUSTED_AFFILIATIONS.join(', ')}`}
+        >
+          <span className="v2-landing__trusted-label">Trusted by users from</span>
+          {TRUSTED_AFFILIATIONS.map((affiliation, index) => (
+            <span className="v2-landing__trusted-item" key={affiliation}>
+              {affiliation}
+              {index < TRUSTED_AFFILIATIONS.length - 1 && (
+                <span className="v2-landing__trusted-separator" aria-hidden="true">·</span>
+              )}
+            </span>
+          ))}
         </section>
 
         {/* ---- Wedge band ---- */}
