@@ -22,6 +22,7 @@
 
 .v2-landing__bar,
 .v2-landing__hero,
+.v2-landing__trusted,
 .v2-landing__section,
 .v2-landing__wedge,
 .v2-landing__proof,
@@ -235,6 +236,43 @@
   line-height: 1.45;
   color: var(--v2-text-tertiary);
   text-align: center;
+}
+
+/* ---------- Affiliation proof strip ---------- */
+.v2-landing__trusted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-tertiary);
+  text-align: center;
+}
+
+.v2-landing__trusted-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v2-text-muted);
+}
+
+.v2-landing__trusted-item {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.v2-landing__trusted-separator {
+  color: var(--v2-border-strong);
 }
 
 /* In-action: one full feature row per screenshot — framed shot on one

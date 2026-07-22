@@ -40,6 +40,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
+  const landing = read('../landing/v2-landing.css');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -143,5 +144,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-invite-options {\n    grid-template-columns: minmax(0, 1fr)');
     expect(v2).toContain('.v2-invite-link-row {\n    flex-wrap: wrap');
     expect(v2).toContain('.v2-root .v2-invite-link-row button.v2-invite-card__cta,');
+  });
+
+  test('landing trusted-by affiliations wrap instead of overflowing on phones', () => {
+    // Eleven provenance-backed names fit one line on desktop but need several
+    // lines at 390px. The flex-wrap rule is the load-bearing overflow guard.
+    const trusted = ruleBody(landing, '.v2-landing__trusted');
+    expect(trusted).toContain('display: flex');
+    expect(trusted).toContain('flex-wrap: wrap');
+    expect(trusted).toContain('justify-content: center');
   });
 });

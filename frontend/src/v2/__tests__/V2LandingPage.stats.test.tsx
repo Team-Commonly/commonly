@@ -19,7 +19,7 @@ const renderLanding = () => render(
   </MemoryRouter>,
 );
 
-describe('V2LandingPage proof stats', () => {
+describe('V2LandingPage public proof', () => {
   let playSpy: jest.SpyInstance;
 
   beforeAll(() => {
@@ -60,5 +60,31 @@ describe('V2LandingPage proof stats', () => {
     expect(stats.queryByText('people')).not.toBeInTheDocument();
     expect(stats.queryByText('ADRs')).not.toBeInTheDocument();
     expect(statsRow?.children).toHaveLength(3);
+  });
+
+  it('renders the provenance-backed trusted-by affiliations', () => {
+    mockAxiosGet.mockResolvedValue({ data: {} });
+
+    const { container } = renderLanding();
+
+    expect(screen.getByText('Trusted by users from')).toBeInTheDocument();
+    expect(screen.getByText('Arista')).toBeInTheDocument();
+    expect(screen.getByText('Peking University')).toBeInTheDocument();
+    expect(screen.getByText('Ajaib')).toBeInTheDocument();
+    expect(Array.from(container.querySelectorAll('.v2-landing__trusted-item')).map(
+      (node) => node.textContent?.replace('·', '').trim(),
+    )).toEqual([
+      'Arista',
+      'UCLA',
+      'Rice University',
+      'Peking University',
+      'University of Pennsylvania',
+      'Yale University',
+      'Columbia University',
+      'McMaster University',
+      'ByteDance',
+      'Microsoft',
+      'Ajaib',
+    ]);
   });
 });
