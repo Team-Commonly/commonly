@@ -218,7 +218,7 @@ describe('V2PodChat just-created Pod starter panel', () => {
     expect(composer).toHaveFocus();
   });
 
-  test('stays absent without the flag, after messages arrive, or behind first-run', async () => {
+  test('stays absent without the flag or after messages arrive', async () => {
     const noFlag = renderChat(makeDetail());
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
     expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
@@ -231,7 +231,9 @@ describe('V2PodChat just-created Pod starter panel', () => {
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
     await waitFor(() => expect(sessionStorage.getItem('v2.justCreated.p1')).toBeNull());
     withMessage.unmount();
+  });
 
+  test('keeps the first-run guide above the starter panel', () => {
     sessionStorage.setItem('v2.justCreated.p1', '1');
     renderChat(makeDetail(), {
       firstRunVisible: true,
@@ -239,6 +241,13 @@ describe('V2PodChat just-created Pod starter panel', () => {
     });
     expect(screen.getByText('First-run guide')).toBeInTheDocument();
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+  });
+
+  test('does not mint an invite when the starter panel does not render', () => {
+    renderChat(makeDetail());
+
+    expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(screen.getByText('This pod is quiet')).toBeInTheDocument();
     expect(axios.post).not.toHaveBeenCalled();
   });
 
