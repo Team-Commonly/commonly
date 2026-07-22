@@ -1,0 +1,225 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useV2Api } from '../hooks/useV2Api';
+
+const POLL_INTERVAL_MS = 3_000;
+export const FIRST_RUN_DISMISSED_KEY = 'v2.firstRun.dismissed';
+export const FIRST_RUN_STARTED_KEY = 'v2.firstRun.started';
+
+interface ConnectedAgent {
+  agentName: string;
+  instanceId: string;
+  podId: string;
+}
+
+export interface AgentConnectionStatus {
+  issued: boolean;
+  connected: boolean;
+  lastUsedAt: string | null;
+  connectedAgent: ConnectedAgent | null;
+}
+
+const readFlag = (key: string): boolean => {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const writeFlag = (key: string, value: boolean): void => {
+  try {
+    if (value) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in private/sandboxed contexts. The current
+    // render still behaves correctly; only persistence is lost.
+  }
+};
+
+const StepMark: React.FC<{ done: boolean; children: React.ReactNode }> = ({ done, children }) => (
+  <span className={`v2-first-run__step-mark${done ? ' v2-first-run__step-mark--done' : ''}`} aria-hidden="true">
+    {done ? '✓' : children}
+  </span>
+);
+
+interface V2FirstRunHeroProps {
+  onVisibilityChange?: (visible: boolean) => void;
+}
+
+const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) => {
+  const api = useV2Api();
+  const navigate = useNavigate();
+  const [dismissed, setDismissed] = useState(() => readFlag(FIRST_RUN_DISMISSED_KEY));
+  // `engaged` is a session latch. Once a zero-install user sees the hero, an
+  // install appearing during the poll must advance the card to Waiting / Say
+  // hello rather than make it disappear mid-flow. The persisted started flag
+  // carries that latch across the BYO setup tab and a page reload.
+  const [engaged, setEngaged] = useState(() => readFlag(FIRST_RUN_STARTED_KEY));
+  const [status, setStatus] = useState<AgentConnectionStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [openingRoom, setOpeningRoom] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
+
+  const pollStatus = useCallback(async () => {
+    try {
+      const next = await api.get<AgentConnectionStatus>('/api/users/me/agent-connection');
+      setStatus(next);
+      setStatusError(null);
+      if (!next.issued) setEngaged(true);
+    } catch {
+      setStatusError('Connection status is temporarily unavailable. We’ll keep checking.');
+    }
+  }, [api]);
+
+  // Reserve the empty-state slot while the ownership probe is unresolved,
+  // but do not flash the full onboarding card for an established user.
+  const shouldProbe = !dismissed && (engaged || status === null || status.issued === false);
+  const visible = !dismissed && (engaged || status?.issued === false);
+
+  useEffect(() => {
+    onVisibilityChange?.(shouldProbe);
+  }, [onVisibilityChange, shouldProbe]);
+
+  useEffect(() => {
+    if (!shouldProbe || status?.connected) return undefined;
+
+    let active = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const run = () => {
+      if (!active) return;
+      void pollStatus();
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const start = (immediate: boolean) => {
+      stop();
+      if (document.visibilityState === 'hidden') return;
+      if (immediate) run();
+      timer = setInterval(run, POLL_INTERVAL_MS);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') stop();
+      else start(true);
+    };
+
+    // The first mount checks immediately. A state-driven effect restart (for
+    // example issued:false arriving) only replaces the interval; firing again
+    // here would duplicate every initial status request.
+    start(status === null);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      active = false;
+      stop();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [pollStatus, shouldProbe, status?.connected]);
+
+  if (!visible) return null;
+
+  const openSetup = () => {
+    writeFlag(FIRST_RUN_STARTED_KEY, true);
+    setEngaged(true);
+  };
+
+  const dismiss = () => {
+    writeFlag(FIRST_RUN_DISMISSED_KEY, true);
+    writeFlag(FIRST_RUN_STARTED_KEY, false);
+    setDismissed(true);
+  };
+
+  const sayHello = async () => {
+    const agent = status?.connectedAgent;
+    if (!agent || openingRoom) return;
+    setOpeningRoom(true);
+    setRoomError(null);
+    try {
+      const data = await api.post<{ room?: { _id?: string } }>('/api/agents/runtime/room', {
+        agentName: agent.agentName,
+        instanceId: agent.instanceId,
+        podId: agent.podId,
+      });
+      const roomId = data.room?._id;
+      if (!roomId) throw new Error('Agent room not returned');
+      writeFlag(FIRST_RUN_DISMISSED_KEY, true);
+      writeFlag(FIRST_RUN_STARTED_KEY, false);
+      navigate(`/v2/pods/${roomId}`);
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
+      setRoomError(message || 'Could not open your 1:1 yet. Try again.');
+      setOpeningRoom(false);
+    }
+  };
+
+  return (
+    <section className="v2-first-run" aria-labelledby="v2-first-run-title">
+      <div className="v2-first-run__eyebrow">Your first five minutes</div>
+      <div className="v2-first-run__heading-row">
+        <div>
+          <h2 id="v2-first-run-title" className="v2-first-run__title">Bring your agent into the room</h2>
+          <p className="v2-first-run__lede">
+            Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.
+          </p>
+        </div>
+        <button type="button" className="v2-first-run__skip" onClick={dismiss}>Skip for now</button>
+      </div>
+
+      <ol className="v2-first-run__steps">
+        <li className="v2-first-run__step">
+          <StepMark done={Boolean(status?.issued)}>1</StepMark>
+          <div className="v2-first-run__step-body">
+            <strong>Connect your agent</strong>
+            <span>Generate its private runtime token and copy the setup command for your tool.</span>
+            {!status?.issued && (
+              <a
+                className="v2-first-run__setup"
+                href="/v2/agents/byo"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={openSetup}
+              >
+                Open connection setup
+                <span aria-hidden="true">↗</span>
+              </a>
+            )}
+          </div>
+        </li>
+
+        <li className="v2-first-run__step">
+          <StepMark done={Boolean(status?.connected)}>2</StepMark>
+          <div className="v2-first-run__step-body">
+            <strong>{status?.connected ? 'Connected' : 'Start your agent'}</strong>
+            <span className={status?.connected ? 'v2-first-run__connected' : ''} role="status" aria-live="polite">
+              {status?.connected ? '✓ Connected' : 'Waiting for your agent to connect…'}
+            </span>
+            {statusError && <span className="v2-first-run__error">{statusError}</span>}
+          </div>
+        </li>
+
+        <li className="v2-first-run__step">
+          <StepMark done={false}>3</StepMark>
+          <div className="v2-first-run__step-body">
+            <strong>Start with one hello</strong>
+            <span>Your agent gets its own durable identity and private 1:1 with you.</span>
+            {status?.connected && status.connectedAgent && (
+              <button
+                type="button"
+                className="v2-first-run__hello"
+                onClick={sayHello}
+                disabled={openingRoom}
+              >
+                {openingRoom ? 'Opening…' : 'Say hello'}
+              </button>
+            )}
+            {roomError && <span className="v2-first-run__error">{roomError}</span>}
+          </div>
+        </li>
+      </ol>
+    </section>
+  );
+};
+
+export default V2FirstRunHero;

@@ -257,6 +257,10 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
 
 AgentInstallationSchema.index({ agentName: 1, podId: 1, instanceId: 1 }, { unique: true });
 AgentInstallationSchema.index({ podId: 1, status: 1 });
+// First-run connection status polls active installs by their human owner.
+// Keep that ownership lookup indexed so the 3s UI poll never scans the full
+// installation collection as the marketplace grows.
+AgentInstallationSchema.index({ installedBy: 1, status: 1 });
 
 AgentInstallationSchema.statics.getInstalledAgents = function (podId: Types.ObjectId) {
   return this.find({ podId, status: 'active' }).lean();

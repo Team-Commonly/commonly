@@ -117,6 +117,11 @@ const writeMode = (podId: string, mode: PodMode) => {
 interface V2PodChatProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
+  // A status-gated onboarding card supplied by V2Layout. It sits inside the
+  // pod transcript rather than replacing the pod, so the workspace header,
+  // composer, task board, and mobile navigation remain reachable.
+  firstRunHero?: React.ReactNode;
+  firstRunVisible?: boolean;
   // Inspector wiring — when present, the avatar group becomes the "show team"
   // entry. Inspector itself is rendered by V2Layout so this is just the
   // hand-off point.
@@ -143,7 +148,7 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
+const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunHero, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
   const { pod, members, messages, agents, sendMessage, loading, error } = detail;
   const navigate = useNavigate();
   const api = useV2Api();
@@ -711,10 +716,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, inspectorCollapsed, onTog
                   {error}
                 </div>
               )}
+              {firstRunHero}
               {loading && messages.length === 0 && (
                 <div className="v2-empty"><span className="v2-spinner" /></div>
               )}
-              {!loading && messages.length === 0 && (
+              {!firstRunVisible && !loading && messages.length === 0 && (
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>

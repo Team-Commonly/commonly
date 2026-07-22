@@ -95,4 +95,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('background: var(--v2-surface)');
     expect(rule).toContain('border: 1px solid var(--v2-border)');
   });
+
+  test('the first-run card and message pane shrink to the mobile content width', () => {
+    // The rail remains visible on phones, leaving ~326px at a 390px viewport.
+    // A fixed-width onboarding card would overflow behind the rail; both the
+    // card cap and reduced transcript gutter are load-bearing for that layout.
+    expect(ruleBody(v2, '.v2-first-run')).toContain('width: min(720px, 100%)');
+    expect(v2).toContain('.v2-chat__messages {\n    padding-inline: 14px');
+  });
+
+  test('the first-run setup CTA beats the global inherited anchor color', () => {
+    // `.v2-root a { color: inherit }` outranks a bare class selector. The
+    // first browser pass rendered blue text on the blue CTA until this
+    // compound selector matched/exceeded the reset specificity.
+    const rule = ruleBody(
+      v2,
+      '.v2-root a.v2-first-run__setup,\n.v2-root button.v2-first-run__hello',
+    );
+    expect(rule).toContain('background: var(--v2-accent)');
+    expect(rule).toContain('color: #fff');
+  });
 });
