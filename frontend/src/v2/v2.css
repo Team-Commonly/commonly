@@ -141,34 +141,77 @@
 
 /* ---------- Language switch ---------- */
 
+/* Language dropdown. The trigger deliberately reads like a plain nav
+   option (no pill chrome) so it sits naturally among nav links; the menu
+   is a small anchored card. */
 .v2-lang-switch {
+  position: relative;
+  display: inline-flex;
+}
+
+.v2-lang-switch__trigger {
   display: inline-flex;
   align-items: center;
-  padding: 2px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-pill);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-lang-switch__option {
-  min-width: 30px;
-  min-height: 24px;
-  padding: 0 7px;
-  border-radius: var(--v2-radius-pill);
-  color: var(--v2-text-tertiary);
-  font-size: 10px;
-  font-weight: 700;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--v2-radius-sm, 8px);
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1;
-  transition: background 80ms ease, color 80ms ease;
+  transition: color 80ms ease;
 }
 
-.v2-lang-switch__option:hover {
+.v2-lang-switch__trigger:hover {
   color: var(--v2-text-primary);
 }
 
-.v2-lang-switch__option--active {
+.v2-lang-switch__caret {
+  font-size: 9px;
+  color: var(--v2-text-muted);
+}
+
+.v2-lang-switch__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 132px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
   background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 10px;
+  box-shadow: var(--v2-shadow-md, 0 8px 24px rgba(16, 24, 40, 0.12));
+}
+
+.v2-lang-switch__item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  text-align: left;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.v2-lang-switch__item:hover {
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-primary);
+}
+
+.v2-lang-switch__item--active {
   color: var(--v2-accent-text);
+  font-weight: 600;
+}
+
+.v2-lang-switch__check {
+  font-size: 11px;
 }
 
 /* ---------- Shared filter grammar ---------- */
@@ -348,10 +391,16 @@
   justify-content: center;
 }
 
-.v2-rail__language .v2-lang-switch__option {
-  min-width: 24px;
-  padding: 0 4px;
-  font-size: 9px;
+.v2-rail__language .v2-lang-switch__trigger {
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* In the narrow rail the menu must open toward the content, not off-screen. */
+.v2-rail__language .v2-lang-switch__menu {
+  right: auto;
+  left: 0;
 }
 
 .v2-rail__brand {

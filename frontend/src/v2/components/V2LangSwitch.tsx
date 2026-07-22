@@ -1,38 +1,75 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// Language names are self-labels, not localized chrome.
-const ENGLISH_LANGUAGE_NAME = 'EN';
-const CHINESE_LANGUAGE_NAME = '中文';
+// Language names are self-labels, not localized chrome — every reader must
+// recognize their own language regardless of the active locale.
+const LANGUAGES = [
+  { code: 'en' as const, label: 'English', short: 'EN' },
+  { code: 'zh-CN' as const, label: '中文', short: '中文' },
+];
 
+// Dropdown language menu (Sam's call 2026-07-22: reads like the other nav
+// options, not a two-button pill). Trigger shows the active language; the
+// menu lists all languages with the active one checked. Closes on outside
+// click, Escape, and selection.
 const V2LangSwitch: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const activeLanguage = i18n.resolvedLanguage === 'zh-CN' ? 'zh-CN' : 'en';
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const active = LANGUAGES.find((l) => l.code === i18n.resolvedLanguage) || LANGUAGES[0];
 
-  const selectLanguage = (language: 'en' | 'zh-CN') => {
-    void i18n.changeLanguage(language);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selectLanguage = (code: 'en' | 'zh-CN') => {
+    void i18n.changeLanguage(code);
+    setOpen(false);
   };
 
   return (
-    <div className="v2-lang-switch" role="group" aria-label={t('common.language.label')}>
+    <div className="v2-lang-switch" ref={rootRef}>
       <button
         type="button"
-        className={`v2-lang-switch__option${activeLanguage === 'en' ? ' v2-lang-switch__option--active' : ''}`}
-        aria-pressed={activeLanguage === 'en'}
-        aria-label={t('common.language.switchToEnglish')}
-        onClick={() => selectLanguage('en')}
+        className="v2-lang-switch__trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={t('common.language.label')}
+        onClick={() => setOpen((v) => !v)}
       >
-        {ENGLISH_LANGUAGE_NAME}
+        {active.short}
+        <span className="v2-lang-switch__caret" aria-hidden="true">▾</span>
       </button>
-      <button
-        type="button"
-        className={`v2-lang-switch__option${activeLanguage === 'zh-CN' ? ' v2-lang-switch__option--active' : ''}`}
-        aria-pressed={activeLanguage === 'zh-CN'}
-        aria-label={t('common.language.switchToChinese')}
-        onClick={() => selectLanguage('zh-CN')}
-      >
-        {CHINESE_LANGUAGE_NAME}
-      </button>
+      {open && (
+        <ul className="v2-lang-switch__menu" role="listbox" aria-label={t('common.language.label')}>
+          {LANGUAGES.map((lang) => (
+            <li key={lang.code} role="option" aria-selected={lang.code === active.code}>
+              <button
+                type="button"
+                className={`v2-lang-switch__item${lang.code === active.code ? ' v2-lang-switch__item--active' : ''}`}
+                onClick={() => selectLanguage(lang.code)}
+              >
+                <span>{lang.label}</span>
+                {lang.code === active.code && (
+                  <span className="v2-lang-switch__check" aria-hidden="true">✓</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 };

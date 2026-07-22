@@ -35,14 +35,40 @@ describe('V2LangSwitch', () => {
     );
 
     expect(screen.getByText('Features')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to Simplified Chinese' }));
+
+    // Dropdown: trigger shows the active language, menu opens on click.
+    const trigger = screen.getByRole('button', { name: 'Language' });
+    expect(trigger).toHaveTextContent('EN');
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
 
     expect(await screen.findByText('功能')).toBeInTheDocument();
     expect(document.documentElement.lang).toBe('zh-CN');
     expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe('zh-CN');
+    // Menu closes after selection.
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '切换到英文' }));
+    // Trigger now reflects zh; switch back via the reopened menu.
+    const zhTrigger = screen.getByRole('button', { name: '语言' });
+    expect(zhTrigger).toHaveTextContent('中文');
+    fireEvent.click(zhTrigger);
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
     expect(await screen.findByText('Features')).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('en');
+  });
+
+  it('closes the menu on Escape and outside click without changing language', async () => {
+    render(<V2LangSwitch />);
+    const trigger = screen.getByRole('button', { name: 'Language' });
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(document.documentElement.lang).toBe('en');
   });
 });

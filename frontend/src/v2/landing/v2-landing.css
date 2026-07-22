@@ -32,6 +32,12 @@
   padding-right: max(24px, calc((100% - 1120px) / 2));
 }
 
+/* Suffix after the rotating term (zh: 「与你的___对话」). Same visual
+   weight as the title; the space is handled by the margin, not the string. */
+.v2-landing__title-suffix {
+  margin-left: 0.18em;
+}
+
 /* ---------- Top bar (sticky) ---------- */
 .v2-landing__bar {
   position: sticky;
