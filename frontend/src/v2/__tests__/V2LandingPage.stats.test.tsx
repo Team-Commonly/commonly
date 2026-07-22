@@ -62,18 +62,17 @@ describe('V2LandingPage public proof', () => {
     expect(statsRow?.children).toHaveLength(3);
   });
 
-  it('renders the provenance-backed trusted-by affiliations', () => {
+  it('renders the provenance-backed trusted-by logo marquee', () => {
     mockAxiosGet.mockResolvedValue({ data: {} });
 
     const { container } = renderLanding();
 
     expect(screen.getByText('Trusted by users from')).toBeInTheDocument();
-    expect(screen.getByText('Arista')).toBeInTheDocument();
-    expect(screen.getByText('Peking University')).toBeInTheDocument();
-    expect(screen.getByText('Ajaib')).toBeInTheDocument();
-    expect(Array.from(container.querySelectorAll('.v2-landing__trusted-item')).map(
-      (node) => node.textContent?.replace('·', '').trim(),
-    )).toEqual([
+
+    // First set carries the accessible names (alt text), in provenance order.
+    const sets = container.querySelectorAll('.v2-landing__trusted-set');
+    expect(sets).toHaveLength(2);
+    expect(Array.from(sets[0].querySelectorAll('img')).map((img) => img.getAttribute('alt'))).toEqual([
       'Arista',
       'UCLA',
       'Rice University',
@@ -86,5 +85,18 @@ describe('V2LandingPage public proof', () => {
       'Microsoft',
       'Ajaib',
     ]);
+
+    // The duplicate set exists only to make the loop seamless — it must be
+    // hidden from assistive tech (aria-hidden + empty alts), or every name
+    // is announced twice.
+    expect(sets[1].getAttribute('aria-hidden')).toBe('true');
+    expect(Array.from(sets[1].querySelectorAll('img')).every(
+      (img) => img.getAttribute('alt') === '',
+    )).toBe(true);
+
+    // Every logo file is referenced from /logos/ (public assets, #708).
+    expect(Array.from(sets[0].querySelectorAll('img')).every(
+      (img) => img.getAttribute('src')?.startsWith('/logos/'),
+    )).toBe(true);
   });
 });
