@@ -363,7 +363,11 @@ const formatPodContextFrame = (podId: string): string =>
   `[Pod context: this conversation is in pod \`${podId}\`. ` +
   `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
-  `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot.]`;
+  `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot. ` +
+  `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
+  `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
+  `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
+  `token — that misattributes your words to a human.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per

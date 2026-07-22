@@ -437,7 +437,7 @@ export const performRun = ({
     // and (if the adapter returns a summary) patch-sync back after.
     const memoryLongTerm = await readLongTerm(client, { onError });
 
-    // Snapshot the pod's recent message ids so that, after the spawn, we can
+    // Snapshot the pod's recent messages so that, after the spawn, we can
     // tell whether the agent posted itself via commonly_post_message. If it
     // did, its final CLI text is a narration/log — echoing it would duplicate
     // the message and re-fire any @mention. This is the wrapper-side guarantee
@@ -445,17 +445,20 @@ export const performRun = ({
     // without relying on the agent to emit NO_REPLY. (A rare concurrent post by
     // another member during the spawn window can suppress a genuine wrapper
     // reply — an acceptable trade against a guaranteed double-post.)
-    const snapshotMessageIds = async () => {
+    const snapshotMessages = async () => {
       try {
         const { messages = [] } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
-        return new Set(messages.map((m) => String(m._id || m.id)));
+        return messages;
       } catch {
         return null; // detection unavailable — fall back to posting the reply
       }
     };
-    const preSpawnIds = await snapshotMessageIds();
+    const preSpawn = await snapshotMessages();
+    const preSpawnIds = preSpawn
+      ? new Set(preSpawn.map((m) => String(m._id || m.id)))
+      : null;
 
     log(`[${event.type}] spawning ${adapter.name}`);
     const result = await adapter.spawn(prompt, {
@@ -487,10 +490,19 @@ export const performRun = ({
     const replyText = (result.text || '').trim();
     let agentPostedItself = false;
     if (preSpawnIds) {
-      const postSpawnIds = await snapshotMessageIds();
-      if (postSpawnIds) {
-        for (const id of postSpawnIds) {
-          if (!preSpawnIds.has(id)) { agentPostedItself = true; break; }
+      const postSpawn = await snapshotMessages();
+      if (postSpawn) {
+        for (const m of postSpawn) {
+          // Only a NEW message from a bot user counts as "the agent posted
+          // itself". A new human-authored message must NOT suppress the echo:
+          // it is either a human typing mid-turn, or the agent misusing an
+          // operator CLI profile / human token (the 2026-07-22 as-operator
+          // attribution incident) — in both cases the wrapper still delivers
+          // the reply under the agent's own identity.
+          if (!preSpawnIds.has(String(m._id || m.id)) && m.isBot) {
+            agentPostedItself = true;
+            break;
+          }
         }
       }
     }
