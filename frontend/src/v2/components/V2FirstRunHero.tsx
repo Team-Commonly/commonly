@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
+import { useTranslation } from 'react-i18next';
 
 const POLL_INTERVAL_MS = 3_000;
+const CHECK_MARK = '✓';
+const EXTERNAL_LINK_MARK = '↗';
 export const FIRST_RUN_DISMISSED_KEY = 'v2.firstRun.dismissed';
 export const FIRST_RUN_STARTED_KEY = 'v2.firstRun.started';
 
@@ -39,7 +42,7 @@ const writeFlag = (key: string, value: boolean): void => {
 
 const StepMark: React.FC<{ done: boolean; children: React.ReactNode }> = ({ done, children }) => (
   <span className={`v2-first-run__step-mark${done ? ' v2-first-run__step-mark--done' : ''}`} aria-hidden="true">
-    {done ? '✓' : children}
+    {done ? CHECK_MARK : children}
   </span>
 );
 
@@ -48,6 +51,7 @@ interface V2FirstRunHeroProps {
 }
 
 const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) => {
+  const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(() => readFlag(FIRST_RUN_DISMISSED_KEY));
@@ -68,9 +72,9 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       setStatusError(null);
       if (!next.issued) setEngaged(true);
     } catch {
-      setStatusError('Connection status is temporarily unavailable. We’ll keep checking.');
+      setStatusError(t('firstRun.errors.statusUnavailable'));
     }
-  }, [api]);
+  }, [api, t]);
 
   // Reserve the empty-state slot while the ownership probe is unresolved,
   // but do not flash the full onboarding card for an established user.
@@ -149,30 +153,30 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     } catch (error) {
       const message = (error as { response?: { data?: { message?: string } } })
         ?.response?.data?.message;
-      setRoomError(message || 'Could not open your 1:1 yet. Try again.');
+      setRoomError(message || t('firstRun.errors.roomFailed'));
       setOpeningRoom(false);
     }
   };
 
   return (
     <section className="v2-first-run" aria-labelledby="v2-first-run-title">
-      <div className="v2-first-run__eyebrow">Your first five minutes</div>
+      <div className="v2-first-run__eyebrow">{t('firstRun.eyebrow')}</div>
       <div className="v2-first-run__heading-row">
         <div>
-          <h2 id="v2-first-run-title" className="v2-first-run__title">Bring your agent into the room</h2>
+          <h2 id="v2-first-run-title" className="v2-first-run__title">{t('firstRun.title')}</h2>
           <p className="v2-first-run__lede">
-            Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.
+            {t('firstRun.lede')}
           </p>
         </div>
-        <button type="button" className="v2-first-run__skip" onClick={dismiss}>Skip for now</button>
+        <button type="button" className="v2-first-run__skip" onClick={dismiss}>{t('firstRun.skip')}</button>
       </div>
 
       <ol className="v2-first-run__steps">
         <li className="v2-first-run__step">
           <StepMark done={Boolean(status?.issued)}>1</StepMark>
           <div className="v2-first-run__step-body">
-            <strong>Connect your agent</strong>
-            <span>Generate its private runtime token and copy the setup command for your tool.</span>
+            <strong>{t('firstRun.steps.connect.title')}</strong>
+            <span>{t('firstRun.steps.connect.text')}</span>
             {!status?.issued && (
               <a
                 className="v2-first-run__setup"
@@ -181,8 +185,8 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
                 rel="noopener noreferrer"
                 onClick={openSetup}
               >
-                Open connection setup
-                <span aria-hidden="true">↗</span>
+                {t('firstRun.steps.connect.openSetup')}
+                <span aria-hidden="true">{EXTERNAL_LINK_MARK}</span>
               </a>
             )}
           </div>
@@ -191,9 +195,9 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
         <li className="v2-first-run__step">
           <StepMark done={Boolean(status?.connected)}>2</StepMark>
           <div className="v2-first-run__step-body">
-            <strong>{status?.connected ? 'Connected' : 'Start your agent'}</strong>
+            <strong>{status?.connected ? t('firstRun.steps.start.connected') : t('firstRun.steps.start.title')}</strong>
             <span className={status?.connected ? 'v2-first-run__connected' : ''} role="status" aria-live="polite">
-              {status?.connected ? '✓ Connected' : 'Waiting for your agent to connect…'}
+              {status?.connected ? t('firstRun.steps.start.connectedStatus') : t('firstRun.steps.start.waiting')}
             </span>
             {statusError && <span className="v2-first-run__error">{statusError}</span>}
           </div>
@@ -202,8 +206,8 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
         <li className="v2-first-run__step">
           <StepMark done={false}>3</StepMark>
           <div className="v2-first-run__step-body">
-            <strong>Start with one hello</strong>
-            <span>Your agent gets its own durable identity and private 1:1 with you.</span>
+            <strong>{t('firstRun.steps.hello.title')}</strong>
+            <span>{t('firstRun.steps.hello.text')}</span>
             {status?.connected && status.connectedAgent && (
               <button
                 type="button"
@@ -211,7 +215,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
                 onClick={sayHello}
                 disabled={openingRoom}
               >
-                {openingRoom ? 'Opening…' : 'Say hello'}
+                {openingRoom ? t('firstRun.steps.hello.opening') : t('firstRun.steps.hello.cta')}
               </button>
             )}
             {roomError && <span className="v2-first-run__error">{roomError}</span>}

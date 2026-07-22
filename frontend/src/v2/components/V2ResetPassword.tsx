@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
+import { Trans, useTranslation } from 'react-i18next';
 
 // Landing pad for the emailed reset link (/v2/reset-password?token=...).
 // Token consumption is server-side; a used or expired token surfaces the
 // backend's "Invalid or expired reset link" with a path back to /forgot.
 const V2ResetPassword: React.FC = () => {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
   const [password, setPassword] = useState('');
@@ -19,11 +21,11 @@ const V2ResetPassword: React.FC = () => {
     e.preventDefault();
     setError(null);
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('auth.reset.errors.tooShort'));
       return;
     }
     if (password !== confirm) {
-      setError('Passwords do not match.');
+      setError(t('auth.reset.errors.mismatch'));
       return;
     }
     setSubmitting(true);
@@ -32,7 +34,7 @@ const V2ResetPassword: React.FC = () => {
       setDone(true);
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string } } };
-      setError(e1.response?.data?.error || 'Reset failed — the link may have expired.');
+      setError(e1.response?.data?.error || t('auth.reset.errors.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -42,27 +44,27 @@ const V2ResetPassword: React.FC = () => {
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
         <V2AuthBrand />
-        <h1 className="v2-login__title">Choose a new password</h1>
+        <h1 className="v2-login__title">{t('auth.reset.title')}</h1>
         {done ? (
           <>
-            <p className="v2-login__subtitle">Password updated. You can sign in now.</p>
+            <p className="v2-login__subtitle">{t('auth.reset.updated')}</p>
             <Link to="/v2/login" className="v2-login__submit" style={{ textAlign: 'center', textDecoration: 'none', display: 'block' }}>
-              Go to sign in
+              {t('auth.reset.goToSignIn')}
             </Link>
           </>
         ) : !token ? (
           <>
             <p className="v2-login__subtitle">
-              This page needs the reset link from your email. Request a new one below.
+              {t('auth.reset.missingToken')}
             </p>
             <div className="v2-login__hint">
-              <Link to="/v2/forgot-password" className="v2-login__link">Send me a reset link</Link>
+              <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.reset.sendNewLink')}</Link>
             </div>
           </>
         ) : (
           <>
             <label className="v2-login__field">
-              <span className="v2-login__label">New password</span>
+              <span className="v2-login__label">{t('auth.reset.newPassword')}</span>
               <input
                 className="v2-login__input"
                 type="password"
@@ -73,7 +75,7 @@ const V2ResetPassword: React.FC = () => {
               />
             </label>
             <label className="v2-login__field">
-              <span className="v2-login__label">Confirm password</span>
+              <span className="v2-login__label">{t('auth.reset.confirmPassword')}</span>
               <input
                 className="v2-login__input"
                 type="password"
@@ -84,13 +86,16 @@ const V2ResetPassword: React.FC = () => {
               />
             </label>
             <button type="submit" className="v2-login__submit" disabled={submitting}>
-              {submitting ? 'Updating…' : 'Update password'}
+              {submitting ? t('auth.reset.updating') : t('auth.reset.submit')}
             </button>
             {error && (
               <div className="v2-login__error">
                 {error}
                 {' '}
-                <Link to="/v2/forgot-password" className="v2-login__link">Request a new link</Link>
+                <Trans
+                  i18nKey="auth.reset.requestNewLink"
+                  components={{ request: <Link to="/v2/forgot-password" className="v2-login__link" /> }}
+                />
               </div>
             )}
           </>

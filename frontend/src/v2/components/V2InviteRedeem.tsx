@@ -9,6 +9,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import V2Avatar from './V2Avatar';
+import { Trans, useTranslation } from 'react-i18next';
 
 interface InvitePodInfo {
   _id: string;
@@ -30,9 +31,9 @@ interface InvitePreviewResponse {
   expiresAt?: string | null;
 }
 
-const DM_INVITE_REFUSAL = 'This is a private 1:1 conversation — it can\'t be joined with an invite link.';
-
 const V2InviteRedeem: React.FC = () => {
+  const { t, i18n } = useTranslation();
+  const numberFormatter = new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en');
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,13 +60,13 @@ const V2InviteRedeem: React.FC = () => {
         );
         if (!cancelled) setPreview(res.data);
       } catch {
-        if (!cancelled) setError('This invite is no longer valid.');
+        if (!cancelled) setError(t('inviteRedeem.errors.invalid'));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [authLoading, isAuthenticated, token]);
+  }, [authLoading, isAuthenticated, t, token]);
 
   // Resolve the invite once auth is confirmed. Idempotent — server returns
   // alreadyMember=true if the user already belongs to the pod, and the UI
@@ -81,13 +82,13 @@ const V2InviteRedeem: React.FC = () => {
       } catch (err) {
         if (cancelled) return;
         const e = err as { response?: { data?: { msg?: string } }; message?: string };
-        setError(e.response?.data?.msg || e.message || 'This invite is no longer valid.');
+        setError(e.response?.data?.msg || e.message || t('inviteRedeem.errors.invalid'));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [authLoading, isAuthenticated, token, api]);
+  }, [authLoading, isAuthenticated, token, api, t]);
 
   const handleJoin = async () => {
     if (!token) return;
@@ -103,8 +104,8 @@ const V2InviteRedeem: React.FC = () => {
       const e = err as { response?: { data?: { code?: string; msg?: string } }; message?: string };
       setError(
         e.response?.data?.code === 'dm_membership_refused'
-          ? DM_INVITE_REFUSAL
-          : (e.response?.data?.msg || e.message || 'Could not join — try again.'),
+          ? t('inviteRedeem.errors.dmRefused')
+          : (e.response?.data?.msg || e.message || t('inviteRedeem.errors.joinFailed')),
       );
     } finally {
       setRedeeming(false);
@@ -112,7 +113,7 @@ const V2InviteRedeem: React.FC = () => {
   };
 
   if (authLoading || loading) {
-    return <div className="v2-invite-page"><div className="v2-invite-card v2-invite-card--loading">Loading invite…</div></div>;
+    return <div className="v2-invite-page"><div className="v2-invite-card v2-invite-card--loading">{t('inviteRedeem.loading')}</div></div>;
   }
 
   // ---- anonymous: preview + signup funnel ----
@@ -121,33 +122,35 @@ const V2InviteRedeem: React.FC = () => {
       return (
         <div className="v2-invite-page">
           <div className="v2-invite-card">
-            <div className="v2-invite-card__title">Invite unavailable</div>
-            <div className="v2-invite-card__error">{error || 'This invite is no longer valid.'}</div>
-            <Link to="/v2" className="v2-invite-card__cta">What is Commonly?</Link>
+            <div className="v2-invite-card__title">{t('inviteRedeem.unavailable')}</div>
+            <div className="v2-invite-card__error">{error || t('inviteRedeem.errors.invalid')}</div>
+            <Link to="/v2" className="v2-invite-card__cta">{t('inviteRedeem.whatIsCommonly')}</Link>
           </div>
         </div>
       );
     }
-    const podName = preview.pod?.name || 'a pod';
+    const podName = preview.pod?.name || t('inviteRedeem.fallbackPod');
     const count = preview.pod?.memberCount ?? 0;
     return (
       <div className="v2-invite-page">
         <div className="v2-invite-card">
           <V2Avatar name={podName} size="lg" />
-          <div className="v2-invite-card__title">You&rsquo;ve been invited to {podName}</div>
+          <div className="v2-invite-card__title">{t('inviteRedeem.invitedTo', { podName })}</div>
           <div className="v2-invite-card__meta">
-            {count} member{count === 1 ? '' : 's'} · humans and agents working together on Commonly
+            {t('inviteRedeem.previewMeta', { count, formattedCount: numberFormatter.format(count) })}
           </div>
           <button
             type="button"
             className="v2-invite-card__cta"
             onClick={() => navigate(`/v2/register?next=${nextParam}`)}
           >
-            Sign up to join
+            {t('inviteRedeem.signUpToJoin')}
           </button>
           <div className="v2-invite-card__meta">
-            Already have an account?{' '}
-            <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link">Log in</Link>
+            <Trans
+              i18nKey="inviteRedeem.alreadyHaveAccount"
+              components={{ login: <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link" /> }}
+            />
           </div>
         </div>
       </div>
@@ -159,10 +162,10 @@ const V2InviteRedeem: React.FC = () => {
     return (
       <div className="v2-invite-page">
         <div className="v2-invite-card">
-          <div className="v2-invite-card__title">Invite unavailable</div>
+          <div className="v2-invite-card__title">{t('inviteRedeem.unavailable')}</div>
           <div className="v2-invite-card__error">{error}</div>
           <button type="button" className="v2-invite-card__cta" onClick={() => navigate('/v2', { replace: true })}>
-            Go to your pods
+            {t('inviteRedeem.goToPods')}
           </button>
         </div>
       </div>
@@ -171,7 +174,7 @@ const V2InviteRedeem: React.FC = () => {
   if (!invite) return null;
 
   const pod = invite.pod;
-  const podName = pod.name || 'Untitled pod';
+  const podName = pod.name || t('inviteRedeem.untitledPod');
 
   return (
     <div className="v2-invite-page">
@@ -182,7 +185,10 @@ const V2InviteRedeem: React.FC = () => {
           <div className="v2-invite-card__description">{pod.description}</div>
         )}
         <div className="v2-invite-card__meta">
-          {pod.memberCount ?? 0} member{pod.memberCount === 1 ? '' : 's'}
+          {t('inviteRedeem.memberCount', {
+            count: pod.memberCount ?? 0,
+            formattedCount: numberFormatter.format(pod.memberCount ?? 0),
+          })}
         </div>
         {error && <div className="v2-invite-card__error">{error}</div>}
         {invite.alreadyMember ? (
@@ -191,7 +197,7 @@ const V2InviteRedeem: React.FC = () => {
             className="v2-invite-card__cta"
             onClick={() => navigate(`/v2/pods/${pod._id}`, { replace: true })}
           >
-            Go to pod →
+            {t('inviteRedeem.goToPod')}
           </button>
         ) : (
           <button
@@ -200,7 +206,7 @@ const V2InviteRedeem: React.FC = () => {
             onClick={handleJoin}
             disabled={redeeming}
           >
-            {redeeming ? 'Joining…' : `Join ${podName}`}
+            {redeeming ? t('inviteRedeem.joining') : t('inviteRedeem.joinPod', { podName })}
           </button>
         )}
       </div>

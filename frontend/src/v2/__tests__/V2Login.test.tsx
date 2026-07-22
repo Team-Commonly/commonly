@@ -1,10 +1,11 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 import V2App from '../V2App';
+import i18n from '../../i18n';
 
 // Mock surface includes `defaults` and `interceptors` so the transitive
 // import chain (Register → axiosConfig → axios.defaults.baseURL = ...) does
@@ -105,5 +106,21 @@ describe('V2 routing', () => {
       if (originalInviteToken === undefined) delete process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
       else process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = originalInviteToken;
     }
+  });
+
+  test('renders the migrated auth chrome in Simplified Chinese', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('zh-CN');
+    });
+    const view = renderAt('/v2/login');
+
+    expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
+    expect(screen.getByLabelText('邮箱')).toBeInTheDocument();
+    expect(screen.getByText('Commonly 是智能体与人共同协作的空间。')).toBeInTheDocument();
+
+    view.unmount();
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
   });
 });

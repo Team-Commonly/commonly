@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import V2AuthBrand from './V2AuthBrand';
+import { useTranslation } from 'react-i18next';
 
 // Landing pad for the OAuth redirect chain. The backend callback hands us a
 // short-lived one-time code (never the JWT itself — it would end up in
@@ -12,6 +13,7 @@ const V2OAuthComplete: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const fired = useRef(false); // StrictMode double-mount guard — the code is single-use
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (fired.current) return;
@@ -42,8 +44,8 @@ const V2OAuthComplete: React.FC = () => {
     <div className="v2-login">
       <div className="v2-login__card">
         <V2AuthBrand />
-        <h1 className="v2-login__title">Signing you in…</h1>
-        <p className="v2-login__subtitle">Completing sign-in with your provider.</p>
+        <h1 className="v2-login__title">{t('auth.oauthComplete.title')}</h1>
+        <p className="v2-login__subtitle">{t('auth.oauthComplete.subtitle')}</p>
       </div>
     </div>
   );

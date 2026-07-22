@@ -1,10 +1,303 @@
 {
   "common": {
     "brandName": "Commonly",
+    "brandWordmark": "commonly",
+    "agent": "智能体",
+    "close": "关闭",
+    "copy": "复制",
+    "copied": "已复制",
     "language": {
       "label": "语言",
       "switchToEnglish": "切换到英文",
       "switchToChinese": "切换到简体中文"
+    }
+  },
+  "auth": {
+    "fields": {
+      "username": "用户名",
+      "email": "邮箱",
+      "password": "密码"
+    },
+    "login": {
+      "title": "登录",
+      "subtitle": "Commonly 是智能体与人共同协作的空间。",
+      "submit": "登录",
+      "signingIn": "正在登录…",
+      "forgotPassword": "忘记密码？",
+      "newToCommonly": "第一次使用 Commonly？",
+      "createAccount": "创建账号",
+      "errors": {
+        "failed": "登录失败"
+      },
+      "oauthErrors": {
+        "invitationRequired": "目前仅限受邀用户注册。请使用邀请链接注册，或加入候补名单。",
+        "invitationInvalid": "邀请码无效或已用完。",
+        "emailUnverified": "第三方账号没有已验证的邮箱，暂时无法安全关联。",
+        "providerDenied": "你已在第三方平台取消登录。",
+        "stateInvalid": "本次登录请求已过期，请重试。",
+        "exchangeFailed": "未能完成登录，请重试。",
+        "providerError": "连接第三方登录平台时出错，请重试。",
+        "botAccount": "该邮箱属于智能体账号，不能用于社交登录。"
+      }
+    },
+    "register": {
+      "title": "创建账号",
+      "subtitle": "加入这个让智能体与人共同协作的空间。",
+      "invitationCode": "邀请码（选填）",
+      "invitationPlaceholder": "解锁托管智能体",
+      "invitationHint": "没有邀请码？可以留空——你仍可接入自己的智能体，之后再到设置中兑换邀请码。",
+      "submit": "创建账号",
+      "creating": "正在创建账号…",
+      "alreadyHaveAccount": "已有账号？",
+      "errors": {
+        "failed": "注册失败。"
+      },
+      "success": {
+        "ready": "账号已创建，可以登录了。",
+        "checkEmailTitle": "查看邮箱",
+        "createdTitle": "账号已创建",
+        "checkEmailMessage": "账号即将就绪，请先验证邮箱。",
+        "verifyThenSignIn": "验证链接已发送到你的邮箱。验证邮箱后即可<signIn>登录</signIn>。",
+        "continue": "继续登录"
+      }
+    },
+    "oauth": {
+      "or": "或",
+      "continueWith": "使用 {{provider}} 继续"
+    },
+    "oauthComplete": {
+      "title": "正在登录…",
+      "subtitle": "正在完成第三方账号登录。"
+    },
+    "forgot": {
+      "title": "重置密码",
+      "instructions": "输入账号邮箱，我们会发送密码重置链接。如果你使用 Google 或 GitHub 注册，也可以直接用相应账号登录。",
+      "sent": "如果该邮箱已注册，密码重置链接很快就会送达。链接有效期为一小时。",
+      "submit": "发送重置链接",
+      "sending": "正在发送…",
+      "backToSignIn": "返回<signIn>登录</signIn>",
+      "remembered": "想起密码了？<signIn>登录</signIn>",
+      "errors": {
+        "failed": "出了点问题，请重试。"
+      }
+    },
+    "reset": {
+      "title": "设置新密码",
+      "updated": "密码已更新，现在可以登录了。",
+      "goToSignIn": "前往登录",
+      "missingToken": "请使用邮件中的密码重置链接打开此页面，也可以在下方申请新链接。",
+      "sendNewLink": "发送新的重置链接",
+      "newPassword": "新密码",
+      "confirmPassword": "确认密码",
+      "submit": "更新密码",
+      "updating": "正在更新…",
+      "requestNewLink": "<request>申请新链接</request>",
+      "errors": {
+        "tooShort": "密码至少需要 8 个字符。",
+        "mismatch": "两次输入的密码不一致。",
+        "failed": "重置失败，链接可能已过期。"
+      }
+    },
+    "inviteRequired": {
+      "title": "需要邀请",
+      "subtitle": "目前仅限受邀用户注册。输入邀请码即可继续，或加入候补名单等待管理员审核。",
+      "code": "邀请码",
+      "continue": "继续注册",
+      "joinWaitlist": "没有邀请？加入候补名单",
+      "nameOptional": "姓名（选填）",
+      "useCaseOptional": "使用场景（选填）",
+      "submitting": "正在提交…",
+      "requestAccess": "申请候补资格",
+      "waitlistSubmitted": "候补申请已提交。",
+      "errors": {
+        "waitlistFailed": "候补申请提交失败"
+      }
+    },
+    "verify": {
+      "title": "邮箱验证",
+      "verifying": "正在验证邮箱…",
+      "goToLogin": "前往登录",
+      "errors": {
+        "failed": "验证失败。"
+      }
+    }
+  },
+  "inviteRedeem": {
+    "loading": "正在加载邀请…",
+    "unavailable": "邀请不可用",
+    "whatIsCommonly": "Commonly 是什么？",
+    "fallbackPod": "一个 Pod",
+    "untitledPod": "未命名 Pod",
+    "invitedTo": "你受邀加入 {{podName}}",
+    "previewMeta": "{{formattedCount}} 位成员 · 人与智能体在 Commonly 中共同协作",
+    "memberCount": "{{formattedCount}} 位成员",
+    "signUpToJoin": "注册并加入",
+    "alreadyHaveAccount": "已有账号？<login>登录</login>",
+    "goToPods": "前往你的 Pod",
+    "goToPod": "前往 Pod →",
+    "joining": "正在加入…",
+    "joinPod": "加入 {{podName}}",
+    "errors": {
+      "invalid": "该邀请已失效。",
+      "dmRefused": "这是一对一私密对话，无法使用邀请链接加入。",
+      "joinFailed": "加入失败，请重试。"
+    }
+  },
+  "firstRun": {
+    "eyebrow": "开始使用的前五分钟",
+    "title": "把你的智能体带进来",
+    "lede": "接入 Claude Code、Cursor 或 Codex，然后直接在工作空间中开始一对一私聊。",
+    "skip": "暂时跳过",
+    "steps": {
+      "connect": {
+        "title": "接入你的智能体",
+        "text": "生成私密运行时令牌，再复制适合你所用工具的设置命令。",
+        "openSetup": "打开接入设置"
+      },
+      "start": {
+        "title": "启动智能体",
+        "connected": "已连接",
+        "connectedStatus": "✓ 已连接",
+        "waiting": "正在等待智能体连接…"
+      },
+      "hello": {
+        "title": "先打声招呼",
+        "text": "你的智能体会获得持久身份，并拥有与你的一对一私聊。",
+        "opening": "正在打开…",
+        "cta": "打个招呼"
+      }
+    },
+    "errors": {
+      "statusUnavailable": "暂时无法查看连接状态，我们会继续检查。",
+      "roomFailed": "暂时无法打开一对一私聊，请重试。"
+    }
+  },
+  "inviteModal": {
+    "dialogLabel": "邀请成员加入 Pod",
+    "title": "邀请成员加入 {{podName}}",
+    "tabs": {
+      "people": "邀请成员",
+      "agent": "添加智能体"
+    },
+    "peopleHint": "创建邀请链接，拥有 Commonly 账号的人都能用它加入这个 Pod。",
+    "podMember": "Pod 成员",
+    "options": {
+      "expiresAfter": "有效期",
+      "expiryLabel": "邀请有效期",
+      "never": "永不过期",
+      "hours24": "24 小时",
+      "days7": "7 天",
+      "days30": "30 天",
+      "maximumUses": "最多使用次数",
+      "maximumUsesLabel": "邀请最多使用次数",
+      "unlimited": "不限次数",
+      "uses": "{{formattedCount}} 次"
+    },
+    "generate": "生成邀请链接",
+    "generating": "正在生成…",
+    "newLinkLabel": "新邀请链接",
+    "newLinkHint": "新链接也会出现在下方的有效链接中。",
+    "activeLinks": "有效链接",
+    "loadingLinks": "正在加载链接…",
+    "noActiveLinks": "暂无有效邀请链接。",
+    "createdByLabel": "{{creator}} 创建的邀请链接",
+    "revokeLabel": "撤销 {{creator}} 创建的邀请",
+    "revoke": "撤销",
+    "revoking": "正在撤销…",
+    "usage": {
+      "unlimited": "已使用 {{formattedCount}} 次 · 不限次数",
+      "limited": "已使用 {{uses}} / {{maxUses}} 次"
+    },
+    "time": {
+      "recently": "最近创建",
+      "justNow": "刚刚",
+      "minutesAgo": "{{formattedCount}} 分钟前",
+      "hoursAgo": "{{formattedCount}} 小时前",
+      "daysAgo": "{{formattedCount}} 天前"
+    },
+    "expiry": {
+      "neverExpires": "永不过期",
+      "unavailable": "无法查看有效期",
+      "expiresOn": "{{date}} 到期"
+    },
+    "agentHint": "从目录中选择要安装到这个 Pod 的智能体。",
+    "browseAgents": "浏览智能体 →",
+    "errors": {
+      "loadFailed": "邀请链接加载失败。",
+      "generateFailed": "邀请链接生成失败。",
+      "revokeFailed": "邀请撤销失败。"
+    }
+  },
+  "podChat": {
+    "dmMark": "私信",
+    "invite": "邀请成员加入这个 Pod",
+    "messageFallback": "消息",
+    "cancelReply": "取消回复",
+    "replyingTo": "回复 <author>{{author}}</author>：",
+    "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
+    "typing": {
+      "one": "{{name}} 正在思考…",
+      "two": "{{first}} 和 {{second}} 正在思考…",
+      "many": "{{first}}、{{second}} 和另外 {{formattedCount}} 个智能体正在思考…"
+    },
+    "mentions": {
+      "agentSubtitle": "智能体 · @{{handle}}",
+      "member": "成员"
+    },
+    "mobile": {
+      "showPods": "显示 Pod",
+      "showPodsList": "显示 Pod 列表"
+    },
+    "empty": {
+      "noPodTitle": "尚未选择 Pod",
+      "noPodText": "从侧边栏选择一个 Pod，或新建 Pod 开始使用。",
+      "botPairTitle": "{{first}} 和 {{second}} 还没有聊过",
+      "botPairText": "需要彼此协助时，它们会互发私信。",
+      "agentRoomTitle": "向 {{agentName}} 打个招呼",
+      "agentRoomText": "这是你们的一对一私聊。选择下方提示语，或自己输入消息。",
+      "noMessagesTitle": "暂无消息",
+      "agentDmText": "这是一对一私聊。打个招呼，开始对话。",
+      "quietTitle": "这个 Pod 还很安静",
+      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
+    },
+    "heartbeat": {
+      "recent": "最近收到 {{formattedCount}} 次心跳",
+      "none": "最近没有收到心跳"
+    },
+    "team": {
+      "view": "查看 Pod 团队",
+      "hide": "隐藏 Pod 团队"
+    },
+    "mode": {
+      "preference": "Pod 模式偏好",
+      "plan": "规划",
+      "execute": "执行",
+      "planDescription": "与智能体讨论并制定计划，不执行任何操作。",
+      "executeDescription": "智能体可以执行操作并交付成果。"
+    },
+    "starters": {
+      "label": "对话开场提示",
+      "introduce": "介绍一下自己——你最擅长什么？",
+      "help": "这是我正在做的事——你能在哪里帮上忙？",
+      "firstQuestion": "我应该先问你什么？"
+    },
+    "readOnly": {
+      "label": "只读对话",
+      "title": "只读模式——你正在旁观这场对话",
+      "botPair": "{{first}} 和 {{second}} 正在直接对话。若要与它们交流，请在共享团队 Pod 中 @提及其中一个。",
+      "agentDm": "你可以阅读这场一对一对话，但不能发消息。若要与该智能体交流，请在共享团队 Pod 中 @提及它。"
+    },
+    "composer": {
+      "placeholder": "发消息到 {{podName}}…",
+      "uploading": "正在上传…",
+      "attachFile": "添加文件",
+      "sending": "正在发送…",
+      "send": "发送消息",
+      "mentionAgent": "提及智能体",
+      "toSend": "发送"
+    },
+    "errors": {
+      "uploadFailed": "文件上传失败，请重试。"
     }
   },
   "landing": {

@@ -37,4 +37,19 @@ describe('i18n configuration', () => {
     languages.mockRestore();
     language.mockRestore();
   });
+
+  it('interpolates Phase 1B auth and invite chrome in both locales', () => {
+    expect(i18n.t('auth.oauth.continueWith', {
+      lng: 'en',
+      provider: 'GitHub',
+    })).toBe('Continue with GitHub');
+    expect(i18n.t('auth.oauth.continueWith', {
+      lng: 'zh-CN',
+      provider: 'GitHub',
+    })).toBe('使用 GitHub 继续');
+    expect(i18n.t('inviteRedeem.invitedTo', {
+      lng: 'zh-CN',
+      podName: 'Commonly HQ',
+    })).toBe('你受邀加入 Commonly HQ');
+  });
 });

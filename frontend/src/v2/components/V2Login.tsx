@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 
@@ -10,19 +11,20 @@ interface LocationState {
 
 // Error codes the backend OAuth callback can bounce back with (as
 // ?oauthError=). Anything unlisted falls through to the generic line.
-const OAUTH_ERROR_MESSAGES: Record<string, string> = {
-  invitation_required: 'Registration is invite-only right now. Use an invitation link to sign up, or join the waitlist.',
-  invitation_invalid: 'That invitation code is invalid or used up.',
-  email_unverified: 'Your provider account has no verified email address, so we can\'t link it safely.',
-  provider_denied: 'Sign-in was cancelled at the provider.',
-  state_invalid: 'That sign-in attempt expired. Please try again.',
-  exchange_failed: 'Sign-in could not be completed. Please try again.',
-  provider_error: 'Something went wrong talking to the sign-in provider. Please try again.',
-  bot_account: 'This email belongs to an agent account and can\'t be used for social sign-in.',
+const OAUTH_ERROR_KEYS: Record<string, string> = {
+  invitation_required: 'auth.login.oauthErrors.invitationRequired',
+  invitation_invalid: 'auth.login.oauthErrors.invitationInvalid',
+  email_unverified: 'auth.login.oauthErrors.emailUnverified',
+  provider_denied: 'auth.login.oauthErrors.providerDenied',
+  state_invalid: 'auth.login.oauthErrors.stateInvalid',
+  exchange_failed: 'auth.login.oauthErrors.exchangeFailed',
+  provider_error: 'auth.login.oauthErrors.providerError',
+  bot_account: 'auth.login.oauthErrors.botAccount',
 };
 
 const V2Login: React.FC = () => {
   const { login, error: authError, loading } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -48,7 +50,7 @@ const V2Login: React.FC = () => {
       navigate(dest, { replace: true });
     } catch (err) {
       const e1 = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || 'Login failed');
+      setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -57,7 +59,7 @@ const V2Login: React.FC = () => {
   const params = new URLSearchParams(location.search);
   const oauthErrorCode = params.get('oauthError');
   const oauthError = oauthErrorCode
-    ? (OAUTH_ERROR_MESSAGES[oauthErrorCode] || OAUTH_ERROR_MESSAGES.provider_error)
+    ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
   const nextPath = params.get('next') || undefined;
 
@@ -67,13 +69,13 @@ const V2Login: React.FC = () => {
     <div className="v2-login">
       <form className="v2-login__card" onSubmit={handleSubmit}>
         <V2AuthBrand />
-        <h1 className="v2-login__title">Sign in</h1>
+        <h1 className="v2-login__title">{t('auth.login.title')}</h1>
         <p className="v2-login__subtitle">
-          Commonly is the shared space where agents and humans collaborate.
+          {t('auth.login.subtitle')}
         </p>
 
         <label className="v2-login__field">
-          <span className="v2-login__label">Email</span>
+          <span className="v2-login__label">{t('auth.fields.email')}</span>
           <input
             className="v2-login__input"
             type="email"
@@ -85,7 +87,7 @@ const V2Login: React.FC = () => {
         </label>
 
         <label className="v2-login__field">
-          <span className="v2-login__label">Password</span>
+          <span className="v2-login__label">{t('auth.fields.password')}</span>
           <input
             className="v2-login__input"
             type="password"
@@ -101,11 +103,11 @@ const V2Login: React.FC = () => {
           className="v2-login__submit"
           disabled={submitting || loading}
         >
-          {submitting ? 'Signing in...' : 'Sign in'}
+          {submitting ? t('auth.login.signingIn') : t('auth.login.submit')}
         </button>
 
         <div className="v2-login__forgot">
-          <Link to="/v2/forgot-password" className="v2-login__link">Forgot password?</Link>
+          <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.login.forgotPassword')}</Link>
         </div>
 
         {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
@@ -113,9 +115,9 @@ const V2Login: React.FC = () => {
         <V2OAuthButtons next={nextPath} />
 
         <div className="v2-login__hint">
-          New to Commonly?
+          {t('auth.login.newToCommonly')}
           {' '}
-          <Link to="/v2/register" className="v2-login__link">Create an account</Link>
+          <Link to="/v2/register" className="v2-login__link">{t('auth.login.createAccount')}</Link>
         </div>
       </form>
     </div>
