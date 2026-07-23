@@ -74,9 +74,6 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   return (
     <aside className="v2-pane v2-pane--rail">
       <div className="v2-rail">
-        <div className="v2-rail__language">
-          <V2LangSwitch />
-        </div>
         <div className="v2-rail__brand">
           <span className="v2-rail__brand-icon" aria-label="Commonly">
             <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
@@ -107,38 +104,48 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
           ))}
         </nav>
 
-        <div className="v2-rail__user">
-          <V2Avatar name={currentUser?.username || 'You'} size="md" online />
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="v2-rail__user-name" style={{
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}
+        <div className="v2-rail__foot">
+          {/* Help & preferences — language, guide, feedback grouped together
+              (Sam 2026-07-23: guide belongs with feedback; language switch
+              moved off its cramped above-the-logo slot into this cluster). */}
+          <div className="v2-rail__utility">
+            <V2LangSwitch />
+            <button
+              type="button"
+              className="v2-rail__guide"
+              onClick={requestFirstRunGuide}
+              title={t('firstRun.reopen')}
+              aria-label={t('firstRun.reopen')}
             >
-              {currentUser?.username || 'You'}
-            </div>
-            <div className="v2-rail__user-status">
-              <span className="v2-online-dot" />
-              Online
-            </div>
+              <Icon d="M9.1 9a3 3 0 115.83 1c0 2-3 2-3 4M12 18h.01" />
+            </button>
+            <V2FeedbackMenu />
           </div>
-          <button
-            type="button"
-            className="v2-rail__guide"
-            onClick={requestFirstRunGuide}
-            title={t('firstRun.reopen')}
-            aria-label={t('firstRun.reopen')}
-          >
-            <Icon d="M9.1 9a3 3 0 115.83 1c0 2-3 2-3 4M12 18h.01" />
-          </button>
-          <V2FeedbackMenu />
-          <button
-            type="button"
-            className="v2-rail__signout"
-            onClick={logout}
-            title="Sign out"
-          >
-            <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-          </button>
+          <span className="v2-rail__foot-sep" aria-hidden="true" />
+          {/* Account */}
+          <div className="v2-rail__user">
+            <V2Avatar name={currentUser?.username || 'You'} size="md" online />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="v2-rail__user-name" style={{
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+              >
+                {currentUser?.username || 'You'}
+              </div>
+              <div className="v2-rail__user-status">
+                <span className="v2-online-dot" />
+                Online
+              </div>
+            </div>
+            <button
+              type="button"
+              className="v2-rail__signout"
+              onClick={logout}
+              title="Sign out"
+            >
+              <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+            </button>
+          </div>
         </div>
       </div>
     </aside>
