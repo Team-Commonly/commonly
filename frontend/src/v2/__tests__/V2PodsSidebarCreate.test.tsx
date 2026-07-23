@@ -1,10 +1,11 @@
 // @ts-nocheck
 import React from 'react';
 import {
-  fireEvent, render, screen, waitFor,
+  act, fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2PodsSidebar from '../components/V2PodsSidebar';
+import i18n, { i18nReady } from '../../i18n';
 
 const mockCreatePod = jest.fn();
 
@@ -54,9 +55,16 @@ jest.mock('../../context/AuthContext', () => ({
 const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}</div>;
 
 describe('V2PodsSidebar create flow', () => {
-  beforeEach(() => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  beforeEach(async () => {
     jest.clearAllMocks();
     sessionStorage.clear();
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
     mockCreatePod.mockResolvedValue({
       _id: 'new-private-pod',
       name: 'Launch circle',
@@ -81,7 +89,12 @@ describe('V2PodsSidebar create flow', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Private Pod' }));
+    expect(screen.getByRole('button', { name: /Team Pod/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Anyone can find and join if listed.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Private Pod/ }));
+    expect(screen.getByRole('button', { name: /Private Pod/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Invite-only — you add people.')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('Pod name'), {
       target: { value: 'Launch circle' },
     });
@@ -100,5 +113,29 @@ describe('V2PodsSidebar create flow', () => {
     });
     expect(sessionStorage.getItem('v2.justCreated.new-private-pod')).toBe('1');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
+  });
+
+  it('renders both policy helpers from the Simplified Chinese catalog', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('zh-CN');
+    });
+    const podsState = {
+      pods: [],
+      loading: false,
+      error: null,
+      createPod: mockCreatePod,
+      patchLastMessage: jest.fn(),
+    };
+    render(
+      <MemoryRouter>
+        <V2PodsSidebar selectedPodId={null} podsState={podsState} />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
+
+    expect(screen.getByText('列入发现后，任何人都可以找到并加入。')).toBeInTheDocument();
+    expect(screen.getByText('仅限邀请，由你添加成员。')).toBeInTheDocument();
+
   });
 });

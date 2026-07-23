@@ -1273,7 +1273,9 @@
     },
     "create": {
       "teamOption": "Team Pod",
+      "teamDescription": "Anyone can find and join if listed.",
       "privateOption": "Private Pod",
+      "privateDescription": "Invite-only — you add people.",
       "namePlaceholder": "Pod name",
       "goalPlaceholder": "Goal or description",
       "cancel": "Cancel",

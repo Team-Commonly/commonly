@@ -682,12 +682,28 @@
 }
 
 .v2-pods__create-option {
-  height: 32px;
-  border-radius: var(--v2-radius-sm);
+  display: flex;
+  min-height: 48px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 9px;
   border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
   color: var(--v2-text-secondary);
+  text-align: left;
+}
+
+.v2-pods__create-option strong {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.v2-pods__create-option span {
+  color: var(--v2-text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .v2-pods__create-option--active {
@@ -1480,17 +1496,31 @@
   font-weight: 650;
 }
 
-/* First-run attach card lives inside the selected pod transcript instead of
-   replacing the pod shell. That keeps the workspace, composer, and mobile
-   drawer reachable while the agent connection status updates live. */
+/* First-run is a shell-level dialog. The overlay separates the one-time setup
+   path from pod content, while the dialog itself owns overflow on short mobile
+   viewports so every step and the dismissal control stay reachable. */
+.v2-first-run__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
 .v2-first-run {
   width: min(720px, 100%);
-  margin: 24px auto 16px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   padding: 28px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
   color: var(--v2-text-primary);
+  box-shadow: var(--v2-shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+  outline: none;
 }
 
 .v2-first-run__eyebrow {
@@ -1730,12 +1760,12 @@
 
 .v2-chat__new-pod {
   align-self: center;
-  width: min(720px, 100%);
+  width: min(760px, 100%);
   margin: auto;
-  padding: 20px;
-  border: 1px solid var(--v2-border);
+  padding: 24px;
+  border: 1px solid var(--v2-border-strong);
   border-radius: var(--v2-radius-lg);
-  background: var(--v2-surface);
+  background: var(--v2-bg-subtle);
 }
 
 .v2-chat__new-pod-head {
@@ -1748,7 +1778,7 @@
 
 .v2-chat__new-pod-title {
   color: var(--v2-text-primary);
-  font-size: 17px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -5110,8 +5140,12 @@
     padding-inline: 14px;
   }
 
+  .v2-first-run__overlay {
+    padding: 12px;
+  }
+
   .v2-first-run {
-    margin-top: 14px;
+    max-height: calc(100dvh - 24px);
     padding: 20px 16px;
   }
 

@@ -496,7 +496,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                     setCreateError(null);
                   }}
                 >
-                  {t('podsSidebar.create.teamOption')}
+                  <strong>{t('podsSidebar.create.teamOption')}</strong>
+                  <span>{t('podsSidebar.create.teamDescription')}</span>
                 </button>
                 <button
                   type="button"
@@ -507,7 +508,8 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                     setCreateError(null);
                   }}
                 >
-                  {t('podsSidebar.create.privateOption')}
+                  <strong>{t('podsSidebar.create.privateOption')}</strong>
+                  <span>{t('podsSidebar.create.privateDescription')}</span>
                 </button>
               </div>
               <input
