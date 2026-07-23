@@ -1,10 +1,11 @@
 // @ts-nocheck
 import React from 'react';
 import {
-  fireEvent, render, screen, waitFor,
+  act, fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2PodsSidebar from '../components/V2PodsSidebar';
+import i18n, { i18nReady } from '../../i18n';
 
 const mockCreatePod = jest.fn();
 
@@ -54,9 +55,16 @@ jest.mock('../../context/AuthContext', () => ({
 const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}</div>;
 
 describe('V2PodsSidebar create flow', () => {
-  beforeEach(() => {
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
+  beforeEach(async () => {
     jest.clearAllMocks();
     sessionStorage.clear();
+    await act(async () => {
+      await i18n.changeLanguage('en');
+    });
     mockCreatePod.mockResolvedValue({
       _id: 'new-private-pod',
       name: 'Launch circle',
@@ -81,21 +89,19 @@ describe('V2PodsSidebar create flow', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    const createDialog = screen.getByRole('dialog', { name: 'Create a Pod' });
-    expect(createDialog).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /Team Pod/ })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByText(/shared space for a team/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Team Pod/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Anyone can find and join if listed.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('radio', { name: /Private Pod/ }));
-    expect(screen.getByRole('radio', { name: /Private Pod/ })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByText(/invite-only membership/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Pod name'), {
+    fireEvent.click(screen.getByRole('button', { name: /Private Pod/ }));
+    expect(screen.getByRole('button', { name: /Private Pod/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Invite-only — you add people.')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Pod name'), {
       target: { value: 'Launch circle' },
     });
-    fireEvent.change(screen.getByLabelText('What will this Pod accomplish?'), {
+    fireEvent.change(screen.getByPlaceholderText('Goal or description'), {
       target: { value: 'Prepare the launch' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create private Pod' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
     await waitFor(() => {
       expect(mockCreatePod).toHaveBeenCalledWith(
@@ -109,7 +115,10 @@ describe('V2PodsSidebar create flow', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
   });
 
-  it('closes the create dialog with Escape without creating a Pod', () => {
+  it('renders both policy helpers from the Simplified Chinese catalog', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('zh-CN');
+    });
     const podsState = {
       pods: [],
       loading: false,
@@ -123,13 +132,10 @@ describe('V2PodsSidebar create flow', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    expect(screen.getByRole('dialog', { name: 'Create a Pod' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
 
-    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByText('列入发现后，任何人都可以找到并加入。')).toBeInTheDocument();
+    expect(screen.getByText('仅限邀请，由你添加成员。')).toBeInTheDocument();
 
-    expect(screen.queryByRole('dialog', { name: 'Create a Pod' })).not.toBeInTheDocument();
-    expect(mockCreatePod).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'New Pod' })).toHaveFocus();
   });
 });

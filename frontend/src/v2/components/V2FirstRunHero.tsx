@@ -57,6 +57,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const api = useV2Api();
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [dismissed, setDismissed] = useState(() => readFlag(FIRST_RUN_DISMISSED_KEY));
   // `engaged` is a session latch. Once a zero-install user sees the hero, an
   // install appearing during the poll must advance the card to Waiting / Say
@@ -134,6 +135,9 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     if (!visible) return undefined;
 
     const dialog = dialogRef.current;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     dialog?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -164,7 +168,11 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+    };
   }, [dismiss, visible]);
 
   if (!visible) return null;

@@ -63,9 +63,10 @@ jest.mock('../components/V2NavRail', () => () => <nav>Rail</nav>);
 jest.mock('../components/V2PodsSidebar', () => () => <aside>Pods</aside>);
 jest.mock('../components/V2PodInspector', () => () => <aside>Inspector</aside>);
 jest.mock('../components/V2InviteModal', () => () => null);
-jest.mock('../components/V2PodChat', () => () => (
+jest.mock('../components/V2PodChat', () => ({ firstRunVisible }: { firstRunVisible?: boolean }) => (
   <main data-testid="pod-chat">
     <span>Normal pod view</span>
+    {!firstRunVisible && <span>Quiet pod empty state</span>}
   </main>
 ));
 
@@ -124,7 +125,8 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toHaveAttribute('aria-modal', 'true');
     expect(screen.getByText('Waiting for your agent to connect…')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open connection setup/i })).toHaveAttribute('target', '_blank');
 
@@ -202,11 +204,27 @@ describe('V2FirstRunHero', () => {
   });
 
   test('dismisses the first-run modal with Escape', async () => {
+    const priorControl = document.createElement('button');
+    document.body.appendChild(priorControl);
+    priorControl.focus();
     renderHero();
     await flush();
 
     expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    expect(priorControl).toHaveFocus();
+    priorControl.remove();
+  });
+
+  test('dismisses the first-run modal from the backdrop', async () => {
+    renderHero();
+    await flush();
+
+    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into the room' });
+    fireEvent.mouseDown(dialog.parentElement as HTMLElement);
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
@@ -258,5 +276,27 @@ describe('V2Layout first-run placement', () => {
     expect(dialog).toBeInTheDocument();
     expect(screen.getByTestId('pod-chat')).not.toContainElement(dialog);
     expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    await waitFor(() => {
+      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
+    });
+  });
+
+  test('keeps the shell unblocked when first-run was already dismissed', async () => {
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/hq']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });

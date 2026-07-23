@@ -664,21 +664,66 @@
   background: var(--v2-accent-strong);
 }
 
+.v2-pods__create {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  margin-bottom: 14px;
+}
+
+.v2-pods__create-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.v2-pods__create-option {
+  display: flex;
+  min-height: 48px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-secondary);
+  text-align: left;
+}
+
+.v2-pods__create-option strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-pods__create-option span {
+  color: var(--v2-text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.v2-pods__create-option--active {
+  background: var(--v2-accent-soft);
+  border-color: var(--v2-border-strong);
+  color: var(--v2-accent-text);
+}
+
 .v2-pods__create-input {
   width: 100%;
-  min-height: 42px;
-  padding: 9px 11px;
+  padding: 8px 9px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
   background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
 }
 
 .v2-pods__create-input:focus {
   border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
 }
 
 .v2-pods__create-error {
@@ -686,12 +731,17 @@
   color: var(--v2-danger);
 }
 
+.v2-pods__create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .v2-pods__create-cancel,
 .v2-pods__create-submit {
-  min-height: 38px;
-  padding: 8px 14px;
+  padding: 6px 9px;
   border-radius: var(--v2-radius-sm);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1726,15 +1776,6 @@
   margin-bottom: 16px;
 }
 
-.v2-chat__new-pod-kicker {
-  margin-bottom: 6px;
-  color: var(--v2-accent-text);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .v2-chat__new-pod-title {
   color: var(--v2-text-primary);
   font-size: 20px;
@@ -1773,13 +1814,13 @@
 
 .v2-root button.v2-chat__new-pod-action,
 .v2-chat__new-pod-action {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  display: flex;
   min-width: 0;
   min-height: 116px;
-  align-items: start;
-  gap: 10px;
-  padding: 14px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
@@ -1794,27 +1835,6 @@
 .v2-root button.v2-chat__new-pod-action:hover {
   border-color: var(--v2-border-strong);
   background: var(--v2-accent-soft);
-}
-
-.v2-chat__new-pod-step {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.v2-chat__new-pod-action-body {
-  display: flex;
-  min-width: 0;
-  height: 100%;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
 }
 
 .v2-chat__new-pod-action-title {
@@ -3794,132 +3814,6 @@
   margin-top: 4px;
 }
 
-.v2-create-pod {
-  width: min(620px, 100%);
-}
-
-.v2-create-pod .v2-modal__head {
-  align-items: flex-start;
-  padding: 20px 22px 16px;
-}
-
-.v2-create-pod__title {
-  color: var(--v2-text-primary);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-
-.v2-create-pod__intro {
-  max-width: 460px;
-  margin: 5px 0 0;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.v2-create-pod__body {
-  gap: 16px;
-  padding: 18px 22px 20px;
-}
-
-.v2-create-pod__policy {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.v2-create-pod__policy legend,
-.v2-create-pod__field > span {
-  margin-bottom: 7px;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.v2-create-pod__policy-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.v2-root button.v2-create-pod__policy-option,
-.v2-create-pod__policy-option {
-  display: grid;
-  min-width: 0;
-  min-height: 112px;
-  grid-template-columns: 36px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  text-align: left;
-  transition: background 80ms ease, border-color 80ms ease;
-}
-
-.v2-root button.v2-create-pod__policy-option:hover,
-.v2-create-pod__policy-option:hover {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-root button.v2-create-pod__policy-option--active,
-.v2-create-pod__policy-option--active {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent-soft);
-}
-
-.v2-create-pod__policy-icon {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-}
-
-.v2-create-pod__policy-option--active .v2-create-pod__policy-icon {
-  background: var(--v2-surface);
-  color: var(--v2-accent-text);
-}
-
-.v2-create-pod__policy-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.v2-create-pod__policy-copy strong {
-  color: var(--v2-text-primary);
-  font-size: 13px;
-}
-
-.v2-create-pod__policy-copy > span {
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.v2-create-pod__field {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.v2-create-pod__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 22px 18px;
-  border-top: 1px solid var(--v2-border-soft);
-}
-
 .v2-modal__section-title {
   font-size: 12px;
   font-weight: 700;
@@ -4121,23 +4015,6 @@
 @media (max-width: 480px) {
   .v2-modal__overlay {
     padding: 12px;
-  }
-
-  .v2-create-pod__policy-options {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .v2-root button.v2-create-pod__policy-option,
-  .v2-create-pod__policy-option {
-    min-height: 0;
-  }
-
-  .v2-create-pod__actions {
-    padding-inline: 16px;
-  }
-
-  .v2-create-pod__actions .v2-pods__create-submit {
-    flex: 1;
   }
 
   .v2-invite-options {

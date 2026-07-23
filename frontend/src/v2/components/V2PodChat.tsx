@@ -882,7 +882,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                 <section className="v2-chat__new-pod" aria-label={t('podChat.newPod.label')}>
                   <div className="v2-chat__new-pod-head">
                     <div>
-                      <div className="v2-chat__new-pod-kicker">{t('podChat.newPod.eyebrow')}</div>
                       <div className="v2-chat__new-pod-title">{t('podChat.newPod.title')}</div>
                       <div className="v2-chat__new-pod-text">{t('podChat.newPod.text')}</div>
                     </div>
@@ -899,66 +898,57 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   </div>
                   <div className="v2-chat__new-pod-actions">
                     <div className="v2-chat__new-pod-action v2-chat__new-pod-action--invite">
-                      <span className="v2-chat__new-pod-step" aria-hidden="true">1</span>
-                      <div className="v2-chat__new-pod-action-body">
-                        <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
-                        <div className="v2-chat__new-pod-action-text">{t('podChat.newPod.inviteText')}</div>
-                        {starterInviteLoading && (
-                          <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>
-                        )}
-                        {starterInviteUrl && (
-                          <div className="v2-invite-link-row">
-                            <input
-                              type="text"
-                              className="v2-invite-link"
-                              aria-label={t('podChat.newPod.inviteLinkLabel')}
-                              readOnly
-                              value={starterInviteUrl}
-                              onFocus={(event) => event.currentTarget.select()}
-                            />
-                            <button
-                              type="button"
-                              className="v2-chat__new-pod-copy"
-                              onClick={() => { void handleStarterInviteCopy(); }}
-                            >
-                              {starterInviteCopied ? t('common.copied') : t('common.copy')}
-                            </button>
-                          </div>
-                        )}
-                        {starterInviteError && (
-                          <div className="v2-chat__new-pod-error">
-                            <span>{starterInviteError}</span>
-                            <button
-                              type="button"
-                              onClick={() => { void generateStarterInvite(pod._id); }}
-                            >
-                              {t('podChat.newPod.tryAgain')}
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
+                      <div className="v2-chat__new-pod-action-text">{t('podChat.newPod.inviteText')}</div>
+                      {starterInviteLoading && (
+                        <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>
+                      )}
+                      {starterInviteUrl && (
+                        <div className="v2-invite-link-row">
+                          <input
+                            type="text"
+                            className="v2-invite-link"
+                            aria-label={t('podChat.newPod.inviteLinkLabel')}
+                            readOnly
+                            value={starterInviteUrl}
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                          <button
+                            type="button"
+                            className="v2-chat__new-pod-copy"
+                            onClick={() => { void handleStarterInviteCopy(); }}
+                          >
+                            {starterInviteCopied ? t('common.copied') : t('common.copy')}
+                          </button>
+                        </div>
+                      )}
+                      {starterInviteError && (
+                        <div className="v2-chat__new-pod-error">
+                          <span>{starterInviteError}</span>
+                          <button
+                            type="button"
+                            onClick={() => { void generateStarterInvite(pod._id); }}
+                          >
+                            {t('podChat.newPod.tryAgain')}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
                       className="v2-chat__new-pod-action"
                       onClick={() => onOpenInvite?.('agent')}
                     >
-                      <span className="v2-chat__new-pod-step" aria-hidden="true">2</span>
-                      <span className="v2-chat__new-pod-action-body">
-                        <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.addAgentTitle')}</span>
-                        <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.addAgentText')}</span>
-                      </span>
+                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.addAgentTitle')}</span>
+                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.addAgentText')}</span>
                     </button>
                     <button
                       type="button"
                       className="v2-chat__new-pod-action"
                       onClick={() => composerInputRef.current?.focus()}
                     >
-                      <span className="v2-chat__new-pod-step" aria-hidden="true">3</span>
-                      <span className="v2-chat__new-pod-action-body">
-                        <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.messageTitle')}</span>
-                        <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.messageText')}</span>
-                      </span>
+                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.messageTitle')}</span>
+                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.messageText')}</span>
                     </button>
                   </div>
                 </section>

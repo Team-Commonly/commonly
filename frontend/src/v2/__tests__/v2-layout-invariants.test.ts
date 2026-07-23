@@ -41,7 +41,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
-  const podsSidebar = read('../components/V2PodsSidebar.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -167,19 +166,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(panel).toContain('width: min(760px, 100%)');
     expect(actions).toContain('repeat(2, minmax(0, 1fr))');
     expect(v2).toContain('.v2-chat__new-pod-actions {\n    grid-template-columns: minmax(0, 1fr)');
-  });
-
-  test('the create-Pod policy cards collapse to one column on phones', () => {
-    const dialog = ruleBody(v2, '.v2-create-pod');
-    const options = ruleBody(v2, '.v2-create-pod__policy-options');
-    expect(dialog).toContain('width: min(620px, 100%)');
-    expect(options).toContain('repeat(2, minmax(0, 1fr))');
-    expect(v2).toContain('.v2-create-pod__policy-options {\n    grid-template-columns: minmax(0, 1fr)');
-  });
-
-  test('the create-Pod dialog escapes the transformed mobile sidebar', () => {
-    expect(podsSidebar).toContain('createPortal((');
-    expect(podsSidebar).toContain('document.querySelector(V2_ROOT_SELECTOR)');
   });
 
   test('invite management controls collapse to one column on phones', () => {

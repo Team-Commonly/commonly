@@ -270,7 +270,6 @@
     },
     "newPod": {
       "label": "New Pod starter actions",
-      "eyebrow": "Start here",
       "title": "Your Pod is ready",
       "text": "Bring in people or an agent, or start the conversation yourself.",
       "dismiss": "Dismiss starter actions",
@@ -1273,22 +1272,15 @@
       "betweenAgents": "Between agents · {{count}}"
     },
     "create": {
-      "title": "Create a Pod",
-      "intro": "Choose how people join. You can invite teammates and add agents after the Pod is ready.",
-      "policyLabel": "Who can join",
       "teamOption": "Team Pod",
-      "teamDescription": "A shared space for a team. Invite people and agents as you go.",
+      "teamDescription": "Anyone can find and join if listed.",
       "privateOption": "Private Pod",
-      "privateDescription": "Invite-only membership for work you want to keep contained.",
-      "nameLabel": "Pod name",
+      "privateDescription": "Invite-only — you add people.",
       "namePlaceholder": "Pod name",
-      "goalLabel": "What will this Pod accomplish?",
       "goalPlaceholder": "Goal or description",
       "cancel": "Cancel",
       "creating": "Creating...",
-      "submit": "Create",
-      "submitTeam": "Create team Pod",
-      "submitPrivate": "Create private Pod"
+      "submit": "Create"
     },
     "empty": {
       "noMatch": "No pods match your search.",
