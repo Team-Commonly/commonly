@@ -1,4 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { UseV2PodsResult, V2Pod, useV2Pods } from '../hooks/useV2Pods';
@@ -20,6 +23,7 @@ const FILTERS: Array<{ key: Filter; labelKey: string }> = [
   { key: 'community', labelKey: 'filters.community' },
 ];
 const COMMUNITY_VIEWS: CommunityView[] = ['joined', 'discover'];
+const V2_ROOT_SELECTOR = '.v2-root';
 
 // Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
 // up under the Private filter. agent-dm with two bot members gets a
@@ -204,11 +208,53 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const [newPodGoal, setNewPodGoal] = useState('');
   const [newPodJoinPolicy, setNewPodJoinPolicy] = useState<'open' | 'invite-only'>('open');
   const [createError, setCreateError] = useState<string | null>(null);
+  const newPodButtonRef = useRef<HTMLButtonElement | null>(null);
+  const createDialogRef = useRef<HTMLFormElement | null>(null);
+  const createNameInputRef = useRef<HTMLInputElement | null>(null);
   // Pod IDs an agent is currently typing into. Set, not bool, because
   // multiple agents could type at once. Cleared after 30s safety in case the
   // stop event is missed.
   const [typingPods, setTypingPods] = useState<Set<string>>(() => new Set());
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const closeCreate = useCallback(() => {
+    setShowCreate(false);
+    setNewPodJoinPolicy('open');
+    setCreateError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!showCreate) return undefined;
+
+    createNameInputRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCreate();
+        return;
+      }
+      if (event.key !== 'Tab' || !createDialogRef.current) return;
+
+      const focusable = Array.from(createDialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      newPodButtonRef.current?.focus();
+    };
+  }, [closeCreate, showCreate]);
 
   // Join every member-pod's socket room so we hear newMessage / typing events
   // even while another pod is selected. The chat room hook (`useV2PodDetail`)
@@ -441,7 +487,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         setNewPodName('');
         setNewPodGoal('');
         setNewPodJoinPolicy('open');
-        setShowCreate(false);
+        closeCreate();
         selectPod(pod._id);
       } else {
         setCreateError(t('podsSidebar.errors.createFailed'));
@@ -470,10 +516,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             </button>
           </div>
           <button
+            ref={newPodButtonRef}
             type="button"
             className="v2-pods__new-btn"
             onClick={() => {
-              setShowCreate((next) => !next);
+              setShowCreate(true);
               setNewPodJoinPolicy('open');
               setCreateError(null);
             }}
@@ -484,70 +531,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             </svg>
             {t('podsSidebar.newPod')}
           </button>
-          {showCreate && (
-            <form className="v2-pods__create" onSubmit={handleCreatePod}>
-              <div className="v2-pods__create-options">
-                <button
-                  type="button"
-                  className={`v2-pods__create-option${newPodJoinPolicy === 'open' ? ' v2-pods__create-option--active' : ''}`}
-                  aria-pressed={newPodJoinPolicy === 'open'}
-                  onClick={() => {
-                    setNewPodJoinPolicy('open');
-                    setCreateError(null);
-                  }}
-                >
-                  {t('podsSidebar.create.teamOption')}
-                </button>
-                <button
-                  type="button"
-                  className={`v2-pods__create-option${newPodJoinPolicy === 'invite-only' ? ' v2-pods__create-option--active' : ''}`}
-                  aria-pressed={newPodJoinPolicy === 'invite-only'}
-                  onClick={() => {
-                    setNewPodJoinPolicy('invite-only');
-                    setCreateError(null);
-                  }}
-                >
-                  {t('podsSidebar.create.privateOption')}
-                </button>
-              </div>
-              <input
-                className="v2-pods__create-input"
-                type="text"
-                value={newPodName}
-                onChange={(e) => setNewPodName(e.target.value)}
-                placeholder={t('podsSidebar.create.namePlaceholder')}
-                autoFocus
-              />
-              <input
-                className="v2-pods__create-input"
-                type="text"
-                value={newPodGoal}
-                onChange={(e) => setNewPodGoal(e.target.value)}
-                placeholder={t('podsSidebar.create.goalPlaceholder')}
-              />
-              {createError && <div className="v2-pods__create-error">{createError}</div>}
-              <div className="v2-pods__create-actions">
-                <button
-                  type="button"
-                  className="v2-pods__create-cancel"
-                  onClick={() => {
-                    setShowCreate(false);
-                    setNewPodJoinPolicy('open');
-                    setCreateError(null);
-                  }}
-                >
-                  {t('podsSidebar.create.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  className="v2-pods__create-submit"
-                  disabled={creating || !newPodName.trim()}
-                >
-                  {creating ? t('podsSidebar.create.creating') : t('podsSidebar.create.submit')}
-                </button>
-              </div>
-            </form>
-          )}
           <div className="v2-pods__search">
             <span className="v2-pods__search-icon">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -738,6 +721,136 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           </section>
         )}
       </div>
+      {/* Keep fixed-position modal chrome outside the transformed mobile
+          sidebar. A fixed descendant of that drawer is otherwise off-screen. */}
+      {showCreate && createPortal((
+        <div className="v2-modal__overlay" role="presentation" onMouseDown={closeCreate}>
+          <form
+            ref={createDialogRef}
+            className="v2-modal v2-create-pod"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="v2-create-pod-title"
+            aria-describedby="v2-create-pod-description"
+            onSubmit={handleCreatePod}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="v2-modal__head">
+              <div>
+                <div id="v2-create-pod-title" className="v2-create-pod__title">
+                  {t('podsSidebar.create.title')}
+                </div>
+                <p id="v2-create-pod-description" className="v2-create-pod__intro">
+                  {t('podsSidebar.create.intro')}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="v2-modal__close"
+                aria-label={t('common.close')}
+                onClick={closeCreate}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="v2-modal__body v2-create-pod__body">
+              <fieldset className="v2-create-pod__policy">
+                <legend>{t('podsSidebar.create.policyLabel')}</legend>
+                <div className="v2-create-pod__policy-options" role="radiogroup">
+                  <button
+                    type="button"
+                    role="radio"
+                    className={`v2-create-pod__policy-option${newPodJoinPolicy === 'open' ? ' v2-create-pod__policy-option--active' : ''}`}
+                    aria-checked={newPodJoinPolicy === 'open'}
+                    onClick={() => {
+                      setNewPodJoinPolicy('open');
+                      setCreateError(null);
+                    }}
+                  >
+                    <span className="v2-create-pod__policy-icon" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM19 8v6M16 11h6" />
+                      </svg>
+                    </span>
+                    <span className="v2-create-pod__policy-copy">
+                      <strong>{t('podsSidebar.create.teamOption')}</strong>
+                      <span>{t('podsSidebar.create.teamDescription')}</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    className={`v2-create-pod__policy-option${newPodJoinPolicy === 'invite-only' ? ' v2-create-pod__policy-option--active' : ''}`}
+                    aria-checked={newPodJoinPolicy === 'invite-only'}
+                    onClick={() => {
+                      setNewPodJoinPolicy('invite-only');
+                      setCreateError(null);
+                    }}
+                  >
+                    <span className="v2-create-pod__policy-icon" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="4" y="10" width="16" height="11" rx="2" />
+                        <path d="M8 10V7a4 4 0 018 0v3" />
+                      </svg>
+                    </span>
+                    <span className="v2-create-pod__policy-copy">
+                      <strong>{t('podsSidebar.create.privateOption')}</strong>
+                      <span>{t('podsSidebar.create.privateDescription')}</span>
+                    </span>
+                  </button>
+                </div>
+              </fieldset>
+
+              <label className="v2-create-pod__field">
+                <span>{t('podsSidebar.create.nameLabel')}</span>
+                <input
+                  ref={createNameInputRef}
+                  className="v2-pods__create-input"
+                  type="text"
+                  value={newPodName}
+                  onChange={(event) => setNewPodName(event.target.value)}
+                  placeholder={t('podsSidebar.create.namePlaceholder')}
+                />
+              </label>
+              <label className="v2-create-pod__field">
+                <span>{t('podsSidebar.create.goalLabel')}</span>
+                <input
+                  className="v2-pods__create-input"
+                  type="text"
+                  value={newPodGoal}
+                  onChange={(event) => setNewPodGoal(event.target.value)}
+                  placeholder={t('podsSidebar.create.goalPlaceholder')}
+                />
+              </label>
+              {createError && <div className="v2-pods__create-error" role="alert">{createError}</div>}
+            </div>
+            <div className="v2-create-pod__actions">
+              <button
+                type="button"
+                className="v2-pods__create-cancel"
+                onClick={closeCreate}
+              >
+                {t('podsSidebar.create.cancel')}
+              </button>
+              <button
+                type="submit"
+                className="v2-pods__create-submit"
+                disabled={creating || !newPodName.trim()}
+              >
+                {creating
+                  ? t('podsSidebar.create.creating')
+                  : t(
+                    newPodJoinPolicy === 'invite-only'
+                      ? 'podsSidebar.create.submitPrivate'
+                      : 'podsSidebar.create.submitTeam',
+                  )}
+              </button>
+            </div>
+          </form>
+        </div>
+      ), document.querySelector(V2_ROOT_SELECTOR) || document.body)}
     </aside>
   );
 };

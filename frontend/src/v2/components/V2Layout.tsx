@@ -90,8 +90,9 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // it entirely (the sidebar is always a visible column there).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Assume visible until the ownership-status probe resolves. This prevents
-  // the legacy empty-state copy flashing underneath the onboarding card; an
-  // established/dismissed user flips it off as soon as the hero resolves.
+  // the empty-state stack from flashing while the shell-level first-run modal
+  // decides whether it should open; an established/dismissed user flips it off
+  // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
   const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
@@ -205,7 +206,6 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       <V2PodChat
         detail={detail}
         podsState={podsState}
-        firstRunHero={<V2FirstRunHero onVisibilityChange={setFirstRunVisible} />}
         firstRunVisible={firstRunVisible}
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
@@ -228,6 +228,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onPendingOpenFileNameConsumed={clearPendingOpenFileName}
         />
       )}
+      <V2FirstRunHero onVisibilityChange={setFirstRunVisible} />
       {inviteEnabled && detail.pod && (
         <V2InviteModal
           open={inviteOpen}

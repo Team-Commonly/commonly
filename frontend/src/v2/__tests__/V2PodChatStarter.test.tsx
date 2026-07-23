@@ -174,10 +174,7 @@ describe('V2PodChat starter prompts', () => {
     expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
     withMessage.unmount();
 
-    renderChat(makeAgentRoom(), {
-      firstRunVisible: true,
-      firstRunHero: <div>First-run guide</div>,
-    });
+    renderChat(makeAgentRoom(), { firstRunVisible: true });
     expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
   });
 });
@@ -233,14 +230,12 @@ describe('V2PodChat just-created Pod starter panel', () => {
     withMessage.unmount();
   });
 
-  test('keeps the first-run guide above the starter panel', () => {
+  test('keeps the first-run modal ahead of the starter panel without minting an invite', () => {
     sessionStorage.setItem('v2.justCreated.p1', '1');
-    renderChat(makeDetail(), {
-      firstRunVisible: true,
-      firstRunHero: <div>First-run guide</div>,
-    });
-    expect(screen.getByText('First-run guide')).toBeInTheDocument();
+    renderChat(makeDetail(), { firstRunVisible: true });
+
     expect(screen.queryByText('Your Pod is ready')).not.toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('does not mint an invite when the starter panel does not render', () => {

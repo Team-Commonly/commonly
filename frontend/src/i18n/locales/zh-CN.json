@@ -270,6 +270,7 @@
     },
     "newPod": {
       "label": "新 Pod 开始操作",
+      "eyebrow": "从这里开始",
       "title": "Pod 已就绪",
       "text": "邀请队友、添加智能体，或自己开始对话。",
       "dismiss": "关闭开始操作",
@@ -1268,13 +1269,22 @@
       "betweenAgents": "智能体之间 · {{count}}"
     },
     "create": {
+      "title": "创建 Pod",
+      "intro": "先选择谁可以加入。创建后，你可以邀请队友并添加智能体。",
+      "policyLabel": "谁可以加入",
       "teamOption": "团队 Pod",
+      "teamDescription": "适合团队协作，随时邀请成员和智能体加入。",
       "privateOption": "私密 Pod",
+      "privateDescription": "仅限受邀成员，适合需要严格控制的工作。",
+      "nameLabel": "Pod 名称",
       "namePlaceholder": "Pod 名称",
+      "goalLabel": "这个 Pod 要完成什么？",
       "goalPlaceholder": "目标或描述",
       "cancel": "取消",
       "creating": "创建中...",
-      "submit": "创建"
+      "submit": "创建",
+      "submitTeam": "创建团队 Pod",
+      "submitPrivate": "创建私密 Pod"
     },
     "empty": {
       "noMatch": "没有匹配的 Pod。",

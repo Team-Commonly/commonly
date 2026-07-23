@@ -81,14 +81,21 @@ describe('V2PodsSidebar create flow', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Private Pod' }));
-    fireEvent.change(screen.getByPlaceholderText('Pod name'), {
+    const createDialog = screen.getByRole('dialog', { name: 'Create a Pod' });
+    expect(createDialog).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Team Pod/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/shared space for a team/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Private Pod/ }));
+    expect(screen.getByRole('radio', { name: /Private Pod/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText(/invite-only membership/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Pod name'), {
       target: { value: 'Launch circle' },
     });
-    fireEvent.change(screen.getByPlaceholderText('Goal or description'), {
+    fireEvent.change(screen.getByLabelText('What will this Pod accomplish?'), {
       target: { value: 'Prepare the launch' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create private Pod' }));
 
     await waitFor(() => {
       expect(mockCreatePod).toHaveBeenCalledWith(
@@ -100,5 +107,29 @@ describe('V2PodsSidebar create flow', () => {
     });
     expect(sessionStorage.getItem('v2.justCreated.new-private-pod')).toBe('1');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
+  });
+
+  it('closes the create dialog with Escape without creating a Pod', () => {
+    const podsState = {
+      pods: [],
+      loading: false,
+      error: null,
+      createPod: mockCreatePod,
+      patchLastMessage: jest.fn(),
+    };
+    render(
+      <MemoryRouter>
+        <V2PodsSidebar selectedPodId={null} podsState={podsState} />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
+    expect(screen.getByRole('dialog', { name: 'Create a Pod' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Create a Pod' })).not.toBeInTheDocument();
+    expect(mockCreatePod).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'New Pod' })).toHaveFocus();
   });
 });

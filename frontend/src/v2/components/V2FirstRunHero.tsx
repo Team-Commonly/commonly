@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, {
+  useCallback, useEffect, useRef, useState,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +56,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
+  const dialogRef = useRef<HTMLElement | null>(null);
   const [dismissed, setDismissed] = useState(() => readFlag(FIRST_RUN_DISMISSED_KEY));
   // `engaged` is a session latch. Once a zero-install user sees the hero, an
   // install appearing during the poll must advance the card to Waiting / Say
@@ -80,6 +83,12 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   // but do not flash the full onboarding card for an established user.
   const shouldProbe = !dismissed && (engaged || status === null || status.issued === false);
   const visible = !dismissed && (engaged || status?.issued === false);
+
+  const dismiss = useCallback(() => {
+    writeFlag(FIRST_RUN_DISMISSED_KEY, true);
+    writeFlag(FIRST_RUN_STARTED_KEY, false);
+    setDismissed(true);
+  }, []);
 
   useEffect(() => {
     onVisibilityChange?.(shouldProbe);
@@ -121,17 +130,48 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     };
   }, [pollStatus, shouldProbe, status?.connected]);
 
+  useEffect(() => {
+    if (!visible) return undefined;
+
+    const dialog = dialogRef.current;
+    dialog?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dismiss();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [dismiss, visible]);
+
   if (!visible) return null;
 
   const openSetup = () => {
     writeFlag(FIRST_RUN_STARTED_KEY, true);
     setEngaged(true);
-  };
-
-  const dismiss = () => {
-    writeFlag(FIRST_RUN_DISMISSED_KEY, true);
-    writeFlag(FIRST_RUN_STARTED_KEY, false);
-    setDismissed(true);
   };
 
   const sayHello = async () => {
@@ -159,70 +199,81 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   };
 
   return (
-    <section className="v2-first-run" aria-labelledby="v2-first-run-title">
-      <div className="v2-first-run__eyebrow">{t('firstRun.eyebrow')}</div>
-      <div className="v2-first-run__heading-row">
-        <div>
-          <h2 id="v2-first-run-title" className="v2-first-run__title">{t('firstRun.title')}</h2>
-          <p className="v2-first-run__lede">
-            {t('firstRun.lede')}
-          </p>
+    <div className="v2-first-run__overlay" onMouseDown={dismiss}>
+      <section
+        ref={dialogRef}
+        className="v2-first-run"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="v2-first-run-title"
+        aria-describedby="v2-first-run-description"
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="v2-first-run__eyebrow">{t('firstRun.eyebrow')}</div>
+        <div className="v2-first-run__heading-row">
+          <div>
+            <h2 id="v2-first-run-title" className="v2-first-run__title">{t('firstRun.title')}</h2>
+            <p id="v2-first-run-description" className="v2-first-run__lede">
+              {t('firstRun.lede')}
+            </p>
+          </div>
+          <button type="button" className="v2-first-run__skip" onClick={dismiss}>{t('firstRun.skip')}</button>
         </div>
-        <button type="button" className="v2-first-run__skip" onClick={dismiss}>{t('firstRun.skip')}</button>
-      </div>
 
-      <ol className="v2-first-run__steps">
-        <li className="v2-first-run__step">
-          <StepMark done={Boolean(status?.issued)}>1</StepMark>
-          <div className="v2-first-run__step-body">
-            <strong>{t('firstRun.steps.connect.title')}</strong>
-            <span>{t('firstRun.steps.connect.text')}</span>
-            {!status?.issued && (
-              <a
-                className="v2-first-run__setup"
-                href="/v2/agents/byo"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={openSetup}
-              >
-                {t('firstRun.steps.connect.openSetup')}
-                <span aria-hidden="true">{EXTERNAL_LINK_MARK}</span>
-              </a>
-            )}
-          </div>
-        </li>
+        <ol className="v2-first-run__steps">
+          <li className="v2-first-run__step">
+            <StepMark done={Boolean(status?.issued)}>1</StepMark>
+            <div className="v2-first-run__step-body">
+              <strong>{t('firstRun.steps.connect.title')}</strong>
+              <span>{t('firstRun.steps.connect.text')}</span>
+              {!status?.issued && (
+                <a
+                  className="v2-first-run__setup"
+                  href="/v2/agents/byo"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={openSetup}
+                >
+                  {t('firstRun.steps.connect.openSetup')}
+                  <span aria-hidden="true">{EXTERNAL_LINK_MARK}</span>
+                </a>
+              )}
+            </div>
+          </li>
 
-        <li className="v2-first-run__step">
-          <StepMark done={Boolean(status?.connected)}>2</StepMark>
-          <div className="v2-first-run__step-body">
-            <strong>{status?.connected ? t('firstRun.steps.start.connected') : t('firstRun.steps.start.title')}</strong>
-            <span className={status?.connected ? 'v2-first-run__connected' : ''} role="status" aria-live="polite">
-              {status?.connected ? t('firstRun.steps.start.connectedStatus') : t('firstRun.steps.start.waiting')}
-            </span>
-            {statusError && <span className="v2-first-run__error">{statusError}</span>}
-          </div>
-        </li>
+          <li className="v2-first-run__step">
+            <StepMark done={Boolean(status?.connected)}>2</StepMark>
+            <div className="v2-first-run__step-body">
+              <strong>{status?.connected ? t('firstRun.steps.start.connected') : t('firstRun.steps.start.title')}</strong>
+              <span className={status?.connected ? 'v2-first-run__connected' : ''} role="status" aria-live="polite">
+                {status?.connected ? t('firstRun.steps.start.connectedStatus') : t('firstRun.steps.start.waiting')}
+              </span>
+              {statusError && <span className="v2-first-run__error">{statusError}</span>}
+            </div>
+          </li>
 
-        <li className="v2-first-run__step">
-          <StepMark done={false}>3</StepMark>
-          <div className="v2-first-run__step-body">
-            <strong>{t('firstRun.steps.hello.title')}</strong>
-            <span>{t('firstRun.steps.hello.text')}</span>
-            {status?.connected && status.connectedAgent && (
-              <button
-                type="button"
-                className="v2-first-run__hello"
-                onClick={sayHello}
-                disabled={openingRoom}
-              >
-                {openingRoom ? t('firstRun.steps.hello.opening') : t('firstRun.steps.hello.cta')}
-              </button>
-            )}
-            {roomError && <span className="v2-first-run__error">{roomError}</span>}
-          </div>
-        </li>
-      </ol>
-    </section>
+          <li className="v2-first-run__step">
+            <StepMark done={false}>3</StepMark>
+            <div className="v2-first-run__step-body">
+              <strong>{t('firstRun.steps.hello.title')}</strong>
+              <span>{t('firstRun.steps.hello.text')}</span>
+              {status?.connected && status.connectedAgent && (
+                <button
+                  type="button"
+                  className="v2-first-run__hello"
+                  onClick={sayHello}
+                  disabled={openingRoom}
+                >
+                  {openingRoom ? t('firstRun.steps.hello.opening') : t('firstRun.steps.hello.cta')}
+                </button>
+              )}
+              {roomError && <span className="v2-first-run__error">{roomError}</span>}
+            </div>
+          </li>
+        </ol>
+      </section>
+    </div>
   );
 };
 

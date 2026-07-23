@@ -63,10 +63,9 @@ jest.mock('../components/V2NavRail', () => () => <nav>Rail</nav>);
 jest.mock('../components/V2PodsSidebar', () => () => <aside>Pods</aside>);
 jest.mock('../components/V2PodInspector', () => () => <aside>Inspector</aside>);
 jest.mock('../components/V2InviteModal', () => () => null);
-jest.mock('../components/V2PodChat', () => ({ firstRunHero }: { firstRunHero?: React.ReactNode }) => (
-  <main>
+jest.mock('../components/V2PodChat', () => () => (
+  <main data-testid="pod-chat">
     <span>Normal pod view</span>
-    {firstRunHero}
   </main>
 ));
 
@@ -125,6 +124,7 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toBeInTheDocument();
     expect(screen.getByText('Waiting for your agent to connect…')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open connection setup/i })).toHaveAttribute('target', '_blank');
 
@@ -201,6 +201,17 @@ describe('V2FirstRunHero', () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
+  test('dismisses the first-run modal with Escape', async () => {
+    renderHero();
+    await flush();
+
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+  });
+
   test('the started latch survives a reload until the connected CTA is used', async () => {
     localStorage.setItem(FIRST_RUN_STARTED_KEY, '1');
     mockGet.mockResolvedValue(connected);
@@ -232,7 +243,7 @@ describe('V2Layout first-run placement', () => {
     jest.useRealTimers();
   });
 
-  test('shows onboarding inside an agent-rich pod when the human owns no installation', async () => {
+  test('shows onboarding as a shell-level modal when the human owns no installation', async () => {
     render(
       <MemoryRouter initialEntries={['/v2/pods/hq']}>
         <Routes>
@@ -243,7 +254,9 @@ describe('V2Layout first-run placement', () => {
     await flush();
 
     expect(screen.getByText('Normal pod view')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Bring your agent into the room' })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: 'Bring your agent into the room' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByTestId('pod-chat')).not.toContainElement(dialog);
     expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');
   });
 });

@@ -41,6 +41,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
+  const podsSidebar = read('../components/V2PodsSidebar.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -97,12 +98,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('border: 1px solid var(--v2-border)');
   });
 
-  test('the first-run card and message pane shrink to the mobile content width', () => {
-    // The rail remains visible on phones, leaving ~326px at a 390px viewport.
-    // A fixed-width onboarding card would overflow behind the rail; both the
-    // card cap and reduced transcript gutter are load-bearing for that layout.
+  test('the first-run modal stays within the mobile viewport', () => {
+    // First-run is shell-level now: the overlay must own the viewport and the
+    // dialog must cap both axes so the last step and dismissal stay reachable
+    // at 390x844 instead of overflowing behind the fixed shell.
+    expect(ruleBody(v2, '.v2-first-run__overlay')).toContain('position: fixed');
     expect(ruleBody(v2, '.v2-first-run')).toContain('width: min(720px, 100%)');
-    expect(v2).toContain('.v2-chat__messages {\n    padding-inline: 14px');
+    expect(ruleBody(v2, '.v2-first-run')).toContain('max-height: calc(100dvh - 48px)');
+    expect(ruleBody(v2, '.v2-first-run')).toContain('overflow-y: auto');
   });
 
   test('the first-run setup CTA beats the global inherited anchor color', () => {
@@ -161,9 +164,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the new-pod starter panel shrinks and stacks inside the mobile chat pane', () => {
     const panel = ruleBody(v2, '.v2-chat__new-pod');
     const actions = ruleBody(v2, '.v2-chat__new-pod-actions');
-    expect(panel).toContain('width: min(720px, 100%)');
+    expect(panel).toContain('width: min(760px, 100%)');
     expect(actions).toContain('repeat(2, minmax(0, 1fr))');
     expect(v2).toContain('.v2-chat__new-pod-actions {\n    grid-template-columns: minmax(0, 1fr)');
+  });
+
+  test('the create-Pod policy cards collapse to one column on phones', () => {
+    const dialog = ruleBody(v2, '.v2-create-pod');
+    const options = ruleBody(v2, '.v2-create-pod__policy-options');
+    expect(dialog).toContain('width: min(620px, 100%)');
+    expect(options).toContain('repeat(2, minmax(0, 1fr))');
+    expect(v2).toContain('.v2-create-pod__policy-options {\n    grid-template-columns: minmax(0, 1fr)');
+  });
+
+  test('the create-Pod dialog escapes the transformed mobile sidebar', () => {
+    expect(podsSidebar).toContain('createPortal((');
+    expect(podsSidebar).toContain('document.querySelector(V2_ROOT_SELECTOR)');
   });
 
   test('invite management controls collapse to one column on phones', () => {
