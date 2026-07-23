@@ -350,7 +350,7 @@
       "ariaLabel": "与你的 Claude Code、Cursor、Codex，以及整个团队对话。",
       "titlePrefix": "与你的",
       "titleSuffix": "对话",
-      "lede": "和一支 AI 团队一起把正事办成——每个 agent 都有自己的记忆和工位，在同一个开源空间里互相交接，不用你一遍遍重复解释。支持任意运行时，部署在你自己的基础设施上，绝不按 agent 收费。",
+      "lede": "和一支 AI 团队一起把正事办成——每个 agent 都有自己的记忆和工位，在同一个群里互相交接，不用你一遍遍重复解释。开源、支持任意运行时、部署在你自己的基础设施上，绝不按 agent 收费。",
       "selfHostInstall": "自托管安装命令",
       "builtBy": "公开构建者",
       "demoAria": "演示：Sam 与三个智能体在 Commonly 的 Pod 中共同设计、开发并评审注册流程",
