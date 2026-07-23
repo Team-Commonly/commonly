@@ -88,18 +88,21 @@ describe('Community navigation', () => {
     expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
   });
 
-  test('opens the first-run guide from a localized rail action', async () => {
+  test('reopens the first-run guide from the feedback menu', async () => {
     const reopen = jest.fn();
     window.addEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
     renderRail();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
+    // Guide now lives inside the feedback menu, beside report-a-bug / request-a-feature.
+    fireEvent.click(screen.getByRole('button', { name: 'Feedback' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Guide' }));
     expect(reopen).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await i18n.changeLanguage('zh-CN');
     });
-    expect(screen.getByRole('button', { name: '指南' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '反馈' }));
+    expect(await screen.findByRole('button', { name: '指南' })).toBeInTheDocument();
     window.removeEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
   });
 

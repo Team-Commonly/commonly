@@ -1,11 +1,9 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2LangSwitch from './V2LangSwitch';
 import { useAuth } from '../../context/AuthContext';
-import { requestFirstRunGuide } from '../firstRunGuide';
 
 interface NavItem {
   key: string;
@@ -48,7 +46,6 @@ const isMobileViewport = (): boolean => (
 );
 
 const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout } = useAuth();
@@ -105,20 +102,12 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
         </nav>
 
         <div className="v2-rail__foot">
-          {/* Help & preferences — language, guide, feedback grouped together
-              (Sam 2026-07-23: guide belongs with feedback; language switch
-              moved off its cramped above-the-logo slot into this cluster). */}
+          {/* Help & preferences — language switch + the help/feedback menu
+              (Sam 2026-07-23: the guide moved into the feedback menu next to
+              report-a-bug / request-a-feature; language switch lives here too,
+              off its old cramped above-the-logo slot). */}
           <div className="v2-rail__utility">
             <V2LangSwitch />
-            <button
-              type="button"
-              className="v2-rail__guide"
-              onClick={requestFirstRunGuide}
-              title={t('firstRun.reopen')}
-              aria-label={t('firstRun.reopen')}
-            >
-              <Icon d="M9.1 9a3 3 0 115.83 1c0 2-3 2-3 4M12 18h.01" />
-            </button>
             <V2FeedbackMenu />
           </div>
           <span className="v2-rail__foot-sep" aria-hidden="true" />
