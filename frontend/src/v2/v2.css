@@ -400,7 +400,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .v2-rail__foot-sep {
@@ -410,9 +410,18 @@
 }
 
 .v2-rail__utility .v2-lang-switch__trigger {
-  padding: 2px 4px;
-  font-size: 10px;
+  min-height: 24px;
+  padding: 2px 6px;
+  gap: 3px;
+  font-size: 11px;
   font-weight: 700;
+  color: var(--v2-text-tertiary);
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-rail__utility .v2-lang-switch__trigger:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
 }
 
 /* At the foot of the rail the menu must open upward + toward content,
@@ -543,7 +552,6 @@
   display: none;
 }
 
-.v2-rail__guide,
 .v2-rail__feedback,
 .v2-rail__signout {
   width: 24px;
@@ -558,7 +566,6 @@
   transition: background 80ms ease, color 80ms ease;
 }
 
-.v2-rail__guide:hover,
 .v2-rail__feedback:hover,
 .v2-rail__feedback[aria-expanded="true"],
 .v2-rail__signout:hover {
@@ -566,7 +573,6 @@
   color: var(--v2-text-primary);
 }
 
-.v2-rail__guide svg,
 .v2-rail__feedback svg,
 .v2-rail__signout svg {
   width: 18px;

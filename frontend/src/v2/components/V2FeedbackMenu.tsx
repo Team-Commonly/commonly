@@ -5,8 +5,10 @@ import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import QuestionAnswerOutlinedIcon from '@mui/icons-material/QuestionAnswerOutlined';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { requestFirstRunGuide } from '../firstRunGuide';
 import {
   buildBugReportUrl,
   buildFeatureRequestUrl,
@@ -52,6 +54,14 @@ const V2FeedbackMenu: React.FC = () => {
         PaperProps={{ className: 'v2-feedback-menu__popover', elevation: 0 }}
       >
         <nav id="v2-feedback-options" className="v2-feedback-menu__list" aria-label={t('feedbackMenu.optionsLabel')}>
+          <button
+            type="button"
+            className="v2-feedback-menu__item"
+            onClick={() => { requestFirstRunGuide(); handleClose(); }}
+          >
+            <MenuBookOutlinedIcon aria-hidden="true" />
+            <span>{t('firstRun.reopen')}</span>
+          </button>
           <a
             className="v2-feedback-menu__item"
             href={buildBugReportUrl(location.pathname)}
