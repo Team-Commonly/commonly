@@ -40,6 +40,13 @@ const {
   listInstances,
   DEFAULT_URL,
 } = await import('../src/lib/config.js');
+const {
+  getSession,
+  setSession,
+  wasEventHandled,
+  recordHandledEvent,
+  clearSessions,
+} = await import('../src/lib/session-store.js');
 
 // ── config.js tests ───────────────────────────────────────────────────────────
 
@@ -179,6 +186,52 @@ describe('config.js', () => {
     expect(dev).toBeTruthy();
     expect(dev.active).toBe(true);
     expect(prod.active).toBe(false);
+  });
+});
+
+// ── session-store.js tests ───────────────────────────────────────────────────
+
+describe('session-store.js handled-event ring', () => {
+  const sessionsDir = path.join(configTmpDir, '.commonly', 'sessions');
+  const eventsFile = path.join(sessionsDir, 'ring-agent.events.json');
+  const sessionFile = path.join(sessionsDir, 'ring-agent.json');
+
+  beforeEach(() => {
+    fs.rmSync(sessionsDir, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    fs.rmSync(sessionsDir, { recursive: true, force: true });
+  });
+
+  test('handled-event persistence keeps an oldest-first ring capped at 500 ids', () => {
+    for (let index = 0; index <= 500; index += 1) {
+      recordHandledEvent('ring-agent', `evt-${index}`);
+    }
+
+    const persisted = JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
+    expect(persisted).toHaveLength(500);
+    expect(persisted[0]).toBe('evt-1');
+    expect(persisted[499]).toBe('evt-500');
+    expect(wasEventHandled('ring-agent', 'evt-0')).toBe(false);
+    expect(wasEventHandled('ring-agent', 'evt-1')).toBe(true);
+    expect(wasEventHandled('ring-agent', 'evt-500')).toBe(true);
+  });
+
+  test('clearSessions removes both session and handled-event files', () => {
+    setSession('ring-agent', 'pod-1', 'session-1');
+    recordHandledEvent('ring-agent', 'evt-handled');
+    recordHandledEvent('other-agent', 'evt-other');
+    expect(fs.existsSync(sessionFile)).toBe(true);
+    expect(fs.existsSync(eventsFile)).toBe(true);
+
+    clearSessions('ring-agent');
+
+    expect(fs.existsSync(sessionFile)).toBe(false);
+    expect(fs.existsSync(eventsFile)).toBe(false);
+    expect(getSession('ring-agent', 'pod-1')).toBeNull();
+    expect(wasEventHandled('ring-agent', 'evt-handled')).toBe(false);
+    expect(wasEventHandled('other-agent', 'evt-other')).toBe(true);
   });
 });
 

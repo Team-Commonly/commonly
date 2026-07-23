@@ -7,6 +7,8 @@
  *  - Happy path: event → adapter.spawn → post to pod → ack
  *  - No-prompt event: no spawn, still acked as 'no_action'
  *  - Adapter failure: no post, no ack (kernel re-delivers — ADR-005)
+ *  - Duplicate delivery: no second spawn, duplicate is re-acked
+ *  - Ack failure: handled id persists before the kernel re-delivers
  *  - Session continuity: newSessionId persists; next event sees it
  *  - stop() halts further polling
  *
@@ -37,7 +39,12 @@ await jest.unstable_mockModule('../src/lib/api.js', () => ({
 
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
-const { getSession, setSession, clearSessions } = await import('../src/lib/session-store.js');
+const {
+  getSession,
+  setSession,
+  clearSessions,
+  wasEventHandled,
+} = await import('../src/lib/session-store.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
 const makeEvent = (overrides = {}) => ({
@@ -342,6 +349,122 @@ describe('performRun', () => {
 
     // CRITICAL: no message post, no ack — kernel MUST re-deliver.
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  test('same event id delivered twice → spawns once and re-acks the duplicate', async () => {
+    const duplicate = makeEvent({ _id: 'evt-duplicate' });
+    const mockGet = jest.fn().mockResolvedValue({ events: [duplicate, duplicate] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'handled once' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    const ackCalls = mockPost.mock.calls.filter(([route]) => route.endsWith('/ack'));
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackCalls).toHaveLength(2);
+    expect(ackCalls[0][1]).toEqual({ result: { outcome: 'posted' } });
+    expect(ackCalls[1][1]).toEqual({
+      result: { outcome: 'no_action', reason: 'duplicate-delivery' },
+    });
+  });
+
+  test('spawn failure is not recorded, so re-delivery spawns again', async () => {
+    const event = makeEvent({ _id: 'evt-retry-after-spawn-failure' });
+    const mockGet = jest.fn().mockResolvedValue({ events: [event] });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('runtime unavailable'));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const first = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    first.stop();
+
+    const second = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    second.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(wasEventHandled('my-stub', event._id)).toBe(false);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  test('ack failure persists the handled id, so a second run skips spawn and re-acks', async () => {
+    const event = makeEvent({ _id: 'evt-persisted-before-ack' });
+    const mockGet = jest.fn().mockResolvedValue({ events: [event] });
+    let ackAttempts = 0;
+    const mockPost = jest.fn(async (route) => {
+      if (route.endsWith('/ack')) {
+        ackAttempts += 1;
+        if (ackAttempts === 1) throw new Error('ack transport offline');
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'completed before ack' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const errors = [];
+
+    const first = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      onError: (err) => errors.push(err),
+    });
+    await drainMicrotasks();
+    first.stop();
+
+    const eventsFile = path.join(
+      sessionsTmpDir, '.commonly', 'sessions', 'my-stub.events.json',
+    );
+    expect(JSON.parse(fs.readFileSync(eventsFile, 'utf8'))).toEqual([event._id]);
+
+    const second = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      onError: (err) => errors.push(err),
+    });
+    await drainMicrotasks();
+    second.stop();
+
+    const ackCalls = mockPost.mock.calls.filter(([route]) => route.endsWith('/ack'));
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(ackCalls).toHaveLength(2);
+    expect(ackCalls[1][1]).toEqual({
+      result: { outcome: 'no_action', reason: 'duplicate-delivery' },
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(/Ack failed.*ack transport offline/);
   });
 
   test('newSessionId from spawn is persisted and reused on the next turn', async () => {
