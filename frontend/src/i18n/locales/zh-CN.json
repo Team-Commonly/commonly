@@ -1257,6 +1257,11 @@
       "private": "私密",
       "community": "社区"
     },
+    "communityViews": {
+      "ariaLabel": "社区视图",
+      "joined": "已加入",
+      "discover": "发现"
+    },
     "groups": {
       "pinned": "已置顶",
       "directMessages": "私信",
@@ -1284,6 +1289,16 @@
     },
     "errors": {
       "createFailed": "无法创建 Pod。请确认你已登录后重试。"
+    },
+    "discover": {
+      "join": "加入",
+      "joining": "加入中…",
+      "empty": "暂时没有可加入的社区 Pod。",
+      "joinedEmpty": "你还没有加入社区 Pod。",
+      "loadFailed": "无法加载社区 Pod，请重试。",
+      "inviteRequired": "这个 Pod 需要邀请链接才能加入。",
+      "rateLimited": "加入尝试过于频繁，请稍后再试。",
+      "joinFailed": "无法加入这个 Pod，请重试。"
     },
     "community": {
       "title": "加入 Commonly HQ",

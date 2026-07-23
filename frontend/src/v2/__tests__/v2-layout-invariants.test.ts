@@ -134,6 +134,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('overflow: visible');
   });
 
+  test('the Community sub-tabs and Discover rows shrink inside the narrow sidebar', () => {
+    // Joined/Discover adds a second segmented row beneath the four main
+    // filters. Equal minmax(0, 1fr) tracks keep both locale labels on one line,
+    // while the Discover card gives its copy column the only shrinkable track.
+    const tabs = ruleBody(v2, '.v2-pods__community-tabs');
+    const row = ruleBody(v2, '.v2-pods__discover-row');
+    expect(tabs).toContain('display: grid');
+    expect(tabs).toContain('repeat(2, minmax(0, 1fr))');
+    expect(tabs).toContain('overflow: hidden');
+    expect(row).toContain('34px minmax(0, 1fr) auto');
+  });
+
   test('starter prompts wrap within the mobile chat pane', () => {
     // At 390px the rail leaves a narrow main pane. Both the row and each chip
     // need explicit shrink/wrap rules or the longest prompt creates horizontal

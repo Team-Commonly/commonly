@@ -813,6 +813,21 @@
   font-weight: 600;
 }
 
+.v2-pods__community-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: -10px 0 14px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.v2-pods__community-tab {
+  min-width: 0;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
 .v2-pods__list {
   flex: 1;
   overflow-y: auto;
@@ -1068,6 +1083,81 @@
   text-align: center;
   color: var(--v2-text-tertiary);
   font-size: 13px;
+}
+
+.v2-pods__join-notice {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-pods__discover-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+}
+
+.v2-pods__discover-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.v2-pods__discover-title {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-pods__discover-description {
+  overflow: hidden;
+  color: var(--v2-text-tertiary);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.v2-pods__discover-meta {
+  color: var(--v2-text-muted);
+  font-size: 11px;
+}
+
+.v2-root button.v2-pods__discover-join {
+  min-width: 44px;
+  min-height: 30px;
+  padding-inline: 9px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-root button.v2-pods__discover-join:hover {
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+}
+
+.v2-root button.v2-pods__discover-join:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .v2-pods__community {

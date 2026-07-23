@@ -11,6 +11,7 @@ import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 
 type Filter = 'all' | 'team' | 'private' | 'community';
+type CommunityView = 'joined' | 'discover';
 
 const FILTERS: Array<{ key: Filter; labelKey: string }> = [
   { key: 'all', labelKey: 'filters.all' },
@@ -18,6 +19,7 @@ const FILTERS: Array<{ key: Filter; labelKey: string }> = [
   { key: 'private', labelKey: 'filters.private' },
   { key: 'community', labelKey: 'filters.community' },
 ];
+const COMMUNITY_VIEWS: CommunityView[] = ['joined', 'discover'];
 
 // Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
 // up under the Private filter. agent-dm with two bot members gets a
@@ -98,13 +100,24 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const navigate = useNavigate();
   const api = useV2Api();
   const ownPodsState = useV2Pods();
-  const { pods, loading, error, createPod, patchLastMessage } = podsState || ownPodsState;
+  const {
+    pods, loading, error, refresh, createPod, patchLastMessage,
+  } = podsState || ownPodsState;
   const { pinned, toggle: togglePin, isPinned } = useV2Pinned();
   const { socket, connected, joinPod } = useSocket();
   const { currentUser } = useAuth();
   const { isUnread, bumpLatest, seedFromExisting } = useV2Unread(selectedPodId);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
   const [communityPods, setCommunityPods] = useState<V2Pod[]>([]);
   const [communityLoading, setCommunityLoading] = useState(true);
+  const [communityView, setCommunityView] = useState<CommunityView>('joined');
+  const [discoverPods, setDiscoverPods] = useState<V2Pod[]>([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [joinedDiscoverPods, setJoinedDiscoverPods] = useState<V2Pod[]>([]);
+  const [joiningPodId, setJoiningPodId] = useState<string | null>(null);
+  const [joinNotice, setJoinNotice] = useState<string | null>(null);
 
   // Discovery is intentionally fetched into separate state. Merging these
   // rows into `pods` would make non-member public pods leak into All/Team,
@@ -126,6 +139,33 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       active = false;
     };
   }, [api]);
+
+  // Discover stays separate from the membership-backed pod list: this endpoint
+  // deliberately returns pods the caller has NOT joined. Fetch it only while
+  // the Discover view is active so the default personal sidebar does not pay
+  // for discovery data it never renders.
+  useEffect(() => {
+    if (filter !== 'community' || communityView !== 'discover') return undefined;
+    let active = true;
+    setDiscoverLoading(true);
+    setDiscoverError(null);
+    api.get<V2Pod[]>('/api/pods?scope=discover')
+      .then((data) => {
+        if (!active) return;
+        setDiscoverPods((Array.isArray(data) ? data : []).filter((pod) => !isPersonalPod(pod)));
+      })
+      .catch(() => {
+        if (!active) return;
+        setDiscoverPods([]);
+        setDiscoverError(t('podsSidebar.discover.loadFailed'));
+      })
+      .finally(() => {
+        if (active) setDiscoverLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, communityView, filter, t]);
 
   // Seed lastSeen for any pod we've never observed before, using its current
   // newest-message timestamp. Without this, the very first load badges every
@@ -158,8 +198,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const showCommunityOffer = Boolean(communityPodId) && Boolean(currentUser?._id)
     && !loading && !error
     && !memberPodIds.includes(communityPodId);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newPodName, setNewPodName] = useState('');
@@ -272,29 +310,50 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const communityCandidates = useMemo(() => {
     const byId = new Map<string, V2Pod>();
     communityPods.forEach((pod) => byId.set(pod._id, pod));
+    joinedDiscoverPods.forEach((pod) => byId.set(pod._id, pod));
     // Prefer the membership-list row when both endpoints return a pod; it is
     // the row socket/unread state already knows about.
     pods.forEach((pod) => byId.set(pod._id, pod));
+    const effectiveMemberIds = new Set([
+      ...memberPodIds,
+      ...joinedDiscoverPods.map((pod) => pod._id),
+    ]);
     return Array.from(byId.values()).filter((pod) => {
       if (isPersonalPod(pod)) return false;
-      const isPublicMembership = memberPodIds.includes(pod._id) && pod.publicRead === true;
+      if (!effectiveMemberIds.has(pod._id)) return false;
       return communityPodIds.has(pod._id)
-        || isPublicMembership
+        || joinedDiscoverPods.some((joined) => joined._id === pod._id)
+        || pod.publicRead === true
         || (Boolean(communityPodId) && pod._id === communityPodId);
     });
-  }, [communityPods, communityPodIds, pods, memberPodIds, communityPodId]);
+  }, [
+    communityPods,
+    communityPodIds,
+    joinedDiscoverPods,
+    pods,
+    memberPodIds,
+    communityPodId,
+  ]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const candidates = filter === 'community' ? communityCandidates : pods;
+    const candidates = filter === 'community'
+      ? (communityView === 'discover' ? discoverPods : communityCandidates)
+      : pods;
     return candidates
       .filter((pod) => filter === 'community' || matchesPersonalFilter(pod, filter))
       .filter((pod) => !term
         || (pod.name || '').toLowerCase().includes(term)
         || (pod.description || '').toLowerCase().includes(term));
-  }, [communityCandidates, pods, filter, search]);
+  }, [communityCandidates, communityView, discoverPods, pods, filter, search]);
 
-  const visibleLoading = loading || (filter === 'community' && communityLoading);
+  const visibleLoading = loading || (
+    filter === 'community'
+    && (communityView === 'discover' ? discoverLoading : communityLoading)
+  );
+  const visibleError = filter === 'community' && communityView === 'discover'
+    ? discoverError
+    : error;
 
   // Default grouping is chronological (Pinned / Today / Yesterday / This week
   // / Earlier). When the user filters down to Private, recency buckets stop
@@ -303,6 +362,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   // so a section header makes the relationship explicit at a glance and
   // doubles as a count of how many a2a conversations are happening.
   const grouped = useMemo(() => {
+    if (filter === 'community' && communityView === 'discover') return [];
     if (filter !== 'private') return groupPods(filtered, pinned);
     const sortByRecency = <T extends { lastMessage?: { createdAt?: string | Date | null } | null; updatedAt?: string | Date; createdAt?: string | Date }>(items: T[]): T[] => {
       const ts = (it: T) => {
@@ -321,13 +381,41 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     if (dms.length) buckets.push({ label: t('podsSidebar.groups.directMessages'), items: sortByRecency(dms) });
     if (a2a.length) buckets.push({ label: t('podsSidebar.groups.betweenAgents', { count: a2a.length }), items: sortByRecency(a2a) });
     return buckets;
-  }, [filter, filtered, pinned, t]);
+  }, [communityView, filter, filtered, pinned, t]);
 
   // Navigate to a pod and, on mobile, dismiss the slide-over drawer so the
   // user lands directly in the chat instead of behind the overlay.
   const selectPod = (podId: string) => {
     navigate(`/v2/pods/${podId}`);
     onMobileClose?.();
+  };
+
+  const handleJoinDiscoverPod = async (pod: V2Pod) => {
+    setJoiningPodId(pod._id);
+    setJoinNotice(null);
+    try {
+      const joined = await api.post<V2Pod>(`/api/pods/${pod._id}/join`);
+      const joinedPod = joined?._id ? joined : pod;
+      setDiscoverPods((current) => current.filter((item) => item._id !== pod._id));
+      setJoinedDiscoverPods((current) => [
+        joinedPod,
+        ...current.filter((item) => item._id !== joinedPod._id),
+      ]);
+      setCommunityView('joined');
+      void refresh?.();
+      selectPod(joinedPod._id);
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 403) {
+        setJoinNotice(t('podsSidebar.discover.inviteRequired'));
+      } else if (status === 429) {
+        setJoinNotice(t('podsSidebar.discover.rateLimited'));
+      } else {
+        setJoinNotice(t('podsSidebar.discover.joinFailed'));
+      }
+    } finally {
+      setJoiningPodId(null);
+    }
   };
 
   const handleCreatePod = async (event: React.FormEvent) => {
@@ -483,7 +571,10 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
               key={f.key}
               type="button"
               className={`v2-pods__filter v2-filter-segment__item${filter === f.key ? ' v2-pods__filter--active v2-filter-segment__item--active' : ''}`}
-              onClick={() => setFilter(f.key)}
+              onClick={() => {
+                setFilter(f.key);
+                setJoinNotice(null);
+              }}
               aria-pressed={filter === f.key}
             >
               {t(`podsSidebar.${f.labelKey}`)}
@@ -491,14 +582,80 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           ))}
         </div>
 
+        {filter === 'community' && (
+          <div
+            className="v2-pods__community-tabs v2-filter-segment"
+            aria-label={t('podsSidebar.communityViews.ariaLabel')}
+          >
+            {COMMUNITY_VIEWS.map((view) => (
+              <button
+                key={view}
+                type="button"
+                className={`v2-pods__community-tab v2-filter-segment__item${communityView === view ? ' v2-pods__community-tab--active v2-filter-segment__item--active' : ''}`}
+                onClick={() => {
+                  setCommunityView(view);
+                  setJoinNotice(null);
+                }}
+                aria-pressed={communityView === view}
+              >
+                {t(`podsSidebar.communityViews.${view}`)}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="v2-pods__list">
           {visibleLoading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
-          {!visibleLoading && error && <div className="v2-pods__empty">{error}</div>}
-          {!visibleLoading && !error && filtered.length === 0 && (
+          {!visibleLoading && visibleError && <div className="v2-pods__empty">{visibleError}</div>}
+          {!visibleLoading
+            && !visibleError
+            && filter === 'community'
+            && communityView === 'discover'
+            && joinNotice && (
+            <div className="v2-pods__join-notice" role="alert">{joinNotice}</div>
+          )}
+          {!visibleLoading && !visibleError && filtered.length === 0 && (
             <div className="v2-pods__empty">
-              {search ? t('podsSidebar.empty.noMatch') : t('podsSidebar.empty.noPods')}
+              {search
+                ? t('podsSidebar.empty.noMatch')
+                : (filter === 'community'
+                  ? t(
+                    communityView === 'discover'
+                      ? 'podsSidebar.discover.empty'
+                      : 'podsSidebar.discover.joinedEmpty',
+                  )
+                  : t('podsSidebar.empty.noPods'))}
             </div>
           )}
+
+          {!visibleLoading
+            && !visibleError
+            && filter === 'community'
+            && communityView === 'discover'
+            && filtered.map((pod) => (
+              <article key={pod._id} className="v2-pods__discover-row">
+                <span className={podMarkClass(pod)}>{podMarkFor(pod)}</span>
+                <span className="v2-pods__discover-body">
+                  <span className="v2-pods__discover-title">{pod.name}</span>
+                  {pod.description && (
+                    <span className="v2-pods__discover-description">{pod.description}</span>
+                  )}
+                  <span className="v2-pods__discover-meta">
+                    {t('podsSidebar.meta.memberCount', { count: pod.members?.length || 0 })}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="v2-pods__discover-join"
+                  disabled={joiningPodId === pod._id}
+                  onClick={() => void handleJoinDiscoverPod(pod)}
+                >
+                  {joiningPodId === pod._id
+                    ? t('podsSidebar.discover.joining')
+                    : t('podsSidebar.discover.join')}
+                </button>
+              </article>
+            ))}
 
           {!visibleLoading && grouped.map((group) => (
             <div key={group.label}>
