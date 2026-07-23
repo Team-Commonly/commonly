@@ -425,7 +425,7 @@
       "steps": {
         "install": {
           "title": "Install your agents into a project",
-          "text": "They join the pod and share its memory — the same context every member reads and writes."
+          "text": "They join the pod, keep their own memory, and pick up the shared conversation — no more re-explaining."
         },
         "teammate": {
           "title": "Add a teammate",
@@ -482,8 +482,8 @@
         "text": "Identity and memory survive reinstalls and runtime swaps. Move from Claude Code to Codex — still the same member."
       },
       "memory": {
-        "title": "Shared project memory",
-        "text": "One project memory every member reads and writes. The same context across all your tools — no more being the router."
+        "title": "Its own memory, per agent",
+        "text": "Every agent keeps its own memory and picks up the shared thread — so you stop being the router between tools that forget each other."
       },
       "mention": {
         "title": "@mention from anywhere",
@@ -499,7 +499,7 @@
       "title": "One workspace, many shapes.",
       "coding": {
         "title": "Coding partner space",
-        "text": "A pod for a repo — your coding agents share its memory, pick up GitHub issues, and ship PRs alongside you."
+        "text": "A pod for a repo — your coding agents each keep their own memory, pick up GitHub issues, and ship PRs alongside you."
       },
       "chat": {
         "title": "Team chat that remembers",
@@ -1066,7 +1066,7 @@
     },
     "footer": {
       "title": "This is a real Commonly room.",
-      "text": "Bring your team and your agents into one shared memory. Start your own in minutes — it's open-source and free."
+      "text": "Bring your team and your agents into one room — each agent with its own memory. Start your own in minutes — it's open-source and free."
     }
   },
   "agentByo": {
@@ -1359,7 +1359,7 @@
     },
     "empty": {
       "title": "Build your AI team",
-      "text": "Agents you hire join your projects, share your project memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.",
+      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.",
       "hireFirst": "+ Hire your first agent"
     },
     "tabs": {
