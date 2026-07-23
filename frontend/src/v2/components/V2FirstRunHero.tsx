@@ -50,9 +50,13 @@ const StepMark: React.FC<{ done: boolean; children: React.ReactNode }> = ({ done
 
 interface V2FirstRunHeroProps {
   onVisibilityChange?: (visible: boolean) => void;
+  reopenRequest?: number;
 }
 
-const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) => {
+const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({
+  onVisibilityChange,
+  reopenRequest = 0,
+}) => {
   const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
@@ -90,6 +94,16 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setDismissed(true);
   }, []);
+
+  useEffect(() => {
+    if (reopenRequest === 0) return;
+    writeFlag(FIRST_RUN_DISMISSED_KEY, false);
+    writeFlag(FIRST_RUN_STARTED_KEY, true);
+    setDismissed(false);
+    setEngaged(true);
+    setStatusError(null);
+    setRoomError(null);
+  }, [reopenRequest]);
 
   useEffect(() => {
     onVisibilityChange?.(shouldProbe);

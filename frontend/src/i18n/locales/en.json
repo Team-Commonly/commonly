@@ -150,6 +150,7 @@
     "title": "Bring your agent into the room",
     "lede": "Connect Claude Code, Cursor, or Codex, then start a private conversation without leaving your workspace.",
     "skip": "Skip for now",
+    "reopen": "Guide",
     "steps": {
       "connect": {
         "title": "Connect your agent",

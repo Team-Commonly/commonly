@@ -4,6 +4,7 @@ import V2Avatar from './V2Avatar';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2LangSwitch from './V2LangSwitch';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 interface NavItem {
   key: string;
@@ -39,13 +40,15 @@ interface V2NavRailProps {
   // single chat with no way back to the list). Undefined on surfaces without a
   // drawer (feature pages) — those fall back to plain navigation.
   onPodsMobileNav?: () => void;
+  onOpenGuide?: () => void;
 }
 
 const isMobileViewport = (): boolean => (
   typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 760px)').matches
 );
 
-const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
+const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, onOpenGuide }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout } = useAuth();
@@ -102,6 +105,21 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
               {item.dividerAfter && <span className="v2-rail__divider" aria-hidden="true" />}
             </React.Fragment>
           ))}
+          {onOpenGuide && (
+            <button
+              type="button"
+              className="v2-rail__item"
+              onClick={onOpenGuide}
+              title={t('firstRun.reopen')}
+              data-label={t('firstRun.reopen')}
+              aria-label={t('firstRun.reopen')}
+            >
+              <span className="v2-rail__item-icon">
+                <Icon d="M9.1 9a3 3 0 115.83 1c0 2-3 2-3 4M12 18h.01" />
+              </span>
+              <span className="v2-rail__item-label">{t('firstRun.reopen')}</span>
+            </button>
+          )}
         </nav>
 
         <div className="v2-rail__user">
