@@ -321,9 +321,12 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     return Array.from(byId.values()).filter((pod) => {
       if (isPersonalPod(pod)) return false;
       if (!effectiveMemberIds.has(pod._id)) return false;
+      // Community membership is opt-in `communityListed` (the scope=community
+      // result set + Discover-joined + HQ) — NOT `publicRead`. publicRead is
+      // anonymous/showcase read only (#722); showcase pods like the milestone
+      // and engineering rooms are publicRead but must NOT appear in Community.
       return communityPodIds.has(pod._id)
         || joinedDiscoverPods.some((joined) => joined._id === pod._id)
-        || pod.publicRead === true
         || (Boolean(communityPodId) && pod._id === communityPodId);
     });
   }, [
