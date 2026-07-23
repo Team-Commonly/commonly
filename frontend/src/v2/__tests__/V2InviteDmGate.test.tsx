@@ -31,6 +31,10 @@ jest.mock('../hooks/useV2PodDetail', () => ({
   }),
 }));
 
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({ currentUser: { _id: 'human-1', username: 'new-human' } }),
+}));
+
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../components/V2PodsSidebar', () => () => null);
 jest.mock('../components/V2PodInspector', () => () => null);

@@ -161,13 +161,13 @@ exports.getAllPods = async (req: any, res: any) => {
     const scope = String(req.query?.scope || 'mine').toLowerCase();
     const isCommunityScope = scope === 'community';
     const isDiscoverScope = scope === 'discover';
-    let discoverCallerId = null;
-    if (isDiscoverScope) {
+    let scopedCallerId = null;
+    if (isCommunityScope || isDiscoverScope) {
       const rawCallerId = String(req.userId || req.user?.id || '');
       if (!mongoose.Types.ObjectId.isValid(rawCallerId)) {
         return res.status(401).json({ error: 'User authentication failed' });
       }
-      discoverCallerId = new mongoose.Types.ObjectId(rawCallerId);
+      scopedCallerId = new mongoose.Types.ObjectId(rawCallerId);
     }
     // Exclude agent-admin DM pods from default listing; only show when
     // explicitly requested and the caller is a member.
@@ -181,7 +181,7 @@ exports.getAllPods = async (req: any, res: any) => {
         publicRead: true,
         communityListed: true,
         joinPolicy: { $ne: 'invite-only' },
-        members: { $ne: discoverCallerId },
+        members: { $ne: scopedCallerId },
         type: type
           ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
           : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
@@ -192,6 +192,7 @@ exports.getAllPods = async (req: any, res: any) => {
         // publicRead for anonymous viewing without appearing in Community.
         publicRead: true,
         communityListed: true,
+        members: scopedCallerId,
         type: type
           ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
           : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
