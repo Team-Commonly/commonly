@@ -387,19 +387,39 @@
   justify-content: space-between;
 }
 
-.v2-rail__language {
+/* Bottom of the rail: a help/preferences cluster (language · guide · feedback)
+   sits above a divider, then the account cluster (avatar · sign out). */
+.v2-rail__foot {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.v2-rail__language .v2-lang-switch__trigger {
+.v2-rail__utility {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.v2-rail__foot-sep {
+  width: 24px;
+  height: 1px;
+  background: var(--v2-border);
+}
+
+.v2-rail__utility .v2-lang-switch__trigger {
   padding: 2px 4px;
   font-size: 10px;
   font-weight: 700;
 }
 
-/* In the narrow rail the menu must open toward the content, not off-screen. */
-.v2-rail__language .v2-lang-switch__menu {
+/* At the foot of the rail the menu must open upward + toward content,
+   not downward off the bottom of the viewport. */
+.v2-rail__utility .v2-lang-switch__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
   right: auto;
   left: 0;
 }
@@ -510,7 +530,6 @@
 }
 
 .v2-rail__user {
-  margin-top: auto;
   min-height: 48px;
   padding: 0;
   display: flex;
