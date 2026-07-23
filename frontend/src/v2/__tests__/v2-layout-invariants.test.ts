@@ -67,6 +67,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
   });
 
+  test('the nav rail pane lets its language dropdown escape the pane clip', () => {
+    // The rail is 76px wide; its language menu is a wider floating popover.
+    // Base `.v2-pane { overflow: hidden }` clips it to the rail edge, so the
+    // menu rendered cut-off "outside the sidebar" (2026-07-23). `.v2-pane--rail`
+    // must override to overflow: visible so the menu floats over the pods sidebar.
+    expect(ruleBody(v2, '.v2-pane--rail')).toContain('overflow: visible');
+  });
+
   test('team-card actions wrap on narrow screens so the agent name keeps width', () => {
     // At <=560px the Profile+Talk-to actions row must wrap to its own line —
     // inline, it squeezes the flex body to zero and the agent NAME disappears

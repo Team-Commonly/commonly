@@ -178,7 +178,7 @@
   z-index: 40;
   min-width: 132px;
   margin: 0;
-  padding: 4px;
+  padding: 6px;
   list-style: none;
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
@@ -191,8 +191,9 @@
   width: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 7px 10px;
+  gap: 14px;
+  min-height: 34px;
+  padding: 8px 12px;
   border-radius: 7px;
   color: var(--v2-text-secondary);
   font-size: 13px;
@@ -346,6 +347,11 @@
 
 .v2-pane--rail {
   background: var(--v2-bg-subtle);
+  /* The rail is only 76px wide, so its language dropdown (a wider floating
+     menu) must be allowed to escape the pane instead of being clipped by the
+     base .v2-pane `overflow: hidden`. The rail's own content is self-contained
+     (brand centered, nav scrolls internally), so only the menu overflows. */
+  overflow: visible;
 }
 
 .v2-pane--main {
@@ -426,11 +432,15 @@
 
 /* At the foot of the rail the menu must open upward + toward content,
    not downward off the bottom of the viewport. */
+/* Opens upward from the foot and floats rightward over the pods sidebar as a
+   clean popover (the pane is overflow:visible so it isn't clipped). */
 .v2-rail__utility .v2-lang-switch__menu {
   top: auto;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   right: auto;
   left: 0;
+  z-index: 200;
+  min-width: 152px;
 }
 
 .v2-rail__brand {
