@@ -9,6 +9,7 @@ import V2FirstRunHero from './V2FirstRunHero';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import { useAuth } from '../../context/AuthContext';
 
 interface V2LayoutProps {
   selectionMode?: 'auto' | 'param';
@@ -20,6 +21,7 @@ export type InspectorView =
   | { kind: 'artifact'; artifactId: string };
 
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
+const LAST_POD_KEY = 'v2:lastPodId';
 const INVITE_BLOCKED_POD_TYPES = new Set(['agent-room', 'agent-dm']);
 
 const readInspectorCollapsed = (): boolean => {
@@ -42,9 +44,32 @@ const writeInspectorCollapsed = (next: boolean) => {
   }
 };
 
+const readLastPodId = (): string | null => {
+  try {
+    return localStorage.getItem(LAST_POD_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const writeLastPodId = (podId: string) => {
+  try {
+    localStorage.setItem(LAST_POD_KEY, podId);
+  } catch {
+    // localStorage unavailable; auto-selection falls back to the workspace.
+  }
+};
+
+const createdAtTime = (createdAt?: string): number => {
+  if (!createdAt) return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(createdAt);
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+};
+
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { podId: paramPodId } = useParams<{ podId: string }>();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const podsState = useV2Pods();
   const { pods, loading } = podsState;
 
@@ -122,14 +147,27 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   useEffect(() => {
     setInspectorView({ kind: 'overview' });
     setMobileNavOpen(false);
+    if (paramPodId) writeLastPodId(paramPodId);
   }, [paramPodId]);
 
-  // Auto-pick the first pod when the user lands on /v2 directly, so the
-  // three-column layout doesn't render an empty main pane on first load.
+  // Resume the last valid room. A new user without history lands in their
+  // self-created invite-only workspace rather than the auto-joined HQ.
   useEffect(() => {
     if (selectionMode !== 'auto' || paramPodId || loading) return;
-    if (pods.length > 0) navigate(`/v2/pods/${pods[0]._id}`, { replace: true });
-  }, [selectionMode, paramPodId, pods, loading, navigate]);
+    if (pods.length === 0) return;
+
+    const lastPodId = readLastPodId();
+    const lastPod = lastPodId ? pods.find((pod) => pod._id === lastPodId) : undefined;
+    const ownWorkspace = pods
+      .filter((pod) => (
+        pod.createdBy?._id === currentUser?._id
+        && pod.joinPolicy === 'invite-only'
+      ))
+      .sort((left, right) => createdAtTime(left.createdAt) - createdAtTime(right.createdAt))[0];
+    const destination = lastPod || ownWorkspace || pods[0];
+
+    navigate(`/v2/pods/${destination._id}`, { replace: true });
+  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id]);
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);

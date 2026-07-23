@@ -340,22 +340,26 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith([myPod]);
   });
 
-  it('getAllPods keeps the existing community query exact', async () => {
+  it('getAllPods community scope requires listed, readable member pods', async () => {
     const sort = jest.fn().mockResolvedValue([]);
     const populateThird = jest.fn(() => ({ sort }));
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
     const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
     Pod.find.mockReturnValue({ populate: populateFirst });
 
-    const req = { query: { scope: 'community' }, userId: 'me', user: {} };
+    const communityUserId = '507f1f77bcf86cd799439011';
+    const req = { query: { scope: 'community' }, userId: communityUserId, user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getAllPods(req, res);
 
     expect(Pod.find).toHaveBeenCalledWith({
       publicRead: true,
       communityListed: true,
+      members: expect.anything(),
       type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
     });
+    const [query] = Pod.find.mock.calls[0];
+    expect(String(query.members)).toBe(communityUserId);
   });
 
   it('getAllPods discover scope requires listed, readable, joinable non-member pods', async () => {

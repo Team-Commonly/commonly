@@ -146,20 +146,17 @@ describe('GET /api/pods community scope', () => {
     await closeMongoDb();
   });
 
-  it('returns non-member public pods while excluding every personal pod type', async () => {
+  it('returns only listed public pods the caller has joined', async () => {
     const res = await request(app)
       .get('/api/pods?scope=community')
       .set('Authorization', `Bearer ${viewerToken}`);
 
     expect(res.status).toBe(200);
     const ids = res.body.map((pod) => pod._id);
-    expect(ids).toEqual(expect.arrayContaining([
-      communityPod._id.toString(),
-      studyCommunityPod._id.toString(),
-      joinedCommunityPod._id.toString(),
-      inviteOnlyPod._id.toString(),
-    ]));
-    expect(ids).toHaveLength(4);
+    expect(ids).toEqual([joinedCommunityPod._id.toString()]);
+    expect(ids).not.toContain(communityPod._id.toString());
+    expect(ids).not.toContain(studyCommunityPod._id.toString());
+    expect(ids).not.toContain(inviteOnlyPod._id.toString());
     expect(ids).not.toContain(privatePod._id.toString());
     expect(ids).not.toContain(nonPublicListedPod._id.toString());
     // Readable-but-unlisted showcase rooms must stay OFF the Community tab.
