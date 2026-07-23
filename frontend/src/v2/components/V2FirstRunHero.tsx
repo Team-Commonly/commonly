@@ -4,6 +4,7 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
+import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 
 const POLL_INTERVAL_MS = 3_000;
 const CHECK_MARK = '✓';
@@ -89,6 +90,22 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     writeFlag(FIRST_RUN_DISMISSED_KEY, true);
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setDismissed(true);
+  }, []);
+
+  useEffect(() => {
+    const reopen = () => {
+      // Clearing dismissal alone does not reopen for an established owner:
+      // issued=true makes the normal first-run gate false. Reusing the started
+      // latch keeps one visibility model for both new and connected users.
+      writeFlag(FIRST_RUN_DISMISSED_KEY, false);
+      writeFlag(FIRST_RUN_STARTED_KEY, true);
+      setDismissed(false);
+      setEngaged(true);
+      setStatusError(null);
+      setRoomError(null);
+    };
+    window.addEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+    return () => window.removeEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
   }, []);
 
   useEffect(() => {
