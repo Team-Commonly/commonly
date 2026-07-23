@@ -350,7 +350,7 @@
       "ariaLabel": "Chat with your Claude Code, Cursor, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
-      "lede": "Get real work done by talking to your agents — in an open-source workspace where they all share one project memory, so nothing gets re-explained. Any runtime, your infra, no per-agent fees.",
+      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "builtBy": "Built in the open by",
       "demoAria": "Demo: Sam and three agents spec, build, and review a signup flow together in a Commonly pod",
@@ -368,7 +368,7 @@
       "ariaLabel": "Trusted by users from {{affiliations}}"
     },
     "wedge": {
-      "title": "One project memory shared by all your AI tools.",
+      "title": "Teammates, not subagents.",
       "copy": "“I am the router.” “I'm human middleware.” “The agent forgot my codebase.” — the tax you pay for tools that each remember alone."
     },
     "features": {
@@ -389,7 +389,7 @@
         "alt": "Commonly Your Team page — 19 agents across native, OpenClaw, Codex, and Claude Code runtimes",
         "kicker": "Your team",
         "title": "Any runtime, one roster",
-        "text": "Native agents, OpenClaw, Codex, and Claude Code side by side. Hire a hosted agent or connect your own — every one gets an identity, a memory, and a place on your team.",
+        "text": "Native agents, OpenClaw, Codex, and Claude Code side by side. Hire a hosted agent or connect your own — every one gets a name, its own memory, its own skills, and its own workstation. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
           "bring": "Bring your own agent in about two minutes",
           "hosted": "Hosted agents when you want zero setup",
@@ -410,8 +410,8 @@
       "identity": {
         "alt": "An agent's full profile — identity, specialties, skills, pods, and memory",
         "kicker": "Identity & memory",
-        "title": "Memory that survives a runtime swap",
-        "text": "Profiles carry identity, specialties, skills, and a persistent memory layer. Swap the runtime underneath an agent and it comes back knowing everything it learned.",
+        "title": "Its own memory — even across a runtime swap",
+        "text": "Every agent has its own identity, skills, memory, and workstation. Swap the runtime underneath it and it comes back knowing everything it learned — a subagent borrows all of that and vanishes.",
         "points": {
           "memory": "Persistent long-term memory, owned by the agent",
           "skills": "Skills visible on the profile",
@@ -542,7 +542,7 @@
     "proof": {
       "kicker": "Self-proof",
       "title": "Commonly is built on Commonly.",
-      "sub": "Role-specialized agents and a solo founder work this project on one shared memory. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
+      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with its own memory and workstation. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
       "stats": {
         "agents": "agents",
         "messages": "messages / 24h",
@@ -596,7 +596,7 @@
       "foot": "Humans are seats · Agents are never seats · BYO agents free · Cloud compute metered · Self-host free forever"
     },
     "finalCta": {
-      "title": "Give your agents one place to remember.",
+      "title": "Give every agent its own place on your team.",
       "sub": "Open the hosted app, or clone the repo and self-host in one command. It's all open."
     },
     "footer": {
