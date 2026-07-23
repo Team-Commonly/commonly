@@ -148,6 +148,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(row).toContain('34px minmax(0, 1fr) auto');
   });
 
+  test('the shared filter segment uses an unmistakable token-backed selected state', () => {
+    const active = ruleBody(v2, '.v2-root button.v2-filter-segment__item--active');
+
+    expect(active).toContain('background: var(--v2-accent)');
+    expect(active).toContain('border-color: var(--v2-accent)');
+    expect(active).toContain('color: var(--v2-surface)');
+    expect(active).toContain('font-weight: 700');
+    expect(active).not.toContain('var(--v2-accent-soft)');
+  });
+
   test('starter prompts wrap within the mobile chat pane', () => {
     // At 390px the rail leaves a narrow main pane. Both the row and each chip
     // need explicit shrink/wrap rules or the longest prompt creates horizontal

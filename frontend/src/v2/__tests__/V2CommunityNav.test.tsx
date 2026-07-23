@@ -1,12 +1,16 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import {
+  act, fireEvent, render, screen,
+} from '@testing-library/react';
 import {
   MemoryRouter, Route, Routes, useLocation,
 } from 'react-router-dom';
 import axios from 'axios';
 import V2CommunityRedirect from '../components/V2CommunityRedirect';
 import V2NavRail from '../components/V2NavRail';
+import i18n, { i18nReady } from '../../i18n';
+import { FIRST_RUN_REOPEN_EVENT } from '../firstRunGuide';
 
 const mockLogout = jest.fn();
 const mockAxiosGet = axios.get as jest.Mock;
@@ -47,13 +51,20 @@ describe('Community navigation', () => {
   const originalPodId = process.env.REACT_APP_COMMUNITY_POD_ID;
   const originalInviteToken = process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
 
+  beforeAll(async () => {
+    await i18nReady;
+  });
+
   beforeEach(() => {
     process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
     process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = COMMUNITY_INVITE_TOKEN;
     jest.clearAllMocks();
+    return act(async () => {
+      await i18n.changeLanguage('en');
+    });
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (originalPodId === undefined) {
       delete process.env.REACT_APP_COMMUNITY_POD_ID;
     } else {
@@ -64,6 +75,7 @@ describe('Community navigation', () => {
     } else {
       process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = originalInviteToken;
     }
+    await i18n.changeLanguage('en');
   });
 
   test('shows the rail entry only when a community pod is configured', () => {
@@ -74,6 +86,21 @@ describe('Community navigation', () => {
     delete process.env.REACT_APP_COMMUNITY_POD_ID;
     renderRail();
     expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
+  });
+
+  test('opens the first-run guide from a localized rail action', async () => {
+    const reopen = jest.fn();
+    window.addEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+    renderRail();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
+    expect(reopen).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await i18n.changeLanguage('zh-CN');
+    });
+    expect(screen.getByRole('button', { name: '指南' })).toBeInTheDocument();
+    window.removeEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
   });
 
   test('sends members to the Community pod', async () => {

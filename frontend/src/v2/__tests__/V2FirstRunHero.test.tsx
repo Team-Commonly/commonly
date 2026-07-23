@@ -59,7 +59,17 @@ jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { _id: 'human-1', username: 'new-human' } }),
 }));
 
-jest.mock('../components/V2NavRail', () => () => <nav>Rail</nav>);
+jest.mock('../components/V2NavRail', () => () => (
+  <nav>
+    Rail
+    <button
+      type="button"
+      onClick={() => globalThis.dispatchEvent(new Event('commonly:reopen-first-run'))}
+    >
+      Guide
+    </button>
+  </nav>
+));
 jest.mock('../components/V2PodsSidebar', () => () => <aside>Pods</aside>);
 jest.mock('../components/V2PodInspector', () => () => <aside>Inspector</aside>);
 jest.mock('../components/V2InviteModal', () => () => null);
@@ -230,6 +240,49 @@ describe('V2FirstRunHero', () => {
     expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
   });
 
+  test.each([
+    {
+      label: 'connected',
+      status: connected,
+      readyControl: 'Say hello',
+    },
+    {
+      label: 'unconnected',
+      status: unissued,
+      readyControl: 'Open connection setup',
+    },
+  ])('reopens for a dismissed $label user and then dismisses normally', async ({
+    status,
+    readyControl,
+  }) => {
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    mockGet.mockResolvedValue(status);
+    renderHero();
+    await flush();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new Event('commonly:reopen-first-run'));
+    });
+
+    expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    await flush();
+    expect(await screen.findByRole(
+      status.connected ? 'button' : 'link',
+      { name: readyControl },
+    )).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
+  });
+
   test('the started latch survives a reload until the connected CTA is used', async () => {
     localStorage.setItem(FIRST_RUN_STARTED_KEY, '1');
     mockGet.mockResolvedValue(connected);
@@ -298,5 +351,32 @@ describe('V2Layout first-run placement', () => {
     });
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  test('reopens the dismissed guide from the rail and restores onboarding suppression', async () => {
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/hq']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
+    });
+    expect(mockGet).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
+    expect(screen.queryByText('Quiet pod empty state')).not.toBeInTheDocument();
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
+    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');
+    });
   });
 });
