@@ -59,14 +59,7 @@ jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { _id: 'human-1', username: 'new-human' } }),
 }));
 
-jest.mock('../components/V2NavRail', () => (
-  { onOpenGuide }: { onOpenGuide?: () => void },
-) => (
-  <nav>
-    Rail
-    {onOpenGuide && <button type="button" onClick={onOpenGuide}>Guide</button>}
-  </nav>
-));
+jest.mock('../components/V2NavRail', () => () => <nav>Rail</nav>);
 jest.mock('../components/V2PodsSidebar', () => () => <aside>Pods</aside>);
 jest.mock('../components/V2PodInspector', () => () => <aside>Inspector</aside>);
 jest.mock('../components/V2InviteModal', () => () => null);
@@ -305,32 +298,5 @@ describe('V2Layout first-run placement', () => {
     });
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalled();
-  });
-
-  test('reopens the dismissed guide from the rail and restores onboarding suppression', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
-    render(
-      <MemoryRouter initialEntries={['/v2/pods/hq']}>
-        <Routes>
-          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
-    });
-    expect(mockGet).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
-
-    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
-      .toBeInTheDocument();
-    expect(screen.queryByText('Quiet pod empty state')).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
-    expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
-    await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith('/api/users/me/agent-connection');
-    });
   });
 });

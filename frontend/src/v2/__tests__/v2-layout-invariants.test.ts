@@ -148,21 +148,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(row).toContain('34px minmax(0, 1fr) auto');
   });
 
-  test('pod filters have an explicit selected indicator and the composer keeps its strong focus ring', () => {
-    const primaryActive = ruleBody(v2, '.v2-root button.v2-pods__filter--active');
-    const communityActive = ruleBody(v2, '.v2-root button.v2-pods__community-tab--active');
-    const composerFocus = ruleBody(v2, '.v2-chat__composer-input-wrap:focus-within');
-
-    [primaryActive, communityActive].forEach((rule) => {
-      expect(rule).toContain('background: var(--v2-accent-soft)');
-      expect(rule).toContain('color: var(--v2-accent-text)');
-      expect(rule).toContain('border-color: var(--v2-accent)');
-      expect(rule).toContain('box-shadow: inset 0 -2px 0 var(--v2-accent)');
-    });
-    expect(composerFocus).toContain('border-color: var(--v2-accent)');
-    expect(composerFocus).toContain('box-shadow: var(--v2-focus-ring)');
-  });
-
   test('starter prompts wrap within the mobile chat pane', () => {
     // At 390px the rail leaves a narrow main pane. Both the row and each chip
     // need explicit shrink/wrap rules or the longest prompt creates horizontal

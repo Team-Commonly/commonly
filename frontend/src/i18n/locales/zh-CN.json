@@ -150,7 +150,6 @@
     "title": "把你的智能体请进房间",
     "lede": "接入 Claude Code、Cursor 或 Codex，然后直接在工作空间中开始一对一私信。",
     "skip": "暂时跳过",
-    "reopen": "帮助",
     "steps": {
       "connect": {
         "title": "接入你的智能体",

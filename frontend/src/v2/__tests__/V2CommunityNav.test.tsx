@@ -1,15 +1,12 @@
 // @ts-nocheck
 import React from 'react';
-import {
-  act, fireEvent, render, screen,
-} from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import {
   MemoryRouter, Route, Routes, useLocation,
 } from 'react-router-dom';
 import axios from 'axios';
 import V2CommunityRedirect from '../components/V2CommunityRedirect';
 import V2NavRail from '../components/V2NavRail';
-import i18n, { i18nReady } from '../../i18n';
 
 const mockLogout = jest.fn();
 const mockAxiosGet = axios.get as jest.Mock;
@@ -27,10 +24,10 @@ const COMMUNITY_INVITE_TOKEN = '7b91255f18ae3c0ae3721707a6613731';
 
 const CurrentPath = () => <div data-testid="current-path">{useLocation().pathname}</div>;
 
-const renderRail = (onOpenGuide?: () => void) => render(
+const renderRail = () => render(
   <MemoryRouter initialEntries={['/v2/agents']}>
     <div className="v2-root">
-      <V2NavRail onOpenGuide={onOpenGuide} />
+      <V2NavRail />
     </div>
   </MemoryRouter>,
 );
@@ -50,20 +47,13 @@ describe('Community navigation', () => {
   const originalPodId = process.env.REACT_APP_COMMUNITY_POD_ID;
   const originalInviteToken = process.env.REACT_APP_COMMUNITY_INVITE_TOKEN;
 
-  beforeAll(async () => {
-    await i18nReady;
-  });
-
   beforeEach(() => {
     process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
     process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = COMMUNITY_INVITE_TOKEN;
     jest.clearAllMocks();
-    return act(async () => {
-      await i18n.changeLanguage('en');
-    });
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     if (originalPodId === undefined) {
       delete process.env.REACT_APP_COMMUNITY_POD_ID;
     } else {
@@ -74,7 +64,6 @@ describe('Community navigation', () => {
     } else {
       process.env.REACT_APP_COMMUNITY_INVITE_TOKEN = originalInviteToken;
     }
-    await i18n.changeLanguage('en');
   });
 
   test('shows the rail entry only when a community pod is configured', () => {
@@ -85,19 +74,6 @@ describe('Community navigation', () => {
     delete process.env.REACT_APP_COMMUNITY_POD_ID;
     renderRail();
     expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
-  });
-
-  test('opens the first-run guide from a localized rail action', async () => {
-    const openGuide = jest.fn();
-    renderRail(openGuide);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
-    expect(openGuide).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await i18n.changeLanguage('zh-CN');
-    });
-    expect(screen.getByRole('button', { name: '帮助' })).toBeInTheDocument();
   });
 
   test('sends members to the Community pod', async () => {

@@ -94,10 +94,6 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // decides whether it should open; an established/dismissed user flips it off
   // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
-  const [firstRunReopenRequest, setFirstRunReopenRequest] = useState(0);
-  const reopenFirstRun = useCallback(() => {
-    setFirstRunReopenRequest((request) => request + 1);
-  }, []);
   const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
@@ -192,7 +188,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   return (
     <div className={shellClass}>
-      <V2NavRail onPodsMobileNav={openMobileNav} onOpenGuide={reopenFirstRun} />
+      <V2NavRail onPodsMobileNav={openMobileNav} />
       {mobileNavOpen && (
         <button
           type="button"
@@ -232,10 +228,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           onPendingOpenFileNameConsumed={clearPendingOpenFileName}
         />
       )}
-      <V2FirstRunHero
-        onVisibilityChange={setFirstRunVisible}
-        reopenRequest={firstRunReopenRequest}
-      />
+      <V2FirstRunHero onVisibilityChange={setFirstRunVisible} />
       {inviteEnabled && detail.pod && (
         <V2InviteModal
           open={inviteOpen}

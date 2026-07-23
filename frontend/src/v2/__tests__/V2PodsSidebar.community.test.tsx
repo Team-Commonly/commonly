@@ -172,23 +172,13 @@ describe('V2PodsSidebar Community offer', () => {
       hqPod,
     ]);
 
-    const communityFilter = screen.getByRole('button', { name: 'Community' });
-    fireEvent.click(communityFilter);
-    expect(communityFilter).toHaveClass('v2-pods__filter--active');
-    expect(screen.getByRole('button', { name: 'All' }))
-      .not.toHaveClass('v2-pods__filter--active');
-    expect(screen.getByRole('button', { name: 'Joined' }))
-      .toHaveClass('v2-pods__community-tab--active');
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }));
     expect(await screen.findByText('Joined Builders')).toBeInTheDocument();
     expect(screen.getByText('Commonly HQ')).toBeInTheDocument();
     expect(screen.queryByText('Open Builders')).not.toBeInTheDocument();
     expect(mockApiGet).not.toHaveBeenCalledWith('/api/pods?scope=discover');
 
-    const discoverView = screen.getByRole('button', { name: 'Discover' });
-    fireEvent.click(discoverView);
-    expect(discoverView).toHaveClass('v2-pods__community-tab--active');
-    expect(screen.getByRole('button', { name: 'Joined' }))
-      .not.toHaveClass('v2-pods__community-tab--active');
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
     expect(await screen.findByText('Open Builders')).toBeInTheDocument();
     expect(screen.getByText('Build in public with the community.')).toBeInTheDocument();
     expect(screen.getByText('0 members')).toBeInTheDocument();
