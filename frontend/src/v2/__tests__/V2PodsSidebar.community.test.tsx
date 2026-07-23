@@ -8,6 +8,7 @@ import V2PodsSidebar from '../components/V2PodsSidebar';
 const COMMUNITY_POD_ID = 'community-pod';
 const mockJoinPod = jest.fn();
 const mockSeedFromExisting = jest.fn();
+const mockRefresh = jest.fn();
 const mockApiGet = jest.fn();
 const mockApi = {
   get: mockApiGet,
@@ -21,7 +22,9 @@ jest.mock('../hooks/useV2Pods', () => ({
     pods: [],
     loading: false,
     error: null,
+    refresh: mockRefresh,
     createPod: jest.fn(),
+    deletePod: jest.fn(),
     patchLastMessage: jest.fn(),
   }),
 }));
@@ -71,7 +74,9 @@ const renderSidebar = (pods) => {
     pods,
     loading: false,
     error: null,
+    refresh: mockRefresh,
     createPod: jest.fn(),
+    deletePod: jest.fn(),
     patchLastMessage: jest.fn(),
   };
   return render(
@@ -91,7 +96,11 @@ describe('V2PodsSidebar Community offer', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockApiGet.mockReset();
+    mockApi.post.mockReset();
     mockApiGet.mockResolvedValue([]);
+    mockApi.post.mockResolvedValue(null);
+    mockRefresh.mockResolvedValue(undefined);
     process.env.REACT_APP_COMMUNITY_POD_ID = COMMUNITY_POD_ID;
     await act(async () => {
       await i18n.changeLanguage('en');
@@ -131,37 +140,136 @@ describe('V2PodsSidebar Community offer', () => {
     expect(screen.queryByRole('button', { name: 'Join HQ' })).not.toBeInTheDocument();
   });
 
-  test('Community shows public discovery and HQ, excludes personal pods, and leaves All personal', async () => {
-    mockApiGet.mockResolvedValue([
-      makePod('public-space', [], { name: 'Open Builders', publicRead: true }),
-      makePod(COMMUNITY_POD_ID, [], { publicRead: true }),
-      makePod('forced-public-dm', [], {
-        name: 'Private agent room',
-        type: 'agent-room',
-        publicRead: true,
-      }),
+  test('splits joined Community pods from discoverable non-members without leaking them into All', async () => {
+    const joinedPod = makePod('joined-space', ['human-1'], {
+      name: 'Joined Builders',
+      publicRead: true,
+    });
+    const hqPod = makePod(COMMUNITY_POD_ID, ['human-1'], { publicRead: true });
+    mockApiGet.mockImplementation((url) => {
+      if (url === '/api/pods?scope=community') {
+        return Promise.resolve([joinedPod, hqPod]);
+      }
+      if (url === '/api/pods?scope=discover') {
+        return Promise.resolve([
+          makePod('public-space', [], {
+            name: 'Open Builders',
+            description: 'Build in public with the community.',
+            publicRead: true,
+          }),
+          makePod('forced-public-dm', [], {
+            name: 'Private agent room',
+            type: 'agent-room',
+            publicRead: true,
+          }),
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    renderSidebar([
+      makePod('workspace', ['human-1']),
+      joinedPod,
+      hqPod,
     ]);
-    renderSidebar([makePod('workspace', ['human-1'])]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Community' }));
-    expect(await screen.findByText('Open Builders')).toBeInTheDocument();
+    expect(await screen.findByText('Joined Builders')).toBeInTheDocument();
     expect(screen.getByText('Commonly HQ')).toBeInTheDocument();
+    expect(screen.queryByText('Open Builders')).not.toBeInTheDocument();
+    expect(mockApiGet).not.toHaveBeenCalledWith('/api/pods?scope=discover');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
+    expect(await screen.findByText('Open Builders')).toBeInTheDocument();
+    expect(screen.getByText('Build in public with the community.')).toBeInTheDocument();
+    expect(screen.getByText('0 members')).toBeInTheDocument();
     expect(screen.queryByText('Private agent room')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
     expect(screen.getByText('My Workspace')).toBeInTheDocument();
     expect(screen.queryByText('Open Builders')).not.toBeInTheDocument();
-    expect(screen.queryByText('Commonly HQ')).not.toBeInTheDocument();
-    await waitFor(() => expect(mockApiGet).toHaveBeenCalledWith('/api/pods?scope=community'));
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/api/pods?scope=community');
+      expect(mockApiGet).toHaveBeenCalledWith('/api/pods?scope=discover');
+    });
   });
 
-  test('renders the Community tab from both locale catalogs', async () => {
+  test('joins a discovered pod, moves it to Joined, refreshes memberships, and navigates in', async () => {
+    const discoveredPod = makePod('bug-reports', [], {
+      name: 'Bug Reports',
+      description: 'Help make Commonly better.',
+      publicRead: true,
+    });
+    const joinedPod = makePod('bug-reports', ['human-1'], {
+      name: 'Bug Reports',
+      description: 'Help make Commonly better.',
+      publicRead: true,
+    });
+    mockApiGet.mockImplementation((url) => (
+      url === '/api/pods?scope=discover'
+        ? Promise.resolve([discoveredPod])
+        : Promise.resolve([])
+    ));
+    mockApi.post.mockResolvedValue(joinedPod);
+    renderSidebar([makePod('workspace', ['human-1'])]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Join' }));
+
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith('/api/pods/bug-reports/join');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/bug-reports');
+    });
+    expect(screen.getByRole('button', { name: 'Joined' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Bug Reports')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Join' })).not.toBeInTheDocument();
+  });
+
+  test.each([
+    [403, 'This Pod needs an invite link to join.'],
+    [429, 'Too many join attempts. Wait a moment and try again.'],
+  ])('keeps a discovered pod visible and explains a %s join refusal', async (status, message) => {
+    const discoveredPod = makePod('feature-requests', [], {
+      name: 'Feature Requests',
+      publicRead: true,
+    });
+    mockApiGet.mockImplementation((url) => (
+      url === '/api/pods?scope=discover'
+        ? Promise.resolve([discoveredPod])
+        : Promise.resolve([])
+    ));
+    mockApi.post.mockRejectedValue({ response: { status } });
+    renderSidebar([makePod('workspace', ['human-1'])]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Join' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByText('Feature Requests')).toBeInTheDocument();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/workspace');
+  });
+
+  test('renders the Community discovery controls from both locale catalogs', async () => {
+    mockApiGet.mockImplementation((url) => (
+      url === '/api/pods?scope=discover'
+        ? Promise.resolve([makePod('public-space', [], { name: 'Open Builders' })])
+        : Promise.resolve([])
+    ));
     renderSidebar([makePod('workspace', ['human-1'])]);
     expect(screen.getByRole('button', { name: 'Community' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Community' }));
+    expect(screen.getByRole('button', { name: 'Joined' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
+    expect(await screen.findByRole('button', { name: 'Join' })).toBeInTheDocument();
 
     await act(async () => {
       await i18n.changeLanguage('zh-CN');
     });
     expect(screen.getByRole('button', { name: '社区' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已加入' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发现' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '加入' })).toBeInTheDocument();
   });
 });

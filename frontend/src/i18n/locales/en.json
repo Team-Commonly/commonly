@@ -1261,6 +1261,11 @@
       "private": "Private",
       "community": "Community"
     },
+    "communityViews": {
+      "ariaLabel": "Community views",
+      "joined": "Joined",
+      "discover": "Discover"
+    },
     "groups": {
       "pinned": "Pinned",
       "directMessages": "Direct messages",
@@ -1288,6 +1293,16 @@
     },
     "errors": {
       "createFailed": "Unable to create pod. Check that you are signed in and try again."
+    },
+    "discover": {
+      "join": "Join",
+      "joining": "Joining…",
+      "empty": "No community Pods to discover right now.",
+      "joinedEmpty": "You haven't joined any community Pods yet.",
+      "loadFailed": "Couldn't load community Pods. Try again.",
+      "inviteRequired": "This Pod needs an invite link to join.",
+      "rateLimited": "Too many join attempts. Wait a moment and try again.",
+      "joinFailed": "Couldn't join this Pod. Try again."
     },
     "community": {
       "title": "Join Commonly HQ",
