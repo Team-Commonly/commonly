@@ -75,17 +75,36 @@ const V2AgentBYO: React.FC = () => {
         const data = await api.get<V2Pod[]>('/api/pods');
         if (cancelled) return;
         const list = Array.isArray(data) ? data : [];
-        // Filter to non-DM pods — agent-room/agent-dm/agent-admin are
-        // strict-1:1 surfaces and refuse third-party installs.
-        const installablePods = list.filter((p) => !['agent-room', 'agent-dm', 'agent-admin'].includes(p.type || ''));
+        const installablePods = list.filter((p) => (
+          // Non-DM only: agent-room/agent-dm/agent-admin are strict-1:1
+          // surfaces and refuse third-party installs.
+          !['agent-room', 'agent-dm', 'agent-admin'].includes(p.type || '')
+          // NEVER offer a public/community pod (e.g. Commonly HQ) here. A
+          // personal BYO agent attached to a stranger-readable room processes
+          // untrusted input — a prompt-injection surface running with the
+          // owner's own tokens/compute. New users auto-join HQ and it sorts
+          // first by activity, so the old `installablePods[0]` default silently
+          // funneled personal agents into the public room (2026-07-24 launch
+          // incident). Restrict the picker to non-public pods.
+          && p.publicRead !== true
+        ));
         setPods(installablePods);
-        if (installablePods.length > 0 && !podId) setPodId(installablePods[0]._id);
+        if (!podId && installablePods.length > 0) {
+          // Default to the user's OWN pod (their private workspace), never the
+          // most-active pod. Fall back to the first non-public pod only if the
+          // user somehow owns none.
+          const uid = currentUser?._id;
+          const own = uid
+            ? installablePods.find((p) => p.createdBy?._id && String(p.createdBy._id) === String(uid))
+            : undefined;
+          setPodId((own || installablePods[0])._id);
+        }
       } catch {
         // Defensive: keep the form usable; user will see the error on submit.
       }
     })();
     return () => { cancelled = true; };
-  }, [api, podId]);
+  }, [api, podId, currentUser?._id]);
 
   const submit = async () => {
     setError(null);
