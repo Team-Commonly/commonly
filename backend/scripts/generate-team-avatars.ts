@@ -26,6 +26,7 @@
 
 import 'dotenv/config';
 import mongoose from 'mongoose';
+import { normalizeAvatarUrl } from '../services/avatarService';
 
 // Use require to match the rest of the backend's module idiom.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -183,7 +184,7 @@ async function run(): Promise<void> {
         continue;
       }
 
-      user.profilePicture = result.avatar;
+      user.profilePicture = normalizeAvatarUrl(result.avatar) || 'default';
       user.avatarMetadata = {
         ...(user.avatarMetadata || {}),
         source: result.metadata?.source || 'unknown',

@@ -1,4 +1,5 @@
 import React from 'react';
+import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
 import { colorFor, initialsFor } from '../utils/avatars';
 
 export type V2AvatarSize = 'sm' | 'md' | 'lg';
@@ -26,7 +27,8 @@ const V2Avatar: React.FC<V2AvatarProps> = ({ name, src, size = 'md', online, tit
   const bg = colorFor(seed);
   const initials = initialsFor(seed);
   const display = title || seed || undefined;
-  const cleanSrc = typeof src === 'string' && src.trim().length > 0 ? src.trim() : null;
+  const rawSrc = typeof src === 'string' && src.trim().length > 0 ? src.trim() : null;
+  const cleanSrc = normalizeUploadUrl(rawSrc) || null;
   const [imgFailed, setImgFailed] = React.useState(false);
 
   React.useEffect(() => {

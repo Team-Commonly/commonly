@@ -3,6 +3,7 @@ const Activity = require('../models/Activity');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { normalizeAvatarUrl } = require('../services/avatarService');
 
 const toSocialProfile = (userDoc: any, viewerId: any = null) => {
   const followers = Array.isArray(userDoc.followers) ? userDoc.followers : [];
@@ -44,7 +45,9 @@ exports.updateProfile = async (req: any, res: any) => {
     const userFields: any = {};
     if (username) userFields.username = username;
     if (bio) userFields.bio = bio;
-    if (profilePicture) userFields.profilePicture = profilePicture;
+    if (profilePicture !== undefined) {
+      userFields.profilePicture = normalizeAvatarUrl(profilePicture);
+    }
 
     // Update user
     const user = await User.findByIdAndUpdate(

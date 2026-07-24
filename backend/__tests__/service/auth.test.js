@@ -417,7 +417,7 @@ describe('Auth Routes Integration Tests', () => {
       const token = generateTestToken(user._id);
 
       const updateData = {
-        profilePicture: 'new-profile-pic-url',
+        profilePicture: 'https://api-dev.commonly.me/api/uploads/new-profile-pic.png',
       };
 
       const response = await request(app)
@@ -426,11 +426,11 @@ describe('Auth Routes Integration Tests', () => {
         .send(updateData)
         .expect(200);
 
-      expect(response.body.profilePicture).toBe('new-profile-pic-url');
+      expect(response.body.profilePicture).toBe('/api/uploads/new-profile-pic.png');
 
       // Verify database update
       const updatedUser = await User.findById(user._id);
-      expect(updatedUser.profilePicture).toBe('new-profile-pic-url');
+      expect(updatedUser.profilePicture).toBe('/api/uploads/new-profile-pic.png');
     });
 
     it('should return 401 without token', async () => {

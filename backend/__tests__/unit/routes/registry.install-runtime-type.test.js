@@ -23,6 +23,10 @@ jest.mock('../../../models/AgentProfile', () => ({
   findOneAndUpdate: jest.fn(),
 }));
 
+jest.mock('../../../models/AgentTemplate', () => ({
+  find: jest.fn(),
+}));
+
 jest.mock('../../../models/Activity', () => ({
   create: jest.fn(),
 }));
@@ -59,6 +63,7 @@ const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegis
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentProfile = require('../../../models/AgentProfile');
+const AgentTemplate = require('../../../models/AgentTemplate');
 const Activity = require('../../../models/Activity');
 const AgentIdentityService = require('../../../services/agentIdentityService');
 const FirstContactService = require('../../../services/firstContactService');
@@ -120,6 +125,11 @@ describe('registry install runtimeType fallback', () => {
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'admin' }));
 
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      }),
+    });
     Activity.create.mockResolvedValue(true);
   });
 
@@ -253,5 +263,55 @@ describe('registry install runtimeType fallback', () => {
     });
     expect(res.status).not.toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  it('seeds a new identity from the normalized per-instance template icon', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent',
+      displayName: 'Sample Agent',
+      description: 'Community marketplace app',
+      iconUrl: 'https://api.commonly.me/api/uploads/registry.png',
+      latestVersion: '1.0.0',
+      manifest: {
+        context: { required: [] },
+        runtime: { type: 'standalone' },
+      },
+    });
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{
+          displayName: 'Aria',
+          iconUrl: 'https://api-dev.commonly.me/api/uploads/aria.png',
+          createdBy: 'user-1',
+          visibility: 'private',
+        }]),
+      }),
+    });
+    const req = {
+      body: {
+        agentName: 'sample-agent',
+        podId: 'pod-1',
+        version: '1.0.0',
+        displayName: 'Aria',
+        config: {},
+        scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    await installHandler(req, res);
+
+    expect(AgentIdentityService.getOrCreateAgentUser).toHaveBeenCalledWith(
+      'sample-agent',
+      expect.objectContaining({
+        displayName: 'Aria',
+        profilePicture: '/api/uploads/aria.png',
+      }),
+    );
   });
 });

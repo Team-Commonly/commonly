@@ -3,7 +3,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentTemplate = require('../../models/AgentTemplate');
-const User = require('../../models/User');
+const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { getUserId, escapeRegExp } = require('./helpers');
 
 const templatesRouter = express.Router();
@@ -92,19 +92,10 @@ templatesRouter.post('/templates', auth, async (req: any, res: any) => {
       agentName: agentName.toLowerCase(),
       displayName: trimmedDisplayName,
       description,
-      iconUrl,
+      iconUrl: normalizeAvatarUrl(iconUrl) || '',
       visibility,
       createdBy: userId,
     });
-
-    // Sync iconUrl to User.profilePicture so post/comment populates pick it up
-    if (iconUrl) {
-      const instanceId = trimmedDisplayName.toLowerCase();
-      await User.updateMany(
-        { 'botMetadata.agentName': agentName.toLowerCase(), 'botMetadata.instanceId': instanceId },
-        { profilePicture: iconUrl },
-      );
-    }
 
     return res.json({
       success: true,
@@ -170,19 +161,10 @@ templatesRouter.patch('/templates/:id', auth, async (req: any, res: any) => {
     }
 
     if (iconUrl !== undefined) {
-      template.iconUrl = iconUrl || '';
+      template.iconUrl = normalizeAvatarUrl(iconUrl) || '';
     }
 
     await template.save();
-
-    // Sync iconUrl to User.profilePicture so post/comment populates pick it up
-    if (iconUrl !== undefined) {
-      const instanceId = template.displayName.toLowerCase();
-      await User.updateMany(
-        { 'botMetadata.agentName': template.agentName, 'botMetadata.instanceId': instanceId },
-        { profilePicture: template.iconUrl || 'default' },
-      );
-    }
 
     return res.json({
       success: true,

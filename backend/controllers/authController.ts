@@ -7,6 +7,7 @@ const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
+const { normalizeAvatarUrl } = require('../services/avatarService');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -652,8 +653,8 @@ exports.updateProfile = async (req: any, res: any) => {
     }
 
     // Update profile picture if provided
-    if (profilePicture) {
-      user.profilePicture = profilePicture;
+    if (profilePicture !== undefined) {
+      user.profilePicture = normalizeAvatarUrl(profilePicture);
     }
 
     await user.save();
