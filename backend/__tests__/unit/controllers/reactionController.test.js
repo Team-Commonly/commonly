@@ -183,6 +183,38 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(MessageReaction.add).toHaveBeenCalledWith('11', 'human-1', '👀');
   });
 
+  test('human NOT in pg pod_members but IN mongo pod.members is still allowed (dual-DB drift, 2026-07-24)', async () => {
+    pool.query
+      .mockResolvedValueOnce(podLookup('pod-drift')) // loadPodIdForMessage
+      .mockResolvedValueOnce(memberLookup(0)); // pg pod_members MISS → must fall back to Mongo
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ members: [{ toString: () => 'human-2' }] }) }),
+    });
+
+    const req = { params: { messageId: '12' }, body: { emoji: '👍' }, user: { _id: 'human-2' } };
+    const res = buildRes();
+
+    await reactionController.addReaction(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(MessageReaction.add).toHaveBeenCalledWith('12', 'human-2', '👍');
+  });
+
+  test('human in neither pg pod_members nor mongo members → 403', async () => {
+    pool.query
+      .mockResolvedValueOnce(podLookup('pod-x'))
+      .mockResolvedValueOnce(memberLookup(0));
+    Pod.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ members: [] }) }) });
+
+    const req = { params: { messageId: '13' }, body: { emoji: '👍' }, user: { _id: 'stranger' } };
+    const res = buildRes();
+
+    await reactionController.addReaction(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(MessageReaction.add).not.toHaveBeenCalled();
+  });
+
   test('unauthenticated request (no user, no agentUser) → 401', async () => {
     const req = { params: { messageId: '1' }, body: { emoji: '👍' } };
     const res = buildRes();
