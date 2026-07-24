@@ -292,6 +292,11 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   // Picker state per message. Open via "+ react"; close on first click
   // (no need for outside-click handling — the picker hides after action).
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Surface why a reaction failed instead of swallowing it. Before this, a
+  // rejected reaction (bad emoji 400, non-member 403, rate-limit 429) did
+  // nothing visible — which made the ❤️-validation bug read as "reactions
+  // don't work / can't add more than one" (2026-07-24).
+  const [reactionError, setReactionError] = useState<string | null>(null);
   const rawUsername = message.user?.username || 'Unknown';
   const overriddenDisplay = agentDisplayNames?.get(rawUsername);
   const author = overriddenDisplay || rawUsername;
@@ -478,7 +483,16 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
               // Optimistic update is unnecessary — the socket `messageReaction`
               // event from the backend updates the message list in place.
             } catch (err) {
-              // Defensive: ignore (likely 429 or 403); next list refresh corrects.
+              const e = err as { response?: { status?: number; data?: { msg?: string; error?: string } } };
+              const status = e.response?.status;
+              const serverMsg = e.response?.data?.msg || e.response?.data?.error;
+              setReactionError(
+                serverMsg
+                || (status === 403 ? "You're not a member of this pod." : '')
+                || (status === 429 ? 'Too many reactions — give it a moment.' : '')
+                || 'Could not add that reaction.',
+              );
+              window.setTimeout(() => setReactionError(null), 4000);
               // eslint-disable-next-line no-console
               console.warn('[reactions] toggle failed:', (err as Error).message);
             } finally {
@@ -563,6 +577,9 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
                     </span>
                   )}
                 </span>
+              )}
+              {reactionError && (
+                <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>
               )}
             </div>
           );

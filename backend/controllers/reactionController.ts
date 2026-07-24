@@ -24,7 +24,14 @@ interface AuthedRes {
   json: (d: unknown) => void;
 }
 
-const SAFE_EMOJI_RE = /^[\p{Emoji}‍]{1,8}$/u;
+// Accept a single emoji OR a full emoji sequence. `\p{Emoji}` alone rejects
+// the combining marks real emoji carry: U+FE0F (variation selector — makes
+// ❤️/☺️/⭐️ render as emoji), U+200D (ZWJ, for 👨‍👩‍👧 family/profession
+// sequences), and skin-tone modifiers (\p{Emoji_Modifier}). Before this, ❤️ —
+// which is in the client's reaction palette — 400'd ("emoji must be 1–8…") and
+// the frontend swallowed it, so users couldn't add it (2026-07-24). Widened to
+// 16 code points so ZWJ sequences fit.
+const SAFE_EMOJI_RE = /^[\p{Emoji}\u{200D}\u{FE0F}\p{Emoji_Modifier}]{1,16}$/u;
 
 function getUserId(req: AuthedReq): string {
   return String(req.user?._id || req.userId || req.agentUser?._id || '');

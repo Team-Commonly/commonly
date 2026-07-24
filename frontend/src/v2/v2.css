@@ -5645,6 +5645,13 @@
   font-weight: 600;
   font-size: 11px;
 }
+/* Transient reason-a-reaction-failed line (bad emoji / not a member / rate
+ * limited). Auto-clears after ~4s from the component. */
+.v2-msg__reaction-error {
+  font-size: 11px;
+  color: var(--v2-danger, #c0392b);
+  align-self: center;
+}
 
 /* Sprint B5 — interactive reaction chips + picker. Mine = filled
  * indigo; not-mine = subtle gray (existing rule above). Same
