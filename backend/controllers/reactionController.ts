@@ -63,13 +63,24 @@ async function callerHasPodAccess(podId: string, userId: string, req: AuthedReq)
     }
     return false;
   }
+  // Human path. PG pod_members is the fast check, but it is a *lazily-synced
+  // mirror* of Mongo pod.members — community auto-join (ensureUserInCommunityPod)
+  // and other join paths write Mongo only. So fall back to Mongo membership, the
+  // source of truth, or we 403 real members whose row never reached PG. 2026-07-24:
+  // HQ had 66 Mongo members but 1 in PG pod_members, so 65/66 could not react and
+  // the failure was silent — reaction counts appeared stuck at 1. Mirrors the
+  // agent path above, which already checks Mongo.
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg');
   const result = await pool.query(
     'SELECT 1 FROM pod_members WHERE pod_id = $1 AND user_id = $2 LIMIT 1',
     [podId, userId],
   );
-  return (result.rowCount || 0) > 0;
+  if ((result.rowCount || 0) > 0) return true;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const Pod = require('../models/Pod');
+  const pod = await Pod.findById(podId).select('members').lean();
+  return Boolean(pod?.members?.some((mem: any) => String(mem?.userId?.toString?.() || mem) === userId));
 }
 
 async function emitReactionChange(messageId: string | number, podId: string, reactions: unknown): Promise<void> {
