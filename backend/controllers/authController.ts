@@ -87,6 +87,27 @@ const createDefaultWorkspacePod = async (userId: any) => {
       members: [userId],
     });
 
+    // Mirror the workspace into PostgreSQL immediately. The UI path
+    // (`createPod`) already does this, but registration's workspace pod did
+    // not — so every new user's workspace lived only in Mongo until its first
+    // chat message (the messageController lazy backfill). Any *non-message* PG
+    // operation on it (adding a member/agent before any message) then FK-failed
+    // on the missing `pods` row (2026-07-24 re-home incident). Sync the user
+    // first — registration has not written it to PG yet, so the pod's member
+    // insert would otherwise fail its user_id FK. Best-effort: PG drift is
+    // still caught by the lazy backfill, so never fail registration on it.
+    try {
+      if (process.env.PG_HOST) {
+        const userDoc = await User.findById(userId);
+        if (userDoc) await AgentIdentityService.syncUserToPostgreSQL(userDoc);
+        // eslint-disable-next-line global-require
+        const { syncPodFromMongo } = require('../services/pgPodSyncService');
+        await syncPodFromMongo(pod._id.toString(), String(userId));
+      }
+    } catch (pgErr: any) {
+      console.warn('[register] default workspace PG mirror failed:', pgErr?.message);
+    }
+
     // Starter checklist — scripted onboarding on the real task board (no
     // dedicated checklist UI to maintain). Matches tasksApi's TASK-###
     // numbering so later tasks continue the sequence. Best-effort, same as
