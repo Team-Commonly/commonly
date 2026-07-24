@@ -1,3 +1,6 @@
+import { createHash } from 'crypto';
+import type { Request, Response } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -38,6 +41,14 @@ function auth(req: AuthReq, res: Res, next: () => void) {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+const taskWriteRateLimitKey = (req: Request): string => {
+  const authHeader = req.get('Authorization') || req.get('x-auth-token');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
 
 async function resolveAuthor(req: AuthReq): Promise<string> {
   const agentInstance = req.user?.isBot ? (req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName) : null;
@@ -104,11 +115,67 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/:podId', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId', rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({ error: 'rate limit exceeded: 20 task creates per 60s' }),
+}), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const { title, assignee, dep, depMockOk, parentTask, source, sourceRef, githubIssueNumber, githubIssueUrl, createGithubIssue } = (req.body || {}) as { title?: string; assignee?: string; dep?: string; depMockOk?: boolean; parentTask?: string; source?: string; sourceRef?: string; githubIssueNumber?: number; githubIssueUrl?: string; createGithubIssue?: boolean };
+    const {
+      title: titleInput,
+      assignee: assigneeInput,
+      dep: depInput,
+      depMockOk: depMockOkInput,
+      parentTask: parentTaskInput,
+      source: sourceInput,
+      sourceRef: sourceRefInput,
+      githubIssueNumber: githubIssueNumberInput,
+      githubIssueUrl: githubIssueUrlInput,
+      createGithubIssue: createGithubIssueInput,
+    } = req.body || {};
+    const stringInputs: Record<string, unknown> = {
+      title: titleInput,
+      assignee: assigneeInput,
+      dep: depInput,
+      parentTask: parentTaskInput,
+      source: sourceInput,
+      sourceRef: sourceRefInput,
+      githubIssueUrl: githubIssueUrlInput,
+    };
+    const invalidStringField = Object.entries(stringInputs)
+      .find(([, value]) => value !== undefined && typeof value !== 'string');
+    if (invalidStringField) {
+      return res.status(400).json({ error: `${invalidStringField[0]} must be a string` });
+    }
+    if (githubIssueNumberInput !== undefined
+      && (typeof githubIssueNumberInput !== 'number'
+        || !Number.isSafeInteger(githubIssueNumberInput)
+        || githubIssueNumberInput < 1)) {
+      return res.status(400).json({ error: 'githubIssueNumber must be a positive integer' });
+    }
+    if (depMockOkInput !== undefined && typeof depMockOkInput !== 'boolean') {
+      return res.status(400).json({ error: 'depMockOk must be a boolean' });
+    }
+    if (createGithubIssueInput !== undefined && typeof createGithubIssueInput !== 'boolean') {
+      return res.status(400).json({ error: 'createGithubIssue must be a boolean' });
+    }
+    // Materialize primitives after runtime validation so Mongo never receives
+    // user-supplied query objects (for example, operator-shaped values).
+    const title = titleInput === undefined ? undefined : String(titleInput);
+    const assignee = assigneeInput === undefined ? undefined : String(assigneeInput);
+    const dep = depInput === undefined ? undefined : String(depInput);
+    const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
+    const source = sourceInput === undefined ? undefined : String(sourceInput);
+    const sourceRef = sourceRefInput === undefined ? undefined : String(sourceRefInput);
+    const githubIssueUrl = githubIssueUrlInput === undefined ? undefined : String(githubIssueUrlInput);
+    const githubIssueNumber = githubIssueNumberInput === undefined ? undefined : Number(githubIssueNumberInput);
+    const depMockOk = depMockOkInput === true;
+    const createGithubIssue = createGithubIssueInput === true;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -151,7 +218,38 @@ router.post('/:podId', auth, async (req: AuthReq, res: Res) => {
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
     if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
     if (parentTask) initUpdate.text += ` · sub-task of ${parentTask}`;
-    const task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: source || (ghNumber ? 'github' : 'human'), sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, updates: [initUpdate] });
+    let task;
+    try {
+      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: source || (ghNumber ? 'github' : 'human'), sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, updates: [initUpdate] });
+    } catch (createErr) {
+      const duplicate = createErr as {
+        code?: number;
+        keyPattern?: Record<string, number>;
+        message?: string;
+      };
+      const sourceRefIndexCollision = duplicate.code === 11000
+        && !!sourceRef
+        && (
+          (
+            duplicate.keyPattern?.podId === 1
+            && duplicate.keyPattern?.sourceRef === 1
+            && duplicate.keyPattern?.taskId === undefined
+          )
+          || duplicate.message?.includes('podId_1_sourceRef_1_partial')
+        );
+      if (!sourceRefIndexCollision) throw createErr;
+
+      // The pre-check can lose a race to another request. Re-read the winner
+      // only after Mongo identifies the sourceRef index as the collision.
+      // Do not reopen here: the concurrent winner has just created a fresh
+      // task, so this request is an idempotent replay of that creation.
+      const existing = await Task.findOne({
+        podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+        sourceRef,
+      }) as { toObject: () => unknown } | null;
+      if (!existing) throw createErr;
+      return res.json({ task: existing.toObject(), alreadyExists: true });
+    }
     if (parentTask && GitHubAppService.isPatConfigured()) {
       try {
         const parent = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId: parentTask }).lean() as { githubIssueNumber?: number } | null;
