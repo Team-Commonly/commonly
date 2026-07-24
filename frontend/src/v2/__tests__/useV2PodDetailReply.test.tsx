@@ -28,6 +28,11 @@ jest.mock('../../context/SocketContext', () => ({
     leavePod: jest.fn(),
   }),
 }));
+// useV2PodDetail now reads currentUser (to recompute reaction `mine` per-client);
+// useAuth throws without an AuthProvider, so stub it here.
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({ currentUser: { _id: 'me' } }),
+}));
 
 describe('useV2PodDetail reply threading (#646)', () => {
   beforeEach(() => {
