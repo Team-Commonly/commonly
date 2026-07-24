@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useV2Api } from './useV2Api';
 import { V2Pod, V2PodMember } from './useV2Pods';
 import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
 
 export interface V2Message {
   id: string;
@@ -136,9 +137,26 @@ const chronologicalMessages = (messages: V2Message[]): V2Message[] => (
   ))
 );
 
+// `emitReactionChange` computes `mine` for the user who triggered the change and
+// broadcasts that single view to the whole room — so every OTHER client gets a
+// wrong `mine`, which flips the add/remove toggle (clicking your own reaction
+// re-adds instead of removing) and mis-highlights chips (2026-07-24). Recompute
+// `mine` for THIS client from each reaction's user list; fall back to the wire
+// value only when `users` is absent (older server / Mongo fallback path).
+export const recomputeReactionMine = <T extends { mine: boolean; users?: Array<{ id: string }> }>(
+  reactions: T[],
+  userId: string | undefined | null,
+): T[] => reactions.map((r) => ({
+  ...r,
+  mine: Array.isArray(r.users) && userId
+    ? r.users.some((u) => String(u.id) === String(userId))
+    : r.mine,
+}));
+
 export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const api = useV2Api();
   const { socket, connected, joinPod, leavePod } = useSocket();
+  const { currentUser } = useAuth();
   const [pod, setPod] = useState<V2Pod | null>(null);
   const [messages, setMessages] = useState<V2Message[]>([]);
   const [agents, setAgents] = useState<V2Agent[]>([]);
@@ -241,12 +259,20 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     // `messageReaction` with the new aggregated list after every add/remove
     // by any user. We patch only the matching message's `reactions` array
     // — no other state churn.
-    const handleReactionChange = (payload: { messageId: string; podId?: string; reactions: Array<{ emoji: string; count: number; mine: boolean }> }) => {
+    const handleReactionChange = (payload: { messageId: string; podId?: string; reactions: Array<{ emoji: string; count: number; mine: boolean; users?: Array<{ id: string }> }> }) => {
       if (!payload || !payload.messageId) return;
       if (payload.podId && payload.podId !== podId) return;
+      // `emitReactionChange` computes `mine` for the user who triggered the
+      // change and broadcasts that single view to the whole room. Trusting it
+      // gives every OTHER client a wrong `mine` — which flips the add/remove
+      // toggle (clicking your own reaction re-adds instead of removing) and
+      // mis-highlights chips. Recompute `mine` for THIS client from the
+      // reaction's user list (2026-07-24). Fall back to the wire value only
+      // when `users` is absent (older server / Mongo fallback).
+      const reactions = recomputeReactionMine(payload.reactions, currentUser?._id);
       setMessages((prev) => prev.map((m) => (
         String(m.id) === String(payload.messageId)
-          ? { ...m, reactions: payload.reactions }
+          ? { ...m, reactions }
           : m
       )));
     };
@@ -257,7 +283,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       socket.off('messageReaction', handleReactionChange);
       leavePod(podId);
     };
-  }, [podId, socket, connected, joinPod, leavePod]);
+  }, [podId, socket, connected, joinPod, leavePod, currentUser?._id]);
 
   const sendMessage = useCallback(async (content: string, messageType = 'text', replyToMessageId?: string): Promise<V2Message | null> => {
     if (!podId || !content.trim()) return null;
