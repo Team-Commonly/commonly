@@ -12,6 +12,10 @@
  * when `mcp` is declared, and wraps the argv with bwrap when
  * `sandbox.mode === 'bwrap'`. The spawn binary becomes `bwrap` in that case —
  * claude moves to the inner argv.
+ * A public `workspace` / `read-only` sandbox maps to an outer deny-default
+ * Seatbelt profile on macOS. Claude gets an isolated HOME, a credential-starved
+ * child environment, and an explicit tool allow/deny policy; Claude and every
+ * declared MCP child inherit the same kernel filesystem boundary.
  * When ctx.environment is absent, behaviour is identical to pre-ADR-008.
  *
  * Session continuity (IMPORTANT — the two claude flags are not interchangeable):
@@ -39,13 +43,29 @@
  */
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { randomUUID } from 'crypto';
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { createHash, randomUUID } from 'crypto';
+import { realpathSync } from 'fs';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'fs/promises';
+import { homedir, tmpdir } from 'os';
+import { isAbsolute, join } from 'path';
 
 import { linkSkills } from '../environment.js';
 import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import {
+  publicClaudeStateRoot,
+  wrapArgvWithSeatbelt,
+} from '../sandbox/seatbelt.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -63,8 +83,149 @@ const buildPrompt = (prompt, memoryLongTerm) => {
   return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
 };
 
+const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
+const PUBLIC_DENIED_TOOLS = [
+  'WebSearch',
+  'WebFetch',
+  'Bash',
+  'Write',
+  'Edit',
+  'NotebookEdit',
+  'Task',
+];
+const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+
+const statOrNull = async (path) => {
+  try {
+    return await lstat(path);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+};
+
+// Claude's macOS OAuth credential lives in Keychain, but Claude also needs a
+// small amount of non-secret account metadata from ~/.claude.json to locate
+// it. Never bind or copy the operator's full file: it contains project paths,
+// MCP configuration, usage history, and other host-private metadata. Public
+// wrappers get a per-identity 0700 HOME carrying only this whitelist.
+const preparePublicClaudeState = async (ctx) => {
+  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
+  const statePath = ctx._publicClaudeState
+    || publicClaudeStateRoot(identityHash);
+  const tmpPath = join(statePath, 'tmp');
+  const configPath = join(statePath, '.claude.json');
+  const stateLibrary = join(statePath, 'Library');
+  const stateKeychains = join(stateLibrary, 'Keychains');
+  const operatorKeychains = join(homedir(), 'Library', 'Keychains');
+
+  await mkdir(tmpPath, { recursive: true, mode: 0o700 });
+  await mkdir(stateLibrary, { recursive: true, mode: 0o700 });
+  await chmod(statePath, 0o700);
+  await chmod(tmpPath, 0o700);
+  await chmod(stateLibrary, 0o700);
+
+  // `/usr/bin/security` resolves the default login keychain relative to HOME.
+  // Keep HOME isolated while pointing that one standard location at the
+  // operator's encrypted keychain database. Seatbelt admits the keychain
+  // directory read-only; no bearer credential is copied into agent state.
+  const keychainLink = await statOrNull(stateKeychains);
+  if (keychainLink && !keychainLink.isSymbolicLink()) {
+    throw new Error(`refusing to replace non-symlink Claude keychain path: ${stateKeychains}`);
+  }
+  if (keychainLink) {
+    const target = await readlink(stateKeychains);
+    if (target !== operatorKeychains) {
+      await unlink(stateKeychains);
+      await symlink(operatorKeychains, stateKeychains);
+    }
+  } else {
+    await symlink(operatorKeychains, stateKeychains);
+  }
+
+  const operatorConfigPath = join(homedir(), '.claude.json');
+  const sourceStat = await statOrNull(operatorConfigPath);
+  let source = {};
+  if (sourceStat) {
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+      throw new Error(`refusing non-regular operator Claude config: ${operatorConfigPath}`);
+    }
+    try {
+      source = JSON.parse(await readFile(operatorConfigPath, 'utf8'));
+    } catch (err) {
+      throw new Error(`failed to read operator Claude auth metadata: ${err.message}`);
+    }
+  }
+
+  const sanitized = {
+    hasCompletedOnboarding: true,
+  };
+  for (const key of ['installMethod', 'userID', 'machineID', 'oauthAccount']) {
+    if (source[key] !== undefined) sanitized[key] = source[key];
+  }
+  await writeFile(
+    configPath,
+    `${JSON.stringify(sanitized, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  await chmod(configPath, 0o600);
+  return { statePath, tmpPath, configPath };
+};
+
+const buildClaudeEnv = (input, state, expansionEnv = {}) => {
+  const source = input || process.env;
+  const output = state ? {} : { ...source };
+  if (state) {
+    for (const [key, value] of Object.entries(source)) {
+      if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
+    }
+    output.HOME = state.statePath;
+    output.TMPDIR = state.tmpPath;
+    output.XDG_CACHE_HOME = join(state.statePath, '.cache');
+    output.XDG_CONFIG_HOME = join(state.statePath, '.config');
+    output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
+  }
+  Object.assign(output, expansionEnv);
+  return output;
+};
+
+const absoluteToolDeny = (path) => `Read(/${path}/**)`;
+
+const buildPublicClaudePolicyArgs = (mcpToolPatterns) => {
+  const home = homedir();
+  const deniedReads = [
+    absoluteToolDeny(join(home, '.commonly')),
+    absoluteToolDeny(join(home, '.claude')),
+    absoluteToolDeny(join(home, '.codex')),
+    absoluteToolDeny(join(home, '.ssh')),
+    absoluteToolDeny(join(home, '.aws')),
+    absoluteToolDeny(join(home, '.config')),
+    'Read(//private/tmp/**)',
+    'Read(./.commonly/**)',
+    'Read(./.codex/**)',
+    'Read(./.env)',
+  ];
+  return [
+    // HOME points at an isolated, sanitized state directory. Ignore settings
+    // from user/project/local sources and disable slash-command extensions;
+    // unlike --safe-mode, this preserves the explicit --mcp-config capability.
+    '--setting-sources', '',
+    '--disable-slash-commands',
+    '--strict-mcp-config',
+    '--no-chrome',
+    '--permission-mode', 'dontAsk',
+    '--allowedTools', 'Read(./**)', ...mcpToolPatterns,
+    '--disallowedTools', ...PUBLIC_DENIED_TOOLS, ...deniedReads,
+  ];
+};
+
 const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
-  const proc = spawnImpl(cmd, args, { cwd, env });
+  const proc = spawnImpl(cmd, args, {
+    cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   let stdout = '';
   let stderr = '';
   let timedOut = false;
@@ -90,80 +251,76 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 
 // ── MCP config write — claude consumes this via --mcp-config <path> ─────────
 
-// Substitute Commonly-supplied placeholders in MCP env values, command args,
-// and URLs so users don't have to hand-paste secrets into their env file
-// every time they re-attach. Surfaced during the 2026-04-17 cross-agent demo:
-// every spec referencing commonly-mcp had to be rewritten with the agent's
-// runtime token after attach, because the token is minted at attach time and
-// only known to the wrapper.
+// Keep Commonly placeholders in the MCP JSON and expose their values only in
+// Claude's per-spawn environment. Claude Code natively expands ${VAR} in MCP
+// command/args/env/url fields. Substituting here used to materialize the raw
+// cm_agent_* bearer token in a transient JSON file, which made the token
+// readable to any co-confined child allowed to read that config directory.
 //
-// Recognised placeholders (substituted everywhere a string appears in the
-// MCP config):
+// Recognised placeholders:
 //   ${COMMONLY_AGENT_TOKEN}   — the per-(agent, pod) cm_agent_* runtime token
 //   ${COMMONLY_API_URL}       — the instance URL the agent is attached to
 //   ${COMMONLY_INSTANCE_URL}  — alias for COMMONLY_API_URL (clearer in context)
 //
-// Substitution is one-pass + literal — no nested expansion, no shell quoting.
-// Unknown placeholders are left intact so the user sees a clear runtime error
-// from the MCP server rather than a silent empty string.
-const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
-const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
-
-const substitutePlaceholders = (value, ctx) => {
-  if (typeof value !== 'string') return value;
-  if (!value.includes('${COMMONLY_')) return value;
-  const subs = {
+// Only values actually referenced by this MCP declaration are added to the
+// child environment. Unknown placeholders remain in JSON so Claude's parser
+// fails clearly instead of receiving a silent empty string.
+const buildMcpExpansionEnv = (mcpConfig, ctx) => {
+  const serialized = JSON.stringify(mcpConfig);
+  const values = {
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
   };
-  return value.replace(PLACEHOLDER_RE, (whole, key) => (
-    SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole
-  ));
+  const output = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value && serialized.includes(`\${${key}}`)) output[key] = value;
+  }
+  return output;
 };
 
-const buildMcpConfig = (mcpServers, ctx = {}) => {
+const buildMcpConfig = (mcpServers) => {
   // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
   for (const server of mcpServers) {
     const entry = { type: server.transport || 'stdio' };
-    if (server.url) entry.url = substitutePlaceholders(server.url, ctx);
+    if (server.url) entry.url = server.url;
     if (server.command) {
       const [command, ...args] = server.command;
       entry.command = command;
-      if (args.length) entry.args = args.map((a) => substitutePlaceholders(a, ctx));
+      if (args.length) entry.args = args;
     }
-    if (server.env) {
-      entry.env = {};
-      for (const [k, v] of Object.entries(server.env)) {
-        entry.env[k] = substitutePlaceholders(v, ctx);
-      }
-    }
+    if (server.env) entry.env = { ...server.env };
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
 };
 
 // Materialized once per spawn outside the workspace, then removed in the
-// spawn's finally block. Keeping this file under <cwd> made the literal
-// cm_agent_* bearer token readable to any public agent allowed Read(./**).
-// The directory and file modes are explicit because this file briefly carries
-// live credentials; relying on the caller's umask is not a security boundary.
+// spawn's finally block. The JSON contains placeholders, never resolved
+// Commonly credentials; Claude expands them from its one-run environment.
+// Directory/file modes stay strict because this config still declares the
+// agent's trusted MCP capabilities and endpoints.
 const createMcpConfig = async (mcpServers, ctx = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
+  const config = buildMcpConfig(mcpServers);
   try {
     await chmod(dir, 0o700);
     await writeFile(
       file,
-      JSON.stringify(buildMcpConfig(mcpServers, ctx), null, 2),
+      JSON.stringify(config, null, 2),
       { encoding: 'utf8', mode: 0o600 },
     );
     // writeFile's mode only applies when creating. Pin the final mode too so
     // this stays correct if the implementation ever starts reusing the path.
     await chmod(file, 0o600);
-    return { dir, file };
+    return {
+      dir,
+      file,
+      expansionEnv: buildMcpExpansionEnv(config, ctx),
+    };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -185,15 +342,22 @@ const resolveClaudePath = () => {
   try { which = spawnSync('which', ['claude'], { encoding: 'utf8' }); } catch { /* ignore */ }
   if (which && which.status === 0) {
     const p = (which.stdout || '').trim();
-    if (p) return p;
+    if (p) {
+      try {
+        return realpathSync(p);
+      } catch {
+        return p;
+      }
+    }
   }
   return 'claude';
 };
 
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
-  if (!env) return { cmd: 'claude', args: innerArgv };
+  if (!env) return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
 
+  let allowedPatterns = [];
   if (Array.isArray(env.mcp) && env.mcp.length > 0) {
     if (!ctx.mcpConfigPath) {
       throw new Error('claude MCP config was declared but no per-spawn config path was prepared');
@@ -208,26 +372,65 @@ const prepareArgv = async (innerArgv, ctx) => {
     // already opted into these servers by declaring them in the env spec, so
     // auto-allowing the corresponding tool prefix is the honest default.
     // Surfaced live during the 2026-04-17 cross-agent demo validation.
-    const allowedPatterns = env.mcp
+    allowedPatterns = env.mcp
       .map((server) => server && server.name)
       .filter(Boolean)
       .map((name) => `mcp__${name}__*`);
-    if (allowedPatterns.length > 0) {
-      innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
-    }
   }
 
   const sandboxMode = env.sandbox?.mode;
+  const sandboxTrust = env.sandbox?.trust;
+  const publicNativeSandbox = sandboxTrust === 'public'
+    && PUBLIC_SANDBOX_MODES.has(sandboxMode);
+  if (sandboxTrust === 'public' && sandboxMode === 'none') {
+    throw new Error('public Claude agents require an enforced sandbox mode');
+  }
+  if (publicNativeSandbox) {
+    if (process.platform !== 'darwin') {
+      throw new Error(
+        `public Claude sandbox.mode=${sandboxMode} maps to Seatbelt on macOS; `
+        + 'use sandbox.mode=bwrap on Linux',
+      );
+    }
+    if (!ctx.publicClaudeState) {
+      throw new Error('public Claude state was not prepared before argv construction');
+    }
+    innerArgv = [
+      ...innerArgv,
+      ...buildPublicClaudePolicyArgs(allowedPatterns),
+    ];
+    const claudeBin = resolveClaudePath();
+    const mcpExecutables = (env.mcp || [])
+      .map((server) => server?.command?.[0])
+      .filter((command) => isAbsolute(command));
+    const wrapped = wrapArgvWithSeatbelt([claudeBin, ...innerArgv], {
+      workspacePath: ctx.cwd,
+      workspaceAccess: sandboxMode === 'read-only' ? 'read' : 'write',
+      claudePath: claudeBin,
+      statePath: ctx.publicClaudeState.statePath,
+      mcpConfigDir: ctx.mcpConfigDir,
+      executablePaths: mcpExecutables,
+    });
+    return {
+      cmd: wrapped[0],
+      args: wrapped.slice(1),
+      env: ctx.claudeEnv,
+    };
+  }
+
+  if (allowedPatterns.length > 0) {
+    innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
+  }
   if (sandboxMode === 'bwrap') {
     const claudeBin = resolveClaudePath();
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
       readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
     });
-    return { cmd: wrapped[0], args: wrapped.slice(1) };
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: ctx.claudeEnv };
   }
 
-  return { cmd: 'claude', args: innerArgv };
+  return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
 };
 
 export default {
@@ -276,7 +479,13 @@ export default {
     }
 
     let mcpConfig = null;
+    let publicClaudeState = null;
     try {
+      const publicNativeSandbox = ctx.environment?.sandbox?.trust === 'public'
+        && PUBLIC_SANDBOX_MODES.has(ctx.environment?.sandbox?.mode);
+      if (publicNativeSandbox) {
+        publicClaudeState = await preparePublicClaudeState(ctx);
+      }
       if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
         mcpConfig = await createMcpConfig(ctx.environment.mcp, {
           runtimeToken: ctx.runtimeToken,
@@ -287,13 +496,19 @@ export default {
         ...ctx,
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
+        publicClaudeState,
+        claudeEnv: buildClaudeEnv(
+          ctx.env,
+          publicClaudeState,
+          mcpConfig?.expansionEnv,
+        ),
       };
-      const { cmd, args } = await prepareArgv(baseArgs, spawnCtx);
+      const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
         cmd,
         args,
         cwd: ctx.cwd,
-        env: ctx.env,
+        env,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
@@ -310,12 +525,18 @@ export default {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
+          publicClaudeState,
+          claudeEnv: buildClaudeEnv(
+            ctx.env,
+            publicClaudeState,
+            mcpConfig?.expansionEnv,
+          ),
         });
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
           cwd: ctx.cwd,
-          env: ctx.env,
+          env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
           spawnImpl: ctx._spawnImpl,
         });
