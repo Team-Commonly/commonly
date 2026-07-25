@@ -265,12 +265,11 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls).toHaveLength(0);
   });
 
-  // ── ${COMMONLY_*} placeholder substitution ────────────────────────────────
-  // Lets users keep their checked-in env files free of secrets — the
-  // wrapper substitutes the runtime token + instance URL at spawn time
-  // from values it already has on hand (the saved token record).
+  // ── ${COMMONLY_*} native MCP environment expansion ────────────────────────
+  // Values exist only in Claude's per-spawn environment. The JSON retains
+  // placeholders so a cm_agent_* bearer token never exists on disk.
 
-  test('${COMMONLY_AGENT_TOKEN} in MCP env values is substituted with ctx.runtimeToken', async () => {
+  test('${COMMONLY_AGENT_TOKEN} stays literal on disk and is supplied only in child env', async () => {
     const { impl, calls } = makeSpawnImpl();
     const environment = {
       mcp: [
@@ -295,15 +294,18 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
     });
     const cfg = calls[0].config;
-    expect(cfg.mcpServers.commonly.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_real_token_12345');
-    expect(cfg.mcpServers.commonly.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
-    // Substitution is literal — interpolation works inside larger strings.
+    expect(cfg.mcpServers.commonly.env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+    expect(cfg.mcpServers.commonly.env.COMMONLY_API_URL).toBe('${COMMONLY_API_URL}');
     expect(cfg.mcpServers.commonly.env.CUSTOM).toBe(
-      'literal-value-cm_agent_real_token_12345-suffix',
+      'literal-value-${COMMONLY_AGENT_TOKEN}-suffix',
     );
+    expect(JSON.stringify(cfg)).not.toContain('cm_agent_real_token_12345');
+    expect(JSON.stringify(calls[0].args)).not.toContain('cm_agent_real_token_12345');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_real_token_12345');
+    expect(calls[0].opts.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
   });
 
-  test('${COMMONLY_INSTANCE_URL} alias substitutes to the same value as ${COMMONLY_API_URL}', async () => {
+  test('${COMMONLY_INSTANCE_URL} alias is supplied to native expansion', async () => {
     const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
@@ -314,10 +316,11 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
     });
     const cfg = calls[0].config;
-    expect(cfg.mcpServers.x.env.U).toBe('http://localhost:5000');
+    expect(cfg.mcpServers.x.env.U).toBe('${COMMONLY_INSTANCE_URL}');
+    expect(calls[0].opts.env.COMMONLY_INSTANCE_URL).toBe('http://localhost:5000');
   });
 
-  test('placeholders in command args + url are also substituted', async () => {
+  test('placeholders in command args + url stay token-free and receive expansion env', async () => {
     const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
@@ -341,8 +344,10 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
     });
     const cfg = calls[0].config;
-    expect(cfg.mcpServers['sse-server'].url).toBe('https://api-dev.commonly.me/mcp/sse');
-    expect(cfg.mcpServers['arg-server'].args).toEqual(['--token', 'cm_agent_x']);
+    expect(cfg.mcpServers['sse-server'].url).toBe('${COMMONLY_API_URL}/mcp/sse');
+    expect(cfg.mcpServers['arg-server'].args).toEqual(['--token', '${COMMONLY_AGENT_TOKEN}']);
+    expect(calls[0].opts.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_x');
   });
 
   test('unknown ${COMMONLY_*} placeholders are left intact (so misspellings surface as MCP errors, not silent empties)', async () => {
@@ -364,13 +369,15 @@ describe('claude adapter — ctx.environment', () => {
     });
     const cfg = calls[0].config;
     expect(cfg.mcpServers.x.env.TYPO).toBe('${COMMONLY_AGNT_TOKEN}');
+    expect(calls[0].opts.env.COMMONLY_AGNT_TOKEN).toBeUndefined();
   });
 
-  test('substitution is a no-op when ctx.runtimeToken / instanceUrl are absent (literal env values pass through)', async () => {
+  test('missing runtime context never creates a token environment entry', async () => {
     const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
+      env: { PATH: process.env.PATH },
       environment: {
         mcp: [{
           name: 'x',
@@ -384,7 +391,7 @@ describe('claude adapter — ctx.environment', () => {
     });
     const cfg = calls[0].config;
     expect(cfg.mcpServers.x.env.LITERAL).toBe('plain-string');
-    // Empty token → placeholder left intact (not substituted with empty string).
     expect(cfg.mcpServers.x.env.PLACEHOLDER).toBe('${COMMONLY_AGENT_TOKEN}');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
   });
 });
