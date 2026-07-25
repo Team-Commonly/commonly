@@ -12,12 +12,13 @@
  * It never reads or prints real credentials.
  *
  * Scope note: the declared MCP server is a trusted capability and receives
- * its configured environment by design. Moving the Commonly token out of the
- * transient MCP config entirely is phase IV; this phase proves that Claude
- * and declared MCP children cannot read unrelated host/workspace secrets.
+ * its configured environment by design. The Commonly token exists only in
+ * Claude's one-run environment and is expanded natively; the probe fails if
+ * it appears in the transient MCP JSON or argv.
  */
 
 import { randomUUID } from 'crypto';
+import { spawn } from 'child_process';
 import {
   access,
   appendFile,
@@ -29,7 +30,7 @@ import {
   unlink,
   writeFile,
 } from 'fs/promises';
-import { constants } from 'fs';
+import { constants, readFileSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -82,6 +83,16 @@ const everyCanary = [
   workspaceTokenCanary,
   inheritedEnvCanary,
 ];
+let materializedMcpConfig = '';
+let spawnedArgv = '';
+const spawnImpl = (cmd, args, opts) => {
+  spawnedArgv = JSON.stringify([cmd, args]);
+  const configIndex = args.indexOf('--mcp-config');
+  if (configIndex !== -1) {
+    materializedMcpConfig = readFileSync(args[configIndex + 1], 'utf8');
+  }
+  return spawn(cmd, args, opts);
+};
 
 const parseCapture = (text) => text
   .split('\n')
@@ -143,6 +154,7 @@ try {
     },
     runtimeToken,
     timeoutMs: 5 * 60 * 1000,
+    _spawnImpl: spawnImpl,
   });
 
   const capture = await readFile(captureFile, 'utf8');
@@ -190,6 +202,12 @@ try {
       fail('SANDBOX FAILURE: a protected canary crossed into model/MCP output');
     }
   }
+  if (!materializedMcpConfig.includes('${COMMONLY_AGENT_TOKEN}')) {
+    fail('MCP config did not preserve the native environment placeholder');
+  }
+  if (materializedMcpConfig.includes(runtimeToken) || spawnedArgv.includes(runtimeToken)) {
+    fail('TOKEN MATERIALIZATION FAILURE: runtime token entered MCP config or argv');
+  }
 
   if ((await readFile(allowedWrite, 'utf8')) !== 'ALLOWED') {
     fail('SANDBOX FAILURE: workspace write did not succeed');
@@ -217,6 +235,15 @@ try {
   if (/COMMONLY_HOST_SECRET_CANARY|cm_agent_host_secret_canary/i
     .test(environmentAttempt?.output || '')) {
     fail('SANDBOX FAILURE: host credential-shaped environment reached the MCP child');
+  }
+  let inspectedEnvironment;
+  try {
+    inspectedEnvironment = JSON.parse(environmentAttempt?.output || '{}');
+  } catch {
+    fail('Attack was incomplete: MCP child environment result was not JSON');
+  }
+  if (inspectedEnvironment.runtimeTokenResolved !== true) {
+    fail('MCP env expansion failed: server did not receive a resolved runtime token');
   }
 
   const redactedReport = everyCanary.reduce(

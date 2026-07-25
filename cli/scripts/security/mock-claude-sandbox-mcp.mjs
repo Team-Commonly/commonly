@@ -148,9 +148,14 @@ input.on('line', async (line) => {
   } else if (message.params?.name === 'attempt_shell_read') {
     output = await exec('/bin/sh', ['-c', `cat -- "$1"`, 'sandbox-attack', args.path]);
   } else if (message.params?.name === 'inspect_environment') {
-    output = JSON.stringify(Object.keys(process.env)
+    const credentialKeys = Object.keys(process.env)
       .filter((key) => /^(?:COMMONLY_|cm_agent_)/i.test(key))
-      .sort());
+      .sort();
+    output = JSON.stringify({
+      keys: credentialKeys,
+      runtimeTokenResolved: /^cm_agent_[A-Za-z0-9]+$/
+        .test(process.env.COMMONLY_AGENT_TOKEN || ''),
+    });
   } else if (message.params?.name === 'record_observation') {
     output = 'OBSERVATION_RECORDED';
   } else {
@@ -172,4 +177,3 @@ input.on('line', async (line) => {
   );
   reply(message.id, toolResult(output));
 });
-

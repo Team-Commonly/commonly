@@ -173,16 +173,20 @@ const preparePublicClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath };
 };
 
-const buildPublicClaudeEnv = (input, state) => {
-  const output = {};
-  for (const [key, value] of Object.entries(input || {})) {
-    if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
+const buildClaudeEnv = (input, state, expansionEnv = {}) => {
+  const source = input || process.env;
+  const output = state ? {} : { ...source };
+  if (state) {
+    for (const [key, value] of Object.entries(source)) {
+      if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
+    }
+    output.HOME = state.statePath;
+    output.TMPDIR = state.tmpPath;
+    output.XDG_CACHE_HOME = join(state.statePath, '.cache');
+    output.XDG_CONFIG_HOME = join(state.statePath, '.config');
+    output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
   }
-  output.HOME = state.statePath;
-  output.TMPDIR = state.tmpPath;
-  output.XDG_CACHE_HOME = join(state.statePath, '.cache');
-  output.XDG_CONFIG_HOME = join(state.statePath, '.config');
-  output.XDG_DATA_HOME = join(state.statePath, '.local', 'share');
+  Object.assign(output, expansionEnv);
   return output;
 };
 
@@ -247,80 +251,76 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
 
 // ── MCP config write — claude consumes this via --mcp-config <path> ─────────
 
-// Substitute Commonly-supplied placeholders in MCP env values, command args,
-// and URLs so users don't have to hand-paste secrets into their env file
-// every time they re-attach. Surfaced during the 2026-04-17 cross-agent demo:
-// every spec referencing commonly-mcp had to be rewritten with the agent's
-// runtime token after attach, because the token is minted at attach time and
-// only known to the wrapper.
+// Keep Commonly placeholders in the MCP JSON and expose their values only in
+// Claude's per-spawn environment. Claude Code natively expands ${VAR} in MCP
+// command/args/env/url fields. Substituting here used to materialize the raw
+// cm_agent_* bearer token in a transient JSON file, which made the token
+// readable to any co-confined child allowed to read that config directory.
 //
-// Recognised placeholders (substituted everywhere a string appears in the
-// MCP config):
+// Recognised placeholders:
 //   ${COMMONLY_AGENT_TOKEN}   — the per-(agent, pod) cm_agent_* runtime token
 //   ${COMMONLY_API_URL}       — the instance URL the agent is attached to
 //   ${COMMONLY_INSTANCE_URL}  — alias for COMMONLY_API_URL (clearer in context)
 //
-// Substitution is one-pass + literal — no nested expansion, no shell quoting.
-// Unknown placeholders are left intact so the user sees a clear runtime error
-// from the MCP server rather than a silent empty string.
-const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
-const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
-
-const substitutePlaceholders = (value, ctx) => {
-  if (typeof value !== 'string') return value;
-  if (!value.includes('${COMMONLY_')) return value;
-  const subs = {
+// Only values actually referenced by this MCP declaration are added to the
+// child environment. Unknown placeholders remain in JSON so Claude's parser
+// fails clearly instead of receiving a silent empty string.
+const buildMcpExpansionEnv = (mcpConfig, ctx) => {
+  const serialized = JSON.stringify(mcpConfig);
+  const values = {
     COMMONLY_AGENT_TOKEN: ctx.runtimeToken || '',
     COMMONLY_API_URL: ctx.instanceUrl || '',
     COMMONLY_INSTANCE_URL: ctx.instanceUrl || '',
   };
-  return value.replace(PLACEHOLDER_RE, (whole, key) => (
-    SUBSTITUTION_KEYS.includes(key) && subs[key] ? subs[key] : whole
-  ));
+  const output = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value && serialized.includes(`\${${key}}`)) output[key] = value;
+  }
+  return output;
 };
 
-const buildMcpConfig = (mcpServers, ctx = {}) => {
+const buildMcpConfig = (mcpServers) => {
   // Shape: `{ mcpServers: { <name>: { ... } } }` — the standard MCP client
   // config, which claude's `--mcp-config` reads directly.
   const mcpServersMap = {};
   for (const server of mcpServers) {
     const entry = { type: server.transport || 'stdio' };
-    if (server.url) entry.url = substitutePlaceholders(server.url, ctx);
+    if (server.url) entry.url = server.url;
     if (server.command) {
       const [command, ...args] = server.command;
       entry.command = command;
-      if (args.length) entry.args = args.map((a) => substitutePlaceholders(a, ctx));
+      if (args.length) entry.args = args;
     }
-    if (server.env) {
-      entry.env = {};
-      for (const [k, v] of Object.entries(server.env)) {
-        entry.env[k] = substitutePlaceholders(v, ctx);
-      }
-    }
+    if (server.env) entry.env = { ...server.env };
     mcpServersMap[server.name] = entry;
   }
   return { mcpServers: mcpServersMap };
 };
 
 // Materialized once per spawn outside the workspace, then removed in the
-// spawn's finally block. Keeping this file under <cwd> made the literal
-// cm_agent_* bearer token readable to any public agent allowed Read(./**).
-// The directory and file modes are explicit because this file briefly carries
-// live credentials; relying on the caller's umask is not a security boundary.
+// spawn's finally block. The JSON contains placeholders, never resolved
+// Commonly credentials; Claude expands them from its one-run environment.
+// Directory/file modes stay strict because this config still declares the
+// agent's trusted MCP capabilities and endpoints.
 const createMcpConfig = async (mcpServers, ctx = {}) => {
   const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
+  const config = buildMcpConfig(mcpServers);
   try {
     await chmod(dir, 0o700);
     await writeFile(
       file,
-      JSON.stringify(buildMcpConfig(mcpServers, ctx), null, 2),
+      JSON.stringify(config, null, 2),
       { encoding: 'utf8', mode: 0o600 },
     );
     // writeFile's mode only applies when creating. Pin the final mode too so
     // this stays correct if the implementation ever starts reusing the path.
     await chmod(file, 0o600);
-    return { dir, file };
+    return {
+      dir,
+      file,
+      expansionEnv: buildMcpExpansionEnv(config, ctx),
+    };
   } catch (err) {
     try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     throw err;
@@ -355,7 +355,7 @@ const resolveClaudePath = () => {
 
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
-  if (!env) return { cmd: 'claude', args: innerArgv, env: ctx.env };
+  if (!env) return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
 
   let allowedPatterns = [];
   if (Array.isArray(env.mcp) && env.mcp.length > 0) {
@@ -414,7 +414,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     return {
       cmd: wrapped[0],
       args: wrapped.slice(1),
-      env: ctx.publicClaudeEnv,
+      env: ctx.claudeEnv,
     };
   }
 
@@ -427,10 +427,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspacePath: ctx.cwd,
       readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
     });
-    return { cmd: wrapped[0], args: wrapped.slice(1), env: ctx.env };
+    return { cmd: wrapped[0], args: wrapped.slice(1), env: ctx.claudeEnv };
   }
 
-  return { cmd: 'claude', args: innerArgv, env: ctx.env };
+  return { cmd: 'claude', args: innerArgv, env: ctx.claudeEnv };
 };
 
 export default {
@@ -497,9 +497,11 @@ export default {
         mcpConfigPath: mcpConfig?.file || null,
         mcpConfigDir: mcpConfig?.dir || null,
         publicClaudeState,
-        publicClaudeEnv: publicClaudeState
-          ? buildPublicClaudeEnv(ctx.env, publicClaudeState)
-          : ctx.env,
+        claudeEnv: buildClaudeEnv(
+          ctx.env,
+          publicClaudeState,
+          mcpConfig?.expansionEnv,
+        ),
       };
       const { cmd, args, env } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
@@ -524,9 +526,11 @@ export default {
           mcpConfigPath: mcpConfig?.file || null,
           mcpConfigDir: mcpConfig?.dir || null,
           publicClaudeState,
-          publicClaudeEnv: publicClaudeState
-            ? buildPublicClaudeEnv(ctx.env, publicClaudeState)
-            : ctx.env,
+          claudeEnv: buildClaudeEnv(
+            ctx.env,
+            publicClaudeState,
+            mcpConfig?.expansionEnv,
+          ),
         });
         const stdout = await runClaude({
           cmd: retry.cmd,
