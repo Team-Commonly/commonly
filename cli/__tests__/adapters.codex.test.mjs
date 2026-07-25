@@ -232,6 +232,10 @@ describe('codex adapter — spawn()', () => {
     ));
     expect(filesystem).toContain('":minimal"="read"');
     expect(filesystem).toContain('":workspace_roots"={"."="write"');
+    expect(filesystem).toContain('".commonly/**"="deny"');
+    expect(filesystem).toContain('".codex/**"="deny"');
+    expect(filesystem).not.toContain('".commonly"="deny"');
+    expect(filesystem).not.toContain('".codex"="deny"');
     for (const secretPath of [
       '~/.commonly',
       '~/.claude',

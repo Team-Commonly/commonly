@@ -246,7 +246,7 @@ const publicPermissionProfileFlags = (mode) => {
     '"~/.aws"="deny"',
     '"~/.config"="deny"',
     '"/private/tmp"="deny"',
-    `":workspace_roots"={"."="${workspaceAccess}",".commonly"="deny",".codex"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
+    `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
   ].join(',');
   return [
     '-c', `default_permissions=${toml(PUBLIC_PERMISSION_PROFILE)}`,
