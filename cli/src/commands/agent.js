@@ -33,6 +33,7 @@ import { detectMemorySources, composeImport, importMemory } from '../lib/memory-
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
+import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -238,26 +239,40 @@ export const performAttach = async ({
         );
       }
     } else if (sandboxMode === 'workspace' || sandboxMode === 'read-only') {
-      if (adapterName !== 'codex' || sandboxTrust !== 'public') {
+      if (sandboxTrust !== 'public' || !['codex', 'claude'].includes(adapterName)) {
         throw new Error(
-          `sandbox.mode=${sandboxMode} is currently implemented only for codex `
-          + `with sandbox.trust=public`,
+          `sandbox.mode=${sandboxMode} is currently implemented only for public `
+          + `codex or Claude adapters`,
         );
       }
-      if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
-        throw new Error(
-          `public codex sandbox requires Codex >=0.138.0 permission profiles; `
-          + `detected ${detected.version || 'unknown'}`,
+      if (adapterName === 'codex') {
+        if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
+          throw new Error(
+            `public codex sandbox requires Codex >=0.138.0 permission profiles; `
+            + `detected ${detected.version || 'unknown'}`,
+          );
+        }
+        log(
+          `sandbox: public ${sandboxMode} via Codex native permission profile `
+          + '(deny-by-default filesystem + network)',
+        );
+      } else {
+        const seatbelt = detectSeatbelt();
+        if (!seatbelt.available) {
+          throw new Error(
+            `public Claude sandbox.mode=${sandboxMode} requires macOS Seatbelt: `
+            + `${seatbelt.error}. On Linux use sandbox.mode=bwrap.`,
+          );
+        }
+        log(
+          `sandbox: public ${sandboxMode} via macOS Seatbelt `
+          + '(deny-by-default host filesystem; Claude/MCP network retained)',
         );
       }
-      log(
-        `sandbox: public ${sandboxMode} via Codex native permission profile `
-        + '(deny-by-default filesystem + network)',
-      );
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
-        + `Supported locally: none, bwrap, codex public workspace/read-only.`,
+        + `Supported locally: none, bwrap, and public codex/Claude workspace/read-only.`,
       );
     }
   } else {
