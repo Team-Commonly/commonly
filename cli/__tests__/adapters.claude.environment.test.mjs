@@ -5,7 +5,7 @@
  *   - sandbox.mode='bwrap' → spawn binary is `bwrap`, not `claude`
  *   - mcp[]               → --mcp-config <path> added to inner argv,
  *                            and a mode-0600 temp file outside the workspace
- *   - skills.claude[]     → linkSkills called against the workspace
+ *   - skills.claude[]     → mountSkills called against the workspace
  *
  * Uses ctx._spawnImpl (the same test seam as adapters.claude.test.mjs) so
  * no real claude/bwrap binary runs.
@@ -127,7 +127,7 @@ describe('claude adapter — ctx.environment', () => {
     expect(fs.existsSync(path.dirname(calls[0].configPath))).toBe(false);
   });
 
-  test('symlinks skills.claude entries into <cwd>/.claude/skills/', async () => {
+  test('mounts skills.claude entries into <cwd>/.claude/skills/ as read-only copies', async () => {
     const { impl } = makeSpawnImpl();
     const skillSrc = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-skill-'));
     fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), 'x', 'utf8');
@@ -139,8 +139,12 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
     });
 
-    const link = path.join(cwd, '.claude', 'skills', path.basename(skillSrc));
-    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    const slot = path.join(cwd, '.claude', 'skills', path.basename(skillSrc));
+    // A copy, never a symlink — a symlink is writable through, which lets an
+    // agent edit its own governing skill in the operator's checkout (#702
+    // guardrail was lost from cli 0.1.4 exactly this way).
+    expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('x');
 
     fs.rmSync(skillSrc, { recursive: true, force: true });
   });

@@ -5,7 +5,7 @@
  * how an agent's runtime should be shaped: workspace path, sandbox mode, the
  * Claude skills to mount, the MCP servers to expose. This module is the
  * adapter-facing read-side: parse, validate, and realize the workspace +
- * skill links on disk. Sandbox argv wrapping lives in `./sandbox/bwrap.js`
+ * skill mounts on disk. Sandbox argv wrapping lives in `./sandbox/bwrap.js`
  * because it is per-driver (Linux-only, bwrap-specific).
  *
  * Zero runtime deps: Node 20 has no built-in YAML, so we accept JSON only and
@@ -14,7 +14,9 @@
  * place to add a `.yaml` branch — the rest of the module is parser-agnostic.
  */
 
-import { readFile, mkdir, symlink, lstat, readlink, cp } from 'fs/promises';
+import {
+  readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile,
+} from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, isAbsolute, join, resolve as pathResolve, basename } from 'path';
 import { homedir } from 'os';
@@ -25,7 +27,7 @@ import { homedir } from 'os';
 // relative skill paths) is NOT stored on the returned spec. Leaking the user's
 // absolute filesystem path into `config.environment` sent to the backend
 // exposes `$HOME` layout for zero server-side benefit. Callers pass
-// `envFileDir` as a separate argument to resolveWorkspace / linkSkills.
+// `envFileDir` as a separate argument to resolveWorkspace / mountSkills.
 
 const ALLOWED_TOP_KEYS = new Set([
   'version', 'workspace', 'sandbox', 'skills', 'mcp',
@@ -85,7 +87,7 @@ export const parseEnvironmentFile = async (absolutePath) => {
   // Return the bare spec — no envFileDir wrapping, no underscore-prefixed
   // annotations. The caller is responsible for tracking envFileDir separately
   // (compute via `dirname(envPath)`) and passing it explicitly to
-  // resolveWorkspace / linkSkills when relative paths in the spec need to
+  // resolveWorkspace / mountSkills when relative paths in the spec need to
   // resolve. This keeps the spec safe to serialize and ship to the backend
   // (`config.environment` on AgentInstallation) without leaking $HOME layout.
   return parsed;
@@ -246,35 +248,72 @@ export const resolveWorkspace = async (spec, agentName, envFileDir = null) => {
   return { path: absPath, created };
 };
 
-// ── linkSkills ──────────────────────────────────────────────────────────────
+// ── mountSkills ─────────────────────────────────────────────────────────────
+
+// Marks a skill directory as a Commonly-managed snapshot. Its presence is what
+// licenses a refresh to delete and re-copy the directory: without it we cannot
+// distinguish "a mount we made last spawn" from "a skill the user authored in
+// their workspace", and clobbering the latter would destroy real work.
+const MOUNT_MARKER = '.commonly-skill-mount';
 
 /**
- * Symlink each `skills.claude[]` source path into `<workspacePath>/.claude/skills/`.
+ * Recursively drop the write bit on every regular file in a mounted snapshot.
  *
- * Idempotent: if a symlink already points at the declared source, it is
- * counted in `skipped` and left in place. If a DIFFERENT file or symlink
- * occupies the slot, it is recorded in `conflicted` with a reason — never
- * overwritten (a user-edited skill in the workspace must not be clobbered).
- * Missing source paths are also reported in `conflicted` so the caller can
- * surface them.
+ * Directories deliberately stay writable: unlinking a file requires write
+ * permission on its PARENT, so read-only directories would make the next
+ * refresh fail. This is defense-in-depth for the agent's own copy, not the
+ * load-bearing protection — that comes from the copy existing at all.
+ */
+const freezeFiles = async (dir) => {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      // eslint-disable-next-line no-await-in-loop
+      await freezeFiles(full);
+    } else if (entry.isFile()) {
+      // eslint-disable-next-line no-await-in-loop
+      await chmod(full, 0o444);
+    }
+  }
+};
+
+/**
+ * Mount each `skills.claude[]` source into `<workspacePath>/.claude/skills/`
+ * as a READ-ONLY SNAPSHOT COPY.
+ *
+ * Why a copy and not a symlink: a symlink is writable *through*, so an agent
+ * holding Write/Edit could edit the file that governs its own behaviour — and
+ * because these sources are usually files tracked in a repo (the bundled
+ * `cli/skills/commonly` is the common case), that edit lands in the operator's
+ * working tree. `npm publish` ships the working tree, not git HEAD, so a
+ * write-through edit can silently ride out in the next release. That is not
+ * hypothetical: @commonlyai/cli@0.1.4 shipped with the "post as yourself,
+ * never as your operator" guardrail (#702) missing for exactly this reason.
+ * The snapshot makes the data flow one-way: source → workspace, never back.
+ *
+ * Refreshed on every call — the claude adapter mounts per spawn — so edits to
+ * the source still reach the agent on its next turn. Only directories carrying
+ * MOUNT_MARKER are refreshed; anything else in the slot is reported as a
+ * conflict and left untouched.
+ *
+ * Legacy symlinks written by CLI ≤0.1.4 are replaced with a snapshot, since
+ * the symlink IS the vulnerable shape being retired.
  *
  * `envFileDir` is the directory of the env file (used to resolve relative
  * skill paths). Optional — when omitted, relative paths fall back to
- * `workspacePath`. Pass it from `performAttach` for attach-time resolution
- * matching the env file's location.
+ * `workspacePath`.
  *
- * Returns `{ linked, skipped, conflicted }`:
- *   - `linked`:     string[]            — newly created symlinks (absolute source paths)
- *   - `skipped`:    string[]            — already correctly linked (no-op)
+ * Returns `{ mounted, conflicted }`:
+ *   - `mounted`:    string[]            — absolute source paths snapshotted
  *   - `conflicted`: Array<{path, reason}> where reason ∈
- *       'different-target' | 'not-symlink' | 'missing-source'
+ *       'not-a-mount' | 'missing-source'
  */
-export const linkSkills = async (spec, workspacePath, envFileDir = null) => {
+export const mountSkills = async (spec, workspacePath, envFileDir = null) => {
   const sources = Array.isArray(spec?.skills?.claude) ? spec.skills.claude : [];
-  const linked = [];
-  const skipped = [];
+  const mounted = [];
   const conflicted = [];
-  if (sources.length === 0) return { linked, skipped, conflicted };
+  if (sources.length === 0) return { mounted, conflicted };
 
   const skillsDir = join(workspacePath, '.claude', 'skills');
   await mkdir(skillsDir, { recursive: true });
@@ -288,47 +327,43 @@ export const linkSkills = async (spec, workspacePath, envFileDir = null) => {
       conflicted.push({ path: absSource, reason: 'missing-source' });
       continue;
     }
-    const linkPath = join(skillsDir, basename(absSource));
+    const destPath = join(skillsDir, basename(absSource));
 
-    let existingTarget = null;
-    let slotIsNonSymlink = false;
+    let slot = null;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const stat = await lstat(linkPath);
-      if (stat.isSymbolicLink()) {
-        // eslint-disable-next-line no-await-in-loop
-        existingTarget = await readlink(linkPath);
-      } else {
-        slotIsNonSymlink = true;
-      }
+      slot = await lstat(destPath);
     } catch (err) {
       // Only ENOENT means "slot is free, proceed." EACCES / EPERM / EIO are
-      // real failures that should surface — without this narrowing the
-      // subsequent symlink() call fails with a confusing follow-on error.
+      // real failures that should surface rather than becoming a confusing
+      // follow-on error from the copy below.
       if (err.code !== 'ENOENT') throw err;
     }
 
-    if (slotIsNonSymlink) {
-      conflicted.push({ path: absSource, reason: 'not-symlink' });
-      continue;
-    }
-
-    if (existingTarget) {
-      const resolvedExisting = isAbsolute(existingTarget)
-        ? existingTarget
-        : pathResolve(skillsDir, existingTarget);
-      if (resolvedExisting === absSource) {
-        skipped.push(absSource);
+    if (slot) {
+      const isLegacySymlink = slot.isSymbolicLink();
+      const isOwnedMount = slot.isDirectory() && existsSync(join(destPath, MOUNT_MARKER));
+      if (!isLegacySymlink && !isOwnedMount) {
+        // A real file, or a directory we did not create — user content.
+        conflicted.push({ path: absSource, reason: 'not-a-mount' });
         continue;
       }
-      conflicted.push({ path: absSource, reason: 'different-target' });
-      continue;
+      // eslint-disable-next-line no-await-in-loop
+      await rm(destPath, { recursive: true, force: true });
     }
 
     // eslint-disable-next-line no-await-in-loop
-    await symlink(absSource, linkPath);
-    linked.push(absSource);
+    await cp(absSource, destPath, { recursive: true });
+    // eslint-disable-next-line no-await-in-loop
+    await writeFile(
+      join(destPath, MOUNT_MARKER),
+      `mounted-from: ${absSource}\n`,
+      'utf8',
+    );
+    // eslint-disable-next-line no-await-in-loop
+    await freezeFiles(destPath);
+    mounted.push(absSource);
   }
 
-  return { linked, skipped, conflicted };
+  return { mounted, conflicted };
 };
