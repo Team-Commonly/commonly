@@ -8,6 +8,7 @@ import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
+import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
 
 // Minimal v2-scoped markdown renderer. Plain HTML elements (no MUI), so
 // styling stays in v2.css under `.v2-msg__content`. The body comes pre-stripped
@@ -345,9 +346,13 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   const { stripped: noReactions, reactions } = parseReactions(message.content || '');
   const { stripped: afterFiles, files } = parseFiles(noReactions);
   const markdownImage = afterFiles.match(MARKDOWN_IMAGE_RE)?.[1];
-  const imageUrl = message.message_type === 'image' || message.messageType === 'image' || IMAGE_URL_RE.test(afterFiles)
+  const rawImageUrl = message.message_type === 'image' || message.messageType === 'image' || IMAGE_URL_RE.test(afterFiles)
     ? afterFiles
     : markdownImage;
+  // Upload responses use instance-portable `/api/uploads/...` references.
+  // Resolve them against the configured API origin at render time so the
+  // browser never requests image bytes from the frontend host.
+  const imageUrl = rawImageUrl ? normalizeUploadUrl(rawImageUrl) : undefined;
 
   // GitHub PR URL detection — if the message body contains a `pull/<n>` URL,
   // we render an inline preview card below the text. Card fetch is lazy +

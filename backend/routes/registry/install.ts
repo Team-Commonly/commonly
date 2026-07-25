@@ -5,12 +5,14 @@ const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
+const AgentTemplate = require('../../models/AgentTemplate');
 const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentMessageService = require('../../services/agentMessageService');
 const FirstContactService = require('../../services/firstContactService');
+const { normalizeAvatarUrl } = require('../../services/avatarService');
 const {
   getUserId,
   normalizeInstanceId,
@@ -437,9 +439,31 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const explicitDisplayName = typeof displayName === 'string' && displayName.trim()
         ? displayName.trim()
         : undefined;
+      let avatarSeed = normalizeAvatarUrl(agent.iconUrl);
+      if (explicitDisplayName) {
+        // Query by the sanitized package key, then compare the user-provided
+        // display label in memory. Besides avoiding a tainted Mongo filter,
+        // this lets the installer's private template win over a public one.
+        const templateCandidates = await AgentTemplate.find({
+          agentName: safeAgentName,
+          $or: [
+            { createdBy: userId },
+            { visibility: 'public' },
+          ],
+        }).select('displayName iconUrl createdBy visibility').lean();
+        const matchingTemplates = templateCandidates.filter((template: any) => (
+          String(template.displayName || '').trim().toLowerCase()
+          === explicitDisplayName.toLowerCase()
+        ));
+        const template = matchingTemplates.find(
+          (candidate: any) => String(candidate.createdBy || '') === String(userId),
+        ) || matchingTemplates.find((candidate: any) => candidate.visibility === 'public');
+        avatarSeed = normalizeAvatarUrl(template?.iconUrl) || avatarSeed;
+      }
       const agentUser = await AgentIdentityService.getOrCreateAgentUser(agent.agentName, {
         instanceId: normalizedInstanceId,
         ...(explicitDisplayName ? { displayName: explicitDisplayName } : {}),
+        ...(avatarSeed ? { profilePicture: avatarSeed } : {}),
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId);
     } catch (identityError: unknown) {

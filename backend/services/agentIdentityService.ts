@@ -1,5 +1,6 @@
 import User from '../models/User';
 import Pod from '../models/Pod';
+import { normalizeAvatarUrl } from './avatarService';
 
 let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } } | null;
 try {
@@ -285,6 +286,7 @@ interface GetOrCreateOptions {
   runtimeId?: string;
   capabilities?: string[];
   botType?: string;
+  profilePicture?: string | null;
 }
 
 /**
@@ -393,7 +395,7 @@ class AgentIdentityService {
         email: buildAgentEmail(resolvedType, instanceId),
         password: `agent-password-${Date.now()}`,
         verified: true,
-        profilePicture: 'default',
+        profilePicture: normalizeAvatarUrl(options.profilePicture) || 'default',
         role: 'user',
         isBot: true,
         botType: typeConfig?.botType || options.botType || 'agent',

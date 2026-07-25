@@ -45,7 +45,7 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
   });
 
   it('writes bytes through the driver and saves metadata-only File', async () => {
-    await request(app)
+    const res = await request(app)
       .post('/api/uploads')
       .attach('image', Buffer.from('data'), 'photo.png')
       .expect(200);
@@ -64,6 +64,8 @@ describe('uploads POST / (ADR-002 Phase 1)', () => {
     expect(fileArgs.contentType).toBe('image/png');
     expect(fileArgs.uploadedBy).toBe('user1');
     expect(File.__saveMock).toHaveBeenCalled();
+    expect(res.body.url).toMatch(/^\/api\/uploads\/[^/]+\.png$/);
+    expect(res.body.url).not.toMatch(/^https?:\/\//);
   });
 
   it('returns 400 when no file is provided', async () => {

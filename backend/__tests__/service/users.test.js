@@ -67,9 +67,9 @@ describe('User Routes Integration Tests', () => {
       .send({ profilePicture: 'newpic.jpg' })
       .expect(200);
 
-    expect(res.body.profilePicture).toBe('newpic.jpg');
+    expect(res.body.profilePicture).toBe('/api/uploads/newpic.jpg');
 
     const updated = await User.findById(user._id);
-    expect(updated.profilePicture).toBe('newpic.jpg');
+    expect(updated.profilePicture).toBe('/api/uploads/newpic.jpg');
   });
 });

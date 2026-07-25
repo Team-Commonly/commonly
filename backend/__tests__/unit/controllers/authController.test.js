@@ -558,7 +558,7 @@ describe('Auth Controller Tests', () => {
         _id: userId,
         username: 'testuser',
         email: 'test@example.com',
-        profilePicture: 'new-profile-pic-url',
+        profilePicture: '/api/uploads/new-profile-pic.png',
       };
 
       // First mock for the initial findById
@@ -573,7 +573,7 @@ describe('Auth Controller Tests', () => {
       const req = {
         userId,
         body: {
-          profilePicture: 'new-profile-pic-url',
+          profilePicture: 'https://api.commonly.me/api/uploads/new-profile-pic.png',
         },
       };
 
@@ -587,12 +587,13 @@ describe('Auth Controller Tests', () => {
       // Verify response
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          profilePicture: 'new-profile-pic-url',
+          profilePicture: '/api/uploads/new-profile-pic.png',
         }),
       );
 
       // Verify save was called
       expect(initialUser.save).toHaveBeenCalled();
+      expect(initialUser.profilePicture).toBe('/api/uploads/new-profile-pic.png');
     });
 
     it('should return 404 if user not found', async () => {

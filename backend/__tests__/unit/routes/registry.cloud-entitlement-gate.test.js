@@ -26,6 +26,10 @@ jest.mock('../../../models/AgentProfile', () => ({
   findOneAndUpdate: jest.fn(),
 }));
 
+jest.mock('../../../models/AgentTemplate', () => ({
+  find: jest.fn(),
+}));
+
 jest.mock('../../../models/Activity', () => ({
   create: jest.fn(),
 }));

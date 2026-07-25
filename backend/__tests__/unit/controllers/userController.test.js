@@ -49,12 +49,15 @@ describe('User Controller', () => {
 
   describe('updateProfile', () => {
     it('updates the profile picture of the user', async () => {
-      const updatedUser = mockUserDoc({ _id: 'u1', profilePicture: 'newpic' });
+      const updatedUser = mockUserDoc({ _id: 'u1', profilePicture: '/api/uploads/newpic.png' });
       User.findByIdAndUpdate = jest
         .fn()
         .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
 
-      const req = { user: { id: 'u1' }, body: { profilePicture: 'newpic' } };
+      const req = {
+        user: { id: 'u1' },
+        body: { profilePicture: 'https://api-dev.commonly.me/api/uploads/newpic.png' },
+      };
       const res = {
         json: jest.fn(),
         status: jest.fn().mockReturnThis(),
@@ -63,10 +66,13 @@ describe('User Controller', () => {
       await userController.updateProfile(req, res);
       expect(User.findByIdAndUpdate).toHaveBeenCalledWith(
         'u1',
-        { $set: { profilePicture: 'newpic' } },
+        { $set: { profilePicture: '/api/uploads/newpic.png' } },
         { new: true },
       );
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', profilePicture: 'newpic' }));
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        _id: 'u1',
+        profilePicture: '/api/uploads/newpic.png',
+      }));
     });
   });
 

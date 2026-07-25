@@ -77,6 +77,39 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata.displayName).toBe('Pixel');
   });
 
+  test('new identity seeds a normalized package avatar', async () => {
+    await AgentIdentityService.getOrCreateAgentUser('openclaw', {
+      instanceId: 'aria',
+      displayName: 'Aria',
+      profilePicture: 'https://api-dev.commonly.me/api/uploads/aria.png',
+    });
+
+    expect(mockSaved[0].profilePicture).toBe('/api/uploads/aria.png');
+  });
+
+  test('reinstall does not overwrite an existing customized identity avatar', async () => {
+    mockExisting = {
+      _id: 'aria-id',
+      username: 'openclaw-aria',
+      profilePicture: '/api/uploads/customized.png',
+      isBot: true,
+      botMetadata: {
+        agentName: 'openclaw',
+        instanceId: 'aria',
+        displayName: 'Aria',
+        runtime: 'moltbot',
+      },
+    };
+
+    const user = await AgentIdentityService.getOrCreateAgentUser('openclaw', {
+      instanceId: 'aria',
+      profilePicture: '/api/uploads/package-seed.png',
+    });
+
+    expect(user.profilePicture).toBe('/api/uploads/customized.png');
+    expect(mockSaved).toHaveLength(0);
+  });
+
   test('new install collides with an existing canonical — gets suffix', async () => {
     // openclaw-pixel already has displayName="Pixel" with instanceId "pixel" (shorter)
     mockPeers = [

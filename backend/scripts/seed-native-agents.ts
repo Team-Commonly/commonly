@@ -19,6 +19,7 @@ import mongoose from 'mongoose';
 import { AgentRegistry, AgentInstallation } from '../models/AgentRegistry';
 import { FIRST_PARTY_APPS } from '../config/native-agents/apps';
 import type { NativeAgentDefinition } from '../config/native-agents/apps';
+import { normalizeAvatarUrl } from '../services/avatarService';
 
 // Lazy requires keep this file import-safe even if dependent services move
 // and avoid pulling the full Mongoose model graph into typecheck.
@@ -169,7 +170,7 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
         $set: {
           displayName: app.displayName,
           description: app.description,
-          iconUrl: app.iconUrl || '',
+          iconUrl: normalizeAvatarUrl(app.iconUrl) || '',
           registry: 'commonly-official',
           verified: true,
           status: 'active',

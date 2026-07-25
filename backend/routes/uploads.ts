@@ -30,6 +30,7 @@ import {
 } from '../services/attachmentAccess';
 import { logAttachmentTokenMint } from '../services/auditService';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { normalizeAvatarUrl } from '../services/avatarService';
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -43,7 +44,6 @@ import { getObjectStore } from '../services/objectStore';
 interface AuthReq {
   userId?: string;
   ip?: string;
-  protocol?: string;
   get?: (header: string) => string | undefined;
   file?: { originalname: string; mimetype: string; size: number; buffer: Buffer };
   params?: { fileName?: string };
@@ -217,23 +217,10 @@ const handleUpload = async (
     });
     await newFile.save();
 
-    // Cloudflare Tunnel doesn't forward a reliable X-Forwarded-Proto, so
-    // `app.set('trust proxy')` alone leaves req.protocol stuck at 'http'
-    // for the cluster-internal hop. Detect the public scheme from explicit
-    // headers Cloudflare DOES send (cf-visitor.scheme) before falling back
-    // to the connection protocol. The downstream effect of getting this
-    // wrong is the URL we emit landing as `http://` and the browser firing
-    // a Mixed Content warning on every avatar/upload load.
-    const cfVisitor = req.get?.('cf-visitor');
-    let scheme = req.get?.('x-forwarded-proto') || req.protocol || 'http';
-    if (cfVisitor) {
-      try {
-        const parsed = JSON.parse(cfVisitor);
-        if (parsed?.scheme) scheme = parsed.scheme;
-      } catch { /* ignore malformed cf-visitor */ }
-    }
-    const host = req.get?.('host');
-    const url = `${scheme}://${host}/api/uploads/${fileName}`;
+    // Stored upload references must survive hostname changes. Callers can
+    // persist this response directly without baking the current API origin
+    // into User.profilePicture or package icon metadata.
+    const url = normalizeAvatarUrl(fileName);
 
     res.json({
       url,
