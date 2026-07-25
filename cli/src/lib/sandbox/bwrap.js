@@ -117,6 +117,17 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     flags.push('--bind-try', p, p);
   }
 
+  // Adapter-owned transient inputs (for example Claude's per-spawn MCP
+  // config) live outside the workspace so model-visible Read(./**) cannot
+  // reach them. Bind only the exact directories the adapter prepared; they
+  // remain read-only inside the namespace and disappear after the spawn.
+  for (const p of opts.readOnlyPaths || []) {
+    if (!p || !isAbsolute(p)) {
+      throw new Error('wrapArgvWithBwrap opts.readOnlyPaths entries must be absolute paths');
+    }
+    flags.push('--ro-bind', p, p);
+  }
+
   flags.push('--bind', opts.workspacePath, opts.workspacePath);
   flags.push('--chdir', opts.workspacePath);
   flags.push('--setenv', 'HOME', opts.workspacePath);

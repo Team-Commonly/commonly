@@ -38,9 +38,24 @@
  */
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
-import { mkdtemp, readFile, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { createHash } from 'crypto';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  unlink,
+} from 'fs/promises';
+import { homedir, tmpdir } from 'os';
+import {
+  dirname,
+  join,
+  resolve as pathResolve,
+} from 'path';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -84,9 +99,10 @@ const buildPrompt = (prompt, memoryLongTerm) => {
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
 //     are skipped rather than half-wired.
-//   - Declared env MUST ride inside the mcp_servers.<name>.env table — codex
-//     does not pass its parent env to the MCP child it spawns (the PR #398
-//     cloud-codex lesson; same failure mode locally).
+//   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
+//     argv override. Command lines are visible to other same-user processes
+//     unless the OS sandbox blocks process inspection; keeping bearer tokens
+//     out of argv is an independent defense.
 const SUBSTITUTION_KEYS = ['COMMONLY_AGENT_TOKEN', 'COMMONLY_API_URL', 'COMMONLY_INSTANCE_URL'];
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 
@@ -109,26 +125,152 @@ const toml = (s) => JSON.stringify(String(s));
 
 const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
+  const forwardedEnv = {};
   for (const server of mcpServers || []) {
     if (!server?.name || !Array.isArray(server.command) || !server.command.length) continue;
     const [command, ...rest] = server.command.map((a) => substitutePlaceholders(a, ctx));
     flags.push('-c', `mcp_servers.${server.name}.command=${toml(command)}`);
+    // The user opted into every server present in the environment spec.
+    // Public permission profiles + approval_policy=never otherwise auto-deny
+    // side-effecting MCP calls, silently removing the agent's Commonly tools.
+    // Mirror Claude's --allowedTools behavior: declared MCP servers are the
+    // capability boundary, and all of their tools are non-interactively
+    // approved inside that boundary.
+    flags.push(
+      '-c',
+      `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
+    );
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
     }
-    const envEntries = Object.entries(server.env || {})
-      .map(([k, v]) => `${k} = ${toml(substitutePlaceholders(v, ctx))}`);
+    const envEntries = [];
+    const envVars = [];
+    for (const [key, rawValue] of Object.entries(server.env || {})) {
+      const value = substitutePlaceholders(rawValue, ctx);
+      const carriesRuntimeToken = !!ctx.runtimeToken
+        && typeof value === 'string'
+        && value.includes(ctx.runtimeToken);
+      if (carriesRuntimeToken) {
+        if (forwardedEnv[key] !== undefined && forwardedEnv[key] !== value) {
+          throw new Error(
+            `codex MCP servers declare conflicting token-bearing values for env var ${key}`,
+          );
+        }
+        forwardedEnv[key] = value;
+        envVars.push(key);
+      } else {
+        envEntries.push(`${key} = ${toml(value)}`);
+      }
+    }
     if (envEntries.length) {
       flags.push('-c', `mcp_servers.${server.name}.env={${envEntries.join(', ')}}`);
     }
+    if (envVars.length) {
+      flags.push('-c', `mcp_servers.${server.name}.env_vars=[${envVars.map(toml).join(',')}]`);
+    }
   }
-  return flags;
+  return { flags, forwardedEnv };
+};
+
+const PUBLIC_PERMISSION_PROFILE = 'commonly_public';
+const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
+
+const statOrNull = async (path) => {
+  try {
+    return await lstat(path);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+};
+
+// Codex reads $CODEX_HOME/AGENTS.md before model-generated commands enter the
+// OS sandbox. Pointing a public run at the operator's normal ~/.codex would
+// therefore expose global private instructions even though shell reads of
+// ~/.codex are denied. Give every public wrapper identity its own persistent
+// Codex home for sessions/state, with only an auth symlink back to the
+// operator credential. The symlink itself lives under ~/.commonly, which the
+// permission profile denies to model-generated commands.
+const preparePublicCodexHome = async (ctx) => {
+  const operatorHome = ctx.env?.CODEX_HOME
+    || process.env.CODEX_HOME
+    || join(homedir(), '.codex');
+  const identity = ctx.agentName || ctx.cwd || 'anonymous';
+  const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
+  const publicHome = ctx._publicCodexHome
+    || join(homedir(), '.commonly', 'codex-homes', identityHash);
+  if (pathResolve(publicHome) === pathResolve(operatorHome)) {
+    throw new Error('public codex home must be isolated from the operator CODEX_HOME');
+  }
+
+  await mkdir(publicHome, { recursive: true, mode: 0o700 });
+  await chmod(publicHome, 0o700);
+
+  const sourceAuth = join(operatorHome, 'auth.json');
+  const targetAuth = join(publicHome, 'auth.json');
+  const sourceStat = await statOrNull(sourceAuth);
+  const targetStat = await statOrNull(targetAuth);
+  if (targetStat && !targetStat.isSymbolicLink()) {
+    throw new Error(`refusing to replace non-symlink public Codex credential: ${targetAuth}`);
+  }
+  if (sourceStat) {
+    const currentTarget = targetStat
+      ? pathResolve(dirname(targetAuth), await readlink(targetAuth))
+      : null;
+    if (currentTarget !== pathResolve(sourceAuth)) {
+      if (targetStat) await unlink(targetAuth);
+      await symlink(sourceAuth, targetAuth);
+    }
+  } else if (targetStat) {
+    // A stale symlink could unexpectedly authenticate through an old home
+    // after the operator intentionally logged out. Remove it and let Codex
+    // fail closed with its normal "not logged in" error.
+    await unlink(targetAuth);
+  }
+  return publicHome;
+};
+
+const publicPermissionProfileFlags = (mode) => {
+  if (!PUBLIC_SANDBOX_MODES.has(mode)) {
+    throw new Error(
+      `public codex agents require sandbox.mode=workspace or read-only, got ${mode || 'unset'}`,
+    );
+  }
+  const workspaceAccess = mode === 'read-only' ? 'read' : 'write';
+  const filesystem = [
+    '":minimal"="read"',
+    '"~/.commonly"="deny"',
+    '"~/.claude"="deny"',
+    '"~/.codex"="deny"',
+    '"~/.ssh"="deny"',
+    '"~/.aws"="deny"',
+    '"~/.config"="deny"',
+    '"/private/tmp"="deny"',
+    `":workspace_roots"={"."="${workspaceAccess}",".commonly"="deny",".codex"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny"}`,
+  ].join(',');
+  return [
+    '-c', `default_permissions=${toml(PUBLIC_PERMISSION_PROFILE)}`,
+    '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.filesystem={${filesystem}}`,
+    '-c', `permissions.${PUBLIC_PERMISSION_PROFILE}.network.enabled=false`,
+    // The MCP launcher receives explicitly forwarded env_vars separately.
+    // Model-generated shell commands inherit only a small non-secret core.
+    '-c', 'shell_environment_policy.inherit="core"',
+    '-c', 'shell_environment_policy.ignore_default_excludes=false',
+    '-c', 'shell_environment_policy.include_only=["PATH","HOME","TMPDIR","LANG","LC_*"]',
+  ];
 };
 
 // Build the argv after the `codex` binary. Resume vs new turn is a
 // subcommand-level distinction in modern codex, not an option flag — keep
 // that detail isolated here so the spawn path stays linear.
-const buildArgs = ({ sessionId, prompt, outputFile, mcpFlags = [] }) => {
+const buildArgs = ({
+  sessionId,
+  prompt,
+  outputFile,
+  mcpFlags = [],
+  publicSandboxMode = null,
+}) => {
+  const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
   // bubblewrap (bwrap) sandbox + approval prompts. bwrap needs CAP_SYS_ADMIN
   // or unprivileged user-namespaces — neither available to standard k8s
@@ -137,26 +279,39 @@ const buildArgs = ({ sessionId, prompt, outputFile, mcpFlags = [] }) => {
   // slave: Permission denied" inside cloud-codex pods (verified 2026-05-15).
   // The pod is the security perimeter — agent identity is isolated, workspace
   // is PVC-scoped, no host mounts. bwrap inside the pod is redundant.
-  // On a laptop wrapper run (sam-local-codex etc.) the same flag is fine: the
-  // operator's machine is already the security boundary they signed up for
-  // when running `commonly agent run`.
+  // Public laptop wrappers are different: untrusted pod content must never
+  // inherit that bypass. Codex >=0.138 permission profiles provide a native
+  // deny-by-default read/write/network boundary on macOS and Linux. Do not
+  // pass legacy `--sandbox` alongside them: Codex documents that the legacy
+  // mode disables permission-profile composition.
+  const executionPolicy = publicSandbox
+    ? [
+      '--ignore-user-config',
+      '--ignore-rules',
+      ...publicPermissionProfileFlags(publicSandboxMode),
+    ]
+    : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
     '--json',
     '--skip-git-repo-check',
-    '--dangerously-bypass-approvals-and-sandbox',
+    ...executionPolicy,
     ...mcpFlags,
     '-o',
     outputFile,
   ];
+  // Approval policy is a global option in Codex 0.144, so it must precede
+  // the `exec` subcommand. A denied operation is returned to the model;
+  // non-interactive public agents never hang waiting for an operator.
+  const prefix = publicSandbox ? ['--ask-for-approval', 'never'] : [];
   if (sessionId) {
     // Place <sessionId> immediately after the `exec resume` subcommand so a
     // future codex parser change can't accidentally consume it as the value
     // of a preceding flag (e.g. -o). Codex's CLI signature is documented as
     // `codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]`, and this ordering
     // matches that intent unambiguously regardless of clap version.
-    return ['exec', 'resume', sessionId, ...common, prompt];
+    return [...prefix, 'exec', 'resume', sessionId, ...common, prompt];
   }
-  return ['exec', ...common, prompt];
+  return [...prefix, 'exec', ...common, prompt];
 };
 
 // Stream-parse JSONL stdout. Codex emits one event per line; partial lines
@@ -270,20 +425,29 @@ export default {
     const outputFile = join(dir, 'last-message.txt');
 
     try {
+      const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
+        runtimeToken: ctx.runtimeToken,
+        instanceUrl: ctx.instanceUrl,
+      });
+      const publicSandboxMode = ctx.environment?.sandbox?.trust === 'public'
+        ? ctx.environment?.sandbox?.mode || 'unset'
+        : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
         outputFile,
-        mcpFlags: buildMcpOverrideArgs(ctx.environment?.mcp, {
-          runtimeToken: ctx.runtimeToken,
-          instanceUrl: ctx.instanceUrl,
-        }),
+        mcpFlags: mcp.flags,
+        publicSandboxMode,
       });
+      const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      if (publicSandboxMode !== null) {
+        childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
+      }
 
       const { threadId } = await runCodex({
         args,
         cwd: ctx.cwd,
-        env: ctx.env,
+        env: childEnv,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });

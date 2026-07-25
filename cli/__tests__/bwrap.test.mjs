@@ -95,6 +95,29 @@ describe('wrapArgvWithBwrap', () => {
     expect(argv[idx + 1]).toBe('/home/user/.claude');
   });
 
+  itLinux('binds exact adapter-owned transient inputs read-only', () => {
+    const argv = wrapArgvWithBwrap(
+      ['claude'],
+      {},
+      {
+        workspacePath: '/tmp/ws',
+        readOnlyPaths: ['/tmp/commonly-claude-mcp-abc123'],
+      },
+    );
+    const idx = argv.indexOf('/tmp/commonly-claude-mcp-abc123');
+    expect(idx).toBeGreaterThan(-1);
+    expect(argv[idx - 1]).toBe('--ro-bind');
+    expect(argv[idx + 1]).toBe('/tmp/commonly-claude-mcp-abc123');
+  });
+
+  itLinux('rejects relative adapter-owned transient paths', () => {
+    expect(() => wrapArgvWithBwrap(
+      ['claude'],
+      {},
+      { workspacePath: '/tmp/ws', readOnlyPaths: ['relative/config'] },
+    )).toThrow(/readOnlyPaths entries must be absolute/);
+  });
+
   itLinux('expands ~ in read-outside / write-outside paths', async () => {
     // Surfaced live during 2026-04-17 demo validation: `~/.local/bin` was
     // declared in read-outside but bwrap saw the literal `~` and the

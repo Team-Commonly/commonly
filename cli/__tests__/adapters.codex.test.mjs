@@ -13,7 +13,14 @@
 
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { mkdtemp, writeFile, rm, readFile } from 'fs/promises';
+import {
+  lstat,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  writeFile,
+} from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -171,12 +178,118 @@ describe('codex adapter — spawn()', () => {
       .filter(Boolean);
     expect(cFlags).toEqual([
       'mcp_servers.commonly.command="npx"',
+      'mcp_servers.commonly.default_tools_approval_mode="approve"',
       'mcp_servers.commonly.args=["-y","@commonlyai/mcp@latest"]',
-      'mcp_servers.commonly.env={COMMONLY_API_URL = "https://api.example.test", COMMONLY_AGENT_TOKEN = "cm_agent_secret"}',
+      'mcp_servers.commonly.env={COMMONLY_API_URL = "https://api.example.test"}',
+      'mcp_servers.commonly.env_vars=["COMMONLY_AGENT_TOKEN"]',
     ]);
+    expect(args.join(' ')).not.toContain('cm_agent_secret');
+    expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
     // Overrides must precede the prompt (last arg) and not disturb -o pairing.
     expect(findOutputFile(args)).toBeTruthy();
     expect(args[args.length - 1]).toBe('hi');
+  });
+
+  test('public workspace mode uses a deny-by-default permission profile and never the legacy sandbox or bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    const operatorAuth = join(operatorHome, 'auth.json');
+    await writeFile(operatorAuth, '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-public"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('work safely', {
+      sessionId: null,
+      cwd: '/tmp/public-agent-workspace',
+      environment: {
+        sandbox: { mode: 'workspace', trust: 'public' },
+      },
+      env: { ...process.env, CODEX_HOME: operatorHome },
+      agentName: 'public-test-agent',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
+    expect((await lstat(join(publicHome, 'auth.json'))).isSymbolicLink()).toBe(true);
+    expect(await readlink(join(publicHome, 'auth.json'))).toBe(operatorAuth);
+    expect(await lstat(publicHome).then((stat) => stat.mode & 0o777)).toBe(0o700);
+    await expect(lstat(join(publicHome, 'AGENTS.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(args.slice(0, 3)).toEqual(['--ask-for-approval', 'never', 'exec']);
+    expect(args).toContain('--ignore-user-config');
+    expect(args).toContain('--ignore-rules');
+    expect(args).not.toContain('--sandbox');
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = args
+      .map((a, i) => (a === '-c' ? args[i + 1] : null))
+      .filter(Boolean);
+    expect(cFlags).toContain('default_permissions="commonly_public"');
+    const filesystem = cFlags.find((flag) => flag.startsWith(
+      'permissions.commonly_public.filesystem=',
+    ));
+    expect(filesystem).toContain('":minimal"="read"');
+    expect(filesystem).toContain('":workspace_roots"={"."="write"');
+    for (const secretPath of [
+      '~/.commonly',
+      '~/.claude',
+      '~/.codex',
+      '~/.ssh',
+      '~/.aws',
+      '~/.config',
+      '/private/tmp',
+    ]) {
+      expect(filesystem).toContain(`"${secretPath}"="deny"`);
+    }
+    expect(cFlags).toContain('permissions.commonly_public.network.enabled=false');
+    expect(cFlags).toContain(
+      'shell_environment_policy.include_only=["PATH","HOME","TMPDIR","LANG","LC_*"]',
+    );
+  });
+
+  test('public read-only mode keeps the workspace read-only and applies on resume', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    const publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-public-home-'));
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-public"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('inspect safely', {
+      sessionId: 'sid-public',
+      environment: {
+        sandbox: { mode: 'read-only', trust: 'public' },
+      },
+      env: { ...process.env, CODEX_HOME: operatorHome },
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args.slice(0, 5)).toEqual([
+      '--ask-for-approval', 'never', 'exec', 'resume', 'sid-public',
+    ]);
+    const filesystemIndex = args.findIndex((arg) => (
+      typeof arg === 'string'
+      && arg.startsWith('permissions.commonly_public.filesystem=')
+    ));
+    expect(filesystemIndex).toBeGreaterThan(-1);
+    expect(args[filesystemIndex]).toContain('":workspace_roots"={"."="read"');
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+  });
+
+  test('public trust fails closed when no enforced public sandbox mode is declared', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"turn.completed"}\n'],
+      outputContents: 'should not run',
+    });
+
+    await expect(codex.spawn('x', {
+      environment: { sandbox: { trust: 'public' } },
+      _spawnImpl: impl,
+    })).rejects.toThrow(/require sandbox.mode=workspace or read-only/);
   });
 
   test('no environment.mcp → no -c flags (argv unchanged for MCP-less agents)', async () => {

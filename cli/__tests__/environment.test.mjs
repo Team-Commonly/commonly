@@ -107,6 +107,23 @@ describe('validateEnvironmentSpec', () => {
     expect(res.errors.join(' ')).toMatch(/sandbox.mode/);
   });
 
+  test('accepts host-neutral public sandbox intent for the codex adapter', () => {
+    expect(validateEnvironmentSpec({
+      sandbox: { mode: 'workspace', trust: 'public' },
+    })).toEqual({ ok: true, errors: [] });
+    expect(validateEnvironmentSpec({
+      sandbox: { mode: 'read-only', trust: 'public' },
+    })).toEqual({ ok: true, errors: [] });
+  });
+
+  test('rejects bad sandbox.trust', () => {
+    const res = validateEnvironmentSpec({
+      sandbox: { mode: 'workspace', trust: 'sometimes' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.errors.join(' ')).toMatch(/sandbox.trust/);
+  });
+
   test('rejects bad sandbox.network.policy', () => {
     const res = validateEnvironmentSpec({
       sandbox: { network: { policy: 'kinda-restricted' } },
