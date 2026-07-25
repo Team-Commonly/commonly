@@ -25,6 +25,7 @@ await jest.unstable_mockModule('child_process', () => ({
 }));
 
 const claude = (await import('../src/lib/adapters/claude.js')).default;
+const { spawnSync } = await import('child_process');
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   const proc = new EventEmitter();
@@ -175,6 +176,93 @@ describe('claude adapter — ctx.environment', () => {
     expect(calls[0].args).not.toContain('--mcp-config');
     expect(fs.existsSync(path.join(cwd, '.commonly'))).toBe(false);
     expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
+  });
+
+  test('public workspace mode wraps Claude in deny-default Seatbelt with isolated state and env', async () => {
+    const originalPlatform = process.platform;
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    const { impl, calls } = makeSpawnImpl();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which'
+          ? { status: 0, stdout: '/usr/bin/true\n' }
+          : { status: 0, stdout: '' }
+      ));
+
+      await claude.spawn('hi', {
+        agentName: 'public-test',
+        sessionId: null,
+        cwd,
+        env: {
+          PATH: process.env.PATH,
+          USER: 'safe-user',
+          LOGNAME: 'safe-user',
+          COMMONLY_HOST_SECRET: 'must-not-inherit',
+          cm_agent_probe: 'must-not-inherit',
+        },
+        environment: {
+          sandbox: { mode: 'workspace', trust: 'public' },
+          mcp: [{
+            name: 'capture',
+            transport: 'stdio',
+            command: [process.execPath, path.join(cwd, 'server.mjs')],
+          }],
+        },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+
+      expect(calls).toHaveLength(1);
+      const call = calls[0];
+      expect(call.cmd).toBe('/usr/bin/sandbox-exec');
+      expect(call.args[0]).toBe('-p');
+      const profile = call.args[1];
+      expect(profile).toContain('(deny default)');
+      expect(profile).toContain(`(subpath "${fs.realpathSync(cwd)}")`);
+      expect(profile).toContain(
+        `(deny file-read* file-write* (subpath "${path.join(fs.realpathSync(cwd), '.commonly')}"))`,
+      );
+      expect(call.args).toContain('--setting-sources');
+      expect(call.args).toContain('--strict-mcp-config');
+      expect(call.args).toContain('--permission-mode');
+      expect(call.args).toContain('Read(./**)');
+      expect(call.args).toContain('mcp__capture__*');
+      expect(call.args).toContain('Bash');
+      expect(call.opts.env.HOME).toBe(publicState);
+      expect(call.opts.env.TMPDIR).toBe(path.join(publicState, 'tmp'));
+      expect(call.opts.env.USER).toBe('safe-user');
+      expect(call.opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
+      expect(call.opts.env.cm_agent_probe).toBeUndefined();
+
+      const sanitized = JSON.parse(
+        fs.readFileSync(path.join(publicState, '.claude.json'), 'utf8'),
+      );
+      expect(sanitized.hasCompletedOnboarding).toBe(true);
+      expect(Object.keys(sanitized).every((key) => [
+        'hasCompletedOnboarding',
+        'installMethod',
+        'userID',
+        'machineID',
+        'oauthAccount',
+      ].includes(key))).toBe(true);
+      expect(fs.statSync(path.join(publicState, '.claude.json')).mode & 0o777).toBe(0o600);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
+  test('public trust with sandbox.mode=none refuses to spawn', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: { sandbox: { mode: 'none', trust: 'public' } },
+      _spawnImpl: impl,
+    })).rejects.toThrow(/require an enforced sandbox mode/);
+    expect(calls).toHaveLength(0);
   });
 
   // ── ${COMMONLY_*} placeholder substitution ────────────────────────────────
