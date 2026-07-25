@@ -60,7 +60,7 @@ import {
 import { homedir, tmpdir } from 'os';
 import { isAbsolute, join } from 'path';
 
-import { linkSkills } from '../environment.js';
+import { mountSkills } from '../environment.js';
 import { wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import {
   publicClaudeStateRoot,
@@ -468,11 +468,11 @@ export default {
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId];
 
     if (ctx.environment && ctx.cwd) {
-      const skills = await linkSkills(ctx.environment, ctx.cwd);
+      const skills = await mountSkills(ctx.environment, ctx.cwd);
       if (skills.conflicted.length > 0) {
         for (const c of skills.conflicted) {
           // eslint-disable-next-line no-console
-          console.warn(`[claude] skill not linked (${c.reason}): ${c.path}`);
+          console.warn(`[claude] skill not mounted (${c.reason}): ${c.path}`);
         }
       }
       if (ctx.onSkillsLinked) ctx.onSkillsLinked(skills);

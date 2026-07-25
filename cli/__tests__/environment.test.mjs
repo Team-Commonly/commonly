@@ -2,7 +2,7 @@
  * environment.test.mjs — ADR-008 Phase 1
  *
  * Covers parseEnvironmentFile, validateEnvironmentSpec, resolveWorkspace,
- * linkSkills. The module is pure I/O against the local FS — we use real temp
+ * mountSkills. The module is pure I/O against the local FS — we use real temp
  * dirs and a mocked `os.homedir` so `~` expansion and the default workspace
  * path land somewhere disposable.
  */
@@ -27,7 +27,7 @@ const {
   parseEnvironmentFile,
   validateEnvironmentSpec,
   resolveWorkspace,
-  linkSkills,
+  mountSkills,
 } = await import('../src/lib/environment.js');
 
 const writeJson = (dir, name, obj) => {
@@ -200,7 +200,7 @@ describe('resolveWorkspace', () => {
   });
 });
 
-describe('linkSkills', () => {
+describe('mountSkills', () => {
   let workspace;
   let skillSrc;
 
@@ -214,85 +214,97 @@ describe('linkSkills', () => {
     fs.rmSync(skillSrc, { recursive: true, force: true });
   });
 
-  test('creates .claude/skills/<basename> symlink to the source dir', async () => {
-    const { linked, skipped, conflicted } = await linkSkills(
+  const slotFor = (src) => path.join(workspace, '.claude', 'skills', path.basename(src));
+
+  test('mounts a real directory copy, not a symlink', async () => {
+    const { mounted, conflicted } = await mountSkills(
       { skills: { claude: [skillSrc] } },
       workspace,
     );
-    expect(linked).toEqual([skillSrc]);
-    expect(skipped).toEqual([]);
+    expect(mounted).toEqual([skillSrc]);
     expect(conflicted).toEqual([]);
 
-    const linkPath = path.join(workspace, '.claude', 'skills', path.basename(skillSrc));
-    expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    expect(fs.readFileSync(path.join(linkPath, 'SKILL.md'), 'utf8')).toBe('# my skill');
+    const slot = slotFor(skillSrc);
+    expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(slot).isDirectory()).toBe(true);
+    expect(fs.readFileSync(path.join(slot, 'SKILL.md'), 'utf8')).toBe('# my skill');
   });
 
-  test('idempotent: re-running with the same source reports as already-linked', async () => {
-    await linkSkills({ skills: { claude: [skillSrc] } }, workspace);
-    const second = await linkSkills({ skills: { claude: [skillSrc] } }, workspace);
-    expect(second.linked).toEqual([]);
-    expect(second.skipped).toEqual([skillSrc]);
+  // The bug this function exists to prevent: @commonlyai/cli@0.1.4 shipped
+  // without the #702 "post as yourself" guardrail because an agent wrote
+  // through the old symlink into the operator's checkout, and `npm publish`
+  // ships the working tree rather than git HEAD.
+  test('writes into the mount CANNOT reach the source (regression: cli 0.1.4 guardrail loss)', async () => {
+    await mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+    const slot = slotFor(skillSrc);
+
+    // Simulate an agent rewriting its own governing skill file. It must be
+    // able to affect at most its own copy — never the source of truth.
+    fs.chmodSync(path.join(slot, 'SKILL.md'), 0o644);
+    fs.writeFileSync(path.join(slot, 'SKILL.md'), '# guardrail deleted', 'utf8');
+
+    expect(fs.readFileSync(path.join(skillSrc, 'SKILL.md'), 'utf8')).toBe('# my skill');
+  });
+
+  test('mounted files are read-only (defense in depth)', async () => {
+    await mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+    const mode = fs.statSync(path.join(slotFor(skillSrc), 'SKILL.md')).mode & 0o222;
+    expect(mode).toBe(0);
+  });
+
+  test('re-mounting refreshes from source, so source edits still reach the agent', async () => {
+    await mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+    fs.writeFileSync(path.join(skillSrc, 'SKILL.md'), '# updated upstream', 'utf8');
+
+    const second = await mountSkills({ skills: { claude: [skillSrc] } }, workspace);
+    expect(second.mounted).toEqual([skillSrc]);
     expect(second.conflicted).toEqual([]);
+    expect(fs.readFileSync(path.join(slotFor(skillSrc), 'SKILL.md'), 'utf8'))
+      .toBe('# updated upstream');
   });
 
-  test('refuses to overwrite a different existing symlink at the same slot — reports `different-target`', async () => {
-    // Two different source dirs, same basename — second one must surface as
-    // a conflict so the caller can warn the user (NOT silently merged into
-    // skipped, which would mask the user's intent being lost).
-    const otherSrc = fs.mkdtempSync(path.join(path.dirname(skillSrc),
-      `${path.basename(skillSrc).slice(0, -6)}-X-`));
-    const slotName = path.basename(skillSrc);
-    const slotPath = path.join(workspace, '.claude', 'skills', slotName);
-    fs.mkdirSync(path.dirname(slotPath), { recursive: true });
-    fs.symlinkSync(otherSrc, slotPath);
+  test('a legacy symlink from CLI <=0.1.4 is replaced by a snapshot', async () => {
+    const slot = slotFor(skillSrc);
+    fs.mkdirSync(path.dirname(slot), { recursive: true });
+    fs.symlinkSync(skillSrc, slot);
 
-    const { linked, skipped, conflicted } = await linkSkills(
+    const { mounted, conflicted } = await mountSkills(
       { skills: { claude: [skillSrc] } },
       workspace,
     );
-    expect(linked).toEqual([]);
-    expect(skipped).toEqual([]);
-    expect(conflicted).toEqual([{ path: skillSrc, reason: 'different-target' }]);
-    // Existing link untouched.
-    expect(fs.readlinkSync(slotPath)).toBe(otherSrc);
-
-    fs.rmSync(otherSrc, { recursive: true, force: true });
+    expect(mounted).toEqual([skillSrc]);
+    expect(conflicted).toEqual([]);
+    expect(fs.lstatSync(slot).isSymbolicLink()).toBe(false);
+    // The source survived the replacement (rm must not follow the symlink).
+    expect(fs.readFileSync(path.join(skillSrc, 'SKILL.md'), 'utf8')).toBe('# my skill');
   });
 
   test('returns empty buckets when no skills are declared', async () => {
-    expect(await linkSkills({}, workspace)).toEqual({
-      linked: [], skipped: [], conflicted: [],
-    });
+    expect(await mountSkills({}, workspace)).toEqual({ mounted: [], conflicted: [] });
   });
 
   test('non-existent source paths surface as `missing-source` conflicts (not silent skips)', async () => {
     const ghost = path.join(skillSrc, 'does-not-exist');
-    const { linked, skipped, conflicted } = await linkSkills(
+    const { mounted, conflicted } = await mountSkills(
       { skills: { claude: [ghost] } },
       workspace,
     );
-    expect(linked).toEqual([]);
-    expect(skipped).toEqual([]);
+    expect(mounted).toEqual([]);
     expect(conflicted).toEqual([{ path: ghost, reason: 'missing-source' }]);
   });
 
-  test('non-symlink occupants (real files/dirs) surface as `not-symlink` conflicts', async () => {
-    // A user might have hand-created a real dir at the slot — never overwrite.
-    const slotName = path.basename(skillSrc);
-    const slotPath = path.join(workspace, '.claude', 'skills', slotName);
-    fs.mkdirSync(path.dirname(slotPath), { recursive: true });
-    fs.mkdirSync(slotPath);
-    fs.writeFileSync(path.join(slotPath, 'hand-edited.md'), 'mine', 'utf8');
+  test('a user-authored dir at the slot is never clobbered — `not-a-mount`', async () => {
+    // No mount marker => we did not create it => it is real user work.
+    const slot = slotFor(skillSrc);
+    fs.mkdirSync(slot, { recursive: true });
+    fs.writeFileSync(path.join(slot, 'hand-edited.md'), 'mine', 'utf8');
 
-    const { linked, skipped, conflicted } = await linkSkills(
+    const { mounted, conflicted } = await mountSkills(
       { skills: { claude: [skillSrc] } },
       workspace,
     );
-    expect(linked).toEqual([]);
-    expect(skipped).toEqual([]);
-    expect(conflicted).toEqual([{ path: skillSrc, reason: 'not-symlink' }]);
-    // Hand-edited file untouched.
-    expect(fs.existsSync(path.join(slotPath, 'hand-edited.md'))).toBe(true);
+    expect(mounted).toEqual([]);
+    expect(conflicted).toEqual([{ path: skillSrc, reason: 'not-a-mount' }]);
+    expect(fs.readFileSync(path.join(slot, 'hand-edited.md'), 'utf8')).toBe('mine');
   });
 });

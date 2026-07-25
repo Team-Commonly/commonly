@@ -175,7 +175,7 @@ export const buildDefaultEnvironment = (adapterName) => {
     ],
   };
   // Only advertise the skill if it actually shipped (defensive: a broken
-  // package that dropped the skills/ dir shouldn't hand linkSkills a
+  // package that dropped the skills/ dir shouldn't hand mountSkills a
   // missing-source path every spawn).
   if (existsSync(BUNDLED_COMMONLY_SKILL_DIR)) {
     environment.skills = { claude: [BUNDLED_COMMONLY_SKILL_DIR] };
