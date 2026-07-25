@@ -126,6 +126,21 @@ const PROMPT_EVENT_TYPES = new Set([
 // commonly_* tools of its own). `stub` does not. Returning null means "no
 // default" — the wrapper proceeds with environment=null exactly like before.
 const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex']);
+const CODEX_PERMISSION_PROFILE_MIN_VERSION = [0, 138, 0];
+
+const versionAtLeast = (version, minimum) => {
+  const parts = String(version || '')
+    .match(/\d+(?:\.\d+){1,2}/)?.[0]
+    .split('.')
+    .map(Number);
+  if (!parts) return false;
+  for (let i = 0; i < minimum.length; i += 1) {
+    const current = parts[i] || 0;
+    if (current > minimum[i]) return true;
+    if (current < minimum[i]) return false;
+  }
+  return true;
+};
 
 // The commonly behavior skill ships inside this package (cli/skills/commonly)
 // so a fresh attach can mount it into the agent without a network fetch.
@@ -205,6 +220,12 @@ export const performAttach = async ({
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
     const sandboxMode = environment.sandbox?.mode || 'none';
+    const sandboxTrust = environment.sandbox?.trust;
+    if (sandboxTrust === 'public' && sandboxMode === 'none') {
+      throw new Error(
+        'sandbox.trust=public requires an enforced sandbox mode; refusing to attach unsandboxed',
+      );
+    }
     if (sandboxMode === 'bwrap') {
       const bwrap = detectBwrap();
       if (!bwrap.available) {
@@ -216,10 +237,27 @@ export const performAttach = async ({
           + 'are advisory in Phase 1. Use sandbox.mode=container for enforced policy.',
         );
       }
+    } else if (sandboxMode === 'workspace' || sandboxMode === 'read-only') {
+      if (adapterName !== 'codex' || sandboxTrust !== 'public') {
+        throw new Error(
+          `sandbox.mode=${sandboxMode} is currently implemented only for codex `
+          + `with sandbox.trust=public`,
+        );
+      }
+      if (!versionAtLeast(detected.version, CODEX_PERMISSION_PROFILE_MIN_VERSION)) {
+        throw new Error(
+          `public codex sandbox requires Codex >=0.138.0 permission profiles; `
+          + `detected ${detected.version || 'unknown'}`,
+        );
+      }
+      log(
+        `sandbox: public ${sandboxMode} via Codex native permission profile `
+        + '(deny-by-default filesystem + network)',
+      );
     } else if (sandboxMode !== 'none' && sandboxMode !== undefined) {
       throw new Error(
         `sandbox.mode=${sandboxMode} is not yet implemented in the local-CLI driver. `
-        + `Phase 1 supports: none, bwrap.`,
+        + `Supported locally: none, bwrap, codex public workspace/read-only.`,
       );
     }
   } else {
@@ -479,6 +517,7 @@ export const performRun = ({
       // and URLs. Lets users keep tokens out of their checked-in env files.
       runtimeToken: token,
       instanceUrl,
+      agentName,
       metadata: { event },
     });
 

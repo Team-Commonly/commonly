@@ -8,9 +8,10 @@
  *
  * Environment (ADR-008 Phase 1): if ctx.environment is present, the adapter
  * symlinks declared Claude skills into `<cwd>/.claude/skills/`, writes an MCP
- * config file at `<cwd>/.commonly/mcp-config.json` when `mcp` is declared,
- * and wraps the argv with bwrap when `sandbox.mode === 'bwrap'`. The spawn
- * binary becomes `bwrap` in that case — claude moves to the inner argv.
+ * config file into a mode-0700 per-spawn temp directory outside the workspace
+ * when `mcp` is declared, and wraps the argv with bwrap when
+ * `sandbox.mode === 'bwrap'`. The spawn binary becomes `bwrap` in that case —
+ * claude moves to the inner argv.
  * When ctx.environment is absent, behaviour is identical to pre-ADR-008.
  *
  * Session continuity (IMPORTANT — the two claude flags are not interchangeable):
@@ -39,7 +40,8 @@
 
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { linkSkills } from '../environment.js';
@@ -143,15 +145,29 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
   return { mcpServers: mcpServersMap };
 };
 
-// Regenerated on every spawn from the env spec; do not hand-edit — the file
-// is overwritten before each `claude` invocation, so any local changes are
-// silently clobbered. ADR-008 §invariant #5 (edits propagate on next spawn).
-const writeMcpConfig = async (cwd, mcpServers, ctx = {}) => {
-  const dir = join(cwd, '.commonly');
-  await mkdir(dir, { recursive: true });
+// Materialized once per spawn outside the workspace, then removed in the
+// spawn's finally block. Keeping this file under <cwd> made the literal
+// cm_agent_* bearer token readable to any public agent allowed Read(./**).
+// The directory and file modes are explicit because this file briefly carries
+// live credentials; relying on the caller's umask is not a security boundary.
+const createMcpConfig = async (mcpServers, ctx = {}) => {
+  const dir = await mkdtemp(join(tmpdir(), 'commonly-claude-mcp-'));
   const file = join(dir, 'mcp-config.json');
-  await writeFile(file, JSON.stringify(buildMcpConfig(mcpServers, ctx), null, 2), 'utf8');
-  return file;
+  try {
+    await chmod(dir, 0o700);
+    await writeFile(
+      file,
+      JSON.stringify(buildMcpConfig(mcpServers, ctx), null, 2),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    // writeFile's mode only applies when creating. Pin the final mode too so
+    // this stays correct if the implementation ever starts reusing the path.
+    await chmod(file, 0o600);
+    return { dir, file };
+  } catch (err) {
+    try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    throw err;
+  }
 };
 
 // ── argv preparation — environment-aware ────────────────────────────────────
@@ -178,14 +194,13 @@ const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   if (!env) return { cmd: 'claude', args: innerArgv };
 
-  if (Array.isArray(env.mcp) && env.mcp.length > 0 && ctx.cwd) {
-    const configPath = await writeMcpConfig(ctx.cwd, env.mcp, {
-      runtimeToken: ctx.runtimeToken,
-      instanceUrl: ctx.instanceUrl,
-    });
+  if (Array.isArray(env.mcp) && env.mcp.length > 0) {
+    if (!ctx.mcpConfigPath) {
+      throw new Error('claude MCP config was declared but no per-spawn config path was prepared');
+    }
     // Insert --mcp-config immediately after the subcommand-style `-p` block
     // so claude parses it before prompt collection begins.
-    innerArgv = [...innerArgv, '--mcp-config', configPath];
+    innerArgv = [...innerArgv, '--mcp-config', ctx.mcpConfigPath];
     // Pre-approve every MCP tool from the declared servers (`mcp__<name>__*`).
     // Without this claude runs in non-interactive `-p` mode and asks for
     // permission before invoking any MCP tool — the wrapper has no way to
@@ -207,6 +222,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     const claudeBin = resolveClaudePath();
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
+      readOnlyPaths: ctx.mcpConfigDir ? [ctx.mcpConfigDir] : [],
     });
     return { cmd: wrapped[0], args: wrapped.slice(1) };
   }
@@ -259,9 +275,20 @@ export default {
       if (ctx.onSkillsLinked) ctx.onSkillsLinked(skills);
     }
 
-    const { cmd, args } = await prepareArgv(baseArgs, ctx);
-
+    let mcpConfig = null;
     try {
+      if (Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+        mcpConfig = await createMcpConfig(ctx.environment.mcp, {
+          runtimeToken: ctx.runtimeToken,
+          instanceUrl: ctx.instanceUrl,
+        });
+      }
+      const spawnCtx = {
+        ...ctx,
+        mcpConfigPath: mcpConfig?.file || null,
+        mcpConfigDir: mcpConfig?.dir || null,
+      };
+      const { cmd, args } = await prepareArgv(baseArgs, spawnCtx);
       const stdout = await runClaude({
         cmd,
         args,
@@ -279,7 +306,11 @@ export default {
       if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
         const freshId = randomUUID();
         const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId];
-        const retry = await prepareArgv(retryBase, ctx);
+        const retry = await prepareArgv(retryBase, {
+          ...ctx,
+          mcpConfigPath: mcpConfig?.file || null,
+          mcpConfigDir: mcpConfig?.dir || null,
+        });
         const stdout = await runClaude({
           cmd: retry.cmd,
           args: retry.args,
@@ -291,6 +322,10 @@ export default {
         return { text: stdout.trim(), newSessionId: freshId };
       }
       throw err;
+    } finally {
+      if (mcpConfig?.dir) {
+        try { await rm(mcpConfig.dir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
     }
   },
 };

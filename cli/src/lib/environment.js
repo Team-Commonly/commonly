@@ -30,7 +30,10 @@ import { homedir } from 'os';
 const ALLOWED_TOP_KEYS = new Set([
   'version', 'workspace', 'sandbox', 'skills', 'mcp',
 ]);
-const ALLOWED_SANDBOX_MODES = new Set(['none', 'bwrap', 'firejail', 'container', 'managed']);
+const ALLOWED_SANDBOX_MODES = new Set([
+  'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
+]);
+const ALLOWED_SANDBOX_TRUST = new Set(['public', 'internal']);
 const ALLOWED_NETWORK_POLICIES = new Set(['unrestricted', 'restricted']);
 
 const expandHome = (p) => {
@@ -127,9 +130,14 @@ export const validateEnvironmentSpec = (spec) => {
     if (typeof spec.sandbox !== 'object' || spec.sandbox === null) {
       errors.push('sandbox must be an object');
     } else {
-      const { mode, network, filesystem } = spec.sandbox;
+      const {
+        mode, trust, network, filesystem,
+      } = spec.sandbox;
       if (mode !== undefined && !ALLOWED_SANDBOX_MODES.has(mode)) {
         errors.push(`sandbox.mode must be one of: ${[...ALLOWED_SANDBOX_MODES].join(', ')}`);
+      }
+      if (trust !== undefined && !ALLOWED_SANDBOX_TRUST.has(trust)) {
+        errors.push(`sandbox.trust must be one of: ${[...ALLOWED_SANDBOX_TRUST].join(', ')}`);
       }
       if (network !== undefined) {
         if (typeof network !== 'object' || network === null) {

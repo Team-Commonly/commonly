@@ -4,7 +4,7 @@
  * Asserts the claude adapter honours ctx.environment:
  *   - sandbox.mode='bwrap' → spawn binary is `bwrap`, not `claude`
  *   - mcp[]               → --mcp-config <path> added to inner argv,
- *                            and the JSON file written under <cwd>/.commonly/
+ *                            and a mode-0600 temp file outside the workspace
  *   - skills.claude[]     → linkSkills called against the workspace
  *
  * Uses ctx._spawnImpl (the same test seam as adapters.claude.test.mjs) so
@@ -38,11 +38,24 @@ const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   return proc;
 };
 
-const makeSpawnImpl = () => {
+const makeSpawnImpl = ({ code = 0 } = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
-    calls.push({ cmd, args, opts });
-    return fakeChild({ stdout: 'ok' });
+    const configIndex = args.indexOf('--mcp-config');
+    const configPath = configIndex === -1 ? null : args[configIndex + 1];
+    const config = configPath
+      ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      : null;
+    calls.push({
+      cmd,
+      args,
+      opts,
+      configPath,
+      config,
+      configMode: configPath ? fs.statSync(configPath).mode & 0o777 : null,
+      configDirMode: configPath ? fs.statSync(path.dirname(configPath)).mode & 0o777 : null,
+    });
+    return fakeChild({ stdout: 'ok', code });
   };
   return { impl, calls };
 };
@@ -56,7 +69,7 @@ describe('claude adapter — ctx.environment', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   });
 
-  test('writes <cwd>/.commonly/mcp-config.json and adds --mcp-config when env.mcp declared', async () => {
+  test('keeps MCP config outside the workspace at 0600 for only the spawn lifetime', async () => {
     const { impl, calls } = makeSpawnImpl();
     const environment = {
       mcp: [
@@ -72,19 +85,45 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
     });
 
-    const cfgPath = path.join(cwd, '.commonly', 'mcp-config.json');
-    expect(fs.existsSync(cfgPath)).toBe(true);
-    const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    expect(calls).toHaveLength(1);
+    const {
+      args: innerArgs,
+      configPath: cfgPath,
+      config: parsed,
+      configMode,
+      configDirMode,
+    } = calls[0];
+    expect(path.isAbsolute(cfgPath)).toBe(true);
+    expect(path.relative(cwd, cfgPath).startsWith('..')).toBe(true);
+    expect(configMode).toBe(0o600);
+    expect(configDirMode).toBe(0o700);
     expect(parsed.mcpServers.github).toMatchObject({ type: 'http', url: 'http://localhost:3000/github-mcp' });
     expect(parsed.mcpServers['local-db']).toMatchObject({
       type: 'stdio', command: 'postgres-mcp', args: ['--db', 'mydb'],
     });
-
-    expect(calls).toHaveLength(1);
-    const innerArgs = calls[0].args;
     expect(innerArgs).toContain('--mcp-config');
     const idx = innerArgs.indexOf('--mcp-config');
     expect(innerArgs[idx + 1]).toBe(cfgPath);
+    expect(fs.existsSync(path.join(cwd, '.commonly'))).toBe(false);
+    expect(fs.existsSync(cfgPath)).toBe(false);
+    expect(fs.existsSync(path.dirname(cfgPath))).toBe(false);
+  });
+
+  test('removes the transient MCP config when the claude spawn fails', async () => {
+    const { impl, calls } = makeSpawnImpl({ code: 1 });
+
+    await expect(claude.spawn('hi', {
+      sessionId: null,
+      cwd,
+      environment: {
+        mcp: [{ name: 'commonly', transport: 'stdio', command: ['commonly-mcp'] }],
+      },
+      _spawnImpl: impl,
+    })).rejects.toThrow(/claude exited with code 1/);
+
+    expect(calls).toHaveLength(1);
+    expect(fs.existsSync(calls[0].configPath)).toBe(false);
+    expect(fs.existsSync(path.dirname(calls[0].configPath))).toBe(false);
   });
 
   test('symlinks skills.claude entries into <cwd>/.claude/skills/', async () => {
@@ -144,7 +183,7 @@ describe('claude adapter — ctx.environment', () => {
   // from values it already has on hand (the saved token record).
 
   test('${COMMONLY_AGENT_TOKEN} in MCP env values is substituted with ctx.runtimeToken', async () => {
-    const { impl } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl();
     const environment = {
       mcp: [
         {
@@ -167,7 +206,7 @@ describe('claude adapter — ctx.environment', () => {
       instanceUrl: 'https://api-dev.commonly.me',
       _spawnImpl: impl,
     });
-    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    const cfg = calls[0].config;
     expect(cfg.mcpServers.commonly.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_real_token_12345');
     expect(cfg.mcpServers.commonly.env.COMMONLY_API_URL).toBe('https://api-dev.commonly.me');
     // Substitution is literal — interpolation works inside larger strings.
@@ -177,7 +216,7 @@ describe('claude adapter — ctx.environment', () => {
   });
 
   test('${COMMONLY_INSTANCE_URL} alias substitutes to the same value as ${COMMONLY_API_URL}', async () => {
-    const { impl } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
@@ -186,12 +225,12 @@ describe('claude adapter — ctx.environment', () => {
       instanceUrl: 'http://localhost:5000',
       _spawnImpl: impl,
     });
-    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    const cfg = calls[0].config;
     expect(cfg.mcpServers.x.env.U).toBe('http://localhost:5000');
   });
 
   test('placeholders in command args + url are also substituted', async () => {
-    const { impl } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
@@ -213,13 +252,13 @@ describe('claude adapter — ctx.environment', () => {
       instanceUrl: 'https://api-dev.commonly.me',
       _spawnImpl: impl,
     });
-    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    const cfg = calls[0].config;
     expect(cfg.mcpServers['sse-server'].url).toBe('https://api-dev.commonly.me/mcp/sse');
     expect(cfg.mcpServers['arg-server'].args).toEqual(['--token', 'cm_agent_x']);
   });
 
   test('unknown ${COMMONLY_*} placeholders are left intact (so misspellings surface as MCP errors, not silent empties)', async () => {
-    const { impl } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
@@ -235,12 +274,12 @@ describe('claude adapter — ctx.environment', () => {
       instanceUrl: 'http://localhost:5000',
       _spawnImpl: impl,
     });
-    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    const cfg = calls[0].config;
     expect(cfg.mcpServers.x.env.TYPO).toBe('${COMMONLY_AGNT_TOKEN}');
   });
 
   test('substitution is a no-op when ctx.runtimeToken / instanceUrl are absent (literal env values pass through)', async () => {
-    const { impl } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl();
     await claude.spawn('hi', {
       sessionId: null,
       cwd,
@@ -255,7 +294,7 @@ describe('claude adapter — ctx.environment', () => {
       _spawnImpl: impl,
       // Note: no runtimeToken, no instanceUrl.
     });
-    const cfg = JSON.parse(fs.readFileSync(path.join(cwd, '.commonly', 'mcp-config.json'), 'utf8'));
+    const cfg = calls[0].config;
     expect(cfg.mcpServers.x.env.LITERAL).toBe('plain-string');
     // Empty token → placeholder left intact (not substituted with empty string).
     expect(cfg.mcpServers.x.env.PLACEHOLDER).toBe('${COMMONLY_AGENT_TOKEN}');
