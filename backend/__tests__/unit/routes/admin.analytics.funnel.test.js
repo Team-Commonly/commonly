@@ -132,8 +132,11 @@ describe('GET /api/admin/analytics/usage', () => {
   const chain = (docs) => ({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(docs) }) });
 
   it('merges Mongo signups with PG message/poster counts per day', async () => {
+    // The bot query is BOT_FILTER ($or of isBot / agentName-present); the
+    // human query names the same field with $exists:false, so key off $or —
+    // mere presence of the field no longer discriminates.
     mockUserFind.mockImplementation((q) => {
-      if (q && q['botMetadata.agentName']) return chain([{ _id: 'bot1' }]);
+      if (q && Array.isArray(q.$or)) return chain([{ _id: 'bot1' }]);
       return chain([userDoc('u1', 3), userDoc('u2', 3), userDoc('u3', 0)]);
     });
     // dau, wau, totalUsers in Promise.all order
