@@ -502,9 +502,10 @@ export const performRun = ({
     // did, its final CLI text is a narration/log — echoing it would duplicate
     // the message and re-fire any @mention. This is the wrapper-side guarantee
     // that a deliberate multi-post ("on it…" then "…done") is never doubled,
-    // without relying on the agent to emit NO_REPLY. (A rare concurrent post by
-    // another member during the spawn window can suppress a genuine wrapper
-    // reply — an acceptable trade against a guaranteed double-post.)
+    // without relying on the agent to emit NO_REPLY. Against a server that
+    // stamps `self` this is exact; against an older one it degrades to the
+    // legacy any-bot test, where a concurrent post by another agent can
+    // suppress a genuine reply (#757).
     const snapshotMessages = async () => {
       try {
         const { messages = [] } = await client.get(
@@ -551,18 +552,33 @@ export const performRun = ({
     // reply via its output) the wrapper delivers the text as before.
     const replyText = (result.text || '').trim();
     let agentPostedItself = false;
+    let suppressedBy = null;
     if (preSpawnIds) {
       const postSpawn = await snapshotMessages();
       if (postSpawn) {
+        // The server stamps each message with `self` when it knows who is
+        // asking. Trust that over any local guess: the wrapper cannot derive
+        // its own bot username reliably (the server applies LEGACY_AGENT_MAP
+        // and an owner-scoped instanceId), and a wrong guess double-posts.
+        const serverKnowsSelf = postSpawn.some((m) => typeof m.self === 'boolean');
         for (const m of postSpawn) {
-          // Only a NEW message from a bot user counts as "the agent posted
-          // itself". A new human-authored message must NOT suppress the echo:
-          // it is either a human typing mid-turn, or the agent misusing an
-          // operator CLI profile / human token (the 2026-07-22 as-operator
-          // attribution incident) — in both cases the wrapper still delivers
-          // the reply under the agent's own identity.
-          if (!preSpawnIds.has(String(m._id || m.id)) && m.isBot) {
+          if (preSpawnIds.has(String(m._id || m.id))) continue;
+          // A new human-authored message must NEVER suppress the echo: it is
+          // either a human typing mid-turn, or the agent misusing an operator
+          // CLI profile / human token (the 2026-07-22 as-operator attribution
+          // incident) — in both cases the wrapper still delivers the reply
+          // under the agent's own identity.
+          if (!m.isBot) continue;
+          // With `self`, only THIS agent's own post suppresses. Without it (an
+          // older server), fall back to the legacy any-bot test — which drops
+          // this agent's reply whenever another agent answers first (#757).
+          if (serverKnowsSelf ? m.self === true : true) {
             agentPostedItself = true;
+            suppressedBy = {
+              id: String(m._id || m.id),
+              author: m.username || 'unknown',
+              basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
+            };
             break;
           }
         }
@@ -571,7 +587,14 @@ export const performRun = ({
     if (!replyText || replyText === 'NO_REPLY') {
       log(`[${event.type}] no wrapper-post (${replyText === 'NO_REPLY' ? 'NO_REPLY' : 'empty output'})`);
     } else if (agentPostedItself) {
-      log(`[${event.type}] agent posted via tool this turn — not echoing CLI output (avoids double-post)`);
+      // Name the message that caused the suppression. A silently dropped reply
+      // is invisible to everyone; #757 went unnoticed precisely because this
+      // line said only "posted via tool" with no way to tell whose post it saw.
+      log(
+        `[${event.type}] agent posted via tool this turn — not echoing CLI output `
+        + `(avoids double-post; matched message ${suppressedBy.id} by ${suppressedBy.author} `
+        + `via ${suppressedBy.basis})`,
+      );
     } else {
       await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
         content: replyText,

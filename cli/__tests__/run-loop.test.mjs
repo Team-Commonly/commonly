@@ -234,6 +234,137 @@ describe('performRun', () => {
     );
   });
 
+  test('#757: ANOTHER agent posting during the spawn must NOT suppress this reply', async () => {
+    // The multi-agent-room case. Two wrapper agents are mentioned in one
+    // message and answer concurrently; the faster one lands its post inside
+    // the slower one's spawn window. The old detection asked "did any bot
+    // post?" and so threw away the slower agent's entire reply — silently,
+    // because the event was still acked. Sam hit this hand-sequencing his
+    // agents one at a time during a working session.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false, self: false }] }
+          : {
+            messages: [
+              { _id: 'm1', isBot: false, self: false },
+              // A DIFFERENT agent's post: bot-authored, but not ours.
+              { _id: 'm2', isBot: true, self: false, username: 'other-agent' },
+            ],
+          };
+      }
+      return { events: [makeEvent({ _id: 'evt-otheragent' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'my real reply' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'my real reply' },
+    );
+  });
+
+  test('#757: the agent OWN post (self: true) still suppresses the echo', async () => {
+    // The double-post guarantee the detection exists for must survive the fix.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false, self: false }] }
+          : {
+            messages: [
+              { _id: 'm1', isBot: false, self: false },
+              { _id: 'm2', isBot: true, self: true, username: 'my-stub' },
+            ],
+          };
+      }
+      return { events: [makeEvent({ _id: 'evt-ownpost' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'narration of what I posted' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'narration of what I posted' },
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-ownpost/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('#757: our own post still suppresses even when another agent posted too', async () => {
+    // Both happened in the window. Ours is what matters — suppress.
+    let messagesCall = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) {
+        messagesCall += 1;
+        return messagesCall === 1
+          ? { messages: [{ _id: 'm1', isBot: false, self: false }] }
+          : {
+            messages: [
+              { _id: 'm1', isBot: false, self: false },
+              { _id: 'm2', isBot: true, self: false, username: 'other-agent' },
+              { _id: 'm3', isBot: true, self: true, username: 'my-stub' },
+            ],
+          };
+      }
+      return { events: [makeEvent({ _id: 'evt-bothposted' })] };
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'narration' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'narration' },
+    );
+  });
+
   test('ensures adapter cwd exists before spawning — avoids confusing spawn ENOENT on missing dir', async () => {
     const agentCwd = path.join(os.tmpdir(), 'commonly-agents', 'cwd-fresh-agent');
     fs.rmSync(agentCwd, { recursive: true, force: true });
