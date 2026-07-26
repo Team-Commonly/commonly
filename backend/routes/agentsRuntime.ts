@@ -96,7 +96,26 @@ try {
   PGPod = null;
 }
 
+const { stripInlineAvatars } = require('../services/avatarService');
+
 const router = express.Router();
+
+// Every response on this router is bound for an agent's context window, so no
+// inline base64 avatar may ride along. Enforcing it here rather than at each
+// handler is deliberate: the leak was spread across getRecentMessages, the
+// post-message echo, thread comments and the create-pod member list, there is
+// no shared user serializer to fix instead, and a per-handler fix would not
+// cover the next endpoint someone adds. Measured before this: a 20-message
+// read returned 230,170 chars, 71% of it image data (#758).
+//
+// Only `data:` values are dropped — URLs are cheap and stay useful. The
+// original objects are never mutated, because the same message object is
+// reused for the human-facing Socket.io broadcast where avatars ARE rendered.
+router.use((_req: any, res: any, next: any) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body: unknown) => originalJson(stripInlineAvatars(body));
+  next();
+});
 const parseNonNegativeInt = (value: any, fallback: any) => {
   const parsed = parseInt(value, 10);
   if (Number.isNaN(parsed)) return fallback;
