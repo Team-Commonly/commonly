@@ -146,6 +146,11 @@ interface MessageNormalized {
   userId: { _id: unknown; username: string; profilePicture?: string };
   username: string;
   isBot?: boolean;
+  // Present ONLY when the caller identified itself via `selfUserId`. An
+  // explicit boolean (never undefined) so a client can tell "this server
+  // computes self" apart from "this server is too old to know" — see
+  // getRecentMessages.
+  self?: boolean;
   createdAt: Date | string;
   metadata?: MetadataDoc;
   profile_picture?: string;
@@ -441,18 +446,35 @@ class AgentMessageService {
     });
   }
 
+  /**
+   * "Has this author already shared these exact links recently?" — used to stop
+   * a heartbeat agent re-posting the same digest every tick.
+   *
+   * `authorUserId` scopes the lookback to that author's own messages. Without
+   * it the check matched ANY author, so a human dropping a link into the pod
+   * suppressed the agent's next post — the agent was silenced for someone
+   * else's message (same class of bug as #757).
+   */
   static async hasRecentDuplicateUrls(options: {
     podId: unknown;
     content: unknown;
     lookback?: number;
+    authorUserId?: unknown;
   }): Promise<boolean> {
-    const { podId, content, lookback = 10 } = options;
+    const {
+      podId, content, lookback = 10, authorUserId,
+    } = options;
     const urls = AgentMessageService.extractUrls(content);
     if (urls.length === 0) return false;
     try {
       const recent = await AgentMessageService.getRecentMessages(podId, lookback);
       if (!Array.isArray(recent) || recent.length === 0) return false;
-      const recentText = recent.map((m) => String(m?.content || '')).join('\n');
+      const authorId = authorUserId ? String(authorUserId) : null;
+      const mine = authorId
+        ? recent.filter((m) => String(m?.userId?._id ?? '') === authorId)
+        : recent;
+      if (mine.length === 0) return false;
+      const recentText = mine.map((m) => String(m?.content || '')).join('\n');
       const recentUrls = new Set(AgentMessageService.extractUrls(recentText));
       return urls.every((url) => recentUrls.has(url));
     } catch {
@@ -1079,7 +1101,11 @@ class AgentMessageService {
     }
 
     if (isHeartbeatEvent) {
-      const isDuplicate = await AgentMessageService.hasRecentDuplicateUrls({ podId, content: sanitizedContent });
+      const isDuplicate = await AgentMessageService.hasRecentDuplicateUrls({
+        podId,
+        content: sanitizedContent,
+        authorUserId: agentUser?._id,
+      });
       if (isDuplicate) {
         AgentMessageService.logMessageLifecycle('skipped', {
           agentName,
@@ -1524,10 +1550,31 @@ class AgentMessageService {
     return cleaned;
   }
 
-  static async getRecentMessages(podId: unknown, limit = 20): Promise<MessageNormalized[]> {
+  /**
+   * Recent pod messages, normalized across the PG and Mongo read paths.
+   *
+   * `selfUserId` — when the caller is a participant (an agent runtime asking
+   * "did *I* post during my turn?"), pass its user id and every returned
+   * message carries an explicit `self` boolean. Answering that server-side is
+   * deliberate: the client cannot safely derive its own bot username, because
+   * `resolveAgentType`'s LEGACY_AGENT_MAP is server-only and `instanceId` is
+   * owner-scoped and assigned at install. A client that guesses wrong silently
+   * double-posts. Omit the argument and no `self` key is emitted at all, which
+   * is how a client detects an older server (see #757).
+   */
+  static async getRecentMessages(
+    podId: unknown,
+    limit = 20,
+    selfUserId?: unknown,
+  ): Promise<MessageNormalized[]> {
     if (!podId) {
       throw new Error('podId is required');
     }
+
+    const selfId = selfUserId ? String(selfUserId) : null;
+    const withSelf = (authorId: unknown): { self?: boolean } => (
+      selfId ? { self: String(authorId ?? '') === selfId } : {}
+    );
 
     if (PGMessage && process.env.PG_HOST) {
       try {
@@ -1537,18 +1584,12 @@ class AgentMessageService {
 
         return messages.map((msg) => {
           const username = (msg.username as string) || 'Unknown';
-          const isBot =
-            msg.is_bot === true
-            || msg.is_bot === 'true'
-            || (() => {
-              const lower = username.toLowerCase();
-              return (
-                lower.includes('-bot')
-                || lower.includes('_bot')
-                || lower.endsWith('bot')
-                || lower.startsWith('openclaw-')
-              );
-            })();
+          // Trust the mirrored `is_bot` column only. This used to fall back to
+          // a username substring test ('-bot', endsWith 'bot', 'openclaw-'),
+          // which misclassified any human named e.g. "talbot" or "abbot" as a
+          // bot — and `isBot` gates the wrapper's echo suppression, so a false
+          // positive silently ate that agent's reply.
+          const isBot = msg.is_bot === true || msg.is_bot === 'true';
           return {
             _id: msg.id,
             id: msg.id,
@@ -1561,6 +1602,7 @@ class AgentMessageService {
             },
             username,
             isBot,
+            ...withSelf(msg.user_id),
             createdAt: msg.created_at as Date,
           };
         });
@@ -1572,7 +1614,11 @@ class AgentMessageService {
     const messages: Array<Record<string, unknown>> = await Message.find({ podId })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate('userId', 'username profilePicture')
+      // `isBot` MUST stay in this projection: it is read below, and omitting it
+      // made every message on this fallback path report isBot:false, which
+      // disabled the wrapper's self-post detection outright (guaranteed
+      // double-posting whenever PG was unavailable).
+      .populate('userId', 'username profilePicture isBot')
       .lean();
 
     return messages.reverse().map((msg) => {
@@ -1586,6 +1632,7 @@ class AgentMessageService {
         userId: userId || { username: 'Unknown' },
         username,
         isBot: userId?.isBot === true,
+        ...withSelf(userId?._id),
         createdAt: msg.createdAt as Date,
       };
     }) as MessageNormalized[];

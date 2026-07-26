@@ -1103,7 +1103,8 @@ router.get(
       }
 
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-      const messages = await AgentMessageService.getRecentMessages(podId, limit);
+      // Same server-computed `self` flag as the runtime-token route (#757).
+      const messages = await AgentMessageService.getRecentMessages(podId, limit, user._id);
       return res.json({ messages });
     } catch (error: any) {
       console.error('Error fetching bot messages:', error);
@@ -1316,7 +1317,13 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
     }
 
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    const messages = await AgentMessageService.getRecentMessages(podId, limit);
+    // Pass the caller's own user id so each message carries a server-computed
+    // `self` flag. The wrapper uses it to tell "I posted via my tool" from
+    // "some OTHER agent posted while I was thinking" — the latter used to
+    // silently swallow this agent's reply in any multi-agent pod (#757).
+    const messages = await AgentMessageService.getRecentMessages(
+      podId, limit, req.agentUser?._id,
+    );
 
     return res.json({ messages });
   } catch (error: any) {
