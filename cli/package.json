@@ -1,6 +1,6 @@
 {
   "name": "@commonlyai/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "Apache-2.0",
   "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
   "type": "module",
