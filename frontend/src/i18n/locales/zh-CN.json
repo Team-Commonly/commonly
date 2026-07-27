@@ -1059,7 +1059,11 @@
     "messages": {
       "olderHidden": "在此公开视图中，更早的消息已隐藏。",
       "emptyTitle": "暂无消息",
-      "emptyText": "此 Pod 目前很安静。请稍后再来看看。"
+      "emptyText": "此 Pod 目前很安静。请稍后再来看看。",
+      "loadOlder": "加载更早的消息",
+      "loadingOlder": "加载中…",
+      "copyLink": "复制此消息的链接",
+      "linkCopied": "已复制"
     },
     "footer": {
       "title": "这是一个真实的 Commonly Pod。",

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import V2Showcase from '../V2Showcase';
 
@@ -37,8 +37,8 @@ jest.mock('../../../context/AuthContext', () => ({
   useAuth: () => ({ token: null, currentUser: null, isAuthenticated: false }),
 }));
 
-const renderAt = (podId: string) => render(
-  <MemoryRouter initialEntries={[`/v2/showcase/${podId}`]}>
+const renderAt = (podId: string, search = '') => render(
+  <MemoryRouter initialEntries={[`/v2/showcase/${podId}${search}`]}>
     <Routes>
       <Route path="/v2/showcase/:podId" element={<V2Showcase />} />
       <Route path="/v2/landing" element={<div>landing-page</div>} />
@@ -104,6 +104,56 @@ describe('V2Showcase', () => {
     // Conversion CTA is present and there is no composer / send affordance.
     expect(screen.getAllByText('Sign up to join').length).toBeGreaterThan(0);
     expect(screen.queryByPlaceholderText(/Message/i)).not.toBeInTheDocument();
+  });
+
+  test('load older fetches with a before cursor and prepends; a poll must not discard them', async () => {
+    const info = { pod: { name: 'Room', memberCount: 2 }, agents: [] };
+    const newest = [{ id: '10', content: 'newest-msg', author: { username: 'sam' }, createdAt: '2026-07-20T00:00:00Z' }];
+    const older = [{ id: '1', content: 'ancient-msg', author: { username: 'sam' }, createdAt: '2026-07-01T00:00:00Z' }];
+    mockGet.mockImplementation((url, cfg = {}) => {
+      if (String(url).endsWith('/messages')) {
+        return Promise.resolve({
+          data: cfg?.params?.before ? { messages: older, hasMore: false } : { messages: newest, hasMore: true },
+        });
+      }
+      return Promise.resolve({ data: info });
+    });
+
+    renderAt('abc');
+    await screen.findByText('newest-msg');
+    const btn = await screen.findByRole('button', { name: /load older/i });
+    await act(async () => { btn.click(); });
+
+    await screen.findByText('ancient-msg');
+    expect(screen.getByText('newest-msg')).toBeInTheDocument();
+
+    const paged = mockGet.mock.calls.find((c) => c[1]?.params?.before);
+    expect(paged[1].params.before).toBe('2026-07-20T00:00:00Z');
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /load older/i })).not.toBeInTheDocument();
+    });
+  });
+
+  test('pages back to find a ?m= permalink target, then highlights it', async () => {
+    const info = { pod: { name: 'Room', memberCount: 2 }, agents: [] };
+    const newest = [{ id: '10', content: 'newest-msg', author: { username: 'sam' }, createdAt: '2026-07-20T00:00:00Z' }];
+    const older = [{ id: '3', content: 'target-msg', author: { username: 'sam' }, createdAt: '2026-07-02T00:00:00Z' }];
+    mockGet.mockImplementation((url, cfg = {}) => {
+      if (String(url).endsWith('/messages')) {
+        return Promise.resolve({
+          data: cfg?.params?.before ? { messages: older, hasMore: false } : { messages: newest, hasMore: true },
+        });
+      }
+      return Promise.resolve({ data: info });
+    });
+
+    renderAt('abc', '?m=3');
+
+    await screen.findByText('target-msg');
+    await waitFor(() => {
+      expect(document.getElementById('msg-3')?.className).toContain('v2-showcase__msg--target');
+    });
   });
 
   test('renders the not-public state on a 404', async () => {

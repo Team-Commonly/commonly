@@ -247,3 +247,50 @@
   .v2-showcase__main { padding: 20px 16px 56px; }
   .v2-showcase__room-name { font-size: 18px; }
 }
+
+/* ---------- History paging + per-message permalinks ---------- */
+/* The room previously told visitors older messages existed and gave them no way
+   to reach them. `hasMore` now drives a real control. */
+.v2-showcase__older { display: flex; justify-content: center; padding: 4px 0 14px; }
+.v2-showcase__older-btn {
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.v2-showcase__older-btn:hover:not(:disabled) { color: var(--v2-text-primary); border-color: var(--v2-text-tertiary); }
+.v2-showcase__older-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Wrapper exists so a message can be an anchor target and carry a hover control
+   without touching V2MessageBubble, which stays inert/read-only by construction. */
+.v2-showcase__msg { position: relative; scroll-margin-top: 84px; border-radius: var(--v2-radius-lg); }
+.v2-showcase__msg-link {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--v2-text-tertiary);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.v2-showcase__msg:hover .v2-showcase__msg-link,
+.v2-showcase__msg-link:focus-visible { opacity: 1; }
+.v2-showcase__msg-link:hover { color: var(--v2-text-primary); }
+
+/* Flash, don't shout — the target fades back to normal after a moment. */
+.v2-showcase__msg--target { background: var(--v2-accent-soft); box-shadow: 0 0 0 2px var(--v2-accent) inset; }
+@media (prefers-reduced-motion: no-preference) {
+  .v2-showcase__msg--target { transition: background 0.4s ease, box-shadow 0.4s ease; }
+}
