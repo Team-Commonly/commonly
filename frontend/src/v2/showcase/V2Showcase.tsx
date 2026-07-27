@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -39,6 +39,10 @@ const getShowcaseClient = () => {
 // supported, so freshness comes from a light poll rather than a live socket.
 const POLL_INTERVAL_MS = 12000;
 const MESSAGE_LIMIT = 50;
+// Bound the auto-paging that hunts for a ?m=<id> permalink target. A link to a
+// message that no longer exists must not page the whole room into memory.
+const MAX_AUTO_PAGES = 20;
+const HIGHLIGHT_MS = 2600;
 
 // TODO(showcase): point this at the curated public demo pod once it is seeded
 // and toggled publicRead on each instance. Overridable per-deploy via
@@ -143,6 +147,18 @@ const toV2Message = (m: ShowcaseMessage): V2Message => {
   };
 };
 
+// The poll used to replace the whole list. Once older pages can be loaded that
+// would silently discard them every POLL_INTERVAL_MS, so both paths merge by id
+// and re-sort chronologically instead.
+const mergeById = (a: ShowcaseMessage[], b: ShowcaseMessage[]): ShowcaseMessage[] => {
+  const byId = new Map<string, ShowcaseMessage>();
+  for (const m of a) byId.set(String(m.id), m);
+  for (const m of b) byId.set(String(m.id), m);
+  return [...byId.values()].sort(
+    (x, y) => new Date(x.createdAt).getTime() - new Date(y.createdAt).getTime(),
+  );
+};
+
 type LoadState = 'loading' | 'ready' | 'not-public' | 'error';
 
 const V2Showcase: React.FC = () => {
@@ -150,13 +166,25 @@ const V2Showcase: React.FC = () => {
   const { podId: podIdParam } = useParams<{ podId: string }>();
   const podId = podIdParam || DEFAULT_SHOWCASE_POD_ID;
 
+  const [searchParams] = useSearchParams();
+  const targetId = searchParams.get('m');
+
   const [state, setState] = useState<LoadState>('loading');
   const [info, setInfo] = useState<ShowcaseInfo | null>(null);
   const [messages, setMessages] = useState<ShowcaseMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
+  // Latest messages, readable from the poll/loadOlder callbacks without
+  // re-creating them on every render.
+  const messagesRef = useRef<ShowcaseMessage[]>([]);
+  const autoPagesRef = useRef(0);
+  const targetDoneRef = useRef(false);
+  messagesRef.current = messages;
 
   // Fetch the pod info + member/agent roster. Drives the load state: a 404 here
   // means the pod is missing OR not publicRead (the backend returns the same 404
@@ -173,17 +201,42 @@ const V2Showcase: React.FC = () => {
     }
   }, [podId]);
 
-  const fetchMessages = useCallback(async (): Promise<void> => {
+  // Newest page. `initial` is the only path allowed to set hasMore: on a poll the
+  // flag describes the newest page's tail, not how far back we have actually
+  // paged, so letting a poll write it would resurrect the "load older" button
+  // after the visitor had reached the beginning.
+  const fetchMessages = useCallback(async (initial = false): Promise<void> => {
     try {
       const res = await getShowcaseClient().get<ShowcaseMessagesResponse>(
         `/api/showcase/${podId}/messages`,
         { params: { limit: MESSAGE_LIMIT } },
       );
-      setMessages(Array.isArray(res.data?.messages) ? res.data.messages : []);
-      setHasMore(Boolean(res.data?.hasMore));
+      const next = Array.isArray(res.data?.messages) ? res.data.messages : [];
+      setMessages((prev) => (prev.length === 0 ? next : mergeById(prev, next)));
+      if (initial) setHasMore(Boolean(res.data?.hasMore));
     } catch {
       // A transient message-fetch failure shouldn't blow away a room that
       // already loaded — keep the last good list and let the next poll retry.
+    }
+  }, [podId]);
+
+  // One page further back, anchored on the oldest message we currently hold.
+  const loadOlder = useCallback(async (): Promise<void> => {
+    const oldest = messagesRef.current[0];
+    if (!oldest) return;
+    setLoadingOlder(true);
+    try {
+      const res = await getShowcaseClient().get<ShowcaseMessagesResponse>(
+        `/api/showcase/${podId}/messages`,
+        { params: { limit: MESSAGE_LIMIT, before: oldest.createdAt } },
+      );
+      const older = Array.isArray(res.data?.messages) ? res.data.messages : [];
+      setMessages((prev) => mergeById(older, prev));
+      setHasMore(Boolean(res.data?.hasMore) && older.length > 0);
+    } catch {
+      // Leave hasMore alone so the visitor can retry the same button.
+    } finally {
+      setLoadingOlder(false);
     }
   }, [podId]);
 
@@ -197,7 +250,7 @@ const V2Showcase: React.FC = () => {
     (async () => {
       const ok = await fetchInfo();
       if (cancelled || !ok) return;
-      await fetchMessages();
+      await fetchMessages(true);
       if (!cancelled) setState('ready');
     })();
     return () => { cancelled = true; };
@@ -215,6 +268,9 @@ const V2Showcase: React.FC = () => {
   // the scroll position.
   useEffect(() => {
     if (state !== 'ready' || didInitialScrollRef.current || messages.length === 0) return;
+    // A ?m=<id> visitor is being sent to a specific message — don't yank them to
+    // the bottom first. The permalink effect below owns the scroll in that case.
+    if (targetId) { didInitialScrollRef.current = true; return; }
     didInitialScrollRef.current = true;
     // Guard: jsdom (tests) and some non-DOM environments don't implement
     // scrollIntoView, so calling it unguarded throws inside this effect.
@@ -222,6 +278,43 @@ const V2Showcase: React.FC = () => {
       messagesEndRef.current.scrollIntoView({ block: 'end' });
     }
   }, [state, messages.length]);
+
+  // Permalink target (?m=<id>). If it isn't in the loaded window yet, page
+  // backwards until we find it — bounded by MAX_AUTO_PAGES so a stale link can't
+  // walk the entire room. Once found, centre it and flash a highlight.
+  useEffect(() => {
+    if (state !== 'ready' || !targetId || targetDoneRef.current) return;
+    const found = messages.some((m) => String(m.id) === String(targetId));
+    if (found) {
+      targetDoneRef.current = true;
+      const el = document.getElementById(`msg-${targetId}`);
+      if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' });
+      setHighlightId(String(targetId));
+      return;
+    }
+    if (hasMore && !loadingOlder && autoPagesRef.current < MAX_AUTO_PAGES) {
+      autoPagesRef.current += 1;
+      loadOlder();
+    } else if (!hasMore) {
+      // Walked back to the beginning without finding it — stop looking.
+      targetDoneRef.current = true;
+    }
+  }, [state, messages, targetId, hasMore, loadingOlder, loadOlder]);
+
+  // Let the highlight fade rather than sit there permanently.
+  useEffect(() => {
+    if (!highlightId) return undefined;
+    const id = window.setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
+    return () => window.clearTimeout(id);
+  }, [highlightId]);
+
+  const copyLink = useCallback((messageId: string) => {
+    const url = `${window.location.origin}${window.location.pathname}?m=${encodeURIComponent(messageId)}`;
+    const done = () => { setCopiedId(messageId); window.setTimeout(() => setCopiedId(null), 1600); };
+    // clipboard is unavailable over plain http and in jsdom; fall back silently.
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => {});
+    else done();
+  }, []);
 
   const topBar = (
     <header className="v2-showcase__bar">
@@ -345,7 +438,16 @@ const V2Showcase: React.FC = () => {
             no identity inspector. V2MessageBubble with no handlers is inert. */}
         <section className="v2-showcase__messages">
           {hasMore && (
-            <div className="v2-showcase__older-note">{t('showcase.messages.olderHidden')}</div>
+            <div className="v2-showcase__older">
+              <button
+                type="button"
+                className="v2-showcase__older-btn"
+                onClick={() => { autoPagesRef.current = 0; loadOlder(); }}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? t('showcase.messages.loadingOlder') : t('showcase.messages.loadOlder')}
+              </button>
+            </div>
           )}
           {messages.length === 0 ? (
             <div className="v2-showcase__empty">
@@ -353,9 +455,27 @@ const V2Showcase: React.FC = () => {
               <div className="v2-showcase__empty-text">{t('showcase.messages.emptyText')}</div>
             </div>
           ) : (
-            messages.map((m) => (
-              <V2MessageBubble key={m.id} message={toV2Message(m)} />
-            ))
+            messages.map((m) => {
+              const mid = String(m.id);
+              return (
+                <div
+                  key={mid}
+                  id={`msg-${mid}`}
+                  className={`v2-showcase__msg${highlightId === mid ? ' v2-showcase__msg--target' : ''}`}
+                >
+                  <V2MessageBubble message={toV2Message(m)} />
+                  <button
+                    type="button"
+                    className="v2-showcase__msg-link"
+                    onClick={() => copyLink(mid)}
+                    aria-label={t('showcase.messages.copyLink')}
+                    title={t('showcase.messages.copyLink')}
+                  >
+                    {copiedId === mid ? t('showcase.messages.linkCopied') : '#'}
+                  </button>
+                </div>
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </section>

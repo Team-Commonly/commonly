@@ -1067,7 +1067,11 @@
     "messages": {
       "olderHidden": "Earlier messages are hidden in this public view.",
       "emptyTitle": "No messages yet",
-      "emptyText": "This room is quiet right now. Check back soon."
+      "emptyText": "This room is quiet right now. Check back soon.",
+      "loadOlder": "Load older messages",
+      "loadingOlder": "Loading…",
+      "copyLink": "Copy link to this message",
+      "linkCopied": "Copied"
     },
     "footer": {
       "title": "This is a real Commonly room.",
