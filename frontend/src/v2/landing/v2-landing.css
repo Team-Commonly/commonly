@@ -784,6 +784,9 @@
 .v2-landing__footer-link:hover { color: var(--v2-accent); }
 
 /* ---------- Compare page (/compare) ---------- */
+/* Cards, not a checkmark grid. A table we win every row of invites the
+   cherry-picked-rows objection; prose also stacks cleanly on mobile without a
+   grid-template override. See docs/commonly-vs-alternatives.md. */
 .v2-compare__head { max-width: 920px; margin: 0 auto; padding-top: 56px; }
 .v2-compare__title {
   margin: 8px 0 0;
@@ -801,40 +804,78 @@
   line-height: 1.5;
   color: var(--v2-text-secondary);
 }
-.v2-compare__table {
+.v2-compare__h2 {
+  margin: 40px 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v2-text-tertiary);
+}
+.v2-compare__body {
+  margin: 0;
+  max-width: 720px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--v2-text-secondary);
+}
+.v2-compare__same {
+  padding: 18px 20px;
+  border-left: 3px solid var(--v2-border);
+  background: var(--v2-bg-subtle);
+  border-radius: 0 var(--v2-radius-lg) var(--v2-radius-lg) 0;
+}
+.v2-compare__same .v2-compare__h2 { margin-top: 0; }
+/* auto-fit keeps this a single column on narrow viewports with no media query */
+.v2-compare__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
+}
+.v2-compare__card {
+  min-width: 0;
+  padding: 18px 20px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-lg);
-  overflow: hidden;
   background: var(--v2-surface);
 }
-.v2-compare__row {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr 1.4fr;
-  border-top: 1px solid var(--v2-border-soft);
+.v2-compare__card--us {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent-soft);
 }
-.v2-compare__row:first-child { border-top: none; }
-.v2-compare__row--head { background: var(--v2-bg-subtle); }
-.v2-compare__cell {
+.v2-compare__card-name {
   display: flex;
-  align-items: center;
+  /* flex-start, not center — the mark must sit on the FIRST line when a title
+     wraps to two ("Humans are seats. Agents never are." at 390px). */
+  align-items: flex-start;
   gap: 8px;
-  padding: 14px 16px;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--v2-text-secondary);
-  border-left: 1px solid var(--v2-border-soft);
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.3;
+  color: var(--v2-text-primary);
 }
-.v2-compare__cell:first-child { border-left: none; }
-.v2-compare__cell--dim { font-weight: 650; color: var(--v2-text-primary); }
-.v2-compare__row--head .v2-compare__cell { font-weight: 700; color: var(--v2-text-primary); font-size: 15px; }
-.v2-compare__cell--us { background: var(--v2-accent-soft); }
-.v2-compare__row--head .v2-compare__cell--us { color: var(--v2-accent); }
-.v2-compare__cell--us .v2-landing__mark { color: var(--v2-accent); display: inline-flex; }
-.v2-compare__ic { font-size: 18px; flex-shrink: 0; }
-.v2-compare__ic--yes { color: var(--v2-accent); }
-.v2-compare__ic--muted { color: var(--v2-text-muted); }
+.v2-compare__card--us .v2-compare__card-name { color: var(--v2-accent); }
+.v2-compare__card--us .v2-landing__mark { color: var(--v2-accent); display: inline-flex; flex-shrink: 0; margin-top: 1px; }
+.v2-compare__card-what {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--v2-text-secondary);
+}
+/* The "what you accept" line is the point of each card — separate it visually
+   from the neutral description above it. */
+.v2-compare__card-accept {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--v2-text-primary);
+}
+.v2-compare__close-block { margin-top: 8px; }
 .v2-compare__close {
-  margin: 36px 0 0;
+  margin: 14px 0 0;
   max-width: 720px;
   font-size: 17px;
   line-height: 1.55;
@@ -842,13 +883,6 @@
 }
 .v2-compare__cta { margin-top: 28px; }
 .v2-compare__note { margin: 28px 0 0; font-size: 12px; line-height: 1.5; color: var(--v2-text-tertiary); }
-
-@media (max-width: 680px) {
-  .v2-compare__row { grid-template-columns: 1fr; }
-  .v2-compare__cell { border-left: none; border-top: 1px solid var(--v2-border-soft); }
-  .v2-compare__cell--dim { border-top: none; background: var(--v2-bg-subtle); }
-  .v2-compare__row--head { display: none; }
-}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
