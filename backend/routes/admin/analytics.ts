@@ -1,7 +1,7 @@
 // Admin activation-funnel analytics (Wave 0 "See & Hear", GH#661).
 // Everything is DERIVED from existing collections — no new tracking, no
-// third-party analytics, nothing leaves the instance. Human users only
-// (bot User rows are excluded by botMetadata.agentName absence).
+// third-party analytics, nothing leaves the instance. Human users only —
+// see HUMAN_FILTER below for what "human" means and why it takes two signals.
 //
 // Honest approximations, documented:
 // - "returned D1/D7" uses User.lastActive >= createdAt + 1d/7d — i.e. "was
@@ -35,6 +35,30 @@ const adminReadLimiter = rateLimit({
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
+// Who counts as a human, and why it takes TWO signals.
+//
+// Not every bot User row carries botMetadata.agentName. Rows created by the
+// gateway bridge, the summarizer, and several openclaw install paths set
+// botMetadata WITHOUT an agentName key. A filter keyed only on agentName
+// therefore passes them as humans — on the dev instance that was 8 rows
+// (clawdbot-bridge, commonly-summarizer, openclaw-inst-*, socialpulse-*),
+// inflating totalUsers/DAU/WAU/signups ~10% and deflating every funnel rate,
+// because a bot in the denominator can never convert.
+//
+// These two are exact logical complements (De Morgan) — keep them that way.
+// Anything counted as a human here must NOT be counted as a bot there, or
+// the "distinct human posters" metric double-subtracts.
+const HUMAN_FILTER = {
+  isBot: { $ne: true },
+  'botMetadata.agentName': { $exists: false },
+};
+const BOT_FILTER = {
+  $or: [
+    { isBot: true },
+    { 'botMetadata.agentName': { $exists: true } },
+  ],
+};
+
 // Distinct PG user_ids with at least one message, within the candidate set.
 // Isolated so tests can run without a live PostgreSQL (mocked module).
 const pgUserIdsWithMessages = async (userIds: string[]): Promise<Set<string>> => {
@@ -58,10 +82,7 @@ router.get('/funnel', adminReadLimiter, auth, adminAuth, async (req: any, res: a
 
     const users = await User.find({
       createdAt: { $gte: since },
-      $or: [
-        { botMetadata: { $exists: false } },
-        { 'botMetadata.agentName': { $exists: false } },
-      ],
+      ...HUMAN_FILTER,
     }).select('_id createdAt lastActive').lean();
 
     const ids = users.map((u: any) => String(u._id));
@@ -131,13 +152,6 @@ router.get('/funnel', adminReadLimiter, auth, adminAuth, async (req: any, res: a
   }
 });
 
-const HUMAN_FILTER = {
-  $or: [
-    { botMetadata: { $exists: false } },
-    { 'botMetadata.agentName': { $exists: false } },
-  ],
-};
-
 // GET /api/admin/analytics/usage?days=30
 // Instance-level activity for the admin dashboard: signups/day (Mongo,
 // humans), messages/day + distinct human posters/day (PG), rolling DAU/WAU
@@ -149,7 +163,7 @@ router.get('/usage', adminReadLimiter, auth, adminAuth, async (req: any, res: an
 
     const [signupUsers, botUsers, dau, wau, totalUsers] = await Promise.all([
       User.find({ createdAt: { $gte: since }, ...HUMAN_FILTER }).select('createdAt').lean(),
-      User.find({ 'botMetadata.agentName': { $exists: true } }).select('_id').lean(),
+      User.find(BOT_FILTER).select('_id').lean(),
       User.countDocuments({ lastActive: { $gte: new Date(Date.now() - DAY_MS) }, ...HUMAN_FILTER }),
       User.countDocuments({ lastActive: { $gte: new Date(Date.now() - 7 * DAY_MS) }, ...HUMAN_FILTER }),
       User.countDocuments(HUMAN_FILTER),
