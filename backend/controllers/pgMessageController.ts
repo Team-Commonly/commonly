@@ -51,10 +51,17 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
       return;
     }
 
+    // Order matters. syncPodFromMongo inserts the pod's owner into pod_members
+    // as a side effect of PGPod.create, so backfilling BEFORE the membership
+    // check let a non-member manufacture the very row the check then read back
+    // — a complete read bypass on any pod not yet mirrored into PG. Existence
+    // is resolved first (read-only, so it cannot grant anything) to preserve
+    // the 404-for-missing / 401-for-non-member contract, then authorization,
+    // and only then the backfill.
     let pod = await PGPod.findById(podId);
     if (!pod) {
-      pod = await syncPodFromMongo(podId, userId);
-      if (!pod) {
+      const mongoPod = await MongoPod.findById(podId).select('_id').lean();
+      if (!mongoPod) {
         res.status(404).json({ msg: 'Pod not found' });
         return;
       }
@@ -64,6 +71,14 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
     if (!isMember) {
       res.status(401).json({ msg: 'Not authorized to view messages in this pod' });
       return;
+    }
+
+    if (!pod) {
+      pod = await syncPodFromMongo(podId, userId);
+      if (!pod) {
+        res.status(404).json({ msg: 'Pod not found' });
+        return;
+      }
     }
 
     const messages = await PGMessage.findByPodId(podId, limit, before);

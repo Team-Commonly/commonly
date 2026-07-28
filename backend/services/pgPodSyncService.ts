@@ -19,6 +19,7 @@ interface MongoPodLean {
   name?: string;
   description?: string;
   type?: string;
+  createdBy?: { toString(): string };
   members?: Array<{ toString(): string }>;
 }
 
@@ -37,11 +38,18 @@ export async function syncPodFromMongo(
 ): Promise<unknown> {
   const mongoPod = await MongoPod.findById(podId).lean() as MongoPodLean | null;
   if (!mongoPod) return null;
+  // `created_by` MUST mirror Mongo's real owner, never whoever happened to
+  // trigger the backfill. PGPod.create also inserts created_by into
+  // pod_members, so attributing it to the requester manufactured a membership
+  // row for a non-member — which `isMemberWithFallback` and
+  // `reactionController.callerHasPodAccess` then trusted as proof of access,
+  // and which the now-removed pg deletePod trusted as proof of ownership.
+  const ownerId = mongoPod.createdBy ? String(mongoPod.createdBy) : requestingUserId;
   const pod = await PGPod.create(
     mongoPod.name,
     mongoPod.description || '',
     mongoPod.type || 'chat',
-    requestingUserId,
+    ownerId,
     podId,
   );
   if (Array.isArray(mongoPod.members)) {
