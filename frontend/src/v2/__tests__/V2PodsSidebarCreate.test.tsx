@@ -134,7 +134,9 @@ describe('V2PodsSidebar create flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
 
+    expect(screen.getByRole('button', { name: /开放加入/ })).toBeInTheDocument();
     expect(screen.getByText('列入「社区」后，任何人都可以加入。')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /仅限邀请/ })).toBeInTheDocument();
     expect(screen.getByText('只有你邀请的人才能加入。')).toBeInTheDocument();
 
   });
