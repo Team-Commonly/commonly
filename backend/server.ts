@@ -52,7 +52,6 @@ const agentEventsAdminRoutes = require('./routes/admin/agentEvents');
 const adminUsersRoutes = require('./routes/admin/users');
 const adminAnalyticsRoutes = require('./routes/admin/analytics');
 // Conditionally load PostgreSQL routes and models
-let pgPodRoutes: any;
 let pgMessageRoutes: any;
 let pgStatusRoutes: any;
 let PGMessage: any;
@@ -66,7 +65,6 @@ const AgentMentionService = require('./services/agentMentionService');
 let pgAvailable = false;
 
 if (process.env.PG_HOST) {
-  pgPodRoutes = require('./routes/pg-pods');
   pgMessageRoutes = require('./routes/pg-messages');
   pgStatusRoutes = require('./routes/pg-status');
   PGMessage = require('./models/pg/Message');
@@ -309,7 +307,15 @@ if (process.env.PG_HOST) {
               // Set global flag that PostgreSQL is available
               pgAvailable = true;
               // Register PostgreSQL routes for chat functionality
-              app.use('/api/pg/pods', pgPodRoutes);
+              // '/api/pg/pods' is deliberately NOT mounted. It exposed an
+              // unauthorized shadow copy of the pod API: getAllPods returned
+              // every pod on the instance with no membership filter, joinPod
+              // had no join-policy check at all (a non-member could join a
+              // private pod and get a 200), and deletePod gated on a
+              // created_by value that the sync path let a requester claim.
+              // It had zero callers anywhere in the repo — the frontend uses
+              // /api/pods, and only /api/pg/messages + /api/pg/status are live
+              // (ChatRoom, SocketContext). Removed rather than patched.
               app.use('/api/pg/messages', pgMessageRoutes);
               app.use('/api/pg/status', pgStatusRoutes);
               console.log(

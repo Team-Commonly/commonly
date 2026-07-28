@@ -43,10 +43,6 @@ jest.mock('../../routes/pg-status', () => {
   r.get('/', (req, res) => res.json({ available: true }));
   return r;
 });
-jest.mock('../../routes/pg-pods', () => {
-  const ex = require('express');
-  return ex.Router();
-});
 jest.mock('../../routes/pg-messages', () => {
   const ex = require('express');
   return ex.Router();
