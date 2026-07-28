@@ -105,6 +105,20 @@ describe('POST /api/pods/:id/join discovery gate', () => {
     expect(fresh.members.map(String)).not.toContain(String(viewer._id));
   });
 
+  it('refuses direct self-join to a listed pod that is not publicRead (#772)', async () => {
+    // The join gate used to check `communityListed` alone while both discovery
+    // queries required `publicRead && communityListed` — so this pod was
+    // joinable by anyone holding its id, yet invisible on every discovery
+    // surface. You can only self-join what you could have found.
+    const pod = await createPod({ publicRead: false, communityListed: true });
+
+    const res = await join(pod._id).expect(403);
+
+    expect(res.body.code).toBe('join_refused');
+    const fresh = await Pod.findById(pod._id).lean();
+    expect(fresh.members.map(String)).not.toContain(String(viewer._id));
+  });
+
   it('returns 200 for an existing member even when the pod is not directly joinable', async () => {
     const pod = await createPod({
       communityListed: false,

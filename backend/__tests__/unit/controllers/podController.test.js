@@ -258,6 +258,10 @@ describe('podController', () => {
       ],
       createdBy: { toString: () => 'creator-id' },
       joinPolicy: 'open',
+      // Listed ⇒ readable (#772): the join gate now uses the same predicate as
+      // the discovery scopes, so `communityListed` without `publicRead` is not
+      // a joinable state — it was the invisible-but-joinable bug.
+      publicRead: true,
       communityListed: true,
     };
     Pod.findById

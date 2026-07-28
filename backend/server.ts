@@ -229,7 +229,7 @@ app.use('/api/agent-profile', require('./routes/agentProfile'));
 // Authed owner/admin-only agent memory index (private counterpart to the public
 // profile). Self-gates via auth middleware + owner/admin check inside the route.
 app.use('/api/agent-memory', require('./routes/agentMemoryView'));
-app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase toggle)
+app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase + community-listing toggles)
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
 // Test routes (development only)

@@ -68,6 +68,13 @@ export interface IPod extends Document {
   // the pod on the Community discovery surface. Showcase rooms (Eng Milestone
   // etc.) stay publicRead but unlisted. Listing is admin-curated for now; an
   // owner-side "request listing" flow is the planned phase 2 (Sam 2026-07-22).
+  //
+  // Written via POST /api/admin/pods/:podId/listing (routes/admin/pods.ts).
+  // INVARIANT (#772): listed ⇒ readable. `communityListed` is a strict
+  // refinement of `publicRead`, never independent of it — the listing route
+  // refuses to list a non-publicRead pod, and the showcase route cascades an
+  // unlist when it unpublishes. See services/podListing.ts for the predicate
+  // shared by the discovery queries and the join gate.
   communityListed: boolean;
   createdAt: Date;
   updatedAt: Date;

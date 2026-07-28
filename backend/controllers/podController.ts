@@ -8,6 +8,7 @@ const Integration = require('../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { COMMUNITY_LISTING_QUERY, isDirectlyJoinable } = require('../services/podListing');
 const User = require('../models/User');
 // Add PGPod at the top level if it's available
 let PGPod: any;
@@ -178,8 +179,7 @@ exports.getAllPods = async (req: any, res: any) => {
     // membership listing below.
     const query = isDiscoverScope
       ? {
-        publicRead: true,
-        communityListed: true,
+        ...COMMUNITY_LISTING_QUERY,
         joinPolicy: { $ne: 'invite-only' },
         members: { $ne: scopedCallerId },
         type: type
@@ -190,8 +190,7 @@ exports.getAllPods = async (req: any, res: any) => {
       ? {
         // Listed is opt-in and distinct from readable: showcase rooms keep
         // publicRead for anonymous viewing without appearing in Community.
-        publicRead: true,
-        communityListed: true,
+        ...COMMUNITY_LISTING_QUERY,
         members: scopedCallerId,
         type: type
           ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
@@ -492,7 +491,12 @@ exports.joinPod = async (req: any, res: any) => {
     // keeps optimistic clients and retried requests idempotent.
     if (!isMember) {
       const isAdmin = await isGlobalAdminRequest(req);
-      const isJoinable = pod.communityListed === true && pod.joinPolicy !== 'invite-only';
+      // Same predicate the discovery scopes query on (#772). Previously this
+      // checked `communityListed` alone, so a { publicRead: false,
+      // communityListed: true } pod was joinable by id while being invisible
+      // to every discovery surface. You can only self-join what you could
+      // have found.
+      const isJoinable = isDirectlyJoinable(pod);
       if (!isAdmin && !isJoinable) {
         return res.status(403).json({
           code: 'join_refused',
