@@ -371,7 +371,9 @@ class AgentIdentityService {
 
     const instanceId = options.instanceId || 'default';
     const username = buildAgentUsername(resolvedType, instanceId);
-    let agentUser = await User.findOne({ username });
+    // `apiToken` is `select: false`; ask for it explicitly or an existing
+    // agent credential looks absent and gets rotated out from under the fleet.
+    let agentUser = await User.findOne({ username }).select('+apiToken');
 
     // Determine if this is an official (default instance) agent
     const isOfficial = instanceId === 'default' && !!typeConfig;
@@ -523,7 +525,7 @@ class AgentIdentityService {
   static async removeAgentFromPod(agentType: string, podId: unknown, instanceId = 'default'): Promise<InstanceType<typeof Pod> | null> {
     if (!agentType || !podId) return null;
     const username = buildAgentUsername(agentType, instanceId);
-    const agentUser = await User.findOne({ username });
+    const agentUser = await User.findOne({ username }).select('+apiToken');
     if (!agentUser) return null;
 
     const pod = await Pod.findById(podId);

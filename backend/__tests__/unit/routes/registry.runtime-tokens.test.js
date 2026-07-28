@@ -252,6 +252,8 @@ describe('agent runtime tokens', () => {
     });
 
     User.findOne.mockReturnValue({
+      // apiToken is select:false, so the route asks for it explicitly.
+      select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue({
         username: 'clawd-bot',
         apiToken: 'cm_token_123',
@@ -285,6 +287,8 @@ describe('agent runtime tokens', () => {
     });
 
     User.findOne.mockReturnValue({
+      // apiToken is select:false, so the route asks for it explicitly.
+      select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue({
         username: 'clawd-bot',
         apiToken: 'cm_token_123',

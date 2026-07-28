@@ -181,7 +181,17 @@ const userSchema = new Schema<IUser>({
   entitlements: {
     cloudAgents: { type: Boolean, default: false },
   },
-  apiToken: { type: String, unique: true, sparse: true },
+  // `select: false` so a live bearer credential can never ride along on an
+  // incidental `findById().select('-password')` or a populate(). Queries that
+  // FILTER on this field still work (projection is separate from the filter),
+  // so token authentication in middleware/auth.ts is unaffected. Any code that
+  // needs to READ the value back must ask for it explicitly with
+  // `.select('+apiToken')` — see agentIdentityService.getOrCreateAgentUser,
+  // where failing to do so would make an existing agent token look absent and
+  // silently rotate it out from under every running wrapper.
+  apiToken: {
+    type: String, unique: true, sparse: true, select: false,
+  },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
   isBot: { type: Boolean, default: false },

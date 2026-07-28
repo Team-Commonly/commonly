@@ -5,6 +5,45 @@ const Pod = require('../models/Pod');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 
+// Credentials. These must never reach a response body under any circumstance,
+// not even the account's own profile: `apiToken` is a live `cm_` bearer that
+// authenticates as this user (middleware/auth.ts), and `agentRuntimeTokens`
+// carries agent runtime credentials. The UI receives a freshly minted token
+// from POST /api/auth/api-token/generate, which is the only place it belongs.
+const SECRET_USER_FIELDS = [
+  'password',
+  'apiToken',
+  'agentRuntimeTokens',
+  'digestUnsubscribeToken',
+];
+
+// Account-private, but legitimately visible to the account holder (and to an
+// admin). Leaking these to any logged-in stranger is what turned a profile
+// lookup into an enumeration tool: `GET /api/users/:id` used to return another
+// user's email and their plaintext apiToken to any authenticated caller.
+const PRIVATE_USER_FIELDS = [
+  'email',
+  'emailPreferences',
+  'digestPreferences',
+  'entitlements',
+  'apiTokenScopes',
+  'apiTokenCreatedAt',
+  'authProviders',
+  'contacts',
+  'activityFeed',
+  'banned',
+  'banReason',
+];
+
+/**
+ * Serialize a user for a response.
+ *
+ * `viewerId` is the caller. When it does not match the profile's owner, the
+ * account-private block is dropped as well as the secrets. Secrets are dropped
+ * unconditionally — a spread of `toObject()` is how they escaped before, so
+ * the deletion happens here rather than relying on every call site to project
+ * correctly.
+ */
 const toSocialProfile = (userDoc: any, viewerId: any = null) => {
   const followers = Array.isArray(userDoc.followers) ? userDoc.followers : [];
   const following = Array.isArray(userDoc.following) ? userDoc.following : [];
@@ -13,8 +52,16 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
     viewerIdStr && followers.some((id: any) => String(id) === viewerIdStr),
   );
 
+  const plain = typeof userDoc.toObject === 'function' ? userDoc.toObject() : { ...userDoc };
+  for (const field of SECRET_USER_FIELDS) delete plain[field];
+
+  const isSelf = Boolean(viewerIdStr && String(userDoc._id) === viewerIdStr);
+  if (!isSelf) {
+    for (const field of PRIVATE_USER_FIELDS) delete plain[field];
+  }
+
   return {
-    ...userDoc.toObject(),
+    ...plain,
     followersCount: followers.length,
     followingCount: following.length,
     followedThreadsCount: Array.isArray(userDoc.followedThreads) ? userDoc.followedThreads.length : 0,
