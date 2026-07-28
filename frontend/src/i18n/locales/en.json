@@ -324,7 +324,9 @@
     },
     "errors": {
       "uploadFailed": "Failed to upload file. Please try again."
-    }
+    },
+    "loadOlder": "Load older messages",
+    "loadingOlder": "Loading…"
   },
   "landing": {
     "nav": {

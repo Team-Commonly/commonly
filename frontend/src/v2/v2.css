@@ -1505,6 +1505,26 @@
   font-weight: 600;
 }
 
+/* "Load older messages" control — the pod chat equivalent of the showcase
+   pager. Same pill treatment so the two reading surfaces match. */
+.v2-chat__older { display: flex; justify-content: center; padding: 4px 0 12px; }
+.v2-chat__older-btn {
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.v2-chat__older-btn:hover:not(:disabled) {
+  color: var(--v2-text-primary);
+  border-color: var(--v2-text-tertiary);
+}
+.v2-chat__older-btn:disabled { opacity: 0.6; cursor: default; }
+
 .v2-chat__messages {
   flex: 1;
   overflow-y: auto;

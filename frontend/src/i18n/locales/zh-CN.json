@@ -324,7 +324,9 @@
     },
     "errors": {
       "uploadFailed": "文件上传失败，请重试。"
-    }
+    },
+    "loadOlder": "加载更早的消息",
+    "loadingOlder": "加载中…"
   },
   "landing": {
     "nav": {

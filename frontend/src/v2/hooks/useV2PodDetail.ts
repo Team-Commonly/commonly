@@ -103,12 +103,29 @@ export interface UseV2PodDetailResult {
   agents: V2Agent[];
   loading: boolean;
   error: string | null;
+  /** A full page came back, so older history probably exists. */
+  hasMore: boolean;
+  loadingOlder: boolean;
+  loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
   sendMessage: (content: string, messageType?: string, replyToMessageId?: string) => Promise<V2Message | null>;
 }
 
 const REQUEST_TIMEOUT_MS = 8000;
 const SEND_TIMEOUT_MS = 20000;
+// One page of history. The backend clamps `limit` to [1,200]; 50 matches the
+// showcase reader so both surfaces page at the same rate.
+const PAGE_SIZE = 50;
+
+// Merge two message lists by id, newest-last. Used when prepending a page of
+// history: a plain concat would duplicate anything the socket delivered while
+// the request was in flight.
+const mergeMessagesById = (a: V2Message[], b: V2Message[]): V2Message[] => {
+  const byId = new Map<string, V2Message>();
+  for (const m of a) byId.set(String(m.id), m);
+  for (const m of b) byId.set(String(m.id), m);
+  return chronologicalMessages([...byId.values()]);
+};
 
 const normalizeMessage = (raw: V2Message): V2Message => {
   const rawUserId = raw.userId;
@@ -162,6 +179,8 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [agents, setAgents] = useState<V2Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const fetchPod = useCallback(async (id: string) => {
     const result = await api.get<V2Pod>(`/api/pods/${id}`, { timeout: REQUEST_TIMEOUT_MS });
@@ -170,15 +189,59 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
 
   const fetchMessages = useCallback(async (id: string) => {
     try {
-      const data = await api.get<V2Message[]>(`/api/messages/${id}?limit=50`, { timeout: REQUEST_TIMEOUT_MS });
+      const data = await api.get<V2Message[]>(
+        `/api/messages/${id}?limit=${PAGE_SIZE}`,
+        { timeout: REQUEST_TIMEOUT_MS },
+      );
       const list = Array.isArray(data) ? data : [];
       setMessages(chronologicalMessages(list.map(normalizeMessage)));
+      // This endpoint returns a bare array with no envelope, so end-of-history
+      // is inferred: a short page means there is nothing older behind it.
+      setHasMore(list.length >= PAGE_SIZE);
     } catch (err) {
       const e = err as { response?: { status?: number } };
-      if (e.response?.status === 404) setMessages([]);
-      else throw err;
+      if (e.response?.status === 404) {
+        setMessages([]);
+        setHasMore(false);
+      } else throw err;
     }
   }, [api]);
+
+  /**
+   * Prepend one page of older history.
+   *
+   * Anchors on the oldest message currently held and asks for everything
+   * strictly before it (`before` is already supported server-side and is the
+   * same cursor the showcase reader uses). Results are merged by id rather
+   * than concatenated, because the socket may have delivered messages while
+   * the request was in flight.
+   */
+  const loadOlder = useCallback(async () => {
+    if (!podId || loadingOlder) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    const cursor = oldest.created_at || oldest.createdAt;
+    if (!cursor) return;
+
+    setLoadingOlder(true);
+    try {
+      const data = await api.get<V2Message[]>(
+        `/api/messages/${podId}?limit=${PAGE_SIZE}&before=${encodeURIComponent(cursor)}`,
+        { timeout: REQUEST_TIMEOUT_MS },
+      );
+      const older = (Array.isArray(data) ? data : []).map(normalizeMessage);
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      setMessages((prev) => mergeMessagesById(older, prev));
+      setHasMore(older.length >= PAGE_SIZE);
+    } catch {
+      // Leave hasMore alone so the same button can be retried.
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [api, podId, messages, loadingOlder]);
 
   const fetchAgents = useCallback(async (id: string) => {
     try {
@@ -323,7 +386,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     (m): m is V2PodMember => typeof m === 'object' && m !== null,
   );
 
-  return { pod, members, messages, agents, loading, error, refresh, sendMessage };
+  return {
+    pod, members, messages, agents, loading, error, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
+  };
 };
 
 // Suppress unused import warning when MessagesResponse is not used below.
