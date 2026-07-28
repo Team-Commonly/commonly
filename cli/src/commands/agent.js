@@ -183,6 +183,68 @@ export const buildDefaultEnvironment = (adapterName) => {
   return environment;
 };
 
+// ── public-pod sandbox gate ─────────────────────────────────────────────────
+
+/**
+ * Refuse to attach an agent to a publicly-readable pod unless it declares an
+ * enforced sandbox.
+ *
+ * The public-agent sandbox is real and attack-tested, but it only engages once
+ * `sandbox.trust` and `sandbox.mode` are declared: `sandbox.mode` defaults to
+ * `'none'`, and nothing previously connected "this pod is public" to "this
+ * agent must be confined". An agent attached with no sandbox block simply ran
+ * unconfined, silently, with the operator none the wiser.
+ *
+ * That is not hypothetical — `hq-support` ran that way in a 67-member public
+ * pod until 2026-07-27. Its permission deny-list was doing the file-blocking
+ * work while the OS-level sandbox never engaged at all.
+ *
+ * Deny-by-default only means something if ABSENT is refused, so this is a hard
+ * error rather than a warning. If the pod's visibility cannot be determined
+ * (older server, network failure, permissions), attach proceeds — failing the
+ * attach on an unrelated fault would be its own footgun — but says so, because
+ * a silent skip is how the original hole stayed invisible.
+ */
+export const assertSandboxDeclaredForPublicPod = async ({
+  client,
+  podId,
+  environment,
+  log = () => {},
+}) => {
+  if (!podId || !client) return;
+
+  const mode = environment?.sandbox?.mode;
+  const trust = environment?.sandbox?.trust;
+  const declared = Boolean(trust) && Boolean(mode) && mode !== 'none';
+  if (declared) return;
+
+  let pod = null;
+  try {
+    pod = await client.get(`/api/pods/${podId}`);
+  } catch {
+    log(
+      'warning: could not read pod visibility, so the public-pod sandbox check '
+      + 'was skipped. If this pod is public, attach with sandbox.trust=public.',
+    );
+    return;
+  }
+
+  const isPublic = Boolean(pod?.publicRead) || Boolean(pod?.communityListed);
+  if (!isPublic) return;
+
+  const label = pod?.name ? `"${pod.name}"` : podId;
+  throw new Error(
+    `${label} is publicly readable, so this agent would take instructions from `
+    + 'people you do not control — but its environment declares no sandbox, and '
+    + 'an undeclared sandbox means NO sandbox.\n\n'
+    + 'Add a sandbox block to the environment file and retry:\n\n'
+    + '  "sandbox": { "trust": "public", "mode": "read-only" }\n\n'
+    + 'Modes for a public agent: "read-only" or "workspace" (macOS Seatbelt / '
+    + 'Linux bwrap). To attach an agent to a private pod instead, pass that '
+    + 'pod id.',
+  );
+};
+
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
@@ -287,6 +349,14 @@ export const performAttach = async ({
       log(`environment: applied default with @commonlyai/mcp wired (pass --env to override)`);
     }
   }
+
+  // Deny-by-default has to mean "absent = refuse". Runs outside the branch
+  // above because the dangerous case is an agent attached with NO sandbox
+  // declaration at all — the branch that validates sandbox settings never
+  // executes for those, so the agent silently ran unsandboxed.
+  await assertSandboxDeclaredForPublicPod({
+    client, podId, environment, log,
+  });
 
   // Identity-bearing runtime tag from the adapter (e.g. 'codex', 'claude-
   // code'). Falls back to adapter.name for adapters that haven't been
