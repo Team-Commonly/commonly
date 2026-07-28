@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+} from 'react';
 import V2Avatar from './V2Avatar';
 import V2MessageBubble from './V2MessageBubble';
 import {
@@ -170,7 +172,10 @@ const Icon = ({ d }: { d: string }) => (
 const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
   const { t, i18n } = useTranslation();
   const numberFormatter = new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en');
-  const { pod, members, messages, agents, sendMessage, loading, error } = detail;
+  const {
+    pod, members, messages, agents, sendMessage, loading, error,
+    hasMore, loadingOlder, loadOlder,
+  } = detail;
   const api = useV2Api();
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
@@ -190,6 +195,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const [mode, setMode] = useState<PodMode>(pod ? readMode(pod._id) : 'plan');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -302,9 +308,33 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     }
   }, [starterInviteUrl]);
 
+  // Auto-scroll belongs to NEW messages only. Keyed on `messages.length` this
+  // also fired when a page of history was prepended, yanking the reader from
+  // the older message they had just asked for straight back to the bottom —
+  // which reads as "load older is broken". Key on the newest message's id so
+  // prepends are ignored.
+  const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+  }, [newestMessageId]);
+
+  // Prepending changes scrollHeight, so without this the viewport jumps. Hold
+  // the reader's position by restoring the distance from the BOTTOM, which is
+  // invariant under a prepend.
+  const scrollAnchorRef = useRef<number | null>(null);
+  const handleLoadOlder = useCallback(async () => {
+    const el = messagesContainerRef.current;
+    scrollAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+    await loadOlder();
+  }, [loadOlder]);
+
+  useLayoutEffect(() => {
+    const el = messagesContainerRef.current;
+    const anchor = scrollAnchorRef.current;
+    if (!el || anchor == null) return;
+    el.scrollTop = el.scrollHeight - anchor;
+    scrollAnchorRef.current = null;
+  }, [messages]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -869,7 +899,19 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
           )}
         </header>
 
-        <div className="v2-chat__messages">
+        <div className="v2-chat__messages" ref={messagesContainerRef}>
+          {hasMore && (
+            <div className="v2-chat__older">
+              <button
+                type="button"
+                className="v2-chat__older-btn"
+                onClick={handleLoadOlder}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? t('podChat.loadingOlder') : t('podChat.loadOlder')}
+              </button>
+            </div>
+          )}
               {error && (
                 <div className="v2-chat__error">
                   {error}
