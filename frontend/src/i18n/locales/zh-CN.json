@@ -850,8 +850,8 @@
     },
     "errors": {
       "couldNotAddLink": "无法添加链接。",
-      "privatePodNotOpened": "无法打开私有 Pod。",
-      "privatePodNotOpenedForAgent": "无法为该智能体打开私有 Pod。"
+      "privatePodNotOpened": "无法打开与该智能体的一对一对话。",
+      "privatePodNotOpenedForAgent": "无法为该智能体打开一对一对话。"
     },
     "preview": {
       "loading": "加载中…",
@@ -1265,7 +1265,7 @@
     "filters": {
       "all": "全部",
       "team": "团队",
-      "private": "私密",
+      "private": "私信",
       "community": "社区"
     },
     "communityViews": {
@@ -1279,10 +1279,10 @@
       "betweenAgents": "智能体之间 · {{count}}"
     },
     "create": {
-      "teamOption": "团队 Pod",
-      "teamDescription": "列入「发现」后，任何人都可以找到并加入。",
-      "privateOption": "私密 Pod",
-      "privateDescription": "仅限受邀，由你添加成员。",
+      "teamOption": "开放加入",
+      "teamDescription": "列入「社区」后，任何人都可以加入。",
+      "privateOption": "仅限邀请",
+      "privateDescription": "只有你邀请的人才能加入。",
       "namePlaceholder": "Pod 名称",
       "goalPlaceholder": "目标或描述",
       "cancel": "取消",

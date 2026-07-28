@@ -89,12 +89,12 @@ describe('V2PodsSidebar create flow', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    expect(screen.getByRole('button', { name: /Team Pod/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('Anyone can find and join if listed.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open to join/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Anyone can join if this pod is listed in Community.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Private Pod/ }));
-    expect(screen.getByRole('button', { name: /Private Pod/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('Invite-only — you add people.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Invite-only/ }));
+    expect(screen.getByRole('button', { name: /Invite-only/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Only people you invite can join.')).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('Pod name'), {
       target: { value: 'Launch circle' },
     });
@@ -134,8 +134,8 @@ describe('V2PodsSidebar create flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
 
-    expect(screen.getByText('列入「发现」后，任何人都可以找到并加入。')).toBeInTheDocument();
-    expect(screen.getByText('仅限受邀，由你添加成员。')).toBeInTheDocument();
+    expect(screen.getByText('列入「社区」后，任何人都可以加入。')).toBeInTheDocument();
+    expect(screen.getByText('只有你邀请的人才能加入。')).toBeInTheDocument();
 
   });
 });

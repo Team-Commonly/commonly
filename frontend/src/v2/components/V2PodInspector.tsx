@@ -1039,7 +1039,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
 
   if (!pod) return <aside className="v2-pane v2-pane--inspector" />;
 
-  const isPrivatePod = pod.type === 'agent-room';
+  const isAgentRoom = pod.type === 'agent-room';
   const humanCount = humanMembers.length;
   const agentCount = agents.length;
   const created = pod.createdAt ? new Date(pod.createdAt).toLocaleDateString([], {
@@ -1294,7 +1294,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     </section>
   );
 
-  const membersSection = !isPrivatePod && (
+  const membersSection = !isAgentRoom && (
     <section className="v2-inspector__section v2-inspector__section--quiet">
       <div className="v2-inspector__members-actions">
         {onOpenInvite && (
@@ -1658,7 +1658,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   {t('inspector.createdByMeta', { name: createdByDisplay, date: created })}
                 </div>
                 <div className="v2-inspector__pod-meta">
-                  {!isPrivatePod && <>{t('inspector.agentCount', { count: agentCount })} · </>}{t('inspector.humanCount', { count: humanCount })}
+                  {!isAgentRoom && <>{t('inspector.agentCount', { count: agentCount })} · </>}{t('inspector.humanCount', { count: humanCount })}
                 </div>
               </div>
             </div>
@@ -1694,7 +1694,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                 >
                   {t('inspector.tabs.overview')}
                 </button>
-                {!isPrivatePod && (
+                {!isAgentRoom && (
                   <button
                     type="button"
                     role="tab"
