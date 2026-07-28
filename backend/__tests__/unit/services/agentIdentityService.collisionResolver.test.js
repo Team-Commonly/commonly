@@ -30,7 +30,10 @@ jest.mock('../../../models/User', () => {
     mockSaved.push(JSON.parse(JSON.stringify(this)));
     return this;
   };
-  User.findOne = jest.fn(async (query) => {
+  // `apiToken` is select:false on the schema, so production code loads the
+  // agent user with `.select('+apiToken')`. The mock therefore has to be a
+  // thenable query builder, not a bare promise.
+  const findOneResult = (query) => {
     if (mockExisting && query.username === mockExisting.username) {
       const doc = JSON.parse(JSON.stringify(mockExisting));
       doc.save = async function save() {
@@ -40,6 +43,12 @@ jest.mock('../../../models/User', () => {
       return doc;
     }
     return null;
+  };
+  User.findOne = jest.fn((query) => {
+    const promise = Promise.resolve(findOneResult(query));
+    promise.select = () => promise;
+    promise.lean = () => promise;
+    return promise;
   });
   User.find = (query) => ({
     select: () => ({

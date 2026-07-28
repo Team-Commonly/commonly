@@ -261,7 +261,8 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req: 
 
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
-    const agentUser = await User.findOne({ username: agentUsername }).lean();
+    // Needs +apiToken (select:false on the field) to report hasToken correctly.
+    const agentUser = await User.findOne({ username: agentUsername }).select('+apiToken').lean();
     if (!agentUser || !agentUser.apiToken) {
       return res.json({ hasToken: false, scopes: [], scopeMode: 'none' });
     }
