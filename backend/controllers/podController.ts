@@ -8,6 +8,11 @@ const Integration = require('../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
+const {
+  COMMUNITY_LISTING_QUERY,
+  NON_LISTABLE_POD_TYPES,
+  isDirectlyJoinable,
+} = require('../services/podListing');
 const User = require('../models/User');
 // Add PGPod at the top level if it's available
 let PGPod: any;
@@ -18,7 +23,6 @@ if (process.env.PG_HOST) {
 }
 
 const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'agent-room', 'team'];
-const COMMUNITY_EXCLUDED_POD_TYPES = ['agent-room', 'agent-dm', 'agent-admin'];
 const DEFAULT_POD_AGENT = process.env.DEFAULT_POD_AGENT_NAME || 'commonly-bot';
 const DEFAULT_POD_AGENT_SCOPES = [
   'context:read',
@@ -178,24 +182,21 @@ exports.getAllPods = async (req: any, res: any) => {
     // membership listing below.
     const query = isDiscoverScope
       ? {
-        publicRead: true,
-        communityListed: true,
-        joinPolicy: { $ne: 'invite-only' },
+        ...COMMUNITY_LISTING_QUERY,
         members: { $ne: scopedCallerId },
         type: type
-          ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
-          : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
+          ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
+          : { $nin: NON_LISTABLE_POD_TYPES },
       }
       : isCommunityScope
       ? {
         // Listed is opt-in and distinct from readable: showcase rooms keep
         // publicRead for anonymous viewing without appearing in Community.
-        publicRead: true,
-        communityListed: true,
+        ...COMMUNITY_LISTING_QUERY,
         members: scopedCallerId,
         type: type
-          ? { $eq: type, $nin: COMMUNITY_EXCLUDED_POD_TYPES }
-          : { $nin: COMMUNITY_EXCLUDED_POD_TYPES },
+          ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
+          : { $nin: NON_LISTABLE_POD_TYPES },
       }
       : (type ? { type } : { type: { $ne: 'agent-admin' } });
 
@@ -492,7 +493,7 @@ exports.joinPod = async (req: any, res: any) => {
     // keeps optimistic clients and retried requests idempotent.
     if (!isMember) {
       const isAdmin = await isGlobalAdminRequest(req);
-      const isJoinable = pod.communityListed === true && pod.joinPolicy !== 'invite-only';
+      const isJoinable = isDirectlyJoinable(pod);
       if (!isAdmin && !isJoinable) {
         return res.status(403).json({
           code: 'join_refused',
