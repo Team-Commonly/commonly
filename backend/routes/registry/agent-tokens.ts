@@ -1,5 +1,34 @@
 // Agent token management routes — extracted from registry.js (GH#112)
 // Handles: runtime-tokens (R/W/D) and user-token (R/W/D)
+
+// ESM import (not require) so CodeQL's js/missing-rate-limiting query can
+// trace the middleware; it cannot follow a limiter through a require() return
+// or a router.use wrapper. Same shape as routes/messages.ts.
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
+
+interface TokenRateReq { get?: (name: string) => string | undefined; ip?: string }
+interface TokenRateRes { status: (code: number) => { json: (body: unknown) => void } }
+
+// These routes read and mint agent credentials, so they are deliberately
+// tighter than ordinary reads. Keyed on the hashed bearer token so one NAT'd
+// office doesn't share a bucket.
+const tokenRouteLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: TokenRateReq) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: TokenRateRes) => {
+    res.status(429).json({ error: 'rate limit exceeded: 60 token requests per 60s' });
+  },
+});
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentInstallation } = require('../../models/AgentRegistry');
@@ -24,7 +53,7 @@ const agentTokensRouter = express.Router();
  * GET /api/registry/pods/:podId/agents/:name/runtime-tokens
  * List runtime tokens for an installed agent
  */
-agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (req: any, res: any) => {
+agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -75,7 +104,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/runtime-tokens', auth, async (r
  * POST /api/registry/pods/:podId/agents/:name/runtime-tokens
  * Issue a runtime token for an installed agent
  */
-agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (req: any, res: any) => {
+agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { label, instanceId, force } = req.body || {};
@@ -155,7 +184,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/runtime-tokens', auth, async (
  * DELETE /api/registry/pods/:podId/agents/:name/runtime-tokens/:tokenId
  * Revoke a runtime token for an installed agent
  */
-agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', auth, async (req: any, res: any) => {
+agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name, tokenId } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -226,7 +255,7 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', au
  * GET /api/registry/pods/:podId/agents/:name/user-token
  * Get metadata for the agent's designated user token (no raw token returned)
  */
-agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
+agentTokensRouter.get('/pods/:podId/agents/:name/user-token', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
@@ -285,7 +314,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', auth, async (req: 
  * POST /api/registry/pods/:podId/agents/:name/user-token
  * Issue a designated user API token for the agent user
  */
-agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
+agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { scopes, instanceId, displayName } = req.body || {};
@@ -347,7 +376,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', auth, async (req:
  * DELETE /api/registry/pods/:podId/agents/:name/user-token
  * Revoke designated user token for the agent user
  */
-agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', auth, async (req: any, res: any) => {
+agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { installation, instanceId } = await resolveInstallation({
