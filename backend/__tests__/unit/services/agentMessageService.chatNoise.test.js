@@ -34,19 +34,18 @@ describe('AgentMessageService.isRuntimeToolFailureNote', () => {
   });
 });
 
-describe('sanitizeAgentContent — concatenated NO_REPLY sentinels', () => {
-  it('strips doubled and tripled sentinel runs', () => {
+describe('sanitizeAgentContent — total-match NO_REPLY sentinel', () => {
+  it('strips only sentinel-only replies, including legacy duplicated runs', () => {
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY')).toBe('');
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLYNO_REPLY')).toBe('');
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY NO_REPLY')).toBe('');
   });
 
-  it('still strips the single sentinel and preserves real content', () => {
-    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
-    expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY')).toBe('Shipped the fix.');
-    // Mid-sentence mentions lose the token (pre-existing behavior) but the
-    // line survives.
+  it('preserves sentinel-plus-content exactly', () => {
+    expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
+      .toBe('Shipped the fix.\nNO_REPLY');
     expect(AgentMessageService.sanitizeAgentContent('Reply with NO_REPLY when done.'))
-      .toBe('Reply with  when done.');
+      .toBe('Reply with NO_REPLY when done.');
   });
 });

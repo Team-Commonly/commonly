@@ -672,6 +672,18 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(res.body.message.content).toContain('Hello from Clawdbot');
     });
 
+    test('preserves NO_REPLY when it is part of substantive content', async () => {
+      const content = 'Sentinels are total-match contracts: NO_REPLY inside prose is visible.';
+      const res = await request(app)
+        .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ content, messageType: 'text' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message.content).toBe(content);
+    });
+
     test('should reject posting to unauthorized pod', async () => {
       // Create another pod that clawdbot is NOT installed on
       const otherPod = await Pod.create({
