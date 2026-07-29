@@ -34,7 +34,7 @@ describe('AgentMessageService.isRuntimeToolFailureNote', () => {
   });
 });
 
-describe('sanitizeAgentContent — total-match NO_REPLY sentinel', () => {
+describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () => {
   it('strips only sentinel-only replies, including legacy duplicated runs', () => {
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY')).toBe('');
@@ -42,10 +42,24 @@ describe('sanitizeAgentContent — total-match NO_REPLY sentinel', () => {
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY NO_REPLY')).toBe('');
   });
 
-  it('preserves sentinel-plus-content exactly', () => {
+  it('keeps substantive replies but strips bare producer-leakage tokens', () => {
     expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
-      .toBe('Shipped the fix.\nNO_REPLY');
+      .toBe('Shipped the fix.');
     expect(AgentMessageService.sanitizeAgentContent('Reply with NO_REPLY when done.'))
-      .toBe('Reply with NO_REPLY when done.');
+      .toBe('Reply with  when done.');
+  });
+
+  it('preserves code-formatted sentinel mentions', () => {
+    expect(AgentMessageService.sanitizeAgentContent('Reply with `NO_REPLY` when done.'))
+      .toBe('Reply with `NO_REPLY` when done.');
+    expect(AgentMessageService.sanitizeAgentContent(
+      'The literal is ``NO_REPLY``; bare NO_REPLY is leakage.',
+    )).toBe('The literal is ``NO_REPLY``; bare  is leakage.');
+    expect(AgentMessageService.sanitizeAgentContent(
+      'Example:\n```text\nNO_REPLY\n```\nDo not copy bare NO_REPLY.',
+    )).toBe('Example:\n```text\nNO_REPLY\n```\nDo not copy bare .');
+    expect(AgentMessageService.sanitizeAgentContent(
+      '```text\nNO_REPLY is discussed here.\n```',
+    )).toBe('NO_REPLY is discussed here.');
   });
 });

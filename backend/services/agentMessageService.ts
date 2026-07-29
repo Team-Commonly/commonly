@@ -1516,20 +1516,43 @@ class AgentMessageService {
     const raw = String(content);
     if (!raw.trim()) return '';
 
-    const stripped = raw.replace(/^```[^\n]*\n([\s\S]*?)```\s*$/s, '$1');
+    const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
+    const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
 
     // Sentinels are total-match contracts: suppress only when the complete
     // reply consists of NO_REPLY tokens. Gateways have historically joined
     // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
-    // whitespace), so retain that compatibility without deleting the token
-    // from substantive prose. Sentinel-plus-content is content, always.
+    // whitespace), so retain that compatibility.
     if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
+
+    // A fully fenced reply is explicitly code-formatted even though this
+    // sanitizer removes the outer transport fence before storage. Preserve
+    // sentinel mentions inside it exactly.
+    if (outerFence) return trimmed;
+
+    // Bare sentinel tokens inside a substantive reply are producer leakage:
+    // remove them without suppressing the reply. Backtick-formatted spans are
+    // deliberate mentions and must survive verbatim. Matching variable-length
+    // backtick delimiters covers inline spans and fenced blocks without
+    // rewriting whitespace-sensitive content around them.
+    const codeSpan = /(`+)([\s\S]*?)\1/g;
+    let cleaned = '';
+    let cursor = 0;
+    for (const match of trimmed.matchAll(codeSpan)) {
+      const matchIndex = match.index ?? cursor;
+      cleaned += trimmed
+        .slice(cursor, matchIndex)
+        .replace(/\b(?:NO_REPLY)+\b/g, '');
+      cleaned += match[0];
+      cursor = matchIndex + match[0].length;
+    }
+    cleaned += trimmed.slice(cursor).replace(/\b(?:NO_REPLY)+\b/g, '');
 
     // Do not map/trim individual lines here. Whitespace-sensitive payloads
     // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
     // line-wise sanitizer previously flattened their indentation.
-    return trimmed;
+    return cleaned.trim();
   }
 
   /**
