@@ -1531,23 +1531,86 @@ class AgentMessageService {
     // sentinel mentions inside it exactly.
     if (outerFence) return trimmed;
 
-    // Bare sentinel tokens inside a substantive reply are producer leakage:
-    // remove them without suppressing the reply. Backtick-formatted spans are
-    // deliberate mentions and must survive verbatim. Matching variable-length
-    // backtick delimiters covers inline spans and fenced blocks without
-    // rewriting whitespace-sensitive content around them.
-    const codeSpan = /(`+)([\s\S]*?)\1/g;
+    // Bare sentinel tokens inside a substantive reply are producer leakage;
+    // matching backtick-delimited spans are deliberate mentions. Pair the
+    // delimiters in a linear scan rather than running a backtracking regex on
+    // user-controlled message text.
+    const delimiterRuns: Array<{ start: number; end: number; length: number }> = [];
+    for (let index = 0; index < trimmed.length;) {
+      if (trimmed[index] !== '`') {
+        index += 1;
+        continue;
+      }
+      const start = index;
+      while (index < trimmed.length && trimmed[index] === '`') index += 1;
+      delimiterRuns.push({ start, end: index, length: index - start });
+    }
+
+    const pendingDelimiter = new Map<
+      number,
+      { start: number; end: number; length: number }
+    >();
+    const protectedRanges: Array<{ start: number; end: number }> = [];
+    for (const run of delimiterRuns) {
+      const opening = pendingDelimiter.get(run.length);
+      if (opening) {
+        protectedRanges.push({ start: opening.start, end: run.end });
+        pendingDelimiter.delete(run.length);
+      } else {
+        pendingDelimiter.set(run.length, run);
+      }
+    }
+    protectedRanges.sort((left, right) => left.start - right.start);
+
+    const mergedRanges: Array<{ start: number; end: number }> = [];
+    for (const range of protectedRanges) {
+      const previous = mergedRanges[mergedRanges.length - 1];
+      if (previous && range.start <= previous.end) {
+        previous.end = Math.max(previous.end, range.end);
+      } else {
+        mergedRanges.push({ ...range });
+      }
+    }
+
+    const isWordCharacter = (character: string | undefined): boolean => (
+      character !== undefined
+      && (
+        (character >= 'A' && character <= 'Z')
+        || (character >= 'a' && character <= 'z')
+        || (character >= '0' && character <= '9')
+        || character === '_'
+      )
+    );
+    const sentinel = 'NO_REPLY';
     let cleaned = '';
     let cursor = 0;
-    for (const match of trimmed.matchAll(codeSpan)) {
-      const matchIndex = match.index ?? cursor;
-      cleaned += trimmed
-        .slice(cursor, matchIndex)
-        .replace(/\b(?:NO_REPLY)+\b/g, '');
-      cleaned += match[0];
-      cursor = matchIndex + match[0].length;
+    let rangeIndex = 0;
+    while (cursor < trimmed.length) {
+      const range = mergedRanges[rangeIndex];
+      if (range && cursor === range.start) {
+        cleaned += trimmed.slice(range.start, range.end);
+        cursor = range.end;
+        rangeIndex += 1;
+        continue;
+      }
+
+      if (
+        trimmed.startsWith(sentinel, cursor)
+        && !isWordCharacter(trimmed[cursor - 1])
+      ) {
+        let sentinelEnd = cursor;
+        while (trimmed.startsWith(sentinel, sentinelEnd)) {
+          sentinelEnd += sentinel.length;
+        }
+        if (!isWordCharacter(trimmed[sentinelEnd])) {
+          cursor = sentinelEnd;
+          continue;
+        }
+      }
+
+      cleaned += trimmed[cursor];
+      cursor += 1;
     }
-    cleaned += trimmed.slice(cursor).replace(/\b(?:NO_REPLY)+\b/g, '');
 
     // Do not map/trim individual lines here. Whitespace-sensitive payloads
     // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
