@@ -463,6 +463,40 @@ describe('performRun', () => {
     );
   });
 
+  test('heartbeat control word with substantive output is not silently swallowed', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-prefixed-update',
+      type: 'heartbeat',
+      payload: { content: 'Check for a decision that needs a human.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const content = 'HEARTBEAT_OK — nothing urgent, but the release owner still needs to choose a date';
+    const spawn = jest.fn(async () => ({ text: content }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content },
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-prefixed-update/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
   test('manual heartbeat without content still runs with a safe fallback prompt', async () => {
     const events = [makeEvent({
       _id: 'evt-hb-manual',
