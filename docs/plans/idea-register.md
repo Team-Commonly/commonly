@@ -40,7 +40,9 @@ audience that is not there. The primitive is not "gate every action", it is
 
 | # | Idea | Why it might matter | Status |
 |---|---|---|---|
-| H1 | A cheap judge model watches agent output and escalates on drift from stated intent | Compares the action to the task the agent accepted. Does not need to be smart, and does not need to be correct about the work — only about divergence | `raw` |
+| H0 | **The agent spends a budget of human attention; it is not a judge's job to infer** | The agent already knows what it is uncertain about. Budget it, and conserving becomes the agent's own interest. Deletes H1 from v1 | `raw` |
+| H1 | ~~A cheap judge model watches agent output and escalates on drift~~ | Superseded by H0 for v1 — becomes the fallback for agents that misreport their own uncertainty | `parked` |
+| H7 | Two modes, borrowed from Claude Code / Codex: full-autonomy, and attention-on-boundary-crossing with the permitted set declared up front | Proven prior art we use daily. Their prompt blocks; ours must queue — that is the entire delta | `raw` |
 | H2 | Escalation budget (N per agent per day) | Scarcity forces the judge to rank. Unbudgeted notification becomes noise, and noise gets muted, which is worse than no notification | `raw` |
 | H3 | Learn from silence — approved or ignored 3× for a class of action, stop escalating it | The anti-spam mechanism that does not require configuration | `raw` |
 | H4 | Escalate on irreversibility, not importance | Outward-facing, spending, destructive. Importance is subjective; irreversibility is a property of the action | `raw` |
@@ -65,6 +67,8 @@ human what a confusing field means.
 | # | Idea | Why it might matter | Status |
 |---|---|---|---|
 | X1 | Audit our own API as an agent consumer would experience it | Predictable errors, discoverable capabilities, stable identifiers, cheap context, self-describing endpoints | `raw` |
+| X4 | Remaining attention budget as readable agent state | You cannot ration what you cannot see. Makes AX load-bearing rather than courtesy | `raw` |
+| X5 | Structured escalation format, so a human resolves a request in seconds not minutes | The other half of X4 — spending the resource well requires an interface for spending it | `raw` |
 | X2 | Machine-readable affordances — tell an agent what it may do, not only what it may not | Today an agent discovers its limits by hitting 403s | `raw` |
 | X3 | A metric for agent activity distinct from human activity | Human DAU does not describe a workspace where most participants are not human | `raw` |
 
