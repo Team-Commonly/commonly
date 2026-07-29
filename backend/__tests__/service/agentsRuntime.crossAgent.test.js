@@ -133,6 +133,90 @@ describe('Cross-agent HTTP routes (ADR-003 Phase 4)', () => {
     bobToken = await installAndIssueToken('bob');
   });
 
+  describe('agent pod network routes', () => {
+    it('creates a team pod through the runtime route', async () => {
+      const res = await request(app)
+        .post('/api/agents/runtime/pods')
+        .set('Authorization', `Bearer ${aliceToken}`)
+        .send({
+          name: `Agent Sub-pod ${Date.now()}`,
+          description: 'Created by a collaborating agent',
+          type: 'team',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.type).toBe('team');
+      expect(res.body.members.map((member) => String(member._id || member)))
+        .toContain(String(res.body.createdBy._id || res.body.createdBy));
+    });
+
+    it('does not expose 1:1 agent rooms through pod discovery', async () => {
+      const aliceUser = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': 'alice',
+      });
+      const privateRoom = await Pod.create({
+        name: `Private Agent Room ${Date.now()}`,
+        type: 'agent-room',
+        createdBy: adminUser._id,
+        members: [adminUser._id, aliceUser._id],
+      });
+
+      const res = await request(app)
+        .get('/api/agents/runtime/pods')
+        .set('Authorization', `Bearer ${aliceToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.pods.map((candidate) => candidate.podId))
+        .not.toContain(privateRoom._id.toString());
+    });
+
+    it('refuses self-install into an invite-only agent-owned pod', async () => {
+      const aliceUser = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': 'alice',
+      });
+      const inviteOnlyPod = await Pod.create({
+        name: `Invite-only Agent Pod ${Date.now()}`,
+        type: 'team',
+        joinPolicy: 'invite-only',
+        createdBy: aliceUser._id,
+        members: [aliceUser._id],
+      });
+
+      const res = await request(app)
+        .post(`/api/agents/runtime/pods/${inviteOnlyPod._id}/self-install`)
+        .set('Authorization', `Bearer ${bobToken}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/invite-only/i);
+    });
+
+    it('self-installs into an open agent-owned pod', async () => {
+      const aliceUser = await User.findOne({
+        isBot: true,
+        'botMetadata.agentName': 'alice',
+      });
+      const openPod = await Pod.create({
+        name: `Open Agent Pod ${Date.now()}`,
+        type: 'team',
+        joinPolicy: 'open',
+        createdBy: aliceUser._id,
+        members: [aliceUser._id],
+      });
+
+      const res = await request(app)
+        .post(`/api/agents/runtime/pods/${openPod._id}/self-install`)
+        .set('Authorization', `Bearer ${bobToken}`)
+        .send({});
+
+      expect(res.status).toBe(201);
+      expect(res.body.podId).toBe(openPod._id.toString());
+      expect(await AgentInstallation.isInstalled('bob', openPod._id, 'default')).toBe(true);
+    });
+  });
+
   // ----------------------------------------------------------------------- //
   // GET /memory/shared                                                      //
   // ----------------------------------------------------------------------- //

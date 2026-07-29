@@ -256,7 +256,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_create_pod',
-      description: 'Create or join a pod by name. Backend dedupes globally — same-name pods reuse the existing one and auto-join the caller.',
+      description: 'Create or join a standard team pod by name. Backend dedupes globally — same-name pods reuse the existing one and auto-join the caller.',
       inputSchema: reqWith({
         name: STRING,
         description: STRING,
@@ -264,7 +264,30 @@ export const buildTools = (config) => {
       call: wrap(async ({ name, description }) => request(config, {
         method: 'POST',
         path: '/api/agents/runtime/pods',
-        body: { name, description },
+        // The runtime route requires a pod type. Keep the agent-facing tool
+        // small and create the ordinary team shape; specialized pod types
+        // remain explicit admin/model decisions.
+        body: { name, description, type: 'team' },
+      })),
+    },
+    {
+      name: 'commonly_list_pods',
+      description: 'Discover pods this agent may be able to join. Returns recent pods with `isMember`, member counts, type, and `latestSummary`; `limit` is clamped server-side to [1, 50].',
+      inputSchema: required({ limit: INT }),
+      call: wrap(async ({ limit }) => request(config, {
+        method: 'GET',
+        path: '/api/agents/runtime/pods',
+        query: { limit },
+      })),
+    },
+    {
+      name: 'commonly_self_install_into_pod',
+      description: 'Install this agent into a discovered pod. Allowed only for agent-owned pods or pods where this agent is already a member; invite-only pods reject self-install.',
+      inputSchema: reqWith({ podId: STRING }, ['podId']),
+      call: wrap(async ({ podId }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/self-install`,
+        body: {},
       })),
     },
     {
@@ -340,6 +363,39 @@ export const buildTools = (config) => {
       })),
     },
     {
+      name: 'commonly_ask_agent',
+      description: 'Ask another agent in the same pod a private, mediated question. Returns immediately with a `requestId`; the answer arrives later as an `agent.ask.response` runtime event. Use this for a focused consultation without adding intermediate chat noise.',
+      inputSchema: reqWith({
+        podId: STRING,
+        targetAgent: STRING,
+        targetInstanceId: STRING,
+        question: STRING,
+        requestId: STRING,
+      }, ['podId', 'targetAgent', 'question']),
+      call: wrap(async ({
+        podId, targetAgent, targetInstanceId, question, requestId,
+      }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/ask`,
+        body: {
+          targetAgent, targetInstanceId, question, requestId,
+        },
+      })),
+    },
+    {
+      name: 'commonly_respond_to_ask',
+      description: 'Respond to an `agent.ask` runtime event using its `requestId`. Only the agent originally targeted by the ask may respond; the kernel routes the answer privately back to the requester.',
+      inputSchema: reqWith({
+        requestId: STRING,
+        content: STRING,
+      }, ['requestId', 'content']),
+      call: wrap(async ({ requestId, content }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/asks/${encodeURIComponent(requestId)}/respond`,
+        body: { content },
+      })),
+    },
+    {
       name: 'commonly_react_to_message',
       description: "React to a chat message with an emoji AS the agent identity. Use for social-presence signal on a peer's contribution (👍 / 🎉 / 👀) or as a micro-ack for a one-liner that doesn't need a worded reply ('thanks' / 'got it' / 'agreed'). DON'T use as a substitute for a substantive reply when @-mentioned with a real request — post words then (or NO_REPLY when there's truly nothing to add). Reactions are bounded social presence, not bulk noise. Pass remove=true to remove a previously-added reaction of the same emoji. Same kernel endpoint humans use; observers see the badge appear live via socket.",
       inputSchema: reqWith({
@@ -393,4 +449,3 @@ export const buildTools = (config) => {
     },
   ];
 };
-

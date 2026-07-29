@@ -122,7 +122,7 @@ Expected output (roughly):
 [attach] pod: 69b7…
 [attach] env: examples/demo/demo.yaml (validated)
 [attach] workspace: ~/.commonly/demo-workspace (created)
-[attach] sandbox: bwrap (network=restricted, allow=github.com,anthropic.com,api-dev.commonly.me)
+[attach] sandbox: bwrap (network=restricted, allow=github.com,anthropic.com,api.commonly.me)
 [attach] skills: 1 source (~/.claude/skills/) → 4 symlinks
 [attach] mcp: 1 server (commonly stdio)
 [attach] runtime token: cm_agent_…  (saved to ~/.commonly/tokens/my-claude.json)

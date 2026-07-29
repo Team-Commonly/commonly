@@ -107,9 +107,9 @@ export const listLocalAgents = () => {
     .filter(Boolean);
 };
 
-// Event types that carry a prompt the wrapper should forward to the CLI.
-// Other event types (heartbeat, delivery, etc.) are acked as no_action even
-// if they happen to carry `content` in their payload.
+// Chat event types whose payload already contains the prompt the wrapper
+// should forward verbatim. Heartbeat and consult events need event-specific
+// framing, so extractPrompt handles them separately below.
 const PROMPT_EVENT_TYPES = new Set([
   'chat.mention',
   'message.posted',
@@ -431,9 +431,48 @@ export const runMemoryImport = async ({
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
 const extractPrompt = (event) => {
-  if (!PROMPT_EVENT_TYPES.has(event.type)) return null;
   const p = event.payload || {};
-  return p.content || p.prompt || p.text || null;
+  if (PROMPT_EVENT_TYPES.has(event.type)) {
+    return p.content || p.prompt || p.text || null;
+  }
+  if (event.type === 'heartbeat') {
+    return p.content || [
+      'Heartbeat tick.',
+      'Read your HEARTBEAT.md workspace file and follow it exactly.',
+      'HEARTBEAT_OK is a return value — never post it or any narration to pod chat.',
+    ].join('\n');
+  }
+  if (event.type === 'agent.ask') {
+    if (!p.requestId || !p.question) return null;
+    const sender = p.fromAgent
+      ? `@${p.fromAgent}${p.fromInstanceId && p.fromInstanceId !== 'default' ? `:${p.fromInstanceId}` : ''}`
+      : 'Another agent';
+    return [
+      '[Private agent consultation]',
+      `${sender} asks:`,
+      String(p.question),
+      '',
+      'Answer the agent directly, including a concise refusal if appropriate.',
+      'Your local wrapper will route your final response privately to the requester.',
+      'Do not call commonly_respond_to_ask and do not post the answer into pod chat.',
+    ].join('\n');
+  }
+  if (event.type === 'agent.ask.response') {
+    if (!p.response) return null;
+    const responder = p.fromAgent
+      ? `@${p.fromAgent}${p.fromInstanceId && p.fromInstanceId !== 'default' ? `:${p.fromInstanceId}` : ''}`
+      : 'The consulted agent';
+    return [
+      '[Private agent consultation response]',
+      ...(p.question ? [`Your question: ${String(p.question)}`] : []),
+      `${responder} answered:`,
+      String(p.response),
+      '',
+      'Use this answer to continue the work you were doing.',
+      'Only post a concise pod update if a human needs it; otherwise return NO_REPLY.',
+    ].join('\n');
+  }
+  return null;
 };
 
 /**
@@ -516,7 +555,11 @@ export const performRun = ({
         return null; // detection unavailable — fall back to posting the reply
       }
     };
-    const preSpawn = await snapshotMessages();
+    // A consult request's final output is routed to the ask-response endpoint,
+    // never echoed into the pod. It therefore does not need pod-message
+    // snapshotting (and cannot be detected through that channel anyway).
+    const shouldSnapshotMessages = event.type !== 'agent.ask';
+    const preSpawn = shouldSnapshotMessages ? await snapshotMessages() : null;
     const preSpawnIds = preSpawn
       ? new Set(preSpawn.map((m) => String(m._id || m.id)))
       : null;
@@ -584,8 +627,39 @@ export const performRun = ({
         }
       }
     }
-    if (!replyText || replyText === 'NO_REPLY') {
-      log(`[${event.type}] no wrapper-post (${replyText === 'NO_REPLY' ? 'NO_REPLY' : 'empty output'})`);
+    const heartbeatControlReply = event.type === 'heartbeat'
+      && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
+    let delivered = agentPostedItself;
+
+    if (event.type === 'agent.ask') {
+      if (silentReply) {
+        const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
+        log(`[${event.type}] no private response (${reason})`);
+      } else {
+        try {
+          await client.post(
+            `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
+            { content: replyText },
+          );
+          delivered = true;
+          log(`[${event.type}] routed private response (${Buffer.byteLength(replyText)} bytes)`);
+        } catch (err) {
+          // A tool-capable agent may have called commonly_respond_to_ask
+          // despite the wrapper instruction. Treat the kernel's idempotent
+          // "already responded" result as delivered rather than re-running
+          // the model forever.
+          if (err?.status === 409 && err?.body?.code === 'already_responded') {
+            delivered = true;
+            log(`[${event.type}] response already routed by agent tool`);
+          } else {
+            throw err;
+          }
+        }
+      }
+    } else if (silentReply) {
+      const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
+      log(`[${event.type}] no wrapper-post (${reason})`);
     } else if (agentPostedItself) {
       // Name the message that caused the suppression. A silently dropped reply
       // is invisible to everyone; #757 went unnoticed precisely because this
@@ -599,6 +673,7 @@ export const performRun = ({
       await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
         content: replyText,
       });
+      delivered = true;
       log(`[${event.type}] posted ${Buffer.byteLength(replyText)} bytes`);
     }
     if (result.memorySummary) {
@@ -613,7 +688,7 @@ export const performRun = ({
         onError?.(new Error(`memory sync failed: ${err.message}`, { cause: err }));
       }
     }
-    return { outcome: 'posted' };
+    return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
   const tick = async () => {

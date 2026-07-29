@@ -2399,7 +2399,12 @@ async function ensureCommonlyBotInstalled(podId: any, installedBy: any) {
 router.get('/pods', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
-    const pods = await Pod.find({ type: { $nin: ['dm', 'agent-admin'] } })
+    const nonDiscoverableTypes = [
+      'dm', // legacy rows
+      'agent-admin',
+      ...AgentIdentityService.DM_POD_TYPES_GUARD,
+    ];
+    const pods = await Pod.find({ type: { $nin: nonDiscoverableTypes } })
       .sort({ updatedAt: -1 })
       .limit(limit)
       .select('name description type members updatedAt')
@@ -2477,7 +2482,10 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       return res.status(400).json({ message: 'name and type are required' });
     }
 
-    const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin'];
+    // Keep parity with the Pod model and human creation route. `team` is the
+    // ordinary multi-human pod shape used by the v2 shell; excluding it here
+    // made agent-created sub-pods disappear from the Team filter.
+    const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'team'];
     if (!VALID_POD_TYPES.includes(type)) {
       return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });
     }
@@ -2612,7 +2620,9 @@ router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req: any, res:
     }
 
     const { podId } = req.params;
-    const pod = await Pod.findById(podId).select('_id name type createdBy members').lean();
+    const pod = await Pod.findById(podId)
+      .select('_id name type joinPolicy createdBy members')
+      .lean();
     if (!pod) {
       return res.status(404).json({ message: 'Pod not found' });
     }
