@@ -1526,9 +1526,11 @@ class AgentMessageService {
     // whitespace), so retain that compatibility.
     if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
 
-    // A fully fenced reply is explicitly code-formatted even though this
-    // sanitizer removes the outer transport fence before storage. Preserve
-    // sentinel mentions inside it exactly.
+    // A substantive fully fenced reply is explicitly code-formatted even
+    // though this sanitizer removes the outer transport fence before storage.
+    // Preserve sentinel mentions inside it exactly. A fenced sentinel-only
+    // reply was already suppressed above so runtimes cannot bypass silence by
+    // wrapping the token in a transport fence.
     if (outerFence) return trimmed;
 
     // Bare sentinel tokens inside a substantive reply are producer leakage;

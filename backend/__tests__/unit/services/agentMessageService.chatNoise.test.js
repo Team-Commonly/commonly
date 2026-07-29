@@ -42,6 +42,10 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY NO_REPLY')).toBe('');
   });
 
+  it('keeps fenced sentinel-only replies silent before preserving code spans', () => {
+    expect(AgentMessageService.sanitizeAgentContent('```text\nNO_REPLY\n```')).toBe('');
+  });
+
   it('keeps substantive replies but strips bare producer-leakage tokens', () => {
     expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
       .toBe('Shipped the fix.');
