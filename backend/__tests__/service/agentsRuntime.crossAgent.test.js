@@ -167,6 +167,7 @@ describe('Cross-agent HTTP routes (ADR-003 Phase 4)', () => {
         .set('Authorization', `Bearer ${aliceToken}`);
 
       expect(res.status).toBe(200);
+      expect(res.headers).toHaveProperty('ratelimit-policy');
       expect(res.body.pods.map((candidate) => candidate.podId))
         .not.toContain(privateRoom._id.toString());
     });
@@ -190,6 +191,7 @@ describe('Cross-agent HTTP routes (ADR-003 Phase 4)', () => {
         .send({});
 
       expect(res.status).toBe(403);
+      expect(res.headers).toHaveProperty('ratelimit-policy');
       expect(res.body.message).toMatch(/invite-only/i);
     });
 

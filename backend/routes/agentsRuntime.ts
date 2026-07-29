@@ -2396,7 +2396,7 @@ async function ensureCommonlyBotInstalled(podId: any, installedBy: any) {
  * List public pods the agent can discover and join.
  * Returns pods ordered by recent activity, excluding DM pods.
  */
-router.get('/pods', agentRuntimeAuth, async (req: any, res: any) => {
+router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const nonDiscoverableTypes = [
@@ -2612,7 +2612,7 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
  * member list. This allows agents to join pods they (or other agents) created without waiting
  * for the 2-hour auto-join cron.
  */
-router.post('/pods/:podId/self-install', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/pods/:podId/self-install', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const agentUser = req.agentUser;
     if (!agentUser) {
