@@ -150,7 +150,7 @@ describe('POST /api/pods/:id/join discovery gate', () => {
     expect(res.body.code).toBe('join_refused');
   });
 
-  it('keeps a listed invite-only pod discoverable without making it directly joinable', async () => {
+  it('keeps a listed invite-only pod out of Discover and refuses direct self-join', async () => {
     const pod = await createPod({ joinPolicy: 'invite-only' });
 
     const discover = await request(app)
@@ -158,7 +158,7 @@ describe('POST /api/pods/:id/join discovery gate', () => {
       .set('Authorization', `Bearer ${viewerToken}`)
       .expect(200);
 
-    expect(discover.body.map((candidate) => candidate._id)).toContain(String(pod._id));
+    expect(discover.body.map((candidate) => candidate._id)).not.toContain(String(pod._id));
     const joinResponse = await join(pod._id).expect(403);
     expect(joinResponse.body.code).toBe('join_refused');
   });

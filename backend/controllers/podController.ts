@@ -11,6 +11,7 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const {
   COMMUNITY_LISTING_QUERY,
   NON_LISTABLE_POD_TYPES,
+  communityDiscoverQuery,
   isDirectlyJoinable,
 } = require('../services/podListing');
 const User = require('../models/User');
@@ -181,13 +182,7 @@ exports.getAllPods = async (req: any, res: any) => {
     // Keep the default query semantically identical to the privacy-hardened
     // membership listing below.
     const query = isDiscoverScope
-      ? {
-        ...COMMUNITY_LISTING_QUERY,
-        members: { $ne: scopedCallerId },
-        type: type
-          ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }
-          : { $nin: NON_LISTABLE_POD_TYPES },
-      }
+      ? communityDiscoverQuery({ callerId: scopedCallerId, type })
       : isCommunityScope
       ? {
         // Listed is opt-in and distinct from readable: showcase rooms keep

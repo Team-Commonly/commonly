@@ -363,7 +363,7 @@ describe('podController', () => {
     expect(String(query.members)).toBe(communityUserId);
   });
 
-  it('getAllPods discover scope requires listed, readable non-member pods', async () => {
+  it('getAllPods discover scope requires listed, readable, joinable non-member pods', async () => {
     const sort = jest.fn().mockResolvedValue([]);
     const populateThird = jest.fn(() => ({ sort }));
     const populateSecond = jest.fn(() => ({ populate: populateThird, sort }));
@@ -378,6 +378,7 @@ describe('podController', () => {
     expect(Pod.find).toHaveBeenCalledWith({
       publicRead: true,
       communityListed: true,
+      joinPolicy: { $ne: 'invite-only' },
       members: { $ne: expect.anything() },
       type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
     });

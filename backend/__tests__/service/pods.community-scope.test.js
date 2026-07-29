@@ -166,7 +166,7 @@ describe('GET /api/pods community scope', () => {
     });
   });
 
-  it('discovers only listed, readable pods the caller has not joined', async () => {
+  it('discovers only listed, readable, directly joinable pods the caller has not joined', async () => {
     const res = await request(app)
       .get('/api/pods?scope=discover')
       .set('Authorization', `Bearer ${viewerToken}`);
@@ -176,9 +176,9 @@ describe('GET /api/pods community scope', () => {
     expect(ids).toEqual(expect.arrayContaining([
       communityPod._id.toString(),
       studyCommunityPod._id.toString(),
-      inviteOnlyPod._id.toString(),
     ]));
-    expect(ids).toHaveLength(3);
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain(inviteOnlyPod._id.toString());
     expect(ids).not.toContain(joinedCommunityPod._id.toString());
     expect(ids).not.toContain(showcasePod._id.toString());
     expect(ids).not.toContain(nonPublicListedPod._id.toString());
