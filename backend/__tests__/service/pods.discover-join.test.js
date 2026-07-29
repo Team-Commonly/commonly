@@ -250,6 +250,7 @@ describe('POST /api/pods/:id/join discovery gate', () => {
         message: expect.stringContaining(`/api/admin/pods/${pod._id}/showcase`),
       });
       const fresh = await Pod.findById(pod._id).lean();
+      expect(fresh.publicRead).toBe(false);
       expect(fresh.communityListed).toBe(false);
     });
 
