@@ -22,7 +22,7 @@ const FILTERS: Array<{ key: Filter; labelKey: string }> = [
 const COMMUNITY_VIEWS: CommunityView[] = ['joined', 'discover'];
 
 // Both agent-room (user↔agent) and agent-dm (any 2-member combo) show
-// up under the Private filter. agent-dm with two bot members gets a
+// up under the DMs filter. agent-dm with two bot members gets a
 // distinct icon ("AA" — agent ↔ agent) so users can tell at a glance
 // that no human is in the conversation.
 const isDmPod = (pod: V2Pod): boolean => pod.type === 'agent-room' || pod.type === 'agent-dm';
@@ -71,7 +71,7 @@ const podSnippetFor = (pod: V2Pod, meta: string): string => {
 const matchesPersonalFilter = (pod: V2Pod, filter: Filter): boolean => {
   switch (filter) {
     // "Team" is the strictest pod-type filter — only pods explicitly typed
-    // as team (multi-human collaborative). "Private" is 1:1 DMs.
+    // as team (multi-human collaborative). "DMs" is 1:1 conversations.
     // "All" covers everything (the redundant "Pod" filter was removed).
     case 'team': return pod.type === 'team';
     case 'private': return podKind(pod) === 'private';
@@ -359,7 +359,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     : error;
 
   // Default grouping is chronological (Pinned / Today / Yesterday / This week
-  // / Earlier). When the user filters down to Private, recency buckets stop
+  // / Earlier). When the user filters down to DMs, recency buckets stop
   // adding signal — DMs are already a tight list — and the meaningful split
   // is human↔agent vs agent↔agent. Bot-bot rooms are observer-only (§3.7),
   // so a section header makes the relationship explicit at a glance and

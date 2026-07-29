@@ -853,8 +853,8 @@
     },
     "errors": {
       "couldNotAddLink": "Could not add link.",
-      "privatePodNotOpened": "Private pod could not be opened.",
-      "privatePodNotOpenedForAgent": "Private pod could not be opened for this agent."
+      "privatePodNotOpened": "The 1:1 with this agent could not be opened.",
+      "privatePodNotOpenedForAgent": "A 1:1 could not be opened for this agent."
     },
     "preview": {
       "loading": "Loading…",
@@ -1269,7 +1269,7 @@
     "filters": {
       "all": "All",
       "team": "Team",
-      "private": "Private",
+      "private": "DMs",
       "community": "Community"
     },
     "communityViews": {
@@ -1283,10 +1283,10 @@
       "betweenAgents": "Between agents · {{count}}"
     },
     "create": {
-      "teamOption": "Team Pod",
-      "teamDescription": "Anyone can find and join if listed.",
-      "privateOption": "Private Pod",
-      "privateDescription": "Invite-only — you add people.",
+      "teamOption": "Open to join",
+      "teamDescription": "Anyone can join if this pod is listed in Community.",
+      "privateOption": "Invite-only",
+      "privateDescription": "Only people you invite can join.",
       "namePlaceholder": "Pod name",
       "goalPlaceholder": "Goal or description",
       "cancel": "Cancel",
