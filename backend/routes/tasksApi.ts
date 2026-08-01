@@ -218,9 +218,16 @@ router.post('/:podId', rateLimit({
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
     if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
     if (parentTask) initUpdate.text += ` · sub-task of ${parentTask}`;
+    // `source` is provenance for task creation, so an agent-authenticated
+    // caller may not self-identify as human (or any other source) through
+    // the request body. Human callers retain the existing source override
+    // for GitHub/import workflows.
+    const taskSource = req.agentUser?._id
+      ? 'agent'
+      : source || (ghNumber ? 'github' : 'human');
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: source || (ghNumber ? 'github' : 'human'), sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
