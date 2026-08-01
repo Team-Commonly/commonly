@@ -258,6 +258,7 @@ describe('podController', () => {
       ],
       createdBy: { toString: () => 'creator-id' },
       joinPolicy: 'open',
+      publicRead: true,
       communityListed: true,
     };
     Pod.findById

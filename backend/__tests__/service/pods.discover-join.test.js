@@ -11,9 +11,11 @@ const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
+const AuditLog = require('../../models/AuditLog');
 const { PodInvite } = require('../../models/PodInvite');
 const podRoutes = require('../../routes/pods');
 const podInvitesRoutes = require('../../routes/podInvites');
+const adminPodsRoutes = require('../../routes/admin/pods');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -36,6 +38,7 @@ describe('POST /api/pods/:id/join discovery gate', () => {
     // catch-all so /api/pods/:podId/invites remains reachable (#712).
     app.use('/api', podInvitesRoutes);
     app.use('/api/pods', podRoutes);
+    app.use('/api/admin/pods', adminPodsRoutes);
   });
 
   beforeEach(async () => {
@@ -83,6 +86,16 @@ describe('POST /api/pods/:id/join discovery gate', () => {
     .post(`/api/pods/${podId}/join`)
     .set('Authorization', `Bearer ${token}`);
 
+  const setListing = (podId, communityListed, token = adminToken) => request(app)
+    .post(`/api/admin/pods/${podId}/listing`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ communityListed });
+
+  const setShowcase = (podId, publicRead, token = adminToken) => request(app)
+    .post(`/api/admin/pods/${podId}/showcase`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ publicRead });
+
   it('joins a listed open pod atomically and makes repeat joins idempotent', async () => {
     const pod = await createPod();
 
@@ -97,6 +110,16 @@ describe('POST /api/pods/:id/join discovery gate', () => {
 
   it('refuses direct self-join to an open but unlisted pod', async () => {
     const pod = await createPod({ communityListed: false });
+
+    const res = await join(pod._id).expect(403);
+
+    expect(res.body.code).toBe('join_refused');
+    const fresh = await Pod.findById(pod._id).lean();
+    expect(fresh.members.map(String)).not.toContain(String(viewer._id));
+  });
+
+  it('refuses direct self-join to a listed pod that is not publicly readable', async () => {
+    const pod = await createPod({ publicRead: false, communityListed: true });
 
     const res = await join(pod._id).expect(403);
 
@@ -125,6 +148,19 @@ describe('POST /api/pods/:id/join discovery gate', () => {
     const res = await join(pod._id).expect(403);
 
     expect(res.body.code).toBe('join_refused');
+  });
+
+  it('keeps a listed invite-only pod out of Discover and refuses direct self-join', async () => {
+    const pod = await createPod({ joinPolicy: 'invite-only' });
+
+    const discover = await request(app)
+      .get('/api/pods?scope=discover')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .expect(200);
+
+    expect(discover.body.map((candidate) => candidate._id)).not.toContain(String(pod._id));
+    const joinResponse = await join(pod._id).expect(403);
+    expect(joinResponse.body.code).toBe('join_refused');
   });
 
   it('keeps the personal-DM refusal ahead of discovery eligibility', async () => {
@@ -157,5 +193,104 @@ describe('POST /api/pods/:id/join discovery gate', () => {
 
     const fresh = await Pod.findById(pod._id).lean();
     expect(fresh.members.map(String)).toContain(String(viewer._id));
+  });
+
+  describe('admin community listing toggle', () => {
+    it('requires a global admin', async () => {
+      const pod = await createPod({ communityListed: false });
+
+      await setListing(pod._id, true, viewerToken).expect(403);
+
+      const fresh = await Pod.findById(pod._id).lean();
+      expect(fresh.communityListed).toBe(false);
+    });
+
+    it('lists and unlists a publicly readable pod with an audit record', async () => {
+      const pod = await createPod({ communityListed: false });
+
+      const listed = await setListing(pod._id, true).expect(200);
+      expect(listed.body).toEqual({
+        id: String(pod._id),
+        publicRead: true,
+        communityListed: true,
+      });
+
+      const unlisted = await setListing(pod._id, false).expect(200);
+      expect(unlisted.body.communityListed).toBe(false);
+
+      const fresh = await Pod.findById(pod._id).lean();
+      expect(fresh.communityListed).toBe(false);
+      const actions = await AuditLog.find({ target: String(pod._id) }).sort({ createdAt: 1 }).lean();
+      expect(actions.map((entry) => entry.action)).toEqual(['community.list', 'community.unlist']);
+    });
+
+    it('rejects a non-boolean body', async () => {
+      const pod = await createPod({ communityListed: false });
+
+      const res = await request(app)
+        .post(`/api/admin/pods/${pod._id}/listing`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ communityListed: 'yes' })
+        .expect(400);
+
+      expect(res.body.error).toMatch(/boolean/);
+    });
+
+    it('returns 404 when the pod does not exist', async () => {
+      await setListing('0123456789abcdef01234567', true).expect(404);
+    });
+
+    it('refuses to list a pod that is not publicly readable', async () => {
+      const pod = await createPod({ publicRead: false, communityListed: false });
+
+      const res = await setListing(pod._id, true).expect(409);
+
+      expect(res.body).toMatchObject({
+        error: 'listing_requires_public_read',
+        message: expect.stringContaining(`/api/admin/pods/${pod._id}/showcase`),
+      });
+      const fresh = await Pod.findById(pod._id).lean();
+      expect(fresh.publicRead).toBe(false);
+      expect(fresh.communityListed).toBe(false);
+    });
+
+    it('allows unlisting a non-public pod without requiring it to be republished', async () => {
+      const pod = await createPod({ publicRead: false, communityListed: true });
+
+      const res = await setListing(pod._id, false).expect(200);
+
+      expect(res.body).toMatchObject({ publicRead: false, communityListed: false });
+    });
+
+    it.each(['agent-room', 'agent-dm', 'agent-admin'])(
+      'refuses listing changes for personal pod type %s',
+      async (type) => {
+        const pod = await createPod({ type, communityListed: false });
+
+        await setListing(pod._id, true).expect(400);
+
+        const fresh = await Pod.findById(pod._id).lean();
+        expect(fresh.communityListed).toBe(false);
+      },
+    );
+  });
+
+  it('unpublishing a listed pod cascades the community unlist', async () => {
+    const pod = await createPod();
+
+    const res = await setShowcase(pod._id, false).expect(200);
+
+    expect(res.body).toEqual({
+      id: String(pod._id),
+      publicRead: false,
+      communityListed: false,
+    });
+    const fresh = await Pod.findById(pod._id).lean();
+    expect(fresh).toMatchObject({ publicRead: false, communityListed: false });
+    const audit = await AuditLog.findOne({
+      target: String(pod._id),
+      action: 'showcase.unpublish',
+    }).lean();
+    expect(audit.detail).toContain('communityListed=false cascade=unlisted');
   });
 });
