@@ -672,6 +672,29 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(res.body.message.content).toContain('Hello from Clawdbot');
     });
 
+    test('strips bare NO_REPLY leakage but preserves code-formatted mentions', async () => {
+      const bareContent = 'A producer leaked NO_REPLY into substantive content.';
+      const bareRes = await request(app)
+        .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ content: bareContent, messageType: 'text' });
+
+      expect(bareRes.status).toBe(200);
+      expect(bareRes.body.success).toBe(true);
+      expect(bareRes.body.message.content)
+        .toBe('A producer leaked  into substantive content.');
+
+      const escapedContent = 'Use `NO_REPLY` only as a whole reply.';
+      const escapedRes = await request(app)
+        .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ content: escapedContent, messageType: 'text' });
+
+      expect(escapedRes.status).toBe(200);
+      expect(escapedRes.body.success).toBe(true);
+      expect(escapedRes.body.message.content).toBe(escapedContent);
+    });
+
     test('should reject posting to unauthorized pod', async () => {
       // Create another pod that clawdbot is NOT installed on
       const otherPod = await Pod.create({

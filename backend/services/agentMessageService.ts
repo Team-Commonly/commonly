@@ -1516,38 +1516,108 @@ class AgentMessageService {
     const raw = String(content);
     if (!raw.trim()) return '';
 
-    const stripped = raw.replace(/^```[^\n]*\n([\s\S]*?)```\s*$/s, '$1');
+    const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
+    const stripped = outerFence ? outerFence[1] : raw;
+    const trimmed = stripped.trim();
 
-    const cleaned = stripped
-      .split(/\r?\n/)
-      // (?:NO_REPLY)+ handles concatenated sentinels: gateways occasionally
-      // join two silent blocks into "NO_REPLYNO_REPLY", which has no word
-      // boundary between the runs and sailed through \bNO_REPLY\b verbatim
-      // into live pods (2026-07-03).
-      //
-      // Only the sentinel is removed — indentation and blank lines are NOT.
-      // The old form was `.map(l => l.replace(...).trim()).filter(Boolean)`,
-      // which per-line-trimmed every message and dropped every empty line.
-      // That is sentinel cleanup with a whitespace bulldozer attached: Python
-      // sent through an agent lost its indentation (`    y = x + 1` arrived as
-      // `y = x + 1`), so a task with one missing `:` reached the agent as code
-      // that also raised IndentationError, and agent-authored code blocks came
-      // out flattened. Whitespace-sensitive payloads (Python, YAML, diffs,
-      // markdown nesting) are normal traffic in an agent pod — verified live
-      // 2026-07-16 by posting identical text through both paths: the user path
-      // (messageController) kept indentation, this one destroyed it.
-      .map((line) => {
-        const withoutSentinel = line.replace(/\b(?:NO_REPLY)+\b/g, '');
-        // A line that was ONLY a sentinel (plus padding) becomes blank rather
-        // than lingering as stray spaces; genuine content keeps its indent.
-        return withoutSentinel.trim() ? withoutSentinel : '';
-      })
-      .join('\n')
-      // Leading/trailing blank lines are still cosmetic noise — but interior
-      // structure now survives.
-      .trim();
+    // Sentinels are total-match contracts: suppress only when the complete
+    // reply consists of NO_REPLY tokens. Gateways have historically joined
+    // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
+    // whitespace), so retain that compatibility.
+    if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
 
-    return cleaned;
+    // A substantive fully fenced reply is explicitly code-formatted even
+    // though this sanitizer removes the outer transport fence before storage.
+    // Preserve sentinel mentions inside it exactly. A fenced sentinel-only
+    // reply was already suppressed above so runtimes cannot bypass silence by
+    // wrapping the token in a transport fence.
+    if (outerFence) return trimmed;
+
+    // Bare sentinel tokens inside a substantive reply are producer leakage;
+    // matching backtick-delimited spans are deliberate mentions. Pair the
+    // delimiters in a linear scan rather than running a backtracking regex on
+    // user-controlled message text.
+    const delimiterRuns: Array<{ start: number; end: number; length: number }> = [];
+    for (let index = 0; index < trimmed.length;) {
+      if (trimmed[index] !== '`') {
+        index += 1;
+        continue;
+      }
+      const start = index;
+      while (index < trimmed.length && trimmed[index] === '`') index += 1;
+      delimiterRuns.push({ start, end: index, length: index - start });
+    }
+
+    const pendingDelimiter = new Map<
+      number,
+      { start: number; end: number; length: number }
+    >();
+    const protectedRanges: Array<{ start: number; end: number }> = [];
+    for (const run of delimiterRuns) {
+      const opening = pendingDelimiter.get(run.length);
+      if (opening) {
+        protectedRanges.push({ start: opening.start, end: run.end });
+        pendingDelimiter.delete(run.length);
+      } else {
+        pendingDelimiter.set(run.length, run);
+      }
+    }
+    protectedRanges.sort((left, right) => left.start - right.start);
+
+    const mergedRanges: Array<{ start: number; end: number }> = [];
+    for (const range of protectedRanges) {
+      const previous = mergedRanges[mergedRanges.length - 1];
+      if (previous && range.start <= previous.end) {
+        previous.end = Math.max(previous.end, range.end);
+      } else {
+        mergedRanges.push({ ...range });
+      }
+    }
+
+    const isWordCharacter = (character: string | undefined): boolean => (
+      character !== undefined
+      && (
+        (character >= 'A' && character <= 'Z')
+        || (character >= 'a' && character <= 'z')
+        || (character >= '0' && character <= '9')
+        || character === '_'
+      )
+    );
+    const sentinel = 'NO_REPLY';
+    let cleaned = '';
+    let cursor = 0;
+    let rangeIndex = 0;
+    while (cursor < trimmed.length) {
+      const range = mergedRanges[rangeIndex];
+      if (range && cursor === range.start) {
+        cleaned += trimmed.slice(range.start, range.end);
+        cursor = range.end;
+        rangeIndex += 1;
+        continue;
+      }
+
+      if (
+        trimmed.startsWith(sentinel, cursor)
+        && !isWordCharacter(trimmed[cursor - 1])
+      ) {
+        let sentinelEnd = cursor;
+        while (trimmed.startsWith(sentinel, sentinelEnd)) {
+          sentinelEnd += sentinel.length;
+        }
+        if (!isWordCharacter(trimmed[sentinelEnd])) {
+          cursor = sentinelEnd;
+          continue;
+        }
+      }
+
+      cleaned += trimmed[cursor];
+      cursor += 1;
+    }
+
+    // Do not map/trim individual lines here. Whitespace-sensitive payloads
+    // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
+    // line-wise sanitizer previously flattened their indentation.
+    return cleaned.trim();
   }
 
   /**

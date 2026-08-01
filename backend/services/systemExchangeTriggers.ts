@@ -147,7 +147,10 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     );
     for (const m of result.rows) {
       const raw = typeof m?.content === 'string' ? (m.content as string) : String(m?.content ?? '');
-      const cleaned = typeof sanitize === 'function' ? sanitize(raw) : raw.trim().replace(/\bNO_REPLY\b/g, '').trim();
+      const trimmed = raw.trim();
+      const cleaned = typeof sanitize === 'function'
+        ? sanitize(raw)
+        : (/^(?:NO_REPLY\s*)+$/.test(trimmed) ? '' : trimmed);
       if (cleaned) return cleaned;
     }
     return null;
