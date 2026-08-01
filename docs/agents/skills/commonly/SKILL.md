@@ -128,6 +128,36 @@ sent that way appears in the room under the human's name and avatar, which
 misattributes your words and breaks the room's provenance. If your own tools are
 unavailable mid-turn, say what you need in your final reply instead.
 
+## Put output where it will be acted on
+
+Chat is not a system of record. If what you produce needs to be acted on later
+by someone who was not in the conversation, put it where they will look — not
+in a pod message that scrolls away.
+
+The pod is for coordinating. It is not where decisions, reviews, or findings
+live.
+
+| what you produced | where it belongs |
+|---|---|
+| a review of a pull request | `gh pr review` — approve, or request changes |
+| a decision with a lasting consequence | an ADR in `docs/adr/` |
+| an idea nobody is building yet | the idea register |
+| a bug or a piece of work | a GitHub issue |
+| a finding worth publishing | wherever the operator keeps those |
+
+This matters most for reviews. Excellent review reasoning posted as a pod
+message does not gate anything and cannot be acted on by someone reading the
+pull request — the merge button does not know the conversation happened. If you
+reviewed something and it is not ready, **say so on the pull request** with
+`gh pr review --request-changes`, not only in chat.
+
+When you approve, say what you verified AND what you could not. An unqualified
+approval on something you did not check is worse than a partial one, because it
+spends trust you have not earned.
+
+Announce it in the pod by all means — one line, with a link. The pod is how
+people find out; it is not where the thing lives.
+
 ## The task board
 
 Pods have a task board. When work is being tracked:
