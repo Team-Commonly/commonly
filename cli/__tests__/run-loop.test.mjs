@@ -392,19 +392,17 @@ describe('performRun', () => {
     fs.rmSync(agentCwd, { recursive: true, force: true });
   });
 
-  test('heartbeat event with payload.content is suppressed — chat-only events spawn', async () => {
-    // Regression: a heartbeat with a stray `content` field must NOT trigger
-    // a spawn. Only PROMPT_EVENT_TYPES are forwarded to the CLI.
+  test('heartbeat event spawns the CLI but keeps HEARTBEAT_OK out of chat', async () => {
     const events = [makeEvent({
       _id: 'evt-hb',
       type: 'heartbeat',
-      payload: { content: 'do not spawn me' },
+      payload: { content: 'Run your heartbeat checklist.' },
     })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
 
-    const spawn = jest.fn();
+    const spawn = jest.fn(async () => ({ text: 'HEARTBEAT_OK' }));
     const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
 
     const { stop } = performRun({
@@ -417,12 +415,246 @@ describe('performRun', () => {
     await drainMicrotasks();
     stop();
 
-    expect(spawn).not.toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledWith(
+      'Run your heartbeat checklist.',
+      expect.objectContaining({ metadata: { event: events[0] } }),
+    );
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb/ack',
       { result: { outcome: 'no_action' } },
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  test('heartbeat event posts substantive output before acking', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-update',
+      type: 'heartbeat',
+      payload: { content: 'Check for a decision that needs a human.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'The release owner needs to choose a date.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'The release owner needs to choose a date.' },
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-update/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('heartbeat control word with substantive output is not silently swallowed', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-prefixed-update',
+      type: 'heartbeat',
+      payload: { content: 'Check for a decision that needs a human.' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const content = 'HEARTBEAT_OK — nothing urgent, but the release owner still needs to choose a date';
+    const spawn = jest.fn(async () => ({ text: content }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content },
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-prefixed-update/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('manual heartbeat without content still runs with a safe fallback prompt', async () => {
+    const events = [makeEvent({
+      _id: 'evt-hb-manual',
+      type: 'heartbeat',
+      payload: { trigger: 'admin-manual' },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'HEARTBEAT_NOOP' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn.mock.calls[0][0]).toContain('Heartbeat tick.');
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-hb-manual/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('agent.ask routes the CLI final answer privately back to the requester', async () => {
+    const events = [makeEvent({
+      _id: 'evt-ask',
+      type: 'agent.ask',
+      payload: {
+        requestId: 'ask/123',
+        fromAgent: 'planner',
+        fromInstanceId: 'default',
+        question: 'What is the riskiest edge case?',
+      },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'An expired request racing the response.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn.mock.calls[0][0]).toContain('@planner asks:');
+    expect(spawn.mock.calls[0][0]).toContain('What is the riskiest edge case?');
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/asks/ask%2F123/respond',
+      { content: 'An expired request racing the response.' },
+    );
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-ask/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('agent.ask re-acks when the agent already responded through its MCP tool', async () => {
+    const events = [makeEvent({
+      _id: 'evt-ask-already-responded',
+      type: 'agent.ask',
+      payload: {
+        requestId: 'ask-responded',
+        fromAgent: 'planner',
+        question: 'Ready?',
+      },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn(async (route) => {
+      if (route.endsWith('/asks/ask-responded/respond')) {
+        const err = new Error('ask has already been responded to');
+        err.status = 409;
+        err.body = { code: 'already_responded' };
+        throw err;
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'Yes.' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-ask-already-responded/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('agent.ask.response reaches the requester without forcing pod chat noise', async () => {
+    const events = [makeEvent({
+      _id: 'evt-ask-response',
+      type: 'agent.ask.response',
+      payload: {
+        requestId: 'ask-123',
+        fromAgent: 'reviewer',
+        fromInstanceId: 'opus',
+        question: 'What is the riskiest edge case?',
+        response: 'An expired request racing the response.',
+      },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn.mock.calls[0][0]).toContain('@reviewer:opus answered:');
+    expect(spawn.mock.calls[0][0]).toContain('An expired request racing the response.');
+    expect(mockPost).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-ask-response/ack',
+      { result: { outcome: 'no_action' } },
+    );
   });
 
   test('chat event with no podId → no spawn, no message, acked as no_action', async () => {

@@ -15,7 +15,7 @@ const tools = buildTools(cfg);
 const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
 describe('tool registry shape', () => {
-  it('ships exactly the v1 surface (21 tools)', () => {
+  it('ships the complete cross-driver tool surface', () => {
     // 14 tools (ADR-010 Phase 1) + 2 added in Phase 4 (commonly_save_my_memory,
     // commonly_log_cycle) so MCP-capable runtimes (Claude Code, Cursor, Codex
     // via wrapper) have the same memory write surface as the openclaw extension.
@@ -23,7 +23,8 @@ describe('tool registry shape', () => {
     // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441).
     // + 2 added for agent file access (commonly_list_files, commonly_read_file).
     // + 1 added for agent file upload (commonly_attach_file).
-    expect(tools).toHaveLength(22);
+    // + 4 network primitives (list pods, self-install, ask, respond; #773).
+    expect(tools).toHaveLength(26);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
@@ -188,12 +189,31 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
 });
 
 describe('commonly_create_pod', () => {
-  it('POSTs to /pods with name + description', async () => {
+  it('POSTs to /pods with the required standard pod type', async () => {
     const fetchSpy = installFetch(async () => okResponse({ podId: 'P1' }));
     await byName.commonly_create_pod.call({ name: 'New', description: 'desc' });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/pods');
-    expect(JSON.parse(init.body)).toEqual({ name: 'New', description: 'desc' });
+    expect(JSON.parse(init.body)).toEqual({ name: 'New', description: 'desc', type: 'team' });
+  });
+});
+
+describe('pod discovery and self-install', () => {
+  it('list_pods GETs /pods with a limit', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ pods: [] }));
+    await byName.commonly_list_pods.call({ limit: 12 });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods?limit=12');
+    expect(init.method).toBe('GET');
+  });
+
+  it('self_install POSTs to the encoded pod path', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ podId: 'P/1' }));
+    await byName.commonly_self_install_into_pod.call({ podId: 'P/1' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/P%2F1/self-install');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({});
   });
 });
 
@@ -241,6 +261,42 @@ describe('commonly_dm_agent', () => {
     const result = await byName.commonly_dm_agent.call({ agentName: 'self' });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).message).toBe('Cannot DM yourself');
+  });
+});
+
+describe('cross-agent ask tools', () => {
+  it('ask_agent POSTs the consultation to the shared pod', async () => {
+    const fetchSpy = installFetch(async () => okResponse({
+      requestId: 'ask/1', expiresAt: '2026-07-29T00:00:00.000Z',
+    }));
+    await byName.commonly_ask_agent.call({
+      podId: 'P/1',
+      targetAgent: 'reviewer',
+      targetInstanceId: 'opus',
+      question: 'What did I miss?',
+      requestId: 'ask/1',
+    });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/P%2F1/ask');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      targetAgent: 'reviewer',
+      targetInstanceId: 'opus',
+      question: 'What did I miss?',
+      requestId: 'ask/1',
+    });
+  });
+
+  it('respond_to_ask POSTs the private answer to the encoded request path', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_respond_to_ask.call({
+      requestId: 'ask/1',
+      content: 'Check the empty state.',
+    });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/asks/ask%2F1/respond');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ content: 'Check the empty state.' });
   });
 });
 

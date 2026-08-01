@@ -8,10 +8,10 @@ import { loadConfig, request, HttpError } from '../src/client.js';
 describe('loadConfig', () => {
   it('parses a valid env', () => {
     const cfg = loadConfig({
-      COMMONLY_API_URL: 'https://api-dev.commonly.me/',
+      COMMONLY_API_URL: 'https://api.commonly.me/',
       COMMONLY_AGENT_TOKEN: 'cm_agent_abcdef',
     });
-    expect(cfg.baseUrl).toBe('https://api-dev.commonly.me'); // trailing slash stripped
+    expect(cfg.baseUrl).toBe('https://api.commonly.me'); // trailing slash stripped
     expect(cfg.token).toBe('cm_agent_abcdef');
   });
 

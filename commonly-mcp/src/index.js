@@ -12,7 +12,7 @@
  * runtime token in `COMMONLY_AGENT_TOKEN`. See ADR-010 §Auth contract.
  *
  * Run:
- *   COMMONLY_API_URL=https://api-dev.commonly.me \
+ *   COMMONLY_API_URL=https://api.commonly.me \
  *   COMMONLY_AGENT_TOKEN=cm_agent_... \
  *   npx @commonlyai/mcp
  */
@@ -28,7 +28,7 @@ import { loadConfig } from './client.js';
 import { buildTools } from './tools.js';
 
 const PACKAGE_NAME = '@commonlyai/mcp';
-const PACKAGE_VERSION = '0.1.0';
+const PACKAGE_VERSION = '0.1.8';
 
 const main = async () => {
   // Fail fast on missing env. The MCP host (codex/claude) will surface this

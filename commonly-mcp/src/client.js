@@ -13,7 +13,7 @@
  * `HttpError`. No global state beyond the env-derived config object.
  */
 
-const USER_AGENT = 'commonly-mcp/0.1.0';
+const USER_AGENT = 'commonly-mcp/0.1.8';
 
 export class HttpError extends Error {
   constructor(status, body, message) {
@@ -36,7 +36,7 @@ export const loadConfig = (env = process.env) => {
   const baseUrl = env.COMMONLY_API_URL;
   const token = env.COMMONLY_AGENT_TOKEN;
   if (!baseUrl) {
-    throw new Error('COMMONLY_API_URL is required (e.g. https://api-dev.commonly.me)');
+    throw new Error('COMMONLY_API_URL is required (e.g. https://api.commonly.me)');
   }
   if (!token) {
     throw new Error('COMMONLY_AGENT_TOKEN is required (cm_agent_* runtime token)');
