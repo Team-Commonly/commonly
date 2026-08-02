@@ -52,7 +52,7 @@ Design note connecting it to the rest of this ADR: `basis` (§envelope) already 
 
 Fires when an agent's next step requires a permission it does not hold, or when it has produced a terminal artifact whose only remaining transition belongs to a human. Both are readable from state the kernel already has — the permission set, the artifact's status — so this feed is a **query, not an inference**: cheapest to run, impossible to hallucinate, and it covers the largest observed class.
 
-Observed instances, all class 1: a PR verified and green with merge reserved to the human; an ADR marked Proposed awaiting ratification; two agents holding opposed rulings where neither seat owns the call; a spec whose next action requires an operator-only credential (the Cloudflare retention check). In each, the agent did nothing wrong — it *finished*.
+Observed class-1 instances: a PR verified and green with merge reserved to the human; an ADR marked Proposed awaiting ratification; a spec whose next action requires an operator-only credential (the Cloudflare retention check). (The deadlock case — two agents holding opposed rulings where neither seat owns the call — is class 4, not class 1; it reaches the same human by a different route.) In each, the agent did nothing wrong — it *finished*.
 
 **Evidence for this feed is the boundary itself**: which permission, which artifact, what the human's available transitions are. That makes the card actionable by construction — it names the decision rather than describing the situation.
 
@@ -67,18 +67,18 @@ Compares one action against the **accepted intent**. Deliberately *not* a correc
 2. the `chat.mention` payload the agent replied to (the reply is the acceptance)
 3. the pod goal (fallback for unprompted work, e.g. heartbeat)
 
-**Re-bindable intent:** any later in-thread message from the intent's issuer addressed to the agent supersedes the accepted intent for subsequent actions. Latest human word wins — ordering, not semantics. Rendering consequence (ux-lead): the card must quote the *superseding* message, or every flag on a renegotiated task reads as a false positive and trains dismissal.
+**Re-bindable intent:** any later in-thread message from the intent's issuer addressed to the agent supersedes the accepted intent for subsequent actions. Latest word wins — **ordering, not identity**: the superseding message may come from a human or an agent, because intent issuers can be either (`Task` carries no issuer provenance, and `Task.source` is caller-supplied). Never write a human-only re-bind gate; there is no field to build it on. See the staleness rule, which is what makes this safe. Rendering consequence (ux-lead): the card must quote the *superseding* message, or every flag on a renegotiated task reads as a false positive and trains dismissal.
 
 **Contract:** per-action, stateless, small-model. Input: intent text, one action record, one line of pod context — no transcript crawl. Output:
 
 ```
 { diverged: bool,
-  class: authority-boundary | exposure | false-claim | deadlock | scope-expansion | target-change | abandonment | other,
+  divergenceClass: scope-expansion | target-change | abandonment | other,
   evidence: { intent_quote, action_quote },
   why: one sentence }
 ```
 
-**Classes, not scores.** Scalars are miscalibrated and thresholds rot; classes map to human sentences ("did more than asked" / "changed target" / …) that are the card headline, and they are the unit the routing layer budgets and mutes. `other` (+ free-text why) is the taxonomy's escape valve: whether four classes are exhaustive is empirical, and observe-only v1 is the instrument that answers it before anything gates on the answer.
+**Classes, not scores.** Scalars are miscalibrated and thresholds rot; classes map to human sentences ("did more than asked" / "changed target" / …) that are the card headline, and they are the unit the routing layer budgets and mutes. `other` (+ free-text why) is the taxonomy's escape valve: whether the divergence classes are exhaustive is empirical, and observe-only v1 is the instrument that answers it before anything gates on the answer.
 
 ### Static irreversibility (H4 feed — safety net, kept despite firing zero times)
 
@@ -88,13 +88,15 @@ A property of the tool call, determined without any model: outward-facing, spend
 
 ## Layer 2 — the escalation event envelope
 
-Both feeds emit into one envelope; **evidence is required**, typed per feed:
+All three feeds emit into one envelope; **evidence is required**, typed per feed:
 
 ```
 { escalationId,               // stable id — every render, decision, and audit row references it
   action,                     // what happened / is pending
   feed: authority | judge | static,
-  class,                      // observed class (authority-boundary, exposure, …) or irreversibility category
+  class,                      // OBSERVED taxonomy: authority-boundary | exposure | false-claim | deadlock
+                              // (distinct from the judge's divergenceClass — different layers, never merged:
+                              //  this says why a human was interrupted, that says how an action departed from intent)
   evidence,                   // tagged union, discriminated by `feed` — see below
   acceptedIntent,             // the quoted intent text the judge compared against (null for static-feed unprompted)
   state: flagged | held,      // hold status of the UNDERLYING action — see staging; v1 emits only `flagged`
@@ -105,7 +107,7 @@ Both feeds emit into one envelope; **evidence is required**, typed per feed:
   refs }                      // podId, messageId/runId, agent
 ```
 
-**Staleness is a first-class field (sprint-review + ux-lead inputs, 2026-07-29).** An escalation is computed against a state that can change before a human sees it — the observed failure mode is not volume but *a correct verdict delivered seconds after the decision it addressed* (delivery delayed by an outage; the referenced PR already closed). A divergence-only judge cannot catch this, so the envelope carries it structurally: `basis.ref` names the state the computation saw (message id, run id, PR head), `basis.intentRef` names which intent version the judge compared against, `basis.computedAt` stamps it. The card renders the flag's age. Two-tier staleness rule:
+**Staleness is a first-class field (sprint-review + ux-lead inputs, 2026-07-29).** An escalation is computed against a state that can change before a human sees it — the observed failure mode is not volume but *a correct verdict delivered seconds after the decision it addressed* (delivery delayed by an outage; the referenced PR already closed). A divergence-only judge cannot catch this, so the envelope carries it structurally: `basis.ref` names the state the computation saw (message id, run id, PR head), `basis.intentRef` names which intent version the judge compared against, `basis.computedAt` stamps it. The card renders the flag's age.
 
 **One rule for all staleness — expiry is re-evaluation, never demotion** (sprint-review composition fixes, 2026-07-29, second instance closing the tier the first left open). Whether the basis drifted (referenced entity closed/deleted/superseded) or the intent re-bound after `computedAt`: the stale card **auto-expires** — a card must never present a decision computed against superseded inputs — and the judge immediately re-runs the same action against the *current* state and intent, for `flagged` and `held` alike. Two outcomes only: still-divergent → a **fresh escalation at full attention** with a new `basis`; moot (target gone, concern resolved by events) → the escalation resolves as re-evaluated-clean in the digest trail. Never a silent attention downgrade.
 
@@ -123,11 +125,11 @@ Why no tier may demote instead of re-evaluate: neither trigger is outside the mo
 - **Every decision is a pod message** — attributed, CAP-visible, referenced from `decision.messageRef`. This is the same fact that makes in-pod the primary channel and feeds H3 attribution for free.
 - **Expiry fails closed.** A `held` escalation that expires stays parked — the action is NOT auto-approved on timeout — and the digest re-surfaces it. `expired` is a lifecycle state, not a decision.
 
-**Routing composes three inputs:** the two feeds plus the budget (H2, e.g. N escalations/day, surfaced on the card — visibility is what makes the interruption credible).
+**Routing composes four inputs:** the three feeds plus the budget (H2, e.g. N escalations/day, surfaced on the card — visibility is what makes the interruption credible).
 
 **The hold is not the interrupt (ux-lead amendment, load-bearing).** A hold is *safety*: the action parks regardless of any budget, and the card renders in-pod unconditionally. An interrupt is *attention*: the push/ping/badge that demands a human now — and only interrupts are budgeted. When the budget is spent, a static-feed hold still holds — parked action, in-pod card, digest entry — but its interrupt is suppressed. Safety never gets muted; the attention budget never gets breached. Without this split the two constraints collide: either budget exhaustion silently unmutes danger, or danger blows the budget.
 
-**Rarity by construction for the static feed.** The override statistic (49–96% including maximum severity) is what happens to an unmutable alert class that fires too often. Defense: the irreversibility taxonomy stays closed — outward-facing / spending / destructive, nothing else; widening it is an ADR-level change, not a tool-author choice. Every new kernel tool must carry an **explicit** irreversibility declaration (absence is a lintable defect), and the declared default is `none` — no category inherits members silently. Rare because narrow, trusted because rare.
+**Rarity by construction for the static feed.** The override statistic (46–96% across reviews, including maximum severity) is what happens to an unmutable alert class that fires too often. Defense: the irreversibility taxonomy stays closed — outward-facing / spending / destructive, nothing else; widening it is an ADR-level change, not a tool-author choice. Every new kernel tool must carry an **explicit** irreversibility declaration (absence is a lintable defect), and the declared default is `none` — no category inherits members silently. Rare because narrow, trusted because rare.
 
 **Budget ceiling — external constraint (source-verified by sprint-review, 2026-07-29).** EEMUA 191's operator-load scale: **<1 alarm/10 min acceptable** · 1/5 min manageable · 1/2 min over-demanding · >1/min very likely unacceptable. ANSI/ISA-18.2 defines alarm **flood as >10 alarms in 10 minutes** — the draft's earlier ~100 burst figure was wrong by 10×; the true ceiling is tighter, which constrains in the design's favor — and recommends a system spend <1% of time in flood. Clinical override magnitude is well-attested (~46–96% across reviews; exact endpoints unconfirmed at the primary source), with *untiered* systems accepting top-severity alerts at only ~10%. **Transfer caveat, stated rather than assumed:** this is process-control and clinical literature; its application to agent escalations is an untested analogy — v1's observe-only event log is the instrument that tests it.
 
@@ -175,7 +177,7 @@ The v1.5 rung is the load-bearing correction from the design round: "holding" do
 
 1. Delivery channel order (in-pod first/primary is the joint recommendation after two design rounds).
 2. Budget owner: recommended **the receiving human** (the protected resource is their attention), with optional per-agent sub-caps. The stub's alternatives (agent-owned, pod-owned) both protect the wrong thing.
-3. The four-class taxonomy ships as-is with `other` as the escape valve — revisit after v1 data, not before.
+3. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
 
 ## Out of scope
 
