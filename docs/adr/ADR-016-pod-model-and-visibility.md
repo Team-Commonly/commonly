@@ -15,7 +15,13 @@ A pod's audience is described by two orthogonal axes — **kind** (dm / room, de
 
 ### Kind — derived, not chosen
 
-`kind = 'dm'` if `type ∈ {agent-room, agent-dm}` (the ADR-001 §3.10 strictly-1:1 set), else `kind = 'room'`. (`agent-admin` is a room: N:1 by design.)
+Three kinds, all derived from `type` — the second exists because listability, not cardinality, is what the visibility model turns on:
+
+- `kind = 'dm'` — `type ∈ {agent-room, agent-dm}` (ADR-001 §3.10, strictly 1:1)
+- `kind = 'admin-room'` — `type = 'agent-admin'`: N:1, so not a DM, but in `NON_LISTABLE_POD_TYPES` and refused by both visibility writers, so **terminally private like a DM for a different reason**
+- `kind = 'room'` — everything else (`team`, `chat`, `study`, `games`): the only listable kind
+
+An earlier draft called `agent-admin` a plain room, which overstated its reachable states — see the enumeration.
 
 - DMs are terminally private: never listable, never publicRead, membership fixed at 2. Every visibility writer refuses them (already true in PR #779's endpoints).
 - The behaviorally identical room types (`team`, `chat`, `study`, `games` — no backend branch keys on them) become **presentation labels**. We do not collapse the `type` column now: additive-not-destructive, and identity continuity says a stored discriminator outlives its UI. Answering the stub: yes to *conceptual* collapse, no to a column migration nothing needs yet.
@@ -61,7 +67,11 @@ Rooms: 3 tiers × 2 join policies = **6 states**, all meaningful:
 | 5 | community | invite-only | world | **no** (until H5) | no | Listed, invite-only |
 | 6 | community | open | world | yes | **yes** | Open via Community |
 
-DMs: exactly **1 state** (private, 2 members, invite/creation rail only). Total reachable: 7.
+`admin-room` (`agent-admin`): exactly **1 state** — private, non-self-joinable. It is in `NON_LISTABLE_POD_TYPES` and both visibility writers refuse it, so rows 3–6 are unreachable for it and `joinPolicy` is inert (self-join requires the community tier it can never hold). Membership is by install, not by join.
+
+DMs: exactly **1 state** (private, 2 members, invite/creation rail only).
+
+**Total reachable: 8** — 6 for listable rooms, 1 for admin-rooms, 1 for DMs.
 
 Unreachable by construction after PR #779: `{publicRead:false, communityListed:true}` (writer refuses, cascade removes), and any dm kind outside state row "DM".
 
@@ -71,7 +81,7 @@ One idempotent script (pattern: `scripts/migrate-agent-dm-multimember.ts`), each
 
 1. **`{publicRead:false, communityListed:true}` rows** → `communityListed := false` (tier `private`). Faithful because the state never rendered anywhere: invisible to both discovery scopes, and its only behavior — joinable by raw id — was the #772 bug, already dead via the narrowed gate. **Members who entered through the bug keep their membership**: revoking reads is a moderation decision about people, not a data migration, and the model must not silently eject anyone.
 2. **dm kinds with `publicRead` or `communityListed` set** → assert none exist; if found, clear flags + flag for operator review (that would be a live privacy incident, not a cleanup).
-3. **`joinPolicy` absent/null** → normalize to `invite-only` (the conservative default; matches the narrowing principle).
+3. **`joinPolicy` absent/null** → normalize to **`'open'`**, matching the schema default (`models/Pod.ts`) and the creation path. An earlier draft said `invite-only` "per the narrowing principle"; that was wrong on inspection — it would have made the migration the only writer in the system that disagrees with the schema, creating a second source of truth for a field whose value is *inert below the community tier anyway*. **The narrowing lives in the tier, not in `joinPolicy`**: a `private` pod with `joinPolicy: 'open'` is not self-joinable, because self-joinable ⟺ community tier ∧ open. Normalizing to the schema default is therefore both conservative and consistent — one canonical answer per field.
 4. Emit a tier-distribution report (counts per state row above) so the first real numbers inform the #770 modal defaults.
 
 No schema change. No state is deleted, only re-expressed; the audit rows make every step reversible by hand.
