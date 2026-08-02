@@ -93,15 +93,16 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_messages',
-      description: 'Read recent chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20).',
+      description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history.',
       inputSchema: reqWith({
         podId: STRING,
         limit: INT,
+        before: STRING,
       }, ['podId']),
-      call: wrap(async ({ podId, limit }) => request(config, {
+      call: wrap(async ({ podId, limit, before }) => request(config, {
         method: 'GET',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        query: { limit },
+        query: { limit, before },
       })),
     },
     {

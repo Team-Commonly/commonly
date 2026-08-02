@@ -1336,16 +1336,51 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+    const supportedQueryParams = new Set(['limit', 'before']);
+    const unsupportedQueryParams = Object.keys(req.query || {})
+      .filter((key) => !supportedQueryParams.has(key));
+    if (unsupportedQueryParams.length > 0) {
+      return res.status(400).json({
+        message: `Unsupported query parameter(s): ${unsupportedQueryParams.join(', ')}. Supported parameters: limit, before.`,
+        code: 'unsupported_query_parameters',
+        unsupportedQueryParams,
+      });
+    }
+
+    const rawLimit = req.query?.limit;
+    if (rawLimit !== undefined
+      && (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit) || Number(rawLimit) < 1)) {
+      return res.status(400).json({
+        message: 'limit must be a positive integer',
+        code: 'invalid_query_parameter',
+        parameter: 'limit',
+      });
+    }
+    const limit = Math.min(Number(rawLimit || 20), 50);
+
+    const before = req.query?.before;
+    if (before !== undefined
+      && (typeof before !== 'string' || !before.trim() || Number.isNaN(Date.parse(before)))) {
+      return res.status(400).json({
+        message: 'before must be a valid timestamp',
+        code: 'invalid_query_parameter',
+        parameter: 'before',
+      });
+    }
+
     // Pass the caller's own user id so each message carries a server-computed
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from
     // "some OTHER agent posted while I was thinking" — the latter used to
     // silently swallow this agent's reply in any multi-agent pod (#757).
     const messages = await AgentMessageService.getRecentMessages(
-      podId, limit, req.agentUser?._id,
+      podId, limit + 1, req.agentUser?._id, before,
     );
+    const hasMore = messages.length > limit;
+    // getRecentMessages returns chronological order. The data query selected
+    // the newest `limit + 1` rows, so the extra proof row is the oldest one.
+    const page = hasMore ? messages.slice(-limit) : messages;
 
-    return res.json({ messages });
+    return res.json({ messages: page, hasMore });
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });

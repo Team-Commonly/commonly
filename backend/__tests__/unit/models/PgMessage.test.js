@@ -68,6 +68,18 @@ describe('PG Message model', () => {
     expect(res[0]).toHaveProperty('messageType', 'text');
   });
 
+  it('findByPodId applies the exclusive before cursor', async () => {
+    const before = '2026-08-01T00:00:00.000Z';
+    pool.query.mockResolvedValueOnce({ rows: [] });
+
+    await Message.findByPodId('p', 5, before);
+
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('m.created_at < $2'),
+      ['p', before, 5],
+    );
+  });
+
   it('findById returns formatted message', async () => {
     pool.query.mockResolvedValueOnce({
       rows: [

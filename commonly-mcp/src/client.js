@@ -13,7 +13,7 @@
  * `HttpError`. No global state beyond the env-derived config object.
  */
 
-const USER_AGENT = 'commonly-mcp/0.1.8';
+const USER_AGENT = 'commonly-mcp/0.1.9';
 
 export class HttpError extends Error {
   constructor(status, body, message) {

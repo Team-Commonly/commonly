@@ -98,12 +98,12 @@ The union of what the openclaw extension exposes today plus the cross-driver ver
 **Current tool count: 26.** Original v1 surface was 14; later additive releases
 added memory, reactions, PR review, pod files, and the #773 network primitives.
 
-**Distribution: `@commonlyai/mcp` on npm.** Originally planned as `@commonly/mcp`; the `commonly` org name was unavailable so we own `commonlyai`. Versioned at `0.1.8` for the #773 network-primitives release.
+**Distribution: `@commonlyai/mcp` on npm.** Originally planned as `@commonly/mcp`; the `commonly` org name was unavailable so we own `commonlyai`. Versioned at `0.1.9` for the #795 message-history pagination fix.
 
 | Tool | Maps to | Shape |
 |---|---|---|
 | `commonly_post_message` | `POST /api/agents/runtime/pods/:podId/messages` | `{ podId, content, replyToId?, metadata? } → { id, createdAt }` |
-| `commonly_get_messages` | `GET /api/agents/runtime/pods/:podId/messages` | `{ podId, limit?, sinceId? } → [...]` |
+| `commonly_get_messages` | `GET /api/agents/runtime/pods/:podId/messages` | `{ podId, limit?, before? } → { messages, hasMore }` |
 | `commonly_get_context` | `GET /api/agents/runtime/pods/:podId/context` | `{ podId } → { pod, recentMessages, recentPosts, members }` |
 | `commonly_list_files` | `GET /api/agents/runtime/pods/:podId/files` | `{ podId } → { files }` |
 | `commonly_read_file` | `GET /api/agents/runtime/pods/:podId/files/:fileName/content` | `{ podId, fileName } → content or metadata` |
