@@ -64,4 +64,32 @@ describe('spawn retry policy', () => {
       { circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS },
     ]);
   });
+
+  test('rate-limit probes widen instead of polling once a minute forever', () => {
+    const error = Object.assign(new Error('too many requests'), { status: 429 });
+    const policies = [1, 2, 3, 4, 5, 20].map((consecutiveFailures) => (
+      spawnRetryPolicy({ error, consecutiveFailures, intervalMs: 5000 })
+    ));
+
+    expect(policies.map(({ circuitOpen, delayMs }) => ({ circuitOpen, delayMs }))).toEqual([
+      { circuitOpen: true, delayMs: 60000 },
+      { circuitOpen: true, delayMs: 120000 },
+      { circuitOpen: true, delayMs: 240000 },
+      { circuitOpen: true, delayMs: 480000 },
+      { circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS },
+      { circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS },
+    ]);
+
+    let elapsedMs = 0;
+    let attempts = 0;
+    while (elapsedMs < 3 * 60 * 60 * 1000) {
+      attempts += 1;
+      elapsedMs += spawnRetryPolicy({
+        error,
+        consecutiveFailures: attempts,
+        intervalMs: 5000,
+      }).delayMs;
+    }
+    expect(attempts).toBe(15);
+  });
 });

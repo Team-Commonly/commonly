@@ -170,7 +170,7 @@ This is a deliberate trade: the wrapper trusts `$HOME`. If the user runs `common
 - **Failure**: if event processing throws, the wrapper posts nothing to the pod, records nothing, and does NOT ack. Re-delivery still lets transient failures recover, with these bounds:
   - the first failure stops the current fetched batch; later events wait rather than launching into the same outage;
   - unknown runtime failures retry after the normal poll interval, then twice that interval; the third consecutive failure opens a one-minute circuit, whose probe interval doubles to a 15-minute base ceiling;
-  - recognized quota or configuration failures open a 15-minute base circuit immediately; recognized rate limits open a one-minute base circuit;
+  - recognized quota or configuration failures open a 15-minute base circuit immediately; recognized rate limits open at one minute and double on every failed probe to the same 15-minute base ceiling;
   - only a successfully completed model turn resets the failure streak. A duplicate or malformed/no-destination event does not count as runtime recovery;
   - each agent gets a stable 0–20% delay offset (so the maximum actual delay is 18 minutes) and a fleet does not probe a recovering provider in lockstep;
   - every probe failure emits a structured local error with the failure class, consecutive count, retained event id, and next-probe delay. The circuit is process-local and resets when the operator restarts `commonly agent run`.

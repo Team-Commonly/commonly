@@ -106,7 +106,13 @@ export const spawnRetryPolicy = ({
     return {
       failureClass,
       circuitOpen: true,
-      delayMs: applyJitter(60 * 1000, jitterRatio),
+      delayMs: applyJitter(
+        Math.min(
+          SPAWN_RETRY_MAX_MS,
+          60 * 1000 * (2 ** (failureCount - 1)),
+        ),
+        jitterRatio,
+      ),
     };
   }
 
