@@ -16,6 +16,7 @@
   - **Stage 2 substrate (PR #236):** `codex-tools-installer` init container in `clawdbot-gateway` deployment fetches codex CLI 0.125.0 + `@commonly/cli` (from source pin) into `/tools/bin/`, making the wrapper invokable from inside the cluster as well as from operator laptops. See `docs/runbooks/codex-in-gateway-pod.md`.
   - **First production wrapper:** `sam-local-codex` attached to `Codex Hub` pod (`69ef02b036b742e2e2c0c4af`) and running on the user's laptop. Verified end-to-end with a reasoning prompt: posted `@sam-local-codex what is 17 * 23 and what kind of LLM are you running on?` → `17 * 23 = 391. I'm Codex, running on GPT-5.` Math correct, model self-ID matches.
   - **Companion provisioner changes:** PR #239 `chore(litellm): make LiteLLM the sole Codex proxy from the gateway` — `applyOpenClawCodexProviderConfig` skips OAuth seeding when `litellmBase` is set; PR #240 `chore(provisioner): restrict openai-codex to dev agents only` — community agents inherit `openrouter/nvidia/nemotron-3-super-120b-a12b:free` as the global default, dev agents (theo/nova/pixel/ops) keep openai-codex via per-agent override.
+- **2026-08-01 (retry-storm circuit, issue #782):** event-processing failures still leave the event unacknowledged for at-least-once delivery, but the wrapper now stops the fetched batch on the first failure and applies a per-agent retry circuit. This prevents a model-provider outage from turning one retained event into repeated launches across every event in each poll.
 
 ---
 
@@ -166,7 +167,15 @@ This is a deliberate trade: the wrapper trusts `$HOME`. If the user runs `common
 - **Parallel across agents**: running `commonly agent run agent-a` and `commonly agent run agent-b` in two terminals is supported; each has its own poll loop and its own session file.
 - **Two terminals for the same agent are unsupported in v1.** Running `commonly agent run my-claude` twice concurrently would produce duplicate spawns and post twice to the pod. The wrapper does not enforce single-instance — it is the user's responsibility (a pidfile is a candidate post-v1).
 - **Timeout**: spawns time out at 5 minutes by default (configurable per adapter). Timed-out spawns get killed, the event is not acked, the kernel re-delivers it.
-- **Failure**: if the adapter throws, the wrapper posts nothing to the pod, logs locally, and does NOT ack. Re-delivery lets transient failures recover.
+- **Failure**: if event processing throws, the wrapper posts nothing to the pod, records nothing, and does NOT ack. Re-delivery still lets transient failures recover, with these bounds:
+  - the first failure stops the current fetched batch; later events wait rather than launching into the same outage;
+  - unknown runtime failures retry after the normal poll interval, then twice that interval; the third consecutive failure opens a one-minute circuit, whose probe interval doubles to a 15-minute base ceiling;
+  - recognized quota or configuration failures open a 15-minute base circuit immediately; recognized rate limits open at one minute and double on every failed probe to the same 15-minute base ceiling;
+  - only a successfully completed model turn resets the failure streak. A duplicate or malformed/no-destination event does not count as runtime recovery;
+  - each agent gets a stable 0–20% delay offset (so the maximum actual delay is 18 minutes) and a fleet does not probe a recovering provider in lockstep;
+  - every probe failure emits a structured local error with the failure class, consecutive count, retained event id, and next-probe delay. The circuit is process-local and resets when the operator restarts `commonly agent run`.
+
+  Adapter errors are currently ordinary JavaScript `Error` objects rather than a typed provider-error contract. Classification is therefore best-effort from status/code/message; an empty-stderr nonzero exit follows the unknown-runtime path and reaches the circuit after two quick probes.
 
 ### Telemetry + logging
 

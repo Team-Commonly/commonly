@@ -714,6 +714,213 @@ describe('performRun', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  test('first processing failure stops the fetched batch before another model launch', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-fail-first' }),
+      makeEvent({ _id: 'evt-must-wait' }),
+    ];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('provider unavailable'));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const scheduled = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].delayMs).toBe(5000);
+  });
+
+  test('unknown repeated failures open the circuit on the third probe', async () => {
+    const event = makeEvent({ _id: 'evt-circuit' });
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') return { events: [event] };
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('claude exited with code 1:'));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+
+    await drainMicrotasks();
+    expect(scheduled[0].delayMs).toBe(5000);
+    scheduled.shift().callback();
+    await drainMicrotasks();
+    expect(scheduled[0].delayMs).toBe(10000);
+    scheduled.shift().callback();
+    await drainMicrotasks();
+
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(3);
+    expect(scheduled[0].delayMs).toBe(60000);
+    expect(errors[2]).toMatchObject({
+      code: 'agent_spawn_retry_scheduled',
+      failureClass: 'runtime',
+      consecutiveFailures: 3,
+      retryAfterMs: 60000,
+      circuitOpen: true,
+      eventId: event._id,
+    });
+    expect(errors[2].message).toMatch(/circuit open, next probe in 1m/);
+  });
+
+  test('recognized quota failure opens the long circuit on the first attempt', async () => {
+    const event = makeEvent({ _id: 'evt-quota' });
+    const mockGet = jest.fn().mockResolvedValue({ events: [event] });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('insufficient_quota: billing limit'));
+    const scheduled = [];
+    const errors = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+      onError: (error) => errors.push(error),
+    });
+    await drainMicrotasks();
+    handle.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(scheduled[0].delayMs).toBe(15 * 60 * 1000);
+    expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
+  });
+
+  test('a no-op event does not erase the model failure streak', async () => {
+    let poll = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        poll += 1;
+        if (poll === 1) return { events: [makeEvent({ _id: 'evt-streak-1' })] };
+        return {
+          events: [
+            makeEvent({ _id: 'evt-no-prompt', payload: {} }),
+            makeEvent({ _id: 'evt-streak-2' }),
+          ],
+        };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('runtime unavailable'));
+    const scheduled = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+    });
+
+    await drainMicrotasks();
+    expect(scheduled[0].delayMs).toBe(5000);
+    scheduled.shift().callback();
+    await drainMicrotasks();
+    handle.stop();
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(scheduled[0].delayMs).toBe(10000);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-no-prompt/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('successful processing resets the failure streak', async () => {
+    let poll = 0;
+    const mockGet = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/events') {
+        poll += 1;
+        return { events: [makeEvent({ _id: `evt-reset-${poll}` })] };
+      }
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: jest.fn().mockResolvedValue({}) });
+
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(new Error('runtime unavailable'))
+      .mockRejectedValueOnce(new Error('runtime unavailable'))
+      .mockResolvedValueOnce({ text: 'recovered' })
+      .mockRejectedValueOnce(new Error('runtime unavailable'));
+    const scheduled = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      retryJitterRatio: 0,
+      setTimeoutImpl: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs });
+        return 0;
+      },
+    });
+
+    await drainMicrotasks();
+    const runNext = async (expectedDelayMs) => {
+      const next = scheduled.shift();
+      expect(next.delayMs).toBe(expectedDelayMs);
+      next.callback();
+      await drainMicrotasks();
+    };
+    await runNext(5000); // first failure → second probe
+    await runNext(10000); // second failure → recovery probe
+    await runNext(5000); // success → normal poll interval
+
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(4);
+    // The post-recovery failure is a fresh streak, so it gets the first retry
+    // delay rather than continuing at the one-minute circuit delay.
+    expect(scheduled[0].delayMs).toBe(5000);
+  });
+
   test('same event id delivered twice → spawns once and re-acks the duplicate', async () => {
     const duplicate = makeEvent({ _id: 'evt-duplicate' });
     const mockGet = jest.fn().mockResolvedValue({ events: [duplicate, duplicate] });

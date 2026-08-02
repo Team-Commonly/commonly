@@ -34,6 +34,11 @@ import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
+import {
+  formatRetryDelay,
+  spawnRetryJitter,
+  spawnRetryPolicy,
+} from '../lib/spawn-retry.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -502,6 +507,7 @@ export const performRun = ({
   log = () => {},
   onError,
   setTimeoutImpl = setTimeout,
+  retryJitterRatio,
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -512,6 +518,8 @@ export const performRun = ({
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
+  let consecutiveSpawnFailures = 0;
+  const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
 
   // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
   // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
@@ -693,6 +701,7 @@ export const performRun = ({
 
   const tick = async () => {
     if (!running) return;
+    let nextPollDelayMs = intervalMs;
     try {
       const { events = [] } = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: 10,
@@ -705,15 +714,46 @@ export const performRun = ({
           result = { outcome: 'no_action', reason: 'duplicate-delivery' };
           log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
         } else {
+          const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
           try {
             result = await processEvent(event);
           } catch (err) {
-            // Spawn failed — do not record or ack, so the kernel can re-deliver
-            // the event after the local runtime recovers (ADR-005).
-            log(`[${event.type}] spawn error: ${err.message}`);
-            onError?.(err);
-            continue;
+            // Do not record or ack: the kernel must retain the event for
+            // at-least-once delivery. Stop this fetched batch immediately —
+            // continuing could launch every one of the 10 returned events
+            // into the same provider outage before the next poll (#782).
+            consecutiveSpawnFailures += 1;
+            const retry = spawnRetryPolicy({
+              error: err,
+              consecutiveFailures: consecutiveSpawnFailures,
+              intervalMs,
+              jitterRatio: spawnJitterRatio,
+            });
+            nextPollDelayMs = retry.delayMs;
+            const retryIn = formatRetryDelay(retry.delayMs);
+            const state = retry.circuitOpen ? 'circuit open' : 'retry scheduled';
+            const wrapped = new Error(
+              `${event.type} processing failed (${retry.failureClass}; `
+              + `${consecutiveSpawnFailures} consecutive) — event ${event._id} remains unacked; `
+              + `${state}, next probe in ${retryIn}: ${err.message}`,
+              { cause: err },
+            );
+            Object.assign(wrapped, {
+              code: 'agent_spawn_retry_scheduled',
+              failureClass: retry.failureClass,
+              consecutiveFailures: consecutiveSpawnFailures,
+              retryAfterMs: retry.delayMs,
+              circuitOpen: retry.circuitOpen,
+              eventId: event._id,
+            });
+            log(`[${event.type}] ${wrapped.message}`);
+            onError?.(wrapped);
+            break;
           }
+          // Only a completed model turn proves the local runtime and delivery
+          // path recovered. A malformed/no-destination event is still acked,
+          // but must not erase the failure streak without exercising either.
+          if (eventWillSpawn) consecutiveSpawnFailures = 0;
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.
@@ -739,7 +779,7 @@ export const performRun = ({
       }
       onError?.(err);
     }
-    if (running) setTimeoutImpl(tick, intervalMs);
+    if (running) setTimeoutImpl(tick, nextPollDelayMs);
   };
 
   tick();
