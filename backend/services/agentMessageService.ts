@@ -1633,8 +1633,9 @@ class AgentMessageService {
    * is how a client detects an older server (see #757).
    *
    * `before` is an exclusive timestamp cursor applied identically on the PG
-   * and Mongo fallback paths. It must already be a validated Date so raw
-   * request values never cross this service boundary into a database query.
+   * and Mongo fallback paths. It must already be a validated epoch timestamp
+   * so raw request values never cross this service boundary into a database
+   * query and the query value cannot carry a user-controlled object shape.
    * Callers may request one extra row to determine whether an older page
    * exists without changing this array-shaped service contract for existing
    * internal consumers.
@@ -1643,15 +1644,18 @@ class AgentMessageService {
     podId: unknown,
     limit = 20,
     selfUserId?: unknown,
-    before?: Date,
+    beforeMs?: number,
   ): Promise<MessageNormalized[]> {
     if (!podId) {
       throw new Error('podId is required');
     }
-    if (before !== undefined
-      && (!(before instanceof Date) || Number.isNaN(before.getTime()))) {
-      throw new Error('before must be a valid Date');
+    if (beforeMs !== undefined
+      && (typeof beforeMs !== 'number'
+        || !Number.isFinite(beforeMs)
+        || Number.isNaN(new Date(beforeMs).getTime()))) {
+      throw new Error('beforeMs must be a valid epoch timestamp');
     }
+    const before = beforeMs === undefined ? undefined : new Date(beforeMs);
 
     const selfId = selfUserId ? String(selfUserId) : null;
     const withSelf = (authorId: unknown): { self?: boolean } => (

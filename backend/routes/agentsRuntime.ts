@@ -1369,14 +1369,14 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
         parameter: 'before',
       });
     }
-    const before = rawBefore === undefined ? undefined : new Date(rawBefore);
+    const beforeMs = rawBefore === undefined ? undefined : Date.parse(rawBefore);
 
     // Pass the caller's own user id so each message carries a server-computed
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from
     // "some OTHER agent posted while I was thinking" — the latter used to
     // silently swallow this agent's reply in any multi-agent pod (#757).
     const messages = await AgentMessageService.getRecentMessages(
-      podId, limit + 1, req.agentUser?._id, before,
+      podId, limit + 1, req.agentUser?._id, beforeMs,
     );
     const hasMore = messages.length > limit;
     // getRecentMessages returns chronological order. The data query selected

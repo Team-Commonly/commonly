@@ -67,20 +67,22 @@ describe('getRecentMessages — PG path', () => {
   });
 
   test('passes the exclusive history cursor to PostgreSQL', async () => {
-    const before = new Date('2026-08-01T00:00:00.000Z');
+    const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
     PGMessage.findByPodId.mockResolvedValue([]);
 
-    await AgentMessageService.getRecentMessages(POD, 10, SELF, before);
+    await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
 
-    expect(PGMessage.findByPodId).toHaveBeenCalledWith(POD, 10, before.toISOString());
+    expect(PGMessage.findByPodId).toHaveBeenCalledWith(
+      POD, 10, new Date(beforeMs).toISOString(),
+    );
   });
 
   test.each([
     ['a raw string', '2026-08-01T00:00:00.000Z'],
-    ['an invalid Date', new Date(Number.NaN)],
+    ['NaN', Number.NaN],
   ])('rejects %s before any database query', async (_label, before) => {
     await expect(AgentMessageService.getRecentMessages(POD, 10, SELF, before))
-      .rejects.toThrow('before must be a valid Date');
+      .rejects.toThrow('beforeMs must be a valid epoch timestamp');
 
     expect(PGMessage.findByPodId).not.toHaveBeenCalled();
     expect(Message.find).not.toHaveBeenCalled();
@@ -169,14 +171,14 @@ describe('getRecentMessages — Mongo fallback path', () => {
   });
 
   test('applies the same exclusive history cursor on the Mongo fallback', async () => {
-    const before = new Date('2026-08-01T00:00:00.000Z');
+    const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
     mockMongoChain([]);
 
-    await AgentMessageService.getRecentMessages(POD, 10, SELF, before);
+    await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
 
     expect(Message.find).toHaveBeenCalledWith({
       podId: POD,
-      createdAt: { $lt: before },
+      createdAt: { $lt: new Date(beforeMs) },
     });
   });
 });

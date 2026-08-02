@@ -68,7 +68,7 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
 
     expect(res.status).toBe(200);
     expect(AgentMessageService.getRecentMessages)
-      .toHaveBeenCalledWith('pod-1', 3, 'bot-1', new Date(cursor));
+      .toHaveBeenCalledWith('pod-1', 3, 'bot-1', Date.parse(cursor));
     expect(res.body).toEqual({
       messages: [
         { id: 'page-oldest', createdAt: '2026-07-31T21:00:00.000Z' },
