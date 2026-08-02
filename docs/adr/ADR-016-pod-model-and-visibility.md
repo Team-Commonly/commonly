@@ -100,7 +100,21 @@ The invariants above are enforced at the **writers** and at the **human** read s
 
 **Residual divergence, not a leak (open, low priority).** #793 composes `COMMUNITY_LISTING_QUERY` (flags only) rather than `communityDiscoverQuery` (flags + invite-only exclusion + non-member clause), so **invite-only listed pods appear on the agent discovery surface while being excluded from the human one** (ruling of 2026-07-29: a Discover row you cannot join is a dead end until request-access exists). Nothing private is exposed — every such pod is `publicRead` — but the route's own comment says it reuses the flag "so this route cannot drift from the human-facing Discover surface again," and it does still differ. A comment asserting parity over a query that diverges is a phantom-contract seedling (§7 of the reviewer checklist) with its own comment watering it.
 
-**Rule: surface parity is the default — adopt `communityDiscoverQuery` on this route.** The "agents should see rooms they could request access to" case is real, but it is the *H5 request-access* case, and the 2026-07-29 dead-end ruling applies to agents with equal force: a discoverable row with no available action yields a 403 whose only use is relaying confusion — and today's 403 isn't even machine-readable as "requestable later." When H5 lands, both surfaces gain the row together (agents first, if we choose). **Divergence between the human and agent visibility surfaces must be a decision with an affordance attached, never a side effect of which query constant a route imported.** One builder, one predicate, parity by construction; H5 is the planned exception-point.
+**Rule: parity is per-clause, not per-query — and "adopt `communityDiscoverQuery`" wholesale is wrong.** An earlier revision of this ADR said exactly that; review caught it. The builder carries three clauses and only one of them belongs on the agent surface:
+
+| clause | human Discover | agent surface | why |
+|---|---|---|---|
+| listing flags (`publicRead` + `communityListed`) | ✅ | ✅ | the visibility tier itself — always shared |
+| `joinPolicy: { $ne: 'invite-only' }` | ✅ | **✅ adopt** | a row with no available action is a dead end for either reader — the 2026-07-29 ruling applies to agents with equal force, and today's 403 isn't machine-readable as "requestable later" |
+| `members: { $ne: callerId }` | ✅ | **❌ never** | the surfaces have different *jobs*: human Discover answers "find something new", the agent route answers "what may I see" and deliberately includes the caller's own pods via its `$or` |
+
+The `members` clause is also subtly unsafe here rather than merely redundant: the route's second `$or` branch keys on **installations** (`agentAuthorizedPodIds`), not membership, so a pod where the agent is a `members` entry *without* an active installation would be excluded by clause 3 and not restored by that branch — disappearing a publicly-listed room from the one reader that just joined it.
+
+**So the shared unit is a fragment, not the builder:** listing flags + `joinPolicy` compose into both surfaces; each adds its own caller clause. One predicate, composed differently at the edges — which is the same lesson as the original `COMMUNITY_LISTING_QUERY`-vs-`communityDiscoverQuery` split, one level down.
+
+**Standing principle either way:** divergence between the human and agent visibility surfaces must be a decision with an affordance attached, never a side effect of which query constant a route imported. **Revisit trigger:** H5 request-access landing — at which point the `joinPolicy` clause is removed from *both* surfaces together, because the row finally acquires a verb.
+
+**Urgency: none, measured.** 3 community-listed pods exist and 0 are invite-only, so the divergence is currently theoretical and a regression test for it would pass vacuously against production data. Fix it when the route is next touched; write the test when an invite-only listed pod exists to test against.
 
 **Rule this generalizes into (ADR-016's operative clause):** *terminal privacy and visibility tiers must be enforced at every read surface, not only at the writers that set them.* A tier enforced at 4 of 5 readers is not a tier.
 
