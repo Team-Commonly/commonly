@@ -29,7 +29,7 @@ This ADR's first draft was designed before any data existed. A labelling pass ov
 
 **So the primary trigger is structural, not behavioural.** Not *"is this agent misbehaving?"* but *"has this agent reached a boundary it cannot cross?"* — and the system already knows the answer, because the boundary **is the permission set**. No judge, no scoring, no corpus needed for the dominant 8-of-15 case. This inverts the draft's ordering: the model-free trigger is the frequent one, and the model-dependent one is the tail.
 
-Standing caveat: n=15 from one pod of four agents over four days, all doing sprint work with a single human decision-maker. The class ranking is evidence, not a law; v1's log re-measures it continuously, and class 1's dominance should be expected to shrink as agents gain authority.
+**Standing caveat, in the labeller's own terms — the zero is strong evidence for one claim and weak for another.** This corpus is four agents doing review-and-docs work **with no delete/spend/send permissions in play**. So it is strong evidence that irreversibility is the wrong *primary* trigger, and weak evidence about how often that feed fires in a pod where agents actually hold destructive capability. Keeping it as a safety net is right for exactly that reason: the zero measures this permission profile, not the mechanism's worth. Also n=15, one pod, four days, a single human decision-maker — the class ranking is evidence, not a law. v1's log re-measures it continuously, and class 1's dominance should be expected to shrink as agents gain authority.
 
 ## Layer 1 — detection feeds
 
