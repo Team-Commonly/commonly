@@ -8,11 +8,42 @@
 
 ## Decision, in one paragraph
 
-Attention routing is three separable layers: **two detection feeds** (a cheap judge that flags divergence from the intent an agent accepted, and a static irreversibility classifier that needs no model at all), a **routing layer** that spends a visible escalation budget and learns from dismissal, and a **rendering layer** built around one invariant unit — the needs-you card — with digest, in-pod, and push as renderings of that card, shipped in that order. v1 is **observe-only**: it flags, it never suspends. Holds arrive in stages tied to what can honestly hold, never as a promise the mechanism can't keep.
+Attention routing is three separable layers: **detection feeds** led by an **authority-boundary** trigger that needs no model at all (an agent has reached something only a human may do), backed by a divergence judge and an irreversibility safety net, a **routing layer** that spends a visible escalation budget and learns from dismissal, and a **rendering layer** built around one invariant unit — the needs-you card — with in-pod, digest, and push as renderings of that card, in that order. v1 is **observe-only**: it flags, it never suspends. Holds arrive in stages tied to what can honestly hold, never as a promise the mechanism can't keep.
+
+## Layer 0 — what the corpus actually showed (labelled 2026-08-01)
+
+This ADR's first draft was designed before any data existed. A labelling pass over this pod's own unattended run — **238 messages, four agents, four days** — corrected it, and the corrections are recorded here because *an ADR that records what didn't work is worth more than one that records only the design*.
+
+**15 of 238 messages (6.3%) warranted interrupting a human.** Sustained rate 0.16/hr; peak 31/10min raw, 5/10min after filtering to escalation-worthy — i.e. the raw stream breaches ISA-18.2's flood line (>10/10min) and the filtered stream does not. That is the whole case for routing in one number pair.
+
+**The observed classes, ranked by frequency:**
+
+| # | class | count | needs a model? |
+|---|---|---|---|
+| 1 | **blocked on authority only the human has** — ratify, merge, choose, veto, sequence | 8 | **no** |
+| 2 | live exposure discovered | 4 | no (static) |
+| 3 | a claim the human was relying on turned out false | 2 | partly |
+| 4 | agents deadlocked, cannot self-resolve | 1 | partly |
+
+**The finding that changed the design: "escalate on irreversibility" caught zero of fifteen.** Not few — zero. Across four days no agent deleted, spent, or sent anything outward; the one real exposure was pre-existing, not agent-caused. The static feed was the part explicitly designed to work without a model, and against real data it never fired. Meanwhile the dominant class is not misbehaviour at all: it is **an agent correctly finishing its work and hitting a wall only a human can pass.**
+
+**So the primary trigger is structural, not behavioural.** Not *"is this agent misbehaving?"* but *"has this agent reached a boundary it cannot cross?"* — and the system already knows the answer, because the boundary **is the permission set**. No judge, no scoring, no corpus needed for the dominant 8-of-15 case. This inverts the draft's ordering: the model-free trigger is the frequent one, and the model-dependent one is the tail.
+
+Standing caveat: n=15 from one pod of four agents over four days, all doing sprint work with a single human decision-maker. The class ranking is evidence, not a law; v1's log re-measures it continuously, and class 1's dominance should be expected to shrink as agents gain authority.
 
 ## Layer 1 — detection feeds
 
-### The judge (divergence feed)
+### Authority boundary (primary trigger — no model)
+
+Fires when an agent's next step requires a permission it does not hold, or when it has produced a terminal artifact whose only remaining transition belongs to a human. Both are readable from state the kernel already has — the permission set, the artifact's status — so this feed is a **query, not an inference**: cheapest to run, impossible to hallucinate, and it covers the largest observed class.
+
+Observed instances, all class 1: a PR verified and green with merge reserved to the human; an ADR marked Proposed awaiting ratification; two agents holding opposed rulings where neither seat owns the call; a spec whose next action requires an operator-only credential (the Cloudflare retention check). In each, the agent did nothing wrong — it *finished*.
+
+**Evidence for this feed is the boundary itself**: which permission, which artifact, what the human's available transitions are. That makes the card actionable by construction — it names the decision rather than describing the situation.
+
+Design consequence worth stating: this trigger's frequency is a **measure of how much authority agents lack**. If class 1 stays at 8-in-15 as the system matures, that is a finding about delegation, not about attention. The right long-run response to a chronically firing authority boundary is usually to move the boundary, not to route more notifications across it.
+
+### The judge (divergence feed — secondary)
 
 Compares one action against the **accepted intent**. Deliberately *not* a correctness model — correctness needs ground truth, policy needs authoring, anomaly detection needs baseline volume; divergence needs only two things CAP already records.
 
@@ -27,16 +58,18 @@ Compares one action against the **accepted intent**. Deliberately *not* a correc
 
 ```
 { diverged: bool,
-  class: scope-expansion | target-change | irreversible-outside-intent | abandonment | other,
+  class: authority-boundary | exposure | false-claim | deadlock | scope-expansion | target-change | abandonment | other,
   evidence: { intent_quote, action_quote },
   why: one sentence }
 ```
 
 **Classes, not scores.** Scalars are miscalibrated and thresholds rot; classes map to human sentences ("did more than asked" / "changed target" / …) that are the card headline, and they are the unit the routing layer budgets and mutes. `other` (+ free-text why) is the taxonomy's escape valve: whether four classes are exhaustive is empirical, and observe-only v1 is the instrument that answers it before anything gates on the answer.
 
-### Static irreversibility (H4 feed)
+### Static irreversibility (H4 feed — safety net, kept despite firing zero times)
 
 A property of the tool call, determined without any model: outward-facing, spending, destructive. Evaluated at the kernel tool layer. Its evidence is computed from the action record itself (branch names, recipient count, dollar amount) — the floor is never "trust me," even where the judge is absent or wrong.
+
+**It caught 0 of 15 in the observed corpus, and it stays anyway.** Not as the primary trigger it was drafted to be, but as a safety net, on an explicit asymmetry: its false-negative cost is unbounded (one unreviewed destructive action) while its false-positive cost is bounded by the budget and by rarity-by-construction. A trigger that never fires costs nothing; the one time it fires may be the only time it matters. What the zero *does* forbid is treating it as the design's centre of gravity — that was the drafting error, and it came from reasoning about agents from first principles instead of watching them work.
 
 ## Layer 2 — the escalation event envelope
 
@@ -45,8 +78,8 @@ Both feeds emit into one envelope; **evidence is required**, typed per feed:
 ```
 { escalationId,               // stable id — every render, decision, and audit row references it
   action,                     // what happened / is pending
-  feed: judge | static,
-  class,                      // divergence class, or the irreversibility category
+  feed: authority | judge | static,
+  class,                      // observed class (authority-boundary, exposure, …) or irreversibility category
   evidence,                   // tagged union, discriminated by `feed` — see below
   acceptedIntent,             // the quoted intent text the judge compared against (null for static-feed unprompted)
   state: flagged | held,      // hold status of the UNDERLYING action — see staging; v1 emits only `flagged`
@@ -63,7 +96,7 @@ Both feeds emit into one envelope; **evidence is required**, typed per feed:
 
 Why no tier may demote instead of re-evaluate: neither trigger is outside the monitored agent's reach — re-binding intent is ordinary agent behavior, and so is closing a PR or deleting a branch. Any demotion tier is therefore a self-suppression path: the party the escalation is about downgrades its attention as a side effect of working normally — the budget-unmutes-danger failure arriving through the staleness door. Re-evaluation removes the free downgrade while preserving both invariants exactly: a stale-but-confident escalation never interrupts, and **attention level is a function of the verdict against current state, never of who caused the drift.**
 
-**Evidence is a tagged union discriminated by `feed`** — no separate type field, because the mapping is 1:1 and a redundant discriminator would drift. Judge feed: `{ intent_quote, action_quote }`, rendered as two attributed lines (intent vs action). Static feed: blast-radius facts, rendered as concrete nouns (names, counts, amounts). The card switches layout on `feed` and never guesses; if a future feed breaks the 1:1 mapping, add the explicit tag then, not before.
+**Evidence is a tagged union discriminated by `feed`** — no separate type field, because the mapping is 1:1 and a redundant discriminator would drift. **Authority feed: `{ boundary, artifact, availableTransitions }`** — which permission is missing, which artifact is terminal, what the human can do about it — rendered as a named decision with its options, which is why class-1 cards are actionable rather than merely informative. Judge feed: `{ intent_quote, action_quote }`, rendered as two attributed lines (intent vs action). Static feed: blast-radius facts, rendered as concrete nouns (names, counts, amounts). The card switches layout on `feed` and never guesses; if a future feed breaks the 1:1 mapping, add the explicit tag then, not before.
 
 ### Decision authorization — enforced, not implied
 
