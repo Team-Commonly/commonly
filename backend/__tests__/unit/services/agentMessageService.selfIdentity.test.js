@@ -180,7 +180,7 @@ describe('getRecentMessages — Mongo fallback path', () => {
 
     await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
 
-    expect(Message.find).toHaveBeenCalledWith({ podId: POD });
+    expect(Message.find).toHaveBeenCalledWith({ podId: { $eq: POD } });
     expect(query.where).toHaveBeenCalledWith('createdAt');
     expect(query.lt).toHaveBeenCalledWith(new Date(beforeMs));
   });

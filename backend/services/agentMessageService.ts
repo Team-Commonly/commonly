@@ -1701,7 +1701,7 @@ class AgentMessageService {
       }
     }
 
-    let messageQuery = Message.find({ podId });
+    let messageQuery = Message.find({ podId: { $eq: podId } });
     if (before) {
       messageQuery = messageQuery.where('createdAt').lt(before);
     }
