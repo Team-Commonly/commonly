@@ -2414,8 +2414,21 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
     //
     // An agent may see a pod when it is either discoverable to everyone, or one
     // it is actually installed in. `communityListed` is the canonical listing
-    // flag (services/podListing.ts) — reuse it rather than restating the rule,
-    // so this route cannot drift from the human-facing Discover surface again.
+    // flag (services/podListing.ts) — composed rather than restated, so the
+    // listing rule itself cannot drift.
+    //
+    // This deliberately uses COMMUNITY_LISTING_QUERY (flags only) and NOT
+    // communityDiscoverQuery, which additionally excludes invite-only pods and
+    // pods the caller already belongs to. So an invite-only, publicly-listed
+    // pod IS visible here while being hidden from the human Discover surface.
+    // That asymmetry is intentional: an agent should be able to see a room it
+    // could ask to join, and nothing returned is private — every branch is
+    // either publicRead or the caller's own installation.
+    //
+    // Stated explicitly because the previous comment claimed this route could
+    // not diverge from Discover, which was a stronger promise than the code
+    // kept. If the asymmetry is ever unwanted, adopt communityDiscoverQuery
+    // rather than hand-adding the clause.
     const visibleToAgent = {
       type: { $nin: nonDiscoverableTypes },
       $or: [
