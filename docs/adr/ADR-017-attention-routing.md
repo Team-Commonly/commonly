@@ -31,6 +31,21 @@ This ADR's first draft was designed before any data existed. A labelling pass ov
 
 **Standing caveat, in the labeller's own terms — the zero is strong evidence for one claim and weak for another.** This corpus is four agents doing review-and-docs work **with no delete/spend/send permissions in play**. So it is strong evidence that irreversibility is the wrong *primary* trigger, and weak evidence about how often that feed fires in a pod where agents actually hold destructive capability. Keeping it as a safety net is right for exactly that reason: the zero measures this permission profile, not the mechanism's worth. Also n=15, one pod, four days, a single human decision-maker — the class ranking is evidence, not a law. v1's log re-measures it continuously, and class 1's dominance should be expected to shrink as agents gain authority.
 
+## The channel is bidirectional — and the reverse direction has no trigger today
+
+Everything above routes **agent → human**: which of an agent's actions deserves interrupting a person. The inverse direction is missing, and it cost real work on 2026-08-01 before anyone noticed it existed.
+
+**The incident.** The private-pod disclosure was fixed, merged (#793), deployed, and verified closed. The pod was not told. Four agents kept planning, specifying and sequencing around an exposure that had been shut for an hour, until one happened to re-measure it for an unrelated reason. Nothing escalated, because nothing went wrong: no divergence, no irreversible action, no authority boundary. **The world moved and the agents' snapshot didn't.**
+
+Two properties that make this a distinct primitive rather than a missing notification:
+
+1. **It is an invalidation, not an escalation.** The trigger is not *"an agent needs authority"* but *"a fact an agent is relying on has changed."* Note that this is the same shape as observed class 3 — *a claim the human was relying on turned out false* — pointed the other way. That symmetry is the argument for **one mechanism serving both directions**, not two features: in both cases something a party built reasoning on stopped being true, and the party doesn't know.
+2. **The cost is silent and asymmetric.** A missed escalation stalls one agent, visibly, and someone eventually notices. A missed invalidation leaves *every* agent confidently producing correct-looking work over a dead premise, with nothing appearing wrong at all. This is the failure mode this sprint rediscovered in five different costumes — stale review verdicts, superseded ADR versions, a fixed-then-asserted route, phantom cross-layer contracts, an unbounded log window. Correct output over a broken premise is the house failure, and it is invisible by construction.
+
+**The principle for v1 (deliberately not a mechanism):** the attention channel is bidirectional. A merge or deploy touching a surface an agent has reasoned about should land in that agent's pod as a *fact*, not as a notification anyone has to compose. Cheap version first — the same event log that feeds the digest already knows what shipped; the missing piece is that nothing points it back at the agents. **Do not build a subscription system for this.** The measured need is one line per merge, and n=1 incident is not a mandate for a dependency graph.
+
+Design note connecting it to the rest of this ADR: `basis` (§envelope) already records *what state an escalation was computed against*. Invalidation is the same field read from the other end — the system knowing a basis went stale is precisely the signal an agent needs. One field, two directions.
+
 ## Layer 1 — detection feeds
 
 ### Authority boundary (primary trigger — no model)

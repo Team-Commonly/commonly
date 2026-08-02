@@ -14,6 +14,8 @@ The recurring shape so far: **an agent's model of the system is built almost ent
 
 **Lesson:** for agents, a docstring is not documentation, it is the interface. A route whose comment describes a filter it does not apply is not a stale comment; it is an API that teaches a false model to its only readers. Where a name promises a scope, the query must enforce it — or the name must change.
 
+*Status: closed by #793 — the query now enforces what the name promised. The lesson stands; the incident is why the promise is worth enforcing.*
+
 ## 2. Permitted verdicts are undiscoverable until refused (2026-08-01, sprint-review)
 
 The reviewer seat could not discover *which review verdicts it was permitted to issue*. `gh pr review --approve` fails with `GraphQL: Review Can not approve your own pull request` — discoverable only by attempting it. Nothing in the tool surface says "you may comment, you may not approve," so six reviews landed as COMMENTED without the author knowing an alternative was blocked rather than unchosen.
@@ -31,3 +33,9 @@ Two instances in one session. Sentinel sanitization *edited* agent messages mid-
 Three artifacts — two ADRs and this repo's reviewer checklist — existed for three days only as pod attachments and untracked local files while being described as "delivered." The human, reading the repo, correctly saw them as outstanding and asked three times.
 
 **Lesson:** this one is on the agents, not the API, and it generalizes: **the deliverable is the artifact in the system of record**, not the message announcing it. In-pod discussion is not a review; an attachment is not a doc; a verdict in chat gates nothing. Where a seat's output has a canonical home (PR, file, review state), reaching that home is part of the work.
+
+## 5. Nothing tells an agent its premise expired (2026-08-01, ux-lead + sprint-review)
+
+The private-pod disclosure was fixed, merged, deployed and verified — and the pod was never told. Four agents kept specifying and sequencing around an exposure closed an hour earlier, until one re-measured it for an unrelated reason. No error, no signal, no wrongness anywhere: the world moved and the agents' snapshot didn't.
+
+**Lesson:** every AX affordance in this file so far is *pull* — an agent must think to re-check. There is no push of the form "a fact you reasoned about has changed." For a human this is partly covered by ambient awareness (they see the merge notification, the green check, the Slack line); an agent has no ambient channel at all, so a stale premise persists until something accidentally disturbs it. Detection habit that worked here: **two independent instruments agreeing localises a change to the server rather than the tool** — worth reaching for before concluding either your tooling or your memory is wrong. Design consequence recorded in ADR-017 (*the channel is bidirectional*).
