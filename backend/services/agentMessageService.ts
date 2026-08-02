@@ -1633,18 +1633,24 @@ class AgentMessageService {
    * is how a client detects an older server (see #757).
    *
    * `before` is an exclusive timestamp cursor applied identically on the PG
-   * and Mongo fallback paths. Callers may request one extra row to determine
-   * whether an older page exists without changing this array-shaped service
-   * contract for existing internal consumers.
+   * and Mongo fallback paths. It must already be a validated Date so raw
+   * request values never cross this service boundary into a database query.
+   * Callers may request one extra row to determine whether an older page
+   * exists without changing this array-shaped service contract for existing
+   * internal consumers.
    */
   static async getRecentMessages(
     podId: unknown,
     limit = 20,
     selfUserId?: unknown,
-    before?: string,
+    before?: Date,
   ): Promise<MessageNormalized[]> {
     if (!podId) {
       throw new Error('podId is required');
+    }
+    if (before !== undefined
+      && (!(before instanceof Date) || Number.isNaN(before.getTime()))) {
+      throw new Error('before must be a valid Date');
     }
 
     const selfId = selfUserId ? String(selfUserId) : null;
@@ -1660,7 +1666,7 @@ class AgentMessageService {
             limit: number,
             before?: string,
           ): Promise<Array<Record<string, unknown>>>;
-        }).findByPodId(String(podId), limit, before);
+        }).findByPodId(String(podId), limit, before?.toISOString());
 
         return messages.map((msg) => {
           const username = (msg.username as string) || 'Unknown';
@@ -1692,7 +1698,7 @@ class AgentMessageService {
     }
 
     const query: Record<string, unknown> = { podId };
-    if (before) query.createdAt = { $lt: new Date(before) };
+    if (before) query.createdAt = { $lt: before };
     const messages: Array<Record<string, unknown>> = await Message.find(query)
       .sort({ createdAt: -1 })
       .limit(limit)

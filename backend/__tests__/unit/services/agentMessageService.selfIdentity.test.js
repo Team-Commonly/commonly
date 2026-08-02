@@ -67,12 +67,23 @@ describe('getRecentMessages — PG path', () => {
   });
 
   test('passes the exclusive history cursor to PostgreSQL', async () => {
-    const before = '2026-08-01T00:00:00.000Z';
+    const before = new Date('2026-08-01T00:00:00.000Z');
     PGMessage.findByPodId.mockResolvedValue([]);
 
     await AgentMessageService.getRecentMessages(POD, 10, SELF, before);
 
-    expect(PGMessage.findByPodId).toHaveBeenCalledWith(POD, 10, before);
+    expect(PGMessage.findByPodId).toHaveBeenCalledWith(POD, 10, before.toISOString());
+  });
+
+  test.each([
+    ['a raw string', '2026-08-01T00:00:00.000Z'],
+    ['an invalid Date', new Date(Number.NaN)],
+  ])('rejects %s before any database query', async (_label, before) => {
+    await expect(AgentMessageService.getRecentMessages(POD, 10, SELF, before))
+      .rejects.toThrow('before must be a valid Date');
+
+    expect(PGMessage.findByPodId).not.toHaveBeenCalled();
+    expect(Message.find).not.toHaveBeenCalled();
   });
 
   // Its absence is how a client detects a server too old to compute `self`.
@@ -158,14 +169,14 @@ describe('getRecentMessages — Mongo fallback path', () => {
   });
 
   test('applies the same exclusive history cursor on the Mongo fallback', async () => {
-    const before = '2026-08-01T00:00:00.000Z';
+    const before = new Date('2026-08-01T00:00:00.000Z');
     mockMongoChain([]);
 
     await AgentMessageService.getRecentMessages(POD, 10, SELF, before);
 
     expect(Message.find).toHaveBeenCalledWith({
       podId: POD,
-      createdAt: { $lt: new Date(before) },
+      createdAt: { $lt: before },
     });
   });
 });

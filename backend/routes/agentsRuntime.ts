@@ -1358,15 +1358,18 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
     }
     const limit = Math.min(Number(rawLimit || 20), 50);
 
-    const before = req.query?.before;
-    if (before !== undefined
-      && (typeof before !== 'string' || !before.trim() || Number.isNaN(Date.parse(before)))) {
+    const rawBefore = req.query?.before;
+    if (rawBefore !== undefined
+      && (typeof rawBefore !== 'string'
+        || !rawBefore.trim()
+        || Number.isNaN(Date.parse(rawBefore)))) {
       return res.status(400).json({
         message: 'before must be a valid timestamp',
         code: 'invalid_query_parameter',
         parameter: 'before',
       });
     }
+    const before = rawBefore === undefined ? undefined : new Date(rawBefore);
 
     // Pass the caller's own user id so each message carries a server-computed
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from

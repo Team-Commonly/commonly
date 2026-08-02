@@ -68,7 +68,7 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
 
     expect(res.status).toBe(200);
     expect(AgentMessageService.getRecentMessages)
-      .toHaveBeenCalledWith('pod-1', 3, 'bot-1', cursor);
+      .toHaveBeenCalledWith('pod-1', 3, 'bot-1', new Date(cursor));
     expect(res.body).toEqual({
       messages: [
         { id: 'page-oldest', createdAt: '2026-07-31T21:00:00.000Z' },
@@ -115,8 +115,21 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
     expect(AgentMessageService.getRecentMessages).not.toHaveBeenCalled();
   });
 
+  test('rejects an operator-shaped cursor instead of passing a query object through', async () => {
+    const res = await request(app)
+      .get('/api/agents/runtime/pods/pod-1/messages?before%5B%24gt%5D=2026-08-01');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(expect.objectContaining({
+      code: 'invalid_query_parameter',
+      parameter: 'before',
+    }));
+    expect(AgentMessageService.getRecentMessages).not.toHaveBeenCalled();
+  });
+
   test.each([
     ['before', 'not-a-timestamp'],
+    ['before', '{"$gt":""}'],
     ['limit', '2.5'],
   ])('rejects malformed %s instead of answering a different query', async (parameter, value) => {
     const res = await request(app)
