@@ -1701,9 +1701,11 @@ class AgentMessageService {
       }
     }
 
-    const query: Record<string, unknown> = { podId };
-    if (before) query.createdAt = { $lt: before };
-    const messages: Array<Record<string, unknown>> = await Message.find(query)
+    let messageQuery = Message.find({ podId });
+    if (before) {
+      messageQuery = messageQuery.where('createdAt').lt(before);
+    }
+    const messages: Array<Record<string, unknown>> = await messageQuery
       .sort({ createdAt: -1 })
       .limit(limit)
       // `isBot` MUST stay in this projection: it is read below, and omitting it

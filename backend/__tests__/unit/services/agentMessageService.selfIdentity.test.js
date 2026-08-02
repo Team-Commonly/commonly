@@ -31,13 +31,17 @@ const POD = 'pod-1';
 const SELF = 'agent-user-1';
 const OTHER = 'agent-user-2';
 
-// Mongo path: Message.find(...).sort(...).limit(...).populate(...).lean()
+// Mongo path: Message.find(...).where(...).lt(...).sort(...).limit(...).populate(...).lean()
 const mockMongoChain = (rows) => {
-  const populate = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(rows) });
-  const limit = jest.fn().mockReturnValue({ populate });
-  const sort = jest.fn().mockReturnValue({ limit });
-  Message.find.mockReturnValue({ sort });
-  return { populate };
+  const query = {};
+  query.where = jest.fn().mockReturnValue(query);
+  query.lt = jest.fn().mockReturnValue(query);
+  query.sort = jest.fn().mockReturnValue(query);
+  query.limit = jest.fn().mockReturnValue(query);
+  query.populate = jest.fn().mockReturnValue(query);
+  query.lean = jest.fn().mockResolvedValue(rows);
+  Message.find.mockReturnValue(query);
+  return query;
 };
 
 describe('getRecentMessages — PG path', () => {
@@ -172,14 +176,13 @@ describe('getRecentMessages — Mongo fallback path', () => {
 
   test('applies the same exclusive history cursor on the Mongo fallback', async () => {
     const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
-    mockMongoChain([]);
+    const query = mockMongoChain([]);
 
     await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
 
-    expect(Message.find).toHaveBeenCalledWith({
-      podId: POD,
-      createdAt: { $lt: new Date(beforeMs) },
-    });
+    expect(Message.find).toHaveBeenCalledWith({ podId: POD });
+    expect(query.where).toHaveBeenCalledWith('createdAt');
+    expect(query.lt).toHaveBeenCalledWith(new Date(beforeMs));
   });
 });
 
