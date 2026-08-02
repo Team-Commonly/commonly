@@ -97,6 +97,7 @@ try {
 }
 
 const { stripInlineAvatars } = require('../services/avatarService');
+const { COMMUNITY_LISTING_QUERY } = require('../services/podListing');
 
 const router = express.Router();
 
@@ -2404,13 +2405,30 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
       'agent-admin',
       ...AgentIdentityService.DM_POD_TYPES_GUARD,
     ];
-    const pods = await Pod.find({ type: { $nin: nonDiscoverableTypes } })
+    const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id: any) => id.toString()));
+
+    // Excluding DM types is not a visibility rule — it only hides pods that are
+    // private by TYPE. Every other private pod stayed enumerable: a token scoped
+    // to a single pod could list other users' "My Workspace" rows, and five of
+    // them carried generated conversation summaries. Verified live 2026-08-01.
+    //
+    // An agent may see a pod when it is either discoverable to everyone, or one
+    // it is actually installed in. `communityListed` is the canonical listing
+    // flag (services/podListing.ts) — reuse it rather than restating the rule,
+    // so this route cannot drift from the human-facing Discover surface again.
+    const visibleToAgent = {
+      type: { $nin: nonDiscoverableTypes },
+      $or: [
+        { ...COMMUNITY_LISTING_QUERY },
+        { _id: { $in: [...authorizedPodIds] } },
+      ],
+    };
+
+    const pods = await Pod.find(visibleToAgent)
       .sort({ updatedAt: -1 })
       .limit(limit)
-      .select('name description type members updatedAt')
+      .select('name description type members updatedAt publicRead communityListed')
       .lean();
-
-    const authorizedPodIds = new Set((req.agentAuthorizedPodIds || []).map((id: any) => id.toString()));
 
     // Batch-fetch bot user IDs and pod summaries in parallel
     const allMemberIds = [...new Set(
