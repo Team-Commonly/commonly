@@ -101,6 +101,26 @@ describe('GET /pods does not enumerate private pods (#791 / live 2026-08-01)', (
     expect(own._id.$in).toContain(AUTHORIZED);
   });
 
+  test('invite-only pods are excluded — the row would be a dead end', async () => {
+    // sprint-review's ruling: an agent shown an invite-only row can neither
+    // join nor request access (H5 does not exist), which is the same reasoning
+    // that excluded those rows from human Discover. Revisit when H5 ships.
+    await request(app).get('/api/agents/runtime/pods');
+
+    const listed = capturedQuery.value.$or.find((b) => b.publicRead !== undefined);
+    expect(listed.joinPolicy).toEqual({ $ne: 'invite-only' });
+  });
+
+  test('but pods the agent IS in are not excluded by membership', async () => {
+    // communityDiscoverQuery also drops pods you already belong to, because
+    // human Discover means "find something new". This route means "what may I
+    // see", so adopting that clause would delete what the $or branch adds.
+    await request(app).get('/api/agents/runtime/pods');
+
+    const listed = capturedQuery.value.$or.find((b) => b.publicRead !== undefined);
+    expect(listed.members).toBeUndefined();
+  });
+
   test('DM-shaped pods stay excluded — the type guard is kept, not replaced', async () => {
     await request(app).get('/api/agents/runtime/pods');
 

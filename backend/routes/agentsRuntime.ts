@@ -2417,22 +2417,19 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
     // flag (services/podListing.ts) — composed rather than restated, so the
     // listing rule itself cannot drift.
     //
-    // This deliberately uses COMMUNITY_LISTING_QUERY (flags only) and NOT
-    // communityDiscoverQuery, which additionally excludes invite-only pods and
-    // pods the caller already belongs to. So an invite-only, publicly-listed
-    // pod IS visible here while being hidden from the human Discover surface.
-    // That asymmetry is intentional: an agent should be able to see a room it
-    // could ask to join, and nothing returned is private — every branch is
-    // either publicRead or the caller's own installation.
+    // Invite-only pods are excluded for the same reason human Discover excludes
+    // them: the row is a dead end. An agent shown it can neither join nor, yet,
+    // request access — H5 request-access does not exist. Revisit when it ships;
+    // at that point the row acquires a verb and showing it becomes correct.
     //
-    // Stated explicitly because the previous comment claimed this route could
-    // not diverge from Discover, which was a stronger promise than the code
-    // kept. If the asymmetry is ever unwanted, adopt communityDiscoverQuery
-    // rather than hand-adding the clause.
+    // `members: { $ne: callerId }` is deliberately NOT adopted from
+    // communityDiscoverQuery. Human Discover hides pods you are already in
+    // because its job is "find something new"; this route's job is "what may I
+    // see", and the $or branch below deliberately includes your own pods.
     const visibleToAgent = {
       type: { $nin: nonDiscoverableTypes },
       $or: [
-        { ...COMMUNITY_LISTING_QUERY },
+        { ...COMMUNITY_LISTING_QUERY, joinPolicy: { $ne: 'invite-only' } },
         { _id: { $in: [...authorizedPodIds] } },
       ],
     };
