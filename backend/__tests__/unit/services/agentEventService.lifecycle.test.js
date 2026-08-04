@@ -61,6 +61,7 @@ const AgentEvent = require('../../../models/AgentEvent');
 const AgentMemory = require('../../../models/AgentMemory');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
+const { runAgent } = require('../../../services/nativeRuntimeService');
 
 // Let fire-and-forget promise chains (webhook delivery, native settle) run.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -250,7 +251,7 @@ describe('driver paths reach a terminal state', () => {
     };
 
     test('creates the event already counted as one delivery', async () => {
-      require('../../../services/nativeRuntimeService').runAgent.mockResolvedValue({ ok: true });
+      runAgent.mockResolvedValue({ ok: true });
 
       await enqueueNative();
 
@@ -264,7 +265,7 @@ describe('driver paths reach a terminal state', () => {
     });
 
     test('a completed run acks — without this the requeue hands it to an external poller', async () => {
-      require('../../../services/nativeRuntimeService').runAgent.mockResolvedValue({ ok: true });
+      runAgent.mockResolvedValue({ ok: true });
       AgentEvent.findOneAndUpdate.mockResolvedValue({
         _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: 'p1',
         type: 'task.assigned', payload: {}, status: 'acked', memoryRevisionAtDelivery: 0,
@@ -279,7 +280,7 @@ describe('driver paths reach a terminal state', () => {
     });
 
     test('a failed run is terminal too, not left for redelivery', async () => {
-      require('../../../services/nativeRuntimeService').runAgent
+      runAgent
         .mockRejectedValue(new Error('model timeout'));
       AgentEvent.findOneAndUpdate.mockResolvedValue({
         _id: 'evt-n', agentName: 'clerk', instanceId: 'default', podId: 'p1',
@@ -298,7 +299,7 @@ describe('driver paths reach a terminal state', () => {
       // The rejection handler is scoped to runAgent via two-argument .then. A
       // chained .catch would swallow this ack rejection and then mark a run
       // that actually succeeded as 'failed' — silently inverting the outcome.
-      require('../../../services/nativeRuntimeService').runAgent.mockResolvedValue({ ok: true });
+      runAgent.mockResolvedValue({ ok: true });
       AgentEvent.findOneAndUpdate.mockRejectedValue(new Error('mongo down'));
 
       await enqueueNative();
