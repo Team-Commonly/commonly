@@ -82,14 +82,20 @@ app.use('/api/agents/runtime', router);
 
 // Default seeding is the DM case: two members, and the caller (bot-1) is NOT
 // one of them — that is the shape the guard has to refuse.
-const existing = (type, members = [{ _id: 'human-9' }, { _id: 'bot-7' }]) => ({
+const existing = (type, members = [{ _id: 'human-9' }, { _id: 'bot-7' }], flags = {}) => ({
   _id: `pod-${type}`,
   name: 'Nova and Theo',
   type,
   members,
+  // Absent by default — an unlisted, non-public pod is the common case and
+  // the one a non-member must not be able to join by guessing its name.
+  ...flags,
   save: podSave,
   populate: podPopulate,
 });
+
+const asMember = [{ _id: 'human-9' }, { _id: 'bot-1' }];
+const LISTED_OPEN = { publicRead: true, communityListed: true, joinPolicy: 'open' };
 
 const createPod = () => request(app)
   .post('/api/agents/runtime/pods')
@@ -104,10 +110,10 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
   describe.each(['agent-room', 'agent-dm'])('name collides with an existing %s', (type) => {
     beforeEach(() => { mockFoundPod.value = existing(type); });
 
-    test('refuses with 403 dm_membership_refused', async () => {
+    test('refuses with 403 pod_name_unavailable', async () => {
       const res = await createPod();
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('dm_membership_refused');
+      expect(res.body.code).toBe('pod_name_unavailable');
     });
 
     test('does not add the caller as a third member', async () => {
@@ -135,10 +141,78 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
   // agent-admin is deliberately NOT in the guard set — admin pods are N:1
   // (multiple admins ↔ one agent), per CLAUDE.md. Asserted so a future
   // "tidy up the set" edit has to argue with a test.
-  test('agent-admin is NOT refused — admin pods are N:1 by design', async () => {
-    mockFoundPod.value = existing('agent-admin');
+  // agent-admin is deliberately NOT in the DM guard set. Seeded with the
+  // caller already a member, because agent-admin is in NON_LISTABLE_POD_TYPES
+  // and so is never directly joinable — a non-member is refused by the
+  // joinability gate below, which is correct but would test the wrong thing
+  // here. What this pins is only that the DM guard does not claim it.
+  test('agent-admin is NOT refused as a DM — admin pods are N:1 by design', async () => {
+    mockFoundPod.value = existing('agent-admin', asMember);
     const res = await createPod();
     expect(res.status).not.toBe(403);
+  });
+
+  // ------------------------------------------------------------------
+  // A guessed name was a credential for joining any non-DM pod. The five
+  // other writers to `members` all gate on joinability; this branch gated on
+  // nothing. `POST /pods/:podId/self-install` — the dedicated agent-join
+  // path — refuses invite-only, refuses non-members, and requires an active
+  // installation; the dedup branch enforced none of the three.
+  // ------------------------------------------------------------------
+  describe('a non-member cannot join a non-joinable pod by guessing its name', () => {
+    const cases = [
+      ['invite-only, otherwise listed', { ...LISTED_OPEN, joinPolicy: 'invite-only' }],
+      ['unlisted and non-public', {}],
+      ['public but not community-listed', { publicRead: true, communityListed: false }],
+      // ADR-016:46 — `joinPolicy: 'open'` below the community tier is a
+      // DORMANT declaration: it means "open once listed", not "open now".
+      // This is the case a joinPolicy-only gate lets through, which is why
+      // the check is isDirectlyJoinable and not `joinPolicy !== 'invite-only'`.
+      ['dormant open — joinPolicy open but never listed', { publicRead: false, communityListed: false, joinPolicy: 'open' }],
+    ];
+
+    test.each(cases)('refuses %s', async (_label, flags) => {
+      mockFoundPod.value = existing('chat', undefined, flags);
+      const res = await createPod();
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('pod_name_unavailable');
+    });
+
+    test.each(cases)('performs none of the three writes for %s', async (_label, flags) => {
+      mockFoundPod.value = existing('chat', undefined, flags);
+      await createPod();
+      expect(podSave).not.toHaveBeenCalled();
+      expect(mockFoundPod.value.members).toHaveLength(2);
+      expect(mockInstall).not.toHaveBeenCalled();
+    });
+  });
+
+  test('a directly joinable pod still joins — the gate is not a blanket refusal', async () => {
+    mockFoundPod.value = existing('chat', undefined, LISTED_OPEN);
+    const res = await createPod();
+    expect(res.status).toBe(200);
+    expect(podSave).toHaveBeenCalled();
+    expect(mockFoundPod.value.members).toContain('bot-1');
+  });
+
+  // Pod names are guessable by construction — resolveAgentDisplayLabel emits
+  // "Nova and Theo" — so a refusal that names its reason is an existence
+  // oracle for other people's private pods. Both refusals must be byte-identical.
+  test('the DM refusal and the non-joinable refusal are indistinguishable', async () => {
+    mockFoundPod.value = existing('agent-dm');
+    const dm = await createPod();
+    jest.clearAllMocks();
+    mockFoundPod.value = existing('chat', undefined, {});
+    const other = await createPod();
+
+    expect(dm.status).toBe(other.status);
+    expect(dm.body).toEqual(other.body);
+    // The remedy (`commonly_open_dm`) is offered in both, so it discloses
+    // nothing. What must never appear is anything about the pod that was
+    // FOUND — its type or its id — since that is what the caller is fishing
+    // for and did not already know.
+    const body = JSON.stringify(dm.body);
+    expect(body).not.toMatch(/agent-dm|agent-room|pod-agent-dm/);
   });
 
   // The caller is seeded as ALREADY a member here, deliberately. What this
