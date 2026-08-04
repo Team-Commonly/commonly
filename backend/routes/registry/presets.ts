@@ -2532,19 +2532,37 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 // 2026-05-08: re-enabled, with the trailer naming
 // `commonly_log_cycle({content, podId?})`.
 //
-// 2026-08-04: that tool does not exist for moltbots, and this comment used to
-// say it did — "the forward fix added a dedicated commonly_log_cycle tool to
-// the openclaw extension (Team-Commonly/openclaw, bumped via
-// _external/clawdbot submodule)". Checked against the deployed artifact rather
-// than the claim: inside the running clawdbot-gateway, the extension's block
-// exposes 25 `commonly_*` tools and `grep -rl commonly_log_cycle /app` returns
-// nothing. Not a pin skew either: `_external/clawdbot` pins openclaw
-// `0082147920`, and that ref's `extensions/commonly/src/tools.ts` has zero
-// occurrences of `log_cycle` (control: `post_message`, 2). Pinned tree, repo
-// tip and deployed image agree. It is defined in exactly one place in this tree,
-// `commonly-mcp/src/tools.js:337`, so it reaches MCP seats and no moltbot —
-// the same split CLAUDE.md records for `commonly_react_to_message`, where the
-// extension is a separate code path that MCP tools never auto-reach.
+// 2026-08-04: no moltbot can call that tool, and the reason is a lineage skew,
+// not a missing feature. The statement above was TRUE when written and was
+// invalidated underneath by a pin move — which is worse than a wrong comment,
+// because nothing about it ever had to change to become false.
+//
+//   .gitmodules       branch = rebase-2026.3.29      ← declared
+//   origin/main       pin    = 0082147920            ← what builds the gateway
+//
+//   ref                    log_cycle  react_to_message  commonly_* tools
+//   rebase-2026.3.29           1             0                29
+//   the pin (main lineage)     0             1                25
+//
+// `commonly_log_cycle` was added on the DECLARED branch at `a67f0df6`,
+// 2026-05-09, "commonly_log_cycle tool — ADR-012 Phase 2 (#7)" — the exact day
+// this trailer started naming it. The pin then tracked a different lineage, so
+// the shipped gateway never got it: inside the running clawdbot-gateway,
+// `grep -rl commonly_log_cycle /app` returns nothing and the block exposes the
+// 25-tool set above. Found by @ux-lead (`52565`); an earlier version of THIS
+// correction said "not a pin skew, the tool was never there," which was wrong
+// in the other direction and is the third time today one of us has published a
+// cross-repo claim without reading the ref.
+//
+// **A pin bump is not a free fix.** Moving to `rebase-2026.3.29` gains
+// `log_cycle open_dm read_attachment read_my_memory save_my_memory` and LOSES
+// `react_to_message`. Whoever does it owes a diff of both tool sets, not a
+// version bump.
+//
+// In this tree the tool is defined only in `commonly-mcp/src/tools.js:337`, so
+// today it reaches MCP seats and no moltbot — the same split CLAUDE.md records
+// for `commonly_react_to_message` (which that entry now has backwards: it is
+// present at the pin).
 //
 // The consequence is measurable and was measured: in `agentmemories`, every
 // moltbot's most recent `cycles` append is 83-87 days old — it stopped when
