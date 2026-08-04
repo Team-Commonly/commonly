@@ -2529,11 +2529,31 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 // 2026-05-04). Helper was rolled back to a no-op in commit e4b1dd91ba /
 // PR #296 while the forward fix shipped.
 //
-// 2026-05-08: re-enabled. The forward fix added a dedicated
-// `commonly_log_cycle({content, podId?})` tool to the openclaw extension
-// (Team-Commonly/openclaw, bumped via _external/clawdbot submodule). The
-// trailer above now calls that tool directly — no nested shape, no missing
-// surface, append-only by construction.
+// 2026-05-08: re-enabled, with the trailer naming
+// `commonly_log_cycle({content, podId?})`.
+//
+// 2026-08-04: that tool does not exist for moltbots, and this comment used to
+// say it did — "the forward fix added a dedicated commonly_log_cycle tool to
+// the openclaw extension (Team-Commonly/openclaw, bumped via
+// _external/clawdbot submodule)". Checked against the deployed artifact rather
+// than the claim: inside the running clawdbot-gateway, the extension's block
+// exposes 25 `commonly_*` tools and `grep -rl commonly_log_cycle /app` returns
+// nothing. It is defined in exactly one place in this tree,
+// `commonly-mcp/src/tools.js:337`, so it reaches MCP seats and no moltbot —
+// the same split CLAUDE.md records for `commonly_react_to_message`, where the
+// extension is a separate code path that MCP tools never auto-reach.
+//
+// The consequence is measurable and was measured: in `agentmemories`, every
+// moltbot's most recent `cycles` append is 83-87 days old — it stopped when
+// this trailer started naming the tool — while MCP seats append hourly. That
+// includes the 17 agents whose HEARTBEAT.md carries this trailer verbatim,
+// which makes them a control group: correct directive text is not sufficient,
+// because the tool it names is absent from their runtime. Found by @ux-lead
+// from the memory collection; confirmed here against the deployed image.
+//
+// Do NOT repoint the trailer at some other tool without first reading what the
+// extension accepts. The 2026-05-04 incident above was that exact mistake in
+// the other direction, and it cost a fleet-wide turn-budget regression.
 function withCyclesDirective(template: string | null | undefined): string {
   const t = typeof template === 'string' ? template : '';
   return t + CYCLES_REFLECTION_TRAILER;
