@@ -91,6 +91,8 @@ The real defect is narrower and more interesting than the one first filed. **The
 
 **Sharpened lesson: an error on a capability that lives elsewhere must name where it lives.** A validator that describes the payload it wants, from inside a tool that can never emit that payload, is a signpost pointing at itself. And the diagnostic habit this cost me: **when a tool cannot express a documented call, check whether a sibling tool owns the verb before concluding the surface is broken** — I searched the schema of the tool I was told to use and never enumerated the rest, which is the tool-layer version of trusting a docstring. Two-surface reads (entry #5) catch server-side change; this is the same move applied to the tool list.
 
+**The correction did not hold, and that is entry #13.** Hours after the paragraph above was written, another seat hit the same deployed cue, ran the same three `commonly_save_my_memory` shapes, and reached this entry's *original* conclusion — including the same "write `daily` instead" workaround. Fourth occurrence, first one after the answer existed in writing. **This retraction was filed where the mistake was diagnosed, not where it is produced**; the cue kept naming the wrong tool until PR #818. See entry #13.
+
 ## 7. One identity, two kinds of message: directives and arguments are indistinguishable (2026-08-02, orchestrating assistant posting under the operator account)
 
 The assistant orchestrating this sprint posts under the operator's account. So operator *instructions* ("take #795 next") and assistant *analysis* ("here is my read of the taint path") arrive in one voice, with nothing marking which is which. Agents defaulted to treating both as directives — the correct default when you cannot distinguish them — and a technical claim consequently propagated for two review cycles without being checked, and was attributed to the wrong seat in a PR approval that is now the durable record of why a design shape was chosen.
@@ -293,3 +295,39 @@ Second, and live: **three of four driver classes terminate inside the requeue's 
 **And the human half, which is why the rule needs stating at all.** In three of these, the refuting datum was in the reader's own output before the wrong conclusion was published — a `mergeStateStatus` printed in three consecutive sign-offs, a route line quoted inside the finding it undercut. **Output we generate ourselves gets read as decoration rather than as evidence.** So the failure is not "did not look"; it is "looked, printed it, and did not join it to the claim two lines below." *(Prior form of the same observation: entry #5, re-check before you rely on a fact — this is the narrower case where the fact was never in doubt, only never connected.)*
 
 **Not verified:** which driver serves the agent seats in this sprint pod. `_external/clawdbot` is an uninitialized submodule in this checkout (0 entries), so the openclaw path is unreadable from here by anyone on the team. What is first-person certain is narrower: **from this seat neither `commonly_poll_events` nor `commonly_ack_event` is surfaced at all**, so the event that produced any given turn is unackable by the agent handling it — but whether the injecting harness acks out-of-band is not observable from inside the turn. The `$inc` fix itself is @sprint-review's and is not written yet; note that landing it also *activates* the `attempts < 3` cap, which has never once fired, so the increment and the cap need to land as a deliberate pair rather than as a one-liner.
+
+## 13. One instruction, two driver classes — and a correction that never reached the surface producing the error (2026-08-04, ux-lead + pod-architect)
+
+Every heartbeat tick delivers two instructions that **cannot be executed on an MCP-based seat**, and the same string is delivered to every agent regardless of driver.
+
+**1. "Read your HEARTBEAT.md workspace file and follow it exactly."** No such file exists on an MCP seat. `HEARTBEAT.md` is provisioned from `backend/routes/registry/presets.ts` (`heartbeatTemplate`, ~19 presets) into a **moltbot PVC workspace** by `agentProvisionerService{,K8s}`. An ADR-005 wrapper or cloud-codex seat, whose workspace is a plain git clone, never receives one. Confirmed independently on two seats. The instruction is not merely a no-op — nothing in the cue tells the agent that absence is *expected*, so the honest reading is "I am failing a stated requirement," and it costs a filesystem check every tick to discover otherwise.
+
+**2. The cycle-write instruction names a tool that cannot serve it.** The deployed cue says `commonly_save_my_memory({ sections: { cycles: { append: { content } } } })`. That tool's MCP schema exposes `section | content | entries | visibility` — **there is no `append` field to put the payload in**, and its description enumerates `soul | long_term | daily | dedup_state | relationships | shared | runtime_meta`, omitting `cycles` entirely. This is entry #6, still deployed. Fixed in the code by PR #818.
+
+### The finding is the recurrence, not the defect
+
+Entry #6 recorded this on 2026-08-02 and was **corrected on 2026-08-04**: `commonly_log_cycle({ content, podId? })` is the append-only `cycles` writer and has shipped since 2026-05-10. That correction is in this file, ~150 lines above.
+
+Hours after it was written, a second seat hit the deployed cue, tried three shapes of `commonly_save_my_memory`, collected three 400s, and concluded: *"`cycles` is unwritable from an MCP seat, and the agent's only recourse is to write `daily` instead."* That is entry #6's **original, already-retracted conclusion**, arrived at independently — together with the identical `daily` workaround this audit records as the original incident's damage. It is the **fourth** occurrence of one failure, and the first to happen *after* the answer was written down.
+
+**The correction landed in documentation; the error is produced by a cue.** Agents do not read the audit — they read the string in `payload.content`, and that string still named the wrong tool. A retraction that does not reach the surface generating the mistake changes nothing for the next reader, and the next reader is not a person browsing a repo but an agent executing an instruction it was handed. **A fix to a false model must land where the model is produced, not where it was diagnosed.**
+
+### The genus: an instruction correct for one driver class, delivered to all
+
+Three instances found the same day, at three layers, none with any notion of driver class in the code:
+
+| layer | surface | correct for | broken for |
+|---|---|---|---|
+| instruction | heartbeat cue (`HEARTBEAT.md`, cycle write) | openclaw moltbots | MCP seats — no file, wrong tool name |
+| instruction | mention cues (`commonly_open_dm`, `commonly_read_attachment`) | openclaw moltbots | MCP seats — `commonly_dm_agent`, `commonly_read_file` |
+| data | `agentEventService` requeue → `status: 'pending'` | pull drivers (genuine redelivery) | push/native — nothing re-reads `pending`, so it is a 20-minute countdown to deletion |
+
+`buildContentForTarget` composes the mention cues with no driver branch; the requeue block has no driver notion either. **The assumption of a single driver class is invisible from inside any one of them** — every check passes for the population the author belongs to. Compare entry #6's lesson (a capability owned by one tool and named by another): this is the same shape with *runtime* as the axis instead of *tool*.
+
+**Lesson:** a kernel-level string or field reaching every driver must name only what every driver has, name each namespace explicitly, or branch on driver class. Where the composing call site has no notion of driver class, it cannot choose — so it must state both. And **"does this exist?" is not answerable without naming the caller**: `commonly_open_dm` is real for moltbots and absent for MCP seats, which is why every individual existence check passed and the defect survived.
+
+### A positive example, which this log is otherwise short of
+
+The server's 400 is the best agent-facing artifact encountered this sprint: *"cycles is append-only — payload must be `{ append: { content, ts?, podId? } }`"*. It names the exact required shape, and it taught more in one response than the tool description it contradicts. Its one gap is entry #6's sharpened lesson — it names the required **payload** but not the required **tool**, so a diligent reader digs deeper into the wrong surface. **The pattern worth copying: an error that states the shape it wants. The pattern worth completing: also state where that shape is accepted.**
+
+**Not verified:** the openclaw extension's own tool list — `_external/clawdbot` is an uninitialized submodule on every seat that looked, so "`commonly_read_attachment` exists nowhere" is proven for `@commonlyai/mcp` and this repo, and *inferred* for openclaw. No cluster read: the `HEARTBEAT.md` provisioning path is traced from source, not observed on a moltbot PVC. The three-400 sequence is @ux-lead's measurement, reproduced here only as far as the tool schema, not re-run.
