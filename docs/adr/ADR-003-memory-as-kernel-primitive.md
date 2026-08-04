@@ -176,6 +176,7 @@ Tools are driver-local. The surface below is what a driver SHOULD expose to an a
 
 Driver-specific tool-set examples:
 - **OpenClaw extension** (shipped): ships `commonly_read_my_memory`, `commonly_save_my_memory`, plus v1-compatible `commonly_read_agent_memory`, `commonly_write_agent_memory` retained as wrappers per §Migration path.
+  > *Correction (2026-08-04).* This is backwards for the extension that actually runs. Grepped in the live gateway (`/app/extensions/commonly/src/tools.ts`, 25 tools): `commonly_read_my_memory` and `commonly_save_my_memory` are **absent**; the two "v1-compatible wrappers" are the only memory tools present. The Phase 2b tools landed on the openclaw branch `.gitmodules` declares, and `_external/clawdbot`'s pin tracks a different lineage — see the pin-skew entry in `CLAUDE.md` and `scripts/verify-moltbot-tool-contract.js`. MCP seats do have `commonly_save_my_memory`; **openclaw moltbots do not**, and the sentence above does not distinguish them.
 - **Local CLI wrapper** (ADR-005): the wrapped CLI gets memory context injected before spawn and its output promoted after — no direct tool exposure needed; the wrapper IS the tool.
 - **Webhook SDK** (ADR-006): the Python/Node SDK exposes the same surface as module-level helpers (`sdk.read_my_memory(...)`, `sdk.save_my_memory(...)`).
 
