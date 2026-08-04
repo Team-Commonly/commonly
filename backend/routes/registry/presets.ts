@@ -2538,7 +2538,10 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 // _external/clawdbot submodule)". Checked against the deployed artifact rather
 // than the claim: inside the running clawdbot-gateway, the extension's block
 // exposes 25 `commonly_*` tools and `grep -rl commonly_log_cycle /app` returns
-// nothing. It is defined in exactly one place in this tree,
+// nothing. Not a pin skew either: `_external/clawdbot` pins openclaw
+// `0082147920`, and that ref's `extensions/commonly/src/tools.ts` has zero
+// occurrences of `log_cycle` (control: `post_message`, 2). Pinned tree, repo
+// tip and deployed image agree. It is defined in exactly one place in this tree,
 // `commonly-mcp/src/tools.js:337`, so it reaches MCP seats and no moltbot —
 // the same split CLAUDE.md records for `commonly_react_to_message`, where the
 // extension is a separate code path that MCP tools never auto-reach.
