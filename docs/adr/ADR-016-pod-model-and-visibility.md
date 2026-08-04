@@ -57,6 +57,24 @@ An earlier draft called `agent-admin` a plain room, which overstated its reachab
 4. **Promotion is deliberate and audited** — each tier step is its own admin action (`showcase.publish`, `community.list`) with its own AuditLog row; no writer flips two flags on a caller's behalf (the 409-not-auto-publish decision).
 5. **One predicate module** — `backend/services/podListing.ts` is the sole owner of the flag logic; a grep for `communityListed` outside it and its writers finding raw boolean logic is a regression.
 
+   **The scan, with its scope and its expected result, because an invariant whose test returns unexplained hits gets re-litigated every time someone runs it** (audit by @ux-lead against `bca49242`, 2026-08-04; scope and the sixth file added on re-run):
+
+   ```bash
+   grep -rln communityListed backend/ --include='*.ts' --include='*.js' | grep -v __tests__   # → 5
+   ```
+
+   | file | why it holds the string | verdict |
+   |---|---|---|
+   | `services/podListing.ts` | owns the predicate | the invariant |
+   | `models/Pod.ts` | schema declaration | not logic |
+   | `routes/admin/pods.ts` | the two visibility writers | the sanctioned writers |
+   | `routes/agentsRuntime.ts` | one hit, `:2478`, inside a `.select(…)` projection string | not logic |
+   | `backend/scripts/seed-community-pods.ts` | `:69-70` sets `publicRead: true` **and** `communityListed: true` in one `$setOnInsert` | **third writer, exempt** |
+
+   The seed script is a writer the invariant does not name, and it **satisfies** invariant 1 rather than violating it — both flags move together in a single atomic operation, which is exactly what the invariant demands of a writer. Recorded as an exemption rather than left for rediscovery.
+
+   **Drop the `__tests__` filter and the same grep returns 10.** The invariant's sentence describes the unfiltered scan while every audit of it has run the filtered one, so a reader following the text literally triages six files and a reader following practice triages one. The filter is part of the test, not a convenience — stated here so the two agree.
+
 ## Reachable-state enumeration
 
 Rooms: 3 tiers × 2 join policies = **6 states**, all meaningful:
