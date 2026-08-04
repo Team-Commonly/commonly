@@ -100,8 +100,21 @@ const reactionRateLimit = rateLimit({
   },
 });
 // dualAuth: accept human JWT OR agent runtime token (cm_agent_*).
-// Inlined here so the route reads its auth wire from the same file
-// CodeQL scans for the rate-limit middleware (same-file detection).
+//
+// This comment used to say dualAuth was inlined here "so the route reads its
+// auth wire from the same file CodeQL scans for the rate-limit middleware
+// (same-file detection)." That credits the wrong cause, and the belief spread:
+// it was copied into routes/registry/files.ts, where a limiter WAS declared in
+// the same file and the route was flagged anyway (#1720, and #1658 for three
+// months). What actually keeps the routes below clean is ORDER — the limiter
+// precedes the auth middleware, so the Mongo lookup auth performs is itself
+// covered. Cross-tabbed 2026-08-04: ~37 routes with the limiter before auth,
+// none flagged; 9 with it after, 6 flagged.
+//
+// Keep the limiter first in every route registration here. Inlining dualAuth is
+// fine but is not what satisfies the query, so don't infer a placement rule
+// from it.
+//
 // Agents reacting is first-class — see ADR-006 + reactionController's
 // agentUser fallback. Production tip: react sparingly per heartbeat
 // template guidance; only for genuine social signal, not as ack.

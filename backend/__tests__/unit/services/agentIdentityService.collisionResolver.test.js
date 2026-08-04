@@ -119,6 +119,59 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved).toHaveLength(0);
   });
 
+  test('a sibling pod label cannot overwrite the portable agent identity', async () => {
+    // One principal can be installed in several pods. The displayName passed
+    // by CAP is the target installation's label, not permission to rename the
+    // shared User row. This is the cross-pod regression that previously made
+    // historical bylines oscillate between the two rooms.
+    mockExisting = {
+      _id: 'strategist-id',
+      username: 'cl-strategist-strategist-fable',
+      isBot: true,
+      botMetadata: {
+        agentName: 'cl-strategist',
+        instanceId: 'strategist-fable',
+        displayName: 'Strategist (Fable)',
+        runtime: 'codex',
+      },
+    };
+
+    const user = await AgentIdentityService.getOrCreateAgentUser('cl-strategist', {
+      instanceId: 'strategist-fable',
+      // This is the label from the sibling pod's AgentInstallation.
+      displayName: 'Strategist (Claude)',
+    });
+
+    expect(user.botMetadata.displayName).toBe('Strategist (Fable)');
+    expect(mockSaved).toHaveLength(0);
+  });
+
+  test('a same-pod installation rename cannot silently rename the principal', async () => {
+    // The config route owns the pod-scoped AgentInstallation/AgentProfile
+    // rename. A later post from that same pod must not turn it into a global
+    // identity rename as a side effect.
+    mockExisting = {
+      _id: 'strategist-id',
+      username: 'cl-strategist-strategist-fable',
+      isBot: true,
+      botMetadata: {
+        agentName: 'cl-strategist',
+        instanceId: 'strategist-fable',
+        displayName: 'Strategist (Claude)',
+        runtime: 'codex',
+      },
+    };
+
+    const user = await AgentIdentityService.getOrCreateAgentUser('cl-strategist', {
+      instanceId: 'strategist-fable',
+      // The installation/profile was renamed inside this pod.
+      displayName: 'Strategy reviewer',
+    });
+
+    expect(user.botMetadata.displayName).toBe('Strategist (Claude)');
+    expect(mockSaved).toHaveLength(0);
+  });
+
   test('new install collides with an existing canonical — gets suffix', async () => {
     // openclaw-pixel already has displayName="Pixel" with instanceId "pixel" (shorter)
     mockPeers = [

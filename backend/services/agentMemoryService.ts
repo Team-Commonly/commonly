@@ -559,9 +559,77 @@ export interface AppendCycleArgs {
   ts?: Date;
 }
 
+// A write path that mutates its payload must report the mutation. `content`
+// over CYCLE_CONTENT_MAX is silently ellipsised, and a caller who only sees
+// `{ok: true}` has no way to learn its tail was dropped — the tool schema
+// declares no cap, so the truncation is invisible from the client side. AX
+// audit #8 (2026-08-04): three agents mislearned this section's write surface
+// and one of them lost content to this exact silence. Returning what we did to
+// the input is the whole fix; callers surface it as `truncated` on the route.
+export interface AppendCycleResult {
+  ok: true;
+  truncated: boolean;
+  storedChars: number;
+  submittedChars: number;
+  // The append mutates in a SECOND dimension: `$slice: CYCLE_ENTRY_CAP` drops
+  // the oldest entry once the window is full, so a caller can lose history it
+  // never submitted on this call. Reporting only `truncated` would fix half of
+  // one call's silence.
+  evicted: boolean;
+  retainedEntries: number;
+  entryCap: number;
+}
+
+// The route-facing projection of an append's mutations. Exported so every
+// response derives the same keys from the same rule — two routes open-coding
+// this is how the two surfaces drift apart.
+//
+// The two FLAGS are emitted unconditionally, including when they are `false`.
+// An earlier draft omitted them on a clean write, which reads as tidier and is
+// wrong: it overloads absence with two meanings — "nothing was mutated" and
+// "a backend that predates this fix". Those two ship on different clocks. The
+// tool description travels with `@commonlyai/mcp` on npm; this code travels to
+// the cluster on a deploy. So an agent running a NEW description against an OLD
+// backend sees no `truncated`, reads the documented absence, and concludes its
+// content was stored whole — a plausible silence confirming a wrong model, in
+// the fix for a plausible silence. (@ux-lead, msg 52263; @sprint-review then
+// established in 52271 that the obvious alternative discriminator does not
+// work — `schemaVersion: 2` is emitted identically on main and on this branch,
+// so keying off it would have distinguished nothing.)
+//
+// Emitting always makes the FIELD's presence the version discriminator and the
+// field's VALUE the mutation report — two questions, two signals, neither
+// inferred from silence. Absent flag ⇒ old backend, says nothing about content.
+//
+// The detail counts stay conditional: they are only meaningful alongside a true
+// flag, they carry no version information, and `storedChars === submittedChars`
+// on a clean write is noise. `entryCap` rides along with an eviction because a
+// caller learning it lost history should learn the horizon in the same breath.
+export function describeCycleMutation(
+  result: AppendCycleResult | null | undefined,
+): Record<string, unknown> {
+  if (!result) return {};
+  return {
+    truncated: result.truncated,
+    ...(result.truncated
+      ? {
+        storedChars: result.storedChars,
+        submittedChars: result.submittedChars,
+      }
+      : {}),
+    evicted: result.evicted,
+    ...(result.evicted
+      ? {
+        retainedEntries: result.retainedEntries,
+        entryCap: result.entryCap,
+      }
+      : {}),
+  };
+}
+
 export async function appendCycle(
   args: AppendCycleArgs,
-): Promise<{ ok: true } | null> {
+): Promise<AppendCycleResult | null> {
   const {
     agentName,
     instanceId,
@@ -574,13 +642,19 @@ export async function appendCycle(
   const trimmedContent = typeof content === 'string' ? content.trim() : '';
   if (!trimmedContent) return null;
 
+  const storedContent = truncateCycleContent(trimmedContent);
   const entry: ICycleEntry = {
     ts,
-    content: truncateCycleContent(trimmedContent),
+    content: storedContent,
     ...(podId && typeof podId === 'string' ? { podId } : {}),
   };
 
-  await AgentMemory.findOneAndUpdate(
+  // `new: false` on purpose — the PRE-image is the only thing that separates
+  // "just reached the cap" from "evicted at the cap". Both leave the array at
+  // exactly CYCLE_ENTRY_CAP afterwards, so a post-image can't tell them apart.
+  // Projected down to each entry's `ts` so this costs a count, not 20KB of
+  // content.
+  const prior = await AgentMemory.findOneAndUpdate(
     { agentName, instanceId },
     {
       $push: {
@@ -596,10 +670,26 @@ export async function appendCycle(
       $currentDate: { 'sections.cycles.updatedAt': true },
       $setOnInsert: { agentName, instanceId },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
-  ).lean();
+    {
+      upsert: true,
+      new: false,
+      setDefaultsOnInsert: true,
+      runValidators: true,
+      projection: { 'sections.cycles.entries.ts': 1 },
+    },
+  ).lean<{ sections?: { cycles?: { entries?: unknown[] } } } | null>();
 
-  return { ok: true };
+  const priorCount = prior?.sections?.cycles?.entries?.length ?? 0;
+
+  return {
+    ok: true,
+    truncated: storedContent.length < trimmedContent.length,
+    storedChars: storedContent.length,
+    submittedChars: trimmedContent.length,
+    evicted: priorCount >= CYCLE_ENTRY_CAP,
+    retainedEntries: Math.min(priorCount + 1, CYCLE_ENTRY_CAP),
+    entryCap: CYCLE_ENTRY_CAP,
+  };
 }
 
 // ADR-012 §10.2: emit-gated digest builders. Each returns `null` (or `[]`)

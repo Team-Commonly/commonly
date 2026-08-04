@@ -6,6 +6,7 @@
 const AgentMemory = require('../../../models/AgentMemory');
 const {
   appendCycle,
+  describeCycleMutation,
   truncateCycleContent,
   buildMemoryDigest,
   buildCyclesDigest,
@@ -53,7 +54,19 @@ describe('appendCycle (DB-backed)', () => {
       content: 'first reflection',
       ts: new Date('2026-05-04T00:00:00Z'),
     });
-    expect(result).toEqual({ ok: true });
+    // Assertion widened (was `toEqual({ ok: true })`) under the AX #8 ruling of
+    // 2026-08-04: a write path that mutates its payload must report the
+    // mutation, so appendCycle now returns the truncation outcome alongside ok.
+    // Still exact — an unexpected extra field fails.
+    expect(result).toEqual({
+      ok: true,
+      truncated: false,
+      storedChars: 'first reflection'.length,
+      submittedChars: 'first reflection'.length,
+      evicted: false,
+      retainedEntries: 1,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
     const doc = await AgentMemory.findOne({ agentName: 'nova', instanceId: 'default' }).lean();
     expect(doc.sections.cycles.entries).toHaveLength(1);
     expect(doc.sections.cycles.entries[0].content).toBe('first reflection');
@@ -82,12 +95,115 @@ describe('appendCycle (DB-backed)', () => {
     expect(doc.sections.cycles.entries[0].content).toBe(`cycle-${CYCLE_ENTRY_CAP + 4}`);
   });
 
+  // AX #8, second dimension: the eviction above was as silent as the
+  // truncation. The boundary is the whole test — reaching the cap and
+  // evicting at the cap both leave the array at exactly CYCLE_ENTRY_CAP, so
+  // only the pre-image can tell them apart.
+  it('reports eviction only once the window is actually full', async () => {
+    const append = (i: number) => appendCycle({
+      agentName: 'theo',
+      instanceId: 'default',
+      content: `entry-${i}`,
+      ts: new Date(`2026-05-04T01:${String(i % 60).padStart(2, '0')}:00Z`),
+    });
+
+    let last: any;
+    for (let i = 0; i < CYCLE_ENTRY_CAP - 1; i++) last = await append(i);
+    // One short of the cap: nothing dropped yet.
+    expect(last).toMatchObject({ evicted: false, retainedEntries: CYCLE_ENTRY_CAP - 1 });
+
+    // The append that FILLS the window still evicts nothing.
+    const filling = await append(CYCLE_ENTRY_CAP - 1);
+    expect(filling).toMatchObject({
+      evicted: false,
+      retainedEntries: CYCLE_ENTRY_CAP,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
+
+    // The next one does, and the count stays pinned at the cap.
+    const overflowing = await append(CYCLE_ENTRY_CAP);
+    expect(overflowing).toMatchObject({
+      evicted: true,
+      retainedEntries: CYCLE_ENTRY_CAP,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
+
+    const doc = await AgentMemory.findOne({ agentName: 'theo', instanceId: 'default' }).lean();
+    expect(doc.sections.cycles.entries).toHaveLength(CYCLE_ENTRY_CAP);
+    // The report is true: entry-0 is the one that went.
+    expect(doc.sections.cycles.entries.map((e: any) => e.content)).not.toContain('entry-0');
+  });
+
+  it('reports both mutations on one call when content is long AND the window is full', async () => {
+    for (let i = 0; i < CYCLE_ENTRY_CAP; i++) {
+      await appendCycle({ agentName: 'ops', instanceId: 'default', content: `seed-${i}` });
+    }
+    const result = await appendCycle({
+      agentName: 'ops',
+      instanceId: 'default',
+      content: 'k'.repeat(CYCLE_CONTENT_MAX + 3),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      truncated: true,
+      submittedChars: CYCLE_CONTENT_MAX + 3,
+      evicted: true,
+    });
+  });
+
   it('truncates content at the schema cap', async () => {
     const long = 'y'.repeat(CYCLE_CONTENT_MAX + 50);
     await appendCycle({ agentName: 'aria', instanceId: 'default', content: long });
     const doc = await AgentMemory.findOne({ agentName: 'aria', instanceId: 'default' }).lean();
     expect(doc.sections.cycles.entries[0].content.length).toBeLessThanOrEqual(CYCLE_CONTENT_MAX);
     expect(doc.sections.cycles.entries[0].content.endsWith('…')).toBe(true);
+  });
+
+  // AX #8: the truncation above was invisible to the caller. These pin the
+  // report, not the truncation — the pair that must move together.
+  it('reports truncation with both lengths when content exceeds the cap', async () => {
+    const long = 'y'.repeat(CYCLE_CONTENT_MAX + 50);
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: long });
+    expect(result).toEqual({
+      ok: true,
+      truncated: true,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX + 50,
+      evicted: false,
+      retainedEntries: 1,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
+  });
+
+  it('reports truncated: false at exactly the cap (boundary is not a mutation)', async () => {
+    const exact = 'z'.repeat(CYCLE_CONTENT_MAX);
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: exact });
+    expect(result).toEqual({
+      ok: true,
+      truncated: false,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX,
+      evicted: false,
+      retainedEntries: 1,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
+    const doc = await AgentMemory.findOne({ agentName: 'aria', instanceId: 'default' }).lean();
+    expect(doc.sections.cycles.entries[0].content).toBe(exact);
+    expect(doc.sections.cycles.entries[0].content.endsWith('…')).toBe(false);
+  });
+
+  it('measures the trimmed payload, so surrounding whitespace is not reported as truncation', async () => {
+    const padded = `   ${'w'.repeat(CYCLE_CONTENT_MAX)}   `;
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: padded });
+    expect(result).toEqual({
+      ok: true,
+      truncated: false,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX,
+      evicted: false,
+      retainedEntries: 1,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
   });
 
   it('returns null on missing required identity fields', async () => {
@@ -322,5 +438,90 @@ describe('digest builders (pure)', () => {
       expect(out.longTermDigest).toBe('durable');
       expect(out.recentDailyDigest).toHaveLength(1);
     });
+  });
+});
+
+// The route-facing projection. Both routes derive their response keys from
+// this one function so the two surfaces cannot drift.
+//
+// The contract these pin: the FLAGS are always present, the DETAIL COUNTS are
+// present only when their flag is true. That split is load-bearing — a caller
+// on an old backend gets no flags at all, so "flag absent" means "this server
+// cannot tell you" and never means "nothing happened".
+describe('describeCycleMutation (pure)', () => {
+  const base = {
+    ok: true,
+    truncated: false,
+    storedChars: 10,
+    submittedChars: 10,
+    evicted: false,
+    retainedEntries: 3,
+    entryCap: CYCLE_ENTRY_CAP,
+  };
+
+  it('emits both flags as false when the payload survived intact', () => {
+    // NOT `{}`. An omitted flag is indistinguishable from a backend that
+    // predates this fix, and the two ship on different clocks (npm vs deploy).
+    expect(describeCycleMutation(base)).toEqual({ truncated: false, evicted: false });
+  });
+
+  it('omits the detail counts when nothing was mutated', () => {
+    const out = describeCycleMutation(base);
+    expect(out).not.toHaveProperty('storedChars');
+    expect(out).not.toHaveProperty('submittedChars');
+    expect(out).not.toHaveProperty('retainedEntries');
+    expect(out).not.toHaveProperty('entryCap');
+  });
+
+  it('emits nothing at all for a null result (append refused on missing identity)', () => {
+    // The one case that stays empty: there was no append, so there is no
+    // mutation to report either way. A false flag here would assert a clean
+    // write that never happened.
+    expect(describeCycleMutation(null)).toEqual({});
+    expect(describeCycleMutation(undefined)).toEqual({});
+  });
+
+  it('emits the content counts, and a false eviction flag, when only content was cut', () => {
+    expect(describeCycleMutation({
+      ...base, truncated: true, storedChars: 500, submittedChars: 531,
+    })).toEqual({
+      truncated: true, storedChars: 500, submittedChars: 531, evicted: false,
+    });
+  });
+
+  it('emits the history counts, and a false truncation flag, when only history was dropped', () => {
+    expect(describeCycleMutation({ ...base, evicted: true, retainedEntries: CYCLE_ENTRY_CAP }))
+      .toEqual({
+        truncated: false,
+        evicted: true,
+        retainedEntries: CYCLE_ENTRY_CAP,
+        entryCap: CYCLE_ENTRY_CAP,
+      });
+  });
+
+  it('emits both sets when both dimensions were mutated', () => {
+    expect(describeCycleMutation({
+      ...base, truncated: true, storedChars: 500, submittedChars: 531, evicted: true,
+    })).toEqual({
+      truncated: true,
+      storedChars: 500,
+      submittedChars: 531,
+      evicted: true,
+      retainedEntries: 3,
+      entryCap: CYCLE_ENTRY_CAP,
+    });
+  });
+
+  it('never omits a flag, for any combination of the two dimensions', () => {
+    // The version-discriminator property stated as one assertion rather than
+    // inferred from the four cases above: whatever the append did, a caller can
+    // always ask "did this server answer?" and get a yes.
+    for (const truncated of [false, true]) {
+      for (const evicted of [false, true]) {
+        const out = describeCycleMutation({ ...base, truncated, evicted });
+        expect(out).toHaveProperty('truncated', truncated);
+        expect(out).toHaveProperty('evicted', evicted);
+      }
+    }
   });
 });

@@ -27,10 +27,17 @@ const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
 
-// Inlined per-route limiter so CodeQL's `js/missing-rate-limiting`
-// query (which only sees express-rate-limit calls in the same file
-// as the route registration) recognises the guard. Mirrors the
-// phase4RateLimit pattern in agentsRuntime.ts. Skipped under
+// Inlined per-route limiter. This comment used to attribute its clean CodeQL
+// status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
+// in the same file as the route registration" — copied from agentsRuntime.ts,
+// where the routes following that recipe are in fact flagged.
+//
+// The route below is clean for a different reason: `installRateLimit` is
+// applied BEFORE `auth`, so the Mongo lookup auth performs is itself covered.
+// Order is the discriminator (~37 routes with the limiter first: none
+// flagged; 9 with it after auth: 6 flagged). Keep it first — moving it after
+// `auth` would flag this route and, more to the point, would leave that
+// lookup unlimited. Skipped under
 // NODE_ENV=test so the integration suite's beforeEach reinstall
 // loops (30+ installs in <60s) don't get throttled.
 const installRateLimit = rateLimit({

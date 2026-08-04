@@ -17,6 +17,13 @@ jest.mock('../../../services/agentThreadService', () => ({}));
 jest.mock('../../../services/podContextService', () => ({}));
 jest.mock('../../../services/globalModelConfigService', () => ({}));
 jest.mock('../../../services/socialPolicyService', () => ({}));
+// agentsRuntime mounts its upload route at module load. This test exercises
+// the message route only, so isolate the upload stack (and its JWT/native
+// dependency chain) rather than making this route contract test depend on it.
+jest.mock('../../../routes/uploads', () => ({
+  uploadSingle: () => (req, res, next) => next(),
+  handleUpload: jest.fn(),
+}));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));

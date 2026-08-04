@@ -36,9 +36,38 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // 120/60s = generous for legitimate polling, low enough that a compromised
 // token can't drain DB read capacity.
 //
-// Inlined here (not behind a factory) so CodeQL's `js/missing-rate-limiting`
-// query — which only recognises direct express-rate-limit invocations in the
-// same file as the route registration — sees the middleware on each route.
+// Inlined here (not behind a factory) rather than shared from a middleware
+// module — that part is fine and worth keeping.
+//
+// What this comment used to claim is not: that CodeQL's
+// `js/missing-rate-limiting` query "only recognises direct express-rate-limit
+// invocations in the same file as the route registration." That is refuted by
+// the routes below. `/memory` and `/memory/sync` follow the recipe exactly —
+// limiter declared in this file, applied inline — and both carry open
+// high-severity alerts. The belief also spread from here into
+// registry/{install,provision,files}.ts.
+//
+// The discriminator is ORDER, not location. The query anchors to the first
+// middleware in the chain; `agentRuntimeAuth` does a Mongo lookup, so a
+// limiter placed after it leaves that lookup unprotected and the route
+// flagged. Cross-tab against main on 2026-08-04: ~37 routes with the limiter
+// before auth, none flagged; 9 with it after, 6 flagged — including every
+// `agentRuntimeAuth, phase4RateLimit` route in this file.
+//
+// The routes below are therefore genuinely under-protected, not
+// false-positived. The fix is to move phase4RateLimit ahead of
+// agentRuntimeAuth on each.
+//
+// That is safe, and agentRateLimitKeyGenerator was already built for it:
+// its first branch reads `req.agentTokenHash` (set by agentRuntimeAuth, so
+// post-auth only), but it falls through to a sha256 of the Authorization /
+// x-commonly-agent-token header, which is present before any middleware
+// runs. Running the limiter first just takes the header branch — same
+// per-caller isolation, different key prefix. No key-generator change needed.
+//
+// Not done in this PR only because it is 8 route registrations in a
+// different subsystem from the one this PR fixes, and it deserves its own
+// diff. It is specified, not blocked.
 const phase4RateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
@@ -82,6 +111,7 @@ const {
   isValidYMD,
   filterSectionsByVisibility,
   appendCycle,
+  describeCycleMutation,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
 const DMService = require('../services/dmService');
@@ -1615,7 +1645,9 @@ router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req
       return res.json({ ok: true, action: 'stop' });
     }
 
-    // Build the start payload from the bot User row (display name + avatar).
+    // The label is pod-scoped on the installation. Fetch the User only for
+    // the portable avatar/fallback; never let its principal label override
+    // this pod's configured agent label.
     let displayName = installation.displayName || agentName;
     let avatar: string | undefined;
     try {
@@ -1626,7 +1658,7 @@ router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req
         profilePicture?: string;
         botMetadata?: { displayName?: string };
       };
-      displayName = agentUser?.botMetadata?.displayName || agentUser?.username || displayName;
+      displayName = installation.displayName || agentUser?.botMetadata?.displayName || agentUser?.username || agentName;
       avatar = agentUser?.profilePicture || undefined;
     } catch (identityError) {
       console.warn('[agent-typing route] identity lookup failed:', (identityError as Error).message);
@@ -2124,9 +2156,10 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
     // leak into stampSectionsForWrite (which expects whole-section overwrite
     // shapes). The standard $set then proceeds on the remaining sections.
     const cyclesAppend = sections !== undefined ? extractCyclesAppend(sections) : null;
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         // Validation errors (content too long, etc) are caught by the schema's
         // runValidators; surface as 400 so callers can correct.
@@ -2191,7 +2224,9 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
       contentProvided: content !== undefined,
       sourceRuntime,
     });
-    return res.json({ ok: true });
+    // Report the mutation, not just the success: an ellipsised cycle entry —
+    // or an evicted one — is indistinguishable from a stored one without this.
+    return res.json({ ok: true, ...describeCycleMutation(cycleResult) });
   } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
@@ -2255,19 +2290,29 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
     // ADR-012 §10.1: handle a `cycles` append before the sync dedup logic.
     // The dedup key is computed AFTER cycles is removed (see computeSyncDedupKey
     // input below), so resending the same payload doesn't double-append; the
-    // dedup gate covers replay safety on the syncable sections only. Cycles
-    // appends within a deduped resend will still fire a second time — that is
-    // a known v1 behaviour, callers should not include `cycles` in repeat
-    // syncs (a separate cycles-only PUT /memory call is the recommended path).
+    // dedup gate covers replay safety on the syncable sections only.
+    //
+    // The hazard is `cycles` *mixed with syncable sections* in a resend: those
+    // appends fire a second time. It is NOT "don't send cycles through sync" —
+    // an earlier version of this comment said callers should use a cycles-only
+    // `PUT /memory` instead, which no shipped caller does. `commonly_log_cycle`
+    // posts cycles-only payloads to this route (`commonly-mcp/src/tools.js`),
+    // and they return at the cycles-only branch below, before
+    // `computeSyncDedupKey` is ever called — so the double-append cannot reach
+    // them. Naming the wrong condition made a real constraint read as a rule
+    // every caller safely ignores.
     const cyclesAppend = extractCyclesAppend(sections);
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         if (cycleErr?.name === 'ValidationError') return rejectAndLog(cycleErr.message);
         throw cycleErr;
       }
     }
+    // See PUT /memory: the append's mutations are reported, never silent.
+    const cycleMutation = describeCycleMutation(cycleResult);
 
     const now = new Date();
     const hasOtherSections = Object.keys(sections).length > 0;
@@ -2276,14 +2321,25 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       // rest of the sync pipeline (no dedup key needed; sync state didn't
       // change for the syncable sections).
       console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
-      return res.json({ ok: true, schemaVersion: 2, cyclesAppended: true });
+      return res.json({
+        // NEVER hardcode true: `appendCycle` returns null on empty/whitespace
+        // content (agentMemoryService.ts:643) and `describeCycleMutation` returns
+        // {} for null, so a hardcoded true answers a rejected write with
+        // {ok, cyclesAppended:true} and no flags — which is byte-identical to a
+        // backend that predates the flags. Two independent validators must not
+        // be able to disagree about whether a write happened. Patch by
+        // @sprint-review.
+        ok: true, schemaVersion: 2, cyclesAppended: !!cycleResult, ...cycleMutation,
+      });
     }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
 
     const existing = await AgentMemory.findOne({ agentName, instanceId }).lean();
     if (existing?.lastSyncKey === dedupKey) {
       console.log('[agent-memory SYNC deduped]', { agentName, instanceId, mode, sourceRuntime });
-      return res.json({ ok: true, deduped: true });
+      // The cycles append above already fired (deduping covers syncable
+      // sections only), so its truncation must be reported here too.
+      return res.json({ ok: true, deduped: true, ...cycleMutation });
     }
 
     // GH#632: stamp provenance + capped version history against the existing
@@ -2338,7 +2394,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       sourceRuntime,
     });
 
-    return res.json({ ok: true, schemaVersion: 2 });
+    return res.json({ ok: true, schemaVersion: 2, ...cycleMutation });
   } catch (err: any) {
     console.error('POST /memory/sync error:', err);
     return res.status(500).json({ message: 'Failed to sync agent memory' });
@@ -2561,7 +2617,79 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture');
     if (existingPod) {
+      // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
+      // the type the caller ASKED for, but this dedup branch matches on name
+      // ALONE and never re-checks the type of what it found — so a name
+      // collision turns a create call into a join against someone else's 1:1
+      // DM. This was the sixth write path to `members` and the only one that
+      // did not consult DM_POD_TYPES_GUARD (podController.joinPod,
+      // podInvites ×2, registry/admin, and ensureAgentInPod are the five that
+      // do). A membership invariant enforced at 5 of 6 writers is not an
+      // invariant — scripts/migrate-agent-dm-multimember.ts exists because
+      // multi-member DMs already happened once, and this writer is how they
+      // could happen again.
+      //
+      // Refuse the whole branch, not just the members.push: the two writes
+      // below are worse than the membership count. AgentInstallation.install
+      // grants posting rights (auth goes through AgentInstallation.find, NOT
+      // pod.members), and ensureCommonlyBotInstalled adds the summarizer with
+      // context:read on a private 1:1 conversation. Fail closed, including
+      // for a caller who is already one of the two members — this is a
+      // CREATE endpoint, and returning someone's DM from it is not something
+      // any caller needs. A third party who wants a private channel with one
+      // of the two members spawns a NEW agent-dm via commonly_open_dm.
+      // One refusal shape for every reason. The caller learns "that name is
+      // taken by something you can't join" and nothing else: which pod, what
+      // type, and whether it is a DM are all withheld, because pod names are
+      // guessable by construction — resolveAgentDisplayLabel produces
+      // "Nova and Theo" — and a refusal that names the reason turns this
+      // endpoint into an existence oracle for other people's private pods.
+      // Same principle as the personal-pod-types 404 on direct GET: the
+      // *existence* surface must not advertise conversations you aren't in.
+      // Operators still get the reason, server-side, in the warn below.
+      const refusePodNameCollision = (reason: string) => {
+        console.warn(
+          `[agent] pod-create dedup refused: "${name}" resolves to pod ${existingPod._id} `
+          + `type=${existingPod.type} — ${reason}`,
+        );
+        return res.status(403).json({
+          code: 'pod_name_unavailable',
+          message: 'That pod name is already taken by a pod you cannot join. Pick a '
+            + 'different name. To start a private conversation with a specific agent, '
+            + 'use commonly_open_dm instead of creating a pod by name.',
+        });
+      };
+
+      const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+      if (DM_POD_TYPES_GUARD.has(String(existingPod.type))) {
+        return refusePodNameCollision('1:1 DM pod (ADR-001 §3.10)');
+      }
+
       const isMember = existingPod.members?.some((m: any) => m._id.toString() === agentUser._id.toString());
+
+      // The DM guard above closes the worst case; this closes the rest of it.
+      // The five other writers to `members` all gate on joinability — the
+      // dedicated agent-join path (`POST /pods/:podId/self-install`) refuses
+      // invite-only, refuses non-members of pods it doesn't own, and requires
+      // an active installation. This branch enforced none of them, so a
+      // guessed name was a credential for joining ANY non-DM pod in the
+      // instance: private, invite-only, another team's — all of it, plus
+      // posting rights via AgentInstallation.install and commonly-bot with
+      // context:read.
+      //
+      // Gate on isDirectlyJoinable, not on joinPolicy. `joinPolicy: 'open'`
+      // below the community tier is a dormant declaration (ADR-016:46) — it
+      // means "open once listed", not "open now" — so a pod with
+      // publicRead:false, communityListed:false, joinPolicy:'open' passes a
+      // joinPolicy-only check and is exactly the pod that must be refused.
+      // isDirectlyJoinable = isCommunityListed && joinPolicy !== 'invite-only',
+      // which is the same predicate the community browse surface uses, so a
+      // pod is joinable-by-name here iff it was already discoverable anyway.
+      const { isDirectlyJoinable } = require('../services/podListing');
+      if (!isMember && !isDirectlyJoinable(existingPod)) {
+        return refusePodNameCollision('caller is not a member and the pod is not directly joinable');
+      }
+
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();

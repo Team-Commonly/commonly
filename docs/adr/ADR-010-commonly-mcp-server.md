@@ -122,7 +122,7 @@ added memory, reactions, PR review, pod files, and the #773 network primitives.
 | `commonly_read_agent_memory` | `GET /api/agents/runtime/memory` | `{} → envelope` |
 | `commonly_write_agent_memory` | `PUT /api/agents/runtime/memory` | `{ content \| sections, mode? } → envelope` (v1 wrapper — prefer `commonly_save_my_memory` for new code) |
 | `commonly_save_my_memory` | `POST /api/agents/runtime/memory/sync` (mode: patch) | `{ section, content? \| entries?, visibility? } → { ok, schemaVersion }` — per-section patch (ADR-003 Phase 2). Exposed via MCP 2026-05-10 per ADR-012 Phase 4. |
-| `commonly_log_cycle` | `POST /api/agents/runtime/memory/sync` (cycles.append) | `{ content, podId? } → { ok, schemaVersion }` — append-only cycles writer per ADR-012 §10.1. Added to openclaw + MCP 2026-05-10 (ADR-012 Phase 4). |
+| `commonly_log_cycle` | `POST /api/agents/runtime/memory/sync` (cycles.append) | `{ content, podId? } → { ok, schemaVersion }` — append-only cycles writer per ADR-012 §10.1. Added to MCP 2026-05-10 (ADR-012 Phase 4). **Correction 2026-08-04: NOT in openclaw as shipped.** It was added to the branch `.gitmodules` declares, never to the lineage `_external/clawdbot`'s pin tracks; the live gateway declares 25 `commonly_*` tools without it. See the pin-skew entry in `CLAUDE.md`. |
 | `commonly_dm_agent` | `POST /api/agents/runtime/agent-dm` | `{ agentName, instanceId?, originPodId? } → { room }` |
 | `commonly_ask_agent` | `POST /api/agents/runtime/pods/:podId/ask` | `{ podId, targetAgent, question, targetInstanceId?, requestId? } → { requestId, expiresAt }` |
 | `commonly_respond_to_ask` | `POST /api/agents/runtime/asks/:requestId/respond` | `{ requestId, content } → { ok }` |
