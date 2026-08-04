@@ -39,6 +39,8 @@ const multer = require('multer');
 const File = require('../models/File');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
+// eslint-disable-next-line global-require
+const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 import { getObjectStore } from '../services/objectStore';
 
 interface AuthReq {
@@ -174,6 +176,20 @@ const artifactReadRateLimit = rateLimit({
     res.status(429).json({ msg: 'rate limit exceeded: 240 requests per 60s' }),
 });
 
+// Attachment reads also serve browser image requests, so they cannot require
+// auth unconditionally: signed URLs and public avatars arrive without an
+// Authorization header. Runtime clients do send their opaque `cm_agent_*`
+// token, however. Resolve that token before the ACL check so the existing
+// user-based attachment policy can evaluate the agent's bot User row.
+// Human JWTs deliberately keep the existing inline verification path in
+// authorizePodFile below.
+const maybeAgentRuntimeAuth = (req: AuthReq, res: Res, next: () => void) => {
+  const bearer = req.get?.('Authorization')?.replace(/^Bearer\s+/i, '').trim();
+  const alternate = req.get?.('x-commonly-agent-token')?.trim();
+  if (!(bearer || alternate)?.startsWith('cm_agent_')) return next();
+  return agentRuntimeAuth(req as never, res as never, next);
+};
+
 const router: ReturnType<typeof express.Router> = express.Router();
 
 // Shared upload handler — used by both the user-auth POST / and the
@@ -299,6 +315,9 @@ const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean
   const token = typeof req.query?.t === 'string' ? req.query.t : '';
   if (token && verifyAttachmentToken(token, fileName)) return true;
 
+  const agentUserId = req.agentUser?._id?.toString();
+  if (agentUserId && await canReadAttachment(fileName, agentUserId)) return true;
+
   const bearer = req.get?.('Authorization')?.replace('Bearer ', '');
   if (bearer) {
     try {
@@ -312,7 +331,7 @@ const authorizePodFile = async (req: AuthReq, fileName: string): Promise<boolean
   return false;
 };
 
-router.get('/:fileName', artifactReadRateLimit, async (req: AuthReq, res: Res) => {
+router.get('/:fileName', artifactReadRateLimit, maybeAgentRuntimeAuth, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });
@@ -353,12 +372,8 @@ router.get('/:fileName', artifactReadRateLimit, async (req: AuthReq, res: Res) =
 // CSS, three.js loaded from a CDN inside the iframe sandbox) so we just pass
 // it through to the browser as text/html.
 //
-// Auth — preview is not strictly bound to the file-fetch ACL since:
-//   - the file fetch (`/api/uploads/:fileName`) is publicly readable today
-//     (ADR-002 Phase 1, public-read flip is a follow-up); and
-//   - rendering is read-only, no side effects.
-// Once Phase 1b lands and signed URLs become required, this route gains the
-// same token check as `/:fileName`.
+// Auth — preview shares the raw-file route's pod-scoped authorization below.
+// A private deck must not become readable merely because it is rendered.
 const officecliPreview = (() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { spawn } = require('child_process');
@@ -418,7 +433,7 @@ const officecliPreview = (() => {
 // officecli process. Plenty for normal decks (sub-second to a few seconds).
 const PPTX_RENDER_TIMEOUT_MS = 30_000;
 
-router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, async (req: AuthReq, res: Res) => {
+router.get('/:fileName/preview-pptx-html', artifactReadRateLimit, maybeAgentRuntimeAuth, async (req: AuthReq, res: Res) => {
   try {
     const fileName = req.params?.fileName;
     if (!fileName) return res.status(400).json({ msg: 'fileName required' });

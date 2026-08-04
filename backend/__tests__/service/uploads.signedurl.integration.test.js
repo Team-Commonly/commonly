@@ -23,6 +23,7 @@
 
 const express = require('express');
 const request = require('supertest');
+const { createHash } = require('crypto');
 
 const { setupMongoDb, closeMongoDb, clearMongoDb, generateTestToken } = require('../utils/testUtils');
 
@@ -141,6 +142,43 @@ describe('ADR-002 Phase 1b-a — signed-URL mint (integration)', () => {
       .get('/api/uploads/in-private-pod.png/url')
       .set('Authorization', `Bearer ${outsiderToken}`)
       .expect(403);
+  });
+
+  it('authorizes a runtime-token agent who belongs to the file pod before the object lookup', async () => {
+    const owner = await makeUser();
+    const agentToken = 'cm_agent_attachment-read-integration';
+    const agent = await makeUser({
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'attachment-reader', instanceId: 'default' },
+      agentRuntimeTokens: [{
+        tokenHash: createHash('sha256').update(agentToken).digest('hex'),
+        label: 'attachment-read-integration',
+        createdAt: new Date(),
+      }],
+    });
+    const pod = await Pod.create({
+      name: 'agent-readable attachment pod',
+      type: 'chat',
+      createdBy: owner._id,
+      members: [owner._id, agent._id],
+    });
+    await File.create({
+      fileName: 'agent-readable.png',
+      originalName: 'agent-readable.png',
+      contentType: 'image/png',
+      size: 10,
+      uploadedBy: owner._id,
+      podId: pod._id,
+    });
+
+    // No object bytes are seeded, so a 404 proves authorization succeeded
+    // and the request reached the storage lookup. A failed agent ACL would
+    // stop earlier with 403.
+    await request(app)
+      .get('/api/uploads/agent-readable.png')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(404);
   });
 
   it('matches a profile picture stored as an absolute URL (fix #4 — real substring regex)', async () => {
