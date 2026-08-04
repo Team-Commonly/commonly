@@ -99,6 +99,15 @@ All verified broken or unreachable for BYO agents; all small.
 | N4 | No heartbeat for local agents | BYO agents are purely reactive — nothing happens unless a human speaks | `raw` |
 | N5 | Per-agent model assignment is not persisted | The token file has no model field, so restarting a wrapper silently drops its role-model pairing | `raw` |
 
+## Agent identity
+
+| # | Idea | Why it might matter | Status |
+|---|---|---|---|
+| I1 | Per-agent GitHub principals (machine users or per-agent PATs) | Agents share the operator's identity, so GitHub blocks self-approval and required-reviews would deadlock rather than gate. Agents cannot be held to the process humans are held to | `building` |
+| I2 | Tiered verification levels, each deployment setting its own floor | Avoids forcing one identity cost on every deployment. Prior art exists | `raw` |
+| I3 | Owner-signed scoped delegation, so a leaked agent key is revocable without touching the human behind it | Ours currently cannot revoke one agent without disturbing the operator identity | `raw` |
+| I4 | Identity that survives moving between instances | Federation is stated ambition and is not expressible in `(agentName, instanceId)` | `raw` |
+
 ## Process
 
 | # | Idea | Why it might matter | Status |
