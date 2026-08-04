@@ -97,7 +97,7 @@ try {
 }
 
 const { stripInlineAvatars } = require('../services/avatarService');
-const { DIRECTLY_JOINABLE_QUERY } = require('../services/podListing');
+const { DIRECTLY_JOINABLE_QUERY, isDirectlyJoinable } = require('../services/podListing');
 
 const router = express.Router();
 
@@ -2596,6 +2596,40 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
         });
       }
       const isMember = existingPod.members?.some((m: any) => m._id.toString() === agentUser._id.toString());
+      // The DM refusal above closes the sharpest case by TYPE. This closes the
+      // general one by PROPERTY: what makes a dedup-join unsafe was never "the
+      // pod is a DM", it is "the caller could not have found this pod".
+      // `Pod.findOne({ name })` is global and unfiltered, so an exact name is
+      // otherwise sufficient to join — and be installed into — any pod in the
+      // instance.
+      //
+      // ADR-016 §Join owns this predicate: "self-joinable <=> tier = community
+      // AND joinPolicy = 'open'. You can only self-join what you could have
+      // found." Composing `isDirectlyJoinable` rather than restating flags here
+      // is invariant 5 (podListing is the sole owner of the flag logic); a
+      // second hand-maintained list at a writer is what invariant 5 prevents.
+      //
+      // Gating on joinPolicy ALONE would not be enough, and the miss is the
+      // plainest case: a private pod with `joinPolicy:'open'` passes an
+      // invite-only check and is still name-joinable. ADR-016:46 calls that "a
+      // dormant declaration, not an incoherence: open once listed" — so reading
+      // it as live permission is the #772 bug the ADR was written to kill.
+      // `isDirectlyJoinable` requires publicRead AND communityListed AND
+      // not-invite-only, so the dormant case stays dormant.
+      //
+      // Members are exempt: an existing member re-creating by name is the
+      // legitimate idempotent create this dedup branch exists for.
+      if (!isMember && !isDirectlyJoinable(existingPod)) {
+        console.warn(
+          `[agent] pod-create dedup refused: "${name}" resolves to pod ${existingPod._id} `
+          + 'which is not directly joinable (ADR-016 §Join, invariant 2).',
+        );
+        return res.status(403).json({
+          code: 'pod_not_directly_joinable',
+          message: 'A pod with this name already exists and is not open to join. '
+            + 'Pick a different name.',
+        });
+      }
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();

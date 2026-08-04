@@ -80,15 +80,27 @@ const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime', router);
 
-// Default seeding is the DM case: two members, and the caller (bot-1) is NOT
-// one of them — that is the shape the guard has to refuse.
-const existing = (type, members = [{ _id: 'human-9' }, { _id: 'bot-7' }]) => ({
+// Default seeding is the DM/private case: two members, the caller (bot-1) is
+// NOT one of them, and no visibility flags — that is both the shape the DM
+// guard must refuse and the shape the property gate must refuse. Tests that
+// need a joinable pod say so explicitly, so forgetting to opt in fails closed.
+const existing = (type, overrides = {}) => ({
   _id: `pod-${type}`,
   name: 'Nova and Theo',
   type,
-  members,
+  members: [{ _id: 'human-9' }, { _id: 'bot-7' }],
   save: podSave,
   populate: podPopulate,
+  ...overrides,
+});
+
+// tier = community ∧ joinPolicy = 'open' — the only self-joinable shape
+// (ADR-016 §Join). This is what the dedup branch is legitimately for.
+const joinable = (type, overrides = {}) => existing(type, {
+  publicRead: true,
+  communityListed: true,
+  joinPolicy: 'open',
+  ...overrides,
 });
 
 const createPod = () => request(app)
@@ -132,28 +144,31 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     });
   });
 
-  // agent-admin is deliberately NOT in the guard set — admin pods are N:1
-  // (multiple admins ↔ one agent), per CLAUDE.md. Asserted so a future
-  // "tidy up the set" edit has to argue with a test.
-  test('agent-admin is NOT refused — admin pods are N:1 by design', async () => {
+  // agent-admin is deliberately NOT in DM_POD_TYPES_GUARD — admin pods are
+  // N:1 (multiple admins <-> one agent), per CLAUDE.md, so the DM guard must
+  // not claim it. It IS in NON_LISTABLE_POD_TYPES, so the property gate does.
+  // Asserted on the CODE, not just the status, so a future "tidy up the set"
+  // edit that moves it into the DM guard has to argue with a test.
+  test('agent-admin is refused by the property gate, not the DM guard', async () => {
     mockFoundPod.value = existing('agent-admin');
     const res = await createPod();
-    expect(res.status).not.toBe(403);
+    // Still refused — but by the PROPERTY gate, not the DM guard, and the
+    // distinct code is the point. agent-admin is deliberately outside
+    // DM_POD_TYPES_GUARD because it is N:1 by design; it is inside
+    // NON_LISTABLE_POD_TYPES because N:1 does not mean anyone may be the N
+    // (ADR-016:21, "terminally private like a DM for a different reason").
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('pod_not_directly_joinable');
+    expect(res.body.code).not.toBe('dm_membership_refused');
   });
 
   // The caller is seeded as ALREADY a member here, deliberately. What this
   // test guards is the dedup path itself — a name collision on an ordinary pod
   // returns the existing pod rather than erroring or creating a duplicate.
-  //
-  // Seeding a non-member instead would make the assertion defend the widening:
-  // "a caller who guesses a chat pod's name is pushed into its members" would
-  // become a pinned behaviour under the name "as before", and the follow-up
-  // gate (refuse unless the pod is directly joinable — isDirectlyJoinable, not
-  // joinPolicy alone, since publicRead:false + joinPolicy:'open' is a dormant
-  // declaration per ADR-016:46) would have to delete a green test to land.
-  // That gate is a separate PR; this file must not pre-approve its absence.
+  // Seeding a non-member instead would make the assertion defend the widening
+  // that the property gate below now refuses.
   test('an ordinary chat pod still dedups and returns the existing pod', async () => {
-    mockFoundPod.value = existing('chat', [{ _id: 'human-9' }, { _id: 'bot-1' }]);
+    mockFoundPod.value = existing('chat', { members: [{ _id: 'human-9' }, { _id: 'bot-1' }] });
     const res = await createPod();
     expect(res.status).toBe(200);
     expect(res.body._id).toBe('pod-chat');
@@ -162,5 +177,57 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     // ...but the branch does run to completion: the install still happens,
     // so this is a real pass through the dedup path, not an early return.
     expect(mockInstall).toHaveBeenCalled();
+  });
+
+  // The other legitimate case, and the one that proves the gate is a gate and
+  // not a blanket refusal: a NON-member joining a pod they could have found in
+  // Discover. tier = community AND joinPolicy = 'open' is the only shape that
+  // passes, and it must keep passing or the dedup branch is dead code.
+  test('a community-listed open pod still admits a non-member', async () => {
+    mockFoundPod.value = joinable('chat');
+    const res = await createPod();
+    expect(res.status).toBe(200);
+    expect(podSave).toHaveBeenCalled();
+    expect(mockFoundPod.value.members).toContain('bot-1');
+    expect(mockInstall).toHaveBeenCalled();
+  });
+
+  describe('a non-member cannot join by guessing the name (ADR-016 invariant 2)', () => {
+    // The case a joinPolicy-only gate misses, and the reason this gate reads
+    // the tier instead. ADR-016:46 — `joinPolicy:'open'` below community tier
+    // is "a dormant declaration, not an incoherence: open once listed."
+    test('private + joinPolicy:open — the dormant declaration is not permission', async () => {
+      mockFoundPod.value = existing('chat', { publicRead: false, joinPolicy: 'open' });
+      const res = await createPod();
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('pod_not_directly_joinable');
+      expect(podSave).not.toHaveBeenCalled();
+      expect(mockInstall).not.toHaveBeenCalled();
+    });
+
+    test('showcase tier (publicRead, not listed) is readable but not joinable', async () => {
+      mockFoundPod.value = existing('chat', { publicRead: true, communityListed: false });
+      const res = await createPod();
+      expect(res.status).toBe(403);
+      expect(mockInstall).not.toHaveBeenCalled();
+    });
+
+    test('community + invite-only is findable but not self-joinable', async () => {
+      mockFoundPod.value = joinable('chat', { joinPolicy: 'invite-only' });
+      const res = await createPod();
+      expect(res.status).toBe(403);
+      expect(mockInstall).not.toHaveBeenCalled();
+    });
+
+    // The write that actually grants access, asserted on the general case and
+    // not only the DM one: refusing the push while still installing would
+    // hand a stranger posting rights on a private pod.
+    test('refusal covers commonly-bot too — no context:read on a private pod', async () => {
+      mockFoundPod.value = existing('team');
+      await createPod();
+      const installed = mockInstall.mock.calls.map(([agentName]) => agentName);
+      expect(installed).not.toContain('commonly-bot');
+      expect(mockInstall).not.toHaveBeenCalled();
+    });
   });
 });
