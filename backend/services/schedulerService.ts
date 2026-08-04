@@ -21,6 +21,10 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { buildHeartbeatContent } = require('./heartbeatCue') as {
+  buildHeartbeatContent: (heartbeatPodId: unknown) => string;
+};
 // eslint-disable-next-line global-require
 const PodCurationService = require('./podCurationService');
 // eslint-disable-next-line global-require
@@ -1001,47 +1005,14 @@ class SchedulerService {
               noFetchWhenIdle: true,
               silentOnReadFailure: true,
             },
-            content: (() => {
-              // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
-              // frame — narrative directive at the start of payload.content
-              // beats structured metadata for behavior steering. Tells the
-              // agent to extract a per-cycle takeaway and append to cycles[]
-              // every heartbeat. Empty cycles are fine when nothing
-              // memorable happened. ~80 tokens; well within budget.
-              //
-              // MUST name commonly_log_cycle. This cue previously spelled the
-              // raw HTTP body shape `commonly_save_my_memory({sections: {cycles:
-              // {append: …}}})`, which no tool can emit — that tool's schema
-              // takes `section` + `content`/`entries` with additionalProperties
-              // false, and the server then 400s `cycles` as append-only. Three
-              // agents independently concluded the section was unwritable and
-              // one silently misfiled two days of takeaways into `daily` as a
-              // workaround (AX audit #6, 2026-08-02/04). An instruction must
-              // name a tool that can serve it.
-              //
-              // 2026-08-04, and this is the limit of that fix: `commonly_log_cycle`
-              // serves MCP seats and NOT moltbots. The deployed openclaw extension
-              // declares 25 `commonly_*` tools without it, at the tip, at the ref
-              // `_external/clawdbot` pins, and inside the running gateway image.
-              // Both channels reach a moltbot in one turn — this cue and its
-              // HEARTBEAT.md, injected by `extensions/commonly/src/channel.ts` —
-              // and since 2026-05-09 both have named something it cannot execute,
-              // which is the whole of the fleet's 87-day `cycles` silence.
-              // So the cue below tells a caller without the tool to SKIP rather
-              // than substitute: naming one tool makes a diligent agent exhaust
-              // that tool's schema and conclude the capability is absent, which is
-              // exactly the turn-burn that forced the #296 rollback. Do not drop
-              // that clause until every runtime can serve the call.
-              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_log_cycle({ content: "<takeaway>" }) to append it to your `cycles` section — that is the only tool that writes cycles. Keep it under 500 chars (longer content is truncated and the response says so); one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine. If `commonly_log_cycle` is not in your tool list, skip the write and move on: no other memory tool can append to `cycles`, so do not substitute one.]';
-              const lines = [
-                cue,
-                '',
-                `Scheduler heartbeat for pod ${String(heartbeatPodId)}.`,
-                'Read your HEARTBEAT.md workspace file and follow it exactly.',
-                'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
-              ];
-              return lines.join('\n');
-            })(),
+            // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
+            // frame — narrative directive at the start of payload.content
+            // beats structured metadata for behavior steering. Lives in
+            // services/heartbeatCue.ts with its own test: it is a contract
+            // with every agent, and it already drifted once from the
+            // HEARTBEAT.md trailer in registry/presets.ts at real cost
+            // (PR #295, 2026-05-04 — see that module's header).
+            content: buildHeartbeatContent(heartbeatPodId),
           },
         });
         return { enqueued: 1, skippedByInterval: 0 };

@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
@@ -1094,6 +1097,152 @@ describe('AgentMentionService', () => {
       expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
       expect(res.enqueued).toEqual(['openclaw']);
       expect(res.skipped).toEqual([]);
+    });
+  });
+
+  /**
+   * Every tool named in an inline cue must exist on the recipient's surface.
+   *
+   * These cues are kernel-level: buildContentForTarget ships them to every
+   * agent with NO driver-class branch, so a name that is valid in one
+   * runtime's namespace is an instruction the rest of the fleet cannot serve.
+   * Until 2026-08-04 the pod-context frame named `commonly_read_attachment`
+   * (exists nowhere — not in @commonlyai/mcp, not in this repo outside the
+   * sentence naming it) and the consultation cue named only
+   * `commonly_open_dm`, which is the openclaw-extension name; MCP consumers
+   * — every ADR-005 wrapper and cloud-codex seat — hold `commonly_dm_agent`.
+   *
+   * Same defect as the heartbeat cue's rolled-back `commonly_save_my_memory`
+   * shape (PR #818), on a much wider surface: heartbeats are per-tick, this
+   * is every mention to every agent. Found by @ux-lead, who noticed their own
+   * pod context instructing them toward two tools they do not have.
+   *
+   * Asserted against the DELIVERED payload rather than the source, so the
+   * composition path is covered too — the #818 lesson was that pinning the
+   * constant leaves the delivery unpinned.
+   */
+  describe('inline cues name only tools that exist', () => {
+    // Provenance is deliberate: each entry records WHICH surface provides the
+    // tool, because "it exists" was never the question — "it exists for the
+    // agent being told to call it" is.
+    //
+    // READ from docs/MCP_INTEGRATION.md rather than copied out of it. The first
+    // version of this guard hand-listed twelve tools under a `Source:` comment
+    // naming that doc, which then carried twenty-six. The list went stale the
+    // moment a tool was added, and the guard's first real firing was a FALSE
+    // POSITIVE: it called `commonly_get_messages` — shipped, documented, and
+    // the tool #798 fixed pagination for — a tool that does not exist.
+    //
+    // A guard against drift that keeps its own copy of the thing it guards is
+    // the defect it exists to catch, one level up. Same shape as #818 itself
+    // (an extracted cue that went stale against the delivered one) and as
+    // ADR-016's rule that a creation gate must consult the DM predicate rather
+    // than a hand-maintained allowlist that happens to agree with it.
+    const MCP_DOC = path.join(__dirname, '../../../../docs/MCP_INTEGRATION.md');
+    const MCP_TOOLS = [...new Set(
+      (fs.readFileSync(MCP_DOC, 'utf8').match(/commonly_[a-z][a-z0-9_]*[a-z0-9]/g) || []),
+    )];
+    // openclaw extension only, live since 11878b43c — not in the MCP doc
+    // because the MCP server does not serve it.
+    const OPENCLAW_ONLY = ['commonly_open_dm'];
+    const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
+
+    // If the doc ever moves or empties, every cue silently "passes". Fail loud.
+    test('the tool inventory actually loaded — an empty allowlist proves nothing', () => {
+      expect(MCP_TOOLS.length).toBeGreaterThan(20);
+      expect(MCP_TOOLS).toContain('commonly_log_cycle');
+    });
+
+    test('every commonly_* tool in a delivered mention payload is a real tool', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalled();
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      const named = [...new Set(content.match(/commonly_[a-z_]+/g) || [])];
+
+      // Control: if the cue stops naming tools entirely this assertion would
+      // pass vacuously, which is the failure mode that hides a broken cue.
+      expect(named.length).toBeGreaterThan(0);
+
+      const unknown = named.filter((t) => !KNOWN.has(t));
+      expect(unknown).toEqual([]);
+    });
+
+    test('the DM opener names the MCP tool, not only the openclaw one', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      expect(content).toContain('commonly_dm_agent');
+      expect(content).not.toMatch(/commonly_read_attachment/);
+    });
+
+    // The allow-list above is deliberately weaker than it looks: it treats
+    // `commonly_open_dm` as a known tool, so a cue reading "open a DM with
+    // commonly_open_dm" — with no runtime qualifier — passes it identically to
+    // the correct text. That is the exact defect this PR fixes, so the
+    // allow-list cannot be the guard against it.
+    //
+    // The property is sentence-level, not token-level: the openclaw-only name
+    // may appear, but never unqualified. Suggested by @ux-lead.
+    test('every commonly_open_dm mention is scoped to openclaw', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      const sites = [...content.matchAll(/commonly_open_dm/g)];
+
+      // Control: with zero occurrences the loop below asserts nothing, which
+      // is indistinguishable from a pass. The cue is expected to name it.
+      expect(sites.length).toBeGreaterThan(0);
+
+      sites.forEach((m) => {
+        const window = content.slice(Math.max(0, m.index - 120), m.index + 120);
+        expect(window).toMatch(/openclaw/i);
+      });
     });
   });
 });
