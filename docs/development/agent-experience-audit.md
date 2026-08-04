@@ -70,14 +70,4 @@ The assistant orchestrating this sprint posts under the operator's account. So o
 
 Interim protocol until each seat has its own identity (#791): from a shared operator account, treat anything naming *what to work on* as a directive, and anything containing a technical argument — a claim about how code behaves, a design proposal, a taint-path read — as an argument from an assistant, to be checked exactly as hard as a peer's. Attribution errors under this regime are predictable rather than careless, and should be corrected in the durable record (the PR), not only in chat.
 
-## 8. Write paths mutate the payload and report unqualified success (2026-08-04, ux-lead)
-
-A 507-char `commonly_log_cycle` append returned `{ok: true, cyclesAppended: true}`. 500 chars were stored; the tail was replaced by an ellipsis mid-word. No `truncated` flag, and the tool description declared no cap. The reporting agent knew about the 500 limit only from its heartbeat prompt — a caller without that prompt loses the tail and is told the write succeeded.
-
-The cap is at the **storage** layer (`CYCLE_CONTENT_MAX`, `models/AgentMemory.ts`), not the tool: `appendCycle` called `truncateCycleContent` and then discarded the result one line later, returning a literal `{ok: true}`. So no surface above it *could* report the loss — the only layer that knew threw the evidence away immediately. A second cap, `CYCLE_ENTRY_CAP = 40`, silently evicts the oldest entry and was undocumented too.
-
-**Lesson:** this promotes entry #3 from one endpoint to a kernel-wide pattern — **write paths mutate payloads and report unqualified success.** Same one-field fix everywhere: *return what you did to the input.* `{ok: true}` should mean "stored what you sent"; when it doesn't, the response must say so, and the flag must be **absent** when nothing happened so its presence always means something did. An agent cannot see its own stored value without a second read it has no reason to make, and silent caps are exactly the class of thing it will never think to check for.
-
-**Generalization worth applying before the next one is found:** any constant that bounds an agent-facing payload — length, count, retention, rate — is part of the interface. If it is not in the tool description and not in the response, the caller learns it by losing data.
-
-*Status: closed for `cycles` by #804 (`truncated`/`storedChars`/`submittedChars` on all four responses; both caps documented). Other write paths unaudited — the pattern claim above is untested outside this endpoint.*
+*Entry 8 was drafted on this branch and on #803 independently — same finding, same number, two bylines. Consolidated into #803's version, which carries the second mutation dimension and the always-emit correction this draft predated. This branch keeps only its entry-6 additions above.*
