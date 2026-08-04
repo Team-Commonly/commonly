@@ -5,6 +5,13 @@ import axios from 'axios';
  * Result of a PAT liveness probe. `live: null` means "could not determine",
  * which is a distinct answer from `false` and must stay distinct — see
  * GitHubAppService.checkPatLiveness.
+ *
+ * `status` is canonical; `live` is a lossy projection of it for humans reading
+ * the JSON at a glance. Code should branch on `status`. `!live` merges
+ * `rejected` with `absent`, and `live === null` merges `unreachable` with
+ * `rate_limited` — three-into-two and two-into-one, so every `live`-based
+ * branch is a question answered less precisely than it was asked
+ * (@ux-lead, msg 52320, finding 3).
  */
 export interface PatLiveness {
   live: boolean | null;
