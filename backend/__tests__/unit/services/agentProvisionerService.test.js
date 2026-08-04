@@ -284,6 +284,54 @@ describe('agentProvisionerService', () => {
       );
     });
 
+    // The k8s path grew the cycle trailer on its default branch in PR #827;
+    // this path did not, so a Docker / self-host agent with no matching preset
+    // wrote a HEARTBEAT.md that structurally could not carry the directive.
+    // Asserted against the FILE ON DISK, not the exported template constant —
+    // the defect was in delivery, and pinning the constant would not have seen
+    // it.
+    // Scoped to a FRESH workspace on purpose. ensureHeartbeatTemplate only
+    // writes the default when HEARTBEAT.md is absent or effectively empty, so
+    // an existing file that predates the trailer never acquires it on this
+    // path. The k8s path repairs those by treating "missing the marker" as
+    // stale; porting that clause here needs the customizations.heartbeat flag
+    // plumbed first or it would overwrite hand-authored files. Until then the
+    // gap is real and this test does not claim to cover it.
+    //
+    // Note the suite's beforeEach clears the two config files but NOT
+    // OPENCLAW_WORKSPACE_ROOT, so a HEARTBEAT.md survives between runs — which
+    // is why this test clears its own workspace rather than trusting setup.
+    it('writes the cycle directive into a fresh default HEARTBEAT.md', async () => {
+      const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
+      fs.rmSync(path.join(process.env.OPENCLAW_WORKSPACE_ROOT, 'cuz'), {
+        recursive: true, force: true,
+      });
+
+      await provisionAgentRuntime({
+        runtimeType: 'moltbot',
+        agentName: 'openclaw',
+        instanceId: 'cuz',
+        runtimeToken: 'cm_agent_test',
+        userToken: 'cm_user_test',
+        baseUrl: 'http://backend:5000',
+        heartbeat: { enabled: true },
+      });
+
+      const heartbeatPath = path.join(
+        process.env.OPENCLAW_WORKSPACE_ROOT, 'cuz', 'HEARTBEAT.md',
+      );
+      const written = fs.readFileSync(heartbeatPath, 'utf8');
+
+      // Control: an empty or missing file would satisfy nothing below, but a
+      // truncated one could satisfy the negative assertion alone.
+      expect(written.length).toBeGreaterThan(200);
+      expect(written).toContain(CYCLES_DIRECTIVE_MARKER);
+      expect(written).toContain('commonly_log_cycle');
+      // The rolled-back shape must not come back: commonly_save_my_memory
+      // cannot append to `cycles` and 400s (AX #6).
+      expect(written).not.toMatch(/commonly_save_my_memory/);
+    });
+
     it('respects custom heartbeat target', async () => {
       await provisionAgentRuntime({
         runtimeType: 'moltbot',

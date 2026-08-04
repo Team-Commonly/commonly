@@ -36,9 +36,38 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // 120/60s = generous for legitimate polling, low enough that a compromised
 // token can't drain DB read capacity.
 //
-// Inlined here (not behind a factory) so CodeQL's `js/missing-rate-limiting`
-// query — which only recognises direct express-rate-limit invocations in the
-// same file as the route registration — sees the middleware on each route.
+// Inlined here (not behind a factory) rather than shared from a middleware
+// module — that part is fine and worth keeping.
+//
+// What this comment used to claim is not: that CodeQL's
+// `js/missing-rate-limiting` query "only recognises direct express-rate-limit
+// invocations in the same file as the route registration." That is refuted by
+// the routes below. `/memory` and `/memory/sync` follow the recipe exactly —
+// limiter declared in this file, applied inline — and both carry open
+// high-severity alerts. The belief also spread from here into
+// registry/{install,provision,files}.ts.
+//
+// The discriminator is ORDER, not location. The query anchors to the first
+// middleware in the chain; `agentRuntimeAuth` does a Mongo lookup, so a
+// limiter placed after it leaves that lookup unprotected and the route
+// flagged. Cross-tab against main on 2026-08-04: ~37 routes with the limiter
+// before auth, none flagged; 9 with it after, 6 flagged — including every
+// `agentRuntimeAuth, phase4RateLimit` route in this file.
+//
+// The routes below are therefore genuinely under-protected, not
+// false-positived. The fix is to move phase4RateLimit ahead of
+// agentRuntimeAuth on each.
+//
+// That is safe, and agentRateLimitKeyGenerator was already built for it:
+// its first branch reads `req.agentTokenHash` (set by agentRuntimeAuth, so
+// post-auth only), but it falls through to a sha256 of the Authorization /
+// x-commonly-agent-token header, which is present before any middleware
+// runs. Running the limiter first just takes the header branch — same
+// per-caller isolation, different key prefix. No key-generator change needed.
+//
+// Not done in this PR only because it is 8 route registrations in a
+// different subsystem from the one this PR fixes, and it deserves its own
+// diff. It is specified, not blocked.
 const phase4RateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
