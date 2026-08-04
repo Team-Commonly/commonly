@@ -80,12 +80,13 @@ const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime', router);
 
-const existing = (type) => ({
+// Default seeding is the DM case: two members, and the caller (bot-1) is NOT
+// one of them — that is the shape the guard has to refuse.
+const existing = (type, members = [{ _id: 'human-9' }, { _id: 'bot-7' }]) => ({
   _id: `pod-${type}`,
   name: 'Nova and Theo',
   type,
-  // The colliding pod's two members; the caller (bot-1) is NOT one of them.
-  members: [{ _id: 'human-9' }, { _id: 'bot-7' }],
+  members,
   save: podSave,
   populate: podPopulate,
 });
@@ -140,11 +141,26 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     expect(res.status).not.toBe(403);
   });
 
-  test('an ordinary chat pod still dedups and joins as before', async () => {
-    mockFoundPod.value = existing('chat');
+  // The caller is seeded as ALREADY a member here, deliberately. What this
+  // test guards is the dedup path itself — a name collision on an ordinary pod
+  // returns the existing pod rather than erroring or creating a duplicate.
+  //
+  // Seeding a non-member instead would make the assertion defend the widening:
+  // "a caller who guesses a chat pod's name is pushed into its members" would
+  // become a pinned behaviour under the name "as before", and the follow-up
+  // gate (refuse unless the pod is directly joinable — isDirectlyJoinable, not
+  // joinPolicy alone, since publicRead:false + joinPolicy:'open' is a dormant
+  // declaration per ADR-016:46) would have to delete a green test to land.
+  // That gate is a separate PR; this file must not pre-approve its absence.
+  test('an ordinary chat pod still dedups and returns the existing pod', async () => {
+    mockFoundPod.value = existing('chat', [{ _id: 'human-9' }, { _id: 'bot-1' }]);
     const res = await createPod();
     expect(res.status).toBe(200);
-    expect(podSave).toHaveBeenCalled();
-    expect(mockFoundPod.value.members).toContain('bot-1');
+    expect(res.body._id).toBe('pod-chat');
+    // Already a member → no membership write at all. Dedup is idempotent.
+    expect(podSave).not.toHaveBeenCalled();
+    // ...but the branch does run to completion: the install still happens,
+    // so this is a real pass through the dedup path, not an early return.
+    expect(mockInstall).toHaveBeenCalled();
   });
 });
