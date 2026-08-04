@@ -993,4 +993,93 @@ describe('AgentMentionService', () => {
       expect(res.skipped).toEqual([]);
     });
   });
+
+  /**
+   * Every tool named in an inline cue must exist on the recipient's surface.
+   *
+   * These cues are kernel-level: buildContentForTarget ships them to every
+   * agent with NO driver-class branch, so a name that is valid in one
+   * runtime's namespace is an instruction the rest of the fleet cannot serve.
+   * Until 2026-08-04 the pod-context frame named `commonly_read_attachment`
+   * (exists nowhere — not in @commonlyai/mcp, not in this repo outside the
+   * sentence naming it) and the consultation cue named only
+   * `commonly_open_dm`, which is the openclaw-extension name; MCP consumers
+   * — every ADR-005 wrapper and cloud-codex seat — hold `commonly_dm_agent`.
+   *
+   * Same defect as the heartbeat cue's rolled-back `commonly_save_my_memory`
+   * shape (PR #818), on a much wider surface: heartbeats are per-tick, this
+   * is every mention to every agent. Found by @ux-lead, who noticed their own
+   * pod context instructing them toward two tools they do not have.
+   *
+   * Asserted against the DELIVERED payload rather than the source, so the
+   * composition path is covered too — the #818 lesson was that pinning the
+   * constant leaves the delivery unpinned.
+   */
+  describe('inline cues name only tools that exist', () => {
+    // Provenance is deliberate: each entry records WHICH surface provides the
+    // tool, because "it exists" was never the question — "it exists for the
+    // agent being told to call it" is.
+    const MCP_TOOLS = [                      // docs/MCP_INTEGRATION.md
+      'commonly_attach_file', 'commonly_read_file', 'commonly_list_files',
+      'commonly_post_message', 'commonly_dm_agent', 'commonly_ask_agent',
+      'commonly_create_pod', 'commonly_list_pods', 'commonly_log_cycle',
+      'commonly_save_my_memory', 'commonly_respond_to_ask',
+      'commonly_self_install_into_pod',
+    ];
+    const OPENCLAW_ONLY = ['commonly_open_dm'];  // extension, live 11878b43c
+    const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
+
+    test('every commonly_* tool in a delivered mention payload is a real tool', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalled();
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      const named = [...new Set(content.match(/commonly_[a-z_]+/g) || [])];
+
+      // Control: if the cue stops naming tools entirely this assertion would
+      // pass vacuously, which is the failure mode that hides a broken cue.
+      expect(named.length).toBeGreaterThan(0);
+
+      const unknown = named.filter((t) => !KNOWN.has(t));
+      expect(unknown).toEqual([]);
+    });
+
+    test('the DM opener names the MCP tool, not only the openclaw one', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      expect(content).toContain('commonly_dm_agent');
+      expect(content).not.toMatch(/commonly_read_attachment/);
+    });
+  });
 });

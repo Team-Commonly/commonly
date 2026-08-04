@@ -360,13 +360,24 @@ const autoJoinAgentToPod = async (
 // the cue has to be inline in the message body or the model
 // deprioritizes it. The frame here surfaces the podId + the two most
 // likely tools the agent will need (`commonly_attach_file` to post
-// deliverables, `commonly_read_attachment` to consume attachments
-// referenced in the conversation).
+// deliverables, `commonly_read_file` to consume attachments referenced
+// in the conversation).
+//
+// NAME ONLY TOOLS THAT EXIST ON THE RECIPIENT'S SURFACE. This frame is
+// kernel-level — enqueueMentions ships it to every agent with no
+// driver-class branch (see the call site) — so a name that is valid in
+// one runtime's namespace is an instruction the rest cannot serve. This
+// cue read `commonly_read_attachment({ fileName })` until 2026-08-04; no
+// such tool exists in `@commonlyai/mcp` (see docs/MCP_INTEGRATION.md) or
+// anywhere in this repo but the sentence naming it. Same defect as the
+// heartbeat cue's rolled-back `commonly_save_my_memory` shape (PR #818),
+// one layer up and on a far wider surface: heartbeats are per-tick, this
+// is every mention to every agent.
 const formatPodContextFrame = (podId: string): string =>
   `[Pod context: this conversation is in pod \`${podId}\`. ` +
   `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
-  `commonly_read_attachment({ fileName }) — it returns the extracted text in one shot. ` +
+  `commonly_read_file({ fileName }) — it returns the extracted text in one shot. ` +
   `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
@@ -383,15 +394,23 @@ const formatPodContextFrame = (podId: string): string =>
 // cloud-codex / claude-code adapters. For non-trivial code work
 // (writing, debugging, refactoring, repo ops), openclaw agents should
 // consult a specialist via 1:1 DM instead of refusing capability.
-// commonly_open_dm already exists in the openclaw extension; this cue
-// makes the call shape impossible to overlook.
+// The DM opener has TWO names, one per driver class, and this cue used
+// to name only openclaw's. `commonly_open_dm` is the openclaw-extension
+// tool (live since 11878b43c); `@commonlyai/mcp` exposes the same
+// capability as `commonly_dm_agent` (docs/MCP_INTEGRATION.md §Pods +
+// agent network). Since this frame ships to every agent unconditionally,
+// naming one namespace tells the other half of the fleet to call
+// something they do not have — the ADR-005 wrapper and cloud-codex seats
+// are all MCP consumers. Name both, or condition on driver class; the
+// call site has no notion of driver class, so: name both.
 //
 // Token cost: ~70 per mention. Skipped for events going TO a
 // code specialist (recursive consult is noise + loop risk).
 const formatConsultationCue = (): string =>
   `[Collaboration: for code-heavy work (writing/debugging/refactoring/repo ops) ` +
   `you can consult a coding specialist via 1:1 DM. Call ` +
-  `commonly_open_dm({ agentName: "codex" }) — returns a podId — then ` +
+  `commonly_dm_agent({ agentName: "codex" }) — or commonly_open_dm on openclaw ` +
+  `runtimes — returns a podId, then ` +
   `commonly_post_message(podId, question). Works when the specialist ` +
   `is already a peer in one of your shared pods (if you get a 403, ` +
   `they're not — skip). Skip for non-code asks.]`;
@@ -475,7 +494,8 @@ const formatCollaborativePodCue = (): string =>
   `~30 min, you can race them by picking it up directly — say so in ` +
   `the pod when you do. Delegate only when the work genuinely exceeds ` +
   `your capability or scope; in that case @-mention a peer in this pod ` +
-  `for sync turnaround, or open a 1:1 DM with commonly_open_dm.]`;
+  `for sync turnaround, or open a 1:1 DM with commonly_dm_agent ` +
+  `(commonly_open_dm on openclaw runtimes).]`;
 
 // Pod types that are explicitly NOT collaborative huddles (1:1 by
 // design). The collab cue is skipped for these regardless of member
