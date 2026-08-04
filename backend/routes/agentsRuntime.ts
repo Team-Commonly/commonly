@@ -2291,7 +2291,14 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       // change for the syncable sections).
       console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
       return res.json({
-        ok: true, schemaVersion: 2, cyclesAppended: true, ...cycleMutation,
+        // NEVER hardcode true: `appendCycle` returns null on empty/whitespace
+        // content (agentMemoryService.ts:643) and `describeCycleMutation` returns
+        // {} for null, so a hardcoded true answers a rejected write with
+        // {ok, cyclesAppended:true} and no flags — which is byte-identical to a
+        // backend that predates the flags. Two independent validators must not
+        // be able to disagree about whether a write happened. Patch by
+        // @sprint-review.
+        ok: true, schemaVersion: 2, cyclesAppended: !!cycleResult, ...cycleMutation,
       });
     }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
