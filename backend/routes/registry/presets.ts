@@ -2546,18 +2546,36 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 //
 // `commonly_log_cycle` was added on the DECLARED branch at `a67f0df6`,
 // 2026-05-09, "commonly_log_cycle tool — ADR-012 Phase 2 (#7)" — the exact day
-// this trailer started naming it. The pin then tracked a different lineage, so
-// the shipped gateway never got it: inside the running clawdbot-gateway,
+// this trailer started naming it. Inside the running clawdbot-gateway,
 // `grep -rl commonly_log_cycle /app` returns nothing and the block exposes the
-// 25-tool set above. Found by @ux-lead (`52565`); an earlier version of THIS
-// correction said "not a pin skew, the tool was never there," which was wrong
-// in the other direction and is the third time today one of us has published a
-// cross-repo claim without reading the ref.
+// 25-tool set above.
 //
-// **Do NOT "bump the pin" to the declared branch — it is not ahead, it is a
-// stale fork.** The pin IS openclaw `main` (`compare/main...0082147920` →
-// `identical`), dated 2026-06-26. `rebase-2026.3.29` heads at `a67f0df6`,
-// 2026-05-09 — 48 days OLDER — and the two are `diverged`, ahead 14 / behind 7.
+// THE PIN ALTERNATES. This paragraph has now been rewritten four times, each
+// version confidently wrong in a different direction, because the pin does not
+// sit still:
+//
+//   2026-05-09  f4b7a487  a67f0df6  BRANCH   log_cycle ARRIVES
+//   2026-05-17  b6a811bd  fc6a2231  main     LOST      (bump was for react_to_message)
+//   2026-05-21  0168f013  a67f0df6  BRANCH   RESTORED  (#418, explicitly)
+//   2026-05-24  d6e63b2e  84549161  main     LOST      (bump was for bundled-skills)
+//   2026-06-26  a3de6d07  00821479  main     ← current
+//
+// So: not "never pinned" (pinned twice, worked twice), not "nobody looked"
+// (#418 is literally `bump _external/clawdbot fc6a22319 → a67f0df63`), and not
+// a stale fork to be avoided. Three authors adding three unrelated features
+// each silently traded away five tools. @ux-lead cross-validated the windows
+// against per-agent last-`cycles`-append timestamps: the writes cluster at
+// 05-09…05-13 and 05-21…05-23, both strictly inside a branch-pinned window,
+// nothing outside them.
+//
+// The lesson this comment keeps re-learning: **a claim about another repo's
+// state is not wrong once and then fixed — it decays.** Four revisions in one
+// afternoon is the evidence. It needs a test that reads the ref, not better
+// prose.
+//
+// A bump in EITHER direction is a lineage swap, not a version change. The pin
+// IS openclaw `main` (`compare/main...0082147920` → `identical`, 2026-06-26);
+// `rebase-2026.3.29` heads at `a67f0df6` (2026-05-09), `diverged`, +14 / −7.
 //
 // The 7 commits it is missing are not incidental:
 //
@@ -2573,10 +2591,12 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 // OPENCLAW_INSTALL_GH_CLI=1`, which this repo's own documented gateway build
 // passes and the dev-agent GitHub PAT flow depends on.
 //
-// The remedy is therefore to CHERRY-PICK `a67f0df6` (and any of
-// `open_dm read_attachment read_my_memory save_my_memory` still wanted) ONTO
-// openclaw `main`, then move the pin to that new main. Never point the
-// submodule at the branch.
+// The remedy is therefore NOT a bump in either direction — it is ending the
+// divergence: CHERRY-PICK `a67f0df6` (and any of `open_dm read_attachment
+// read_my_memory save_my_memory` still wanted) ONTO openclaw `main`, then move
+// the pin to that new main. Anything short of that leaves the next person
+// adding an unrelated tool free to swap the set back, which is exactly what
+// happened on 05-17 and again on 05-24 after #418 had already fixed it.
 //
 // An earlier version of this paragraph said the bump "gains five tools and
 // loses `react_to_message`, so it owes a diff of both tool sets." That rule

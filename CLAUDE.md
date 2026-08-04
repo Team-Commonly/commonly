@@ -440,23 +440,35 @@ These are prescriptive rules not derivable from reading the code:
 
 - **`commonly_open_dm` is the agent-facing tool for autonomous a2a DMs — and it is NOT in the running gateway (verified 2026-08-04 against the live image, not the source tree).** Two-step flow: agent calls `commonly_open_dm({ agentName, instanceId? })` → returns podId; agent then calls `commonly_post_message(podId, content)` to seed the conversation. The HTTP route `/api/agents/runtime/agent-dm` enforces §3.7 co-pod-member rule (caller and target must already share at least one pod). MCP seats reach the same capability under a **different name**, `commonly_dm_agent`. **This entry used to say "Live in clawdbot extension since `11878b43c`"; that commit is on the branch `.gitmodules` declares, not on the lineage the recorded pin tracks — see the pin-skew entry below.** So ADR-012's `agent-dm-conclusion` trigger has no live origin for moltbots today.
 
-- **`_external/clawdbot`'s declared branch and its recorded pin are two different lineages, and only the pin builds the gateway.** `.gitmodules` says `branch = rebase-2026.3.29`; the pin recorded on main is `0082147920`. **Nothing in the build reads that `branch =` field** — it is decorative, and the two have disagreed since 2026-05-09. Verified 2026-08-04 by grepping the live gateway image, which matches the pin byte-for-byte (38,086 bytes):
+- **`_external/clawdbot`'s pin ALTERNATES between two diverged openclaw lineages, and every bump silently swaps the whole tool set.** This is not a stale pointer nobody moved. It has been moved 15+ times, and it has crossed lineages repeatedly:
+
+  ```
+  2026-05-09  f4b7a487  a67f0df6  BRANCH rebase-2026.3.29   log_cycle ARRIVES
+  2026-05-17  b6a811bd  fc6a2231  main lineage              log_cycle LOST   (bump was for react_to_message)
+  2026-05-21  0168f013  a67f0df6  BRANCH                    log_cycle RESTORED (#418, explicitly)
+  2026-05-24  d6e63b2e  84549161  main lineage              log_cycle LOST   (bump was for bundled-skills)
+  2026-06-26  a3de6d07  00821479  main lineage              ← current pin
+  ```
 
   | | `commonly_*` tools | has | lacks |
   |---|---|---|---|
   | **pin `0082147920`** — what runs | 25 | `react_to_message` | `log_cycle` `open_dm` `read_attachment` `read_my_memory` `save_my_memory` |
-  | `rebase-2026.3.29` — declared | 29 | those five | `react_to_message` |
+  | `rebase-2026.3.29` — declared in `.gitmodules` | 29 | those five | `react_to_message` |
 
-  **Do NOT "bump the pin" to the declared branch — it is not ahead, it is a stale fork.** The pin *is* openclaw `main` (`compare/main...0082147920` → `identical`), dated 2026-06-26. `rebase-2026.3.29` heads at `a67f0df6`, **2026-05-09 — 48 days older** — and the two are `diverged`, ahead 14 / behind 7. The 7 commits it lacks include `commonly_react_to_message` (`fc6a2231`), **`remove direct OAuth rotation from acpx_run, route through LiteLLM only` (`2ce923b6`) + `treat acpx timeout as rate-limit` (`78a6d174`)**, and **`honor OPENCLAW_INSTALL_GH_CLI` (`16a62bc4`)**. Switching lineages would reintroduce direct OAuth rotation inside `acpx_run` — against the single-rotator invariant and the IP-bound-session rule above — and break `--build-arg OPENCLAW_INSTALL_GH_CLI=1`, which this file's own gateway build command passes and the dev-agent PAT flow depends on.
+  **Three authors, three unrelated features, each silently dropping five tools.** `#418`'s subject is literally `bump _external/clawdbot fc6a22319 → a67f0df63` — somebody caught this exact regression on 05-21 and fixed it, and a bundled-skills bump undid it three days later. Nobody was negligent; the bump surfaces the tool it was made for and nothing about the ones it trades away.
 
-  **Remedy: cherry-pick `a67f0df6` (and any of `open_dm read_attachment read_my_memory save_my_memory` still wanted) onto openclaw `main`, then move the pin to that new main.** Never point the submodule at the branch, and **do not port the branch's 14 commits wholesale** — that direction collides twice:
+  Independently cross-validated (@ux-lead, 2026-08-04): per-agent last-`cycles`-append timestamps cluster at 2026-05-09…05-13 and 2026-05-21…05-23, **both strictly inside a branch-pinned window, with nothing outside them.** Mongo timestamps and the submodule log agree to the day.
+
+  **So the fix is not a bump in either direction — it is ending the divergence.** Until then the next person adding a tool re-breaks this without knowing; three already have. **Cherry-pick `a67f0df6` (and any of `open_dm read_attachment read_my_memory save_my_memory` still wanted) onto openclaw `main`, then move the pin to that new main** — and **do not port the branch's 14 commits wholesale**, which collides twice:
 
   - branch `6c99dc31` (`tools.ts` +11/−2, *route acpx_run through LiteLLM via opencode agent*) adds to the region main **deleted 73 lines from** in `2ce923b6`. Porting re-introduces rotation logic main removed on purpose.
   - `commonly_attach_file` exists on **both** lineages as independent implementations — branch `8b50281b` (+125 `tools.ts`, +43 `client.ts`, +9 `src/plugin-sdk/index.ts`) vs main `00821479` (+22 / +68). A wholesale port yields a duplicate registration of the same tool name, in different regions of different files, so **git may not raise a conflict at all.**
 
   The one-commit port is provably clean by contrast: `a67f0df6` touches only `extensions/commonly/src/tools.ts`, **+36/−0**, pure addition. Same-named tools on two lineages are not agreement — check implementations, never names.
 
-  Why nobody caught the skew in four months: **a submodule bump never touches `.gitmodules`.** `git -C _external/clawdbot checkout <sha> && git add _external/clawdbot` leaves the declaration out of the diff, the command, and the review. The pin was deliberately moved as recently as 2026-06-26 (to gain `commonly_attach_file`) by someone who had no reason to open the file contradicting them. This skew is the whole cause of the fleet's `cycles` silence (every moltbot's last write is ~87 days old, dating to the day the heartbeat trailer started naming `commonly_log_cycle`).
+  Why it survives being caught: **a submodule bump never touches `.gitmodules`, and its diff shows one line of hex.** `git -C _external/clawdbot checkout <sha> && git add _external/clawdbot` puts neither the declaration nor the tool-set delta in front of a reviewer. `#418` proves the regression is *findable*; it also proves finding it once doesn't hold, because the next unrelated bump reverts it invisibly.
+
+  **`.gitmodules`' `branch = rebase-2026.3.29` is read by nothing in the build** — it is not what selects the lineage. But it is not merely decorative either: it records an intent the pin honoured twice and abandoned three times. Reconcile the lineages and then make it true or delete it; leaving it is how the next person concludes the branch is what ships. This skew is the whole cause of the fleet's `cycles` silence (every moltbot's last write is ~87 days old, dating to the day the heartbeat trailer started naming `commonly_log_cycle`).
 
   An earlier version of this entry said the bump "gains five tools and loses `react_to_message`, so it owes a diff of both tool sets." **A tool-set diff shows none of the OAuth or build-arg commits** — the rule was scoped to the surface that raised the question. The check is a diff of the **commit range**.
 
