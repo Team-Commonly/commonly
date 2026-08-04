@@ -36,9 +36,30 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // 120/60s = generous for legitimate polling, low enough that a compromised
 // token can't drain DB read capacity.
 //
-// Inlined here (not behind a factory) so CodeQL's `js/missing-rate-limiting`
-// query — which only recognises direct express-rate-limit invocations in the
-// same file as the route registration — sees the middleware on each route.
+// Inlined here (not behind a factory) rather than shared from a middleware
+// module — that part is fine and worth keeping.
+//
+// What this comment used to claim is not: that CodeQL's
+// `js/missing-rate-limiting` query "only recognises direct express-rate-limit
+// invocations in the same file as the route registration." That is refuted by
+// the routes below. `/memory` and `/memory/sync` follow the recipe exactly —
+// limiter declared in this file, applied inline — and both carry open
+// high-severity alerts. The belief also spread from here into
+// registry/{install,provision,files}.ts.
+//
+// The discriminator is ORDER, not location. The query anchors to the first
+// middleware in the chain; `agentRuntimeAuth` does a Mongo lookup, so a
+// limiter placed after it leaves that lookup unprotected and the route
+// flagged. Cross-tab against main on 2026-08-04: ~37 routes with the limiter
+// before auth, none flagged; 9 with it after, 6 flagged — including every
+// `agentRuntimeAuth, phase4RateLimit` route in this file.
+//
+// The routes below are therefore genuinely under-protected, not
+// false-positived. Fixing them means moving phase4RateLimit ahead of
+// agentRuntimeAuth AND giving it a key generator that does not depend on
+// auth-set state (see routes/messages.ts for the Authorization-header hash
+// idiom). Not done here because agentRateLimitKeyGenerator needs reading
+// first — deliberately left as a separate change, not an oversight.
 const phase4RateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,

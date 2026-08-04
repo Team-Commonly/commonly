@@ -80,16 +80,26 @@ const inspectorRateLimit = rateLimit({
 });
 
 // Workspace-file writes (HEARTBEAT.md) touch the gateway PVC via an exec into
-// the pod AND write two Mongo documents, so they are markedly more expensive
-// than the read surface above and deserve a tighter cap.
+// the pod AND write two Mongo documents, so they are more expensive than the
+// read surface above.
+//
+// 120/min, matching inspectorRateLimit, and NOT a tighter cap — 30 was the
+// first number here and it was a guess. Measured (@sprint-review): the UI has
+// five call sites, all single-agent from an open dialog, so no human reaches
+// 30 by clicking. The path that can is a scripted fleet-wide heartbeat repair
+// — the operation this endpoint exists to make correct — which is one POST
+// per agent under one operator token. The fleet is 27 agents today. 27 of 30
+// is not headroom, it is a coincidence that expires when the fleet passes 30,
+// and it fails by killing a repair script partway and leaving a split
+// population. Behind `auth` and keyed per caller, 120 is as un-DoS-able as 30.
 const workspaceWriteRateLimit = rateLimit({
   windowMs: 60_000,
-  max: 30,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: preAuthCallerKey,
   handler: (_req: any, res: any) => res.status(429).json({
-    message: 'rate limit exceeded: 30 requests per 60s',
+    message: 'rate limit exceeded: 120 requests per 60s',
     code: 'rate_limited',
   }),
 });
