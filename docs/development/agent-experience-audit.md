@@ -196,7 +196,35 @@ Only the third answers the question. The run failed on a `helm upgrade --wait --
 
 **Lesson:** for any question of the form *"is X live,"* the only instrument that answers it is the thing serving traffic. A build result reports a *process*, a release pointer reports an *intent*, and neither is a claim about the running system even though both are routinely read as one. This is entry #3 inverted — silent failure looking like success is the house pattern; **this is loud failure looking like nothing**, and it is more expensive, because a red signal that once meant "it worked anyway" is a signal that has been taught to mean nothing. Where entry #5's rule was *re-check before you rely on a fact*, this one is narrower and cheaper: **name which instrument you read, because "the deploy failed" and "the deploy shipped" were both true statements about the same event at the same moment.**
 
-**The correction that improved this entry, recorded because it is the same discipline the entry argues for.** The first filing said `--wait` "blocked on a release member that never went Ready." The error text is `client rate limiter Wait returned an error: context deadline exceeded` — a client-side limiter and an expired context. **It names no resource and no readiness wait; that mechanism was inferred and stated as a reason.** It is closable, but by elimination rather than by reading: `--wait` blocks until every release Deployment reports available, and exactly one is not — `litellm`, `READY=<none>`, crash-looping at CrashLoopBackOff's 5m0s ceiling (restart count 429 at `10:12Z`, 438 at `11:15Z` — ~9/hour, not decaying). One candidate, no competitor, and a run duration matching the timeout to twelve seconds. That is a sound argument and it is still not the error naming its own cause, which is the distinction worth keeping: **the divergence in the table above never depended on the mechanism, and it is the part that survives.**
+**The correction that improved this entry, recorded because it is the same discipline the entry argues for.** The first filing said `--wait` "blocked on a release member that never went Ready." The error text is `client rate limiter Wait returned an error: context deadline exceeded` — a client-side limiter and an expired context. **It names no resource and no readiness wait; that mechanism was inferred and stated as a reason.** It is closable, but by elimination rather than by reading: `--wait` blocks until every release Deployment reports available, and exactly one is not — `litellm`, `READY=<none>`, crash-looping at CrashLoopBackOff's 5m0s ceiling (`restartCount` 442 against a pod age of 45.81h at `11:34:32Z` — a **6.218 min** whole-life average, ≈9.6/hour, not decaying). One candidate, no competitor, and a run duration matching the timeout to twelve seconds.
+
+*(Those figures replace the ones first filed here — "429 at `10:12Z`, 438 at `11:15Z` — ~9/hour" — and the replacement is recorded rather than swapped, because this entry is about instruments. **The pod message carrying that measurement was posted at `11:10:06Z`, so `11:15Z` is five minutes after the message citing it**: not a mislabel, an impossible reading, and the `6.9 min` interval derived from it was consequently wrong. Three seats then spent an hour differencing pairs of counter samples to recover a number every single sample already contained. The replacement needs no differencing and no clock agreement — `restartCount ÷ age`, two fields of one reading (@sprint-review, msg 52379).)*
+
+**And then the caveat on that replacement went wrong three times, which is the more useful half of this entry.** A whole-life average is a lower bound on current cadence, since CrashLoopBackOff ramps 10s→300s and cheap early restarts pull the mean down. Sizing that bias produced, in order: **0.37%** (mine — I used 610s, the sum of the backoffs themselves, when the bias is the shortfall against steady state), **0.95%** (@sprint-review's correction of it — right numerator, `Σ(300−gapᵢ) = 1190s`, divided by `N×300` instead of `N×period`), and **0.71%** (@sprint-review and @ux-lead, converging independently: `1190/165,640`). The third value is arithmetically correct.
+
+**It is also unfounded, because the model all three compute against is contradicted by the data.** Steady state is not one period. Measured across four consecutive instances:
+
+```
+container lifetimes   223s · 220s · 220s · 219s      ← deterministic
+  startupProbe 15 + 10×18 = 195s, + 30s default grace = 225s   (the budget that sets it)
+backoff gaps          0s · 311s · 0s                 ← bimodal, not saturated at 300
+consecutive periods   223s and 531s                  ← 2.4× spread
+```
+
+So the quantity being corrected by **2.7 seconds** has consecutive samples differing by **~300 seconds**. The bias term is ~100× smaller than a variance nobody bounded, and a fourth pass at it would be as unfounded as the first three: **the error was never in any of the three calculations, it was in continuing to calculate.** Keep the lower-bound direction, drop the number.
+
+**Two smaller claims fail for the same reason and are withdrawn rather than corrected.** *"Re-measured at `11:46:42Z` the average was 6.2177 against 6.218, drifting upward exactly as predicted"* — that is **downward**, by 0.0003 min, and `AGE` reported at `0.01h` quantizes the mean to `36/442 = 0.0014 min`, ~4.7× the difference. The pair resolves nothing in either direction and the sign is quantization; the prediction may well be right and this reading does not test it. And the `5m07s` read from `finishedAt`→`startedAt` is one sample of the **varying** component, not "the backoff measured directly" — the deterministic component is the lifetime, which is the opposite of what the phrasing implies. (Minor, same family: the divisor is the *pod's* age, but its containers start ~110s later — ≈0.07%, the same order as terms this paragraph was modelling.)
+
+**The finding that outranks all of the above: nobody read why it restarts.**
+
+```
+reason = Error    exitCode = 137 (SIGKILL, not OOMKilled)
+previous container's final log lines: a ChatGPT device-code sign-in prompt
+```
+
+It blocks on interactive auth, never serves `/health/readiness`, and the startup probe kills it. That was one `kubectl logs --previous` away for the entire hour three seats spent refining an interval. **So the sentence this correction was originally appended to no longer holds:** the error *does* name its own cause, and always did — it was the *helm* error that named none, and we substituted a derived metric for the one instrument that would have answered. **The generalizable rule, and the reason this belongs in an audit about instruments: when the status feed shows nothing and a derived metric shows something, read the error before refining the metric.** A cheap-to-compute number will absorb arbitrary effort regardless of whether it answers anything — `restartCount ÷ age` needs no permissions and always returns a value; `reason` requires knowing to ask.
+
+That still leaves the original distinction intact: **the divergence in the table above never depended on the mechanism, and it is the part that survives.**
 
 ## 11. The envelope carries the author; the part the model reads does not (2026-08-04, sprint-review)
 
