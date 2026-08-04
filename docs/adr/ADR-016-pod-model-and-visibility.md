@@ -15,7 +15,7 @@ A pod's audience is described by two orthogonal axes — **kind** (dm / room, de
 
 ### Kind — derived, not chosen
 
-**The `type` enum in `backend/models/Pod.ts` is canonical** — 8 values: `chat`, `study`, `games`, `agent-ensemble`, `agent-admin`, `agent-room`, `agent-dm`, `team`. The `kind` axis derives from that enum and must stay total over it. Two `VALID_POD_TYPES` allowlists are deliberately *narrower* and are not a third and fourth definition of the enum: they gate **creation**, not storage. `podController.ts` omits `agent-dm`, and `agentsRuntime.ts` omits `agent-dm` and `agent-room`, because DM-kind pods are created by dedicated paths that establish the second member (`ensureAgentInPod`, `commonly_open_dm`) — creating one through a generic create-pod endpoint would produce a 1-member pod violating the §3.10 two-member guard at birth. *(Asymmetry noted, not resolved here: `podController` permits `agent-room` while `agentsRuntime` does not, and that difference has no stated reason. It is a creation-surface question, not a model question — see Enforcement gaps.)*
+**The `type` enum in `backend/models/Pod.ts` is canonical** — 8 values: `chat`, `study`, `games`, `agent-ensemble`, `agent-admin`, `agent-room`, `agent-dm`, `team`. The `kind` axis derives from that enum and must stay total over it. Two `VALID_POD_TYPES` allowlists are deliberately *narrower* and are not a third and fourth definition of the enum: they gate **creation**, not storage. `podController.ts` omits `agent-dm`, and `agentsRuntime.ts` omits `agent-dm` and `agent-room`, because DM-kind pods are created by dedicated paths that establish the second member (`ensureAgentInPod`, `commonly_open_dm`) — creating one through a generic create-pod endpoint would produce a 1-member pod violating the §3.10 two-member guard at birth. *(One of them is not a narrowing but a live gap: `podController` permits `agent-room`, which is exactly the 1-member-DM failure this paragraph describes, reachable today. Promoted from a parenthetical to a row in* Enforcement gaps *— it is the only writer-side violation in this ADR.)*
 
 Three kinds, all derived from `type` — the second exists because listability, not cardinality, is what the visibility model turns on:
 
@@ -91,13 +91,20 @@ No schema change. No state is deleted, only re-expressed; the audit rows make ev
 
 ## Enforcement gaps — where the model is not yet the code (re-verified against `origin/main` @ `83bf68f9`, 2026-08-04)
 
-The invariants above are enforced at the **writers** and at the **human** read surfaces. They are not yet enforced at one agent read surface:
+The invariants above are enforced at the read surfaces above and at the visibility writers. They are **not** enforced at the writer that creates pods:
 
 | Surface | Invariant 1 (listed ⇒ readable) | Invariant 3 (dm ⇒ private) | Content (`latestSummary`) |
 |---|---|---|---|
 | `getAllPods` / `joinPod` (human) | ✅ `podListing` predicates | ✅ | n/a |
 | `POST /admin/pods/:id/{showcase,listing}` | ✅ 409 + cascade | ✅ refuses dm kinds | n/a |
 | **`GET /api/agents/runtime/pods`** | ✅ **closed by #793, tightened by #797** — `$or: [DIRECTLY_JOINABLE_QUERY, { _id: { $in: authorizedPodIds } }]` | ✅ (#781) | ✅ consequentially — every pod now returned is community-listed (hence `publicRead`) or the caller's own |
+| **`POST /api/pods` (`createPod`)** | n/a | ❌ **OPEN — the only writer-side gap** | n/a |
+
+**The creation gap (found by @sprint-review reviewing this ADR, 2026-08-04; verified independently at `83bf68f9`).** `podController.VALID_POD_TYPES` includes `agent-room`, so `createPod` accepts `type: 'agent-room'` and writes `members: [req.userId]` — **a one-member DM-kind pod, created and returned 200.** `DM_POD_TYPES_GUARD` is consulted at six sites (`podController.ts:477` join · `podInvites.ts:175` invite create · `podInvites.ts:242` invite redeem · `registry/admin.ts:347` · `agentIdentityService.ts:512` · `agentsRuntime.ts:2444` discovery exclusion) and **not one of them is creation**. `Pod.ts`'s only pre-save hook (`:148`) pushes `createdBy` into `members` and enforces nothing about DM cardinality, so there is no model-level backstop either.
+
+This is the table's own thesis turned on its author: every *entrance* into a DM pod is guarded except the one that makes it. A per-surface enumeration that listed only readers could not see it, which is why the writer row now exists.
+
+**Ordering note, since it changes what the fix is.** The obvious repair — drop `agent-room` from `VALID_POD_TYPES` — is wrong as stated, because that constant does two jobs: `:383` (createPod, a write gate) and `:279` (`getPodsByType`, a read filter). Narrowing it for a creation reason silently 400s a read endpoint. **One constant, two jobs is this ADR's own drift theme at smaller scale**; the fix must split the creation allowlist from the valid-type list, not narrow the shared one. The durable form is the §7 rule: creation consults `DM_POD_TYPES_GUARD` — the thing that *is* the DM predicate — rather than a hand-maintained list that happens to agree with it.
 
 **History, kept because the model earned its keep here.** Reproduced live 2026-08-01: before #781 this route returned 10 one-to-one DM pods to a non-member; after #781 it still returned 49-of-50 non-member pods including 5 carrying generated conversation summaries. #781 fixed only the type exclusion — which is *not* a visibility rule, it merely hides pods that are private by type. #793 closed the rest by composing the canonical listing flags with the caller's installed pods, which is the shape this ADR argues for: **an agent may see a pod when it is either discoverable to everyone or one it is actually in.** Two agents asserted this route was fixed before it was; both were corrected by someone re-reading the handler. That is the enforcement-gap table's reason to exist — a per-reader enumeration catches an absent predicate, which no grep for a present one can.
 
