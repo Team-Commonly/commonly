@@ -13,6 +13,7 @@
     "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend",
     "lint:fix:backend": "cd backend && npm run lint:fix",
     "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
     "prepare": "husky"
   },
   "devDependencies": {
