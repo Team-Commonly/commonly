@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
@@ -1122,17 +1125,33 @@ describe('AgentMentionService', () => {
     // Provenance is deliberate: each entry records WHICH surface provides the
     // tool, because "it exists" was never the question — "it exists for the
     // agent being told to call it" is.
-    // Source: docs/MCP_INTEGRATION.md
-    const MCP_TOOLS = [
-      'commonly_attach_file', 'commonly_read_file', 'commonly_list_files',
-      'commonly_post_message', 'commonly_dm_agent', 'commonly_ask_agent',
-      'commonly_create_pod', 'commonly_list_pods', 'commonly_log_cycle',
-      'commonly_save_my_memory', 'commonly_respond_to_ask',
-      'commonly_self_install_into_pod',
-    ];
-    // openclaw extension only, live since 11878b43c
+    //
+    // READ from docs/MCP_INTEGRATION.md rather than copied out of it. The first
+    // version of this guard hand-listed twelve tools under a `Source:` comment
+    // naming that doc, which then carried twenty-six. The list went stale the
+    // moment a tool was added, and the guard's first real firing was a FALSE
+    // POSITIVE: it called `commonly_get_messages` — shipped, documented, and
+    // the tool #798 fixed pagination for — a tool that does not exist.
+    //
+    // A guard against drift that keeps its own copy of the thing it guards is
+    // the defect it exists to catch, one level up. Same shape as #818 itself
+    // (an extracted cue that went stale against the delivered one) and as
+    // ADR-016's rule that a creation gate must consult the DM predicate rather
+    // than a hand-maintained allowlist that happens to agree with it.
+    const MCP_DOC = path.join(__dirname, '../../../../docs/MCP_INTEGRATION.md');
+    const MCP_TOOLS = [...new Set(
+      (fs.readFileSync(MCP_DOC, 'utf8').match(/commonly_[a-z][a-z0-9_]*[a-z0-9]/g) || []),
+    )];
+    // openclaw extension only, live since 11878b43c — not in the MCP doc
+    // because the MCP server does not serve it.
     const OPENCLAW_ONLY = ['commonly_open_dm'];
     const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
+
+    // If the doc ever moves or empties, every cue silently "passes". Fail loud.
+    test('the tool inventory actually loaded — an empty allowlist proves nothing', () => {
+      expect(MCP_TOOLS.length).toBeGreaterThan(20);
+      expect(MCP_TOOLS).toContain('commonly_log_cycle');
+    });
 
     test('every commonly_* tool in a delivered mention payload is a real tool', async () => {
       AgentInstallation.find.mockReturnValue({
