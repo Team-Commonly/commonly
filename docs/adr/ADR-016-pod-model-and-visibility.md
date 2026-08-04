@@ -136,10 +136,16 @@ The `members` clause is also subtly unsafe here rather than merely redundant: th
 |---|---|---|---|
 | `POST /api/admin/pods/:id/showcase` | tier ↔ private/showcase | admin; refuses dm kinds; unlist cascade | live (PR #766-era + #779 cascade) |
 | `POST /api/admin/pods/:id/listing` | tier ↔ showcase/community | admin; 409 below showcase; refuses dm kinds | PR #779 |
-| Creation flow presets (#770 deliverable 2) | joinPolicy at creation; tier stays `private` | presets can only express the 7 reachable states | parked until this ADR ratifies |
+| Creation flow presets (#770 deliverable 2) | joinPolicy at creation; tier stays `private` | presets express **2** states — not the state space; see below | parked until this ADR ratifies |
 | Owner "request listing" | asks an admin for tier promotion | H5 request-access shape | phase 2, explicitly out of scope here |
 
 Answering the stub's second question: **visibility is not chosen at creation.** Every pod is born `private`; promotion is a later, deliberate act on a pod that has content worth disclosing. This matches the curation model, keeps the creation modal to one honest choice (join policy), and makes "I accidentally created a public pod" structurally impossible.
+
+**That cell said 7, and both the number and the quantity were wrong** (found by @sprint-review, narrowed to the right quantity by @ux-lead, 2026-08-04). 7 was the pre-correction total from the enumeration above — 6 listable-room states + 1 DM, from the draft that called `agent-admin` a plain room. The enumeration was corrected to **8**; this sentence, built on the old number, was not. But the total was never the right quantity for that cell: **presets do not select a state, they select a join policy on a pod that is born `private`.** The creation surface therefore expresses exactly **2** — private + open, and private + invite-only — and #778's live copy (*"Open to join"* / *"Invite-only"*, with the *"Anyone can join if this pod is listed in Community"* caveat) is already that expression, so §Writers ratifies shipped copy rather than specifying new work.
+
+Two consequences worth stating, because they shrink a parked deliverable. **The creation modal is not a tier picker and must never become one** — a visibility control at creation contradicts the rule directly above it and reintroduces the accident this design eliminates. And #770 deliverable 2 is not "build the richer modal"; it is explain dormancy (why *open* does not yet mean joinable) and give the owner a legible path toward listing, which is H5's request-listing row and out of scope here.
+
+**The shape of the error is this document's own thesis turned on its prose.** A correction landed at one surface and not at the sentence reading from it — the same *fixed here, not there* failure §Enforcement-gaps exists to catch, in a doc whose operative clause is that a tier enforced at 4 of 5 readers is not a tier.
 
 ## Out of scope
 
