@@ -201,3 +201,49 @@ describe('claude adapter — spawn()', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
+
+/**
+ * Regression for the 2026-08-03 outage: 361 consecutive spawn failures across
+ * three agents, every one reported as `claude exited with code 1: ` with an
+ * empty reason. claude writes terminal conditions — usage limits above all —
+ * to stdout in `-p` mode and exits non-zero with stderr empty, and the adapter
+ * discarded stdout on the failure path.
+ *
+ * This is not only about readable logs. The circuit breaker classifies from
+ * the error message (see spawn-retry.test.mjs), so a blank message downgrades
+ * a hard quota failure to RUNTIME and gives it the shortest backoff — the
+ * fleet then retries into an exhausted quota instead of standing down.
+ */
+describe('claude adapter — failure reporting', () => {
+  test('surfaces a stdout-only failure reason instead of an empty message', async () => {
+    const { impl } = makeSpawnImpl({
+      stdout: 'Claude usage limit reached. Your limit will reset at 11:40pm.',
+      stderr: '',
+      code: 1,
+    });
+
+    await expect(claude.spawn('hi', { sessionId: null, _spawnImpl: impl }))
+      .rejects.toThrow(/usage limit reached/i);
+  });
+
+  test('still prefers stderr, and includes both when both are present', async () => {
+    const { impl } = makeSpawnImpl({ stdout: 'partial output', stderr: 'boom', code: 1 });
+
+    await expect(claude.spawn('hi', { sessionId: null, _spawnImpl: impl }))
+      .rejects.toThrow(/boom \| partial output/);
+  });
+
+  test('bounds the reported detail so a huge stdout cannot flood the log', async () => {
+    const { impl } = makeSpawnImpl({ stdout: 'x'.repeat(50_000), stderr: '', code: 1 });
+
+    const err = await claude.spawn('hi', { sessionId: null, _spawnImpl: impl }).catch((e) => e);
+    expect(err.message.length).toBeLessThan(2_100);
+  });
+
+  test('a successful spawn is unaffected — stdout is still the return value', async () => {
+    const { impl } = makeSpawnImpl({ stdout: 'the answer', code: 0 });
+
+    const res = await claude.spawn('hi', { sessionId: null, _spawnImpl: impl });
+    expect(res.text).toBe('the answer');
+  });
+});

@@ -93,3 +93,49 @@ describe('spawn retry policy', () => {
     expect(attempts).toBe(15);
   });
 });
+
+/**
+ * Regression: the classifier is only as good as the failure strings it has
+ * actually seen. Both cases below are verbatim from the 2026-08-03 fleet
+ * outage, where every one of them classified as RUNTIME — the weakest class,
+ * with the shortest backoff — instead of QUOTA.
+ */
+describe('classifies real provider-exhaustion strings (2026-08-03 outage)', () => {
+  test("codex's exact out-of-credits wording is QUOTA, not RUNTIME", () => {
+    const error = new Error(
+      'codex turn failed: Your workspace is out of credits. '
+      + 'Ask your workspace owner to refill in order to continue.',
+    );
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+  });
+
+  test('a QUOTA verdict opens the circuit on the very first failure', () => {
+    // The point of classifying it correctly: RUNTIME grants two free retries
+    // before tripping, QUOTA trips immediately at the full cooldown.
+    const error = new Error('Your workspace is out of credits.');
+    const { circuitOpen, delayMs, failureClass } = spawnRetryPolicy({
+      error,
+      consecutiveFailures: 1,
+      intervalMs: 5000,
+    });
+    expect(failureClass).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+    expect(circuitOpen).toBe(true);
+    expect(delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  });
+
+  test('a claude usage-limit message reported on stdout is QUOTA once surfaced', () => {
+    // The adapter used to drop stdout on failure, so this arrived as the empty
+    // string and was unclassifiable. See adapters.claude.test.mjs.
+    const error = new Error(
+      'claude exited with code 1: Claude usage limit reached. '
+      + 'Your limit will reset at 11:40pm.',
+    );
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+  });
+
+  test('an empty failure message still classifies, as RUNTIME', () => {
+    // What every one of the 361 claude failures looked like before the fix.
+    expect(classifySpawnFailure(new Error('claude exited with code 1: ')))
+      .toBe(SPAWN_FAILURE_CLASS.RUNTIME);
+  });
+});
