@@ -8,6 +8,9 @@ const JSON5 = require('json5');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 const GlobalModelConfigService = require('./globalModelConfigService');
+// Safe at module scope: routes/registry/presets has zero requires of its own,
+// so this cannot close a cycle back through routes/registry/provision.
+const { withCyclesDirective } = require('../routes/registry/presets');
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_COMMONLY_SKILL_FALLBACK = `---
@@ -703,12 +706,26 @@ const ensureHeartbeatTemplate = (accountId: any, heartbeat: any) => {
     console.warn('[agent-provisioner] Failed to read HEARTBEAT.md:', (error as Error).message);
   }
   if (!content || isHeartbeatContentEffectivelyEmpty(content)) {
-    const normalized = normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
+    // Parity with agentProvisionerServiceK8s.ts:489 — the default branch gets
+    // the cycle trailer. Without this, an agent provisioned on the Docker /
+    // self-host path with no matching preset writes a HEARTBEAT.md that
+    // structurally cannot carry the directive, exactly the defect PR #827
+    // fixed on the k8s path.
+    const normalized = withCyclesDirective(normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT));
     ensureDir(heartbeatPath);
     fs.writeFileSync(heartbeatPath, normalized);
     chownPath(heartbeatPath);
     return heartbeatPath;
   }
+  // DELIBERATELY NOT full parity. The k8s path also treats "existing file
+  // missing CYCLES_DIRECTIVE_MARKER" as stale and rewrites it. That clause is
+  // only safe there because `skipHeartbeat` short-circuits on
+  // `customizations.heartbeat`, and routes/registry/files.ts sets that flag
+  // when it accepts a hand-authored file. THIS function takes no
+  // customizations argument and its call site (:1096) passes none, so adding
+  // the same clause here would silently overwrite hand-edited HEARTBEAT.md
+  // files on the Docker path. Plumb the flag first; the branch above is safe
+  // without it only because it writes when there is nothing to clobber.
   const migrated = migrateLegacyHeartbeatContent(content);
   if (migrated !== content) {
     const normalized = normalizeHeartbeatContent(migrated);
