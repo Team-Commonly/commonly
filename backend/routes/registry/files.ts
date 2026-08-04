@@ -51,6 +51,24 @@ const inspectorRateLimit = rateLimit({
   }),
 });
 
+// Workspace-file writes (HEARTBEAT.md) touch the gateway PVC via an exec into
+// the pod AND write two Mongo documents, so they are markedly more expensive
+// than the read surface above and deserve a tighter cap. Same per-user keying
+// and same same-file placement requirement — CodeQL's `js/missing-rate-limiting`
+// only recognises the middleware when it is declared in this file.
+const workspaceWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) =>
+    String(req.userId || req.user?._id || (req.ip ? ipKeyGenerator(req.ip) : 'anon')),
+  handler: (_req: any, res: any) => res.status(429).json({
+    message: 'rate limit exceeded: 30 requests per 60s',
+    code: 'rate_limited',
+  }),
+});
+
 filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
@@ -208,7 +226,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
   }
 });
 
-filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: any, res: any) => {
+filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, workspaceWriteRateLimit, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, content, reset } = req.body;
