@@ -16,6 +16,22 @@ This ADR's first draft was designed before any data existed. A labelling pass ov
 
 **15 of 238 messages (6.3%) warranted interrupting a human.** Sustained rate 0.16/hr; peak 31/10min raw, 5/10min after filtering to escalation-worthy — i.e. the raw stream breaches ISA-18.2's flood line (>10/10min) and the filtered stream does not. That is the whole case for routing in one number pair.
 
+**Regime caveat — every rate above is an *unattended* measurement, and the word appears once, at the top (@sprint-review, 2026-08-04; decomposition and correction @ux-lead, same day).** `:15` says *unattended* and nothing downstream repeats it, so a reader sizing an alarm budget for a pod under active human attention inherits numbers from a regime that isn't theirs. That gap is real and it is the finding. **What it is not is a simple multiplier, and the reason is worth more than the number.**
+
+Measured on this pod's own corpus — 300 messages, `2026-07-29T01:56Z → 2026-08-04T10:08Z`, six contiguous pages with the seams checked for overlap and gaps:
+
+| statistic | value | what selects the window |
+|---|---|---|
+| burst-weighted | **9.34 / 10min** | episode (gap > 30 min splits) |
+| averaged over elapsed | **0.33 / 10min** | clock |
+| duty cycle | **3.5%** — 321 active minutes of 9133 | — |
+
+**One dataset, a 28× spread, and the only variable is which window you choose.** This pod does not have a message rate; it has episodes separated by dead days. So `0.41/10min` for the 238-message corpus is an **average**, not a rate, and comparing it against an attended *burst* rate compares two different quantities — which is precisely how three seats produced three attended figures (4.0, 5.28, 9.09) from one tool in one hour, none of them wrong. **Layer 0's own duty cycle has not been measured**, so the honest position is that the multiple between regimes is *unknown*, not that it is ~22×.
+
+**And measured correctly it strengthens this section rather than qualifying it.** ISA-18.2 defines flood in a **10-minute window** exactly because operator load is an episode property that a daily average destroys. Decomposed per-episode, **4 of 10 bursts breach >10/10min on the raw stream, peaking at 21.0/10min sustained across 52 minutes.** The paragraph above argues the raw-stream case from a number that *understates* it.
+
+**Two quantities are named here and neither is measured; do not read past them.** (1) The unattended corpus's duty cycle — without it no regime multiple is computable. (2) The **filtered** attended rate: only the raw attended stream has been measured, and the escalation-worthy *share* is what §Routing's budget is actually sized against. Labelling one attended hour against the four classes above would settle it and is roughly an hour of work nobody has done. **The transferable figure from this section is the 6.3% share, not the rates** — a ratio is scale-free and survives either window; a rate does not.
+
 **The observed classes, ranked by frequency:**
 
 | # | class | count | needs a model? |
@@ -42,7 +58,7 @@ Two properties that make this a distinct primitive rather than a missing notific
 1. **It is an invalidation, not an escalation.** The trigger is not *"an agent needs authority"* but *"a fact an agent is relying on has changed."* Note that this is the same shape as observed class 3 — *a claim the human was relying on turned out false* — pointed the other way. That symmetry is the argument for **one mechanism serving both directions**, not two features: in both cases something a party built reasoning on stopped being true, and the party doesn't know.
 2. **The cost is silent and asymmetric.** A missed escalation stalls one agent, visibly, and someone eventually notices. A missed invalidation leaves *every* agent confidently producing correct-looking work over a dead premise, with nothing appearing wrong at all. This is the failure mode this sprint rediscovered in five different costumes — stale review verdicts, superseded ADR versions, a fixed-then-asserted route, phantom cross-layer contracts, an unbounded log window. Correct output over a broken premise is the house failure, and it is invisible by construction.
 
-**The principle for v1 (deliberately not a mechanism):** the attention channel is bidirectional. A merge or deploy touching a surface an agent has reasoned about should land in that agent's pod as a *fact*, not as a notification anyone has to compose. Cheap version first — the same event log that feeds the digest already knows what shipped; the missing piece is that nothing points it back at the agents. **Do not build a subscription system for this.** The measured need is one line per merge, and n=2 incidents are not a mandate for a dependency graph.
+**The principle for v1 (deliberately not a mechanism):** the attention channel is bidirectional. A merge or deploy touching a surface an agent has reasoned about should land in that agent's pod as a *fact*, not as a notification anyone has to compose. Cheap version first — the same event log that feeds the digest already knows what shipped; the missing piece is that nothing points it back at the agents. **Do not build a subscription system for this.** The measured need is one line per merge **or deploy**, and n=3 incidents are not a mandate for a dependency graph. *(Sizing sentence corrected 2026-08-04 on @sprint-review's review: it read "one line per merge, and n=2" while the third instance three paragraphs down is a **deploy with no merge attached** — so the sentence narrowed the correct principle stated one line above it and then certified the narrowing with a stale count. A deploy line is still one line and still needs no subscription model, so the fix strengthens the anti-graph argument rather than qualifying it.)*
 
 **n=1 became n=2 before this draft was reviewed, and the second instance is this file's own merge** (found by @sprint-review, 2026-08-04). #797 merged at `07:33:37Z`, closing the exact divergence ADR-016's §Enforcement-gaps documented as open; #792 merged both ADRs at `07:33:49Z`. **Twelve seconds** — two PRs reviewed in parallel by seats that could not see each other, so the sibling document shipped stale on arrival. That is *superseded ADR versions*, the second costume in the list above, produced by the merge that introduced the list.
 
