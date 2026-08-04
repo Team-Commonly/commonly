@@ -82,6 +82,7 @@ const {
   isValidYMD,
   filterSectionsByVisibility,
   appendCycle,
+  describeCycleMutation,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
 const DMService = require('../services/dmService');
@@ -2126,9 +2127,10 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
     // leak into stampSectionsForWrite (which expects whole-section overwrite
     // shapes). The standard $set then proceeds on the remaining sections.
     const cyclesAppend = sections !== undefined ? extractCyclesAppend(sections) : null;
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         // Validation errors (content too long, etc) are caught by the schema's
         // runValidators; surface as 400 so callers can correct.
@@ -2193,7 +2195,9 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
       contentProvided: content !== undefined,
       sourceRuntime,
     });
-    return res.json({ ok: true });
+    // Report the mutation, not just the success: an ellipsised cycle entry —
+    // or an evicted one — is indistinguishable from a stored one without this.
+    return res.json({ ok: true, ...describeCycleMutation(cycleResult) });
   } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
@@ -2257,19 +2261,29 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
     // ADR-012 §10.1: handle a `cycles` append before the sync dedup logic.
     // The dedup key is computed AFTER cycles is removed (see computeSyncDedupKey
     // input below), so resending the same payload doesn't double-append; the
-    // dedup gate covers replay safety on the syncable sections only. Cycles
-    // appends within a deduped resend will still fire a second time — that is
-    // a known v1 behaviour, callers should not include `cycles` in repeat
-    // syncs (a separate cycles-only PUT /memory call is the recommended path).
+    // dedup gate covers replay safety on the syncable sections only.
+    //
+    // The hazard is `cycles` *mixed with syncable sections* in a resend: those
+    // appends fire a second time. It is NOT "don't send cycles through sync" —
+    // an earlier version of this comment said callers should use a cycles-only
+    // `PUT /memory` instead, which no shipped caller does. `commonly_log_cycle`
+    // posts cycles-only payloads to this route (`commonly-mcp/src/tools.js`),
+    // and they return at the cycles-only branch below, before
+    // `computeSyncDedupKey` is ever called — so the double-append cannot reach
+    // them. Naming the wrong condition made a real constraint read as a rule
+    // every caller safely ignores.
     const cyclesAppend = extractCyclesAppend(sections);
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         if (cycleErr?.name === 'ValidationError') return rejectAndLog(cycleErr.message);
         throw cycleErr;
       }
     }
+    // See PUT /memory: the append's mutations are reported, never silent.
+    const cycleMutation = describeCycleMutation(cycleResult);
 
     const now = new Date();
     const hasOtherSections = Object.keys(sections).length > 0;
@@ -2278,14 +2292,25 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       // rest of the sync pipeline (no dedup key needed; sync state didn't
       // change for the syncable sections).
       console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
-      return res.json({ ok: true, schemaVersion: 2, cyclesAppended: true });
+      return res.json({
+        // NEVER hardcode true: `appendCycle` returns null on empty/whitespace
+        // content (agentMemoryService.ts:643) and `describeCycleMutation` returns
+        // {} for null, so a hardcoded true answers a rejected write with
+        // {ok, cyclesAppended:true} and no flags — which is byte-identical to a
+        // backend that predates the flags. Two independent validators must not
+        // be able to disagree about whether a write happened. Patch by
+        // @sprint-review.
+        ok: true, schemaVersion: 2, cyclesAppended: !!cycleResult, ...cycleMutation,
+      });
     }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
 
     const existing = await AgentMemory.findOne({ agentName, instanceId }).lean();
     if (existing?.lastSyncKey === dedupKey) {
       console.log('[agent-memory SYNC deduped]', { agentName, instanceId, mode, sourceRuntime });
-      return res.json({ ok: true, deduped: true });
+      // The cycles append above already fired (deduping covers syncable
+      // sections only), so its truncation must be reported here too.
+      return res.json({ ok: true, deduped: true, ...cycleMutation });
     }
 
     // GH#632: stamp provenance + capped version history against the existing
@@ -2340,7 +2365,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       sourceRuntime,
     });
 
-    return res.json({ ok: true, schemaVersion: 2 });
+    return res.json({ ok: true, schemaVersion: 2, ...cycleMutation });
   } catch (err: any) {
     console.error('POST /memory/sync error:', err);
     return res.status(500).json({ message: 'Failed to sync agent memory' });
