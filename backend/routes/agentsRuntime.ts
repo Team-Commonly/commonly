@@ -1615,7 +1615,9 @@ router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req
       return res.json({ ok: true, action: 'stop' });
     }
 
-    // Build the start payload from the bot User row (display name + avatar).
+    // The label is pod-scoped on the installation. Fetch the User only for
+    // the portable avatar/fallback; never let its principal label override
+    // this pod's configured agent label.
     let displayName = installation.displayName || agentName;
     let avatar: string | undefined;
     try {
@@ -1626,7 +1628,7 @@ router.post('/pods/:podId/typing', agentRuntimeAuth, phase4RateLimit, async (req
         profilePicture?: string;
         botMetadata?: { displayName?: string };
       };
-      displayName = agentUser?.botMetadata?.displayName || agentUser?.username || displayName;
+      displayName = installation.displayName || agentUser?.botMetadata?.displayName || agentUser?.username || agentName;
       avatar = agentUser?.profilePicture || undefined;
     } catch (identityError) {
       console.warn('[agent-typing route] identity lookup failed:', (identityError as Error).message);
