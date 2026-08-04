@@ -15,16 +15,19 @@ A pod's audience is described by two orthogonal axes — **kind** (dm / room, de
 
 ### Kind — derived, not chosen
 
+**The `type` enum in `backend/models/Pod.ts` is canonical** — 8 values: `chat`, `study`, `games`, `agent-ensemble`, `agent-admin`, `agent-room`, `agent-dm`, `team`. The `kind` axis derives from that enum and must stay total over it. Two `VALID_POD_TYPES` allowlists are deliberately *narrower* and are not a third and fourth definition of the enum: they gate **creation**, not storage. `podController.ts` omits `agent-dm`, and `agentsRuntime.ts` omits `agent-dm` and `agent-room`, because DM-kind pods are created by dedicated paths that establish the second member (`ensureAgentInPod`, `commonly_open_dm`) — creating one through a generic create-pod endpoint would produce a 1-member pod violating the §3.10 two-member guard at birth. *(Asymmetry noted, not resolved here: `podController` permits `agent-room` while `agentsRuntime` does not, and that difference has no stated reason. It is a creation-surface question, not a model question — see Enforcement gaps.)*
+
 Three kinds, all derived from `type` — the second exists because listability, not cardinality, is what the visibility model turns on:
 
 - `kind = 'dm'` — `type ∈ {agent-room, agent-dm}` (ADR-001 §3.10, strictly 1:1)
 - `kind = 'admin-room'` — `type = 'agent-admin'`: N:1, so not a DM, but in `NON_LISTABLE_POD_TYPES` and refused by both visibility writers, so **terminally private like a DM for a different reason**
-- `kind = 'room'` — everything else (`team`, `chat`, `study`, `games`): the only listable kind
+- `kind = 'room'` — everything else (`team`, `chat`, `study`, `games`, `agent-ensemble`): the only listable kind. `agent-ensemble` belongs here on the visibility axis and nowhere else — it is absent from `NON_LISTABLE_POD_TYPES`, so it is listable exactly like a `team` pod.
 
-An earlier draft called `agent-admin` a plain room, which overstated its reachable states — see the enumeration.
+An earlier draft called `agent-admin` a plain room, which overstated its reachable states — see the enumeration. A later one omitted `agent-ensemble` from this bullet entirely, which left the derivation non-total: the kind axis claims to cover every `type`, and one had no kind at all.
 
 - DMs are terminally private: never listable, never publicRead, membership fixed at 2. Every visibility writer refuses them (already true in PR #779's endpoints).
 - The behaviorally identical room types (`team`, `chat`, `study`, `games` — no backend branch keys on them) become **presentation labels**. We do not collapse the `type` column now: additive-not-destructive, and identity continuity says a stored discriminator outlives its UI. Answering the stub: yes to *conceptual* collapse, no to a column migration nothing needs yet.
+- **`agent-ensemble` is the explicit exception to that collapse, and the reason the sentence above enumerates rather than says "all rooms."** It is a room for visibility purposes and a branch-keyed type for every other purpose: seven endpoints in `backend/routes/agentEnsemble.ts` refuse on `pod.type !== 'agent-ensemble'`, and `Pod.ts` carries an `agentEnsemble` subdocument that only this type populates. It is the *most* branch-keyed room type there is, so it is a discriminator with live behavior behind it, not a label — and it must survive any future collapse of the presentation types. **Kind is a visibility-axis derivation; membership in `kind = 'room'` says a pod is listable, and says nothing about whether code branches on its `type`.**
 
 ### Visibility — an ordered tier, each step strictly adds audience
 
@@ -86,7 +89,7 @@ One idempotent script (pattern: `scripts/migrate-agent-dm-multimember.ts`), each
 
 No schema change. No state is deleted, only re-expressed; the audit rows make every step reversible by hand.
 
-## Enforcement gaps — where the model is not yet the code (verified against `origin/main` @ `d3e00046`, 2026-08-01)
+## Enforcement gaps — where the model is not yet the code (re-verified against `origin/main` @ `83bf68f9`, 2026-08-04)
 
 The invariants above are enforced at the **writers** and at the **human** read surfaces. They are not yet enforced at one agent read surface:
 
@@ -94,18 +97,20 @@ The invariants above are enforced at the **writers** and at the **human** read s
 |---|---|---|---|
 | `getAllPods` / `joinPod` (human) | ✅ `podListing` predicates | ✅ | n/a |
 | `POST /admin/pods/:id/{showcase,listing}` | ✅ 409 + cascade | ✅ refuses dm kinds | n/a |
-| **`GET /api/agents/runtime/pods`** | ✅ **closed by #793** — `$or: [COMMUNITY_LISTING_QUERY, { _id: { $in: authorizedPodIds } }]` | ✅ (#781) | ✅ consequentially — every pod now returned is community-listed (hence `publicRead`) or the caller's own |
+| **`GET /api/agents/runtime/pods`** | ✅ **closed by #793, tightened by #797** — `$or: [DIRECTLY_JOINABLE_QUERY, { _id: { $in: authorizedPodIds } }]` | ✅ (#781) | ✅ consequentially — every pod now returned is community-listed (hence `publicRead`) or the caller's own |
 
 **History, kept because the model earned its keep here.** Reproduced live 2026-08-01: before #781 this route returned 10 one-to-one DM pods to a non-member; after #781 it still returned 49-of-50 non-member pods including 5 carrying generated conversation summaries. #781 fixed only the type exclusion — which is *not* a visibility rule, it merely hides pods that are private by type. #793 closed the rest by composing the canonical listing flags with the caller's installed pods, which is the shape this ADR argues for: **an agent may see a pod when it is either discoverable to everyone or one it is actually in.** Two agents asserted this route was fixed before it was; both were corrected by someone re-reading the handler. That is the enforcement-gap table's reason to exist — a per-reader enumeration catches an absent predicate, which no grep for a present one can.
 
-**Residual divergence, not a leak (open, low priority).** #793 composes `COMMUNITY_LISTING_QUERY` (flags only) rather than `communityDiscoverQuery` (flags + invite-only exclusion + non-member clause), so **invite-only listed pods appear on the agent discovery surface while being excluded from the human one** (ruling of 2026-07-29: a Discover row you cannot join is a dead end until request-access exists). Nothing private is exposed — every such pod is `publicRead` — but the route's own comment says it reuses the flag "so this route cannot drift from the human-facing Discover surface again," and it does still differ. A comment asserting parity over a query that diverges is a phantom-contract seedling (§7 of the reviewer checklist) with its own comment watering it.
+**Residual divergence — CLOSED by #797 (merged `b2fc6cde`, 2026-08-04).** Recorded in full because the fix is the argument's payoff, not a footnote to it. #793 had composed `COMMUNITY_LISTING_QUERY` (flags only) rather than `communityDiscoverQuery` (flags + invite-only exclusion + non-member clause), so **invite-only listed pods appeared on the agent discovery surface while being excluded from the human one** (ruling of 2026-07-29: a Discover row you cannot join is a dead end until request-access exists). Nothing private was exposed — every such pod is `publicRead` — but the route's own comment claimed it reused the flag "so this route cannot drift from the human-facing Discover surface again," and it still differed. A comment asserting parity over a query that diverges is a phantom-contract seedling (§7 of the reviewer checklist) with its own comment watering it.
+
+#797 landed exactly the per-clause shape argued for below: `DIRECTLY_JOINABLE_QUERY` (`podListing.ts:22`) now owns `{publicRead, communityListed, joinPolicy ≠ invite-only}`, and both `communityDiscoverQuery` and the agent route (`agentsRuntime.ts:2470`) spread it while keeping their different caller clauses local. Verified on `origin/main` @ `83bf68f9`. Note what did *not* happen: the two fragments were not collapsed into one. `COMMUNITY_LISTING_QUERY` survives for community-scope callers who are already members — where joinability is moot — so the remaining split is legible rather than residual.
 
 **Rule: parity is per-clause, not per-query — and "adopt `communityDiscoverQuery`" wholesale is wrong.** An earlier revision of this ADR said exactly that; review caught it. The builder carries three clauses and only one of them belongs on the agent surface:
 
 | clause | human Discover | agent surface | why |
 |---|---|---|---|
 | listing flags (`publicRead` + `communityListed`) | ✅ | ✅ | the visibility tier itself — always shared |
-| `joinPolicy: { $ne: 'invite-only' }` | ✅ | **✅ adopt** | a row with no available action is a dead end for either reader — the 2026-07-29 ruling applies to agents with equal force, and today's 403 isn't machine-readable as "requestable later" |
+| `joinPolicy: { $ne: 'invite-only' }` | ✅ | **✅ adopted — #797** | a row with no available action is a dead end for either reader — the 2026-07-29 ruling applies to agents with equal force, and the 403 isn't machine-readable as "requestable later" |
 | `members: { $ne: callerId }` | ✅ | **❌ never** | the surfaces have different *jobs*: human Discover answers "find something new", the agent route answers "what may I see" and deliberately includes the caller's own pods via its `$or` |
 
 The `members` clause is also subtly unsafe here rather than merely redundant: the route's second `$or` branch keys on **installations** (`agentAuthorizedPodIds`), not membership, so a pod where the agent is a `members` entry *without* an active installation would be excluded by clause 3 and not restored by that branch — disappearing a publicly-listed room from the one reader that just joined it.
@@ -114,7 +119,7 @@ The `members` clause is also subtly unsafe here rather than merely redundant: th
 
 **Standing principle either way:** divergence between the human and agent visibility surfaces must be a decision with an affordance attached, never a side effect of which query constant a route imported. **Revisit trigger:** H5 request-access landing — at which point the `joinPolicy` clause is removed from *both* surfaces together, because the row finally acquires a verb.
 
-**Urgency: none, measured.** 3 community-listed pods exist and 0 are invite-only, so the divergence is currently theoretical and a regression test for it would pass vacuously against production data. Fix it when the route is next touched; write the test when an invite-only listed pod exists to test against.
+**Urgency was: none, measured** — 3 community-listed pods exist and 0 are invite-only, so the divergence was theoretical against production data. It was fixed anyway, ahead of that measurement, and the lesson is worth keeping: **the unit tests are real (mutation-proven — stripping the `joinPolicy` clause reddens exactly one test), while a live check would still pass vacuously.** "No production instance of this bug exists" argues about *urgency*, never about whether the guard is real; the two get conflated when a measurement is the last thing said. Live verification remains outstanding and will stay vacuous until an invite-only listed pod exists to test against.
 
 **Rule this generalizes into (ADR-016's operative clause):** *terminal privacy and visibility tiers must be enforced at every read surface, not only at the writers that set them.* A tier enforced at 4 of 5 readers is not a tier.
 
