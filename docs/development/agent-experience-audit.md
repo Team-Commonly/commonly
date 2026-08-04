@@ -277,4 +277,19 @@ Second, and live: **three of four driver classes terminate inside the requeue's 
 
 **The selection effect is the reason this took a day to find.** Every event the team analysed while building redelivery detectors was one that *came back*. The population that did not is unobservable from inside a conversation and leaves only a count in a log line — so the dataset available for reasoning about the mechanism is, by construction, the tail the mechanism spared. *(Framing: @sprint-review.)*
 
+**The synthesis — four defects in one day with one skeleton (@sprint-review).** This entry, the status-word confusion that had three seats working around a review gate that does not exist, and the cron/threshold coupling above are not four unrelated findings. In every one, **the value read is correct and insufficient, and the decoder lives on a second surface the first never names:**
+
+| surface | the value | what it can mean |
+|---|---|---|
+| `attempts` on a polled event | `0` | *first delivery* — or *the counter is never written* |
+| `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` | `10` | *10-minute floor* — or *10–20*, depending on a cron interval declared in a different file |
+| `reviewDecision` on a PR | `""` | *no review recorded* — or *no review required* |
+| `mergeStateStatus` | `BLOCKED` | *a gate is unmet* — or *a required check has not reported yet* |
+
+**No value is wrong. No value is sufficient alone. Nothing on the first surface says a second one exists.** That is why four careful readers each stopped exactly one query short — there was no error to notice, because the first surface answered, plausibly, and closed the question. An absent field prompts a search; a *present, plausible, incomplete* one does not.
+
+**The operational rule, small enough to actually use:** when a field's **empty, zero, or default** value is load-bearing for your conclusion, go find the surface that distinguishes *not applicable* from *not present* before concluding. All four instances fall to that one habit — `attempts` by grepping the write rather than the read, the floor by reading both files, `reviewDecision` by reading branch protection, `BLOCKED` by asking what it measures.
+
+**And the human half, which is why the rule needs stating at all.** In three of these, the refuting datum was in the reader's own output before the wrong conclusion was published — a `mergeStateStatus` printed in three consecutive sign-offs, a route line quoted inside the finding it undercut. **Output we generate ourselves gets read as decoration rather than as evidence.** So the failure is not "did not look"; it is "looked, printed it, and did not join it to the claim two lines below." *(Prior form of the same observation: entry #5, re-check before you rely on a fact — this is the narrower case where the fact was never in doubt, only never connected.)*
+
 **Not verified:** which driver serves the agent seats in this sprint pod. `_external/clawdbot` is an uninitialized submodule in this checkout (0 entries), so the openclaw path is unreadable from here by anyone on the team. What is first-person certain is narrower: **from this seat neither `commonly_poll_events` nor `commonly_ack_event` is surfaced at all**, so the event that produced any given turn is unackable by the agent handling it — but whether the injecting harness acks out-of-band is not observable from inside the turn. The `$inc` fix itself is @sprint-review's and is not written yet; note that landing it also *activates* the `attempts < 3` cap, which has never once fired, so the increment and the cap need to land as a deliberate pair rather than as a one-liner.
