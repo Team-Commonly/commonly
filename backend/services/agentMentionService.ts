@@ -424,6 +424,44 @@ const formatMentionReplyCue = (podId: string): string =>
   `reach the pod (openclaw heartbeat-clobber-mention bug, 3 reproductions ` +
   `2026-05-20). Post-then-stop is the safe sequence.]`;
 
+// Authorship + age frame. Same rationale as every cue above: the
+// envelope has carried `userId`, `username` and `createdAt` since it
+// was written, and `/events` returns the payload whole — but the model
+// only ever sees `payload.content`, so all three were invisible to the
+// only reader that needed them. Four sprint agents spent 2026-08-04
+// misattributing each other's messages and re-answering redeliveries,
+// and two of them proposed *adding* fields that were already present
+// (AX audit entry 6's shape: a value owned by one surface, looked for
+// in another).
+//
+// ABSOLUTE timestamp, never a relative age, and the distinction is the
+// whole point of the frame. Content is composed once at enqueue; an
+// unacked event is re-served from the queue with that same frozen
+// string. "posted 3 seconds ago" would therefore still read "3 seconds
+// ago" on a redelivery eighteen minutes later — lying precisely on the
+// case this exists to catch. An absolute stamp stays true on every
+// redelivery and the reader compares it against its own clock.
+//
+// messageId rides along so a reply can cite the trigger without paging
+// the log — the same "resolve it without a second call" property that
+// motivates the timestamp.
+const formatAuthorFrame = (
+  username: string | undefined,
+  createdAt: unknown,
+  messageId: string | undefined,
+): string => {
+  const author = username || 'unknown';
+  const stamp = createdAt instanceof Date
+    ? createdAt.toISOString()
+    : new Date(String(createdAt || Date.now())).toISOString();
+  const idPart = messageId ? ` (message ${messageId})` : '';
+  return `[Trigger: this turn was raised by **${author}**${idPart}, posted at ${stamp}. `
+    + `That stamp is when the message was WRITTEN, not when it reached you — an unacked `
+    + `event is re-served, so a redelivery arrives with this same stamp. Compare it against `
+    + `the current time before treating this as new: if it is not recent, check whether you `
+    + `already answered it (commonly_get_messages) rather than answering twice.]`;
+};
+
 // Agents whose runtime IS a code specialist shouldn't be told to consult
 // themselves — would be noise + risk loop-forming.
 const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean => {
@@ -534,8 +572,13 @@ const buildContentForTarget = (
   eventType: 'chat.mention' | 'thread.mention',
   targetAgentName: string,
   collaborativePod: boolean = false,
+  author: { username?: string; createdAt?: unknown; messageId?: string } = {},
 ): string => {
   const frames: string[] = [formatPodContextFrame(podId)];
+  // First after pod context, and unconditional: every event type and
+  // every runtime needs to know who spoke and when. The four cues below
+  // are all conditional on shape; this one never is.
+  frames.push(formatAuthorFrame(author.username, author.createdAt, author.messageId));
   if (
     eventType === 'chat.mention'
     && collaborativePod
@@ -613,6 +656,15 @@ const enqueueMentions = async ({
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
   const eventType: 'chat.mention' | 'thread.mention' = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  // Author/age frame inputs — identical for every target of this
+  // message, so resolved once here rather than at each of the four
+  // enqueue sites below. Same values that already go into the envelope
+  // fields; the frame is what actually reaches the model.
+  const authorFrame = {
+    username,
+    createdAt: message?.createdAt || message?.created_at || new Date(),
+    messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
+  };
   // Per-target content composition: see buildContentForTarget above for
   // the four-case matrix (chat-vs-thread × specialist-vs-not). Each
   // enqueue site below passes its own `targetAgentName` so the cue
@@ -754,7 +806,7 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod),
+              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame),
               userId,
               username,
               mentions: rawMentions,
@@ -802,7 +854,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod),
+                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -869,7 +921,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod),
+                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod, authorFrame),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -915,6 +967,7 @@ const enqueueMentions = async ({
               'chat.mention',
               target.agentName,
               collaborativePod,
+              authorFrame,
             ),
             userId,
             username,
