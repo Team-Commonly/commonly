@@ -40,6 +40,79 @@ const githubPrRateLimit = rateLimit({
   }),
 });
 
+// AX audit #9. Every route below proxies GitHub, and every failure — including
+// GitHub rejecting OUR credential — was collapsed into a 500 whose only true
+// signal lived in a human-readable `detail` string. The two codes carry
+// opposite instructions: 500 means *the server failed, retry*, while an
+// upstream 401 means *stop, the credential is wrong, retrying changes
+// nothing*. A caller that reads the status and does the right thing by it
+// retries forever against a fault no retry resolves.
+//
+// So: map the upstream status into the same class, and put the instruction in
+// a machine-readable field (`retryable`) rather than in prose. The status
+// stays 502 for a credential rejection rather than passing 401 through,
+// because the CALLER's auth is fine — it is our server credential GitHub
+// refused, and a bare 401 would just relocate the false model onto the
+// caller's own token. `code` + `upstreamStatus` say which of the two it is.
+// NOTE: deliberately not `export function`. This file ends in
+// `module.exports = router`, which replaces the exports object wholesale — a
+// TS named export would compile to `exports.x = …` and then be silently
+// discarded. It is re-attached to the router below instead, which is the
+// shape that actually survives.
+function mapGitHubUpstreamError(
+  err: unknown,
+  labels: { fallback: string; notFound: string },
+): { status: number; body: Record<string, unknown> } {
+  const e = err as {
+    response?: { status?: number; headers?: Record<string, string> };
+    message?: string;
+  };
+  const upstreamStatus = e.response?.status;
+  const detail = e.message;
+
+  if (upstreamStatus === 404) {
+    return { status: 404, body: { error: labels.notFound, code: 'github_not_found', retryable: false } };
+  }
+
+  // GitHub signals rate limiting as 429, or as 403 with the remaining budget
+  // at zero. Both are retryable — but only after a wait, so say so.
+  const remaining = e.response?.headers?.['x-ratelimit-remaining'];
+  if (upstreamStatus === 429 || (upstreamStatus === 403 && remaining === '0')) {
+    return {
+      status: 429,
+      body: {
+        error: 'GitHub rate limit exceeded', code: 'github_rate_limited', upstreamStatus, retryable: true, detail,
+      },
+    };
+  }
+
+  if (upstreamStatus === 401 || upstreamStatus === 403) {
+    return {
+      status: 502,
+      body: {
+        error: 'GitHub rejected the server credential — this is not your token, and retrying will not fix it',
+        code: 'github_credential_rejected',
+        upstreamStatus,
+        retryable: false,
+        detail,
+      },
+    };
+  }
+
+  if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
+    return {
+      status: 502,
+      body: {
+        error: 'GitHub is failing upstream', code: 'github_upstream_error', upstreamStatus, retryable: true, detail,
+      },
+    };
+  }
+
+  // No upstream response at all: our own bug, our own 500. This is the only
+  // branch where 500 is the honest answer.
+  return { status: 500, body: { error: labels.fallback, code: 'github_proxy_error', retryable: false, detail } };
+}
+
 function anyAuth(req: AuthReq, res: Res, next: () => void) {
   const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
   if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
@@ -99,9 +172,9 @@ router.get('/issues', anyAuth, async (req: AuthReq, res: Res) => {
     const issues = await GitHubAppService.listOpenIssues({ owner, repo, perPage: Number(per_page) || 20 });
     return res.json({ issues: issues.map((i: { number: number; title: string; body: string; html_url: string; labels?: Array<{ name: string }>; milestone?: { title?: string } }) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name), milestone: i.milestone?.title || null })) });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error('GET /github/issues error:', e.message);
-    return res.status(500).json({ error: 'Failed to list issues', detail: e.message });
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to list issues', notFound: 'Repository not found' });
+    console.error('GET /github/issues error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
@@ -116,9 +189,9 @@ router.post('/issues', anyAuth, async (req: AuthReq, res: Res) => {
     const issue = await GitHubAppService.createIssue({ owner, repo, title, body, labels });
     return res.status(201).json({ number: issue.number, title: issue.title, url: issue.html_url });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error('POST /github/issues error:', e.message);
-    return res.status(500).json({ error: 'Failed to create issue', detail: e.message });
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to create issue', notFound: 'Repository not found' });
+    console.error('POST /github/issues error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
@@ -130,9 +203,9 @@ router.post('/issues/:number/comment', anyAuth, async (req: AuthReq, res: Res) =
     await GitHubAppService.addIssueComment({ owner, repo, issueNumber, body });
     return res.json({ ok: true });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error('POST /github/issues/comment error:', e.message);
-    return res.status(500).json({ error: 'Failed to comment', detail: e.message });
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to comment', notFound: 'Issue not found' });
+    console.error('POST /github/issues/comment error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
@@ -143,9 +216,9 @@ router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => 
     await GitHubAppService.closeIssue({ owner, repo, issueNumber, comment });
     return res.json({ ok: true, closed: issueNumber });
   } catch (err) {
-    const e = err as { message?: string };
-    console.error('POST /github/issues/close error:', e.message);
-    return res.status(500).json({ error: 'Failed to close issue', detail: e.message });
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to close issue', notFound: 'Issue not found' });
+    console.error('POST /github/issues/close error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
@@ -163,10 +236,9 @@ router.get('/pulls/:number/diff', githubPrRateLimit, anyAuth, async (req: AuthRe
     const diff = await GitHubAppService.getPullDiff({ owner, repo, pullNumber });
     return res.json({ number: pullNumber, diff });
   } catch (err) {
-    const e = err as { response?: { status?: number }; message?: string };
-    if (e.response?.status === 404) return res.status(404).json({ error: 'Pull request not found' });
-    console.error('GET /github/pulls/diff error:', e.message);
-    return res.status(500).json({ error: 'Failed to fetch pull diff', detail: e.message });
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to fetch pull diff', notFound: 'Pull request not found' });
+    console.error('GET /github/pulls/diff error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
@@ -185,13 +257,19 @@ router.post('/pulls/:number/review', githubPrRateLimit, anyAuth, async (req: Aut
     const r = review as { id?: number; state?: string; html_url?: string };
     return res.status(201).json({ ok: true, id: r?.id, state: r?.state, url: r?.html_url });
   } catch (err) {
-    const e = err as { response?: { status?: number }; message?: string };
-    if (e.response?.status === 404) return res.status(404).json({ error: 'Pull request not found' });
-    console.error('POST /github/pulls/review error:', e.message);
-    return res.status(500).json({ error: 'Failed to submit review', detail: e.message });
+    // AX #9 left this one explicitly unverified — "whether commonly_pr_review
+    // shares the same broken credential; assume it does until someone checks."
+    // It does: both routes go through GitHubAppService._apiHeaders and the same
+    // GITHUB_PAT, so a rejected credential fails the write path identically.
+    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to submit review', notFound: 'Pull request not found' });
+    console.error('POST /github/pulls/review error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json(mapped.body);
   }
 });
 
 module.exports = router;
+// Exposed for unit tests: the mapping is the load-bearing part, and testing it
+// through six routes' worth of axios mocks would test the mocks.
+module.exports.mapGitHubUpstreamError = mapGitHubUpstreamError;
 
 export {};
