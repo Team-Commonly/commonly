@@ -844,7 +844,7 @@ class SchedulerService {
       if (installation?.config?.heartbeat?.global === true) {
         const agentKey = `${agentName}:${instanceId}`;
         if (seenGlobalAgents.has(agentKey)) continue;
-        if (installation?.config?.heartbeat?.enabled === false) continue;
+        if (installation?.config?.heartbeat?.enabled !== true) continue;
         seenGlobalAgents.add(agentKey);
         toProcess.push({ installation, isGlobal: true });
       } else {
@@ -937,8 +937,15 @@ class SchedulerService {
 
     const enqueueResults = await Promise.all(
       toProcess.map(async ({ installation, isGlobal }) => {
+        // Opt-in, not opt-out. `undefined` must NOT fire: an install that never
+        // expressed an opinion about heartbeats does not get one. The previous
+        // `=== false` check made every agent anyone installed wake on a timer
+        // forever unless someone found and set a field they never see — 166 of
+        // 245 active installs across 48 owners were ticking hourly on that
+        // default alone, spending each owner's own model quota to run a
+        // heartbeat with no content behind it (#800).
         const heartbeatEnabled = installation?.config?.heartbeat?.enabled;
-        if (heartbeatEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
+        if (heartbeatEnabled !== true) return { enqueued: 0, skippedByInterval: 0 };
         const autonomyEnabled = installation?.config?.autonomy?.enabled;
         if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
 
