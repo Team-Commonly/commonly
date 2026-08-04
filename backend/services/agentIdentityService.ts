@@ -426,16 +426,26 @@ class AgentIdentityService {
       console.log(`Upgraded user to bot: ${username}`);
     } else {
       const existingMeta = agentUser.botMetadata || {};
-      const requestedDisplayName = options.displayName
-        ? String(options.displayName).trim()
-        : '';
+      const hasStoredDisplayName = typeof existingMeta.displayName === 'string'
+        && existingMeta.displayName.trim().length > 0;
+      // `displayName` is supplied by an AgentInstallation on normal CAP
+      // requests. Installations are pod-scoped; this User row is the
+      // portable principal for (agentName, instanceId). Letting a routine
+      // post refresh the principal label therefore lets one pod rewrite the
+      // label seen by every sibling pod (and every historical PG message
+      // joined through this User). Use an incoming name only when creating
+      // or repairing a principal that has no label. An intentional principal
+      // rename needs an explicit identity-level operation, not a side effect
+      // of posting from one installation.
       const needsUpdate = !existingMeta.agentName
         || existingMeta.agentName !== resolvedType
         || existingMeta.instanceId !== instanceId
         || !existingMeta.runtime
-        || (requestedDisplayName && existingMeta.displayName !== requestedDisplayName);
+        || !hasStoredDisplayName;
       if (needsUpdate) {
-        const refreshRawDisplayName = options.displayName || existingMeta.displayName || typeConfig?.officialDisplayName || resolvedType;
+        const refreshRawDisplayName = hasStoredDisplayName
+          ? String(existingMeta.displayName)
+          : (options.displayName || typeConfig?.officialDisplayName || resolvedType);
         agentUser.botMetadata = {
           ...existingMeta,
           displayName: await resolveCollisionFreeDisplayName(refreshRawDisplayName, instanceId, agentUser._id),

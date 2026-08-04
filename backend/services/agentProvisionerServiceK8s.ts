@@ -13,6 +13,10 @@ const path = require('path');
 const PodAsset = require('../models/PodAsset');
 const PodAssetService = require('./podAssetService');
 const GlobalModelConfigService = require('./globalModelConfigService');
+// The cycle-reflection trailer lives with the presets because that is where it
+// is authored, but it is NOT preset-specific — see ensureHeartbeatTemplate.
+// `presets.ts` has no requires of its own, so this direction cannot cycle.
+const { withCyclesDirective, CYCLES_DIRECTIVE_MARKER } = require('../routes/registry/presets');
 
 // Initialize K8s client
 const kc = new k8s.KubeConfig();
@@ -469,17 +473,40 @@ const ensureHeartbeatTemplate = async (accountId: any, heartbeat: any, { gateway
   const podName = await resolveGatewayPodNameWithRetry(gateway);
   const workspacePath = '/workspace';
   const heartbeatPath = `${workspacePath}/${accountId}/HEARTBEAT.md`;
-  // Use preset-specific customContent if provided; otherwise fall back to default template
+  // Use preset-specific customContent if provided; otherwise fall back to default template.
+  //
+  // The default branch gets the cycle trailer too. It used to not: `withCyclesDirective`
+  // was applied only to `matchedPreset.heartbeatTemplate` at the two registry call sites,
+  // so the trailer reached an agent only if a preset matched. Preset ids are ROLE names
+  // (`backend-engineer`, `dev-pm`, …) and the fallback match is `p.id === instanceId`, so
+  // for every agent whose install carries no explicit `presetId` the match failed, this
+  // branch ran, and the deployed HEARTBEAT.md structurally could not carry the directive —
+  // 10 of 27 moltbots on 2026-08-04. Those agents were then told to log cycles by the
+  // scheduler's inline cue alone, which named a tool that 400s. Applying it here means a
+  // match failure can no longer silence the directive.
   const templateContent = (customContent && customContent.trim())
     ? customContent
-    : normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT);
+    : withCyclesDirective(normalizeHeartbeatContent(DEFAULT_HEARTBEAT_CONTENT));
   const encoded = Buffer.from(templateContent.endsWith('\n') ? templateContent : `${templateContent}\n`, 'utf8').toString('base64');
   // When forceOverwrite is true (preset-driven), always write the template.
   // Otherwise, preserve existing non-stale HEARTBEAT.md files.
+  //
+  // "Missing the cycle directive" counts as stale. Without this clause the two
+  // legacy markers below are the ONLY way an existing file is ever rewritten,
+  // so a HEARTBEAT.md written before the trailer existed survives every
+  // reprovision indefinitely — theo's still named `commonly_write_agent_memory`
+  // for the cycles append months later, a tool that cannot append to `cycles`.
+  // This is staleness, not customization — but that separation only holds
+  // because `routes/registry/files.ts` now SETS `customizations.heartbeat` when
+  // it accepts a hand-authored file. It previously did not: the flag was only
+  // ever supplied at install time, so a file edited through the UI looked
+  // un-customized here and this clause would have overwritten it. If you add
+  // another HEARTBEAT.md write path, it must set that flag or it inherits the
+  // same bug. The upstream short-circuit is `skipHeartbeat` below.
   const overwriteCondition = forceOverwrite
     ? `printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`
     : [
-      `if grep -q "via user-token routes" "${heartbeatPath}" || grep -q "with runtime token, or \\\`/api/pods/:podId/context\\\` with user token" "${heartbeatPath}"; then`,
+      `if grep -q "via user-token routes" "${heartbeatPath}" || grep -q "with runtime token, or \\\`/api/pods/:podId/context\\\` with user token" "${heartbeatPath}" || ! grep -qF "${CYCLES_DIRECTIVE_MARKER}" "${heartbeatPath}"; then`,
       `    printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`,
       '  fi',
     ].join('\n');

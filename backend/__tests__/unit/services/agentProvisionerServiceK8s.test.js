@@ -29,6 +29,11 @@ const mock = {
         }],
       },
     })),
+    // Every `sh -lc` script the provisioner runs inside the gateway pod. The
+    // HEARTBEAT.md the fleet actually receives is a base64 blob inside one of
+    // these, so this is the only place a test can assert on the delivered file
+    // rather than on the source that composes it.
+    execCommands: [],
   };
 
   class KubeConfig {
@@ -63,6 +68,7 @@ const mock = {
       _tty,
       statusCallback,
     ) {
+      mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
       if (typeof statusCallback === 'function') {
         statusCallback({ status: 'Success' });
       }
@@ -80,6 +86,7 @@ const mock = {
 
 const k8s = require('@kubernetes/client-node');
 const { restartAgentRuntime, provisionAgentRuntime } = require('../../../services/agentProvisionerServiceK8s');
+const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
 describe('agentProvisionerServiceK8s', () => {
   beforeEach(() => {
@@ -314,5 +321,71 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.agents.defaults.model.fallbacks).not.toContain('openrouter/arcee-ai/trinity-large-preview:free');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4-mini');
     expect(config.agents.defaults.model.fallbacks).not.toContain('openai-codex/gpt-5.4');
+  });
+});
+
+describe('HEARTBEAT.md delivery — cycle directive reaches unmatched agents', () => {
+  // 2026-08-04: 10 of 27 deployed moltbots had no cycle directive in their
+  // HEARTBEAT.md. The trailer was applied only to `matchedPreset.heartbeatTemplate`
+  // at the two registry call sites; preset ids are role names, the fallback match
+  // is `p.id === instanceId`, so every agent installed without an explicit
+  // `presetId` fell through to the raw default. These tests assert on the file
+  // content actually written into the pod, because the defect was invisible at
+  // every layer above it — the constant was correct the whole time.
+  const heartbeatWrites = () => k8s.__mock.execCommands
+    .filter((cmd) => cmd.includes('HEARTBEAT.md'));
+
+  // The provisioner ships the file as base64 to survive shell quoting; decode it
+  // back so assertions read the agent-visible text rather than the transport.
+  const decodeWrittenFiles = (script) => (script.match(/'([A-Za-z0-9+/=]{64,})'/g) || [])
+    .map((chunk) => Buffer.from(chunk.slice(1, -1), 'base64').toString('utf8'));
+
+  beforeEach(() => {
+    k8s.__mock.execCommands.length = 0;
+  });
+
+  const provisionWithoutPreset = () => provisionAgentRuntime({
+    runtimeType: 'moltbot',
+    agentName: 'openclaw',
+    instanceId: 'cuz',
+    runtimeToken: 'cm_agent_test',
+    userToken: 'cm_user_test',
+    baseUrl: 'http://backend',
+    displayName: 'Cuz',
+    // No customContent: this is the no-preset-matched path, the one 10 agents took.
+    heartbeat: { everyMinutes: 30 },
+  });
+
+  it('writes the cycle directive even when no preset matched', async () => {
+    await provisionWithoutPreset();
+
+    const writes = heartbeatWrites();
+    expect(writes.length).toBeGreaterThan(0);
+
+    const delivered = writes.flatMap(decodeWrittenFiles).filter((f) => f.includes('HEARTBEAT'));
+    expect(delivered.length).toBeGreaterThan(0);
+    expect(delivered.some((f) => f.includes(CYCLES_DIRECTIVE_MARKER))).toBe(true);
+    expect(delivered.some((f) => f.includes('commonly_log_cycle'))).toBe(true);
+  });
+
+  it('never names a tool that cannot append to cycles', async () => {
+    await provisionWithoutPreset();
+
+    const delivered = heartbeatWrites().flatMap(decodeWrittenFiles).join('\n');
+    // theo's fossil file told agents to append cycles via commonly_write_agent_memory
+    // (writes the whole envelope) and commonly_save_my_memory({sections:{cycles}})
+    // (400s — no such section). Neither may appear as the cycles writer.
+    expect(delivered).not.toMatch(/cycles[^\n]*commonly_write_agent_memory/i);
+    expect(delivered).not.toMatch(/commonly_save_my_memory\s*\(\s*\{\s*sections/);
+  });
+
+  it('treats a file missing the directive as stale, so existing agents get rewritten', async () => {
+    await provisionWithoutPreset();
+
+    // Without this clause the only rewrite triggers are two 2026-era marker
+    // strings, so a pre-trailer HEARTBEAT.md survives every reprovision forever.
+    const script = heartbeatWrites().find((cmd) => cmd.includes('grep'));
+    expect(script).toBeDefined();
+    expect(script).toContain(`! grep -qF "${CYCLES_DIRECTIVE_MARKER}"`);
   });
 });

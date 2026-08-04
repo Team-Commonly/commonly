@@ -322,7 +322,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     // `messageReaction` with the new aggregated list after every add/remove
     // by any user. We patch only the matching message's `reactions` array
     // — no other state churn.
-    const handleReactionChange = (payload: { messageId: string; podId?: string; reactions: Array<{ emoji: string; count: number; mine: boolean; users?: Array<{ id: string }> }> }) => {
+    const handleReactionChange = (payload: { messageId: string; podId?: string; reactions: Array<{ emoji: string; count: number; mine: boolean; users?: Array<{ id: string; username: string; displayName?: string }> }> }) => {
       if (!payload || !payload.messageId) return;
       if (payload.podId && payload.podId !== podId) return;
       // `emitReactionChange` computes `mine` for the user who triggered the
