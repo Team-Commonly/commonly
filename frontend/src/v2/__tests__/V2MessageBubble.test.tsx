@@ -22,8 +22,11 @@ describe('V2MessageBubble', () => {
         <V2MessageBubble
           message={{
             id: '1',
+            pod_id: 'pod-1',
+            user_id: 'sender-1',
             content: '/api/uploads/avatar.png',
             message_type: 'image',
+            created_at: '2026-08-04T00:00:00.000Z',
             user: { username: 'sender' },
           }}
         />

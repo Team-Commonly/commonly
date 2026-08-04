@@ -2511,6 +2511,13 @@ Rules:
 - After this call (or skip), return \`HEARTBEAT_OK\`.
 `;
 
+// A substring guaranteed present in CYCLES_REFLECTION_TRAILER, used by the k8s
+// provisioner to detect a deployed HEARTBEAT.md that predates the trailer.
+// Exported rather than re-typed at the grep site: a second literal would drift
+// from the trailer silently, and the drift would present as "fleet is fine"
+// (nothing to rewrite) rather than as a failure. Pinned by a test.
+const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
+
 // Append the cycle-reflection trailer to a heartbeat template.
 //
 // 2026-05-04: first attempt (PR #295) instructed agents to call
@@ -2522,14 +2529,103 @@ Rules:
 // 2026-05-04). Helper was rolled back to a no-op in commit e4b1dd91ba /
 // PR #296 while the forward fix shipped.
 //
-// 2026-05-08: re-enabled. The forward fix added a dedicated
-// `commonly_log_cycle({content, podId?})` tool to the openclaw extension
-// (Team-Commonly/openclaw, bumped via _external/clawdbot submodule). The
-// trailer above now calls that tool directly — no nested shape, no missing
-// surface, append-only by construction.
+// 2026-05-08: re-enabled, with the trailer naming
+// `commonly_log_cycle({content, podId?})`.
+//
+// 2026-08-04: no moltbot can call that tool, and the reason is a lineage skew,
+// not a missing feature. The statement above was TRUE when written and was
+// invalidated underneath by a pin move — which is worse than a wrong comment,
+// because nothing about it ever had to change to become false.
+//
+//   .gitmodules       branch = rebase-2026.3.29      ← declared
+//   origin/main       pin    = 0082147920            ← what builds the gateway
+//
+//   ref                    log_cycle  react_to_message  commonly_* tools
+//   rebase-2026.3.29           1             0                29
+//   the pin (main lineage)     0             1                25
+//
+// `commonly_log_cycle` was added on the DECLARED branch at `a67f0df6`,
+// 2026-05-09, "commonly_log_cycle tool — ADR-012 Phase 2 (#7)" — the exact day
+// this trailer started naming it. Inside the running clawdbot-gateway,
+// `grep -rl commonly_log_cycle /app` returns nothing and the block exposes the
+// 25-tool set above.
+//
+// THE PIN ALTERNATES. This paragraph has now been rewritten four times, each
+// version confidently wrong in a different direction, because the pin does not
+// sit still:
+//
+//   2026-05-09  f4b7a487  a67f0df6  BRANCH   log_cycle ARRIVES
+//   2026-05-17  b6a811bd  fc6a2231  main     LOST      (bump was for react_to_message)
+//   2026-05-21  0168f013  a67f0df6  BRANCH   RESTORED  (#418, explicitly)
+//   2026-05-24  d6e63b2e  84549161  main     LOST      (bump was for bundled-skills)
+//   2026-06-26  a3de6d07  00821479  main     ← current
+//
+// So: not "never pinned" (pinned twice, worked twice), not "nobody looked"
+// (#418 is literally `bump _external/clawdbot fc6a22319 → a67f0df63`), and not
+// a stale fork to be avoided. Three authors adding three unrelated features
+// each silently traded away five tools. @ux-lead cross-validated the windows
+// against per-agent last-`cycles`-append timestamps: the writes cluster at
+// 05-09…05-13 and 05-21…05-23, both strictly inside a branch-pinned window,
+// nothing outside them.
+//
+// The lesson this comment keeps re-learning: **a claim about another repo's
+// state is not wrong once and then fixed — it decays.** Four revisions in one
+// afternoon is the evidence. It needs a test that reads the ref, not better
+// prose.
+//
+// A bump in EITHER direction is a lineage swap, not a version change. The pin
+// IS openclaw `main` (`compare/main...0082147920` → `identical`, 2026-06-26);
+// `rebase-2026.3.29` heads at `a67f0df6` (2026-05-09), `diverged`, +14 / −7.
+//
+// The 7 commits it is missing are not incidental:
+//
+//   fc6a2231  commonly_react_to_message (kernel social-presence verb)
+//   2ce923b6  remove direct OAuth rotation from acpx_run, route via LiteLLM only
+//   78a6d174  treat acpx timeout as rate-limit so rotation triggers
+//   16a62bc4  honor OPENCLAW_INSTALL_GH_CLI to install the GitHub CLI
+//   eda5e1d4  install officecli + bake commonly-bundled-skills
+//
+// So switching lineages would reintroduce direct OAuth rotation inside
+// `acpx_run` — against the single-rotator/single-quota invariant and the
+// IP-bound-ChatGPT-session rule — and break `--build-arg
+// OPENCLAW_INSTALL_GH_CLI=1`, which this repo's own documented gateway build
+// passes and the dev-agent GitHub PAT flow depends on.
+//
+// The remedy is therefore NOT a bump in either direction — it is ending the
+// divergence: CHERRY-PICK `a67f0df6` (and any of `open_dm read_attachment
+// read_my_memory save_my_memory` still wanted) ONTO openclaw `main`, then move
+// the pin to that new main. Anything short of that leaves the next person
+// adding an unrelated tool free to swap the set back, which is exactly what
+// happened on 05-17 and again on 05-24 after #418 had already fixed it.
+//
+// An earlier version of this paragraph said the bump "gains five tools and
+// loses `react_to_message`, so it owes a diff of both tool sets." That rule
+// was scoped to the artifact I happened to be reading. A tool-set diff shows
+// none of the five commits above — it would have waved through the OAuth and
+// build-arg regressions. **The check is a diff of the commit RANGE, not of the
+// surface that raised the question.**
+//
+// In this tree the tool is defined only in `commonly-mcp/src/tools.js:337`, so
+// today it reaches MCP seats and no moltbot — the same split CLAUDE.md records
+// for `commonly_react_to_message` (which that entry now has backwards: it is
+// present at the pin).
+//
+// The consequence is measurable and was measured: in `agentmemories`, every
+// moltbot's most recent `cycles` append is 83-87 days old — it stopped when
+// this trailer started naming the tool — while MCP seats append hourly. That
+// includes the 17 agents whose HEARTBEAT.md carries this trailer verbatim,
+// which makes them a control group: correct directive text is not sufficient,
+// because the tool it names is absent from their runtime. Found by @ux-lead
+// from the memory collection; confirmed here against the deployed image.
+//
+// Do NOT repoint the trailer at some other tool without first reading what the
+// extension accepts. The 2026-05-04 incident above was that exact mistake in
+// the other direction, and it cost a fleet-wide turn-budget regression.
 function withCyclesDirective(template: string | null | undefined): string {
   const t = typeof template === 'string' ? template : '';
   return t + CYCLES_REFLECTION_TRAILER;
 }
 
-module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective };
+module.exports = {
+  PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective, CYCLES_DIRECTIVE_MARKER,
+};

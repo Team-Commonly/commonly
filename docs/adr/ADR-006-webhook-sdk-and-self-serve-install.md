@@ -43,7 +43,7 @@ Ship three artifacts in one PR:
 
 1. **A first-party reference SDK**, single-file per language, in `examples/sdk/python/commonly.py` and `examples/sdk/node/commonly.mjs`. Implements the four CAP verbs and nothing more. Not (yet) a published package.
 2. **A scaffolding command**: `commonly agent init --language python|node --name <name>`. Writes a ready-to-run hello-world agent into the current directory, importing the SDK file. Handles publish + install + runtime-token issuance in the same step.
-3. **A self-serve install path**: any authed user can register a webhook-typed agent and install it into a pod they belong to, without admin approval. `createdBy` stamps the installing user for audit.
+3. **A self-serve install path**: any authed user can register a webhook-typed agent and install it into a pod they belong to, without admin approval. `installedBy` stamps the installing user for audit.
 
 ### SDK shape (both languages)
 
@@ -101,15 +101,20 @@ The generated `research-bot.py` is ~30 lines: imports `commonly`, constructs a c
 
 The `runtimeType: 'webhook'` value already exists on `AgentInstallation.config.runtime` (shipped via `cli register`). This ADR formalizes it as the first-class self-serve path. Behavioral changes:
 
-- `POST /api/registry/install` accepts webhook-typed installs WITHOUT a pre-existing `AgentRegistry` row, provided the installing user has pod-membership. The install synthesizes an ephemeral registry entry owned by `createdBy`.
-- The synthesized registry entry is NOT published to the marketplace, NOT visible to other users' discovery UIs, and bound to the specific `(createdBy, pod)` pair.
+- `POST /api/registry/install` accepts webhook-typed installs WITHOUT a pre-existing `AgentRegistry` row, provided the installing user has pod-membership. The install synthesizes an ephemeral registry entry owned by `installedBy`.
+- The synthesized registry entry is NOT published to the marketplace, NOT visible to other users' discovery UIs, and bound to the specific `(installedBy, pod)` pair.
 - Revoking the install (via uninstall) removes the synthesized registry entry if it has no other installations; otherwise leaves it alone.
 - The existing publish-then-install path via `cli register` keeps working unchanged; self-serve is a NEW, shorter path that skips the publish step for ephemeral bots.
 
 **Scope of self-serve:** pod-scope installs only. Instance-scope (admin-wide) and user-scope (DM) installs remain admin-gated per ADR-001 §Install scopes.
 
 **Audit posture:**
-- Every runtime token traces back through `AgentInstallation.createdBy` to a User.
+- Every runtime token traces back through `AgentInstallation.installedBy` to a User.
+  **Field name corrected 2026-08-04** — this ADR said `createdBy` in 6 places and no such
+  field exists; see [ADR-004 Conformance C1](ADR-004-commonly-agent-protocol.md#conformance-against-the-implementation-2026-08-04).
+  Note the claim above says *a User*, not *a human*: on the self-serve webhook path it is a
+  human (`routes/registry/install.ts:387`), but agent-initiated installs elsewhere store the
+  agent's own User id, so read this as identity-of-record, not accountability.
 - A new structured log line fires on every self-serve install: `[cap self-serve-install] user=<id> pod=<id> agent=<name> runtime=webhook`.
 - A future admin UI can enumerate "webhook agents you've installed" per user.
 
@@ -135,7 +140,7 @@ The `runtimeType: 'webhook'` value already exists on `AgentInstallation.config.r
 
 1. **SDK surface is exactly the four CAP verbs.** No framework features, no hidden state, no opinions. Easy to audit, easy to port to Go/Rust/whatever.
 2. **No SDK → kernel direct coupling beyond CAP.** An SDK version that depends on non-CAP routes is a bug; CAP-only keeps the SDK stable across kernel refactors.
-3. **Self-serve install is authed, scoped, audited.** No anonymous install. No instance-scope install. Every install has a `createdBy`.
+3. **Self-serve install is authed, scoped, audited.** No anonymous install. No instance-scope install. Every install has a `installedBy`.
 4. **Invite-only posture is the security model.** Self-serve works because the ambient user population is trusted-by-invite. When Commonly opens public signup, this ADR gets revisited to add rate limits + per-user install caps (see §Open questions #2).
 5. **No published package in v1.** Live-copy the SDK file. Publishing adds versioning + distribution complexity; we defer until 2+ external driver authors ask.
 6. **SDK is sync by default.** Async variants come later if demand appears.
@@ -197,7 +202,7 @@ Why not: the scaffolder's value is the demo — `commonly agent init` producing 
 ### What gets harder (and we accept)
 
 - **Registry cleanup**: self-serve installs create ephemeral registry rows. Needs a janitor cron (weekly, say) to garbage-collect orphan rows whose only installation was uninstalled >30 days ago.
-- **Audit surface**: more tokens in circulation. We rely on the logging + `createdBy` trace; a future admin UI closes the loop.
+- **Audit surface**: more tokens in circulation. We rely on the logging + `installedBy` trace; a future admin UI closes the loop.
 - **Abuse-by-authed-user**: an invited user could mint 100 agents and spam a pod. Counter-measures: per-user install cap (not in v1), pod admins can see and remove installed agents (already supported).
 
 ### What this enables downstream

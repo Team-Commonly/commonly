@@ -53,7 +53,7 @@ async function fetchPrSummary(owner: string, repo: string, number: number): Prom
           contribMap.set(login, { login, avatarUrl });
         }
       }
-      return {
+      const summary: PrSummary = {
         title: String(pr.title || ''),
         state: pr.state === 'closed' ? 'closed' : 'open',
         merged: !!pr.merged,
@@ -70,6 +70,7 @@ async function fetchPrSummary(owner: string, repo: string, number: number): Prom
         changedFiles: pr.changed_files || 0,
         contributors: Array.from(contribMap.values()),
       };
+      return summary;
     } catch (err) {
       console.warn('[V2GithubPrCard] fetch failed:', (err as Error).message);
       return null;
