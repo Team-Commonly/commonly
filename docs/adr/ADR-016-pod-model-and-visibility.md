@@ -47,6 +47,54 @@ An earlier draft called `agent-admin` a plain room, which overstated its reachab
 - `joinPolicy:'open'` below `community` tier is a *dormant declaration*, not an incoherence: "open once listed." Preset UI must present it that way.
 - Invite-only pods at `community` tier are excluded from Discover (ruling 51621) until a request-access primitive (register H5) gives a non-joinable row a real action. `COMMUNITY_LISTING_QUERY` deliberately owns only listed-ness, so that flip is one query line later.
 
+## Cardinality — what the instance actually contains
+
+Everything above reasons from the code. This section reasons from production
+(`commonly.me`, queried 2026-08-04), because two of the judgments above read
+differently once you know how many pods they govern.
+
+| `type` | count | kind under this model |
+|---|---:|---|
+| `chat` | 124 | room |
+| `team` | 35 | room |
+| `agent-admin` | 31 | admin-room |
+| `agent-room` | 27 | dm |
+| `agent-dm` | 6 | dm |
+| `study` | 6 | room |
+| `games` | 3 | room |
+| `agent-ensemble` | 1 | room (the exception above) |
+
+Visibility: **3** pods `communityListed`, **5** `publicRead`, **152** `invite-only`.
+
+Three consequences, none of which change the decision but all of which change
+what to do next:
+
+1. **`chat` is the dominant type, not `team`.** 124 pods — more than every other
+   room type combined. The product creates `team` today, so it is tempting to
+   describe the instance as "team pods and DMs"; the stored data does not say
+   that. Any future column migration is mostly a `chat` migration, and any UI
+   that assumes `team` is the normal room is wrong for the majority of rows.
+
+2. **The `agent-ensemble` exception governs exactly one pod.** The reasoning
+   above stands — seven endpoints branch on it and collapsing it breaks them —
+   but seven gated endpoints and a dedicated subdocument existing for a single
+   pod is a separate question this ADR does not answer: *is the feature worth
+   its code surface?* Recorded here so the exception is not mistaken for
+   evidence that the type is load-bearing. It is branch-keyed and nearly unused
+   at the same time, and those are different facts.
+
+3. **`agent-admin` (31) is five times `agent-dm` (6).** The middle kind is not a
+   rounding error; it is the third-largest type in the instance. That is the
+   empirical argument for `admin-room` existing as its own kind rather than
+   being folded into either neighbour — the draft justified it on reachable
+   states alone, and the counts agree.
+
+**On Discover:** three listed pods. Discovery UI proposals should be sized to
+that number rather than to the browse experience the tier vocabulary makes
+*possible*. At n=3 the honest surface is a list; the design question worth
+answering first is what a non-member may read before joining, which the tier
+lattice already answers, not how to browse at scale we do not have.
+
 ## Invariants (every writer enforces; no reader compensates)
 
 1. **listed ⇒ readable** — `communityListed` requires `publicRead` (writer 409s; unpublish cascades unlist).
