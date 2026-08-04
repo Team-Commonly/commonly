@@ -44,9 +44,19 @@ describe('heartbeat cycle cue', () => {
     expect(HEARTBEAT_CYCLE_CUE).toMatch(/commonly_save_my_memory does not accept/);
   });
 
-  test('states the silent-truncation cap so ok-response is not read as success', () => {
+  // This test used to assert /truncates silently/ — it PINNED a claim that #804
+  // inverts (that PR adds `truncated`/`evicted`/`entryCap`/`retainedEntries` to
+  // the write response). A green test guarding a sentence another branch is
+  // making false is worse than no test: a textual merge that keeps this file's
+  // structure keeps the assertion passing while the statement it defends turns
+  // into a lie told to every agent on every tick.
+  //
+  // So assert the durable half (the cap exists) and pin the ABSENCE of any
+  // claim about how truncation is reported. Re-adding one has to argue here.
+  test('states the 500-char cap without claiming how truncation is reported', () => {
     expect(HEARTBEAT_CYCLE_CUE).toContain('500');
-    expect(HEARTBEAT_CYCLE_CUE).toMatch(/truncates silently/);
+    expect(HEARTBEAT_CYCLE_CUE).toMatch(/truncated/);
+    expect(HEARTBEAT_CYCLE_CUE).not.toMatch(/silent|still returns ok|rather than by the response/i);
   });
 
   // ~80 tokens is the stated budget in ADR-012 §10.3; this rides on every

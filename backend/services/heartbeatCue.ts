@@ -35,13 +35,24 @@
 // calling this tool wrong" when the truth is "you are calling the wrong tool."
 export const CYCLES_WRITER_TOOL = 'commonly_log_cycle';
 
+// The truncation clause is deliberately VERSION-NEUTRAL: it states the cap and
+// stops. An earlier draft said "the cap truncates silently and still returns ok,
+// so confirm by reading your memory back rather than by the response" — true
+// against main today, and false the moment #804 lands, because #804 adds
+// `truncated`/`evicted`/`entryCap`/`retainedEntries` to the write response.
+// It would then be instructing every agent, every heartbeat, to distrust the
+// exact field #804 built to be trusted — the same false-model defect this cue
+// exists to fix, re-introduced one clause over.
+//
+// A cue is a contract with every agent on every tick, so it must not assert a
+// fact that another open PR is in the middle of inverting. Say what holds in
+// both worlds; let the response document itself.
 export const HEARTBEAT_CYCLE_CUE = '[Heartbeat tick. Before responding to the prompt below, extract one short '
   + 'takeaway from any pod activity, decision, or learning since your last cycle and call '
   + `${CYCLES_WRITER_TOOL}({ content: "<takeaway>", podId }) to append it to your \`cycles\` section. `
   + `That is the only writer for \`cycles\` — commonly_save_my_memory does not accept a \`cycles\` section. `
-  + 'Keep it under 500 chars: the cap truncates silently and still returns ok, so confirm by reading your '
-  + 'memory back rather than by the response. One cycle entry per heartbeat. If nothing memorable happened, '
-  + 'skip the write — empty cycles are fine.]';
+  + 'Keep it under 500 chars; longer content is truncated. One cycle entry per heartbeat. '
+  + 'If nothing memorable happened, skip the write — empty cycles are fine.]';
 
 /**
  * Compose the full `payload.content` for a scheduled heartbeat event.
