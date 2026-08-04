@@ -8,10 +8,16 @@ import axios from 'axios';
  */
 export interface PatLiveness {
   live: boolean | null;
-  status: 'absent' | 'accepted' | 'rejected' | 'unreachable';
+  status: 'absent' | 'accepted' | 'rejected' | 'rate_limited' | 'unreachable';
   upstreamStatus?: number;
   detail?: string;
 }
+
+// The 403-disambiguation predicate is shared with routes/github.ts and lives in
+// its own module — see githubRateLimit.ts for why it is not a static on this
+// class.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isRateLimitError } = require('./githubRateLimit');
 
 export interface GitHubToken {
   token: string;
@@ -170,6 +176,18 @@ class GitHubAppService {
    * do not know, and reporting `false` would send an operator to rotate a
    * working credential — a diagnostic that guesses in the confident direction
    * is the defect this method exists to remove, not a smaller version of it.
+   * Throttling gets the same treatment for the same reason: a 403 that means
+   * "slow down" is not a dead credential, and `isRateLimitError` is what keeps
+   * this branch from asserting one.
+   *
+   * SCOPE LIMIT, and it is not academic: `accepted` proves GitHub *recognises*
+   * the token, not that the token is *authorized* for what the seven proxying
+   * routes do. `/rate_limit` is not scope-gated, so a PAT regenerated without
+   * `repo` scope, or without SSO re-authorization, returns 200 here and 403 on
+   * every real call. That is this method's own version of the bug it fixes —
+   * the verdict is narrower than the name (@ux-lead, msg 52320). Unmeasured:
+   * settle it at the next rotation by probing this endpoint and one real repo
+   * read with the new token and comparing.
    */
   static async checkPatLiveness(timeoutMs = 5000): Promise<PatLiveness> {
     if (!this.isPatConfigured()) return { live: false, status: 'absent' };
@@ -178,8 +196,14 @@ class GitHubAppService {
       await axios.get('https://api.github.com/rate_limit', { headers, timeout: timeoutMs });
       return { live: true, status: 'accepted' };
     } catch (err) {
-      const e = err as { response?: { status?: number }; message?: string };
+      const e = err as {
+        response?: { status?: number; headers?: Record<string, string> };
+        message?: string;
+      };
       const upstreamStatus = e.response?.status;
+      if (isRateLimitError(upstreamStatus, e.response?.headers)) {
+        return { live: null, status: 'rate_limited', upstreamStatus, detail: e.message };
+      }
       if (upstreamStatus === 401 || upstreamStatus === 403) {
         return { live: false, status: 'rejected', upstreamStatus };
       }

@@ -8,6 +8,10 @@ const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const GitHubAppService = require('../services/githubAppService');
+// Its own module, not a static on the service: route tests legitimately mock
+// GitHubAppService wholesale, which would take this pure predicate with it.
+// eslint-disable-next-line global-require
+const { isRateLimitError } = require('../services/githubRateLimit');
 
 interface AuthReq {
   user?: { role?: string };
@@ -76,8 +80,9 @@ function mapGitHubUpstreamError(
 
   // GitHub signals rate limiting as 429, or as 403 with the remaining budget
   // at zero. Both are retryable — but only after a wait, so say so.
-  const remaining = e.response?.headers?.['x-ratelimit-remaining'];
-  if (upstreamStatus === 429 || (upstreamStatus === 403 && remaining === '0')) {
+  // The predicate lives in the service so the liveness probe shares it exactly;
+  // when this test existed only here, the probe called every throttled PAT dead.
+  if (isRateLimitError(upstreamStatus, e.response?.headers)) {
     return {
       status: 429,
       body: {

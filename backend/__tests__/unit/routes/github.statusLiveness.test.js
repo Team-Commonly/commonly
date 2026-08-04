@@ -45,9 +45,10 @@ const app = express();
 app.use(express.json());
 app.use('/api/github', router);
 
-const upstream = (status) => Object.assign(new Error(`Request failed with status code ${status}`), {
-  response: { status },
-});
+const upstream = (status, headers) => Object.assign(
+  new Error(`Request failed with status code ${status}`),
+  { response: { status, headers } },
+);
 
 describe('GET /status reports credential liveness, not just presence', () => {
   const priorPat = process.env.GITHUB_PAT;
@@ -102,14 +103,52 @@ describe('GET /status reports credential liveness, not just presence', () => {
     expect(res.status).toBe(200);
   });
 
-  it('treats a 403 credential rejection the same way', async () => {
+  it('treats a bare 403 as credential rejection, same as 401', async () => {
+    // No rate-limit headers — this is GitHub refusing the credential, not
+    // throttling. It is the discriminating negative for the two tests below.
     axios.get.mockRejectedValue(upstream(403));
 
     const res = await request(app).get('/api/github/status');
 
     expect(res.status).toBe(200);
     expect(res.body.credentialLive).toBe(false);
+    expect(res.body.credentialStatus).toBe('rejected');
     expect(res.body.upstreamStatus).toBe(403);
+  });
+
+  // GitHub overloads 403: refused credential AND exhausted quota. Reporting a
+  // throttled-but-valid PAT as dead sends an operator to rotate a working
+  // credential — the exact outcome `live: null` exists to prevent, arriving
+  // through the branch the first cut of this probe did not guard (msg 52320).
+  it('does not call a rate-limited PAT dead — primary quota exhausted', async () => {
+    axios.get.mockRejectedValue(upstream(403, { 'x-ratelimit-remaining': '0' }));
+
+    const res = await request(app).get('/api/github/status');
+
+    expect(res.status).toBe(200);
+    expect(res.body.credentialLive).toBeNull();
+    expect(res.body.credentialStatus).toBe('rate_limited');
+    expect(res.body.upstreamStatus).toBe(403);
+  });
+
+  it('does not call a rate-limited PAT dead — secondary limit (retry-after)', async () => {
+    // The likelier 403 on /rate_limit specifically: primary exhaustion does not
+    // throttle that endpoint, so a 403 there is more often abuse-detection.
+    axios.get.mockRejectedValue(upstream(403, { 'retry-after': '60' }));
+
+    const res = await request(app).get('/api/github/status');
+
+    expect(res.body.credentialLive).toBeNull();
+    expect(res.body.credentialStatus).toBe('rate_limited');
+  });
+
+  it('reports a 429 as rate-limited, never as dead', async () => {
+    axios.get.mockRejectedValue(upstream(429));
+
+    const res = await request(app).get('/api/github/status');
+
+    expect(res.body.credentialLive).toBeNull();
+    expect(res.body.credentialStatus).toBe('rate_limited');
   });
 
   it('reports unreachable as unknown, never as dead', async () => {
