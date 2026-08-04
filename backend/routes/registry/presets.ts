@@ -2511,6 +2511,13 @@ Rules:
 - After this call (or skip), return \`HEARTBEAT_OK\`.
 `;
 
+// A substring guaranteed present in CYCLES_REFLECTION_TRAILER, used by the k8s
+// provisioner to detect a deployed HEARTBEAT.md that predates the trailer.
+// Exported rather than re-typed at the grep site: a second literal would drift
+// from the trailer silently, and the drift would present as "fleet is fine"
+// (nothing to rewrite) rather than as a failure. Pinned by a test.
+const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
+
 // Append the cycle-reflection trailer to a heartbeat template.
 //
 // 2026-05-04: first attempt (PR #295) instructed agents to call
@@ -2532,4 +2539,6 @@ function withCyclesDirective(template: string | null | undefined): string {
   return t + CYCLES_REFLECTION_TRAILER;
 }
 
-module.exports = { PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective };
+module.exports = {
+  PRESET_DEFINITIONS, DEFAULT_BRANCH, withCyclesDirective, CYCLES_DIRECTIVE_MARKER,
+};
