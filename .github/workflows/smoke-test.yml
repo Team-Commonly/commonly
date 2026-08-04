@@ -18,6 +18,15 @@ on:
       - 'k8s/**'
       - 'backend/Dockerfile'
       - 'frontend/Dockerfile'
+      # A submodule bump changes the gitlink entry itself — GitHub reports the
+      # changed path as exactly `_external/clawdbot`, with nothing under it,
+      # because the parent repo tracks no files inside the submodule. So the
+      # `/**` glob below it can never match a bump, and this gate silently
+      # skipped every one (verified on #418 and #443: `files: ["_external/
+      # clawdbot"]`, and no smoke check on either PR head). Keep both entries —
+      # the bare path catches the bump, the glob catches vendored files if any
+      # are ever tracked directly.
+      - '_external/clawdbot'
       - '_external/clawdbot/**'
       - 'dev.sh'
       - '.github/workflows/**'

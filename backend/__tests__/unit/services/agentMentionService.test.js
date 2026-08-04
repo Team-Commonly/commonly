@@ -687,6 +687,109 @@ describe('AgentMentionService', () => {
       expect(ev.payload.content).toContain('Hi @nova');
     });
 
+    // Author/age frame. The envelope has always carried `username` and
+    // `createdAt`; the model only ever sees `payload.content`, so they
+    // were invisible to their only reader (four sprint agents spent
+    // 2026-08-04 misattributing each other and re-answering
+    // redeliveries). These guard the two properties that make the frame
+    // work, both of which a plausible "simplification" would break.
+    describe('author/age frame', () => {
+      test('chat.mention carries author + message id inline in content', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-1',
+          message: { content: 'Hi @nova', id: 'msg-42', createdAt: new Date('2026-08-04T11:42:38.637Z') },
+          userId: 'user-1',
+          username: 'UX Lead',
+        });
+        const ev = lastPayload();
+        expect(ev.payload.content).toContain('[Trigger:');
+        expect(ev.payload.content).toContain('UX Lead');
+        expect(ev.payload.content).toContain('message msg-42');
+      });
+
+      // THE regression guard. Content is composed once at enqueue and an
+      // unacked event is re-served with that same frozen string, so a
+      // relative age ("posted 3 seconds ago") would still read "3 seconds
+      // ago" on a redelivery 18 minutes later — lying on exactly the case
+      // the frame exists to catch. The stamp must be the message's own
+      // createdAt, absolute.
+      test('stamp is the message createdAt, absolute — never a relative age', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        const written = new Date('2026-08-04T11:42:38.637Z');
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-2',
+          message: { content: 'Hi @nova', id: 'msg-43', createdAt: written },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain(written.toISOString());
+        // Bare /\bago\b/, not a unit-prefixed pattern. The likelier bad
+        // edit ADDS a friendly age beside the stamp rather than
+        // replacing it — `posted at <ISO> (3m ago)` keeps the ISO and
+        // slips a unit-prefixed matcher, which was this guard's first
+        // shape (@sprint-review, verified applied, 35/35 still passed).
+        expect(content).not.toMatch(/\bago\b/i);
+      });
+
+      // A missing createdAt must read as UNKNOWN, never as `new Date()`.
+      // An absent author renders "unknown" and is honest; a fabricated
+      // stamp is not — it is indistinguishable from a real one, asserted
+      // as the write time, and frozen into the string, so an ageless
+      // message would read as freshly-written on every redelivery
+      // forever. That is the exact failure the frame exists to prevent.
+      test('no createdAt → says UNKNOWN, does not fabricate a stamp', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-4',
+          message: { content: 'Hi @nova', id: 'msg-99' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain('write time UNKNOWN');
+        // No ISO-8601 timestamp anywhere in the frame.
+        const frame = content.slice(content.indexOf('[Trigger:'));
+        expect(frame.slice(0, frame.indexOf(']') + 1))
+          .not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+      });
+
+      // `.toISOString()` on an Invalid Date THROWS, so an unparseable
+      // value would take the whole enqueue down rather than degrading.
+      test('unparseable createdAt degrades to UNKNOWN, does not throw', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await expect(AgentMentionService.enqueueMentions({
+          podId: 'pod-author-5',
+          message: { content: 'Hi @nova', id: 'msg-100', createdAt: 'not-a-date' },
+          userId: 'user-1',
+          username: 'sam',
+        })).resolves.toBeDefined();
+        expect(lastPayload().payload.content).toContain('write time UNKNOWN');
+      });
+
+      // Unconditional, unlike the four cues around it: every event type
+      // and every runtime needs to know who spoke and when.
+      test('thread.mention carries it too — the frame is not shape-gated', async () => {
+        setupForAgent({ agentName: 'codex', instanceId: 'cody', displayName: 'Cody' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-3',
+          message: {
+            content: 'Hi @cody',
+            id: 'msg-44',
+            source: 'thread',
+            createdAt: new Date('2026-08-04T11:42:38.637Z'),
+            thread: { postId: 'thread-1', postContent: 'parent' },
+          },
+          userId: 'user-1',
+          username: 'Sprint Review',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain('[Trigger:');
+        expect(content).toContain('Sprint Review');
+      });
+    });
+
     test('chat.mention + codex (specialist) → pod + reply-mechanics, NO consultation', async () => {
       setupForAgent({ agentName: 'codex', instanceId: 'cody', displayName: 'Cody' });
       await AgentMentionService.enqueueMentions({

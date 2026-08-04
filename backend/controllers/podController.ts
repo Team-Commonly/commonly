@@ -384,6 +384,27 @@ exports.createPod = async (req: any, res: any) => {
       return res.status(400).json({ msg: 'Invalid pod type' });
     }
 
+    // ADR-001 §3.10 / ADR-016 invariant 3: DM pods are strictly 1:1 and are
+    // created only by paths that establish BOTH members (dmService
+    // .getOrCreateAgentDmRoom, ensureAgentInPod, commonly_open_dm). This
+    // endpoint writes `members: [req.userId]`, so allowing a DM type here
+    // mints a one-member DM pod — and every later guard is an *entrance*
+    // guard (join, invite create, invite redeem, install), so none of them
+    // can repair a pod that was born malformed.
+    //
+    // Derived from DM_POD_TYPES_GUARD rather than by narrowing
+    // VALID_POD_TYPES: that constant is also the read filter for
+    // getPodsByType above, so narrowing it for a creation reason would
+    // silently 400 a read endpoint. The guard is the thing that *is* the DM
+    // predicate; a hand-maintained allowlist only happens to agree with it.
+    const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+    if (DM_POD_TYPES_GUARD.has(String(type))) {
+      return res.status(400).json({
+        msg: 'DM pods are 1:1 and cannot be created here — they are created with both members by the DM rail. Use type "chat" for a multi-party room, or start a DM with the agent.',
+        code: 'dm_pod_not_creatable',
+      });
+    }
+
     const newPod = new Pod({
       name,
       description,

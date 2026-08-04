@@ -63,12 +63,31 @@ export const CYCLES_WRITER_TOOL = 'commonly_log_cycle';
 // A cue is a contract with every agent on every tick, so it must not assert a
 // fact that another open PR is in the middle of inverting. Say what holds in
 // both worlds; let the response document itself.
+// The text below is main's live cue verbatim (#804), not this branch's earlier
+// draft. This branch and #804 fixed the same bug independently; #804 merged
+// first, and its wording gained a final clause this extraction predates:
+//
+//   "If commonly_log_cycle is not in your tool list, skip the write and move
+//    on: no other memory tool can append to `cycles`, so do not substitute one."
+//
+// That clause is load-bearing, not padding. `commonly_log_cycle` reaches MCP
+// seats and NOT moltbots — the deployed openclaw extension declares 25
+// `commonly_*` tools without it — so naming one tool with no escape hatch makes
+// a diligent agent exhaust its schema and conclude the capability is absent.
+// That turn-burn is what forced the #296 rollback. Extracting the cue without
+// it would have silently regressed #804 for the entire moltbot fleet, which is
+// the failure this module exists to make impossible.
+//
+// Rule for this constant: it is the delivered contract, so it changes only when
+// the delivered text changes. An extraction is a move, never an edit.
 export const HEARTBEAT_CYCLE_CUE = '[Heartbeat tick. Before responding to the prompt below, extract one short '
   + 'takeaway from any pod activity, decision, or learning since your last cycle and call '
-  + `${CYCLES_WRITER_TOOL}({ content: "<takeaway>", podId }) to append it to your \`cycles\` section. `
-  + `That is the only writer for \`cycles\` — commonly_save_my_memory does not accept a \`cycles\` section. `
-  + 'Keep it under 500 chars; longer content is truncated. One cycle entry per heartbeat. '
-  + 'If nothing memorable happened, skip the write — empty cycles are fine.]';
+  + `${CYCLES_WRITER_TOOL}({ content: "<takeaway>" }) to append it to your \`cycles\` section — `
+  + 'that is the only tool that writes cycles. Keep it under 500 chars (longer content is '
+  + 'truncated and the response says so); one cycle entry per heartbeat. If nothing memorable '
+  + 'happened, skip the write — empty cycles are fine. '
+  + `If \`${CYCLES_WRITER_TOOL}\` is not in your tool list, skip the write and move on: no other `
+  + 'memory tool can append to `cycles`, so do not substitute one.]';
 
 /**
  * Compose the full `payload.content` for a scheduled heartbeat event.

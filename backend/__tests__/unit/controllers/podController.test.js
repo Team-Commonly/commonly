@@ -123,6 +123,60 @@ describe('podController', () => {
     expect(res.json).toHaveBeenCalledWith(savedPod);
   });
 
+  // ADR-016 enforcement gap, found reviewing #802 (2026-08-04): every DM guard
+  // in the codebase is an ENTRANCE guard (join, invite create, invite redeem,
+  // install) and none covered creation — so this endpoint minted one-member
+  // agent-room pods with a 200, which no later guard can repair.
+  it('createPod refuses DM pod types and creates nothing', async () => {
+    const save = jest.fn();
+    Pod.mockImplementation(() => ({ save }));
+    const req = {
+      body: { name: 'Sneaky Room', type: 'agent-room' },
+      userId: 'creator',
+    };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await podController.createPod(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'dm_pod_not_creatable' }));
+    // The refusal must also not write: a 400 that still saved would be the
+    // exact defect this guard exists to prevent.
+    expect(Pod).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('createPod still accepts ordinary room types', async () => {
+    const savedPod = { _id: 'p-chat', populate: jest.fn().mockResolvedValue() };
+    const save = jest.fn().mockResolvedValue(savedPod);
+    Pod.mockImplementation(() => ({ save }));
+    const req = { body: { name: 'Normal Room', type: 'chat' }, userId: 'creator' };
+    const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    await podController.createPod(req, res);
+
+    expect(save).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(savedPod);
+  });
+
+  // The guard is deliberately NOT implemented by narrowing VALID_POD_TYPES,
+  // because that constant is also the read filter for getPodsByType. This
+  // pins the separation: refusing to CREATE agent-room must not stop READING
+  // the agent-room pods that the DM rail legitimately created.
+  it('getPodsByType still serves agent-room after the creation guard', async () => {
+    const req = { params: { type: 'agent-room' } };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const sort = jest.fn().mockResolvedValue([]);
+    const populateSecond = jest.fn(() => ({ sort }));
+    const populateFirst = jest.fn(() => ({ populate: populateSecond, sort }));
+    Pod.find.mockReturnValue({ populate: populateFirst });
+
+    await podController.getPodsByType(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(Pod.find).toHaveBeenCalledWith({ type: 'agent-room' });
+  });
+
   it('createPod does NOT auto-install commonly-bot by default (opt-in via AUTO_INSTALL_DEFAULT_AGENT=1)', async () => {
     // Regression: pre-beta this defaulted ON, which put the summarizer bot
     // into the member list of every UI-created pod — including real users'

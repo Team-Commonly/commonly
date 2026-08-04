@@ -289,16 +289,18 @@ const buildAgentInstallationPayload = (installation: any, {
     normalizedConfig?.runtime || installation.config?.runtime || null,
     installation.agentName,
   );
-  // Display label — prefer the User's `botMetadata.displayName` (curated,
-  // identity-bearing) over `installation.displayName` (which can hold the
-  // stale runtime label "openclaw" from pre-fix pod creation paths).
-  // Falls back to the stored installation displayName, then a generic.
-  // The stale-data backfill in scripts/rename-agent-dm-pods.ts repairs
-  // existing rows; this resolver is defense-in-depth.
-  const fallback = installation.displayName || installation.agentName || '';
-  const displayName = user
-    ? resolveDisplayLabelFromUser(user, fallback)
-    : fallback;
+  // The profile and installation are scoped to this pod; the User is the
+  // portable principal. Read the scoped labels first. Reversing that order
+  // makes a label written in one pod bleed into every other pod that renders
+  // this same principal.
+  const profileDisplayName = typeof profile?.name === 'string' ? profile.name.trim() : '';
+  const installationDisplayName = typeof installation.displayName === 'string'
+    ? installation.displayName.trim()
+    : '';
+  const identityFallback = installation.agentName || '';
+  const displayName = profileDisplayName
+    || installationDisplayName
+    || (user ? resolveDisplayLabelFromUser(user, identityFallback) : identityFallback);
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',

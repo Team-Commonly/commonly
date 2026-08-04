@@ -1,18 +1,32 @@
 {
+  // The gate is only as wide as this file. It is EXCLUDE-driven on purpose:
+  // an enumerated `include` list silently stops covering any directory added
+  // after it was written, and the miss looks identical to a pass. This config
+  // previously listed 8 directories and so did not typecheck middleware/,
+  // providers/, gateway/, types/, scripts/, migrations/ or seed/ — including
+  // agentRuntimeAuth, which every agent route depends on. All seven were
+  // already clean; nobody knew, because nothing checked.
+  //
+  // Add exclusions here only for files you are consciously carrying as debt,
+  // never to make a red build green. A new directory is covered by default.
   "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true
-  },
-  "include": [
-    "models/**/*.ts",
-    "controllers/**/*.ts",
-    "routes/**/*.ts",
-    "services/**/*.ts",
-    "integrations/**/*.ts",
-    "config/**/*.ts",
-    "utils/**/*.ts",
-    "src/**/*.ts",
-    "src/**/*.d.ts"
-  ],
-  "exclude": ["node_modules", "dist", "**/__tests__/**", "**/*.test.ts", "**/*.spec.ts"]
+  "compilerOptions": { "noEmit": true },
+  "include": ["**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    // Vendored/authored elsewhere — not this package's source.
+    "commonly-bundled-skills",
+    "docs",
+    // Root-level scratch scripts, unreferenced by package.json or any route
+    // or service. 54 pre-existing errors between them. Fix or delete rather
+    // than extending this list — it is the debt ledger, not an escape hatch.
+    "test-discord-integration.ts",
+    "test-discord-interactions.ts",
+    "test-discord-commands.ts",
+    "cleanup-test-data.ts"
+  ]
 }

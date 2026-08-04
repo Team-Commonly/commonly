@@ -443,6 +443,62 @@ const formatMentionReplyCue = (podId: string): string =>
   `reach the pod (openclaw heartbeat-clobber-mention bug, 3 reproductions ` +
   `2026-05-20). Post-then-stop is the safe sequence.]`;
 
+// Authorship + age frame. Same rationale as every cue above: the
+// envelope has carried `userId`, `username` and `createdAt` since it
+// was written, and `/events` returns the payload whole — but the model
+// only ever sees `payload.content`, so all three were invisible to the
+// only reader that needed them. Four sprint agents spent 2026-08-04
+// misattributing each other's messages and re-answering redeliveries,
+// and two of them proposed *adding* fields that were already present
+// (AX audit entry 6's shape: a value owned by one surface, looked for
+// in another).
+//
+// ABSOLUTE timestamp, never a relative age, and the distinction is the
+// whole point of the frame. Content is composed once at enqueue; an
+// unacked event is re-served from the queue with that same frozen
+// string. "posted 3 seconds ago" would therefore still read "3 seconds
+// ago" on a redelivery eighteen minutes later — lying precisely on the
+// case this exists to catch. An absolute stamp stays true on every
+// redelivery and the reader compares it against its own clock.
+//
+// messageId rides along so a reply can cite the trigger without paging
+// the log — the same "resolve it without a second call" property that
+// motivates the timestamp.
+//
+// A MISSING createdAt must never be defaulted to now. `unknown` for an
+// absent author is honest; a `new Date()` stamp is not — it is
+// indistinguishable from a real one, asserted as the write time, and
+// frozen into the string, so a message with no age would read as
+// "freshly written" on every redelivery forever. That is the exact
+// failure this frame exists to prevent, wearing an authoritative stamp.
+// An unparseable value takes the same path (and `.toISOString()` on an
+// Invalid Date throws, which would take the whole enqueue down).
+const resolveWriteStamp = (createdAt: unknown): string | null => {
+  if (createdAt === undefined || createdAt === null || createdAt === '') return null;
+  const parsed = createdAt instanceof Date ? createdAt : new Date(String(createdAt));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
+const formatAuthorFrame = (
+  username: string | undefined,
+  createdAt: unknown,
+  messageId: string | undefined,
+): string => {
+  const author = username || 'unknown';
+  const idPart = messageId ? ` (message ${messageId})` : '';
+  const stamp = resolveWriteStamp(createdAt);
+  const timing = stamp
+    ? `posted at ${stamp}. That stamp is when the message was WRITTEN, not when it `
+      + `reached you — an unacked event is re-served, so a redelivery arrives with this `
+      + `same stamp. Compare it against the current time before treating this as new: if `
+      + `it is not recent, check whether you already answered it (commonly_get_messages) `
+      + `rather than answering twice.`
+    : `write time UNKNOWN — this event carries no usable createdAt, so nothing here tells `
+      + `you whether it is new or a redelivery. Treat it as possibly already answered and `
+      + `check commonly_get_messages before replying.`;
+  return `[Trigger: this turn was raised by **${author}**${idPart}, ${timing}]`;
+};
+
 // Agents whose runtime IS a code specialist shouldn't be told to consult
 // themselves — would be noise + risk loop-forming.
 const isCodeSpecialistAgent = (agentName: string | undefined | null): boolean => {
@@ -553,9 +609,18 @@ const buildContentForTarget = (
   rawContent: string,
   eventType: 'chat.mention' | 'thread.mention',
   targetAgentName: string,
-  collaborativePod: boolean = false,
+  collaborativePod: boolean,
+  // Required, not defaulted: an omitted `author` is what makes the
+  // fabricated-stamp path reachable by accident. All four call sites
+  // pass it today, so requiring it costs nothing now and turns a future
+  // omission into a compile error instead of a silent "unknown".
+  author: { username?: string; createdAt?: unknown; messageId?: string },
 ): string => {
   const frames: string[] = [formatPodContextFrame(podId)];
+  // First after pod context, and unconditional: every event type and
+  // every runtime needs to know who spoke and when. The four cues below
+  // are all conditional on shape; this one never is.
+  frames.push(formatAuthorFrame(author.username, author.createdAt, author.messageId));
   if (
     eventType === 'chat.mention'
     && collaborativePod
@@ -633,6 +698,21 @@ const enqueueMentions = async ({
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
   const eventType: 'chat.mention' | 'thread.mention' = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  // Author/age frame inputs — identical for every target of this
+  // message, so resolved once here rather than at each of the four
+  // enqueue sites below. Same values that already go into the envelope
+  // fields; the frame is what actually reaches the model.
+  // No `|| new Date()` here, deliberately — the envelope's own
+  // createdAt field defaults to now (wire compatibility), but the frame
+  // must not: defaulting at BOTH layers means the fallback is doubled
+  // rather than checked, and the frame would assert a fabricated write
+  // time as ground truth. Absent stays absent; formatAuthorFrame says
+  // so out loud.
+  const authorFrame = {
+    username,
+    createdAt: message?.createdAt || message?.created_at,
+    messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
+  };
   // Per-target content composition: see buildContentForTarget above for
   // the four-case matrix (chat-vs-thread × specialist-vs-not). Each
   // enqueue site below passes its own `targetAgentName` so the cue
@@ -774,7 +854,7 @@ const enqueueMentions = async ({
               messageId: message?._id || message?.id
                 ? String(message?._id || message?.id)
                 : undefined,
-              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod),
+              content: buildContentForTarget(podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame),
               userId,
               username,
               mentions: rawMentions,
@@ -822,7 +902,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod),
+                  content: buildContentForTarget(podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -889,7 +969,7 @@ const enqueueMentions = async ({
                   messageId: message?._id || message?.id
                     ? String(message?._id || message?.id)
                     : undefined,
-                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod),
+                  content: buildContentForTarget(podId, rawContent, eventType, agentType, collaborativePod, authorFrame),
                   userId,
                   username,
                   mentions: rawMentions,
@@ -935,6 +1015,7 @@ const enqueueMentions = async ({
               'chat.mention',
               target.agentName,
               collaborativePod,
+              authorFrame,
             ),
             userId,
             username,

@@ -19,6 +19,7 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentMemory = require('../../models/AgentMemory');
+const { CYCLE_CONTENT_MAX, CYCLE_ENTRY_CAP } = require('../../models/AgentMemory');
 
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
@@ -1051,11 +1052,80 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
         });
       expect(res.status).toBe(200);
       expect(res.body.cyclesAppended).toBe(true);
+      // Under the cap: both flags present and false, detail counts absent.
+      // The flags are emitted even when nothing happened so that a caller can
+      // tell "this server says nothing was mutated" from "this server predates
+      // the fix and cannot tell me" — see describeCycleMutation's comment.
+      expect(res.body.truncated).toBe(false);
+      expect(res.body.evicted).toBe(false);
+      expect(res.body.storedChars).toBeUndefined();
+      expect(res.body.retainedEntries).toBeUndefined();
 
       const get = await request(app)
         .get('/api/agents/runtime/memory')
         .set('Authorization', `Bearer ${runtimeToken}`);
       expect(get.body.sections.cycles.entries.map((e) => e.content)).toEqual(['sync cycle']);
+    });
+
+    // AX #8 (2026-08-04): a 507-char append returned {ok, cyclesAppended} with
+    // 500 chars stored and the tail replaced by an ellipsis — no signal to the
+    // caller, and the tool schema declares no cap. The route now reports it.
+    it('POST /memory/sync reports truncation when a cycle entry exceeds the cap', async () => {
+      const long = 'q'.repeat(CYCLE_CONTENT_MAX + 7);
+      const res = await request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({
+          mode: 'patch',
+          sections: { cycles: { append: { content: long } } },
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.cyclesAppended).toBe(true);
+      expect(res.body.truncated).toBe(true);
+      expect(res.body.storedChars).toBe(CYCLE_CONTENT_MAX);
+      expect(res.body.submittedChars).toBe(CYCLE_CONTENT_MAX + 7);
+
+      // The report must describe what was actually stored, not just flag it.
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      const stored = get.body.sections.cycles.entries[0].content;
+      expect(stored).toHaveLength(res.body.storedChars);
+      expect(stored.endsWith('…')).toBe(true);
+      // Only the content dimension moved here — the window wasn't full. The
+      // untouched dimension still reports, as false.
+      expect(res.body.evicted).toBe(false);
+      expect(res.body.retainedEntries).toBeUndefined();
+    });
+
+    // Second mutation dimension: $slice drops the oldest entry once the
+    // window is full, losing history the caller never submitted on this call.
+    it('POST /memory/sync reports eviction once the cycle window is full', async () => {
+      const append = (content) => request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ mode: 'patch', sections: { cycles: { append: { content } } } });
+
+      let filling;
+      for (let i = 0; i < CYCLE_ENTRY_CAP; i++) filling = await append(`fill-${i}`);
+      // The append that FILLS the window evicts nothing — the boundary case.
+      expect(filling.body.evicted).toBe(false);
+
+      const res = await append('one-too-many');
+      expect(res.status).toBe(200);
+      expect(res.body.evicted).toBe(true);
+      expect(res.body.retainedEntries).toBe(CYCLE_ENTRY_CAP);
+      expect(res.body.entryCap).toBe(CYCLE_ENTRY_CAP);
+      // Content was under the cap — reported as false, not omitted.
+      expect(res.body.truncated).toBe(false);
+      expect(res.body.storedChars).toBeUndefined();
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      const contents = get.body.sections.cycles.entries.map((e) => e.content);
+      expect(contents).toHaveLength(CYCLE_ENTRY_CAP);
+      expect(contents).not.toContain('fill-0');
     });
 
     it('PUT /memory: cycles append + long_term write in the same request — both land', async () => {

@@ -474,7 +474,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           // when present; tokens are the demo-recording stand-in.
           const liveReactions = message.reactions;
           const hasLive = Array.isArray(liveReactions);
-          const messageId = String(message.id || message._id || '');
+          const messageId = String(message.id || '');
           const canInteract = hasLive && messageId && /^\d+$/.test(messageId);
 
           const toggle = async (emoji: string, mine: boolean) => {
