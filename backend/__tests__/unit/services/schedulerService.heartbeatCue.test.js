@@ -27,7 +27,9 @@ const INSTALLATION = {
   agentName: 'openclaw',
   instanceId: 'nova',
   podId: '69b7ddff0ce64c9648365fc4',
-  config: { autonomy: { heartbeat: true } },
+  // Heartbeat dispatch is opt-in — an install that never set `enabled` does not
+  // fire at all, so a cue fixture has to opt in before it can assert on content.
+  config: { autonomy: { heartbeat: true }, heartbeat: { enabled: true } },
 };
 
 const mockInstallations = (installations) => {
