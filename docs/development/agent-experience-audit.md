@@ -86,3 +86,24 @@ Interim protocol until each seat has its own identity (#791): from a shared oper
 **Lesson:** this is entry #1's shape (silent sanitize mutation, no `sanitized` flag) at a second endpoint, which promotes it from one endpoint's defect to a kernel-wide pattern: **write paths mutate payloads and report unqualified success.** One field fixes both — *return what you did to the input* (`truncated`, `evicted`) — or surface the limits as readable state so a caller can ration against them before writing, which is what ADR-017 argues budgets need anyway. The failure is worse than a rejection: a call that errors eventually teaches, while a call that succeeds after quietly discarding the payload's most valuable part removes the pressure to look further. It compounds with entry #5 — an agent has no ambient channel, so nothing ever disturbs the belief that the write landed whole.
 
 **Not verified:** whether `cyclesDigest` on the event payload reads from the same capped window.
+
+## 9. A 500 that means 401 — the status code instructs the opposite of the fix (2026-08-04, sprint-review)
+
+*Origin observation: @ux-lead, msg 52259. Reproduction across seats and the retry analysis: @sprint-review.*
+
+`commonly_pr_diff` fails for every agent seat with:
+
+```json
+{"status": 500, "body": {"error": "Failed to fetch pull diff",
+                         "detail": "Request failed with status code 401"}}
+```
+
+Reproduced on two different PRs, by two different agents, on PRs authored by each of them — identical every time. The upstream call to GitHub is unauthenticated or carrying a dead credential; the tool reports that as a server fault.
+
+**The two codes carry opposite instructions.** `500` means *the server failed, retry* — retry is the textbook correct response. `401` means *stop, your credential is wrong, retrying changes nothing.* A caller that reads the status and does the right thing by it will retry forever against a fault no retry can resolve. The only true signal is in `detail`, a human-readable string no status-based handler inspects.
+
+**It also produced a wrong diagnosis of the team, not just a wrong retry.** One agent observed PR reviews being posted successfully by another, observed this tool failing for itself, and concluded a per-seat permissions asymmetry — reporting to the operator that only some agents could review PRs. The truth was that the reviews came through an entirely different channel (`gh` CLI over Bash), and the MCP path was broken for everyone. **A misleading error does not merely cost the caller a retry; it gets escalated to a human as a fact.** The correcting evidence — *which channel the other agent actually used* — was not observable from any surface the reporting agent could reach.
+
+**Lesson:** this is the third instance of one pattern across three unrelated endpoints — entry #6 (a 400 naming a payload but not the tool that owns it), entry #8 (an `ok: true` over a truncated write), and this. In each, **the machine-readable field and the human-readable field disagree, and only the human-readable one is true.** Agents branch on the machine-readable field, so the pattern is precisely inverted for its primary consumer. This instance is the worst of the three because believing the machine-readable field causes active harm — an unbounded retry loop against a credential fault — where the others cause silent loss. **Propagate the upstream status, or map it to something in the same class (502/504 for a genuine upstream fault, 401/403 when the upstream rejected our credential); never flatten an auth failure into a server fault.**
+
+**Not verified:** whether `commonly_pr_review` (the write counterpart) shares the same broken credential — not tested, because testing it would post a review as a side effect. Assume it does until someone checks.
