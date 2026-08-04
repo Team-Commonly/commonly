@@ -31,13 +31,17 @@ const POD = 'pod-1';
 const SELF = 'agent-user-1';
 const OTHER = 'agent-user-2';
 
-// Mongo path: Message.find(...).sort(...).limit(...).populate(...).lean()
+// Mongo path: Message.find(...).where(...).lt(...).sort(...).limit(...).populate(...).lean()
 const mockMongoChain = (rows) => {
-  const populate = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(rows) });
-  const limit = jest.fn().mockReturnValue({ populate });
-  const sort = jest.fn().mockReturnValue({ limit });
-  Message.find.mockReturnValue({ sort });
-  return { populate };
+  const query = {};
+  query.where = jest.fn().mockReturnValue(query);
+  query.lt = jest.fn().mockReturnValue(query);
+  query.sort = jest.fn().mockReturnValue(query);
+  query.limit = jest.fn().mockReturnValue(query);
+  query.populate = jest.fn().mockReturnValue(query);
+  query.lean = jest.fn().mockResolvedValue(rows);
+  Message.find.mockReturnValue(query);
+  return query;
 };
 
 describe('getRecentMessages — PG path', () => {
@@ -64,6 +68,28 @@ describe('getRecentMessages — PG path', () => {
     const out = await AgentMessageService.getRecentMessages(POD, 10, SELF);
 
     expect(out.map((m) => m.self)).toEqual([true, false]);
+  });
+
+  test('passes the exclusive history cursor to PostgreSQL', async () => {
+    const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
+    PGMessage.findByPodId.mockResolvedValue([]);
+
+    await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
+
+    expect(PGMessage.findByPodId).toHaveBeenCalledWith(
+      POD, 10, new Date(beforeMs).toISOString(),
+    );
+  });
+
+  test.each([
+    ['a raw string', '2026-08-01T00:00:00.000Z'],
+    ['NaN', Number.NaN],
+  ])('rejects %s before any database query', async (_label, before) => {
+    await expect(AgentMessageService.getRecentMessages(POD, 10, SELF, before))
+      .rejects.toThrow('beforeMs must be a valid epoch timestamp');
+
+    expect(PGMessage.findByPodId).not.toHaveBeenCalled();
+    expect(Message.find).not.toHaveBeenCalled();
   });
 
   // Its absence is how a client detects a server too old to compute `self`.
@@ -146,6 +172,17 @@ describe('getRecentMessages — Mongo fallback path', () => {
     const theirs = out.find((m) => String(m.userId._id) === OTHER);
     expect(mine.self).toBe(true);
     expect(theirs.self).toBe(false);
+  });
+
+  test('applies the same exclusive history cursor on the Mongo fallback', async () => {
+    const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
+    const query = mockMongoChain([]);
+
+    await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
+
+    expect(Message.find).toHaveBeenCalledWith({ podId: { $eq: POD } });
+    expect(query.where).toHaveBeenCalledWith('createdAt');
+    expect(query.lt).toHaveBeenCalledWith(new Date(beforeMs));
   });
 });
 

@@ -343,19 +343,34 @@ paths:
       parameters:
         - $ref: '#/components/parameters/PodId'
         - $ref: '#/components/parameters/Limit'
+        - name: before
+          in: query
+          description: Exclusive ISO-8601 timestamp cursor for reading older messages.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
-          description: Recent messages
+          description: A chronological page of messages and whether older history remains
           content:
             application/json:
               schema:
                 type: object
-                required: [messages]
+                required: [messages, hasMore]
                 properties:
                   messages:
                     type: array
                     items:
                       $ref: '#/components/schemas/GenericDocument'
+                  hasMore:
+                    type: boolean
+                    description: True when another older page exists.
+        '400':
+          description: Invalid or unsupported query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':

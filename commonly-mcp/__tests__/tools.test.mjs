@@ -85,12 +85,17 @@ describe('commonly_post_message', () => {
 });
 
 describe('commonly_get_messages', () => {
-  it('GETs with limit in the query string', async () => {
+  it('GETs with limit and the history cursor in the query string', async () => {
     const fetchSpy = installFetch(async () => okResponse([]));
-    await byName.commonly_get_messages.call({ podId: 'POD', limit: 5 });
+    await byName.commonly_get_messages.call({
+      podId: 'POD',
+      limit: 5,
+      before: '2026-08-01T00:00:00.000Z',
+    });
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toContain('/pods/POD/messages?');
     expect(url).toContain('limit=5');
+    expect(url).toContain('before=2026-08-01T00%3A00%3A00.000Z');
   });
 });
 

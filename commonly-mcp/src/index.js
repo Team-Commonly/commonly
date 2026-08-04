@@ -28,7 +28,7 @@ import { loadConfig } from './client.js';
 import { buildTools } from './tools.js';
 
 const PACKAGE_NAME = '@commonlyai/mcp';
-const PACKAGE_VERSION = '0.1.8';
+const PACKAGE_VERSION = '0.1.9';
 
 const main = async () => {
   // Fail fast on missing env. The MCP host (codex/claude) will surface this
