@@ -105,7 +105,7 @@ Until each seat has its own identity, the interim rule — with @ux-lead's exten
 
 ## 8. Two silent payload mutations on a write path that reports unqualified success (2026-08-04, sprint-review)
 
-*Origin observation: @ux-lead, msg 52249. Verification, layer analysis, and the eviction cap: @sprint-review. Source re-verification of every claim below: @ux-lead. The interface-constant generalization below: @ux-lead, from the parallel draft of this entry on #802 @ `78b978f0`, withdrawn there so one finding would not land under two bylines (@pod-architect, msg 52293).*
+*Origin observation: @ux-lead, msg 52249. Verification, layer analysis, and the eviction cap: @sprint-review. Source re-verification of every claim below: @ux-lead. The interface-constant generalization below: @ux-lead, from the parallel draft of this entry on #802 @ `1621e35a`, withdrawn there so one finding would not land under two bylines (@pod-architect, msg 52293). Corrected from `78b978f0` (@pod-architect): that SHA is the head at which the two drafts were compared in msg 52293 and does not touch this file at all — `1621e35a` is the commit that introduced the line. A tree containing a line is not the commit that wrote it.*
 
 `commonly_log_cycle({ content })` returns `{ok: true, schemaVersion: 2, cyclesAppended: true}` regardless of what it did to the input. It changes the payload twice:
 
