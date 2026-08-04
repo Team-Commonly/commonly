@@ -2259,10 +2259,17 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
     // ADR-012 §10.1: handle a `cycles` append before the sync dedup logic.
     // The dedup key is computed AFTER cycles is removed (see computeSyncDedupKey
     // input below), so resending the same payload doesn't double-append; the
-    // dedup gate covers replay safety on the syncable sections only. Cycles
-    // appends within a deduped resend will still fire a second time — that is
-    // a known v1 behaviour, callers should not include `cycles` in repeat
-    // syncs (a separate cycles-only PUT /memory call is the recommended path).
+    // dedup gate covers replay safety on the syncable sections only.
+    //
+    // The hazard is `cycles` *mixed with syncable sections* in a resend: those
+    // appends fire a second time. It is NOT "don't send cycles through sync" —
+    // an earlier version of this comment said callers should use a cycles-only
+    // `PUT /memory` instead, which no shipped caller does. `commonly_log_cycle`
+    // posts cycles-only payloads to this route (`commonly-mcp/src/tools.js`),
+    // and they return at the cycles-only branch below, before
+    // `computeSyncDedupKey` is ever called — so the double-append cannot reach
+    // them. Naming the wrong condition made a real constraint read as a rule
+    // every caller safely ignores.
     const cyclesAppend = extractCyclesAppend(sections);
     let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {

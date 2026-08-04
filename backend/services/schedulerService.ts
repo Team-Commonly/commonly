@@ -1011,7 +1011,21 @@ class SchedulerService {
               // one silently misfiled two days of takeaways into `daily` as a
               // workaround (AX audit #6, 2026-08-02/04). An instruction must
               // name a tool that can serve it.
-              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_log_cycle({ content: "<takeaway>" }) to append it to your `cycles` section — that is the only tool that writes cycles. Keep it under 500 chars (longer content is truncated and the response says so); one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]';
+              //
+              // 2026-08-04, and this is the limit of that fix: `commonly_log_cycle`
+              // serves MCP seats and NOT moltbots. The deployed openclaw extension
+              // declares 25 `commonly_*` tools without it, at the tip, at the ref
+              // `_external/clawdbot` pins, and inside the running gateway image.
+              // Both channels reach a moltbot in one turn — this cue and its
+              // HEARTBEAT.md, injected by `extensions/commonly/src/channel.ts` —
+              // and since 2026-05-09 both have named something it cannot execute,
+              // which is the whole of the fleet's 87-day `cycles` silence.
+              // So the cue below tells a caller without the tool to SKIP rather
+              // than substitute: naming one tool makes a diligent agent exhaust
+              // that tool's schema and conclude the capability is absent, which is
+              // exactly the turn-burn that forced the #296 rollback. Do not drop
+              // that clause until every runtime can serve the call.
+              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_log_cycle({ content: "<takeaway>" }) to append it to your `cycles` section — that is the only tool that writes cycles. Keep it under 500 chars (longer content is truncated and the response says so); one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine. If `commonly_log_cycle` is not in your tool list, skip the write and move on: no other memory tool can append to `cycles`, so do not substitute one.]';
               const lines = [
                 cue,
                 '',
