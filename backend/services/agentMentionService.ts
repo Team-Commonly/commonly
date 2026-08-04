@@ -445,21 +445,39 @@ const formatMentionReplyCue = (podId: string): string =>
 // messageId rides along so a reply can cite the trigger without paging
 // the log — the same "resolve it without a second call" property that
 // motivates the timestamp.
+//
+// A MISSING createdAt must never be defaulted to now. `unknown` for an
+// absent author is honest; a `new Date()` stamp is not — it is
+// indistinguishable from a real one, asserted as the write time, and
+// frozen into the string, so a message with no age would read as
+// "freshly written" on every redelivery forever. That is the exact
+// failure this frame exists to prevent, wearing an authoritative stamp.
+// An unparseable value takes the same path (and `.toISOString()` on an
+// Invalid Date throws, which would take the whole enqueue down).
+const resolveWriteStamp = (createdAt: unknown): string | null => {
+  if (createdAt === undefined || createdAt === null || createdAt === '') return null;
+  const parsed = createdAt instanceof Date ? createdAt : new Date(String(createdAt));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 const formatAuthorFrame = (
   username: string | undefined,
   createdAt: unknown,
   messageId: string | undefined,
 ): string => {
   const author = username || 'unknown';
-  const stamp = createdAt instanceof Date
-    ? createdAt.toISOString()
-    : new Date(String(createdAt || Date.now())).toISOString();
   const idPart = messageId ? ` (message ${messageId})` : '';
-  return `[Trigger: this turn was raised by **${author}**${idPart}, posted at ${stamp}. `
-    + `That stamp is when the message was WRITTEN, not when it reached you — an unacked `
-    + `event is re-served, so a redelivery arrives with this same stamp. Compare it against `
-    + `the current time before treating this as new: if it is not recent, check whether you `
-    + `already answered it (commonly_get_messages) rather than answering twice.]`;
+  const stamp = resolveWriteStamp(createdAt);
+  const timing = stamp
+    ? `posted at ${stamp}. That stamp is when the message was WRITTEN, not when it `
+      + `reached you — an unacked event is re-served, so a redelivery arrives with this `
+      + `same stamp. Compare it against the current time before treating this as new: if `
+      + `it is not recent, check whether you already answered it (commonly_get_messages) `
+      + `rather than answering twice.`
+    : `write time UNKNOWN — this event carries no usable createdAt, so nothing here tells `
+      + `you whether it is new or a redelivery. Treat it as possibly already answered and `
+      + `check commonly_get_messages before replying.`;
+  return `[Trigger: this turn was raised by **${author}**${idPart}, ${timing}]`;
 };
 
 // Agents whose runtime IS a code specialist shouldn't be told to consult
@@ -571,8 +589,12 @@ const buildContentForTarget = (
   rawContent: string,
   eventType: 'chat.mention' | 'thread.mention',
   targetAgentName: string,
-  collaborativePod: boolean = false,
-  author: { username?: string; createdAt?: unknown; messageId?: string } = {},
+  collaborativePod: boolean,
+  // Required, not defaulted: an omitted `author` is what makes the
+  // fabricated-stamp path reachable by accident. All four call sites
+  // pass it today, so requiring it costs nothing now and turns a future
+  // omission into a compile error instead of a silent "unknown".
+  author: { username?: string; createdAt?: unknown; messageId?: string },
 ): string => {
   const frames: string[] = [formatPodContextFrame(podId)];
   // First after pod context, and unconditional: every event type and
@@ -660,9 +682,15 @@ const enqueueMentions = async ({
   // message, so resolved once here rather than at each of the four
   // enqueue sites below. Same values that already go into the envelope
   // fields; the frame is what actually reaches the model.
+  // No `|| new Date()` here, deliberately — the envelope's own
+  // createdAt field defaults to now (wire compatibility), but the frame
+  // must not: defaulting at BOTH layers means the fallback is doubled
+  // rather than checked, and the frame would assert a fabricated write
+  // time as ground truth. Absent stays absent; formatAuthorFrame says
+  // so out loud.
   const authorFrame = {
     username,
-    createdAt: message?.createdAt || message?.created_at || new Date(),
+    createdAt: message?.createdAt || message?.created_at,
     messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
   };
   // Per-target content composition: see buildContentForTarget above for

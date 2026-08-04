@@ -725,7 +725,47 @@ describe('AgentMentionService', () => {
         });
         const { content } = lastPayload().payload;
         expect(content).toContain(written.toISOString());
-        expect(content).not.toMatch(/\b(seconds?|minutes?|hours?) ago\b/);
+        // Bare /\bago\b/, not a unit-prefixed pattern. The likelier bad
+        // edit ADDS a friendly age beside the stamp rather than
+        // replacing it — `posted at <ISO> (3m ago)` keeps the ISO and
+        // slips a unit-prefixed matcher, which was this guard's first
+        // shape (@sprint-review, verified applied, 35/35 still passed).
+        expect(content).not.toMatch(/\bago\b/i);
+      });
+
+      // A missing createdAt must read as UNKNOWN, never as `new Date()`.
+      // An absent author renders "unknown" and is honest; a fabricated
+      // stamp is not — it is indistinguishable from a real one, asserted
+      // as the write time, and frozen into the string, so an ageless
+      // message would read as freshly-written on every redelivery
+      // forever. That is the exact failure the frame exists to prevent.
+      test('no createdAt → says UNKNOWN, does not fabricate a stamp', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-4',
+          message: { content: 'Hi @nova', id: 'msg-99' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain('write time UNKNOWN');
+        // No ISO-8601 timestamp anywhere in the frame.
+        const frame = content.slice(content.indexOf('[Trigger:'));
+        expect(frame.slice(0, frame.indexOf(']') + 1))
+          .not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+      });
+
+      // `.toISOString()` on an Invalid Date THROWS, so an unparseable
+      // value would take the whole enqueue down rather than degrading.
+      test('unparseable createdAt degrades to UNKNOWN, does not throw', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await expect(AgentMentionService.enqueueMentions({
+          podId: 'pod-author-5',
+          message: { content: 'Hi @nova', id: 'msg-100', createdAt: 'not-a-date' },
+          userId: 'user-1',
+          username: 'sam',
+        })).resolves.toBeDefined();
+        expect(lastPayload().payload.content).toContain('write time UNKNOWN');
       });
 
       // Unconditional, unlike the four cues around it: every event type
