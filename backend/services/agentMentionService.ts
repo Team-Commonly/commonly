@@ -13,6 +13,10 @@ const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
+  maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
   resolveAgentDisplayLabel: (
     user: { username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null | undefined,
@@ -718,7 +722,75 @@ const enqueueMentions = async ({
   // enqueue site below passes its own `targetAgentName` so the cue
   // composition is correct for that target's runtime.
   const rawMentions = extractMentions(rawContent);
-  if (!podId || (rawMentions.length === 0 && !replyToMessageId)) {
+  if (!podId) {
+    return { enqueued: [], implicit: [], skipped: [] };
+  }
+  // "Routed" means the message already names its recipient — an @mention, or
+  // a reply that the #703 path resolves. Everything else reaches nobody, and
+  // for a member's FIRST message in a pod that is the #834 gap.
+  const isRouted = rawMentions.length > 0 || !!replyToMessageId;
+
+  // Sender identity is resolved BEFORE the unrouted early-return below,
+  // because the welcome wake has to know whether the sender is human. It was
+  // previously resolved further down, where only the routed path could see
+  // it. Uses of it (the self-mention guard) are all downstream and unchanged.
+  //
+  // Self-mention guard: if the sender is a bot, resolve their own
+  // (agentName, instanceId) so we can skip re-enqueuing an event on themselves.
+  // Without this, any agent whose reply echoes its own handle (e.g. the
+  // webhook-SDK "echo:" template, or a CLI-wrapper that quotes the mention)
+  // triggers an infinite chat.mention → reply → chat.mention loop.
+  let sender: SenderRow | null = null;
+  try {
+    sender = await User.findById(userId).select('isBot botMetadata').lean() as SenderRow | null;
+  } catch (error) {
+    // Non-fatal: missing sender just means we can't suppress self-mentions,
+    // which is a strictly weaker invariant than the one we had before.
+    console.warn('Agent mention sender lookup failed:', (error as Error).message);
+  }
+
+  let installations: Array<Record<string, unknown>> = [];
+  let profiles: Array<Record<string, unknown>> = [];
+  try {
+    installations = await AgentInstallation.find({
+      podId,
+      status: 'active',
+    }).lean();
+    // Profiles feed the mention map only, so an unrouted message never needs
+    // them. Kept behind the routed check to hold the added cost of reaching
+    // this point on every message down to two queries rather than three.
+    if (isRouted) profiles = await AgentProfile.find({ podId }).lean();
+  } catch (error) {
+    console.warn('Agent mention lookup failed:', (error as Error).message);
+  }
+
+  // #834: claim the member's first-message marker, and wake the pod's
+  // designated greeter when that first message named nobody. Claimed for
+  // routed first messages too — otherwise a member whose opener was
+  // "@codex help" gets welcomed on their SECOND message. Bots never claim:
+  // an agent's first post in a pod would otherwise seed a wake loop, the same
+  // reasoning that gates the #703 implicit path on `isBot === false`.
+  if (sender?.isBot === false) {
+    try {
+      await maybeFireWelcomeWake({
+        podId,
+        userId,
+        username,
+        content: rawContent,
+        messageId: message?._id || message?.id
+          ? String(message?._id || message?.id)
+          : undefined,
+        isRouted,
+        installations,
+      });
+    } catch (error) {
+      // The message is already persisted; a welcome failure must never turn a
+      // successful human send into a 500.
+      console.warn('[welcome-wake] failed:', (error as Error).message);
+    }
+  }
+
+  if (!isRouted) {
     return { enqueued: [], implicit: [], skipped: [] };
   }
 
@@ -733,18 +805,6 @@ const enqueueMentions = async ({
     enqueuedIdentityKeys.add(identityKey(target));
     enqueued.push(resultLabel);
   };
-
-  let installations: Array<Record<string, unknown>> = [];
-  let profiles: Array<Record<string, unknown>> = [];
-  try {
-    installations = await AgentInstallation.find({
-      podId,
-      status: 'active',
-    }).lean();
-    profiles = await AgentProfile.find({ podId }).lean();
-  } catch (error) {
-    console.warn('Agent mention lookup failed:', (error as Error).message);
-  }
 
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
   let pod: Record<string, unknown> | null = null;
@@ -764,19 +824,6 @@ const enqueueMentions = async ({
   }
   const collaborativePod = isCollaborativePod(podType, installations);
 
-  // Self-mention guard: if the sender is a bot, resolve their own
-  // (agentName, instanceId) so we can skip re-enqueuing an event on themselves.
-  // Without this, any agent whose reply echoes its own handle (e.g. the
-  // webhook-SDK "echo:" template, or a CLI-wrapper that quotes the mention)
-  // triggers an infinite chat.mention → reply → chat.mention loop.
-  let sender: SenderRow | null = null;
-  try {
-    sender = await User.findById(userId).select('isBot botMetadata').lean() as SenderRow | null;
-  } catch (error) {
-    // Non-fatal: missing sender just means we can't suppress self-mentions,
-    // which is a strictly weaker invariant than the one we had before.
-    console.warn('Agent mention sender lookup failed:', (error as Error).message);
-  }
   const senderAgentName = sender?.isBot ? sender.botMetadata?.agentName?.toLowerCase() : null;
   const senderInstanceId = sender?.isBot ? (sender.botMetadata?.instanceId || 'default') : null;
   const isSelfMention = (target: MentionTarget): boolean => (
