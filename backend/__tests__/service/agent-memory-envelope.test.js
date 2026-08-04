@@ -1052,9 +1052,14 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
         });
       expect(res.status).toBe(200);
       expect(res.body.cyclesAppended).toBe(true);
-      // Under the cap: no truncation keys at all, so their presence always
-      // means something happened to the payload.
-      expect(res.body.truncated).toBeUndefined();
+      // Under the cap: both flags present and false, detail counts absent.
+      // The flags are emitted even when nothing happened so that a caller can
+      // tell "this server says nothing was mutated" from "this server predates
+      // the fix and cannot tell me" — see describeCycleMutation's comment.
+      expect(res.body.truncated).toBe(false);
+      expect(res.body.evicted).toBe(false);
+      expect(res.body.storedChars).toBeUndefined();
+      expect(res.body.retainedEntries).toBeUndefined();
 
       const get = await request(app)
         .get('/api/agents/runtime/memory')
@@ -1087,8 +1092,10 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       const stored = get.body.sections.cycles.entries[0].content;
       expect(stored).toHaveLength(res.body.storedChars);
       expect(stored.endsWith('…')).toBe(true);
-      // Only the content dimension moved here — the window wasn't full.
-      expect(res.body.evicted).toBeUndefined();
+      // Only the content dimension moved here — the window wasn't full. The
+      // untouched dimension still reports, as false.
+      expect(res.body.evicted).toBe(false);
+      expect(res.body.retainedEntries).toBeUndefined();
     });
 
     // Second mutation dimension: $slice drops the oldest entry once the
@@ -1102,15 +1109,16 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       let filling;
       for (let i = 0; i < CYCLE_ENTRY_CAP; i++) filling = await append(`fill-${i}`);
       // The append that FILLS the window evicts nothing — the boundary case.
-      expect(filling.body.evicted).toBeUndefined();
+      expect(filling.body.evicted).toBe(false);
 
       const res = await append('one-too-many');
       expect(res.status).toBe(200);
       expect(res.body.evicted).toBe(true);
       expect(res.body.retainedEntries).toBe(CYCLE_ENTRY_CAP);
       expect(res.body.entryCap).toBe(CYCLE_ENTRY_CAP);
-      // Content was under the cap, so that dimension stays silent.
-      expect(res.body.truncated).toBeUndefined();
+      // Content was under the cap — reported as false, not omitted.
+      expect(res.body.truncated).toBe(false);
+      expect(res.body.storedChars).toBeUndefined();
 
       const get = await request(app)
         .get('/api/agents/runtime/memory')

@@ -584,25 +584,42 @@ export interface AppendCycleResult {
 // response derives the same keys from the same rule — two routes open-coding
 // this is how the two surfaces drift apart.
 //
-// Keys are OMITTED when nothing happened, so their presence in a response
-// always means the payload or the history was changed. `entryCap` rides along
-// with an eviction because a caller learning it lost history should learn the
-// horizon in the same breath.
+// The two FLAGS are emitted unconditionally, including when they are `false`.
+// An earlier draft omitted them on a clean write, which reads as tidier and is
+// wrong: it overloads absence with two meanings — "nothing was mutated" and
+// "a backend that predates this fix". Those two ship on different clocks. The
+// tool description travels with `@commonlyai/mcp` on npm; this code travels to
+// the cluster on a deploy. So an agent running a NEW description against an OLD
+// backend sees no `truncated`, reads the documented absence, and concludes its
+// content was stored whole — a plausible silence confirming a wrong model, in
+// the fix for a plausible silence. (@ux-lead, msg 52263; @sprint-review then
+// established in 52271 that the obvious alternative discriminator does not
+// work — `schemaVersion: 2` is emitted identically on main and on this branch,
+// so keying off it would have distinguished nothing.)
+//
+// Emitting always makes the FIELD's presence the version discriminator and the
+// field's VALUE the mutation report — two questions, two signals, neither
+// inferred from silence. Absent flag ⇒ old backend, says nothing about content.
+//
+// The detail counts stay conditional: they are only meaningful alongside a true
+// flag, they carry no version information, and `storedChars === submittedChars`
+// on a clean write is noise. `entryCap` rides along with an eviction because a
+// caller learning it lost history should learn the horizon in the same breath.
 export function describeCycleMutation(
   result: AppendCycleResult | null | undefined,
 ): Record<string, unknown> {
   if (!result) return {};
   return {
+    truncated: result.truncated,
     ...(result.truncated
       ? {
-        truncated: true,
         storedChars: result.storedChars,
         submittedChars: result.submittedChars,
       }
       : {}),
+    evicted: result.evicted,
     ...(result.evicted
       ? {
-        evicted: true,
         retainedEntries: result.retainedEntries,
         entryCap: result.entryCap,
       }

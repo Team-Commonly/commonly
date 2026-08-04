@@ -442,8 +442,12 @@ describe('digest builders (pure)', () => {
 });
 
 // The route-facing projection. Both routes derive their response keys from
-// this one function so the two surfaces cannot drift; these pin the rule that
-// absence is meaningful.
+// this one function so the two surfaces cannot drift.
+//
+// The contract these pin: the FLAGS are always present, the DETAIL COUNTS are
+// present only when their flag is true. That split is load-bearing — a caller
+// on an old backend gets no flags at all, so "flag absent" means "this server
+// cannot tell you" and never means "nothing happened".
 describe('describeCycleMutation (pure)', () => {
   const base = {
     ok: true,
@@ -455,24 +459,44 @@ describe('describeCycleMutation (pure)', () => {
     entryCap: CYCLE_ENTRY_CAP,
   };
 
-  it('emits nothing when the payload survived intact', () => {
-    expect(describeCycleMutation(base)).toEqual({});
+  it('emits both flags as false when the payload survived intact', () => {
+    // NOT `{}`. An omitted flag is indistinguishable from a backend that
+    // predates this fix, and the two ship on different clocks (npm vs deploy).
+    expect(describeCycleMutation(base)).toEqual({ truncated: false, evicted: false });
   });
 
-  it('emits nothing for a null result (append refused on missing identity)', () => {
+  it('omits the detail counts when nothing was mutated', () => {
+    const out = describeCycleMutation(base);
+    expect(out).not.toHaveProperty('storedChars');
+    expect(out).not.toHaveProperty('submittedChars');
+    expect(out).not.toHaveProperty('retainedEntries');
+    expect(out).not.toHaveProperty('entryCap');
+  });
+
+  it('emits nothing at all for a null result (append refused on missing identity)', () => {
+    // The one case that stays empty: there was no append, so there is no
+    // mutation to report either way. A false flag here would assert a clean
+    // write that never happened.
     expect(describeCycleMutation(null)).toEqual({});
     expect(describeCycleMutation(undefined)).toEqual({});
   });
 
-  it('emits only the content keys when only content was cut', () => {
+  it('emits the content counts, and a false eviction flag, when only content was cut', () => {
     expect(describeCycleMutation({
       ...base, truncated: true, storedChars: 500, submittedChars: 531,
-    })).toEqual({ truncated: true, storedChars: 500, submittedChars: 531 });
+    })).toEqual({
+      truncated: true, storedChars: 500, submittedChars: 531, evicted: false,
+    });
   });
 
-  it('emits only the history keys when only history was dropped', () => {
+  it('emits the history counts, and a false truncation flag, when only history was dropped', () => {
     expect(describeCycleMutation({ ...base, evicted: true, retainedEntries: CYCLE_ENTRY_CAP }))
-      .toEqual({ evicted: true, retainedEntries: CYCLE_ENTRY_CAP, entryCap: CYCLE_ENTRY_CAP });
+      .toEqual({
+        truncated: false,
+        evicted: true,
+        retainedEntries: CYCLE_ENTRY_CAP,
+        entryCap: CYCLE_ENTRY_CAP,
+      });
   });
 
   it('emits both sets when both dimensions were mutated', () => {
@@ -486,5 +510,18 @@ describe('describeCycleMutation (pure)', () => {
       retainedEntries: 3,
       entryCap: CYCLE_ENTRY_CAP,
     });
+  });
+
+  it('never omits a flag, for any combination of the two dimensions', () => {
+    // The version-discriminator property stated as one assertion rather than
+    // inferred from the four cases above: whatever the append did, a caller can
+    // always ask "did this server answer?" and get a yes.
+    for (const truncated of [false, true]) {
+      for (const evicted of [false, true]) {
+        const out = describeCycleMutation({ ...base, truncated, evicted });
+        expect(out).toHaveProperty('truncated', truncated);
+        expect(out).toHaveProperty('evicted', evicted);
+      }
+    }
   });
 });
