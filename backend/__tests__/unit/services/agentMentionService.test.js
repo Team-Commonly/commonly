@@ -37,6 +37,10 @@ jest.mock('../../../models/AgentEvent', () => ({
   countDocuments: jest.fn(),
 }));
 
+jest.mock('../../../services/welcomeWakeService', () => ({
+  maybeFireWelcomeWake: jest.fn(),
+}));
+
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -45,6 +49,7 @@ const Pod = require('../../../models/Pod');
 const chatSummarizerService = require('../../../services/chatSummarizerService');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
+const { maybeFireWelcomeWake } = require('../../../services/welcomeWakeService');
 
 describe('AgentMentionService', () => {
   beforeEach(() => {
@@ -1243,6 +1248,116 @@ describe('AgentMentionService', () => {
         const window = content.slice(Math.max(0, m.index - 120), m.index + 120);
         expect(window).toMatch(/openclaw/i);
       });
+    });
+  });
+  // ── #834 first-message welcome wake, wiring ───────────────────────────────
+  //
+  // The unit behaviour lives in welcomeWakeService.test.js. What matters here
+  // is that enqueueMentions reaches it at all, because the wake's whole point
+  // is to run on the path that used to return before doing anything.
+  describe('first-message welcome wake wiring', () => {
+    const human = () => {
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ isBot: false }),
+        }),
+      });
+    };
+    const bot = () => {
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            isBot: true,
+            botMetadata: { agentName: 'openclaw', instanceId: 'aria' },
+          }),
+        }),
+      });
+    };
+
+    beforeEach(() => {
+      AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: 'chat' }) }),
+      });
+      maybeFireWelcomeWake.mockResolvedValue({ claimed: true, woke: [] });
+    });
+
+    test('an unaddressed human message reaches the wake — the path that used to return early', async () => {
+      human();
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: '这个是什么', _id: 'm-9' },
+        userId: 'user-1',
+        username: 'user-9228',
+      });
+      expect(maybeFireWelcomeWake).toHaveBeenCalledWith(
+        expect.objectContaining({ isRouted: false, podId: 'pod-1', userId: 'user-1' }),
+      );
+    });
+
+    test('an unaddressed message still enqueues nothing — behaviour is unchanged', async () => {
+      human();
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'no mention here' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+      expect(res).toEqual({ enqueued: [], implicit: [], skipped: [] });
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    });
+
+    test('an addressed message reaches the wake flagged routed, so it claims without welcoming', async () => {
+      human();
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'hi @codex' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+      expect(maybeFireWelcomeWake).toHaveBeenCalledWith(
+        expect.objectContaining({ isRouted: true }),
+      );
+    });
+
+    test('a reply counts as routed even with no @mention', async () => {
+      human();
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'thanks!' },
+        userId: 'user-1',
+        username: 'alice',
+        replyToMessageId: 'm-1',
+      });
+      expect(maybeFireWelcomeWake).toHaveBeenCalledWith(
+        expect.objectContaining({ isRouted: true }),
+      );
+    });
+
+    // An agent's first post in a pod must never claim or wake: the greeter
+    // would answer it, that answer is itself a first post elsewhere, and the
+    // #703 path is gated on isBot === false for exactly this reason.
+    test('a bot sender never reaches the wake', async () => {
+      bot();
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'status update' },
+        userId: 'bot-1',
+        username: 'Aria',
+      });
+      expect(maybeFireWelcomeWake).not.toHaveBeenCalled();
+    });
+
+    test('a wake failure never breaks the send', async () => {
+      human();
+      maybeFireWelcomeWake.mockRejectedValue(new Error('mongo down'));
+      await expect(AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'hello' },
+        userId: 'user-1',
+        username: 'alice',
+      })).resolves.toEqual({ enqueued: [], implicit: [], skipped: [] });
     });
   });
 });
