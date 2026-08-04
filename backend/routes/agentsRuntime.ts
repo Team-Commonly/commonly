@@ -2638,20 +2638,58 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       // CREATE endpoint, and returning someone's DM from it is not something
       // any caller needs. A third party who wants a private channel with one
       // of the two members spawns a NEW agent-dm via commonly_open_dm.
-      const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
-      if (DM_POD_TYPES_GUARD.has(String(existingPod.type))) {
+      // One refusal shape for every reason. The caller learns "that name is
+      // taken by something you can't join" and nothing else: which pod, what
+      // type, and whether it is a DM are all withheld, because pod names are
+      // guessable by construction — resolveAgentDisplayLabel produces
+      // "Nova and Theo" — and a refusal that names the reason turns this
+      // endpoint into an existence oracle for other people's private pods.
+      // Same principle as the personal-pod-types 404 on direct GET: the
+      // *existence* surface must not advertise conversations you aren't in.
+      // Operators still get the reason, server-side, in the warn below.
+      const refusePodNameCollision = (reason: string) => {
         console.warn(
           `[agent] pod-create dedup refused: "${name}" resolves to pod ${existingPod._id} `
-          + `type=${existingPod.type} (1:1 DM). ADR-001 §3.10.`,
+          + `type=${existingPod.type} — ${reason}`,
         );
         return res.status(403).json({
-          code: 'dm_membership_refused',
-          message: 'A 1:1 DM pod already uses this name. DM pods are 1:1 and cannot be '
-            + 'joined by a third party — pick a different name, or open a new DM with '
-            + 'commonly_open_dm for a private conversation.',
+          code: 'pod_name_unavailable',
+          message: 'That pod name is already taken by a pod you cannot join. Pick a '
+            + 'different name. To start a private conversation with a specific agent, '
+            + 'use commonly_open_dm instead of creating a pod by name.',
         });
+      };
+
+      const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+      if (DM_POD_TYPES_GUARD.has(String(existingPod.type))) {
+        return refusePodNameCollision('1:1 DM pod (ADR-001 §3.10)');
       }
+
       const isMember = existingPod.members?.some((m: any) => m._id.toString() === agentUser._id.toString());
+
+      // The DM guard above closes the worst case; this closes the rest of it.
+      // The five other writers to `members` all gate on joinability — the
+      // dedicated agent-join path (`POST /pods/:podId/self-install`) refuses
+      // invite-only, refuses non-members of pods it doesn't own, and requires
+      // an active installation. This branch enforced none of them, so a
+      // guessed name was a credential for joining ANY non-DM pod in the
+      // instance: private, invite-only, another team's — all of it, plus
+      // posting rights via AgentInstallation.install and commonly-bot with
+      // context:read.
+      //
+      // Gate on isDirectlyJoinable, not on joinPolicy. `joinPolicy: 'open'`
+      // below the community tier is a dormant declaration (ADR-016:46) — it
+      // means "open once listed", not "open now" — so a pod with
+      // publicRead:false, communityListed:false, joinPolicy:'open' passes a
+      // joinPolicy-only check and is exactly the pod that must be refused.
+      // isDirectlyJoinable = isCommunityListed && joinPolicy !== 'invite-only',
+      // which is the same predicate the community browse surface uses, so a
+      // pod is joinable-by-name here iff it was already discoverable anyway.
+      const { isDirectlyJoinable } = require('../services/podListing');
+      if (!isMember && !isDirectlyJoinable(existingPod)) {
+        return refusePodNameCollision('caller is not a member and the pod is not directly joinable');
+      }
+
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
