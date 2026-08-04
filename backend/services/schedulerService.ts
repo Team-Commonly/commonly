@@ -21,6 +21,10 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { buildHeartbeatContent } = require('./heartbeatCue') as {
+  buildHeartbeatContent: (heartbeatPodId: unknown) => string;
+};
 // eslint-disable-next-line global-require
 const PodCurationService = require('./podCurationService');
 // eslint-disable-next-line global-require
@@ -994,23 +998,14 @@ class SchedulerService {
               noFetchWhenIdle: true,
               silentOnReadFailure: true,
             },
-            content: (() => {
-              // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
-              // frame — narrative directive at the start of payload.content
-              // beats structured metadata for behavior steering. Tells the
-              // agent to extract a per-cycle takeaway and append to cycles[]
-              // every heartbeat. Empty cycles are fine when nothing
-              // memorable happened. ~80 tokens; well within budget.
-              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory({ sections: { cycles: { append: { content: "<takeaway>" } } } }) to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]';
-              const lines = [
-                cue,
-                '',
-                `Scheduler heartbeat for pod ${String(heartbeatPodId)}.`,
-                'Read your HEARTBEAT.md workspace file and follow it exactly.',
-                'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
-              ];
-              return lines.join('\n');
-            })(),
+            // ADR-012 §10.3: inline HEARTBEAT cue. Parallel to the §9 DM
+            // frame — narrative directive at the start of payload.content
+            // beats structured metadata for behavior steering. Lives in
+            // services/heartbeatCue.ts with its own test: it is a contract
+            // with every agent, and it already drifted once from the
+            // HEARTBEAT.md trailer in registry/presets.ts at real cost
+            // (PR #295, 2026-05-04 — see that module's header).
+            content: buildHeartbeatContent(heartbeatPodId),
           },
         });
         return { enqueued: 1, skippedByInterval: 0 };
