@@ -80,6 +80,10 @@ interface GarbageCollectResult {
   failedRetentionHours: number;
   requeuedDelivered?: number;
   requeueDeliveredMinutes?: number;
+  // Events that hit the requeue cap and were retired to the terminal 'failed'
+  // state. Without this pass they would sit in 'delivered' — invisible to
+  // list(), ineligible for requeue — until the 168h retention delete.
+  expiredDelivered?: number;
 }
 
 interface SessionSizeEntry {
@@ -204,8 +208,18 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       }
     }
 
+    // Terminal, not 'delivered'. The webhook has returned 2xx and its outcome
+    // is recorded — there is no later ack coming, because ADR-006 drivers do
+    // not poll and cannot call POST /events/:id/ack. Leaving these 'delivered'
+    // put every successfully-handled webhook event into the garbageCollect()
+    // requeue population, which has no `delivery` exclusion: ~10-20 min after
+    // a successful POST the row flipped back to 'pending' and the endpoint was
+    // called AGAIN with the same event. That is duplicate delivery across the
+    // whole webhook driver class, not queue hygiene — and it is exactly the
+    // at-least-once behaviour ADR-004 permits, arriving for a reason the
+    // driver has no way to distinguish from a real retry.
     await AgentEvent.findByIdAndUpdate(event._id, {
-      status: 'delivered',
+      status: 'acked',
       deliveredAt: new Date(),
       'delivery.outcome': outcome,
       'delivery.updatedAt': new Date(),
@@ -601,25 +615,36 @@ class AgentEventService {
 
     // Task #67: requeue events stuck in 'delivered' status whose poller
     // crashed/errored before processing. The /events endpoint only returns
-    // `status: 'pending'` events, so a 'delivered' event with no `ackedAt`
-    // becomes invisible to the agent forever — neither retried nor surfaced.
+    // `status: 'pending'` events, so an unhandled 'delivered' event becomes
+    // invisible to the agent forever — neither retried nor surfaced.
     // Saw this 2026-05-18: Cody's old pod marked 2 chat.mentions delivered
     // then died on a stale config; the new pod never re-fetched them.
     //
-    // Requeue rule: status === 'delivered' AND ackedAt is null AND
-    // deliveredAt is older than 10 min (env-tunable) AND attempts < 3
-    // (prevent infinite loops on poison events). The 10-min default
-    // accommodates legitimately-long-running tool calls — codex exec for
-    // multi-slide LLM generation can take 3-5 min — without re-firing
-    // while the agent is still processing.
+    // Requeue rule: status === 'delivered' AND deliveredAt is older than
+    // 10 min (env-tunable) AND attempts < 3 (prevent infinite loops on
+    // poison events). The 10-min default accommodates legitimately-long-
+    // running tool calls — codex exec for multi-slide LLM generation can
+    // take 3-5 min — without re-firing while the agent is still processing.
+    //
+    // Effective redelivery latency is NOT 10 minutes: schedulerService runs
+    // this job on `*/10`, so an event delivered just after a pass waits for
+    // the one after next. Period P and threshold T give [T, T+P) — uniform
+    // over 10-20 min here, mean ~15. Change both numbers together.
+    //
+    // The predicate previously also required `ackedAt: {$in: [null, undefined]}`.
+    // There is no `ackedAt` field on AgentEvent — not in IAgentEvent, not in
+    // the schema, never written — so Mongoose stripped it and the clause
+    // matched every document. Dropped rather than "fixed": `status: 'delivered'`
+    // already excludes acked events, since ack moves the row to 'acked'.
     let requeuedDelivered = 0;
+    let expiredDelivered = 0;
+    const attemptCap = Math.max(requeueMaxAttempts, 1);
     try {
       const requeueResult = await AgentEvent.updateMany(
         {
           status: 'delivered',
-          ackedAt: { $in: [null, undefined] },
           deliveredAt: { $lt: requeueThreshold },
-          $or: [{ attempts: { $lt: Math.max(requeueMaxAttempts, 1) } }, { attempts: { $exists: false } }],
+          $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
         },
         {
           $set: { status: 'pending', deliveredAt: null },
@@ -628,6 +653,31 @@ class AgentEventService {
       requeuedDelivered = requeueResult?.modifiedCount || 0;
       if (requeuedDelivered > 0) {
         console.log(`[agent-event] requeued ${requeuedDelivered} stuck 'delivered' events older than ${requeueDeliveredMinutes}min`);
+      }
+
+      // Retire events that have exhausted the cap. This pass is what makes the
+      // cap a bound rather than a leak: `attempts >= cap` fails the requeue
+      // predicate, and a 'delivered' row is invisible to list(), so without a
+      // terminal transition a poison event silently reproduces the exact Task
+      // #67 symptom above — stuck, unretried, unsurfaced — for the full 168h
+      // retention window. Disjoint from the requeue by `attempts` alone, so
+      // the two passes cannot touch the same document in one run.
+      const expireResult = await AgentEvent.updateMany(
+        {
+          status: 'delivered',
+          deliveredAt: { $lt: requeueThreshold },
+          attempts: { $gte: attemptCap },
+        },
+        {
+          $set: {
+            status: 'failed',
+            error: `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`,
+          },
+        },
+      ) as { modifiedCount?: number };
+      expiredDelivered = expireResult?.modifiedCount || 0;
+      if (expiredDelivered > 0) {
+        console.warn(`[agent-event] retired ${expiredDelivered} 'delivered' events that exhausted the ${attemptCap}-attempt requeue cap`);
       }
     } catch (err: unknown) {
       console.warn('[agent-event] requeue pass failed:', (err as Error).message);
@@ -657,6 +707,7 @@ class AgentEventService {
       failedRetentionHours: Math.max(failedRetentionHours, 1),
       requeuedDelivered,
       requeueDeliveredMinutes: Math.max(requeueDeliveredMinutes, 1),
+      expiredDelivered,
     };
   }
 
@@ -824,11 +875,20 @@ class AgentEventService {
       podId,
       type,
       payload: eventPayload,
-      // Native runs resolve in-process, so we mark the event delivered
-      // immediately — it remains in the DB for auditability but never
-      // sits in the pending queue polled by external runtimes.
+      // Native runs resolve in-process, so the event is claimed at creation
+      // rather than polled. `attempts: 1` because this IS its one delivery —
+      // the claim in list() never runs for native events, and a native event
+      // reaching a driver with attempts: 0 would misreport the same way an
+      // external redelivery used to.
+      //
+      // This used to read "never sits in the pending queue polled by external
+      // runtimes." That was true when written and false from the moment the
+      // Task #67 requeue shipped: 'delivered' with no terminal transition is
+      // precisely the requeue's target population, so every native event
+      // entered the pending queue ~10-20 min after creation, guaranteed. The
+      // settle handlers below close it — success acks, failure records.
       ...(routedToNative
-        ? { status: 'delivered', deliveredAt: new Date() }
+        ? { status: 'delivered', deliveredAt: new Date(), attempts: 1 }
         : {}),
     }) as EventDoc;
 
@@ -839,13 +899,44 @@ class AgentEventService {
         const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
         // Fire-and-forget — callers of enqueue() must never block on the
         // loop. Errors are logged but never rethrown.
+        // Settle the event on the run's actual outcome. nativeRuntimeService
+        // contains no ack or recordFailure call of its own, so before this the
+        // native lifecycle had no terminal state at all: every native event
+        // stayed 'delivered' forever and was structurally unackable. Doing it
+        // here rather than inside runAgent keeps the terminal transition next
+        // to the non-terminal state that created it.
         Promise.resolve(runAgent(nativeInstallation, {
           type,
           eventId: eventIdStr,
           payload: event.payload,
-        })).catch((err: Error) => {
-          console.error('[native-runtime] runAgent failed:', err?.message || err);
-        });
+        // Two-argument .then, deliberately, NOT .then().catch(): a chained
+        // .catch would also catch a rejection thrown by the success handler,
+        // so a failing acknowledge() would fall through and mark a run that
+        // actually succeeded as 'failed'. The rejection handler here is scoped
+        // to runAgent alone. Both terminal calls swallow their own errors so
+        // this stays fire-and-forget for the caller.
+        })).then(
+          () => this.acknowledge(
+            eventIdStr,
+            agentName,
+            instanceId,
+            { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+          ).catch((ackErr: Error) => {
+            console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
+          }),
+          (err: Error) => {
+            console.error('[native-runtime] runAgent failed:', err?.message || err);
+            // Terminal on failure too — a native event that errored must not
+            // be left for the requeue to hand to an external poller that
+            // cannot run it.
+            return this.recordFailure(
+              eventIdStr,
+              agentName,
+              instanceId,
+              `native runtime error: ${err?.message || String(err)}`,
+            ).catch(() => undefined);
+          },
+        );
       } catch (dispatchErr) {
         console.warn(
           '[native-runtime] dispatch error:',
@@ -974,6 +1065,18 @@ class AgentEventService {
       // so even if the _id were tampered with, the query is bounded.
       const safeId = candidate._id != null ? String(candidate._id) : '';
       if (!safeId) continue;
+      // ADR-004 §Event model: "Unacked events stay in the queue and re-deliver
+      // on next poll, with `attempts` incremented." The claim IS the delivery,
+      // so this is the only site that can honour that sentence — and until it
+      // did, `attempts` was a frozen 0 on every payload the kernel has ever
+      // served. CAP obliges drivers to be idempotent using what we send them;
+      // a counter that never moves tells a driver every redelivery is a first
+      // delivery. It also made `attempts < cap` in garbageCollect() a guard on
+      // a variable nothing wrote — structurally unable to fire.
+      //
+      // `attempts` therefore counts DELIVERIES, not lifecycle transitions:
+      // first claim is 1, a requeued redelivery is 2. `{new: true}` means the
+      // value the driver receives in the payload is the post-increment one.
       const updated = await AgentEvent.findOneAndUpdate(
         { _id: safeId, status: 'pending' },
         {
@@ -982,6 +1085,7 @@ class AgentEventService {
             memoryRevisionAtDelivery: currentRevision,
             deliveredAt: new Date(),
           },
+          $inc: { attempts: 1 },
         },
         { new: true },
       ).lean() as EventDoc | null;
@@ -1039,7 +1143,11 @@ class AgentEventService {
           deliveredAt: new Date(),
           ...(normalizedDelivery ? { delivery: normalizedDelivery } : {}),
         },
-        $inc: { attempts: 1 },
+        // No $inc here. `attempts` counts deliveries (incremented at the claim
+        // in list()); an ack is not a delivery. Incrementing at both sites made
+        // a normally-handled event read `attempts: 2` and left the field
+        // meaning "deliveries plus terminal transitions" — a number no driver
+        // can use for the ADR-004 dedup it is obliged to perform.
       },
       { new: true },
     ) as EventDoc | null;
@@ -1143,7 +1251,9 @@ class AgentEventService {
   ): Promise<EventDoc | null> {
     const result = await AgentEvent.findOneAndUpdate(
       { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
-      { $set: { status: 'failed', error: errorMessage }, $inc: { attempts: 1 } },
+      // No $inc — see acknowledge(). `attempts` is a delivery counter owned by
+      // the claim in list(); a terminal transition must not inflate it.
+      { $set: { status: 'failed', error: errorMessage } },
       { new: true },
     ) as EventDoc | null;
 
