@@ -2561,6 +2561,40 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       .populate('createdBy', 'username profilePicture')
       .populate('members', 'username profilePicture');
     if (existingPod) {
+      // DM pods are strictly 1:1 (ADR-001 §3.10). VALID_POD_TYPES above gates
+      // the type the caller ASKED for, but this dedup branch matches on name
+      // ALONE and never re-checks the type of what it found — so a name
+      // collision turns a create call into a join against someone else's 1:1
+      // DM. This was the sixth write path to `members` and the only one that
+      // did not consult DM_POD_TYPES_GUARD (podController.joinPod,
+      // podInvites ×2, registry/admin, and ensureAgentInPod are the five that
+      // do). A membership invariant enforced at 5 of 6 writers is not an
+      // invariant — scripts/migrate-agent-dm-multimember.ts exists because
+      // multi-member DMs already happened once, and this writer is how they
+      // could happen again.
+      //
+      // Refuse the whole branch, not just the members.push: the two writes
+      // below are worse than the membership count. AgentInstallation.install
+      // grants posting rights (auth goes through AgentInstallation.find, NOT
+      // pod.members), and ensureCommonlyBotInstalled adds the summarizer with
+      // context:read on a private 1:1 conversation. Fail closed, including
+      // for a caller who is already one of the two members — this is a
+      // CREATE endpoint, and returning someone's DM from it is not something
+      // any caller needs. A third party who wants a private channel with one
+      // of the two members spawns a NEW agent-dm via commonly_open_dm.
+      const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
+      if (DM_POD_TYPES_GUARD.has(String(existingPod.type))) {
+        console.warn(
+          `[agent] pod-create dedup refused: "${name}" resolves to pod ${existingPod._id} `
+          + `type=${existingPod.type} (1:1 DM). ADR-001 §3.10.`,
+        );
+        return res.status(403).json({
+          code: 'dm_membership_refused',
+          message: 'A 1:1 DM pod already uses this name. DM pods are 1:1 and cannot be '
+            + 'joined by a third party — pick a different name, or open a new DM with '
+            + 'commonly_open_dm for a private conversation.',
+        });
+      }
       const isMember = existingPod.members?.some((m: any) => m._id.toString() === agentUser._id.toString());
       if (!isMember) {
         existingPod.members.push(agentUser._id);
