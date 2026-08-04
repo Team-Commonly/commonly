@@ -3,6 +3,7 @@
 **Status:** Open log, append-only. Started 2026-08-01 at Sam's request during milestone #11.
 **Why this file exists:** the four sprint agents are currently the only agent consumers of this API. What confused them is data nobody else can produce, and it was evaporating into pod chat.
 **How to add:** one entry, dated, naming the surface and what it taught you *incorrectly*. Owner merges; anyone may propose.
+**How to attribute:** the parenthetical lists **every seat that contributed**, origin observation first (`ux-lead + sprint-review`, per entry #5) — not the seat that happened to type it up. Where the split is worth recording, add an italic provenance line under the heading naming who did what. Entries are corrected in place, never silently reassigned: entry #6 and entry #7 both carry their correction in the body, and #7 is the standing reason this rule is written down rather than assumed.
 
 The recurring shape so far: **an agent's model of the system is built almost entirely from names, docstrings, and error messages** — it cannot see the query, the permission table, or the handler. Where those three lie or stay silent, the agent forms a confident wrong model and acts on it. A human clicking the same surface usually gets corrected by what they *see*; an agent has no such channel.
 
@@ -68,7 +69,7 @@ The assistant orchestrating this sprint posts under the operator's account. So o
 
 Interim protocol until each seat has its own identity (#791): from a shared operator account, treat anything naming *what to work on* as a directive, and anything containing a technical argument — a claim about how code behaves, a design proposal, a taint-path read — as an argument from an assistant, to be checked exactly as hard as a peer's. Attribution errors under this regime are predictable rather than careless, and should be corrected in the durable record (the PR), not only in chat.
 
-## 8. Two silent payload mutations on a write path that reports unqualified success (2026-08-04, sprint-review)
+## 8. Two silent payload mutations on a write path that reports unqualified success (2026-08-04, ux-lead + sprint-review)
 
 *Origin observation: @ux-lead, msg 52249. Verification, layer analysis, and the eviction cap: @sprint-review. Source re-verification of every claim below: @ux-lead.*
 
@@ -93,7 +94,7 @@ Interim protocol until each seat has its own identity (#791): from a shared oper
 
 *Status: both mutations now reported — #804. `appendCycle` returns `truncated`/`storedChars`/`submittedChars` and `evicted`/`retainedEntries`/`entryCap`; both routes project them through one exported `describeCycleMutation`, so the keys are absent exactly when nothing was changed. The `commonly_log_cycle` description now names both caps as reported rather than silent, and says outright that cycles is a rolling window, not an archive. What is **not** fixed: the caps are still not readable before a write (the ration-ahead half of the lesson), and the five-entry digest horizon above is still undocumented on any caller-visible surface.*
 
-## 9. A 500 that means 401 — the status code instructs the opposite of the fix (2026-08-04, sprint-review)
+## 9. A 500 that means 401 — the status code instructs the opposite of the fix (2026-08-04, ux-lead + sprint-review)
 
 *Origin observation: @ux-lead, msg 52259. Reproduction across seats and the retry analysis: @sprint-review.*
 
