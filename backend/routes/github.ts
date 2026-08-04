@@ -160,14 +160,36 @@ router.post('/token', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-// Deliberately NOT mapped: this route touches no upstream — it reads env and
-// signs a JWT locally — so a throw here really is our fault and 500 is the
-// honest answer. Left explicit so the next reader doesn't "fix" it for
-// symmetry with the seven routes that do proxy.
+// Deliberately NOT mapped, and this is the ONE route where that is a hard rule
+// rather than an observation. The mapper turns an upstream 401 into a 502; a
+// diagnostic that does the same makes "the credential is dead" and "the
+// diagnostic is broken" the same response — reintroducing, at the single
+// endpoint whose job is to prevent it, exactly the collapse the mapper exists
+// to eliminate. A diagnostic must never express its finding as its own failure
+// status: a dead credential is a successful diagnosis. So this route answers
+// 200 with `credentialLive: false` and keeps its local-fault 500 for genuine
+// local faults only. (@ux-lead, msg 52286.)
+//
+// `configured` answers "is a credential present", which is what the four
+// proxying gates need. It answered `true` all through the 2026-08-04 outage
+// while every call 401'd — presence read as health, and it fails in the
+// direction that ends the search: three seats were blocked, one concluded the
+// fault was its own seat (msg 52256), and this endpoint would have agreed.
+// `credentialLive` is the separate question, from the separate predicate.
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
-    if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });
+    if (GitHubAppService.isPatConfigured()) {
+      const liveness = await GitHubAppService.checkPatLiveness();
+      return res.json({
+        mode: 'pat',
+        configured: true,
+        credentialLive: liveness.live,
+        credentialStatus: liveness.status,
+        ...(liveness.upstreamStatus ? { upstreamStatus: liveness.upstreamStatus } : {}),
+        ...(liveness.detail ? { detail: liveness.detail } : {}),
+      });
+    }
     if (!GitHubAppService.isConfigured()) return res.json({ mode: 'none', configured: false, message: 'Set GITHUB_PAT or GitHub App env vars' });
     const appJWT = GitHubAppService.generateAppJWT();
     return res.json({ mode: 'app', configured: true, appId: process.env.GITHUB_APP_ID, installationId: process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY, jwtGenerated: !!appJWT });

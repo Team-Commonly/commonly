@@ -1,6 +1,18 @@
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
 
+/**
+ * Result of a PAT liveness probe. `live: null` means "could not determine",
+ * which is a distinct answer from `false` and must stay distinct — see
+ * GitHubAppService.checkPatLiveness.
+ */
+export interface PatLiveness {
+  live: boolean | null;
+  status: 'absent' | 'accepted' | 'rejected' | 'unreachable';
+  upstreamStatus?: number;
+  detail?: string;
+}
+
 export interface GitHubToken {
   token: string;
   expiresAt: string | null;
@@ -129,9 +141,50 @@ class GitHubAppService {
 
   /**
    * Check whether a PAT is configured (simpler alternative to GitHub App).
+   *
+   * PRESENCE, not liveness — and that is correct for its four callers, which
+   * ask "should I even attempt this?" before proxying. Keep it free of I/O.
+   * If you need to know whether the credential still WORKS, use
+   * `checkPatLiveness` instead; see the note there for why these are two
+   * predicates rather than one corrected one.
    */
   static isPatConfigured(): boolean {
     return !!process.env.GITHUB_PAT;
+  }
+
+  /**
+   * Liveness, not presence: does GitHub still accept the configured PAT?
+   *
+   * A second predicate rather than a fix to `isPatConfigured` (@ux-lead, msg
+   * 52286). Those six call sites ask two different questions: four ask
+   * "should I attempt this?", where presence is the right test and a network
+   * round-trip on every proxying request would be the wrong price; `/status`
+   * asks "is it working?", which only GitHub can answer. One constant serving
+   * two jobs is how the answer ends up wrong for one of them.
+   *
+   * `/rate_limit` is the probe because GitHub documents it as not counting
+   * against the rate limit, so a diagnostic may call it freely. A 401 there is
+   * precisely the signal wanted: present, well-formed, and refused.
+   *
+   * `live: null` is deliberate and load-bearing. If GitHub is unreachable we
+   * do not know, and reporting `false` would send an operator to rotate a
+   * working credential — a diagnostic that guesses in the confident direction
+   * is the defect this method exists to remove, not a smaller version of it.
+   */
+  static async checkPatLiveness(timeoutMs = 5000): Promise<PatLiveness> {
+    if (!this.isPatConfigured()) return { live: false, status: 'absent' };
+    try {
+      const headers = await this._apiHeaders();
+      await axios.get('https://api.github.com/rate_limit', { headers, timeout: timeoutMs });
+      return { live: true, status: 'accepted' };
+    } catch (err) {
+      const e = err as { response?: { status?: number }; message?: string };
+      const upstreamStatus = e.response?.status;
+      if (upstreamStatus === 401 || upstreamStatus === 403) {
+        return { live: false, status: 'rejected', upstreamStatus };
+      }
+      return { live: null, status: 'unreachable', detail: e.message };
+    }
   }
 
   /**
