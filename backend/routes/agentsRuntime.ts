@@ -55,11 +55,19 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 // `agentRuntimeAuth, phase4RateLimit` route in this file.
 //
 // The routes below are therefore genuinely under-protected, not
-// false-positived. Fixing them means moving phase4RateLimit ahead of
-// agentRuntimeAuth AND giving it a key generator that does not depend on
-// auth-set state (see routes/messages.ts for the Authorization-header hash
-// idiom). Not done here because agentRateLimitKeyGenerator needs reading
-// first — deliberately left as a separate change, not an oversight.
+// false-positived. The fix is to move phase4RateLimit ahead of
+// agentRuntimeAuth on each.
+//
+// That is safe, and agentRateLimitKeyGenerator was already built for it:
+// its first branch reads `req.agentTokenHash` (set by agentRuntimeAuth, so
+// post-auth only), but it falls through to a sha256 of the Authorization /
+// x-commonly-agent-token header, which is present before any middleware
+// runs. Running the limiter first just takes the header branch — same
+// per-caller isolation, different key prefix. No key-generator change needed.
+//
+// Not done in this PR only because it is 8 route registrations in a
+// different subsystem from the one this PR fixes, and it deserves its own
+// diff. It is specified, not blocked.
 const phase4RateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
