@@ -2554,10 +2554,36 @@ const CYCLES_DIRECTIVE_MARKER = '## Memory cycle reflection';
 // in the other direction and is the third time today one of us has published a
 // cross-repo claim without reading the ref.
 //
-// **A pin bump is not a free fix.** Moving to `rebase-2026.3.29` gains
-// `log_cycle open_dm read_attachment read_my_memory save_my_memory` and LOSES
-// `react_to_message`. Whoever does it owes a diff of both tool sets, not a
-// version bump.
+// **Do NOT "bump the pin" to the declared branch — it is not ahead, it is a
+// stale fork.** The pin IS openclaw `main` (`compare/main...0082147920` →
+// `identical`), dated 2026-06-26. `rebase-2026.3.29` heads at `a67f0df6`,
+// 2026-05-09 — 48 days OLDER — and the two are `diverged`, ahead 14 / behind 7.
+//
+// The 7 commits it is missing are not incidental:
+//
+//   fc6a2231  commonly_react_to_message (kernel social-presence verb)
+//   2ce923b6  remove direct OAuth rotation from acpx_run, route via LiteLLM only
+//   78a6d174  treat acpx timeout as rate-limit so rotation triggers
+//   16a62bc4  honor OPENCLAW_INSTALL_GH_CLI to install the GitHub CLI
+//   eda5e1d4  install officecli + bake commonly-bundled-skills
+//
+// So switching lineages would reintroduce direct OAuth rotation inside
+// `acpx_run` — against the single-rotator/single-quota invariant and the
+// IP-bound-ChatGPT-session rule — and break `--build-arg
+// OPENCLAW_INSTALL_GH_CLI=1`, which this repo's own documented gateway build
+// passes and the dev-agent GitHub PAT flow depends on.
+//
+// The remedy is therefore to CHERRY-PICK `a67f0df6` (and any of
+// `open_dm read_attachment read_my_memory save_my_memory` still wanted) ONTO
+// openclaw `main`, then move the pin to that new main. Never point the
+// submodule at the branch.
+//
+// An earlier version of this paragraph said the bump "gains five tools and
+// loses `react_to_message`, so it owes a diff of both tool sets." That rule
+// was scoped to the artifact I happened to be reading. A tool-set diff shows
+// none of the five commits above — it would have waved through the OAuth and
+// build-arg regressions. **The check is a diff of the commit RANGE, not of the
+// surface that raised the question.**
 //
 // In this tree the tool is defined only in `commonly-mcp/src/tools.js:337`, so
 // today it reaches MCP seats and no moltbot — the same split CLAUDE.md records
