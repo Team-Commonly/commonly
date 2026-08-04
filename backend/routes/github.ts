@@ -142,13 +142,28 @@ router.post('/token', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
     const result = await GitHubAppService.getInstallationToken(installationId);
     return res.json(result);
   } catch (err) {
-    const e = err as { response?: { status?: number }; message?: string };
-    const status = e.response?.status;
-    if (status === 404) return res.status(404).json({ message: 'GitHub App not installed on this repository' });
-    return res.status(500).json({ message: 'Failed to generate GitHub token', error: e.message });
+    // The seventh proxying route, and the one where the flattening bit
+    // hardest (@ux-lead, msg 52276): this endpoint's entire job is
+    // credentials, so the caller most likely to hit an upstream 401 here is
+    // someone ALREADY debugging a credential failure — and a 500 tells them to
+    // retry. `getInstallationIdForRepo` and `getInstallationToken` both call
+    // GitHub, so the same mapping applies.
+    const mapped = mapGitHubUpstreamError(err, {
+      fallback: 'Failed to generate GitHub token',
+      notFound: 'GitHub App not installed on this repository',
+    });
+    // `message` is kept alongside the mapped body: this route has always
+    // answered with `message`, and CLI/driver callers read it. Additive, so
+    // nothing that parses the old shape breaks.
+    console.error('POST /github/token error:', mapped.body.code, mapped.body.detail);
+    return res.status(mapped.status).json({ ...mapped.body, message: mapped.body.error });
   }
 });
 
+// Deliberately NOT mapped: this route touches no upstream — it reads env and
+// signs a JWT locally — so a throw here really is our fault and 500 is the
+// honest answer. Left explicit so the next reader doesn't "fix" it for
+// symmetry with the seven routes that do proxy.
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });

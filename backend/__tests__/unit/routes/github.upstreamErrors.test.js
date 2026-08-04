@@ -31,10 +31,17 @@ describe('mapGitHubUpstreamError', () => {
     expect(body.detail).toBe('Request failed with status code 401');
   });
 
-  it('does not pass the 401 through to the caller', () => {
+  it('reports a credential rejection as 502 and does not pass the 401 through', () => {
     // A bare 401 would relocate the false model onto the caller's own token:
     // the caller's auth is fine, it is our server credential GitHub refused.
+    //
+    // The positive assertion is load-bearing (@ux-lead, msg 52276): with only
+    // `not.toBe(401)` this test stayed green under the exact 502→500 mutation
+    // it reads like it guards, because a 500 isn't a 401 either. A test that
+    // pins what a value ISN'T has to pin what it IS, or it passes under the
+    // bug.
     const { status, body } = mapGitHubUpstreamError(upstream(401), LABELS);
+    expect(status).toBe(502);
     expect(status).not.toBe(401);
     expect(String(body.error)).toMatch(/server credential/i);
   });
