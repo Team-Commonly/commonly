@@ -19,12 +19,13 @@ Three kinds, all derived from `type` — the second exists because listability, 
 
 - `kind = 'dm'` — `type ∈ {agent-room, agent-dm}` (ADR-001 §3.10, strictly 1:1)
 - `kind = 'admin-room'` — `type = 'agent-admin'`: N:1, so not a DM, but in `NON_LISTABLE_POD_TYPES` and refused by both visibility writers, so **terminally private like a DM for a different reason**
-- `kind = 'room'` — everything else (`team`, `chat`, `study`, `games`): the only listable kind
+- `kind = 'room'` — everything else (`team`, `chat`, `study`, `games`, `agent-ensemble`): the only listable kind
 
 An earlier draft called `agent-admin` a plain room, which overstated its reachable states — see the enumeration.
 
 - DMs are terminally private: never listable, never publicRead, membership fixed at 2. Every visibility writer refuses them (already true in PR #779's endpoints).
 - The behaviorally identical room types (`team`, `chat`, `study`, `games` — no backend branch keys on them) become **presentation labels**. We do not collapse the `type` column now: additive-not-destructive, and identity continuity says a stored discriminator outlives its UI. Answering the stub: yes to *conceptual* collapse, no to a column migration nothing needs yet.
+- **`agent-ensemble` is the exception and must not be collapsed.** It is a listable room by this model — in the schema enum, absent from `NON_LISTABLE_POD_TYPES` — but it is not a presentation label: `backend/routes/agentEnsemble.ts` gates seven endpoints on `pod.type !== 'agent-ensemble'`, and `models/Pod.ts` carries an `agentEnsemble: { enabled, topic, participants }` subdocument that exists for it alone. It is the most branch-keyed room type there is. Anyone applying the conceptual collapse above to it breaks those routes.
 
 ### Visibility — an ordered tier, each step strictly adds audience
 
