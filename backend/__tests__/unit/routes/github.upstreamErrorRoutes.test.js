@@ -6,8 +6,10 @@
  * Keep this explicit table when adding a GitHub proxy route. The request
  * shapes are intentionally visible here: deriving cases from `router.stack`
  * would hide the route-specific validation each request must pass before it
- * reaches the upstream service. `/status` is excluded because it only reads
- * local configuration and signs locally; it must keep its honest local 500.
+ * reaches the upstream service. The call-site count below makes every new use
+ * of the mapper add a row. A proxy route that bypasses the mapper altogether
+ * remains a review concern. `/status` is excluded because it only reads local
+ * configuration and signs locally; it must keep its honest local 500.
  */
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
@@ -33,6 +35,8 @@ jest.mock('../../../services/githubAppService', () => ({
   createPullReview: jest.fn(),
 }));
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const request = require('supertest');
 // The backend source is TypeScript, while the legacy ESLint resolver only
@@ -51,6 +55,7 @@ const credentialRejected = {
   response: { status: 401 },
 };
 const CREDENTIAL_REJECTION_TITLE = '$name maps an upstream 401 to non-retryable credential guidance';
+const githubRouteSource = fs.readFileSync(path.join(__dirname, '../../../routes/github.ts'), 'utf8');
 
 // Each row is a distinct route-level call site of mapGitHubUpstreamError.
 // Adding another GitHub-proxy route means adding a row here with the smallest
@@ -60,6 +65,7 @@ const PROXYING_ROUTE_CASES = [
     name: 'POST /token',
     service: 'getInstallationToken',
     send: (client) => client.post('/api/github/token'),
+    assertResponse: (res) => expect(res.body.message).toBe(res.body.error),
   },
   {
     name: 'GET /issues',
@@ -100,7 +106,13 @@ describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', ()
     GitHubAppService.isConfigured.mockReturnValue(true);
   });
 
-  test.each(PROXYING_ROUTE_CASES)(CREDENTIAL_REJECTION_TITLE, async ({ service, send }) => {
+  it('keeps the visible request table aligned with every mapper call site', () => {
+    const mapperCallSites = (githubRouteSource.match(/mapGitHubUpstreamError\(/g) || []).length - 1;
+
+    expect(PROXYING_ROUTE_CASES).toHaveLength(mapperCallSites);
+  });
+
+  test.each(PROXYING_ROUTE_CASES)(CREDENTIAL_REJECTION_TITLE, async ({ service, send, assertResponse }) => {
     GitHubAppService[service].mockRejectedValue(credentialRejected);
 
     const res = await send(request(app));
@@ -112,5 +124,6 @@ describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', ()
       upstreamStatus: 401,
       retryable: false,
     }));
+    if (assertResponse) assertResponse(res);
   });
 });
