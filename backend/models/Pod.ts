@@ -31,7 +31,20 @@ export interface IPod extends Document {
   name: string;
   description?: string;
   type: PodType;
-  joinPolicy: PodJoinPolicy;
+  // OPTIONAL, and the `?` is load-bearing. The schema below defaults this
+  // to 'open', but a mongoose default applies on WRITE — documents created
+  // before the field existed have no `joinPolicy` at all, and production
+  // still holds 18 of them. Declaring it required told a type-checking
+  // reader the field is always present, which licenses `=== 'open'`; that
+  // test is false for every legacy row and would fail CLOSED, silently
+  // hiding pods that are in fact joinable.
+  //
+  // Read it as `!== 'invite-only'` (fail open), never `=== 'open'`. That is
+  // what every production read already does, and what DIRECTLY_JOINABLE_QUERY
+  // encodes as `{ $ne: 'invite-only' }` — see services/podListing.ts, whose
+  // own CommunityListingPod already declared the field optional. The two
+  // declarations of one field disagreed; this is the one that was wrong.
+  joinPolicy?: PodJoinPolicy;
   parentPod?: Types.ObjectId | null;
   agentEnsemble: {
     enabled: boolean;
