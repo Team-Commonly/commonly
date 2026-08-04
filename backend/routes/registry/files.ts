@@ -1,22 +1,41 @@
 // Agent file routes — extracted from registry.js (GH#112)
 // Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
-// ESM import for express-rate-limit, with a userId-keyed generator so per-user
-// limits stay isolated.
+// ESM import for express-rate-limit, keyed per caller so limits stay isolated.
 //
-// CORRECTION (2026-08-04): this block used to assert that CodeQL's
-// `js/missing-rate-limiting` query "only recognises the middleware on the SAME
-// file as the route registration." Treat that as unproven — the evidence in
-// this repo contradicts it. Alert #1658 has been open against the a2a-dms route
-// below since 2026-05-11, and that route has had `inspectorRateLimit` applied
-// inline the whole time. Adding `workspaceWriteRateLimit` to the heartbeat POST
-// in the same shape produced a second alert (#1720) rather than clearing one.
+// PLACEMENT IS LOAD-BEARING: the limiter must come BEFORE `auth` in the
+// middleware chain, not after it.
 //
-// The limiters here are kept because they are genuine protection, not because
-// they satisfy the scanner. If you are adding one to silence an alert, verify
-// against the alert API first — the same-file placement is what a previous fix
-// attempt believed, and it is how this comment propagated a non-fix to a second
-// author.
+// Two earlier versions of this comment got the reason wrong, so here is the
+// evidence rather than the conclusion. CodeQL's `js/missing-rate-limiting`
+// anchors its alert to the FIRST middleware in the chain — and `auth` does a
+// Mongo lookup, so a limiter placed after `auth` leaves that lookup
+// unprotected and the route still flagged. Cross-tabbed against main on
+// 2026-08-04: of ~37 routes with the limiter placed BEFORE auth, zero are
+// flagged; of the 9 with it placed after, 6 are flagged — including the
+// a2a-dms route below (#1658, open since 2026-05-11 with `inspectorRateLimit`
+// applied the whole time) and the heartbeat POST (#1720, which I created by
+// copying that same shape). The 3 after-auth routes that escaped are
+// unexplained; I did not chase them.
+//
+// So the scanner was reporting something true. The cost of reordering is that
+// `req.userId` is not set yet, which is why the key generators below hash the
+// Authorization header instead — the idiom `routes/messages.ts` already uses
+// for its pre-auth limiters, and the reason those are clean.
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+const { createHash } = require('crypto');
+
+// Per-caller key that works BEFORE `auth` has run. Hashing the raw header
+// keeps one token's budget isolated from another's without leaking the token
+// into rate-limiter state; unauthenticated callers fall back to
+// ipKeyGenerator so IPv6 clients can't rotate within their /64
+// (ERR_ERL_KEY_GEN_IPV6, #652).
+const preAuthCallerKey = (req: any) => {
+  const authHeader = req.get?.('authorization');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
 
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -46,17 +65,14 @@ const {
 
 const filesRouter = express.Router({ mergeParams: true });
 
-// Inline rate limiter for the inspector a2a-DM read surface. Per-user
-// (after auth middleware sets req.userId); the unauth fallback goes through
-// ipKeyGenerator so IPv6 clients can't rotate within their prefix
-// (ERR_ERL_KEY_GEN_IPV6, #652). 120/min mirrors the agentsRuntime phase4 cap.
+// Inline rate limiter for the inspector a2a-DM read surface. 120/min mirrors
+// the agentsRuntime phase4 cap.
 const inspectorRateLimit = rateLimit({
   windowMs: 60_000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: any) =>
-    String(req.userId || req.user?._id || (req.ip ? ipKeyGenerator(req.ip) : 'anon')),
+  keyGenerator: preAuthCallerKey,
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 120 requests per 60s',
     code: 'rate_limited',
@@ -65,16 +81,13 @@ const inspectorRateLimit = rateLimit({
 
 // Workspace-file writes (HEARTBEAT.md) touch the gateway PVC via an exec into
 // the pod AND write two Mongo documents, so they are markedly more expensive
-// than the read surface above and deserve a tighter cap. Same per-user keying
-// and same same-file placement requirement — CodeQL's `js/missing-rate-limiting`
-// only recognises the middleware when it is declared in this file.
+// than the read surface above and deserve a tighter cap.
 const workspaceWriteRateLimit = rateLimit({
   windowMs: 60_000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: any) =>
-    String(req.userId || req.user?._id || (req.ip ? ipKeyGenerator(req.ip) : 'anon')),
+  keyGenerator: preAuthCallerKey,
   handler: (_req: any, res: any) => res.status(429).json({
     message: 'rate limit exceeded: 30 requests per 60s',
     code: 'rate_limited',
@@ -238,7 +251,7 @@ filesRouter.get('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: an
   }
 });
 
-filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, workspaceWriteRateLimit, async (req: any, res: any) => {
+filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', workspaceWriteRateLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId, content, reset } = req.body;
@@ -413,7 +426,7 @@ filesRouter.post('/pods/:podId/agents/:name/identity-file', auth, async (req: an
  * `DMService.canViewPod` (the §3.7 co-pod-member rule) — humans see DMs
  * where they share at least one pod with both members.
  */
-filesRouter.get('/pods/:podId/agents/:name/a2a-dms', auth, inspectorRateLimit, async (req: any, res: any) => {
+filesRouter.get('/pods/:podId/agents/:name/a2a-dms', inspectorRateLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
     const { instanceId } = req.query;
