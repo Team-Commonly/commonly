@@ -327,7 +327,10 @@ interface ICyclesSection {
 
 - **Cap: 40 entries.** At a 30-min heartbeat cadence that's 20 hours of context; at 10-min it's ~7 hours. Tunable in v1.x with production data.
 - **Char cap: 500.** Larger than `system_exchanges.takeaway` (280) because the agent is generalizing a whole turn, not capturing a verbatim slice. Still small enough that 40 entries × 500 chars ≈ 20KB worst-case section size.
-- **Append-only via `commonly_save_my_memory(section: 'cycles', append: {...})`.** Whole-array overwrite is *not* allowed (a write that replaces the entries array drops history). The `/memory` and `/memory/sync` routes gain an `append` mode for `cycles[]` analogous to the `$push + $position:0 + $slice` pattern `appendSystemExchange` already uses.
+- **Append-only via `commonly_log_cycle({ content, podId? })`.** *(As-planned this
+  read `commonly_save_my_memory(section: 'cycles', append: {...})`; that tool
+  cannot write `cycles` — see the §10.3 supersede note and "What actually
+  shipped" below.)* Whole-array overwrite is *not* allowed (a write that replaces the entries array drops history). The `/memory` and `/memory/sync` routes gain an `append` mode for `cycles[]` analogous to the `$push + $position:0 + $slice` pattern `appendSystemExchange` already uses.
 - **No platform writer.** `cycles[]` is the agent's reflection space — only the agent writes to it. The platform never appends here.
 - **Visibility hard-coded `'private'`** — same rule as `system_exchanges` for the same reason.
 
@@ -362,6 +365,20 @@ Steady-state injection (agent has ack'd through the latest `system_exchanges` wr
 Parallel to the §9 DM frame: heartbeat events get an inline narrative directive prepended to `payload.content` instructing the agent to extract a per-cycle takeaway and append it to `cycles[]`. Ships in `agentEventService.fetch` (or wherever heartbeat payloads are constructed) the same way the §9 DM frame ships in `enqueueDmEvent`.
 
 Concrete cue (~80 tokens, parallel shape to §9):
+
+> ⚠️ **SUPERSEDED — the cue below names the wrong tool. Do not copy it.**
+> `commonly_save_my_memory` cannot write `cycles`: the section is not in its
+> allow-list, and the nested `{sections:{cycles:{append:…}}}` envelope does not
+> match its flat `section` + `content` signature. **`commonly_log_cycle({ content, podId? })`
+> is the only writer** — see "What actually shipped" below (`commonly_log_cycle` tool,
+> 2026-05-08) and `backend/services/heartbeatCue.ts` for the live text.
+>
+> This paragraph exists because the correction lived ~40 lines downstream while
+> this section stayed the *canonical* cue. That is visible reading linearly and
+> invisible jumping to the cited section — which is plausibly how the cue shipped
+> wrong in PR #295 (2026-05-04) and stayed wrong for three months, costing agents
+> 3+ tool-call turns per heartbeat. Fixed in the code 2026-08-04; this marker
+> closes the doc surface that kept re-arming it.
 
 ```
 [Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]
@@ -464,7 +481,7 @@ This phase closes the read loop AND the write loop in one PR. The original 2-day
 **Schema work:**
 - New `AgentMemorySections.cycles` typed section: `{ entries: [{ ts, podId?, content }], visibility: 'private', updatedAt }`. Cap 40 entries, `content` ≤ 500 chars enforced server-side. Backfill is a no-op (section absence reads as empty).
 - New `AgentMemoryService.appendCycle(agent, instance, entry)` helper, mirrors `appendSystemExchange`'s atomic `$push + $position:0 + $slice:40` pattern. Does NOT bump `revision` (revision tracks `system_exchanges` only).
-- Route changes: `PUT /memory` and `POST /memory/sync` accept `cycles` in `append` mode only. Whole-array overwrite for `cycles` is rejected with 403 + tagged reason `cycles_append_only`. The agent's tool surface (`commonly_save_my_memory`) gets an explicit `append: { ts, podId?, content }` shape for `cycles` — distinct from the existing whole-section overwrite shape used by `long_term` etc.
+- Route changes: `PUT /memory` and `POST /memory/sync` accept `cycles` in `append` mode only. Whole-array overwrite for `cycles` is rejected with 403 + tagged reason `cycles_append_only`. The agent's tool surface gets a dedicated writer, `commonly_log_cycle({ content, podId? })`, for `cycles` *(as-planned this said `commonly_save_my_memory` with an `append` shape; that tool cannot write `cycles` — see the §10.3 supersede note)* — distinct from the existing whole-section overwrite shape used by `long_term` etc.
 - `AgentEvent.memoryRevisionAtDelivery` schema field (unchanged from original spec).
 
 **Injection work:**
@@ -480,7 +497,7 @@ This phase closes the read loop AND the write loop in one PR. The original 2-day
 - Webhook-SDK Phase 2 hook (post-HTTP-200 ack-equivalent). Lands when ADR-006 Phase 2 ships; not blocking this ADR.
 
 **Inline HEARTBEAT cue:**
-- `agentEventService.fetch` (or whichever module constructs heartbeat-event payloads) prepends an inline narrative directive to heartbeat `payload.content` instructing the agent to extract a per-cycle takeaway and append to `cycles[]` via `commonly_save_my_memory`. Cue text in §10.3, ~80 tokens. Same shape as the §9 DM frame.
+- `agentEventService.fetch` (or whichever module constructs heartbeat-event payloads) prepends an inline narrative directive to heartbeat `payload.content` instructing the agent to extract a per-cycle takeaway and append to `cycles[]` via `commonly_log_cycle` *(as-planned: `commonly_save_my_memory` — wrong tool, see §10.3 supersede note)*. Cue text in §10.3, ~80 tokens. Same shape as the §9 DM frame.
 
 **Tests:**
 - `cyclesSectionSchema` rejects `content > 500 chars` and missing `ts`.

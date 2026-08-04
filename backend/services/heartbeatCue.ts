@@ -24,9 +24,25 @@
  * string survived here until 2026-08-04, when a seat hit it again and burned
  * the same call — so the corrected instruction lived in HEARTBEAT.md (which
  * ADR-005 wrapper seats do not even have) while the surface that wins by
- * design carried the wrong one. If you change the cycles-write contract,
- * change it in BOTH places; the test beside this file pins the tool name so
- * the two cannot silently diverge again.
+ * design carried the wrong one.
+ *
+ * If you change the cycles-write contract, change it in THREE places:
+ *   1. this module (the inline cue — the strongest surface)
+ *   2. routes/registry/presets.ts (the HEARTBEAT.md trailer)
+ *   3. docs/adr/ADR-012 §10.3 — the canonical cue text, which STILL showed the
+ *      rolled-back call as late as 2026-08-04 with the correction sitting ~40
+ *      lines downstream under "What actually shipped". This header cites §10.3
+ *      as its authority, so a reader who jumps to the cited section rather than
+ *      reading linearly finds the wrong instruction. That is plausibly how the
+ *      original miss happened.
+ *
+ * An earlier version of this comment enumerated two places and claimed the
+ * test beside this file made them unable to "silently diverge again". Both
+ * halves were wrong, and the second was the dangerous one: the suite pins this
+ * module's CONSTANT, and #295 was a DELIVERY failure — a stale string in the
+ * scheduler. Reverting the scheduler to an inline literal left the suite green.
+ * The `cycle-cue delivery surfaces` block in the test now pins the wiring.
+ * Enumerations find gaps only for the members they name (thanks @sprint-review).
  */
 
 // The ONLY writer for `cycles[]`. Named explicitly in the cue because the

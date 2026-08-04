@@ -86,3 +86,54 @@ describe('buildHeartbeatContent', () => {
     expect(buildHeartbeatContent(12345)).toContain('pod 12345.');
   });
 });
+
+/**
+ * DELIVERY guards — the tests above pin the constant, which is not the thing
+ * that broke.
+ *
+ * PR #295 was not a wrong constant, it was a wrong *delivery*: the scheduler
+ * shipped a stale inline string. Extracting the cue into a module made it
+ * testable and simultaneously made bypassing it a one-line diff no test could
+ * see — reverting `content: buildHeartbeatContent(...)` to an inline literal
+ * left the suite at 9/9 green and `tsc --noEmit` clean. So an earlier version
+ * of this file's header claimed the test "pins the tool name so the two cannot
+ * silently diverge again," and that was false: it pinned the constant and
+ * nothing pinned that anyone still calls it. Found by @sprint-review.
+ *
+ * Source-text assertions are the same tier CLAUDE.md already sanctions for
+ * load-bearing CSS (`v2-layout-invariants.test.ts`) — a presence test until a
+ * higher tier exists. They are deliberately about WIRING, not content: the
+ * content assertions live above, and duplicating them here would just create a
+ * second place to update.
+ */
+describe('cycle-cue delivery surfaces', () => {
+  const { readFileSync } = require('fs');
+  const path = require('path');
+  const read = (p) => readFileSync(path.join(__dirname, '../../..', p), 'utf8');
+
+  const ROLLED_BACK_SHAPE = /commonly_save_my_memory\s*\(\s*\{\s*sections/;
+
+  test('schedulerService composes the cue from this module, never inline', () => {
+    const src = read('services/schedulerService.ts');
+    expect(src).toMatch(/buildHeartbeatContent\(/);
+    expect(src).toMatch(/require\(['"]\.\/heartbeatCue['"]\)/);
+    // The bypass that no test caught: an inline cue literal in the scheduler.
+    expect(src).not.toMatch(/\[Heartbeat tick/);
+    expect(src).not.toMatch(ROLLED_BACK_SHAPE);
+  });
+
+  test('the HEARTBEAT.md trailer names the same writer tool', () => {
+    // The sibling surface that DID get the 2026-05-08 forward fix while this
+    // one did not. Pinned here because it was carrying the correct string with
+    // zero tests defending it — the exact state this cue was in before it broke.
+    //
+    // Assert the DELIVERED trailer, not the source text: presets.ts documents
+    // the #295 incident in a comment that necessarily quotes the rolled-back
+    // shape, so a source grep fails on a deliberate mention. Same distinction
+    // the NO_REPLY sentinel makes between a bare token and a quoted one.
+    const { withCyclesDirective } = require('../../../routes/registry/presets');
+    const trailer = withCyclesDirective('');
+    expect(trailer).toContain(CYCLES_WRITER_TOOL);
+    expect(trailer).not.toMatch(ROLLED_BACK_SHAPE);
+  });
+});
