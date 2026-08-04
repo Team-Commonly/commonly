@@ -17,6 +17,7 @@ In order, for any non-trivial review:
 3. **Skim relevant domain docs** — `docs/COMMONLY_SCOPE.md`, `docs/SUMMARIZER_AND_AGENTS.md`, `docs/DISCORD_INTEGRATION_ARCHITECTURE.md`, `docs/POSTGRESQL_MIGRATION.md`, `docs/deployment/KUBERNETES.md`, `backend/TESTING.md`, `frontend/TESTING.md` — whichever apply.
 4. **Read the surrounding code**, not just the diff. A file's local conventions matter more than any global rule.
 5. **Find the tests**. If there aren't any, that's the first piece of review feedback.
+6. **Open `docs/development/review-checklist.md`** — the incident-derived checklist, applied mid-review. This rubric sets the bar; that file holds the specific rules each earned by a defect that shipped. Its §7 (*phantom cross-layer contract*) is the one to run on any diff where one layer reads a value another layer promises in prose to provide: if a comment says another layer sets this, grep that the layer actually sets it.
 
 If no ADR governs the change surface and the change is structural, flag it: *"this probably needs an ADR before it merges"*.
 
@@ -237,6 +238,8 @@ Flag this and set verdict to `Needs discussion` when:
 ---
 
 ## Self-review checklist (for authors, before opening a PR)
+
+Two checklists, two moments: this one is for **authors, pre-PR**; `docs/development/review-checklist.md` is for **reviewers, mid-PR**. They do not overlap — don't substitute one for the other.
 
 Before requesting review, answer each:
 

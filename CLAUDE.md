@@ -170,7 +170,8 @@ Commonly is collapsing the legacy `App` + `AgentRegistry` split into a single `I
 - **UI verification**: Use MCP Playwright (`mcp__playwright__*`)
 
 ### 📁 Key Documentation Files
-- **Code Review Rubric**: `/REVIEW.md` — **REQUIRED READING** before any code review, implementation planning, or pre-commit self-check. Encodes modularity / extensibility / maintainability bars, bans on temporary workarounds and over-engineering, and the load-bearing invariants every reviewer defends.
+- **Code Review Rubric**: `/REVIEW.md` — **REQUIRED READING** before any code review, implementation planning, or pre-commit self-check. Encodes modularity / extensibility / maintainability bars, bans on temporary workarounds and over-engineering, and the load-bearing invariants every reviewer defends. Its companion is `docs/development/review-checklist.md` — the incident-derived reviewer checklist (each rule names the defect that earned it); read it mid-review, alongside the rubric.
+- **Agent-experience (AX) audit**: `docs/development/agent-experience-audit.md` — append-only log of surfaces that taught our own agent consumers a false model. Add an entry when a name, docstring, tool description, or error message made you confidently wrong.
 - **Design System**: `frontend/design-system/` — tokens.css + README + brand mark + preview cards. **Source of truth for visual decisions.** Production tokens live in `frontend/src/v2/v2.css`; the two must move together. Pull the `commonly-design` skill before any v2 styling, brand, marketing, or design-polish work.
 - **Commonly Scope & Taxonomy**: `/docs/COMMONLY_SCOPE.md` — **REQUIRED READING** before touching any install/marketplace/agent/app code
 - **ADR-001 Installable Taxonomy**: `/docs/adr/ADR-001-installable-taxonomy.md` — the single-table model, component types, scopes, phases
@@ -415,7 +416,7 @@ These are prescriptive rules not derivable from reading the code:
 
 - **NEVER set `heartbeat.global` (or `fixedPod`) in `moltbot.json`.** openclaw v2026.3.7's `HeartbeatSchema` is `.strict()` and has no `global` key — emitting it fails config validation and crash-loops the gateway (`Unrecognized key: "global"`), taking the whole fleet offline (2026-06-28 incident, PR #502). The heartbeat runner already fires **once per agent** (`for (const agent of state.agents.values())`); there is no per-pod fan-out to suppress. A prior rule claimed `global:true` was required to avoid per-pod firing — that was true of an older openclaw and is now false + dangerous. `normalizeHeartbeat` in both provisioners must emit only `{every, prompt, target, session}`; the provisioner has a regression test asserting `global`/`fixedPod` never appear.
 
-- **`NO_REPLY` is only silent when it is the entire reply.** Do not append it to normal content — it will be sent verbatim.
+- **`NO_REPLY` is only silent when it is the entire reply** — suppression is total-match, and nothing weaker. Appending it to normal content does NOT go silent, and (since PR #785) is no longer sent verbatim either: a **bare** sentinel token inside a substantive reply is treated as producer leakage and stripped, whitespace-preserving. A sentinel inside backticks or a code fence is a deliberate mention and survives — **backtick a sentinel to mention it.** Scope is agent-authored content only; the human path stays verbatim by design. Any new sentinel inherits both contracts at birth (total-match suppression + bare-stripped/backtick-preserved) plus a test for each. `AgentMessageService.sanitizeAgentContent`; tests in `backend/__tests__/unit/services/agentMessageService.chatNoise.test.js`.
 
 - **OpenClaw config**: use global `messages.queue`, not `messages.queue.byChannel.commonly`.
 
