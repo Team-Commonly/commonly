@@ -59,6 +59,20 @@ jobs:
           cd frontend
           npm run typecheck
 
+      # packages/types has zero dependencies and zero external imports, so it
+      # needs no install of its own — it typechecks with the compiler the
+      # backend step already installed. Gated now because it is green now;
+      # that is the only moment a gate is free.
+      #
+      # packages/commonly-apps is deliberately NOT gated here. It defines the
+      # same tsc:check script and is equally uninvoked, but it needs @types/node
+      # and is not npm ci'd by this job, so adding it means adding an install.
+      # Its actual state is unknown, not assumed green. Separate change.
+      - name: Shared types TypeScript check
+        run: |
+          cd packages/types
+          ../../backend/node_modules/.bin/tsc --noEmit -p tsconfig.json
+
       - name: Run backend tests with coverage
         run: |
           cd backend
