@@ -70,8 +70,17 @@ function mapGitHubUpstreamError(
   const upstreamStatus = e.response?.status;
   const detail = e.message;
 
+  // `detail` rides on every branch including this one. Omitting it here made
+  // the callers' log line read `github_not_found undefined` on the commonest
+  // failure there is (@sprint-review) — a diagnostic that goes blank exactly
+  // where it is most often read.
   if (upstreamStatus === 404) {
-    return { status: 404, body: { error: labels.notFound, code: 'github_not_found', retryable: false } };
+    return {
+      status: 404,
+      body: {
+        error: labels.notFound, code: 'github_not_found', retryable: false, detail,
+      },
+    };
   }
 
   // GitHub signals rate limiting as 429, or as 403 with the remaining budget
@@ -153,8 +162,15 @@ router.post('/token', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
       notFound: 'GitHub App not installed on this repository',
     });
     // `message` is kept alongside the mapped body: this route has always
-    // answered with `message`, and CLI/driver callers read it. Additive, so
-    // nothing that parses the old shape breaks.
+    // answered with `message`, and CLI/driver callers read it — so that key
+    // keeps its meaning. `error` does NOT: on main this route alone put the
+    // raw upstream text in `error`, and it now carries the human label while
+    // the raw text moves to `detail`. Not additive, and worth stating plainly
+    // (@sprint-review) — the previous comment said "additive", which is the
+    // sentence someone would cite the next time they touch this file.
+    // The change is right for a different reason than backwards compatibility:
+    // the other six routes already answered `{error: <label>, detail: <raw>}`,
+    // so this normalises the one route that disagreed with the rest.
     console.error('POST /github/token error:', mapped.body.code, mapped.body.detail);
     return res.status(mapped.status).json({ ...mapped.body, message: mapped.body.error });
   }

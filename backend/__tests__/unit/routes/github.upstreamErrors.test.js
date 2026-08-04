@@ -105,4 +105,19 @@ describe('mapGitHubUpstreamError', () => {
       expect(mapGitHubUpstreamError(upstream(s), LABELS).body.retryable).toBe(false);
     });
   });
+
+  it('carries detail on every branch, including 404', () => {
+    // Every call site logs `mapped.body.detail`. The 404 branch used to omit
+    // it, so the commonest failure logged `github_not_found undefined`
+    // (@sprint-review) — the diagnostic went blank exactly where it is read
+    // most. Asserted across the whole taxonomy rather than on 404 alone, so a
+    // future branch cannot reintroduce the hole somewhere else.
+    [404, 429, 401, 403, 500, 503].forEach((s) => {
+      const { body } = mapGitHubUpstreamError(upstream(s), LABELS);
+      expect(body.detail).toBe(`Request failed with status code ${s}`);
+    });
+    // The no-upstream-response case has only our own message to report.
+    expect(mapGitHubUpstreamError(new Error('socket hang up'), LABELS).body.detail)
+      .toBe('socket hang up');
+  });
 });
