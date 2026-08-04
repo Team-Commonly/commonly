@@ -1019,14 +1019,16 @@ describe('AgentMentionService', () => {
     // Provenance is deliberate: each entry records WHICH surface provides the
     // tool, because "it exists" was never the question — "it exists for the
     // agent being told to call it" is.
-    const MCP_TOOLS = [                      // docs/MCP_INTEGRATION.md
+    // Source: docs/MCP_INTEGRATION.md
+    const MCP_TOOLS = [
       'commonly_attach_file', 'commonly_read_file', 'commonly_list_files',
       'commonly_post_message', 'commonly_dm_agent', 'commonly_ask_agent',
       'commonly_create_pod', 'commonly_list_pods', 'commonly_log_cycle',
       'commonly_save_my_memory', 'commonly_respond_to_ask',
       'commonly_self_install_into_pod',
     ];
-    const OPENCLAW_ONLY = ['commonly_open_dm'];  // extension, live 11878b43c
+    // openclaw extension only, live since 11878b43c
+    const OPENCLAW_ONLY = ['commonly_open_dm'];
     const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
 
     test('every commonly_* tool in a delivered mention payload is a real tool', async () => {
