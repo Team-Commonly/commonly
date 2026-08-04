@@ -19,7 +19,11 @@ export const SPAWN_CIRCUIT_THRESHOLD = 3;
 export const SPAWN_RETRY_MAX_MS = 15 * 60 * 1000;
 export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 
-const QUOTA_RE = /(?:quota|usage limit|credit balance|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+// `out of credits` is codex's exact wording for an exhausted workspace balance
+// ("Your workspace is out of credits. Ask your workspace owner to refill…").
+// Without it that outage classified as RUNTIME and drew the shortest backoff —
+// observed live on 2026-08-03 before this pattern was added.
+const QUOTA_RE = /(?:quota|usage limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 

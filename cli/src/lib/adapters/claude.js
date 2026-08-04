@@ -244,7 +244,16 @@ const runClaude = ({ cmd, args, cwd, env, timeoutMs, spawnImpl = childSpawn }) =
   proc.on('close', (code) => {
     clearTimeout(timer);
     if (timedOut) return reject(new Error(`claude timed out after ${timeoutMs}ms`));
-    if (code !== 0) return reject(new Error(`claude exited with code ${code}: ${stderr.trim()}`));
+    if (code !== 0) {
+      // Report stdout too, not just stderr. In `-p` mode claude writes terminal
+      // conditions (usage limits especially) to stdout and exits non-zero with
+      // stderr empty — 361 consecutive failures on 2026-08-03 carried no reason
+      // at all because of this. It is not only a diagnosability problem: the
+      // circuit breaker classifies from the error message, so a blank message
+      // downgrades a hard quota failure to RUNTIME and its shortest backoff.
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
+      return reject(new Error(`claude exited with code ${code}: ${detail.slice(0, 2000)}`));
+    }
     resolve(stdout);
   });
 });
