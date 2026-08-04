@@ -19,7 +19,7 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentMemory = require('../../models/AgentMemory');
-const { CYCLE_CONTENT_MAX } = require('../../models/AgentMemory');
+const { CYCLE_CONTENT_MAX, CYCLE_ENTRY_CAP } = require('../../models/AgentMemory');
 
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
@@ -1087,6 +1087,37 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       const stored = get.body.sections.cycles.entries[0].content;
       expect(stored).toHaveLength(res.body.storedChars);
       expect(stored.endsWith('…')).toBe(true);
+      // Only the content dimension moved here — the window wasn't full.
+      expect(res.body.evicted).toBeUndefined();
+    });
+
+    // Second mutation dimension: $slice drops the oldest entry once the
+    // window is full, losing history the caller never submitted on this call.
+    it('POST /memory/sync reports eviction once the cycle window is full', async () => {
+      const append = (content) => request(app)
+        .post('/api/agents/runtime/memory/sync')
+        .set('Authorization', `Bearer ${runtimeToken}`)
+        .send({ mode: 'patch', sections: { cycles: { append: { content } } } });
+
+      let filling;
+      for (let i = 0; i < CYCLE_ENTRY_CAP; i++) filling = await append(`fill-${i}`);
+      // The append that FILLS the window evicts nothing — the boundary case.
+      expect(filling.body.evicted).toBeUndefined();
+
+      const res = await append('one-too-many');
+      expect(res.status).toBe(200);
+      expect(res.body.evicted).toBe(true);
+      expect(res.body.retainedEntries).toBe(CYCLE_ENTRY_CAP);
+      expect(res.body.entryCap).toBe(CYCLE_ENTRY_CAP);
+      // Content was under the cap, so that dimension stays silent.
+      expect(res.body.truncated).toBeUndefined();
+
+      const get = await request(app)
+        .get('/api/agents/runtime/memory')
+        .set('Authorization', `Bearer ${runtimeToken}`);
+      const contents = get.body.sections.cycles.entries.map((e) => e.content);
+      expect(contents).toHaveLength(CYCLE_ENTRY_CAP);
+      expect(contents).not.toContain('fill-0');
     });
 
     it('PUT /memory: cycles append + long_term write in the same request — both land', async () => {

@@ -82,6 +82,7 @@ const {
   isValidYMD,
   filterSectionsByVisibility,
   appendCycle,
+  describeCycleMutation,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
 const DMService = require('../services/dmService');
@@ -2192,18 +2193,9 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
       contentProvided: content !== undefined,
       sourceRuntime,
     });
-    // Report the mutation, not just the success: an ellipsised cycle entry is
-    // indistinguishable from a stored one without this.
-    return res.json({
-      ok: true,
-      ...(cycleResult?.truncated
-        ? {
-          truncated: true,
-          storedChars: cycleResult.storedChars,
-          submittedChars: cycleResult.submittedChars,
-        }
-        : {}),
-    });
+    // Report the mutation, not just the success: an ellipsised cycle entry —
+    // or an evicted one — is indistinguishable from a stored one without this.
+    return res.json({ ok: true, ...describeCycleMutation(cycleResult) });
   } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
@@ -2281,14 +2273,8 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
         throw cycleErr;
       }
     }
-    // See PUT /memory: truncation is reported, never silent.
-    const cycleTruncation = cycleResult?.truncated
-      ? {
-        truncated: true,
-        storedChars: cycleResult.storedChars,
-        submittedChars: cycleResult.submittedChars,
-      }
-      : {};
+    // See PUT /memory: the append's mutations are reported, never silent.
+    const cycleMutation = describeCycleMutation(cycleResult);
 
     const now = new Date();
     const hasOtherSections = Object.keys(sections).length > 0;
@@ -2298,7 +2284,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       // change for the syncable sections).
       console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
       return res.json({
-        ok: true, schemaVersion: 2, cyclesAppended: true, ...cycleTruncation,
+        ok: true, schemaVersion: 2, cyclesAppended: true, ...cycleMutation,
       });
     }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
@@ -2308,7 +2294,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       console.log('[agent-memory SYNC deduped]', { agentName, instanceId, mode, sourceRuntime });
       // The cycles append above already fired (deduping covers syncable
       // sections only), so its truncation must be reported here too.
-      return res.json({ ok: true, deduped: true, ...cycleTruncation });
+      return res.json({ ok: true, deduped: true, ...cycleMutation });
     }
 
     // GH#632: stamp provenance + capped version history against the existing
@@ -2363,7 +2349,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       sourceRuntime,
     });
 
-    return res.json({ ok: true, schemaVersion: 2, ...cycleTruncation });
+    return res.json({ ok: true, schemaVersion: 2, ...cycleMutation });
   } catch (err: any) {
     console.error('POST /memory/sync error:', err);
     return res.status(500).json({ message: 'Failed to sync agent memory' });

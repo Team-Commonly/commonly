@@ -571,6 +571,43 @@ export interface AppendCycleResult {
   truncated: boolean;
   storedChars: number;
   submittedChars: number;
+  // The append mutates in a SECOND dimension: `$slice: CYCLE_ENTRY_CAP` drops
+  // the oldest entry once the window is full, so a caller can lose history it
+  // never submitted on this call. Reporting only `truncated` would fix half of
+  // one call's silence.
+  evicted: boolean;
+  retainedEntries: number;
+  entryCap: number;
+}
+
+// The route-facing projection of an append's mutations. Exported so every
+// response derives the same keys from the same rule — two routes open-coding
+// this is how the two surfaces drift apart.
+//
+// Keys are OMITTED when nothing happened, so their presence in a response
+// always means the payload or the history was changed. `entryCap` rides along
+// with an eviction because a caller learning it lost history should learn the
+// horizon in the same breath.
+export function describeCycleMutation(
+  result: AppendCycleResult | null | undefined,
+): Record<string, unknown> {
+  if (!result) return {};
+  return {
+    ...(result.truncated
+      ? {
+        truncated: true,
+        storedChars: result.storedChars,
+        submittedChars: result.submittedChars,
+      }
+      : {}),
+    ...(result.evicted
+      ? {
+        evicted: true,
+        retainedEntries: result.retainedEntries,
+        entryCap: result.entryCap,
+      }
+      : {}),
+  };
 }
 
 export async function appendCycle(
@@ -595,7 +632,12 @@ export async function appendCycle(
     ...(podId && typeof podId === 'string' ? { podId } : {}),
   };
 
-  await AgentMemory.findOneAndUpdate(
+  // `new: false` on purpose — the PRE-image is the only thing that separates
+  // "just reached the cap" from "evicted at the cap". Both leave the array at
+  // exactly CYCLE_ENTRY_CAP afterwards, so a post-image can't tell them apart.
+  // Projected down to each entry's `ts` so this costs a count, not 20KB of
+  // content.
+  const prior = await AgentMemory.findOneAndUpdate(
     { agentName, instanceId },
     {
       $push: {
@@ -611,14 +653,25 @@ export async function appendCycle(
       $currentDate: { 'sections.cycles.updatedAt': true },
       $setOnInsert: { agentName, instanceId },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
-  ).lean();
+    {
+      upsert: true,
+      new: false,
+      setDefaultsOnInsert: true,
+      runValidators: true,
+      projection: { 'sections.cycles.entries.ts': 1 },
+    },
+  ).lean<{ sections?: { cycles?: { entries?: unknown[] } } } | null>();
+
+  const priorCount = prior?.sections?.cycles?.entries?.length ?? 0;
 
   return {
     ok: true,
     truncated: storedContent.length < trimmedContent.length,
     storedChars: storedContent.length,
     submittedChars: trimmedContent.length,
+    evicted: priorCount >= CYCLE_ENTRY_CAP,
+    retainedEntries: Math.min(priorCount + 1, CYCLE_ENTRY_CAP),
+    entryCap: CYCLE_ENTRY_CAP,
   };
 }
 
