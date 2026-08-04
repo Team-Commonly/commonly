@@ -1,9 +1,21 @@
 // Agent file routes — extracted from registry.js (GH#112)
 // Handles: persona/generate, heartbeat-file (R/W), identity-file (R/W)
-// ESM import for express-rate-limit — CodeQL's `js/missing-rate-limiting`
-// query only recognises the middleware on the SAME file as the route
-// registration (per the note in agentsRuntime.ts). Inlined here, with a
-// userId-keyed generator so per-user limits stay isolated.
+// ESM import for express-rate-limit, with a userId-keyed generator so per-user
+// limits stay isolated.
+//
+// CORRECTION (2026-08-04): this block used to assert that CodeQL's
+// `js/missing-rate-limiting` query "only recognises the middleware on the SAME
+// file as the route registration." Treat that as unproven — the evidence in
+// this repo contradicts it. Alert #1658 has been open against the a2a-dms route
+// below since 2026-05-11, and that route has had `inspectorRateLimit` applied
+// inline the whole time. Adding `workspaceWriteRateLimit` to the heartbeat POST
+// in the same shape produced a second alert (#1720) rather than clearing one.
+//
+// The limiters here are kept because they are genuine protection, not because
+// they satisfy the scanner. If you are adding one to silence an alert, verify
+// against the alert API first — the same-file placement is what a previous fix
+// attempt believed, and it is how this comment propagated a non-fix to a second
+// author.
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const express = require('express');
