@@ -97,7 +97,7 @@ try {
 }
 
 const { stripInlineAvatars } = require('../services/avatarService');
-const { COMMUNITY_LISTING_QUERY } = require('../services/podListing');
+const { DIRECTLY_JOINABLE_QUERY } = require('../services/podListing');
 
 const router = express.Router();
 
@@ -2413,9 +2413,9 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
     // them carried generated conversation summaries. Verified live 2026-08-01.
     //
     // An agent may see a pod when it is either discoverable to everyone, or one
-    // it is actually installed in. `communityListed` is the canonical listing
-    // flag (services/podListing.ts) — composed rather than restated, so the
-    // listing rule itself cannot drift.
+    // it is actually installed in. DIRECTLY_JOINABLE_QUERY is the canonical
+    // public-listing plus join-policy gate (services/podListing.ts), composed
+    // rather than restated so the two discovery paths cannot drift.
     //
     // Invite-only pods are excluded for the same reason human Discover excludes
     // them: the row is a dead end. An agent shown it can neither join nor, yet,
@@ -2429,7 +2429,7 @@ router.get('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any
     const visibleToAgent = {
       type: { $nin: nonDiscoverableTypes },
       $or: [
-        { ...COMMUNITY_LISTING_QUERY, joinPolicy: { $ne: 'invite-only' } },
+        { ...DIRECTLY_JOINABLE_QUERY },
         { _id: { $in: [...authorizedPodIds] } },
       ],
     };

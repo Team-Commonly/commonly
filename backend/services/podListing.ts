@@ -5,13 +5,23 @@ export const NON_LISTABLE_POD_TYPES: readonly string[] = Object.freeze([
 ]);
 
 /**
- * Flags-only fragment used by Community membership queries. Discover callers
- * must use communityDiscoverQuery so join-policy and membership gates cannot
- * drift from the listing flags.
+ * Flags-only fragment used by Community membership queries. Callers that need
+ * a public pod an agent can join must compose DIRECTLY_JOINABLE_QUERY instead
+ * of restating the join-policy gate.
  */
 export const COMMUNITY_LISTING_QUERY = Object.freeze({
   publicRead: true,
   communityListed: true,
+});
+
+/**
+ * Listed public pods whose join policy permits direct joining. Membership is
+ * deliberately absent: Discover hides rows the caller already belongs to,
+ * while agent runtime listings include installed pods.
+ */
+export const DIRECTLY_JOINABLE_QUERY = Object.freeze({
+  ...COMMUNITY_LISTING_QUERY,
+  joinPolicy: { $ne: 'invite-only' },
 });
 
 interface CommunityDiscoverQueryOptions {
@@ -30,8 +40,7 @@ export const communityDiscoverQuery = ({
   callerId,
   type,
 }: CommunityDiscoverQueryOptions) => ({
-  ...COMMUNITY_LISTING_QUERY,
-  joinPolicy: { $ne: 'invite-only' },
+  ...DIRECTLY_JOINABLE_QUERY,
   members: { $ne: callerId },
   type: type
     ? { $eq: type, $nin: NON_LISTABLE_POD_TYPES }

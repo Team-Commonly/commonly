@@ -67,6 +67,7 @@ jest.mock('../../../services/chatSummarizerService', () => ({
 const express = require('express');
 const request = require('supertest');
 const router = require('../../../routes/agentsRuntime');
+const { DIRECTLY_JOINABLE_QUERY } = require('../../../services/podListing');
 
 const app = express();
 app.use(express.json());
@@ -92,7 +93,8 @@ describe('GET /pods does not enumerate private pods (#791 / live 2026-08-01)', (
     expect(branches).toHaveLength(2);
 
     const listed = branches.find((b) => b.publicRead !== undefined);
-    expect(listed).toEqual(expect.objectContaining({
+    expect(listed).toEqual(DIRECTLY_JOINABLE_QUERY);
+    expect(DIRECTLY_JOINABLE_QUERY).toEqual(expect.objectContaining({
       publicRead: true,
       communityListed: true,
     }));
@@ -108,7 +110,8 @@ describe('GET /pods does not enumerate private pods (#791 / live 2026-08-01)', (
     await request(app).get('/api/agents/runtime/pods');
 
     const listed = capturedQuery.value.$or.find((b) => b.publicRead !== undefined);
-    expect(listed.joinPolicy).toEqual({ $ne: 'invite-only' });
+    expect(DIRECTLY_JOINABLE_QUERY.joinPolicy).toEqual({ $ne: 'invite-only' });
+    expect(listed).toEqual(DIRECTLY_JOINABLE_QUERY);
   });
 
   test('but pods the agent IS in are not excluded by membership', async () => {
