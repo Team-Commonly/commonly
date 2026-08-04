@@ -266,6 +266,24 @@ filesRouter.post('/pods/:podId/agents/:name/heartbeat-file', auth, async (req: a
       console.warn('[heartbeat-file] Failed to persist to AgentProfile:', (profileErr as Error).message);
     }
 
+    // Record the file as user-owned. `customizations.heartbeat` is the flag the
+    // provisioner checks before overwriting HEARTBEAT.md (`skipHeartbeat` in
+    // agentProvisionerServiceK8s), and until now NOTHING set it — this endpoint
+    // wrote the file and left the installation looking un-customized, so the
+    // next reprovision was free to clobber a hand-authored template. The flag
+    // belongs here because this is where the customization actually happens;
+    // setting it only at install time protected the one case that never needed
+    // protecting. A `reset` clears it: the user is asking for the default back,
+    // which is precisely the state in which the provisioner should own the file.
+    try {
+      await AgentInstallation.updateOne(
+        { _id: resolved.installation._id },
+        { $set: { 'config.customizations.heartbeat': !reset } },
+      );
+    } catch (flagErr: unknown) {
+      console.warn('[heartbeat-file] Failed to record heartbeat customization flag:', (flagErr as Error).message);
+    }
+
     return res.json({ success: true, path: filePath, reset: Boolean(reset) });
   } catch (error) {
     console.error('Error updating heartbeat file:', error);

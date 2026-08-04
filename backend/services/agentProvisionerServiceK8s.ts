@@ -496,9 +496,13 @@ const ensureHeartbeatTemplate = async (accountId: any, heartbeat: any, { gateway
   // so a HEARTBEAT.md written before the trailer existed survives every
   // reprovision indefinitely — theo's still named `commonly_write_agent_memory`
   // for the cycles append months later, a tool that cannot append to `cycles`.
-  // Note this is staleness, not customization: an operator-edited file is
-  // already short-circuited upstream by `customizations.heartbeat === true`
-  // before this function is reached.
+  // This is staleness, not customization — but that separation only holds
+  // because `routes/registry/files.ts` now SETS `customizations.heartbeat` when
+  // it accepts a hand-authored file. It previously did not: the flag was only
+  // ever supplied at install time, so a file edited through the UI looked
+  // un-customized here and this clause would have overwritten it. If you add
+  // another HEARTBEAT.md write path, it must set that flag or it inherits the
+  // same bug. The upstream short-circuit is `skipHeartbeat` below.
   const overwriteCondition = forceOverwrite
     ? `printf '%s' '${encoded}' | base64 -d > "${heartbeatPath}"`
     : [
