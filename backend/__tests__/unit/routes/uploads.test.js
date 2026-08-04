@@ -25,6 +25,17 @@ jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 
+const mockCanReadAttachment = jest.fn();
+jest.mock('../../../services/attachmentAccess', () => ({
+  DEFAULT_TOKEN_TTL_SECONDS: 300,
+  canReadAttachment: (...args) => mockCanReadAttachment(...args),
+  signAttachmentToken: jest.fn(),
+  verifyAttachmentToken: jest.fn(),
+}));
+
+const mockAgentRuntimeAuth = jest.fn();
+jest.mock('../../../middleware/agentRuntimeAuth', () => (...args) => mockAgentRuntimeAuth(...args));
+
 const File = require('../../../models/File');
 const routes = require('../../../routes/uploads');
 
@@ -38,6 +49,11 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
     mockStore.put.mockReset();
     mockStore.delete.mockReset();
     File.findByFileName.mockReset();
+    mockCanReadAttachment.mockReset();
+    mockAgentRuntimeAuth.mockReset().mockImplementation((req, _res, next) => {
+      req.agentUser = { _id: 'agent-user' };
+      next();
+    });
   });
 
   it('streams bytes from the driver when the key is present', async () => {
@@ -95,5 +111,53 @@ describe('uploads GET /:fileName (ADR-002 Phase 1)', () => {
   it('returns 500 when the driver throws', async () => {
     mockStore.get.mockRejectedValue(new Error('boom'));
     await request(app).get('/api/uploads/explode').expect(500);
+  });
+
+  it('allows a runtime agent to read a pod attachment when its bot user passes the ACL', async () => {
+    File.findByFileName.mockResolvedValue({ podId: 'private-pod' });
+    mockCanReadAttachment.mockResolvedValue(true);
+    mockStore.get.mockResolvedValue({
+      stream: Readable.from(Buffer.from('agent-readable')),
+      mime: 'text/plain',
+      size: 14,
+    });
+
+    const res = await request(app)
+      .get('/api/uploads/private.txt')
+      .set('Authorization', 'Bearer cm_agent_runtime-token')
+      .expect(200);
+
+    expect(res.text).toBe('agent-readable');
+    expect(mockAgentRuntimeAuth).toHaveBeenCalledTimes(1);
+    expect(mockCanReadAttachment).toHaveBeenCalledWith('private.txt', 'agent-user');
+  });
+
+  it('keeps a runtime agent out of a pod attachment when the ACL denies its bot user', async () => {
+    File.findByFileName.mockResolvedValue({ podId: 'private-pod' });
+    mockCanReadAttachment.mockResolvedValue(false);
+
+    await request(app)
+      .get('/api/uploads/private.txt')
+      .set('Authorization', 'Bearer cm_agent_runtime-token')
+      .expect(403);
+
+    expect(mockCanReadAttachment).toHaveBeenCalledWith('private.txt', 'agent-user');
+    expect(mockStore.get).not.toHaveBeenCalled();
+  });
+
+  it('uses the same runtime-agent authorization for a private PPTX preview', async () => {
+    File.findByFileName.mockResolvedValue({ podId: 'private-pod' });
+    mockCanReadAttachment.mockResolvedValue(true);
+    mockStore.get.mockResolvedValue(null);
+
+    // No PPTX bytes are needed: the 404 proves the agent cleared the shared
+    // authorization helper and reached storage instead of being denied 403.
+    await request(app)
+      .get('/api/uploads/private.pptx/preview-pptx-html')
+      .set('Authorization', 'Bearer cm_agent_runtime-token')
+      .expect(404);
+
+    expect(mockAgentRuntimeAuth).toHaveBeenCalledTimes(1);
+    expect(mockCanReadAttachment).toHaveBeenCalledWith('private.pptx', 'agent-user');
   });
 });
