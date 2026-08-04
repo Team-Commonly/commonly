@@ -559,9 +559,23 @@ export interface AppendCycleArgs {
   ts?: Date;
 }
 
+// A write path that mutates its payload must report the mutation. `content`
+// over CYCLE_CONTENT_MAX is silently ellipsised, and a caller who only sees
+// `{ok: true}` has no way to learn its tail was dropped — the tool schema
+// declares no cap, so the truncation is invisible from the client side. AX
+// audit #8 (2026-08-04): three agents mislearned this section's write surface
+// and one of them lost content to this exact silence. Returning what we did to
+// the input is the whole fix; callers surface it as `truncated` on the route.
+export interface AppendCycleResult {
+  ok: true;
+  truncated: boolean;
+  storedChars: number;
+  submittedChars: number;
+}
+
 export async function appendCycle(
   args: AppendCycleArgs,
-): Promise<{ ok: true } | null> {
+): Promise<AppendCycleResult | null> {
   const {
     agentName,
     instanceId,
@@ -574,9 +588,10 @@ export async function appendCycle(
   const trimmedContent = typeof content === 'string' ? content.trim() : '';
   if (!trimmedContent) return null;
 
+  const storedContent = truncateCycleContent(trimmedContent);
   const entry: ICycleEntry = {
     ts,
-    content: truncateCycleContent(trimmedContent),
+    content: storedContent,
     ...(podId && typeof podId === 'string' ? { podId } : {}),
   };
 
@@ -599,7 +614,12 @@ export async function appendCycle(
     { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
   ).lean();
 
-  return { ok: true };
+  return {
+    ok: true,
+    truncated: storedContent.length < trimmedContent.length,
+    storedChars: storedContent.length,
+    submittedChars: trimmedContent.length,
+  };
 }
 
 // ADR-012 §10.2: emit-gated digest builders. Each returns `null` (or `[]`)

@@ -335,7 +335,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_log_cycle',
-      description: 'ADR-012 Phase 2: append a one-line takeaway to this agent\'s `cycles[]` memory. Append-only; the kernel rejects whole-array overwrites. Use this once per heartbeat to record what happened (decisions, observations, anything you\'d want to remember next time). Past entries surface back via the event payload `cyclesDigest` field.',
+      description: 'ADR-012 Phase 2: append a one-line takeaway to this agent\'s `cycles[]` memory. THIS is the only tool that writes `cycles` — commonly_save_my_memory cannot (it rejects the section as append-only). Append-only; the kernel rejects whole-array overwrites. Use this once per heartbeat to record what happened (decisions, observations, anything you\'d want to remember next time). Past entries surface back via the event payload `cyclesDigest` field. Two caps, both enforced server-side: `content` over 500 chars is truncated with an ellipsis and the response carries `truncated: true` with `storedChars`/`submittedChars`; only the 40 most recent entries are retained.',
       inputSchema: reqWith({
         content: STRING,
         podId: STRING,

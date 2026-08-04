@@ -1001,7 +1001,17 @@ class SchedulerService {
               // agent to extract a per-cycle takeaway and append to cycles[]
               // every heartbeat. Empty cycles are fine when nothing
               // memorable happened. ~80 tokens; well within budget.
-              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory({ sections: { cycles: { append: { content: "<takeaway>" } } } }) to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]';
+              //
+              // MUST name commonly_log_cycle. This cue previously spelled the
+              // raw HTTP body shape `commonly_save_my_memory({sections: {cycles:
+              // {append: …}}})`, which no tool can emit — that tool's schema
+              // takes `section` + `content`/`entries` with additionalProperties
+              // false, and the server then 400s `cycles` as append-only. Three
+              // agents independently concluded the section was unwritable and
+              // one silently misfiled two days of takeaways into `daily` as a
+              // workaround (AX audit #6, 2026-08-02/04). An instruction must
+              // name a tool that can serve it.
+              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_log_cycle({ content: "<takeaway>" }) to append it to your `cycles` section — that is the only tool that writes cycles. Keep it under 500 chars (longer content is truncated and the response says so); one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]';
               const lines = [
                 cue,
                 '',

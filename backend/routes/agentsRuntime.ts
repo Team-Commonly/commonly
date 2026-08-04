@@ -2124,9 +2124,10 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
     // leak into stampSectionsForWrite (which expects whole-section overwrite
     // shapes). The standard $set then proceeds on the remaining sections.
     const cyclesAppend = sections !== undefined ? extractCyclesAppend(sections) : null;
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         // Validation errors (content too long, etc) are caught by the schema's
         // runValidators; surface as 400 so callers can correct.
@@ -2191,7 +2192,18 @@ router.put('/memory', agentRuntimeAuth, phase4RateLimit, async (req: any, res: a
       contentProvided: content !== undefined,
       sourceRuntime,
     });
-    return res.json({ ok: true });
+    // Report the mutation, not just the success: an ellipsised cycle entry is
+    // indistinguishable from a stored one without this.
+    return res.json({
+      ok: true,
+      ...(cycleResult?.truncated
+        ? {
+          truncated: true,
+          storedChars: cycleResult.storedChars,
+          submittedChars: cycleResult.submittedChars,
+        }
+        : {}),
+    });
   } catch (err: any) {
     console.error('PUT /memory error:', err);
     return res.status(500).json({ message: 'Failed to write agent memory' });
@@ -2260,14 +2272,23 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
     // a known v1 behaviour, callers should not include `cycles` in repeat
     // syncs (a separate cycles-only PUT /memory call is the recommended path).
     const cyclesAppend = extractCyclesAppend(sections);
+    let cycleResult: Awaited<ReturnType<typeof appendCycle>> = null;
     if (cyclesAppend) {
       try {
-        await appendCycle({ agentName, instanceId, ...cyclesAppend });
+        cycleResult = await appendCycle({ agentName, instanceId, ...cyclesAppend });
       } catch (cycleErr: any) {
         if (cycleErr?.name === 'ValidationError') return rejectAndLog(cycleErr.message);
         throw cycleErr;
       }
     }
+    // See PUT /memory: truncation is reported, never silent.
+    const cycleTruncation = cycleResult?.truncated
+      ? {
+        truncated: true,
+        storedChars: cycleResult.storedChars,
+        submittedChars: cycleResult.submittedChars,
+      }
+      : {};
 
     const now = new Date();
     const hasOtherSections = Object.keys(sections).length > 0;
@@ -2276,14 +2297,18 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       // rest of the sync pipeline (no dedup key needed; sync state didn't
       // change for the syncable sections).
       console.log('[agent-memory SYNC cycles-only]', { agentName, instanceId, sourceRuntime });
-      return res.json({ ok: true, schemaVersion: 2, cyclesAppended: true });
+      return res.json({
+        ok: true, schemaVersion: 2, cyclesAppended: true, ...cycleTruncation,
+      });
     }
     const dedupKey = computeSyncDedupKey(sections, sourceRuntime, mode, now);
 
     const existing = await AgentMemory.findOne({ agentName, instanceId }).lean();
     if (existing?.lastSyncKey === dedupKey) {
       console.log('[agent-memory SYNC deduped]', { agentName, instanceId, mode, sourceRuntime });
-      return res.json({ ok: true, deduped: true });
+      // The cycles append above already fired (deduping covers syncable
+      // sections only), so its truncation must be reported here too.
+      return res.json({ ok: true, deduped: true, ...cycleTruncation });
     }
 
     // GH#632: stamp provenance + capped version history against the existing
@@ -2338,7 +2363,7 @@ router.post('/memory/sync', agentRuntimeAuth, phase4RateLimit, async (req: any, 
       sourceRuntime,
     });
 
-    return res.json({ ok: true, schemaVersion: 2 });
+    return res.json({ ok: true, schemaVersion: 2, ...cycleTruncation });
   } catch (err: any) {
     console.error('POST /memory/sync error:', err);
     return res.status(500).json({ message: 'Failed to sync agent memory' });

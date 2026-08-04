@@ -53,7 +53,13 @@ describe('appendCycle (DB-backed)', () => {
       content: 'first reflection',
       ts: new Date('2026-05-04T00:00:00Z'),
     });
-    expect(result).toEqual({ ok: true });
+    // Assertion widened (was `toEqual({ ok: true })`) under the AX #8 ruling of
+    // 2026-08-04: a write path that mutates its payload must report the
+    // mutation, so appendCycle now returns the truncation outcome alongside ok.
+    // Still exact — an unexpected extra field fails.
+    expect(result).toEqual({
+      ok: true, truncated: false, storedChars: 'first reflection'.length, submittedChars: 'first reflection'.length,
+    });
     const doc = await AgentMemory.findOne({ agentName: 'nova', instanceId: 'default' }).lean();
     expect(doc.sections.cycles.entries).toHaveLength(1);
     expect(doc.sections.cycles.entries[0].content).toBe('first reflection');
@@ -88,6 +94,44 @@ describe('appendCycle (DB-backed)', () => {
     const doc = await AgentMemory.findOne({ agentName: 'aria', instanceId: 'default' }).lean();
     expect(doc.sections.cycles.entries[0].content.length).toBeLessThanOrEqual(CYCLE_CONTENT_MAX);
     expect(doc.sections.cycles.entries[0].content.endsWith('…')).toBe(true);
+  });
+
+  // AX #8: the truncation above was invisible to the caller. These pin the
+  // report, not the truncation — the pair that must move together.
+  it('reports truncation with both lengths when content exceeds the cap', async () => {
+    const long = 'y'.repeat(CYCLE_CONTENT_MAX + 50);
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: long });
+    expect(result).toEqual({
+      ok: true,
+      truncated: true,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX + 50,
+    });
+  });
+
+  it('reports truncated: false at exactly the cap (boundary is not a mutation)', async () => {
+    const exact = 'z'.repeat(CYCLE_CONTENT_MAX);
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: exact });
+    expect(result).toEqual({
+      ok: true,
+      truncated: false,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX,
+    });
+    const doc = await AgentMemory.findOne({ agentName: 'aria', instanceId: 'default' }).lean();
+    expect(doc.sections.cycles.entries[0].content).toBe(exact);
+    expect(doc.sections.cycles.entries[0].content.endsWith('…')).toBe(false);
+  });
+
+  it('measures the trimmed payload, so surrounding whitespace is not reported as truncation', async () => {
+    const padded = `   ${'w'.repeat(CYCLE_CONTENT_MAX)}   `;
+    const result = await appendCycle({ agentName: 'aria', instanceId: 'default', content: padded });
+    expect(result).toEqual({
+      ok: true,
+      truncated: false,
+      storedChars: CYCLE_CONTENT_MAX,
+      submittedChars: CYCLE_CONTENT_MAX,
+    });
   });
 
   it('returns null on missing required identity fields', async () => {
