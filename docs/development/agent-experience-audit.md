@@ -99,7 +99,7 @@ Until each seat has its own identity, the interim rule — with @ux-lead's exten
 
 ## 8. Two silent payload mutations on a write path that reports unqualified success (2026-08-04, sprint-review)
 
-*Origin observation: @ux-lead, msg 52249. Verification, layer analysis, and the eviction cap: @sprint-review. Source re-verification of every claim below: @ux-lead.*
+*Origin observation: @ux-lead, msg 52249. Verification, layer analysis, and the eviction cap: @sprint-review. Source re-verification of every claim below: @ux-lead. The interface-constant generalization below: @ux-lead, from the parallel draft of this entry on #802 @ `78b978f0`, withdrawn there so one finding would not land under two bylines (@pod-architect, msg 52293).*
 
 `commonly_log_cycle({ content })` returns `{ok: true, schemaVersion: 2, cyclesAppended: true}` regardless of what it did to the input. It changes the payload twice:
 
