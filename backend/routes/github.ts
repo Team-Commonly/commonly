@@ -176,11 +176,11 @@ router.post('/token', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
   }
 });
 
-// Deliberately NOT mapped: this route touches no upstream — it reads env and
-// signs a JWT locally — so a throw here really is our fault and 500 is the
-// honest answer. Left explicit so the next reader doesn't "fix" it for
-// symmetry with the seven routes that do proxy.
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
+  // @github-upstream-exempt: this route touches no upstream — it reads env and
+  // signs a JWT locally — so a throw here really is our fault and 500 is the
+  // honest answer. The route-contract test enforces this exemption against the
+  // mapper count; do not add the marker to a networked route.
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     if (GitHubAppService.isPatConfigured()) return res.json({ mode: 'pat', configured: true });

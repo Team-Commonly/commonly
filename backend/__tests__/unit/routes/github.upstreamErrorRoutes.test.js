@@ -6,9 +6,10 @@
  * Keep this explicit table when adding a GitHub proxy route. The request
  * shapes are intentionally visible here: deriving cases from `router.stack`
  * would hide the route-specific validation each request must pass before it
- * reaches the upstream service. The call-site count below makes every new use
- * of the mapper add a row. A proxy route that bypasses the mapper altogether
- * remains a review concern. `/status` is excluded because it only reads local
+ * reaches the upstream service. The source-level check below counts every
+ * handler that calls GitHubAppService, not merely every mapper call, so an
+ * unmapped proxy route cannot make both sides of the assertion move together.
+ * `/status` carries the single explicit exemption because it only reads local
  * configuration and signs locally; it must keep its honest local 500.
  */
 
@@ -56,6 +57,20 @@ const credentialRejected = {
 };
 const CREDENTIAL_REJECTION_TITLE = '$name maps an upstream 401 to non-retryable credential guidance';
 const githubRouteSource = fs.readFileSync(path.join(__dirname, '../../../routes/github.ts'), 'utf8');
+
+const githubRouteHandlers = (source) => {
+  const starts = [...source.matchAll(/router\.(?:get|post)\(/g)].map((match) => match.index);
+
+  return starts.map((start, index) => {
+    const handler = source.slice(start, starts[index + 1]);
+
+    return {
+      touchesGitHubService: handler.includes('GitHubAppService.'),
+      mapsUpstreamError: handler.includes('mapGitHubUpstreamError('),
+      upstreamExempt: handler.includes('@github-upstream-exempt'),
+    };
+  });
+};
 
 // Each row is a distinct route-level call site of mapGitHubUpstreamError.
 // Adding another GitHub-proxy route means adding a row here with the smallest
@@ -106,10 +121,15 @@ describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', ()
     GitHubAppService.isConfigured.mockReturnValue(true);
   });
 
-  it('keeps the visible request table aligned with every mapper call site', () => {
-    const mapperCallSites = (githubRouteSource.match(/mapGitHubUpstreamError\(/g) || []).length - 1;
+  it('maps every GitHub service handler unless it declares a local-only exemption', () => {
+    const handlers = githubRouteHandlers(githubRouteSource);
+    const githubServiceHandlers = handlers.filter((handler) => handler.touchesGitHubService);
+    const exemptHandlers = githubServiceHandlers.filter((handler) => handler.upstreamExempt);
+    const mappedHandlers = githubServiceHandlers.filter((handler) => handler.mapsUpstreamError);
 
-    expect(PROXYING_ROUTE_CASES).toHaveLength(mapperCallSites);
+    expect(exemptHandlers.every((handler) => !handler.mapsUpstreamError)).toBe(true);
+    expect(githubServiceHandlers.length - exemptHandlers.length).toBe(mappedHandlers.length);
+    expect(PROXYING_ROUTE_CASES).toHaveLength(mappedHandlers.length);
   });
 
   test.each(PROXYING_ROUTE_CASES)(CREDENTIAL_REJECTION_TITLE, async ({ service, send, assertResponse }) => {
