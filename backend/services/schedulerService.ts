@@ -844,7 +844,7 @@ class SchedulerService {
       if (installation?.config?.heartbeat?.global === true) {
         const agentKey = `${agentName}:${instanceId}`;
         if (seenGlobalAgents.has(agentKey)) continue;
-        if (installation?.config?.heartbeat?.enabled === false) continue;
+        if (installation?.config?.heartbeat?.enabled !== true) continue;
         seenGlobalAgents.add(agentKey);
         toProcess.push({ installation, isGlobal: true });
       } else {
@@ -937,8 +937,15 @@ class SchedulerService {
 
     const enqueueResults = await Promise.all(
       toProcess.map(async ({ installation, isGlobal }) => {
+        // Opt-in, not opt-out. `undefined` must NOT fire: an install that never
+        // expressed an opinion about heartbeats does not get one. The previous
+        // `=== false` check made every agent anyone installed wake on a timer
+        // forever unless someone found and set a field they never see — 166 of
+        // 245 active installs across 48 owners were ticking hourly on that
+        // default alone, spending each owner's own model quota to run a
+        // heartbeat with no content behind it (#800).
         const heartbeatEnabled = installation?.config?.heartbeat?.enabled;
-        if (heartbeatEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
+        if (heartbeatEnabled !== true) return { enqueued: 0, skippedByInterval: 0 };
         const autonomyEnabled = installation?.config?.autonomy?.enabled;
         if (autonomyEnabled === false) return { enqueued: 0, skippedByInterval: 0 };
 
@@ -1001,7 +1008,31 @@ class SchedulerService {
               // agent to extract a per-cycle takeaway and append to cycles[]
               // every heartbeat. Empty cycles are fine when nothing
               // memorable happened. ~80 tokens; well within budget.
-              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory({ sections: { cycles: { append: { content: "<takeaway>" } } } }) to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]';
+              //
+              // MUST name commonly_log_cycle. This cue previously spelled the
+              // raw HTTP body shape `commonly_save_my_memory({sections: {cycles:
+              // {append: …}}})`, which no tool can emit — that tool's schema
+              // takes `section` + `content`/`entries` with additionalProperties
+              // false, and the server then 400s `cycles` as append-only. Three
+              // agents independently concluded the section was unwritable and
+              // one silently misfiled two days of takeaways into `daily` as a
+              // workaround (AX audit #6, 2026-08-02/04). An instruction must
+              // name a tool that can serve it.
+              //
+              // 2026-08-04, and this is the limit of that fix: `commonly_log_cycle`
+              // serves MCP seats and NOT moltbots. The deployed openclaw extension
+              // declares 25 `commonly_*` tools without it, at the tip, at the ref
+              // `_external/clawdbot` pins, and inside the running gateway image.
+              // Both channels reach a moltbot in one turn — this cue and its
+              // HEARTBEAT.md, injected by `extensions/commonly/src/channel.ts` —
+              // and since 2026-05-09 both have named something it cannot execute,
+              // which is the whole of the fleet's 87-day `cycles` silence.
+              // So the cue below tells a caller without the tool to SKIP rather
+              // than substitute: naming one tool makes a diligent agent exhaust
+              // that tool's schema and conclude the capability is absent, which is
+              // exactly the turn-burn that forced the #296 rollback. Do not drop
+              // that clause until every runtime can serve the call.
+              const cue = '[Heartbeat tick. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_log_cycle({ content: "<takeaway>" }) to append it to your `cycles` section — that is the only tool that writes cycles. Keep it under 500 chars (longer content is truncated and the response says so); one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine. If `commonly_log_cycle` is not in your tool list, skip the write and move on: no other memory tool can append to `cycles`, so do not substitute one.]';
               const lines = [
                 cue,
                 '',

@@ -37,11 +37,17 @@ const {
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
 
-// Inlined per-route limiter so CodeQL's `js/missing-rate-limiting` query
-// (which only recognises express-rate-limit calls in the same file as the
-// route registration) sees the guard on this DB-touching handler. Mirrors
-// installRateLimit in install.ts. Skipped under NODE_ENV=test so the
-// integration suite's reinstall/reprovision loops don't get throttled.
+// Inlined per-route limiter on this DB-touching handler. The previous version
+// of this comment credited the clean CodeQL status to the query "only
+// recognising express-rate-limit calls in the same file as the route
+// registration" — inherited from install.ts, which inherited it from
+// agentsRuntime.ts, where the routes following that recipe are flagged anyway.
+//
+// The real reason this route is clean: `provisionRateLimit` runs BEFORE
+// `auth`, so auth's own Mongo lookup is covered too. Order is the
+// discriminator, not file location — keep the limiter first. Skipped under
+// NODE_ENV=test so the integration suite's reinstall/reprovision loops don't
+// get throttled.
 const provisionRateLimit = rateLimit({
   windowMs: 60_000,
   max: 30,

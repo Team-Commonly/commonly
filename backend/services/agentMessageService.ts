@@ -1290,7 +1290,10 @@ class AgentMessageService {
       metadata = {}, agentUser, displayName, replyToMessageId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
     } = options;
 
-    const senderDisplayName = agentUser?.botMetadata?.displayName || displayName || agentUser?.username;
+    // The installation label belongs to this pod; the User label belongs to
+    // the portable principal. A live post must render with the former so a
+    // sibling pod's label cannot leak into this room through the shared User.
+    const senderDisplayName = displayName || agentUser?.botMetadata?.displayName || agentUser?.username;
     let message: MessageNormalized | null = null;
 
     if (PGMessage && process.env.PG_HOST) {

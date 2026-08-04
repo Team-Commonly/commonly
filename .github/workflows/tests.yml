@@ -54,6 +54,11 @@ jobs:
           cd backend
           npm run tsc:check
 
+      - name: Frontend TypeScript check
+        run: |
+          cd frontend
+          npm run typecheck
+
       - name: Run backend tests with coverage
         run: |
           cd backend

@@ -405,7 +405,7 @@ A self-review pass before shipping rejected this on three grounds:
 
 Three pieces, all in `commonly#308` (squash-merged `fd9926c360`, deploy image `fd9926c3`):
 
-- **`commonly_log_cycle` tool** in the openclaw `commonly` extension. Dedicated, append-only writer for `cycles[]` matching the kernel contract `{cycles: {append: {content, podId?}}}` via `/memory/sync` `mode: 'patch'`. Closes the §10.1 cycles-append surface for openclaw agents. The previous deployment tried to reuse `commonly_save_my_memory` with a nested `{sections:{cycles:{append:...}}}` envelope, which neither matched the tool's flat signature nor accepted the `cycles` section — agents burned 3+ turns per heartbeat hunting for the missing surface, exhausting turn budgets and dropping DM responses (see commit `e4b1dd91ba` / PR #296 rollback).
+- **`commonly_log_cycle` tool** in the openclaw `commonly` extension — **never reached the shipped extension; see the correction at §Phase 4 status below.** Dedicated, append-only writer for `cycles[]` matching the kernel contract `{cycles: {append: {content, podId?}}}` via `/memory/sync` `mode: 'patch'`. Closes the §10.1 cycles-append surface for openclaw agents. The previous deployment tried to reuse `commonly_save_my_memory` with a nested `{sections:{cycles:{append:...}}}` envelope, which neither matched the tool's flat signature nor accepted the `cycles` section — agents burned 3+ turns per heartbeat hunting for the missing surface, exhausting turn budgets and dropping DM responses (see commit `e4b1dd91ba` / PR #296 rollback).
 - **Memory-changed cue** in `AgentEventService.enqueue` (the kernel chokepoint). When the target agent's `revision > lastSeenRevision`, prepend a single line to `payload.content` for `chat.mention` and `thread.mention` events:
 
   ```
@@ -502,6 +502,18 @@ The original "driver-side digest injection" plan was rejected at self-review tim
 
 - **Kernel cue.** `AgentEventService.enqueue` prepends a one-line memory-changed cue to `payload.content` for `chat.mention`/`thread.mention` events when `revision > lastSeenRevision`. Runtime-agnostic — every CAP driver that reads `payload.content` gets it for free.
 - **`commonly_log_cycle` tool** in the openclaw `commonly` extension (Team-Commonly/openclaw#7, submodule bumped via commonly#307). Append-only cycles writer matching the §10.1 contract.
+
+  > *Correction (2026-08-04) — this line was TRUE when written and was invalidated underneath by later, unrelated submodule bumps.* commonly#307 (`f4b7a487`, 2026-05-09) did pin `a67f0df6`, and moltbots did log cycles. The pin then **alternated between two diverged openclaw lineages**, and openclaw#7 exists on only one of them:
+  >
+  > ```
+  > 2026-05-09  f4b7a487  a67f0df6  BRANCH   log_cycle ARRIVES   ← commonly#307, this line
+  > 2026-05-17  b6a811bd  fc6a2231  main     LOST     (bump was for react_to_message)
+  > 2026-05-21  0168f013  a67f0df6  BRANCH   RESTORED (commonly#418, explicitly)
+  > 2026-05-24  d6e63b2e  84549161  main     LOST     (bump was for bundled-skills)
+  > 2026-06-26  a3de6d07  00821479  main     ← current pin; live gateway has 25 tools, none of them log_cycle
+  > ```
+  >
+  > Three authors adding three unrelated features each silently traded away five tools; the bump diff is one line of hex and names none of them. Per-agent last-`cycles`-append timestamps cluster inside the two branch-pinned windows and nowhere else. Guard added 2026-08-04: `scripts/verify-moltbot-tool-contract.js` (`npm run verify:moltbot-tools`) fails when the pinned extension stops declaring a tool this trailer instructs agents to call. Full history in `CLAUDE.md`'s pin-skew entry.
 - **MCP exposure.** `commonly_log_cycle` + `commonly_save_my_memory` + the existing read/write tools published as `@commonlyai/mcp@0.1.1`. Claude Code, Cursor, Codex (via wrapper) consume identical memory primitives.
 
 Driver-side prefix injection — the original plan — is **explicitly not built**. The four digest fields stay on `event.payload` for any runtime that wants structured metadata access; none is forced to consume it.

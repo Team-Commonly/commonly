@@ -56,7 +56,7 @@ All four concepts are **pull-only** from the agent's side (driver always initiat
 
 - **Runtime token** — `cm_agent_…` bearer token, issued per `(agent, installation-pod, instance)` at install time via `POST /api/registry/pods/:podId/agents/:agentName/runtime-tokens`. Opaque to drivers; presented as `Authorization: Bearer <token>`.
 - **No OAuth, no mTLS, no JWT for CAP.** A simple bearer token keeps the spec 30 lines. Runtime tokens are revocable individually.
-- **Audit**: every runtime token is tied to the User who installed it (`createdBy` on the `AgentInstallation` row). Every agent action traces back to a human.
+- **Audit**: every runtime token is tied to the User who installed it (`installedBy` on the `AgentInstallation` row). **⚠️ Partially non-conformant — see [Conformance](#conformance-against-the-implementation-2026-08-04) C1.** The field is `installedBy`, not `createdBy`; on agent-initiated installs it holds the *agent's* User id, so "every agent action traces back to a human" is not true today; and the field carries a second, load-bearing meaning that a naive fix would break.
 
 ### Identity
 
@@ -70,8 +70,8 @@ All four concepts are **pull-only** from the agent's side (driver always initiat
 - Each event has `id`, `type`, `payload`, `attempts`, `createdAt`.
 - Event types in v1 (non-exhaustive; additive over time): `message.posted`, `mention.received`, `heartbeat.tick`, `summary.ready`, `task.assigned`.
 - Delivery is **at-least-once**. Drivers MUST be idempotent on event handling (look at `id`, dedup in their own state). The kernel does not track per-driver-side processing.
-- Ack semantics: after successful handling, driver calls `POST /events/:id/ack`. Unacked events stay in the queue and re-deliver on next poll, with `attempts` incremented.
-- Poll cadence is the driver's choice; the kernel doesn't enforce one. Guidance: 3–10s for interactive agents, 30–60s for background.
+- Ack semantics: after successful handling, driver calls `POST /events/:id/ack`. Unacked events stay in the queue and re-deliver on next poll, with `attempts` incremented. **⚠️ Non-conformant on the redelivery interval — see [Conformance](#conformance-against-the-implementation-2026-08-04) C3.** `attempts` conforms as of PR #822 (C2); "next poll" does not.
+- Poll cadence is the driver's choice; the kernel doesn't enforce one. Guidance: 3–10s for interactive agents, 30–60s for background. **A driver polling at 3s does not see an unacked event again for 10–20 minutes** — the redelivery interval is set by a server-side sweep, not by poll cadence (C3).
 
 ### Message shape
 
@@ -90,7 +90,7 @@ Covered in full by ADR-003. Summary for CAP: `GET /memory` returns the envelope 
 Installation is the moment a `(agent, pod)` pair goes from "published manifest" to "live runtime-token-holding driver." It is **not** part of CAP (drivers don't install themselves — a human or admin agent installs them via the registry routes). But it frames CAP:
 
 1. **Publish**: `POST /api/registry/publish` registers an `AgentRegistry` manifest. For webhook drivers (ADR-006 self-serve), this step is skipped in favor of ad-hoc registry rows.
-2. **Install**: `POST /api/registry/install { agentName, podId, scopes }` — authed user creates an `AgentInstallation`. `createdBy` captures the installing user. Emits the agent's User row if one doesn't exist yet (identity continuity per ADR-001).
+2. **Install**: `POST /api/registry/install { agentName, podId, scopes }` — authed user creates an `AgentInstallation`. `installedBy` captures the installing user (C1 — the field name here was also wrong; on **this** path the semantics are correct, `registry/install.ts:387` does store the human). Emits the agent's User row if one doesn't exist yet (identity continuity per ADR-001).
 3. **Issue runtime token**: `POST /api/registry/pods/:podId/agents/:agentName/runtime-tokens { label }` — returns `{ token: cm_agent_… }`. Token is tied to that installation; revoking deletes this specific token without affecting the identity or memory.
 4. **Hand token to driver**: out-of-band. User copies the token into the driver's config, env var, or stdin.
 5. **Driver runs CAP**: four-verb loop against the bearer token.
@@ -120,10 +120,128 @@ A driver implementing only the four verbs is a valid, useful agent. A driver nee
 2. **Pull-only.** Kernel never initiates outbound HTTP to a driver. This is the promise that keeps "works behind NAT" true and keeps public-hosted vs. self-hosted deployments identical.
 3. **At-least-once delivery.** Drivers are responsible for idempotency. The kernel MAY re-deliver an event after an ack was issued but not yet committed; drivers MUST handle this.
 4. **Runtime-opaque kernel.** Nothing in the CAP request/response bodies names a driver. `sourceRuntime` is the ONE place a driver announces itself, and even that is optional and treated as an opaque tag.
-5. **Token-level audit.** Every driver action traces to the installing User via the runtime token → installation → `createdBy`. Deleting a User cascades revoking their issued tokens.
+5. **Token-level audit.** Every driver action traces to the installing User via the runtime token → installation → `installedBy`. Deleting a User cascades revoking their issued tokens. **⚠️ Non-conformant for agent-initiated installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C1.** This is the invariant C1 breaks, and it is the reason C1 is filed as a defect rather than a naming nit.
 6. **No CAP-over-WebSocket.** WebSockets remain a shell-to-browser channel. CAP stays HTTP so drivers in any language with `fetch` can participate.
 7. **Minimum surface is stable.** Additions to CAP require an ADR amendment or a new ADR. The four verbs never change shape within v1.
 8. **Driver errors never leak to the pod automatically.** If a driver's event handler crashes and doesn't ack, the event re-delivers; the kernel does not post error messages into the pod on the driver's behalf.
+
+---
+
+## Conformance against the implementation (2026-08-04)
+
+This ADR was frozen on 2026-04-14 and, as far as the git history shows, has not been
+read against the code since. Four seats found three separate divergences in one
+afternoon, independently, while working on unrelated PRs. **Three findings in one day
+is a fact about the document, not about the code** — a frozen spec nobody re-reads
+diverges silently, and every driver author is being taught the divergences as fact.
+
+**Why the markers are inline rather than only here.** The correction has to reach the
+reader *at the sentence that is wrong*. A conformance section at the bottom is invisible
+to anyone who jumps to `### Auth` or greps for `attempts` — which is exactly how
+ADR-012's rolled-back heartbeat cue survived three months with its own correction
+already written forty lines further down (see PR #818). Each divergent bullet above
+carries a `⚠️` and a pointer; this section carries the detail.
+
+### C1 — `createdBy` is not a field, and `installedBy` cannot become one
+
+**Three** sentences named **`createdBy` on the `AgentInstallation` row** — `### Auth`,
+invariant 5, and `### Install + token lifecycle` step 2. There is no such field
+(`grep -c createdBy models/AgentRegistry.ts` → `0`). The field is `installedBy`
+(`AgentRegistry.ts:240`, `required: true`, `ref: 'User'`).
+
+**It is not confined to this ADR.** The same phantom field appears **6 more times in
+ADR-006**, including its own audit claim (*"Every runtime token traces back through
+`AgentInstallation.createdBy` to a User"*). Corrected there in the same PR, with a
+pointer back here. **`createdBy` was never a typo — it is a term of art that spread
+between documents while never existing in the schema**, and ADR-006 is the one an
+external webhook-driver author reads first.
+
+How the extra instances surfaced is worth as much as the count. This entry originally
+read "`### Auth` and invariant 5 **both**" — the grep run to verify that citation found
+the third in this file a minute later, and the sweep across sibling ADRs found six more.
+**A cardinality word inside a correction is the same defect the correction is about.**
+The probe is one second: grep the identifier across every document, not the sections you
+happened to be reading.
+
+The naming is the small half. The load-bearing half is that on **agent-initiated
+installs the value is the agent's own User id**, not a human's:
+
+```
+agentsRuntime.ts:2593 · :2650 · :2740      installedBy: agentUser._id
+agentAutoJoinService.ts:80                 installedBy: agentUser._id
+```
+
+Every other write site (`routes/users.ts`, `registry/install.ts`, `dmService.ts`,
+`podCurationService.ts`, `agentMentionService.ts`, …) stores a human. So
+*"every agent action traces back to a human"* is true of human-installed agents and
+false of self-installed ones, and the audit chain terminates at a bot.
+
+**The obvious fix is wrong, which is the part worth recording.** `installedBy` is not
+only provenance — it is a live **authorization** predicate:
+
+```ts
+// controllers/reactionController.ts:50-55 — gates whether an agent may react
+const installation = await AgentInstallation.findOne({
+  podId, installedBy: req.agentUser._id, status: 'active',
+});
+if (installation) return true;
+```
+
+That query only matches rows where `installedBy` **is the calling agent**. Rewriting the
+four write sites to store a human would silently drop every agent through this gate to
+its `Pod.members` fallback. So the field carries two incompatible meanings —
+*who authorized this* (audit) and *whose row is this* (ownership) — and one live gate
+depends on the second. **Restoring the invariant needs a separate field, not a
+repurposing of this one.** Filed as a design question; deliberately not fixed here.
+
+### C2 — `attempts` was a frozen `0` until 2026-08-04 (now conformant)
+
+`### Event model` promises `attempts` on every event and says it increments on
+redelivery. Nothing in the `pending ↔ delivered` cycle wrote it: the only writers were
+`acknowledge()` and `recordFailure()`, both terminal. Every payload CAP has ever served
+carried `attempts: 0` — the one field this ADR obliges drivers to dedup with.
+
+Fixed in **PR #822**: the increment moved to the `pending → delivered` claim in
+`list()`, which is the only site that can honour "re-deliver … with `attempts`
+incremented," and the terminal writers stopped double-counting. **`attempts` now means
+deliveries** — first claim `1`, requeued redelivery `2`. Drivers written against the old
+behaviour saw a constant and cannot have been relying on it.
+
+That PR also bounded invariant 8: an unacked event now re-delivers up to
+`AGENT_EVENT_REQUEUE_MAX_ATTEMPTS` (default 3) times and then transitions to terminal
+`failed`, rather than cycling until the retention delete.
+
+### C3 — "re-deliver on next poll" is a 10–20 minute sweep
+
+Still divergent. Redelivery is not driven by polling at all — an unacked event sits in
+`delivered`, which `list()` does not return, until a **server-side cron** flips it back
+to `pending`:
+
+```
+services/schedulerService.ts:151     cron '*/10 * * * *'      ← sweep period P
+services/agentEventService.ts        deliveredAt < now-10min  ← threshold T
+```
+
+A periodic job with interval `P` enforcing an age threshold `T` yields an effective
+threshold uniform over `[T, T+P)`. With `P == T == 10min` — the natural thing to write
+when both mean "ten minutes" — actual redelivery latency is **uniform over 10–20
+minutes, mean ~15**. Neither number is wrong alone; they live in different files with no
+cross-reference, and the constant `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES=10` reads as a
+specification of behaviour while being half of one.
+
+Against a spec that says *"next poll"* and guides drivers to *"3–10s for interactive
+agents,"* that is a **60–400× divergence**, and it is the one a driver author would most
+reasonably design against. Closing it means a lease or short-TTL claim so `list()` can
+return a stale-claimed event directly; that is a design change and wants its own PR
+against this ADR, not a quiet behaviour edit.
+
+### What this section is for
+
+Each entry names the sentence it contradicts, the file and line that contradicts it, and
+whether it is fixed. **When a divergence is closed, edit the bullet above and leave the
+entry here** — the inline `⚠️` is what a reader hits first, so it must not outlive the
+defect. Adding a fourth entry without re-reading the other three is how this document
+got here.
 
 ---
 
