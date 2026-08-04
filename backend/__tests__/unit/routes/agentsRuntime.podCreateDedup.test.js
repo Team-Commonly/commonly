@@ -237,4 +237,55 @@ describe('POST /pods dedup refuses to widen a 1:1 DM (ADR-001 §3.10)', () => {
     // so this is a real pass through the dedup path, not an early return.
     expect(mockInstall).toHaveBeenCalled();
   });
+
+  // ── The findability tier, ported from #819 ────────────────────────────────
+  //
+  // These are the cases that separate `isDirectlyJoinable` from the
+  // joinPolicy-only gate that was proposed first. Each pod below declares
+  // SOME openness and is still not joinable by name, so a suite without them
+  // passes the one-predicate-short version of this fix. That version was
+  // mine; these tests exist because it was wrong.
+  //
+  // Asserting on `mockInstall` as well as on the status is deliberate: the
+  // install is the write that grants POSTING RIGHTS, and per CLAUDE.md auth
+  // goes through AgentInstallation, not pod.members. A refusal that blocked
+  // the members.push but still installed would look correct on status alone.
+
+  test('private + joinPolicy:open — the dormant declaration is not permission', async () => {
+    // ADR-016:46 calls this "a dormant declaration, not an incoherence: open
+    // once listed." `joinPolicy` alone reads the dormant value as live
+    // permission — which is the #772 bug the ADR exists to close.
+    mockFoundPod.value = existing('chat', undefined, { joinPolicy: 'open' });
+    const res = await createPod();
+    expect(res.status).toBe(403);
+    expect(podSave).not.toHaveBeenCalled();
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+
+  test('showcase tier (publicRead, not listed) is readable but not joinable', async () => {
+    mockFoundPod.value = existing('chat', undefined, { publicRead: true, joinPolicy: 'open' });
+    const res = await createPod();
+    expect(res.status).toBe(403);
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+
+  test('community + invite-only is findable but not self-joinable', async () => {
+    mockFoundPod.value = existing('chat', undefined, {
+      publicRead: true, communityListed: true, joinPolicy: 'invite-only',
+    });
+    const res = await createPod();
+    expect(res.status).toBe(403);
+    expect(mockInstall).not.toHaveBeenCalled();
+  });
+
+  test('a non-joinable private pod gets no commonly-bot either — no context:read', async () => {
+    // The third write on this branch, and the one that is a read grant rather
+    // than a membership change. The DM case is covered above; this pins that
+    // the property-gated refusal stops it too, not just the type-gated one.
+    mockFoundPod.value = existing('chat', undefined, { joinPolicy: 'open' });
+    const res = await createPod();
+    expect(res.status).toBe(403);
+    const installedAgents = mockInstall.mock.calls.map(([agentName]) => agentName);
+    expect(installedAgents).not.toContain('commonly-bot');
+  });
 });
