@@ -3,8 +3,7 @@
  *
  * `joinPolicy` has a mongoose default of 'open', but a default applies on
  * write: documents created before the field existed carry no `joinPolicy`
- * at all, and production still holds 18 of them. Every read here must
- * therefore fail OPEN — `!== 'invite-only'`, never `=== 'open'` — so a
+ * at all. Every read here must therefore fail OPEN — `!== 'invite-only'`, never `=== 'open'` — so a
  * legacy pod stays joinable instead of silently disappearing from Discover.
  *
  * The predicate and the query are two encodings of the same rule, and they

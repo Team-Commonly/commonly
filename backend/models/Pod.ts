@@ -33,8 +33,11 @@ export interface IPod extends Document {
   type: PodType;
   // OPTIONAL, and the `?` is load-bearing. The schema below defaults this
   // to 'open', but a mongoose default applies on WRITE — documents created
-  // before the field existed have no `joinPolicy` at all, and production
-  // still holds 18 of them. Declaring it required told a type-checking
+  // before the field existed have no `joinPolicy` at all. (No count here on
+  // purpose: a census in a permanent comment is stale the moment rows are
+  // written, and the type is justified by one such row existing — or by the
+  // possibility of one — not by how many there are today.) Declaring it
+  // required told a type-checking
   // reader the field is always present, which licenses `=== 'open'`; that
   // test is false for every legacy row and would fail CLOSED, silently
   // hiding pods that are in fact joinable.
