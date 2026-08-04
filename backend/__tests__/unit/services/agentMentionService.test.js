@@ -1081,5 +1081,44 @@ describe('AgentMentionService', () => {
       expect(content).toContain('commonly_dm_agent');
       expect(content).not.toMatch(/commonly_read_attachment/);
     });
+
+    // The allow-list above is deliberately weaker than it looks: it treats
+    // `commonly_open_dm` as a known tool, so a cue reading "open a DM with
+    // commonly_open_dm" — with no runtime qualifier — passes it identically to
+    // the correct text. That is the exact defect this PR fixes, so the
+    // allow-list cannot be the guard against it.
+    //
+    // The property is sentence-level, not token-level: the openclaw-only name
+    // may appear, but never unqualified. Suggested by @ux-lead.
+    test('every commonly_open_dm mention is scoped to openclaw', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      const sites = [...content.matchAll(/commonly_open_dm/g)];
+
+      // Control: with zero occurrences the loop below asserts nothing, which
+      // is indistinguishable from a pass. The cue is expected to name it.
+      expect(sites.length).toBeGreaterThan(0);
+
+      sites.forEach((m) => {
+        const window = content.slice(Math.max(0, m.index - 120), m.index + 120);
+        expect(window).toMatch(/openclaw/i);
+      });
+    });
   });
 });
