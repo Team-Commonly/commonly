@@ -32,10 +32,8 @@ jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
 }));
 
-// User.find is called inside the GET /pods/:podId/agents handler to resolve
-// botMetadata.displayName for each install. Without a mock the handler waits
-// on the real Mongoose model (no DB connection in this unit test) and times
-// out at 10s.
+// User.find provides the portable principal as a fallback only. Pod-scoped
+// AgentProfile / AgentInstallation labels must win when present.
 jest.mock('../../../models/User', () => ({
   find: jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
@@ -79,6 +77,7 @@ jest.mock('../../../routes/registry/presets', () => ({
 const Pod = require('../../../models/Pod');
 const AgentProfile = require('../../../models/AgentProfile');
 const AgentTemplate = require('../../../models/AgentTemplate');
+const User = require('../../../models/User');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
 const registryRoutes = require('../../../routes/registry');
 
@@ -150,5 +149,56 @@ describe('registry list pod agents config payload', () => {
         mode: 'all', allPods: true, podIds: [], skillNames: [],
       },
     });
+  });
+
+  it('keeps a pod-scoped label when the portable principal has a different label', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
+    });
+    AgentInstallation.getInstalledAgents.mockResolvedValue([
+      {
+        agentName: 'cl-strategist',
+        instanceId: 'strategist-fable',
+        displayName: 'Strategist (Claude)',
+        version: '1.0.0',
+        status: 'active',
+        scopes: [],
+        usage: {},
+      },
+    ]);
+    AgentRegistry.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+    });
+    AgentProfile.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          agentName: 'cl-strategist',
+          instanceId: 'strategist-fable',
+          name: 'Strategist (Claude)',
+        },
+      ]),
+    });
+    AgentTemplate.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+    });
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            username: 'cl-strategist-strategist-fable',
+            botMetadata: { displayName: 'Strategist (Fable)' },
+          },
+        ]),
+      }),
+    });
+
+    const res = await request(app).get('/api/registry/pods/pod-1/agents');
+
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].displayName).toBe('Strategist (Claude)');
   });
 });

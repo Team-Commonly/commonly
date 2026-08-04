@@ -280,6 +280,15 @@ const signalAgentTyping = async (event: EventDoc): Promise<void> => {
     let displayName = event.agentName;
     let avatar: string | undefined;
     try {
+      // Events are delivered to a concrete pod. Prefer that installation's
+      // label over the shared User label so the typing indicator follows the
+      // same scope rule as a posted message.
+      const installation = await AgentInstallation.findOne({
+        agentName: event.agentName,
+        instanceId: event.instanceId || 'default',
+        podId: event.podId,
+        status: 'active',
+      }).select('displayName').lean() as { displayName?: string } | null;
       const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
         instanceId: event.instanceId || 'default',
       }) as {
@@ -287,7 +296,10 @@ const signalAgentTyping = async (event: EventDoc): Promise<void> => {
         profilePicture?: string;
         botMetadata?: { displayName?: string };
       };
-      displayName = agentUser?.botMetadata?.displayName || agentUser?.username || event.agentName;
+      displayName = installation?.displayName
+        || agentUser?.botMetadata?.displayName
+        || agentUser?.username
+        || event.agentName;
       avatar = agentUser?.profilePicture || undefined;
     } catch (identityError) {
       // Fall back to the raw agent name — typing indicator is cosmetic, not load-bearing.
