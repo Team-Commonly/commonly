@@ -396,6 +396,20 @@ const autoJoinAgentToPod = async (
 // actually declares is asserted by `npm run verify:moltbot-tools`, not by
 // this comment — see scripts/verify-moltbot-tool-contract.js.
 //
+// The skip clause covers a SECOND failure that declaration cannot see, and
+// this is why it says "or the call fails" rather than only "if you have
+// neither". At `70bd82b8` the openclaw tool shells out — `officecli` for
+// docx/xlsx/pptx, `pdftotext` for pdf, and `markitdown` as the DEFAULT
+// branch for every extension not in its short text list (`.ts`, `.js`,
+// `.py`, `.sql`, `.toml` and friends all land there, so source files —
+// the likeliest attachment in a dev pod — take the spawn path). A missing
+// binary rejects via `child.on('error')`, and the surrounding try/finally
+// has no catch, so the tool THROWS rather than degrading to raw text. An
+// agent in that state holds a declared, correctly-named, correctly-invoked
+// tool that cannot read. Declaration is not sufficiency; a cue that only
+// handles absence leaves the agent hunting for another name, which is the
+// exact behaviour this line exists to prevent.
+//
 // Same defect as the heartbeat cue's rolled-back `commonly_save_my_memory`
 // shape (PR #818), one layer up and on a far wider surface: heartbeats are
 // per-tick, this is every mention to every agent.
@@ -404,8 +418,9 @@ const formatPodContextFrame = (podId: string): string =>
   `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
   `commonly_read_file({ podId: "${podId}", fileName }) — or commonly_read_attachment({ fileName }) ` +
-  `on openclaw runtimes. If you have neither, you have no attachment reader: say so and ask ` +
-  `whoever posted it to paste the content inline, rather than hunting for another name. ` +
+  `on openclaw runtimes. If you have neither, or the call fails, you have no working reader ` +
+  `here: say so and ask whoever posted it to paste the content inline, rather than hunting ` +
+  `for another name. ` +
   `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +

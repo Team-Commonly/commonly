@@ -1256,8 +1256,26 @@ describe('AgentMentionService', () => {
       expect(content).toContain('commonly_read_attachment');
       // Pin-independence: an agent on a pin that declares neither must be
       // told to stop, not left to hunt for a third name.
-      expect(content).toMatch(/no attachment reader/i);
+      expect(content).toMatch(/no working reader/i);
       expect(content).toMatch(/paste the content/i);
+
+      /**
+       * The skip clause must cover FAILURE, not only ABSENCE — declaration is
+       * not sufficiency.
+       *
+       * At `70bd82b8` the openclaw reader shells out: `officecli` for Office
+       * formats, `pdftotext` for PDF, and `markitdown` as the DEFAULT branch
+       * for every extension outside its short text list — `.ts`, `.js`, `.py`,
+       * `.sql` all land there, so source files (the likeliest attachment in a
+       * dev pod) take the spawn path. A missing binary rejects through
+       * `child.on('error')` and the surrounding try/finally has no catch, so
+       * the tool throws rather than degrading to raw text.
+       *
+       * That agent holds a declared, correctly-named, correctly-invoked tool
+       * that cannot read. A cue scoped to absence sends it hunting for another
+       * name, which is the behaviour this whole line exists to prevent.
+       */
+      expect(content).toMatch(/or the call fails/i);
     });
 
     /**
