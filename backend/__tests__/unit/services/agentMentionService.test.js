@@ -1147,9 +1147,15 @@ describe('AgentMentionService', () => {
     const MCP_TOOLS = [...new Set(
       (fs.readFileSync(MCP_DOC, 'utf8').match(/commonly_[a-z][a-z0-9_]*[a-z0-9]/g) || []),
     )];
-    // openclaw extension only, live since 11878b43c — not in the MCP doc
-    // because the MCP server does not serve it.
-    const OPENCLAW_ONLY = ['commonly_open_dm'];
+    // Names the openclaw extension declares and the MCP server does not, so
+    // they are absent from the doc above. Deliberately NOT annotated with a
+    // commit — every previous attempt to pin these to a sha ("live since
+    // 11878b43c") named a ref on a lineage the gitlink was not tracking, and
+    // was false or true depending on the week. Whether a given pin declares
+    // these is asserted by `npm run verify:moltbot-tools` against the actual
+    // submodule; this list only records that the names are openclaw's, which
+    // is a fact about namespaces and does not move.
+    const OPENCLAW_ONLY = ['commonly_open_dm', 'commonly_read_attachment'];
     const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
 
     // If the doc ever moves or empties, every cue silently "passes". Fail loud.
@@ -1208,7 +1214,104 @@ describe('AgentMentionService', () => {
 
       const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
       expect(content).toContain('commonly_dm_agent');
-      expect(content).not.toMatch(/commonly_read_attachment/);
+    });
+
+    /**
+     * The read line is the same two-namespace problem as the DM opener, and
+     * it has now been wrong in BOTH directions inside 24 hours: it named
+     * `commonly_read_attachment` (right for openclaw, absent from MCP), that
+     * was deleted as nonexistent, and the replacement `commonly_read_file`
+     * is right for MCP but absent from openclaw — and was written at the
+     * wrong arity besides. An assertion that the delivered payload does NOT
+     * contain the openclaw name used to live in the DM-opener test above;
+     * it pinned one half of the defect while the other half shipped.
+     *
+     * What is asserted here is the property that survives a pin move: both
+     * names present, the MCP call at full arity, and a fallback for an agent
+     * that holds neither — which is the state the `0082147920` pin was in.
+     */
+    test('the read line names both readers, at the right arity, with a fallback', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+
+      // MCP's reader requires podId AND fileName — naming it with fileName
+      // alone is the defect this replaces, and reads as correct.
+      expect(content).toMatch(/commonly_read_file\(\{\s*podId:\s*"pod-1",\s*fileName\s*\}\)/);
+      expect(content).toContain('commonly_read_attachment');
+      // Pin-independence: an agent on a pin that declares neither must be
+      // told to stop, not left to hunt for a third name.
+      expect(content).toMatch(/no working reader/i);
+      expect(content).toMatch(/paste the content/i);
+
+      /**
+       * The skip clause must cover FAILURE, not only ABSENCE — declaration is
+       * not sufficiency.
+       *
+       * At `70bd82b8` the openclaw reader shells out: `officecli` for Office
+       * formats, `pdftotext` for PDF, and `markitdown` as the DEFAULT branch
+       * for every extension outside its short text list — `.ts`, `.js`, `.py`,
+       * `.sql` all land there, so source files (the likeliest attachment in a
+       * dev pod) take the spawn path. A missing binary rejects through
+       * `child.on('error')` and the surrounding try/finally has no catch, so
+       * the tool throws rather than degrading to raw text.
+       *
+       * That agent holds a declared, correctly-named, correctly-invoked tool
+       * that cannot read. A cue scoped to absence sends it hunting for another
+       * name, which is the behaviour this whole line exists to prevent.
+       */
+      expect(content).toMatch(/or the call fails/i);
+    });
+
+    /**
+     * Sentence-level, same as the open_dm scoping test: the openclaw-only
+     * reader may appear, but never unqualified — an MCP seat reading
+     * "call commonly_read_attachment" with no runtime qualifier is exactly
+     * the turn-burn that forced the #296 rollback.
+     */
+    test('every commonly_read_attachment mention is scoped to openclaw', async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }),
+      });
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Hi @openclaw', id: 'msg-1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const { content } = AgentEventService.enqueue.mock.calls[0][0].payload;
+      const sites = [...content.matchAll(/commonly_read_attachment/g)];
+
+      // Control: zero occurrences would make the loop assert nothing.
+      expect(sites.length).toBeGreaterThan(0);
+
+      sites.forEach((m) => {
+        const window = content.slice(Math.max(0, m.index - 120), m.index + 120);
+        expect(window).toMatch(/openclaw/i);
+      });
     });
 
     // The allow-list above is deliberately weaker than it looks: it treats

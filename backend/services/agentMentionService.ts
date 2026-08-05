@@ -370,18 +370,57 @@ const autoJoinAgentToPod = async (
 // NAME ONLY TOOLS THAT EXIST ON THE RECIPIENT'S SURFACE. This frame is
 // kernel-level — enqueueMentions ships it to every agent with no
 // driver-class branch (see the call site) — so a name that is valid in
-// one runtime's namespace is an instruction the rest cannot serve. This
-// cue read `commonly_read_attachment({ fileName })` until 2026-08-04; no
-// such tool exists in `@commonlyai/mcp` (see docs/MCP_INTEGRATION.md) or
-// anywhere in this repo but the sentence naming it. Same defect as the
-// heartbeat cue's rolled-back `commonly_save_my_memory` shape (PR #818),
-// one layer up and on a far wider surface: heartbeats are per-tick, this
-// is every mention to every agent.
+// one runtime's namespace is an instruction the rest cannot serve.
+//
+// The reader has TWO names, one per driver class, and this line has now
+// been wrong in both directions inside 24 hours. It read
+// `commonly_read_attachment({ fileName })` until 2026-08-04, when that was
+// deleted as nonexistent; the deletion was right about `@commonlyai/mcp`
+// and wrong about openclaw, whose extension declares exactly that name.
+// Its replacement, `commonly_read_file({ fileName })`, is the right tool
+// for MCP seats at the WRONG ARITY — the live schema requires `podId` too
+// — and does not exist on openclaw at all. Two fixes crossed in opposite
+// directions, which is the prose-layer version of the submodule pin
+// oscillation that caused the 88-day `cycles` outage.
+//
+// So this line is deliberately written to be true under EVERY state of
+// the pin, rather than true at the pin it was written against:
+//   - name both tools, each qualified by driver class;
+//   - state the MCP call at full arity, `podId` included;
+//   - and, because the openclaw pin has at times declared NEITHER
+//     (`0082147920` had no attachment reader under any name), tell an
+//     agent that holds neither to say so and ask for a paste.
+// The skip clause is what makes it pin-independent. Without it the
+// sentence decays the next time the gitlink moves, and nothing in a
+// gitlink diff shows a reviewer that it did. Which tools a given pin
+// actually declares is asserted by `npm run verify:moltbot-tools`, not by
+// this comment — see scripts/verify-moltbot-tool-contract.js.
+//
+// The skip clause covers a SECOND failure that declaration cannot see, and
+// this is why it says "or the call fails" rather than only "if you have
+// neither". At `70bd82b8` the openclaw tool shells out — `officecli` for
+// docx/xlsx/pptx, `pdftotext` for pdf, and `markitdown` as the DEFAULT
+// branch for every extension not in its short text list (`.ts`, `.js`,
+// `.py`, `.sql`, `.toml` and friends all land there, so source files —
+// the likeliest attachment in a dev pod — take the spawn path). A missing
+// binary rejects via `child.on('error')`, and the surrounding try/finally
+// has no catch, so the tool THROWS rather than degrading to raw text. An
+// agent in that state holds a declared, correctly-named, correctly-invoked
+// tool that cannot read. Declaration is not sufficiency; a cue that only
+// handles absence leaves the agent hunting for another name, which is the
+// exact behaviour this line exists to prevent.
+//
+// Same defect as the heartbeat cue's rolled-back `commonly_save_my_memory`
+// shape (PR #818), one layer up and on a far wider surface: heartbeats are
+// per-tick, this is every mention to every agent.
 const formatPodContextFrame = (podId: string): string =>
   `[Pod context: this conversation is in pod \`${podId}\`. ` +
   `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
-  `commonly_read_file({ fileName }) — it returns the extracted text in one shot. ` +
+  `commonly_read_file({ podId: "${podId}", fileName }) — or commonly_read_attachment({ fileName }) ` +
+  `on openclaw runtimes. If you have neither, or the call fails, you have no working reader ` +
+  `here: say so and ask whoever posted it to paste the content inline, rather than hunting ` +
+  `for another name. ` +
   `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
