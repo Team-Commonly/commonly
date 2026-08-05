@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -48,6 +50,9 @@ jobs:
           cd ../cli
           npm ci --include=dev
           cd ..
+
+      - name: Verify moltbot tool contract
+        run: npm run verify:moltbot-tools
 
       - name: Backend TypeScript check
         run: |
