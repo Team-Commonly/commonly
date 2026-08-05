@@ -18,6 +18,8 @@ const {
   parseDeclaredTools,
   collectRequiredTools,
   loadCyclesTrailer,
+  readDeclaredBranch,
+  checkPinReachable,
 } = require('../../../../scripts/verify-moltbot-tool-contract');
 
 // Shape lifted verbatim from extensions/commonly/src/tools.ts at both refs.
@@ -118,6 +120,106 @@ describe('moltbot tool contract', () => {
     // pin moved — which is the event this whole check exists to catch.
     it('is not vacuous: the two lineages give different verdicts', () => {
       expect(missingFrom(PIN_SOURCE)).not.toEqual(missingFrom(BRANCH_SOURCE));
+    });
+  });
+
+  /**
+   * Pin reachability — a second invariant on the same subject.
+   *
+   * The tool contract asks what the pin DECLARES. This asks whether the pin is
+   * REACHABLE from the branch `.gitmodules` claims to track. Neither implies
+   * the other, and #840 is the proof: it pinned a commit with an exactly
+   * correct tool set that lived only on an unmerged feature branch, so the
+   * tool contract went green over a pin a squash-merge would have orphaned.
+   */
+  describe('pin reachability', () => {
+    describe('readDeclaredBranch', () => {
+      // The real .gitmodules declares TWO submodules and only the second has a
+      // `branch =`. A first-match regex therefore returns the right answer for
+      // the wrong reason, and would start lying the day the other submodule
+      // gains a branch. The fixture gives BOTH a branch so the test can tell
+      // block-scoped parsing apart from luck.
+      const TWO_SUBMODULES = [
+        '[submodule "external/awesome-openclaw-skills"]',
+        '\tpath = external/awesome-openclaw-skills',
+        '\turl = https://github.com/VoltAgent/awesome-openclaw-skills',
+        '\tbranch = some-other-branch',
+        '[submodule "_external/clawdbot"]',
+        '\tpath = _external/clawdbot',
+        '\turl = https://github.com/Team-Commonly/openclaw',
+        '\tbranch = rebase-2026.3.29',
+      ].join('\n');
+
+      it('reads the clawdbot block, not the first branch in the file', () => {
+        expect(readDeclaredBranch(TWO_SUBMODULES)).toBe('rebase-2026.3.29');
+      });
+
+      it('returns null when the clawdbot block declares no branch', () => {
+        const noBranch = TWO_SUBMODULES.replace('\tbranch = rebase-2026.3.29', '');
+        expect(readDeclaredBranch(noBranch)).toBeNull();
+      });
+
+      it('returns null when there is no clawdbot block at all', () => {
+        expect(readDeclaredBranch('[submodule "other"]\n\tbranch = main\n')).toBeNull();
+      });
+    });
+
+    describe('checkPinReachable', () => {
+      // `git merge-base --is-ancestor` communicates its ANSWER through the exit
+      // code: 1 means "not an ancestor". Anything above 1 is git failing, which
+      // is a different thing entirely.
+      const gitError = (status) => Object.assign(new Error(`git exited ${status}`), { status });
+
+      it('reports contained when the ancestry check succeeds', () => {
+        const exec = jest.fn(() => '');
+        expect(checkPinReachable({ exec }).state).toBe('contained');
+      });
+
+      it('reports orphaned when --is-ancestor exits 1', () => {
+        const exec = jest.fn((_bin, args) => {
+          if (args[0] === 'merge-base') throw gitError(1);
+          return '';
+        });
+        expect(checkPinReachable({ exec }).state).toBe('orphaned');
+      });
+
+      /**
+       * The control that matters. A git failure — bad object, corrupt repo,
+       * permissions — must NOT be reported as "the pin is orphaned", because a
+       * false violation gets the check disabled, and a check that cried wolf is
+       * worth less than no check. It must degrade to undetermined, which is
+       * still non-zero.
+       */
+      it('reports undetermined, not orphaned, when git errors above 1', () => {
+        const exec = jest.fn((_bin, args) => {
+          if (args[0] === 'merge-base') throw gitError(128);
+          return '';
+        });
+        expect(checkPinReachable({ exec }).state).toBe('undetermined');
+      });
+
+      it('falls back to fetching when the remote ref is not present locally', () => {
+        const calls = [];
+        const exec = jest.fn((_bin, args) => {
+          calls.push(args[0]);
+          if (args[0] === 'rev-parse') throw gitError(1);
+          return '';
+        });
+        expect(checkPinReachable({ exec }).state).toBe('contained');
+        expect(calls).toContain('fetch');
+      });
+
+      it('reports undetermined when the branch can neither be resolved nor fetched', () => {
+        const exec = jest.fn((_bin, args) => {
+          if (args[0] === 'rev-parse' || args[0] === 'fetch') throw gitError(128);
+          return '';
+        });
+        const result = checkPinReachable({ exec });
+        expect(result.state).toBe('undetermined');
+        // Non-vacuity: an undetermined verdict has to say what stopped it, or
+        // it is indistinguishable from the check silently not running.
+        expect(result.detail).toMatch(/fetch/i);
+      });
     });
   });
 });

@@ -33,10 +33,16 @@
  * conflict rather than a safeguard. Widening it to those cues is the obvious
  * next step once #818 lands — see WIDENING below.
  *
+ * WHAT IT ALSO CHECKS. That the pinned commit is contained in the branch
+ * `.gitmodules` declares. That is a separate invariant on the same subject and
+ * neither implies the other — see checkPinReachable. Both are reported before
+ * either decides the exit code, so a failure in one never hides the other.
+ *
  * EXIT CODES
- *   0  contract holds
- *   1  a required tool is missing from the pinned extension  ← the regression
- *   2  cannot verify (submodule not initialised, file missing/unparseable)
+ *   0  both contracts hold
+ *   1  a required tool is missing, or the pin is not on the declared branch
+ *   2  cannot verify (submodule not initialised, file missing/unparseable,
+ *      or the declared branch could not be resolved to compare against)
  *
  * 2 is deliberately NOT 0. A check that cannot run must not look like a check
  * that passed — that is the failure mode this whole investigation kept hitting.
@@ -97,14 +103,103 @@ const parseDeclaredTools = (source) => new Set(
     .map((m) => m.replace(/name:\s*["']/, '').replace(/["']$/, '')),
 );
 
-const readGitlinkSha = () => {
+const readGitlinkSha = ({ full = false } = {}) => {
   try {
     const out = execFileSync('git', ['ls-tree', 'HEAD', '_external/clawdbot'], {
       cwd: REPO_ROOT, encoding: 'utf8',
     });
-    return (out.trim().split(/\s+/)[2] || '').slice(0, 10) || '(unknown)';
+    const sha = out.trim().split(/\s+/)[2] || '';
+    if (!sha) return '(unknown)';
+    return full ? sha : sha.slice(0, 10);
   } catch {
     return '(unknown)';
+  }
+};
+
+/** The branch `.gitmodules` declares for the submodule, or null if none. */
+const readDeclaredBranch = (gitmodulesText) => {
+  const text = typeof gitmodulesText === 'string'
+    ? gitmodulesText
+    : fs.readFileSync(path.join(REPO_ROOT, '.gitmodules'), 'utf8');
+  // Take the `branch =` that follows the clawdbot submodule header, not the
+  // first one in the file — there is more than one submodule.
+  const header = text.indexOf('[submodule "_external/clawdbot"]');
+  if (header === -1) return null;
+  const nextHeader = text.indexOf('[submodule', header + 1);
+  const block = text.slice(header, nextHeader === -1 ? undefined : nextHeader);
+  const m = block.match(/^\s*branch\s*=\s*(\S+)\s*$/m);
+  return m ? m[1] : null;
+};
+
+/**
+ * Is the pinned commit contained in the branch `.gitmodules` declares?
+ *
+ * This is a DIFFERENT invariant from the tool contract above, on the same
+ * subject. The tool contract asks what the pin declares; this asks whether the
+ * pin is reachable from the branch we claim to track. Both were violated by
+ * the same five bumps, and neither implies the other: #840 pinned a commit
+ * whose tool set was exactly right and which lived only on an unmerged feature
+ * branch, so the tool contract passed green over a pin that a squash-merge
+ * would have orphaned.
+ *
+ * An unreachable pin is not a cosmetic problem. Once the branch holding it is
+ * deleted the commit becomes GC-eligible, and every fresh clone and every
+ * `submodules: recursive` CI job then dies on
+ *   fatal: Fetched in submodule path '_external/clawdbot', but it did not contain <sha>
+ * which is neither loud nor legible at the surface anyone is watching.
+ *
+ * Returns { state: 'contained' | 'orphaned' | 'undetermined', detail }.
+ * `undetermined` is not success — main() maps it to exit 2, same as any other
+ * check that could not run.
+ */
+const checkPinReachable = ({ exec = execFileSync } = {}) => {
+  const branch = readDeclaredBranch();
+  const pin = readGitlinkSha({ full: true });
+  const submodule = path.join(REPO_ROOT, '_external', 'clawdbot');
+
+  if (!branch) {
+    return { state: 'undetermined', branch, pin, detail: '.gitmodules declares no branch for _external/clawdbot' };
+  }
+  if (pin === '(unknown)') {
+    return { state: 'undetermined', branch, pin, detail: 'could not read the gitlink sha from HEAD' };
+  }
+
+  const git = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+  // Prefer the ref we already have; only reach for the network if it is absent,
+  // so an offline run of a freshly-updated checkout still resolves.
+  let ref = `refs/remotes/origin/${branch}`;
+  try {
+    git(['rev-parse', '--verify', '--quiet', ref]);
+  } catch {
+    try {
+      git(['fetch', '--quiet', 'origin', branch]);
+      ref = 'FETCH_HEAD';
+    } catch (err) {
+      return {
+        state: 'undetermined',
+        branch,
+        pin,
+        detail: `could not resolve or fetch origin/${branch} (${String(err.message || err).split('\n')[0]})`,
+      };
+    }
+  }
+
+  try {
+    git(['merge-base', '--is-ancestor', pin, ref]);
+    return { state: 'contained', branch, pin, detail: `${pin.slice(0, 10)} is an ancestor of ${branch}` };
+  } catch (err) {
+    // `--is-ancestor` exits 1 for "not an ancestor" and >1 for a real error.
+    // Only the former is a finding; anything else means the check did not run.
+    if (err && err.status === 1) {
+      return { state: 'orphaned', branch, pin, detail: `${pin.slice(0, 10)} is NOT contained in ${branch}` };
+    }
+    return {
+      state: 'undetermined',
+      branch,
+      pin,
+      detail: `ancestry check errored (${String(err && err.message).split('\n')[0]})`,
+    };
   }
 };
 
@@ -139,6 +234,32 @@ const main = () => {
 
   const missing = [...required.entries()].filter(([tool]) => !declared.has(tool));
 
+  // Both checks are reported before either decides the exit code. A pin can be
+  // simultaneously tool-complete and unreachable (that is exactly #840), and
+  // exiting on the first failure would hide whichever ran second.
+  const reach = checkPinReachable();
+  if (reach.state === 'orphaned') {
+    console.error(
+      `[moltbot-tool-contract] FAIL — the pin is not on the branch .gitmodules declares.\n`
+      + `    pin              ${reach.pin}\n`
+      + `    declared branch  ${reach.branch}\n`
+      + `    ${reach.detail}\n\n`
+      + '  The tool set at this pin may be perfectly correct — that is not what this\n'
+      + '  checks. Once the branch actually holding this commit is deleted it becomes\n'
+      + '  GC-eligible, and every fresh clone and `submodules: recursive` job then fails\n'
+      + "  with \"did not contain <sha>\".\n"
+      + '  Fix: land the commit on the declared branch and pin the sha that results.\n'
+      + '  A squash-merge mints a NEW sha — re-pin to that one, do not assume the\n'
+      + '  feature-branch commit survived.',
+    );
+  } else if (reach.state === 'undetermined') {
+    console.error(
+      `[moltbot-tool-contract] CANNOT VERIFY reachability — ${reach.detail}.\n`
+      + '  Exiting 2, NOT 0: the tool-declaration result below stands on its own, but\n'
+      + '  nothing here established that the pin is durable.',
+    );
+  }
+
   if (missing.length) {
     console.error(
       `[moltbot-tool-contract] FAIL — the pinned openclaw extension (${pin}) declares `
@@ -151,16 +272,26 @@ const main = () => {
       + '  re-drops commonly_react_to_message. End the divergence: cherry-pick onto\n'
       + '  openclaw main, then pin that.',
     );
-    process.exit(1);
+  } else {
+    console.log(
+      `[moltbot-tool-contract] OK — pin ${pin} declares ${declared.size} commonly_* tools, `
+      + `including all ${required.size} the fleet is instructed to call `
+      + `(${[...required.keys()].join(', ')}).`,
+    );
   }
 
-  console.log(
-    `[moltbot-tool-contract] OK — pin ${pin} declares ${declared.size} commonly_* tools, `
-    + `including all ${required.size} the fleet is instructed to call `
-    + `(${[...required.keys()].join(', ')}).`,
-  );
+  if (reach.state === 'contained') {
+    console.log(`[moltbot-tool-contract] OK — ${reach.detail}, the branch .gitmodules declares.`);
+  }
+
+  // Severity order: a proven violation (1) outranks an unrun check (2) only
+  // because a violation is actionable now. Both are non-zero; neither is a pass.
+  if (missing.length || reach.state === 'orphaned') process.exit(1);
+  if (reach.state === 'undetermined') process.exit(2);
 };
 
 if (require.main === module) main();
 
-module.exports = { parseDeclaredTools, collectRequiredTools, loadCyclesTrailer };
+module.exports = {
+  parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, readDeclaredBranch, checkPinReachable,
+};
