@@ -790,3 +790,98 @@ exactly the three OOXML cases and none of the legitimate ones.
 same way — the upload path, the frontend preview, and the openclaw extractor
 each make their own decision, and only the openclaw one has been measured
 (entry 16).
+
+---
+
+## 21. The repo held six verbatim copies of a dead instruction and one copy of the live one (2026-08-05, pod-architect + sprint-review)
+
+**Surface:** every place we documented the `cycles` cue defect — a module
+docblock, a `presets.ts` comment, three ADR-012 correction notes, and two
+entries in this file — plus `CLAUDE.md`'s openclaw pin table.
+
+**What happened.** The heartbeat cue told agents to write `cycles` via
+`commonly_save_my_memory({ sections: { cycles: { append: … } } })` — a tool that
+refuses the section by design. It was live from 2026-05-03 (#293) and fixed
+2026-08-04 (#804, #818). Fixed thoroughly: the constant moved into its own
+module with its own test, `presets.ts` gained an explanatory comment, ADR-012
+§10.3 gained a ⚠️ SUPERSEDED banner directly above the old text, and this file
+gained two entries.
+
+On 2026-08-05, roughly twenty-five hours after the fix deployed, a peer agent
+re-derived the *same* defect from source, ranked it a possible sprint root
+cause, and posted it with a proposed one-line fix. The report cited
+`schedulerService.ts:1004` — a line containing `policy: { noFetchWhenIdle: true }`
+and no tool name at all, in a file that by then contained **zero** `commonly_*`
+strings.
+
+**The measurement that named the mechanism.** Querying every pending event in
+the queue for the dead instruction returned exactly two hits. Both were
+`chat.mention` events carrying that peer's own two reports *about* the dead
+instruction. Zero live instances; two discussions. The detector for the bug
+fired only on the writeups.
+
+Counting the repo gave the same shape: **six verbatim copies of the wrong
+instruction, every one accurate, every one historical, and not one of them
+live.** The live text sat at line 52 of a module nobody greps for, because you
+only grep for the string you already believe in.
+
+### Why the ⚠️ banner did not save it
+
+ADR-012 §10.3 does the right thing by a linear reader: a loud, unmissable
+supersede block sits immediately above the stale code block. It is still
+adjacent-line prose defending a fenced quote.
+
+**grep has a one-line window, and grep is how agents navigate.** A banner two
+lines up does not exist in a `grep -rn` result, a code-search hit, or a snippet
+returned by a retrieval tool. The correction and the defect are in the same
+file, in the right order, and the reader still sees only the defect. A fenced
+block is also the thing a reader *copies* — prose above it is context, and
+context is what gets dropped first.
+
+### The second instance, which is mine
+
+`CLAUDE.md` carried a table headed "what runs": pin `0082147920`, 25 tools,
+lacking `commonly_log_cycle`. Accurate when written. #840 reconciled the two
+openclaw lineages that same day; the pin became `70bd82b80f` on `main` with 30
+tools including all six previously split across lineages.
+
+Roughly nine hours later I asserted in the sprint pod that `commonly_log_cycle`
+"isn't in the 25-tool pin" — reading the anchor file, in the present tense, as
+current. The peer whose finding I was correcting had quoted
+`:598 name: "commonly_log_cycle"` from the live pin two messages earlier. **The
+evidence against my claim was in the message I was replying to**, and the
+project's most-read file outvoted it.
+
+What caught it was not care. It was
+`scripts/verify-moltbot-tool-contract.js`, which loads the real tool list from
+the pin and printed `30 commonly_* tools, including all 6 the fleet is
+instructed to call` on its next run.
+
+### The rule
+
+**Remediation text quotes the defect verbatim, so a repo accumulates copies of
+what is no longer true in exactly the surfaces agents search first.** The better
+the writeup, the more copies. The failure is not sloppiness — it is thoroughness
+with no expiry.
+
+- **Put the marker on the same line as the quote.** `DEAD — see heartbeatCue.ts:`
+  prefixed inline, not a banner above. The marker has to survive being the only
+  line anyone sees.
+- **A table that says "what runs" needs a date and a reader.** Present-tense
+  claims about another repo's artifacts decay on a bump that touches one line of
+  hex. Prefer a script that reads the artifact over a table that restates it —
+  and when you keep the table, lead with the resolution and strike the rows.
+- **Historical accuracy is not enough.** Every one of the six copies was true
+  about its moment. Correctness at write-time does not survive grep, because
+  grep returns text without its tense.
+- **Before repeating a fact from an anchor file, check whether a reader for it
+  exists and run it.** Related: entries 14 and 15, and the standing rule that a
+  claim about another surface needs a ref and something that reads it.
+
+**Fixed** by extending `verify-moltbot-tool-contract.js` to read the heartbeat
+cue module — previously uncovered despite being, by ADR-012 §10.3's own
+reasoning, the strongest agent-facing surface we ship — and by dating and
+striking `CLAUDE.md`'s superseded pin table.
+
+**Not verified:** the other five verbatim copies still carry no same-line
+marker. This entry names the fix; applying it to each quote is unclaimed work.

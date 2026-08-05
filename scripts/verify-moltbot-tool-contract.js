@@ -178,8 +178,100 @@ const loadMentionCues = () => {
   }).join('\n');
 };
 
+const HEARTBEAT_CUE_MODULE = path.join(REPO_ROOT, 'backend', 'services', 'heartbeatCue.ts');
+
+/**
+ * The inline heartbeat cue — by ADR-012 §10.3's own reasoning the STRONGEST
+ * agent-facing surface we ship, and until now the one this check did not read.
+ * It reached every agent on every tick while the two weaker surfaces beside it
+ * were the only ones under contract.
+ *
+ * That gap had already been paid for twice. The cue named
+ * `commonly_save_my_memory` for a `cycles` write from 2026-05-03 (#293) to
+ * 2026-08-04 (#804/#818) — a tool that refuses the section by design — and
+ * neither repo's suite could see the other, so both stayed green for three
+ * months. @sprint-review re-derived that same contradiction from source on
+ * 2026-08-05, hours after it was fixed, which is what surfaced this omission.
+ *
+ * The constant interpolates `${CYCLES_WRITER_TOOL}`, so a plain text read
+ * yields the template rather than the tool name. Resolve it from the same file
+ * instead of restating the name here: a restated name is exactly the drift this
+ * script exists to catch, and it would defend a string nobody receives.
+ */
+const loadHeartbeatCycleCue = () => {
+  const code = stripComments(fs.readFileSync(HEARTBEAT_CUE_MODULE, 'utf8'));
+
+  const writer = (code.match(/const CYCLES_WRITER_TOOL = '(commonly_[a-z_]+)'/) || [])[1];
+  if (!writer) throw new Error('CYCLES_WRITER_TOOL not found in heartbeatCue.ts');
+
+  const start = code.indexOf('const HEARTBEAT_CYCLE_CUE');
+  if (start === -1) throw new Error('HEARTBEAT_CYCLE_CUE not found in heartbeatCue.ts');
+  // To the next top-level declaration — the cue body contains `;` inside its
+  // own prose, so a statement-terminator scan would slice it short and silently
+  // drop whatever tool names live past the cut.
+  const rest = code.slice(start);
+  const end = rest.slice(1).search(/\n(?:const|export|function) /);
+  const body = end === -1 ? rest : rest.slice(0, end + 1);
+  if (body.length < 200) {
+    throw new Error(`HEARTBEAT_CYCLE_CUE sliced to ${body.length} chars — the region shape has changed`);
+  }
+
+  const resolved = body.split('${CYCLES_WRITER_TOOL}').join(writer);
+
+  // The escape hatch is a CONTRACT, not padding, and it must survive the pin
+  // currently being able to satisfy the cue. It was added by #804 when the
+  // pinned lineage genuinely lacked `commonly_log_cycle`: naming one tool with
+  // no fallback makes a diligent agent exhaust its schema hunting a surface
+  // that is not there, which is the turn-burn that forced the #296 rollback.
+  // #840 reconciled the lineages and the pin now declares the tool — so this
+  // clause looks redundant today and would be the first thing an editor cuts.
+  // Deleting it re-arms the original failure the next time a bump drops the
+  // tool, which the log in CLAUDE.md shows happening three times unnoticed.
+  if (!/is not in your tool list/.test(resolved) || !/do not substitute one/.test(resolved)) {
+    throw new Error(
+      'HEARTBEAT_CYCLE_CUE no longer tells an agent what to do when the named tool is '
+      + 'absent from its tool list. That clause is what makes naming a single writer safe '
+      + 'across pin changes — restore it rather than relying on the pin to keep the tool.',
+    );
+  }
+
+  // EXISTENCE IS NOT CAPABILITY, and the check below is the only part of this
+  // script that knows the difference.
+  //
+  // The rest of this file asks "does the pin declare every tool the cue names."
+  // That question would have PASSED the #295 cue against today's pin: the cue
+  // named `commonly_save_my_memory`, and the pin declares it — at :526, right
+  // above a description that says "`cycles` is intentionally unavailable here."
+  // A declared tool that refuses the payload is indistinguishable from a working
+  // one to a name-matching check, which is why three months of green suites did
+  // not notice.
+  //
+  // `cycles` has exactly one writer, so the cue that instructs the write may
+  // name exactly that one tool and no other. Naming a second is how the original
+  // defect looked from here, and it is the shape a well-meaning edit reproduces
+  // ("mention save_my_memory too, in case log_cycle is missing") — the precise
+  // substitution the escape-hatch clause above forbids in prose.
+  const named = new Set(resolved.match(/commonly_[a-z_]+/g) || []);
+  named.delete(writer);
+  if (named.size) {
+    throw new Error(
+      `HEARTBEAT_CYCLE_CUE names ${[...named].join(', ')} alongside ${writer}. `
+      + `\`cycles\` has one writer; a cue naming a second sends agents to a tool that `
+      + 'declares the section unavailable — the #295 defect, which a declares-the-tool '
+      + 'check cannot see because the wrong tool exists too.',
+    );
+  }
+
+  return resolved;
+};
+
 const REQUIRED_TOOL_SOURCES = [
   { name: 'cycles reflection trailer (presets.ts)', text: loadCyclesTrailer },
+  // No `namedForOtherDrivers` here on purpose. `commonly_log_cycle` is declared
+  // by the pin as of #840, so this is a HARD requirement: if a future bump drops
+  // it again, the cue keeps instructing the fleet to call it and this check goes
+  // red instead of the fleet going quiet for three months.
+  { name: 'inline heartbeat cycle cue (heartbeatCue.ts)', text: loadHeartbeatCycleCue },
   {
     name: 'inline mention cues (agentMentionService.ts)',
     text: loadMentionCues,
