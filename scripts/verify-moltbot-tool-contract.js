@@ -46,11 +46,13 @@
  *   pin behind tip  ← AT REST  35M → 71M, 1.3s   — one --deepen=64 rung
  *   pin genuinely orphaned      35M → 288M, 18s  — the whole ladder, then FAIL
  *
- * The middle row is the normal one, not the first: a pin sits behind its branch
- * tip except in the moments right after a bump, so the fast path is the
- * exception and one rung is the steady state. Only the last row is expensive,
- * it is a build that was failing anyway, and it is the only shape where a
- * cheaper answer would be a guess.
+ * The middle row is the normal one, not the first. The fast path fires only
+ * when the pin IS the tip — that is, after a bump made TO the tip, and only
+ * until the branch next moves. Note that is narrower than "right after a bump":
+ * #840 bumps to `70bd82b8` while openclaw main is at `38f717bc6`, so it is a
+ * brand-new bump whose fast path still misses. One rung is the steady state.
+ * Only the last row is expensive, it is a build that was failing anyway, and it
+ * is the only shape where a cheaper answer would be a guess.
  *
  * EXIT CODES
  *   0  both contracts hold
@@ -227,7 +229,9 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
 
   // Fast path, and the only one that is trustworthy in a shallow checkout:
   // if the pin IS the branch tip, containment is settled without any history.
-  // Worth doing first because it is also the common case right after a bump.
+  // Worth doing first because it costs one rev-parse — but it is NOT the
+  // common case. It fires only after a bump made TO the tip, and only until
+  // the branch next moves; see the COST table in the header.
   let tip = null;
   try {
     tip = String(git(['rev-parse', ref])).trim();
