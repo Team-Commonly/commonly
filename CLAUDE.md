@@ -322,8 +322,29 @@ docker build frontend --build-arg REACT_APP_API_URL=https://api.commonly.me \
 (cd _external/clawdbot && docker build \
   --build-arg OPENCLAW_EXTENSIONS=acpx \
   --build-arg OPENCLAW_INSTALL_GH_CLI=1 \
+  --build-arg OPENCLAW_INSTALL_DOC_TOOLCHAIN=1 \
   -t "$REG/clawdbot-gateway:$TAG" . && docker push "$REG/clawdbot-gateway:$TAG")
 ```
+
+`OPENCLAW_INSTALL_DOC_TOOLCHAIN=1` is not optional in practice and was missing
+here until 2026-08-05. `deploy-dev.yml` passes it; this escape hatch did not, so
+a hand-built hotfix image silently shipped without the extractors
+`commonly_read_attachment` shells out to, and nothing failed until an agent
+tried to read an attachment — at which point it throws rather than degrading.
+Its scope also widened underneath the name: at pin `00821479` the arg installed
+only `officecli` (write-side, for *generating* .docx/.xlsx/.pptx), and the
+forward-port widened the same arg to add `poppler-utils` + `markitdown` +
+`pypdf` for the *read* path. Verified on the live gateway 2026-08-05:
+`officecli` present, `pdftotext` and `markitdown` absent — matching the old pin
+exactly. **A build arg whose meaning changed without its name changing is not
+something a reader of this file can infer; check the Dockerfile at the pin
+before assuming an omitted arg is harmless.**
+
+Note also that the gateway image is where the openclaw *extension code* lives —
+`commonly_*` tools included. A submodule bump alone changes nothing live, and
+`reprovision-all` only regenerates `moltbot.json` from the DB. A pin change
+reaches agents as: **merge → `Deploy Dev` (rebuilds from the new gitlink) →
+`reprovision-all`.**
 
 `gcloud builds submit` is blocked by the dev project's org policy on AR uploads, so don't reach for it.
 
