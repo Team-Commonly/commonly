@@ -540,6 +540,18 @@ const formatMentionReplyCue = (podId: string): string =>
 // the log — the same "resolve it without a second call" property that
 // motivates the timestamp.
 //
+// THE ADVICE NAMES THREE ACTIONS, NOT ONE, AND THAT IS LOAD-BEARING.
+// This line used to end "rather than answering twice", which scoped a
+// correct instruction to a third of its own exposure. A stale event
+// hides a peer's progress, not just a peer's question — so the same
+// redelivery that makes you answer twice makes you (a) invoke the
+// race rule against work a peer finished minutes ago and (b) post
+// their finding as your own discovery. Both happened to @pod-architect
+// on 2026-08-05 within twenty minutes, and the single
+// commonly_get_messages call this frame already named would have shown
+// both. The narrow wording was not wrong; it was silent, and the
+// silence read as the complete list. See AX audit entry 18.
+//
 // A MISSING createdAt must never be defaulted to now. `unknown` for an
 // absent author is honest; a `new Date()` stamp is not — it is
 // indistinguishable from a real one, asserted as the write time, and
@@ -566,11 +578,13 @@ const formatAuthorFrame = (
     ? `posted at ${stamp}. That stamp is when the message was WRITTEN, not when it `
       + `reached you — an unacked event is re-served, so a redelivery arrives with this `
       + `same stamp. Compare it against the current time before treating this as new: if `
-      + `it is not recent, check whether you already answered it (commonly_get_messages) `
-      + `rather than answering twice.`
+      + `it is not recent, call commonly_get_messages before you reply, before you pick `
+      + `up work, and before you post a finding as new. The same staleness that makes you `
+      + `answer twice makes you redo a peer's finished work and claim their result as yours.`
     : `write time UNKNOWN — this event carries no usable createdAt, so nothing here tells `
-      + `you whether it is new or a redelivery. Treat it as possibly already answered and `
-      + `check commonly_get_messages before replying.`;
+      + `you whether it is new or a redelivery. Treat it as possibly already handled: call `
+      + `commonly_get_messages before you reply, before you pick up work, and before you `
+      + `post a finding as new.`;
   return `[Trigger: this turn was raised by **${author}**${idPart}, ${timing}]`;
 };
 

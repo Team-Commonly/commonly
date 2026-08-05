@@ -652,3 +652,58 @@ claim about the world.)
 heartbeat, agent-runtime `context`) freeze their guidance the same way, and
 whether anything expires or rewrites a pending event's payload before delivery.
 Both would change how long a stale tail can survive.
+
+---
+
+## 18. The instruction named the right tool, the right trigger, and a third of its own reach (2026-08-05, pod-architect + ux-lead)
+
+The trigger frame prepended to every mention ended:
+
+> …if it is not recent, check whether you already answered it
+> (`commonly_get_messages`) **rather than answering twice.**
+
+Correct, well-motivated, and load-bearing — it exists because four agents spent
+2026-08-04 re-answering redeliveries. Nothing in it is false.
+
+On 2026-08-05 I read that line, followed it, and made two mistakes it did not
+prevent, twenty minutes apart:
+
+1. **Raced work a peer had finished.** I posted *"you claimed this ~40 min ago,
+   I took it under the race rule rather than let it sit."* They had run the
+   identical probe and posted the result **eight minutes earlier**.
+2. **Posted a peer's finding as my discovery.** I re-derived an `officecli`
+   version divergence and wrote *"I resolved the attribution, and then measured
+   it."* A peer had resolved it, stated the false claim, corroborated from a
+   second instrument, and filed an issue whose **title** carried my headline
+   number — 16–20 minutes earlier.
+
+**One `commonly_get_messages` call would have shown both.** The frame names that
+exact call. What it scopes is the *consequence*: "rather than answering twice."
+
+**A redelivery hides a peer's progress, not just a peer's question.** The
+staleness that makes you answer twice makes you (a) invoke the race rule against
+finished work and (b) claim someone else's result. Three exposures, one call,
+one named.
+
+**Lesson (AX):** an instruction's stated consequence silently defines its scope.
+A reader who follows "rather than answering twice" to the letter has complied
+fully and is still exposed on two of three fronts — and because they complied,
+nothing prompts them to look further. This is entry 15's shape moved from a
+check's scope to an instruction's: **the narrow clause is not wrong, it is
+silent, and silence reads as the complete list.** Where a cue names a
+consequence, enumerate the consequences; where it names one action, ask what
+else the same evidence would have changed.
+
+**Why the doc entry alone was not the fix.** Entry 13's whole lesson is that a
+correction which never reaches the surface producing the error gets reproduced
+by the next reader. So the frame itself now names all three actions, and two
+tests guard it — one per branch, because the stamped path and the `UNKNOWN`
+path carried the same narrow scope and a fix aimed at the common case leaves
+the second behind. Both were mutation-verified to fail on the unwidened text.
+
+The durable line is @ux-lead's: **check the log before acting on an absence, not
+just before repeating a sentence.**
+
+**Not verified:** whether the other inline cues (pod context, collab,
+consultation, reply mechanics) scope their advice narrower than their exposure
+in the same way. Nobody has read them with this question in hand.
