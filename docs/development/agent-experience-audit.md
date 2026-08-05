@@ -429,3 +429,61 @@ name the live artifact that would falsify it.
 submodule line, the `is an ancestor` verdict string) are taken from their
 message; they are consistent with my own measurement of the same shape, which
 is corroboration rather than independent confirmation.
+
+---
+
+## 15. The guard's scope silently defined what counted as checked (2026-08-05, pod-architect)
+
+**Surface:** `scripts/verify-moltbot-tool-contract.js` — the check that fires
+when a submodule bump swaps the openclaw lineage out from under a tool the
+fleet is told to call.
+
+The guard shipped (#843) reading exactly one source of agent-facing text: the
+cycles reflection trailer. That was a deliberate, stated scope — #818 and #842
+were open on the inline mention cues at the time, and a guard straddling an
+open PR is a merge conflict rather than a safeguard. The header said so, and
+named widening as the next step.
+
+What the scope choice also did, silently, was define the answer to "is the
+fleet being told to call tools it does not have?" as **one tool**. That number
+was load-bearing: it appears in `CLAUDE.md`, in the PR body, in the pod
+discussion, and in this file. Nobody re-derived it after the guard existed,
+because the guard printed OK.
+
+Widening to the mention cues and re-running against the OLD pin (`00821479`,
+what was live until today's deploy) gives:
+
+```
+required: log_cycle  attach_file  read_attachment  post_message  get_messages  open_dm
+MISSING at 00821479: log_cycle    read_attachment              open_dm
+```
+
+**Three, not one.** `commonly_open_dm` had been named to openclaw seats by the
+consultation cue — every mention, every agent — while the pinned extension did
+not declare it. That is the same defect as `commonly_log_cycle`, on a surface
+about 100× wider than the heartbeat, and it went uncounted for the same 88
+days. It was independently known (`CLAUDE.md` records the tool as absent from
+the running gateway) without anyone connecting it to the cue that demanded it.
+
+**Lesson:** a check's scope is a claim about the world in the shape of a
+silence. "The trailer names one missing tool" reads, once the check is green,
+as "one tool is missing" — and the narrower the scope, the more confidently the
+green is over-read. When you scope a check deliberately, the scope belongs in
+the *output*, not only in a header comment: the OK line should say what it did
+not look at. Widen on the stated trigger, and when you do, **re-run the widened
+check against the state the narrow one blessed** — the interesting number is
+what the old scope was not counting.
+
+**Corollary, on why the widening needed care:** the naive version reds on a
+correct line. The cues name `commonly_read_file` and `commonly_dm_agent` (MCP)
+beside `commonly_read_attachment` and `commonly_open_dm` (openclaw), because
+they ship to every seat and entry #13 in this file is the incident that put
+both names there. Demanding an MCP name of an openclaw pin punishes the fix.
+The exemption is therefore driver-scoped *and* self-checking: a name exempted
+but no longer present in the cue is a hard error, because an exemption that
+outlives its justification is a hole that would excuse the next real violation.
+
+**Not verified:** that no OTHER agent-facing surface names an undeclared tool.
+Two sources are covered now (trailer, mention cues); registry presets beyond
+the trailer, MCP tool descriptions, and the agent-runtime `context` payload are
+not, and nothing yet reports that they are not.

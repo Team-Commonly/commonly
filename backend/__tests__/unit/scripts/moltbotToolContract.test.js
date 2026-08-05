@@ -14,13 +14,19 @@
  * than against invented ones.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   parseDeclaredTools,
   collectRequiredTools,
   loadCyclesTrailer,
+  loadMentionCues,
   readDeclaredBranch,
   checkPinReachable,
   readGitlinkSha,
+  stripComments,
+  MENTION_CUES,
 } = require('../../../../scripts/verify-moltbot-tool-contract');
 
 // Shape lifted verbatim from extensions/commonly/src/tools.ts at both refs.
@@ -37,10 +43,14 @@ const PIN_SOURCE = [
   'commonly_react_to_message', 'commonly_read_agent_memory',
 ].map(declaration).join('\n');
 
-// rebase-2026.3.29 — has log_cycle + open_dm, lacks react_to_message
+// rebase-2026.3.29 — has log_cycle + open_dm + read_attachment, lacks
+// react_to_message. read_attachment and open_dm are listed because the
+// widened contract requires them (the mention cues name both); they are real
+// declarations on this lineage, not fixture padding.
 const BRANCH_SOURCE = [
   'commonly_post_message', 'commonly_get_messages', 'commonly_attach_file',
   'commonly_log_cycle', 'commonly_open_dm', 'commonly_save_my_memory',
+  'commonly_read_attachment',
 ].map(declaration).join('\n');
 
 describe('moltbot tool contract', () => {
@@ -77,7 +87,7 @@ describe('moltbot tool contract', () => {
       const declared = parseDeclaredTools(BRANCH_SOURCE);
       expect(declared.has('commonly_log_cycle')).toBe(true);
       expect(declared.has('commonly_react_to_message')).toBe(false);
-      expect(declared.size).toBe(6);
+      expect(declared.size).toBe(7);
     });
 
     // The whole investigation turned on this distinction. `presets.ts` asserted
@@ -107,8 +117,14 @@ describe('moltbot tool contract', () => {
       return [...collectRequiredTools().keys()].filter((t) => !declared.has(t));
     };
 
+    // Three, not one. The trailer-only contract caught commonly_log_cycle;
+    // widening to the mention cues catches two more that the old pin also
+    // lacked and every agent was told on every mention to call. Measured
+    // against the real 00821479 tool block on 2026-08-05.
     it('FAILS against the pin — this is the live regression', () => {
-      expect(missingFrom(PIN_SOURCE)).toEqual(['commonly_log_cycle']);
+      expect(missingFrom(PIN_SOURCE)).toEqual([
+        'commonly_log_cycle', 'commonly_read_attachment', 'commonly_open_dm',
+      ]);
     });
 
     it('PASSES against the branch', () => {
@@ -121,6 +137,97 @@ describe('moltbot tool contract', () => {
     // pin moved — which is the event this whole check exists to catch.
     it('is not vacuous: the two lineages give different verdicts', () => {
       expect(missingFrom(PIN_SOURCE)).not.toEqual(missingFrom(BRANCH_SOURCE));
+    });
+  });
+
+  /**
+   * The mention cues — the wide surface. The trailer reaches an agent once a
+   * heartbeat; these reach every agent on every mention. Widening the contract
+   * to them is only safe because of the driver-scoped exclusion, and these
+   * tests exist mostly to keep that exclusion from becoming a hole.
+   */
+  describe('inline mention cues', () => {
+    const cueText = loadMentionCues();
+
+    it('reads the live cues rather than a restatement of them', () => {
+      // Control: an extraction that silently returned '' would satisfy every
+      // "does not require X" assertion below by emptiness.
+      expect(cueText.length).toBeGreaterThan(1000);
+      expect(cueText).toContain('[Pod context:');
+      expect(cueText).toContain('[Reply mechanics:');
+    });
+
+    it('requires the tools the cues tell every agent to call', () => {
+      const required = collectRequiredTools();
+      ['commonly_attach_file', 'commonly_read_attachment', 'commonly_post_message',
+        'commonly_get_messages', 'commonly_open_dm'].forEach((tool) => {
+        expect([...required.keys()]).toContain(tool);
+      });
+      expect(required.get('commonly_open_dm')).toMatch(/mention cues/i);
+    });
+
+    // The reason a naive widening is wrong. These are MCP names, deliberately
+    // present beside their openclaw counterpart because the cue ships to every
+    // seat. Requiring them of an openclaw pin reds a correct line.
+    it('does not require the MCP names the cues address to other drivers', () => {
+      const required = [...collectRequiredTools().keys()];
+      expect(required).not.toContain('commonly_read_file');
+      expect(required).not.toContain('commonly_dm_agent');
+    });
+
+    // ...and the exclusion has to stay earned. Both names must still be in the
+    // delivered text; an exemption for a tool no longer mentioned is a hole
+    // that would silently excuse a future, genuine requirement.
+    it('exempts only names that actually appear in the cues', () => {
+      expect(cueText).toContain('commonly_read_file');
+      expect(cueText).toContain('commonly_dm_agent');
+    });
+
+    // Both halves of each pair must be present, or the cue is telling one
+    // driver class to call something it does not have — the original defect.
+    it('keeps each capability named under BOTH driver namespaces', () => {
+      expect(cueText).toContain('commonly_read_attachment');
+      expect(cueText).toContain('commonly_open_dm');
+    });
+
+    it('ignores tool names that appear only in comments', () => {
+      // agentMentionService.ts discusses tools at length in comments,
+      // including ones that deliberately do not exist on the pinned lineage.
+      // A comment is not delivered to an agent and must not become a
+      // requirement.
+      const src = [
+        '// discussion of `commonly_ghost_tool` that no runtime declares',
+        '/* commonly_block_comment_tool */',
+        'const formatThingCue = (): string =>',
+        '  `[Thing: call commonly_real_tool to do the thing. '
+        + 'Padding so the region clears the non-vacuity floor for slicing.]`;',
+        '',
+        'const next = 1;',
+      ].join('\n');
+      const stripped = stripComments(src);
+      expect(stripped).toContain('commonly_real_tool');
+      expect(stripped).not.toContain('commonly_ghost_tool');
+      expect(stripped).not.toContain('commonly_block_comment_tool');
+      // Blanking, not deleting: line structure survives so `^const` anchors
+      // still land where they did in the original.
+      expect(stripped.split('\n')).toHaveLength(src.split('\n').length);
+    });
+
+    it('does not treat a URL as a line comment', () => {
+      expect(stripComments('const u = "https://example.com/commonly_x";'))
+        .toContain('commonly_x');
+    });
+
+    // The coverage-gap guard. A cue added and not registered would ship tool
+    // names nobody checks, and the check would still print OK — which is the
+    // failure mode this whole file exists to prevent, reproduced inside it.
+    it('every cue the service defines is registered', () => {
+      const servicePath = path.join(__dirname, '../../../services/agentMentionService.ts');
+      const src = fs.readFileSync(servicePath, 'utf8');
+      const defined = (stripComments(src).match(/^const (format[A-Za-z]*(?:Cue|Frame))\b/gm) || [])
+        .map((m) => m.replace('const ', ''));
+      expect(defined.length).toBeGreaterThan(0);
+      expect(defined.sort()).toEqual([...MENTION_CUES].sort());
     });
   });
 

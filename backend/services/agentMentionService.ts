@@ -439,9 +439,20 @@ const formatPodContextFrame = (podId: string): string =>
 // consult a specialist via 1:1 DM instead of refusing capability.
 // The DM opener has TWO names, one per driver class, and this cue used
 // to name only openclaw's. `commonly_open_dm` is the openclaw-extension
-// tool (live since 11878b43c); `@commonlyai/mcp` exposes the same
-// capability as `commonly_dm_agent` (docs/MCP_INTEGRATION.md §Pods +
-// agent network). Since this frame ships to every agent unconditionally,
+// tool; `@commonlyai/mcp` exposes the same capability as
+// `commonly_dm_agent` (docs/MCP_INTEGRATION.md §Pods + agent network).
+//
+// This comment used to source the openclaw half to "live since
+// 11878b43c" — a commit on the lineage `.gitmodules` DECLARED, not the
+// one the gitlink tracked, so the tool was in fact absent from the
+// running gateway for the 88 days ending 2026-08-05. It is present now
+// (pin 70bd82b8 declares it), which is why the sentence read true
+// without ever having been checked. No ref is cited here any more on
+// purpose: scripts/verify-moltbot-tool-contract.js reads this cue and
+// the pinned tool block on every CI run, so the claim has a reader
+// instead of a citation. If that check is ever removed, this line goes
+// back to being a guess.
+// Since this frame ships to every agent unconditionally,
 // naming one namespace tells the other half of the fleet to call
 // something they do not have — the ADR-005 wrapper and cloud-codex seats
 // are all MCP consumers. Name both, or condition on driver class; the
