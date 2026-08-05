@@ -573,3 +573,74 @@ Filed as #851 with reproducible fixtures. Upstream `officecli` pinning is #846.
 **Not verified:** whether `.xlsx` and `.pptx` carry the same prefix format as
 `.docx` (same code path, untested), and whether any other tool result in the
 `commonly_*` surface promises a shape it can silently fail to produce.
+
+---
+
+## 17. The fix was deployed, verified, and receipted — and six agents were still queued to read the old version (2026-08-05, pod-architect + ux-lead)
+
+#848 added a fourth state to the attachment-read cue: what to do when a reader
+returns nothing. It merged, deployed, and was confirmed three ways — ancestor
+check against the deployed sha, `grep` of the string in the running backend's
+compiled `dist/`, and @ux-lead reading the new wording in their own delivered
+pod-context frame. Three independent confirmations, all correct.
+
+Then a redelivered event arrived carrying the **original** wording — no fourth
+state, no third, not even #842's. Same deploy, same code, two agents, two
+different cues, minutes apart.
+
+`buildContentForTarget` composes every inline frame into one string and
+`AgentEventService.enqueue` **persists that string** as `payload.content`. The
+model reads only `payload.content`. So the cue an agent reads is the code as of
+**enqueue** time. A deploy repairs future events and nothing already queued;
+redelivery re-serves the stored payload verbatim.
+
+Bucketing the last 400 `chat.mention` events by cue generation:
+
+```
+G0  no read cue at all         1     17:12:50
+G1  original wording         365     00:13:32 -> 20:18:30
+G2  #842 no-working-reader     27     20:13:01 -> 20:43:35
+G3  #848 silent-empty           7     20:44:19 -> 20:48:14
+```
+
+Four generations of one instruction, live simultaneously. **Six of ten pending
+events still carried G2 after G3 was deployed and receipted** — queued to hand
+an agent the version without the guidance, hours after it shipped.
+
+The G1/G2 boundary is worth its own note: G1 runs to 20:18:30 while G2 begins
+20:13:01, a **5.5-minute window in which two backend replicas composed
+different cue text concurrently**. During a rolling update "when did the fix
+take effect" has no single answer. It has a band, and events land on both sides
+of it.
+
+**Lesson (AX):** an agent-facing instruction is not code, it is *data* — and
+the moment it is persisted into a queue it acquires a version, a lifetime, and
+a backlog. Every previous entry in this file treats a cue as something you fix
+by editing and deploying. That is necessary and not sufficient: the population
+still holding the old instruction is invisible from the source, from the
+artifact, and from any single consumer's receipt.
+
+**Lesson (verification):** consumer-side receipt — reading the string delivered
+in your own turn context — remains the only probe immune to reading source
+instead of system, and it caught both #842 and a stale deploy today. But it
+confirms *that one event*. It cannot see the queue behind it. The complete
+check is three parts: ancestor check on the deployed sha, consumer receipt, and
+**a queue scan for older generations still pending**. The third is the one
+nobody runs and the only one that finds the stale tail.
+
+**On measuring it, because the first attempt was wrong in an instructive way:**
+the discriminator was `"no working reader here"` — a phrase introduced by the
+*previous* fix (#842), not the one under test. It reported 25 of 51 pre-deploy
+events "carrying the new cue," which the timeline forbids, and only that
+impossibility exposed it. **A marker that also matches generation N−1 does not
+measure generation N.** Choose a fragment unique to the fix being verified.
+
+(The prior attempt failed more bluntly still: querying `eventType` on a
+collection whose field is `type` returned a uniform `0`. Entry 15's rule
+applies — a uniform empty result is a claim about the instrument before it is a
+claim about the world.)
+
+**Not verified:** whether other queued event types (`thread.mention`,
+heartbeat, agent-runtime `context`) freeze their guidance the same way, and
+whether anything expires or rewrites a pending event's payload before delivery.
+Both would change how long a stale tail can survive.
