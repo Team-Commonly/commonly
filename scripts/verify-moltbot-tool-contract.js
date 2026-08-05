@@ -26,12 +26,22 @@
  * about another repo's state does not get fixed; it decays, and prose has no
  * mechanism to notice.
  *
- * WHAT IT CHECKS. Every `commonly_*` tool the cycles trailer tells an agent to
- * call must be declared in the pinned extension's tool block. Scoped to the
- * trailer on purpose: the inline mention cues in `agentMentionService.ts` are
- * being changed on #818, and a guard that straddles an open PR is a merge
- * conflict rather than a safeguard. Widening it to those cues is the obvious
- * next step once #818 lands — see WIDENING below.
+ * WHAT IT CHECKS. Every `commonly_*` tool an agent is TOLD to call must be
+ * declared in the pinned extension's tool block. Two sources of such text
+ * today: the cycles reflection trailer (per heartbeat) and the inline mention
+ * cues in `agentMentionService.ts` (every mention, every agent). The second is
+ * by far the wider surface and was the last to be covered — it was left out
+ * originally only because #818/#842 were open on those exact lines and a guard
+ * straddling an open PR is a merge conflict rather than a safeguard.
+ *
+ * NOT EVERY NAMED TOOL IS THE PIN'S RESPONSIBILITY. Some cues name a capability
+ * under BOTH driver namespaces because they ship to every seat unconditionally
+ * — `commonly_read_file` (MCP) beside `commonly_read_attachment` (openclaw),
+ * `commonly_dm_agent` beside `commonly_open_dm`. Demanding the MCP name of an
+ * openclaw pin would red the build over a line that is deliberately correct, so
+ * a source declares those in `namedForOtherDrivers` and they are excluded.
+ * The exclusion is itself checked: a name listed there that no longer appears
+ * in the cue is a hard error, so the list cannot quietly grow into a hole.
  *
  * WHAT IT ALSO CHECKS. That the pinned commit is contained in the branch
  * `.gitmodules` declares. That is a separate invariant on the same subject and
@@ -66,7 +76,10 @@
  * loudly rather than folding it into success.
  *
  * WIDENING: add a source to REQUIRED_TOOL_SOURCES. Each entry supplies the
- * text an agent receives; every `commonly_*` token in it becomes required.
+ * text an agent receives; every `commonly_*` token in it becomes required,
+ * except names it lists in `namedForOtherDrivers`. Supply text by reading the
+ * live source of truth, never by restating it here — a restated cue drifts
+ * from the delivered one and the guard then defends a string nobody receives.
  */
 
 const fs = require('fs');
@@ -93,8 +106,89 @@ const loadCyclesTrailer = () => {
   return raw.slice(bodyStart, end);
 };
 
+const MENTION_SERVICE = path.join(REPO_ROOT, 'backend', 'services', 'agentMentionService.ts');
+
+/**
+ * The inline cues prepended to `chat.mention.payload.content`, in delivery
+ * order. Registered by name rather than discovered, because a cue that names a
+ * tool must be a deliberate entry on this list — but see the inventory check
+ * below, which makes forgetting to register one an error instead of a silent
+ * gap in coverage.
+ */
+const MENTION_CUES = [
+  'formatPodContextFrame',
+  'formatAuthorFrame',
+  'formatCollaborativePodCue',
+  'formatConsultationCue',
+  'formatMentionReplyCue',
+];
+
+/**
+ * Blank a comment out rather than deleting it, so every later offset and
+ * line-start anchor still lands where it did in the original text.
+ */
+const blankOut = (text) => text.replace(/[^\n]/g, ' ');
+
+/**
+ * Comments are NOT delivered to agents, and this file's comments discuss tools
+ * at length — including backticked names of tools that deliberately do not
+ * exist on the pinned lineage. Counting one would red the build over a
+ * paragraph. The `[^:]` guard keeps `https://` from being read as a comment.
+ */
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, blankOut)
+  .replace(/(^|[^:])\/\/[^\n]*/g, (m, lead) => lead + blankOut(m.slice(lead.length)));
+
+/**
+ * The text of every inline mention cue, concatenated. Read from the live
+ * service for the same reason loadCyclesTrailer reads presets.ts: a cue that
+ * starts naming a different tool is covered without anyone remembering to
+ * come back here.
+ */
+const loadMentionCues = () => {
+  const code = stripComments(fs.readFileSync(MENTION_SERVICE, 'utf8'));
+
+  // Inventory: a cue added and not registered would be uncovered, and an
+  // uncovered surface reads exactly like a passing one. Fail instead.
+  const present = (code.match(/^const (format[A-Za-z]*(?:Cue|Frame))\b/gm) || [])
+    .map((m) => m.replace(/^const /, ''));
+  const unregistered = present.filter((name) => !MENTION_CUES.includes(name));
+  if (unregistered.length) {
+    throw new Error(
+      `agentMentionService.ts defines mention cues this check does not know about: `
+      + `${unregistered.join(', ')}. Add them to MENTION_CUES — a cue outside the list `
+      + 'ships tool names no one is checking.',
+    );
+  }
+
+  return MENTION_CUES.map((name) => {
+    const start = code.indexOf(`\nconst ${name}`);
+    if (start === -1) throw new Error(`${name} not found in agentMentionService.ts`);
+    // To the next top-level declaration; the cues are one-per-region and this
+    // holds for both arrow-expression and block bodies (formatAuthorFrame).
+    const rest = code.slice(start + 1);
+    const end = rest.search(/\n(?:const|export|function) /);
+    const body = end === -1 ? rest : rest.slice(0, end);
+    // A region that sliced to nothing would contribute no tool names and look
+    // exactly like a cue that names none.
+    if (body.length < 80) {
+      throw new Error(`${name} sliced to ${body.length} chars — the region shape has changed`);
+    }
+    return body;
+  }).join('\n');
+};
+
 const REQUIRED_TOOL_SOURCES = [
   { name: 'cycles reflection trailer (presets.ts)', text: loadCyclesTrailer },
+  {
+    name: 'inline mention cues (agentMentionService.ts)',
+    text: loadMentionCues,
+    // Named on purpose for NON-openclaw seats, alongside the openclaw name for
+    // the same capability. These are MCP tools; the pin neither has nor owes
+    // them. Every entry is asserted to still appear in the cue text below, so
+    // this list cannot outlive the line that justified it.
+    namedForOtherDrivers: ['commonly_read_file', 'commonly_dm_agent'],
+  },
 ];
 
 /** Every `commonly_*` token an agent is told to call, across all sources. */
@@ -102,7 +196,24 @@ const collectRequiredTools = () => {
   const required = new Map();
   REQUIRED_TOOL_SOURCES.forEach((source) => {
     const text = typeof source.text === 'function' ? source.text() : source.text;
-    (text.match(/commonly_[a-z_]+/g) || []).forEach((tool) => {
+    const named = text.match(/commonly_[a-z_]+/g) || [];
+
+    // An exemption for a name the source no longer mentions is a hole with no
+    // remaining justification — and it would keep excusing that tool if a cue
+    // later started requiring it for real. Same reasoning as the empty-parse
+    // control in main(): a check must not pass by having nothing to look at.
+    (source.namedForOtherDrivers || []).forEach((tool) => {
+      if (!named.includes(tool)) {
+        throw new Error(
+          `${source.name} lists ${tool} in namedForOtherDrivers, but the source no longer `
+          + 'names it. Delete the exemption rather than leaving it to excuse a future use.',
+        );
+      }
+    });
+
+    const exempt = new Set(source.namedForOtherDrivers || []);
+    named.forEach((tool) => {
+      if (exempt.has(tool)) return;
       if (!required.has(tool)) required.set(tool, source.name);
     });
   });
@@ -374,7 +485,21 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
 };
 
 const main = () => {
-  const required = collectRequiredTools();
+  let required;
+  try {
+    required = collectRequiredTools();
+  } catch (err) {
+    // Every throw on this path means the guard could not read what agents are
+    // told — a stale exemption, an unregistered cue, a moved region. That is
+    // "cannot verify" (2), not "contract violated" (1), and emphatically not
+    // an uncaught stack trace that a CI reader would mistake for either.
+    console.error(
+      `[moltbot-tool-contract] CANNOT VERIFY — could not derive the required tool set.\n`
+      + `  ${err.message}\n`
+      + '  Exiting 2. The check did not run; it did not pass.',
+    );
+    process.exit(2);
+  }
   const pin = readGitlinkSha();
 
   if (!fs.existsSync(EXTENSION_TOOLS)) {
@@ -443,10 +568,16 @@ const main = () => {
       + '  openclaw main, then pin that.',
     );
   } else {
+    // Name the sources in the PASS line, not only in a header comment. A green
+    // check is read as "nothing is wrong", and the narrower the scope the more
+    // confidently that is over-read — for two months this printed OK over a
+    // surface it had never been pointed at. The scope belongs in the output.
     console.log(
       `[moltbot-tool-contract] OK — pin ${pin} declares ${declared.size} commonly_* tools, `
       + `including all ${required.size} the fleet is instructed to call `
-      + `(${[...required.keys()].join(', ')}).`,
+      + `(${[...required.keys()].join(', ')}).\n`
+      + `  Sources read: ${REQUIRED_TOOL_SOURCES.map((s) => s.name).join('; ')}.\n`
+      + '  Agent-facing text outside those sources is NOT covered by this result.',
     );
   }
 
@@ -463,6 +594,7 @@ const main = () => {
 if (require.main === module) main();
 
 module.exports = {
-  parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, readDeclaredBranch, checkPinReachable,
-  readGitlinkSha,
+  parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, loadMentionCues,
+  readDeclaredBranch, checkPinReachable, readGitlinkSha,
+  MENTION_CUES, REQUIRED_TOOL_SOURCES, stripComments,
 };
