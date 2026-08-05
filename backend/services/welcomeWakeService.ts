@@ -71,12 +71,51 @@ export const findGreeters = (
   installations: Array<Record<string, any>>,
 ): Array<Record<string, any>> => (installations || []).filter(isDesignatedGreeter);
 
-const WELCOME_CUE = (username?: string): string => [
+/**
+ * The handle a HUMAN would type to reach this install — not the agent's own
+ * `agentName`.
+ *
+ * These differ, and the difference is a trap. The support agent's token
+ * carries `agentName: 'hq-support'` while everyone in the room sees
+ * "Commonly Support" and types `@commonly-support`. An agent asked to name
+ * its own handle answers from its token and gets it wrong, so the cue states
+ * it rather than delegating the guess.
+ *
+ * Mirrors buildMentionMap's resolution order: displayName slug first (what
+ * the UI renders and therefore what a person copies), instanceId second.
+ */
+const slugifyHandle = (value = ''): string => value
+  .toString().trim().toLowerCase()
+  .replace(/[^a-z0-9-]/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+export const mentionHandleFor = (installation: Record<string, any>): string => {
+  const display = slugifyHandle(String(installation?.displayName || ''));
+  if (display) return display;
+  const instanceId = String(installation?.instanceId || '');
+  if (instanceId && instanceId !== 'default') return slugifyHandle(instanceId);
+  return slugifyHandle(String(installation?.agentName || ''));
+};
+
+const WELCOME_CUE = (username: string | undefined, handle: string): string => [
   '[First message from a new member in this pod. They have never posted here before,',
   'and they did not @mention anyone — most likely because they do not yet know they can.',
   'Answer their message directly. Do not list your capabilities and do not paste a menu;',
-  'if the message is a question, just answer it. Keep it short and end with one concrete',
-  'next step they can take. If their message needs no reply, return NO_REPLY.]',
+  'if the message is a question, just answer it. Keep it short.',
+  '',
+  // The one durable thing this reply can do. This wake fires ONCE per member
+  // per pod, so their next unaddressed message reaches nobody — by design,
+  // because a continuation window cannot tell a message meant for you from
+  // one meant for another human, and with two greeters installed it wakes
+  // both on everything. The fix for that is not more routing, it is closing
+  // the discoverability gap while they are looking at proof that it works.
+  // A pinned room description already failed at this; the agent that just
+  // answered them will not.
+  `End by telling them how to reach you again: they can @${handle} anytime, or reply`,
+  'directly to your message. Say it once, plainly, as the last line — not as a menu.',
+  '',
+  'If their message needs no reply at all, return NO_REPLY.]',
   '',
   username ? `${username} wrote:` : 'They wrote:',
 ].join('\n');
@@ -191,7 +230,7 @@ export async function maybeFireWelcomeWake({
           // The cue rides inline in content, not in metadata: models
           // deprioritize structured fields and act on the narrative frame.
           // Same rule as the DM cue (ADR-012 §9) and the pod-context cue.
-          content: `${WELCOME_CUE(username)}\n${String(content || '').trim()}`,
+          content: `${WELCOME_CUE(username, mentionHandleFor(installation))}\n${String(content || '').trim()}`,
           userId: String(safeUserId),
           username,
           mentions: [],

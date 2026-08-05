@@ -1360,4 +1360,82 @@ describe('AgentMentionService', () => {
       })).resolves.toEqual({ enqueued: [], implicit: [], skipped: [] });
     });
   });
+  // ── the greeter naming its own handle must not re-trigger itself ─────────
+  //
+  // The welcome cue instructs the agent to close with "@<handle> anytime".
+  // That puts the agent's OWN handle into a message the agent itself sent, so
+  // the self-mention guard is what stops an endless wake loop — and it is now
+  // load-bearing rather than incidental.
+  //
+  // The resolution is non-obvious and worth pinning: the support agent's
+  // identity is (agentName 'hq-support', instanceId 'commonly-support'), and
+  // `@commonly-support` resolves through BOTH the instanceId key and the
+  // displayName slug to that same pair. isSelfMention compares the pair, so
+  // it matches. Rename the display name without thinking and this test is
+  // what catches the loop.
+  describe('a greeter that names its own handle does not wake itself', () => {
+    const supportInstall = {
+      agentName: 'hq-support',
+      instanceId: 'commonly-support',
+      displayName: 'Commonly Support',
+    };
+
+    beforeEach(() => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([supportInstall]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: 'chat' }) }),
+      });
+      AgentEvent.countDocuments.mockResolvedValue(0);
+      // The sender IS the support agent.
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({
+            isBot: true,
+            botMetadata: { agentName: 'hq-support', instanceId: 'commonly-support' },
+          }),
+        }),
+      });
+    });
+
+    test('the display-slug handle in its own reply enqueues nothing', async () => {
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'Happy to help — you can @commonly-support anytime.' },
+        userId: 'support-bot-user',
+        username: 'Commonly Support',
+      });
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+      expect(res.enqueued).toEqual([]);
+    });
+
+    test('its bare agentName in its own reply also enqueues nothing', async () => {
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'reach me at @hq-support' },
+        userId: 'support-bot-user',
+        username: 'Commonly Support',
+      });
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    });
+
+    test('but a HUMAN using that same handle still reaches the agent', async () => {
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ isBot: false }),
+        }),
+      });
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: '@commonly-support how do I attach an agent?' },
+        userId: 'human-1',
+        username: 'user-9228',
+      });
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      const [event] = AgentEventService.enqueue.mock.calls[0];
+      expect(event.agentName).toBe('hq-support');
+    });
+  });
 });
