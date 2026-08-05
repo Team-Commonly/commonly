@@ -364,3 +364,68 @@ Three instances found the same day, at three layers, none with any notion of dri
 The server's 400 is the best agent-facing artifact encountered this sprint: *"cycles is append-only — payload must be `{ append: { content, ts?, podId? } }`"*. It names the exact required shape, and it taught more in one response than the tool description it contradicts. Its one gap is entry #6's sharpened lesson — it names the required **payload** but not the required **tool**, so a diligent reader digs deeper into the wrong surface. **The pattern worth copying: an error that states the shape it wants. The pattern worth completing: also state where that shape is accepted.**
 
 **Not verified:** the openclaw extension's own tool list — `_external/clawdbot` is an uninitialized submodule on every seat that looked, so "`commonly_read_attachment` exists nowhere" is proven for `@commonlyai/mcp` and this repo, and *inferred* for openclaw. No cluster read: the `HEARTBEAT.md` provisioning path is traced from source, not observed on a moltbot PVC. The three-400 sequence is @ux-lead's measurement, reproduced here only as far as the tool schema, not re-run.
+
+---
+
+## 14. A comment refuted by a measurement thirty lines above it, in the same file (2026-08-05, sprint-review + pod-architect)
+
+`scripts/verify-moltbot-tool-contract.js`, both sentences written by me in one
+commit:
+
+```
+:261  // Measured on the real post-merge state in CI shape (pin one hop back,
+:262  // as a merge commit's second parent):
+:264  //   depth-1            is-ancestor → 1  (wrong)
+:265  //   after --deepen=64  is-ancestor → 0  (correct)
+        ⋮
+:295  // cheap — the common case never climbs.
+```
+
+The measurement records the pin one hop behind the tip and climbing one rung.
+Thirty lines later the same function claims the common case never climbs. Both
+in the same commit, by the same author, neither read against the other.
+
+### Why this is its own sub-genus, not another stale citation
+
+The rest of this log is about claims that **decayed** — true when written, false
+later, no diff to show it (entries #6, #13). This one was **false on arrival**
+and self-refuting: the file carries its own counter-evidence, so any reader who
+reads the whole function has everything needed to catch it. Which is exactly
+why it survives. A reader who reaches `:295` has read `:261` thirty lines
+earlier and *believes they already understand the cost model*; the sentence
+confirms the summary they are carrying rather than contradicting the data they
+read. Proximity is what makes it invisible, not distance.
+
+It also passes every check this repo has. Tests pin behaviour, and **the
+behaviour was correct** — the ladder always climbed. Nothing in a test suite,
+a linter, or a reviewer's diff view compares two comments for consistency.
+
+### The tell, and the discriminator that found it
+
+@sprint-review did not read the comment. They reproduced the CI shape, ran the
+check, and read the **verdict string**: `is an ancestor`, not `is the tip` —
+proof the fast path never fired. An output that distinguishes which branch of
+the code ran is worth more than any amount of re-reading, and this file had
+already been given one for a different reason.
+
+The residual error is the sharpest part. My *fix* said the fast path fires
+"right after a bump" — still wrong, and **#840, the PR the whole sprint is
+about, is the counterexample**: it bumps to `70bd82b8` while openclaw main is
+at `38f717bc6`, so it is a brand-new bump whose fast path still misses. The
+precise condition is narrower than "after a bump": *after a bump made TO the
+tip, and only until the branch next moves.* Caught by @ux-lead. **Third
+revision of one sentence** — and per the pin-comment lesson in `CLAUDE.md`, a
+sentence needing three revisions is asking for a check, not a fourth wording.
+
+**Lesson:** when a comment summarizes a measurement, put them adjacent or
+delete one. A summary that drifts from data in the same file is not caught by
+any tier of test, is invisible in a diff that touches only one of them, and
+reads as *more* authoritative for sitting next to evidence. Where the claim is
+load-bearing — this one describes cost, which is what a future change
+optimizes against — state the condition precisely enough to be falsifiable, and
+name the live artifact that would falsify it.
+
+**Not verified:** @sprint-review's CI-log readings (`--depth=1 --recursive`
+submodule line, the `is an ancestor` verdict string) are taken from their
+message; they are consistent with my own measurement of the same shape, which
+is corroboration rather than independent confirmation.

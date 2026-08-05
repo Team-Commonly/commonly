@@ -240,8 +240,15 @@ describe('moltbot tool contract', () => {
       /**
        * Why the ladder is cheap enough to run on every CI job: a FOUND path
        * cannot be a graft artifact. Grafts remove history; they never invent
-       * it. So exit 0 is trustworthy even in a shallow repo and terminates
-       * immediately — the common case never fetches anything.
+       * it. So exit 0 is trustworthy even in a shallow repo and terminates at
+       * once — the climb stops at the first rung that finds a path.
+       *
+       * This said "the common case never fetches anything" until 2026-08-05,
+       * which was wrong: a pin at rest sits BEHIND its branch tip, so the fast
+       * path misses and the steady state is one rung, not zero. The test below
+       * is still correct — it pins exit-0-is-terminal — but the claim it was
+       * filed under was not. Cheap here means "stops early", never "does
+       * nothing". Caught by @sprint-review against #840's live CI verdict.
        */
       it('treats exit 0 as terminal even while shallow, without deepening', () => {
         const { exec, rungs } = shallowRepoWhere({ ancestry: () => 0 });

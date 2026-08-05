@@ -42,12 +42,17 @@
  * history as the answer needs, and stops at the first rung that finds a path.
  * Measured end-to-end against a real depth-1 submodule checkout:
  *
- *   pin is the branch tip      no fetch at all, no ancestry walk
- *   pin one hop back (#840)    35M → 71M, 1.3s   — one --deepen=64 rung
- *   pin genuinely orphaned     35M → 288M, 18s   — the whole ladder, then FAIL
+ *   pin is the branch tip       no fetch at all, no ancestry walk
+ *   pin behind tip  ← AT REST  35M → 71M, 1.3s   — one --deepen=64 rung
+ *   pin genuinely orphaned      35M → 288M, 18s  — the whole ladder, then FAIL
  *
- * Only the last is expensive, it is a build that was failing anyway, and it is
- * the only shape where a cheaper answer would be a guess.
+ * The middle row is the normal one, not the first. The fast path fires only
+ * when the pin IS the tip — that is, after a bump made TO the tip, and only
+ * until the branch next moves. Note that is narrower than "right after a bump":
+ * #840 bumps to `70bd82b8` while openclaw main is at `38f717bc6`, so it is a
+ * brand-new bump whose fast path still misses. One rung is the steady state.
+ * Only the last row is expensive, it is a build that was failing anyway, and it
+ * is the only shape where a cheaper answer would be a guess.
  *
  * EXIT CODES
  *   0  both contracts hold
@@ -224,7 +229,9 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
 
   // Fast path, and the only one that is trustworthy in a shallow checkout:
   // if the pin IS the branch tip, containment is settled without any history.
-  // Worth doing first because it is also the common case right after a bump.
+  // Worth doing first because it costs one rev-parse — but it is NOT the
+  // common case. It fires only after a bump made TO the tip, and only until
+  // the branch next moves; see the COST table in the header.
   let tip = null;
   try {
     tip = String(git(['rev-parse', ref])).trim();
@@ -291,8 +298,17 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
     const status = ancestryStatus();
 
     // A path that was found is real: grafts remove history, they never invent
-    // it. Terminal regardless of shallowness, and the reason the ladder is
-    // cheap — the common case never climbs.
+    // it. Terminal regardless of shallowness — which is what keeps the ladder
+    // cheap: it stops at the FIRST rung that finds a path.
+    //
+    // Not "the common case never climbs", which this comment said until
+    // 2026-08-05 while the measurement 30 lines up recorded the opposite. The
+    // resting state of a submodule pin is BEHIND its branch tip, not equal to
+    // it, so the fast path misses and the common case climbs exactly one rung.
+    // #840 is the live proof: its CI verdict reads `is an ancestor`, not `is
+    // the tip`. That is ~900ms and ~1MB every run, which is fine — but "never
+    // climbs" is the kind of premise someone later optimizes against, and the
+    // ladder is load-bearing rather than defensive. Caught by @sprint-review.
     if (status === 0) {
       return { state: 'contained', branch, pin, detail: `${short} is an ancestor of ${branch}` };
     }
