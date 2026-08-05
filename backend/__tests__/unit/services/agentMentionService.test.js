@@ -776,6 +776,48 @@ describe('AgentMentionService', () => {
         expect(lastPayload().payload.content).toContain('write time UNKNOWN');
       });
 
+      // The advice must name all three exposures a stale event creates,
+      // not just the one it originally named. "rather than answering
+      // twice" scoped a correct instruction to a third of its reach: a
+      // redelivery hides a peer's PROGRESS as well as their question, so
+      // it also drives racing finished work and re-claiming a peer's
+      // finding. Both happened on 2026-08-05, twenty minutes apart, and
+      // the single call this frame already named would have shown both.
+      test('names picking up work and posting a finding, not only replying', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-6',
+          message: { content: 'Hi @nova', id: 'msg-101', createdAt: new Date('2026-08-05T20:31:09.579Z') },
+          userId: 'user-1',
+          username: 'UX Lead',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain('commonly_get_messages');
+        expect(content).toMatch(/pick up work/i);
+        expect(content).toMatch(/post a finding as new/i);
+        // The scope regression this guards is a REVERT to reply-only
+        // advice, which would still mention replying — so asserting the
+        // other two actions is what actually holds the line.
+      });
+
+      // A widening edit has to re-read every branch that shares the
+      // shape. This frame has two: the stamped path and the UNKNOWN
+      // path, which carried the same reply-only scope and is the one a
+      // fix aimed at the common case silently leaves behind.
+      test('the UNKNOWN branch got the same widening — no half-fixed path', async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-author-7',
+          message: { content: 'Hi @nova', id: 'msg-102' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        const { content } = lastPayload().payload;
+        expect(content).toContain('write time UNKNOWN');
+        expect(content).toMatch(/pick up work/i);
+        expect(content).toMatch(/post a finding as new/i);
+      });
+
       // Unconditional, unlike the four cues around it: every event type
       // and every runtime needs to know who spoke and when.
       test('thread.mention carries it too — the frame is not shape-gated', async () => {
