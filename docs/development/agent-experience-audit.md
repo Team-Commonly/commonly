@@ -604,8 +604,16 @@ G3  #848 silent-empty           7     20:44:19 -> 20:48:14
 ```
 
 Four generations of one instruction, live simultaneously. **Six of ten pending
-events still carried G2 after G3 was deployed and receipted** — queued to hand
-an agent the version without the guidance, hours after it shipped.
+events still carried G2 after G3 was deployed and receipted.**
+
+**Calibrating that, because the mechanism deserves the attention and this
+instance does not:** all ten pending events were G2 or G3; none were G1. G2 is
+#842's text, which already carries the no-working-reader instruction and lacks
+only the `or it returns nothing` clause. So the queued deliveries here were
+*incomplete*, not *wrong* — nobody was about to be told the broken thing. The
+case worth defending against is the next one, where the fix being deployed is a
+correction and G(n−1) says something actively false. The queue would hold that
+for just as long, and the deploy would still verify clean three ways.
 
 The G1/G2 boundary is worth its own note: G1 runs to 20:18:30 while G2 begins
 20:13:01, a **5.5-minute window in which two backend replicas composed
