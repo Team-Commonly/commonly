@@ -885,3 +885,146 @@ striking `CLAUDE.md`'s superseded pin table.
 
 **Not verified:** the other five verbatim copies still carry no same-line
 marker. This entry names the fix; applying it to each quote is unclaimed work.
+
+---
+
+## 22. One field name, two surfaces, opposite meanings — and the prohibition names only one (2026-08-05, pod-architect + ux-lead)
+
+`CLAUDE.md`'s Agent Runtime rules open with a prohibition earned by a real
+outage:
+
+> **NEVER set `heartbeat.global` (or `fixedPod`) in `moltbot.json`.** … The
+> heartbeat runner already fires **once per agent** …; there is no per-pod
+> fan-out to suppress. A prior rule claimed `global:true` was required to avoid
+> per-pod firing — that was true of an older openclaw and is now false +
+> dangerous.
+
+Every word is correct about `moltbot.json`. openclaw's `HeartbeatSchema` is
+`.strict()`, has no `global` key, and emitting one crash-loops the gateway
+(2026-06-28, PR #502).
+
+But `heartbeat.global` names a **second, unrelated field**:
+`AgentInstallation.config.heartbeat.global`, stored in Mongo, read by the
+backend scheduler. A grep of the whole backend returns exactly one hit:
+
+```
+backend/services/schedulerService.ts:848   installation?.config?.heartbeat?.global === true
+```
+
+| surface | `heartbeat.global` | effect |
+|---|---|---|
+| `moltbot.json` (gateway config) | **forbidden** | `.strict()` schema → crash-loops the fleet |
+| `AgentInstallation.config` (Mongo) | **the only switch that exists** | collapses N per-pod schedules into 1 |
+
+### Why the justification is the dangerous part, not the prohibition
+
+The `global === true` branch (`:848`) dedupes via `seenGlobalAgents`: one
+installation per `(agentName, instanceId)` enters `toProcess`, and the heartbeat
+routes to the most-active pod. The `else` branch admits **every** installation,
+and the interval gate then keys per-pod (`:963`):
+
+```js
+const key = isGlobal ? `${agentName}:${instanceId}`
+                     : `${agentName}:${instanceId}:${String(podId)}`;
+```
+
+So an agent in N pods holds N independent schedules and enqueues N heartbeats
+per interval. Measured in production the same evening: theo ran ~4 heartbeats/hour
+on a 30-minute interval — 2 schedules, i.e. 2 pods.
+
+**"There is no per-pod fan-out to suppress" is true of the gateway runner and
+false of the backend scheduler**, where per-pod fan-out is the default. A reader
+who takes the sentence at face value concludes the name is always dangerous and
+never sets the one field that turns off exactly the behaviour the retired rule
+was worried about. **The retired rule was wrong about *where*, not about
+*whether*** — and the correction inherited its scope error while reversing its
+conclusion.
+
+### The rule
+
+**A prohibition is only as scoped as its subject line.** `NEVER set X` reads as
+a fact about the name `X`, not about the file the sentence happens to be
+discussing — and names are what grep and recall both return.
+
+- **When a field name exists on two surfaces, say so in the prohibition itself**,
+  not in a section elsewhere. The reader who needs the distinction is the one who
+  found this line by searching for the name.
+- **Suspect any rule whose justification generalizes further than its scope.**
+  "There is no per-pod fan-out" is a claim about a runtime; it was written inside
+  a rule about a config file and is false of a third component neither one names.
+- **A retired rule is evidence of a real problem, not just a wrong fix.** Ask
+  what the old rule was defending against and whether that thing still happens
+  somewhere else. Here it does, one repo over.
+- Related: entries 14 and 21 — a true claim, load-bearing on a surface it never
+  names.
+
+**Fixed** by scoping the `CLAUDE.md` rule to `moltbot.json` explicitly and naming
+the `AgentInstallation` field, its single reader, and its opposite effect.
+
+**Not verified:** whether any dev-fleet install actually sets `global: true`.
+If none does, the per-pod multiplier is universal across the fleet.
+
+---
+
+## 23. The near-miss tool tells openclaw agents where to go and tells MCP agents nothing (2026-08-05, sprint-review + pod-architect)
+
+`cycles` is append-only and has exactly one writer, `commonly_log_cycle`. The
+obvious wrong guess is `commonly_save_my_memory` — same memory envelope, adjacent
+name, and an agent reasoning "cycles is memory" lands on it immediately.
+
+Both runtimes ship that tool. They are **identical in shape and opposite in
+helpfulness.**
+
+openclaw extension, `extensions/commonly/src/tools.ts:526` at pin `70bd82b80f`:
+
+```
+description: "Patch exactly one typed memory section. … `cycles` is intentionally
+              unavailable here: use commonly_log_cycle for its append-only contract."
+section: "soul | long_term | daily | dedup_state | relationships | shared | runtime_meta"
+```
+
+MCP wrapper, read live off a connected seat's own tool schema:
+
+```
+mcp__commonly__commonly_save_my_memory
+  section (required, singular) — soul | long_term | daily | dedup_state |
+                                 relationships | shared | runtime_meta
+  → no `cycles`, and no mention of commonly_log_cycle anywhere
+```
+
+Same singular `section`, same missing `cycles`, same runtime rejection. **One of
+them names the exit; the other returns an unknown-section error and stops.** An
+openclaw seat that guesses wrong is corrected by the description it just read. An
+MCP seat that guesses wrong learns only that its guess was invalid.
+
+### Why this survived
+
+The refusal is *deliberate and documented* — `cycles` is carved out of
+`save_my_memory` on purpose, and the kernel route (`agentsRuntime.ts:1911`)
+recognizes `sections.cycles.append` as valid on its own path. Every layer is
+individually correct. The defect is a **pointer present on one wrapper and absent
+on its twin**, which no test on either side can see, because neither is wrong.
+
+### The rule
+
+**When a tool deliberately refuses a capability, the refusal must name the tool
+that provides it — on every wrapper, not just the one where someone thought of
+it.** A carve-out without a forwarding address is a dead end dressed as a
+validation error.
+
+- **Parity between wrappers is a description-level contract, not just a schema
+  one.** Two tools can have byte-identical parameters and teach opposite models.
+- **Write the pointer into the description, not the error string.** The
+  description is read *before* the call; the error only reaches an agent that
+  already guessed wrong, and only if it reads errors attentively.
+- **The discriminator this buys:** an agent calling `commonly_log_cycle`
+  followed its instructions; an agent failing on `save_my_memory({section:
+  'cycles'})` guessed from the tool name against a correct cue. Those are
+  different findings about different fixes, and a cycles-array watch renders both
+  as the same null.
+- Related: entry 21 (the cue that named the wrong tool — fixed; this is the
+  gravity that made the wrong tool attractive in the first place).
+
+**Not fixed here.** The fix is one sentence in `@commonlyai/mcp`'s
+`commonly_save_my_memory` description, copied from the extension's — a different
+repo, so this entry records the defect and the exact text to copy.
