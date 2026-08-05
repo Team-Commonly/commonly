@@ -707,3 +707,86 @@ just before repeating a sentence.**
 **Not verified:** whether the other inline cues (pod context, collab,
 consultation, reply mechanics) scope their advice narrower than their exposure
 in the same way. Nobody has read them with this question in hand.
+
+---
+
+## 19. Every Office document an MCP seat ever read came back as ZIP noise labelled `content` (2026-08-05, sprint-review + pod-architect)
+
+@sprint-review read a no-text-layer PDF through `commonly_read_file` and got the
+honest answer:
+
+```json
+{"contentType":"application/pdf","size":431,
+ "content":null,"note":"Binary file — content is not returned as text."}
+```
+
+They inferred from the tool description that the gate is on content **type**, not
+content — meaning MCP seats could not read *any* PDF — but had no text-layer PDF
+in the pod to prove it, and said so.
+
+I built one: 599 bytes, one page, a single `Tj`, validated with `pypdf` before
+upload (`extract_text()` returned the sentinel). Read back: **identical
+`content: null` + note.** Inference confirmed by measurement. MCP seats cannot
+read a PDF, text layer or not.
+
+**Then the `.docx`, which neither of us predicted.** A 939-byte document with one
+real text run returned `content` populated with the file's **raw ZIP bytes
+decoded as UTF-8** — leading `PK` local-file-header magic and all — and **no
+`note`**. A `.txt` control returned its sentinel cleanly, so the reader was not
+broken; it was confidently wrong on exactly one family.
+
+**Root cause, `backend/routes/agentsRuntime.ts`:**
+
+```js
+const isText = /^text\/|json|csv|xml|javascript|markdown|yaml|x-sh|html/.test(ct);
+```
+
+Only `^text/` is anchored. Every alternative after it matched **anywhere in the
+string** — and `application/vnd.open`**`xml`**`formats-officedocument…` contains
+`xml`. All three OOXML types were classified as text:
+
+```
+isText=TRUE   .docx  …openxmlformats-officedocument.wordprocessingml.document
+isText=TRUE   .xlsx  …openxmlformats-officedocument.spreadsheetml.sheet
+isText=TRUE   .pptx  …openxmlformats-officedocument.presentationml.presentation
+isText=false  .pdf   application/pdf                                     ← correct
+```
+
+**Lesson (AX):** this is the worst shape in the family this file has catalogued
+all day, and the ranking is the point:
+
+```
+markitdown/PNG   totalChars 0    empty string       catchable by if (!content)
+pdftotext/PDF    totalChars 1    a form feed        defeats emptiness checks
+officecli/DOCX   totalChars 12   "[/body/p[1]]"     reads as content
+MCP/DOCX         939 bytes       raw ZIP, no note   reads as THE DOCUMENT
+```
+
+A refusal is legible. `content: null` plus a note teaches an agent something
+true. Bytes in a field named `content`, with no note and no error, teach it
+something false **and remove every signal that would let it notice** — there is
+no failure to detect, no emptiness to test, and the response is well-formed. The
+consumer's only remaining defence is recognising ZIP magic as not-prose, which
+is not something an instruction can reasonably ask for.
+
+**Lesson (why it survived):** the format everyone tested failed honestly. PDF
+never matched the buggy pattern, so every probe of this surface — including the
+one that opened this investigation — hit the single branch that was correct. The
+adjacent branch, reached by a different content type, had never been run.
+
+**Lesson (the bug itself):** an alternation is not a list of anchors. `/^a|b|c/`
+anchors only `a`. When the thing being matched is a structured identifier — a
+MIME type, a URI, a package name — parse it and compare tokens; substring tests
+on structured strings fail on exactly the inputs that are *longer and more
+specific*, which is to say the interesting ones.
+
+**Fixed** by parsing `type/subtype`, matching the subtype as a whole token, and
+anchoring structured-syntax suffixes to the end (`+json` / `+xml`), so
+`image/svg+xml` still reads as text and `…wordprocessingml.document` does not.
+19 route-level tests, mutation-verified: reverting to the old pattern fails
+exactly the three OOXML cases and none of the legitimate ones.
+
+**Not verified:** whether any other surface classifies this content type the
+same way — the upload path, the frontend preview, and the openclaw extractor
+each make their own decision, and only the openclaw one has been measured
+(entry 16).
