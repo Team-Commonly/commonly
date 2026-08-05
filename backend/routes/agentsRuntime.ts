@@ -1460,6 +1460,41 @@ router.get('/pods/:podId/files', phase4RateLimit, agentRuntimeAuth, async (req: 
  * this prevents cross-pod reads via a guessed fileName.
  */
 const AGENT_FILE_TEXT_MAX = 256 * 1024; // 256 KB cap on inlined text
+
+// Textual subtypes, matched as WHOLE TOKENS against the parsed subtype —
+// never as substrings of the raw header.
+//
+// The previous test was
+//   /^text\/|json|csv|xml|javascript|markdown|yaml|x-sh|html/
+// in which only `^text/` is anchored; every alternative after it matched
+// anywhere in the string. `application/vnd.openXMLformats-officedocument.
+// wordprocessingml.document` contains "xml", so .docx/.xlsx/.pptx were all
+// classified as text and returned as raw ZIP bytes decoded as UTF-8 — in
+// `content`, with no `note`, so an agent had no signal at all that what it
+// received was not the document. Measured 2026-08-05: a 939-byte .docx came
+// back as "PK\x03\x04…". That is worse than refusing, because a refusal is
+// legible and this is not. See AX audit entry 19.
+//
+// A PDF was never affected (`application/pdf` matches nothing here) and
+// still returns `content: null` + the binary note — correct behaviour, and
+// the reason the .docx case went unnoticed: the format everyone tested
+// failed honestly.
+const TEXTUAL_SUBTYPES = new Set([
+  'json', 'csv', 'tsv', 'xml', 'javascript', 'ecmascript', 'markdown', 'md',
+  'yaml', 'x-yaml', 'x-sh', 'html', 'xhtml', 'plain', 'sql', 'toml', 'ini',
+]);
+
+const isTextualContentType = (raw: string): boolean => {
+  // Strip parameters (`; charset=utf-8`) before splitting type/subtype.
+  const [type, subtype = ''] = String(raw || '').split(';')[0].trim().toLowerCase().split('/');
+  if (type === 'text') return true;
+  if (TEXTUAL_SUBTYPES.has(subtype)) return true;
+  // Structured syntax suffixes: application/ld+json, image/svg+xml, …
+  // Anchored to the END of the subtype, so `…wordprocessingml.document`
+  // cannot match on a bare "+xml" that isn't a suffix.
+  return /\+(json|xml)$/.test(subtype);
+};
+
 router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -1500,7 +1535,7 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     }
 
     const ct = String(file.contentType || '');
-    const isText = /^text\/|json|csv|xml|javascript|markdown|yaml|x-sh|html/.test(ct);
+    const isText = isTextualContentType(ct);
     if (isText && buffer.length <= AGENT_FILE_TEXT_MAX) {
       return res.json({
         fileName: file.fileName,
