@@ -1276,6 +1276,19 @@ describe('AgentMentionService', () => {
        * name, which is the behaviour this whole line exists to prevent.
        */
       expect(content).toMatch(/or the call fails/i);
+
+      /**
+       * ...and the THIRD state, which is neither absence nor failure.
+       *
+       * Probed on the deployed gateway (934df6de) 2026-08-05: markitdown is
+       * installed without extras, so a valid PNG converts to exit 0 and zero
+       * bytes. Nothing throws, nothing is missing, the status code says
+       * success. The agent receives "" and reports the file as blank —
+       * a specific false statement, not a vague one, which is why the cue
+       * names it rather than only saying "you have no reader".
+       */
+      expect(content).toMatch(/returns nothing/i);
+      expect(content).toMatch(/reporting the file as empty/i);
     });
 
     /**

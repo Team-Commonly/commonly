@@ -410,6 +410,27 @@ const autoJoinAgentToPod = async (
 // handles absence leaves the agent hunting for another name, which is the
 // exact behaviour this line exists to prevent.
 //
+// THIRD STATE — "or it returns nothing". Present and callable is still not
+// working. Probed against the deployed gateway 2026-08-05, image 934df6de,
+// on a valid 1x1 PNG (magic bytes asserted in the probe, because a first
+// attempt with random bytes was a fixture that could itself explain the
+// result):
+//
+//   markitdown probe.ts   exit 0, correct content
+//   markitdown real.png   exit 0, ZERO bytes
+//
+// The image installs `pip3 install markitdown pypdf` with no extras, so
+// there is no image converter and markitdown succeeds at producing nothing.
+// That is neither absence nor failure: nothing throws, nothing is missing,
+// the status code is 0. An agent handed "" does not conclude "I cannot read
+// images" — it concludes the image is blank, and reports that confidently.
+// Hence "or reporting the file as empty": the failure mode being prevented
+// is a specific false statement, not a general vagueness.
+//
+// This costs a genuinely-empty attachment a false "I could not read it".
+// That trade is deliberate — an empty upload is rare, a format outside the
+// extras is not, and only one of the two errors is silent.
+//
 // Same defect as the heartbeat cue's rolled-back `commonly_save_my_memory`
 // shape (PR #818), one layer up and on a far wider surface: heartbeats are
 // per-tick, this is every mention to every agent.
@@ -418,9 +439,9 @@ const formatPodContextFrame = (podId: string): string =>
   `When attaching files, call commonly_attach_file({ podId: "${podId}", filePath, message }). ` +
   `When reading files referenced via [[upload:fileName|...]] in this thread, call ` +
   `commonly_read_file({ podId: "${podId}", fileName }) — or commonly_read_attachment({ fileName }) ` +
-  `on openclaw runtimes. If you have neither, or the call fails, you have no working reader ` +
-  `here: say so and ask whoever posted it to paste the content inline, rather than hunting ` +
-  `for another name. ` +
+  `on openclaw runtimes. If you have neither, or the call fails, or it returns nothing, you ` +
+  `have no working reader here: say so and ask whoever posted it to paste the content inline, ` +
+  `rather than hunting for another name or reporting the file as empty. ` +
   `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
