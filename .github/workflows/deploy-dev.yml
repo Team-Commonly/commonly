@@ -147,6 +147,26 @@ jobs:
         env:
           DEV_HELM_VALUES_PRIVATE: ${{ secrets.DEV_HELM_VALUES_PRIVATE }}
 
+      # `--wait` is deliberately NOT used here. It waits for EVERY resource in
+      # the release, so any long-unhealthy auxiliary workload fails a deploy
+      # that actually succeeded. On 2026-08-04 that produced five consecutive
+      # false failures: `litellm` (CrashLoopBackOff, 561 restarts over 2d10h)
+      # and `cloud-codex-cody` (Init:CrashLoopBackOff) never become ready, so
+      # `--wait` burned the full 10m timeout and exited non-zero while
+      # backend/frontend/clawdbot-gateway/commonly-bot had all rolled out
+      # correctly minutes earlier.
+      #
+      # The error it surfaces — `client rate limiter Wait returned an error:
+      # context deadline exceeded` — reads like throttling and is not: the
+      # release already runs --burst-limit 200 --qps 100 (#245). It is the
+      # context deadline expiring while waiting on pods that will never be
+      # ready. Raising the limiter cannot fix it.
+      #
+      # The cost of the false failure was not the red check. It was that helm
+      # records a failed upgrade, so the newest revision helm considers
+      # `deployed` went stale by days — and a bare `helm rollback` during an
+      # incident silently reverts every deploy since, which by then included
+      # two auth fixes. Rollback safety depends on this job telling the truth.
       - name: Helm upgrade commonly-dev
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -159,10 +179,57 @@ jobs:
             --set frontend.image.tag="$TAG" \
             --set agents.clawdbot.image.tag="$TAG" \
             --set agents.commonlyBot.image.tag="$TAG" \
-            --wait \
             --timeout 10m \
             --burst-limit 200 \
             --qps 100
+
+      # Verify exactly what this job deploys: the four workloads whose image
+      # tags it sets above. Scoping the check to them is the point — an
+      # unrelated unhealthy workload is a real problem, but it is not THIS
+      # job's failure, and conflating the two is what made the signal
+      # worthless. Anything outside this list is deliberately not gated here;
+      # it needs its own alerting rather than a deploy that cries wolf.
+      #
+      # `kubectl rollout status` is the honest instrument: it returns non-zero
+      # on a genuine stuck rollout, so a real regression still fails the job.
+      # Per-deployment timeouts, because clawdbot-gateway carries two init
+      # containers and legitimately takes minutes longer than the rest.
+      - name: Verify rollout of the deployed workloads
+        run: |
+          set -uo pipefail
+          FAILED=""
+          for d in backend frontend clawdbot-gateway commonly-bot; do
+            echo "::group::rollout status $d"
+            if kubectl rollout status "deploy/$d" -n "$NAMESPACE" --timeout=8m; then
+              echo "$d: rolled out"
+            else
+              echo "::error title=Rollout failed::$d did not become ready within 8m"
+              FAILED="$FAILED $d"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "Deploy failed for:$FAILED"
+            exit 1
+          fi
+          echo "All four deployed workloads are live."
+
+      # Unhealthy workloads outside the deployed set are surfaced, never
+      # failed on. Silence here is how litellm accumulated 561 restarts
+      # without anyone noticing; failing on it is how five good deploys got
+      # marked bad. A notice is the correct middle.
+      - name: Note any unhealthy workloads outside the deployed set
+        if: always()
+        run: |
+          set -uo pipefail
+          UNHEALTHY=$(kubectl get deploy -n "$NAMESPACE" \
+            -o jsonpath='{range .items[?(@.spec.replicas>0)]}{.metadata.name}{" "}{.status.readyReplicas}{"\n"}{end}' \
+            | awk '$2 == "" || $2 == 0 { printf "%s ", $1 }')
+          if [ -n "$UNHEALTHY" ]; then
+            echo "::notice title=Unhealthy workloads (not deployed by this job)::$UNHEALTHY"
+          else
+            echo "No unhealthy workloads in $NAMESPACE."
+          fi
 
       - name: Report deploy outcome
         if: always()
