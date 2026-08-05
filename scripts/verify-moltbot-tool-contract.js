@@ -142,11 +142,14 @@ const readDeclaredBranch = (gitmodulesText) => {
  * branch, so the tool contract passed green over a pin that a squash-merge
  * would have orphaned.
  *
- * An unreachable pin is not a cosmetic problem. Once the branch holding it is
- * deleted the commit becomes GC-eligible, and every fresh clone and every
- * `submodules: recursive` CI job then dies on
+ * An unreachable pin is not a cosmetic problem, though it takes a step to
+ * become fatal: openclaw has `delete_branch_on_merge: false`, so the branch
+ * holding an orphan survives its PR and someone has to delete it by hand.
+ * After that the commit is GC-eligible, and every fresh clone and every
+ * `submodules: recursive` CI job dies on
  *   fatal: Fetched in submodule path '_external/clawdbot', but it did not contain <sha>
- * which is neither loud nor legible at the surface anyone is watching.
+ * which is neither loud nor legible at the surface anyone is watching. An
+ * earlier version of this comment said the deletion was automatic; it is not.
  *
  * Returns { state: 'contained' | 'orphaned' | 'undetermined', detail }.
  * `undetermined` is not success — main() maps it to exit 2, same as any other
@@ -184,6 +187,48 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
       };
     }
   }
+
+  // Fast path, and the only one that is trustworthy in a shallow checkout:
+  // if the pin IS the branch tip, containment is settled without any history.
+  // Worth doing first because it is also the common case right after a bump.
+  let tip = null;
+  try {
+    tip = String(git(['rev-parse', ref])).trim();
+  } catch { /* fall through to the ancestry check */ }
+  if (tip && tip === pin) {
+    return { state: 'contained', branch, pin, detail: `${pin.slice(0, 10)} is the tip of ${branch}` };
+  }
+
+  // A SHALLOW repository answers the ancestry question CONFIDENTLY AND WRONG.
+  // Both commits are valid objects, so git does not error — it walks from the
+  // tip, hits the shallow graft (which it treats as parentless), never reaches
+  // the pin, and reports "not an ancestor" with status 1. That is exactly the
+  // status this function treats as a finding, so the degradation designed for
+  // git failures does not catch it. Measured, same two shas both ways:
+  //
+  //   full clone     merge-base --is-ancestor 2ce923b6 origin/main  → 0
+  //   depth-1 clone  same two shas, both objects present            → 1
+  //
+  // actions/checkout defaults to fetch-depth 1 and passes --depth=1 down to
+  // submodules, so the default CI checkout is the shallow case. Left
+  // unguarded, this check would red every pin that is not exactly the branch
+  // tip — the normal resting state of a submodule pin — and tell the operator
+  // to re-pin a commit that was never orphaned. Found by @sprint-review.
+  //
+  // Deepening here instead would mean a full-history fetch of openclaw on
+  // every CI run; the caller declaring `fetch-depth: 0` pays that cost once,
+  // visibly, where it can be weighed.
+  try {
+    if (String(git(['rev-parse', '--is-shallow-repository'])).trim() === 'true') {
+      return {
+        state: 'undetermined',
+        branch,
+        pin,
+        detail: `the submodule checkout is shallow, and a shallow repo reports "not an ancestor" `
+          + `for a pin it simply cannot see — set fetch-depth: 0 on the checkout to verify this`,
+      };
+    }
+  } catch { /* older git without the flag: fall through and accept the risk */ }
 
   try {
     git(['merge-base', '--is-ancestor', pin, ref]);
@@ -294,4 +339,5 @@ if (require.main === module) main();
 
 module.exports = {
   parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, readDeclaredBranch, checkPinReachable,
+  readGitlinkSha,
 };

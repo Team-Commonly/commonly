@@ -20,6 +20,7 @@ const {
   loadCyclesTrailer,
   readDeclaredBranch,
   checkPinReachable,
+  readGitlinkSha,
 } = require('../../../../scripts/verify-moltbot-tool-contract');
 
 // Shape lifted verbatim from extensions/commonly/src/tools.ts at both refs.
@@ -173,6 +174,60 @@ describe('moltbot tool contract', () => {
       it('reports contained when the ancestry check succeeds', () => {
         const exec = jest.fn(() => '');
         expect(checkPinReachable({ exec }).state).toBe('contained');
+      });
+
+      /**
+       * A SHALLOW checkout answers this question confidently and wrongly.
+       *
+       * Both commits are valid objects, so git does not error — it walks back
+       * from the tip, hits the shallow graft, treats it as parentless, never
+       * reaches the pin, and returns status 1: "not an ancestor". Status 1 is
+       * precisely what this function treats as a finding, so the degradation
+       * built for git FAILURES does not catch a git ANSWER that is an artifact
+       * of missing history.
+       *
+       * Measured against the real repo, same two shas both ways:
+       *   full clone     merge-base --is-ancestor 2ce923b6 origin/main  → 0
+       *   depth-1 clone  both objects present, no connecting history    → 1
+       *
+       * actions/checkout defaults to fetch-depth 1 and passes --depth=1 down to
+       * submodules, so the DEFAULT CI checkout is the shallow case. Unguarded,
+       * this would red every pin that is not exactly the branch tip — the
+       * normal resting state of a submodule pin. Found by @sprint-review.
+       */
+      it('reports undetermined, not orphaned, when the checkout is shallow', () => {
+        const exec = jest.fn((_bin, args) => {
+          if (args[0] === 'rev-parse' && args[1] === '--is-shallow-repository') return 'true\n';
+          if (args[0] === 'rev-parse') return 'a-different-sha\n';
+          if (args[0] === 'merge-base') throw gitError(1); // what a shallow repo says
+          return '';
+        });
+        const result = checkPinReachable({ exec });
+        expect(result.state).toBe('undetermined');
+        expect(result.detail).toMatch(/shallow/i);
+        // The actionable half: an undetermined verdict has to name its remedy.
+        expect(result.detail).toMatch(/fetch-depth/);
+      });
+
+      /**
+       * The fast path, and the only trustworthy answer in a shallow checkout:
+       * if the pin IS the tip, containment needs no history at all. This is
+       * also the common case immediately after a bump.
+       */
+      it('reports contained without ancestry when the pin is the branch tip', () => {
+        const pin = readGitlinkSha({ full: true });
+        const exec = jest.fn((_bin, args) => {
+          if (args[0] === 'rev-parse' && args[1] === '--verify') return '';
+          if (args[0] === 'rev-parse' && args[1] === '--is-shallow-repository') return 'true\n';
+          if (args[0] === 'rev-parse') return `${pin}\n`;
+          if (args[0] === 'merge-base') throw new Error('ancestry must not be consulted here');
+          return '';
+        });
+        const result = checkPinReachable({ exec });
+        expect(result.state).toBe('contained');
+        expect(result.detail).toMatch(/tip/);
+        // Shallowness is irrelevant on this path — assert we never got that far.
+        expect(exec.mock.calls.some((c) => c[1][0] === 'merge-base')).toBe(false);
       });
 
       it('reports orphaned when --is-ancestor exits 1', () => {
