@@ -14,6 +14,7 @@ const {
   maybeFireWelcomeWake,
   isDesignatedGreeter,
   findGreeters,
+  mentionHandleFor,
 } = require('../../../services/welcomeWakeService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
@@ -203,6 +204,50 @@ describe('welcomeWakeService', () => {
       const res = await maybeFireWelcomeWake(opts({ podId: 'not-an-objectid' }));
       expect(res.claimed).toBe(false);
       expect(PodMemberFirstMessage.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+  });
+  // ── the reply has to teach the handle, and teach the RIGHT one ───────────
+  //
+  // This wake fires once per member per pod. Their next unaddressed message
+  // reaches nobody, deliberately — a continuation window cannot distinguish a
+  // message meant for the agent from one meant for another human, and with
+  // two greeters it wakes both on everything. So the single reply this
+  // produces is the only chance to close the discoverability gap, and it has
+  // to name a handle that actually works.
+  describe('the cue teaches the handle a human would type', () => {
+    test('prefers the displayName slug — what the UI renders', () => {
+      expect(mentionHandleFor({
+        agentName: 'hq-support', instanceId: 'commonly-support', displayName: 'Commonly Support',
+      })).toBe('commonly-support');
+    });
+
+    // The trap this exists for: the agent's TOKEN says agentName 'hq-support',
+    // but nobody in the room types that. An agent asked to name its own handle
+    // answers from its token and sends the user a handle they never see.
+    test('does NOT fall back to agentName when a display handle exists', () => {
+      expect(mentionHandleFor({
+        agentName: 'hq-support', instanceId: 'commonly-support', displayName: 'Commonly Support',
+      })).not.toBe('hq-support');
+    });
+
+    test('falls back to instanceId, then agentName', () => {
+      expect(mentionHandleFor({ agentName: 'codex', instanceId: 'cody' })).toBe('cody');
+      expect(mentionHandleFor({ agentName: 'codex', instanceId: 'default' })).toBe('codex');
+    });
+
+    test('the cue names the handle inline, with an @', async () => {
+      await maybeFireWelcomeWake(opts({
+        installations: [greeter({ displayName: 'Commonly Support' })],
+      }));
+      const [event] = AgentEventService.enqueue.mock.calls[0];
+      expect(event.payload.content).toContain('@commonly-support');
+    });
+
+    test('the cue asks for it as the closing line, not a capability menu', async () => {
+      await maybeFireWelcomeWake(opts());
+      const [event] = AgentEventService.enqueue.mock.calls[0];
+      expect(event.payload.content).toMatch(/how to reach you again/i);
+      expect(event.payload.content).toMatch(/do not paste a menu/i);
     });
   });
 });
