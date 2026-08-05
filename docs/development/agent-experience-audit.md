@@ -487,3 +487,89 @@ outlives its justification is a hole that would excuse the next real violation.
 Two sources are covered now (trailer, mention cues); registry presets beyond
 the trailer, MCP tool descriptions, and the agent-runtime `context` payload are
 not, and nothing yet reports that they are not.
+
+---
+
+## 16. A field named `text` that has never contained only text (2026-08-05, pod-architect + sprint-review)
+
+`commonly_read_attachment` returns `{ ok, extractor, sizeBytes, totalChars,
+truncated, text }`. Every name in that shape is a promise, and `text` is the one
+agents act on. For `.docx` / `.pptx` / `.xlsx` it has never kept it.
+
+The investigation was aimed somewhere else. @sprint-review built a
+no-text-layer PDF (431 bytes, validated with `pypdf`: 1 page,
+`extract_text() == ''`) to test whether extraction fails silently. It does —
+`pdftotext` exits 0 emitting a single form feed, and `runExtractor` resolves on
+exit 0 with no trim, so the agent gets `ok: true, totalChars: 1, text: "\f"`.
+Not the predicted `totalChars: 0`: **one** byte, which passes every emptiness
+check a defensive caller would write.
+
+Probing the third extractor with a contentless `.docx` (valid OOXML, zero
+`<w:t>` elements) produced a third shape:
+
+```
+officecli view notext.docx text   → exit 0, 12 bytes: [/body/p[1]]
+```
+
+Twelve characters that read as a result. An agent can summarise that as "the
+document contains one paragraph" — a description of a document it never read.
+
+**Then the control, which is where the real finding was.** Same fixture builder,
+two real text runs:
+
+```
+[/body/p[1]] HELLO_SENTINEL_ONE
+[/body/p[2]] HELLO_SENTINEL_TWO
+```
+
+`[/body/p[N]]` is a per-paragraph XPath prefix `officecli` emits
+unconditionally. The empty-document output was not an error format — it was the
+ordinary format with nothing after it. `extracted` reaches `text` unmodified, so
+**every successful Office read any agent has ever done returned structural
+markup interleaved with the content.** `truncated` slices at a raw character
+offset, so long documents are cut mid-marker.
+
+The edge case affects unusual input. The bug the control exposed affects every
+read, and has since the feature shipped.
+
+Three failure shapes, escalating in how much each resembles success, each
+defeating the guard the previous one suggests:
+
+```
+PNG,  no image extras  markitdown  exit 0  totalChars: 0   text: ""
+PDF,  no text layer    pdftotext   exit 0  totalChars: 1   text: "\f"
+DOCX, no text runs     officecli   exit 0  totalChars: 12  text: "[/body/p[1]]"
+   ^ same DOCX         markitdown  exit 1  honest failure — not the branch taken
+```
+
+That last line matters: the container already holds a reader that fails
+honestly on that file, and the dispatch routes Office formats to the one that
+does not. A routing choice, not a missing capability. And none of it is fixable
+by installing package extras — a page with no text layer has nothing to
+convert, so `markitdown[all]` leaves two of these rows unchanged.
+
+**Lesson (AX):** `ok: true` is an assertion about the *call*, and agents read it
+as an assertion about the *result*. When a producer cannot distinguish "read it,
+it was empty" from "could not read it," every consumer inherits a false model,
+and the more plausible the returned bytes the deeper the falsehood travels.
+A field's name is a contract with a reader who cannot inspect the producer:
+`text` must contain text or say it does not.
+
+**Lesson (method):** when a probe of a failure path returns something
+structurally odd, run the *success* path through the same probe before writing
+it up. It decides whether you found an edge case or a systemic one — here, one
+extra command turned a narrow empty-file bug into a defect on every ordinary
+read.
+
+**Corollary on where the fix belongs.** #848 added an inline cue telling agents
+what to do when extraction returns nothing. That cue cannot reach this: 12
+characters of XPath are not "nothing," and no prose instruction reasonably
+teaches every agent to recognise `[/body/p[1]]` as not-content. Three of these
+are producer bugs. Teaching consumers to compensate is the weaker half of the
+fix and should not be mistaken for the whole one.
+
+Filed as #851 with reproducible fixtures. Upstream `officecli` pinning is #846.
+
+**Not verified:** whether `.xlsx` and `.pptx` carry the same prefix format as
+`.docx` (same code path, untested), and whether any other tool result in the
+`commonly_*` surface promises a shape it can silently fail to produce.
