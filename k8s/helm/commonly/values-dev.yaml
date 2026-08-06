@@ -8,12 +8,12 @@ global:
 errorTracking:
   enabled: true
 
-# Flip to true only once all three commonly-dev-stripe-* secrets have a version
-# in Secret Manager — verify with `gcloud secrets versions list <name>`. An
-# empty secret container passes `describe` and still breaks the whole api-keys
-# ExternalSecret. See the note in values.yaml.
+# All three commonly-dev-stripe-* secrets verified present with an ENABLED
+# version on 2026-08-06 before this was flipped. Do not set true anywhere the
+# secrets are absent: an empty secret container passes `describe` and still
+# breaks the whole api-keys ExternalSecret. See the note in values.yaml.
 billing:
-  enabled: false
+  enabled: true
 
 agentProvisioning:
   enabled: true
