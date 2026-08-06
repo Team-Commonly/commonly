@@ -18,8 +18,9 @@ jest.mock('../../models/User', () => ({
       : Promise.resolve(mockProUsers.value),
   ); }),
 }));
+const mockPodQuery = { value: null };
 jest.mock('../../models/Pod', () => ({
-  find: jest.fn(() => mockChain(Promise.resolve(mockProPods.value))),
+  find: jest.fn((q) => { mockPodQuery.value = q; return mockChain(Promise.resolve(mockProPods.value)); }),
 }));
 
 const { pool } = require('../../config/db-pg');
@@ -194,6 +195,34 @@ describe('pgRetentionService.runMessageRetention', () => {
    * night means a single failed card payment is unrecoverable. The grace
    * window is the win-back runway.
    */
+  /*
+   * Retention is a property of the ROOM, not of whoever wandered into it.
+   * "Any Pro member protects the pod" was tried first and rejected: membership
+   * is cheap and unilateral, so one Pro admin who had joined everything
+   * silently protected 95 of 235 pods — 78% of all messages — and the only way
+   * to remove protection would have been to remove a person.
+   */
+  describe('the pod creator governs retention', () => {
+    const runAndGetPodQuery = async () => {
+      mockProUsers.value = [{ _id: 'u-pro' }];
+      mockProPods.value = [{ _id: 'pod-1' }];
+      mockSizeQueries([1, 1]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 0 });
+      await runMessageRetention();
+      return mockPodQuery.value;
+    };
+
+    it('selects pods by createdBy', async () => {
+      const q = await runAndGetPodQuery();
+      expect(q).toEqual({ createdBy: { $in: ['u-pro'] } });
+    });
+
+    it('does NOT protect a pod merely because a Pro user is a member', async () => {
+      const q = await runAndGetPodQuery();
+      expect(JSON.stringify(q)).not.toContain('members');
+    });
+  });
+
   describe('lapsed-Pro data grace', () => {
     const runAndGetQuery = async () => {
       mockSizeQueries([1, 1]);
