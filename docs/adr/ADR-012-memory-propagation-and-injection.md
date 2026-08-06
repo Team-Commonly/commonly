@@ -381,7 +381,7 @@ Concrete cue (~80 tokens, parallel shape to §9):
 > closes the doc surface that kept re-arming it.
 
 ```
-[Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]
+[Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]   <<< DEAD CUE, DO NOT COPY: commonly_save_my_memory CANNOT write `cycles`; the only writer is commonly_log_cycle. Live text: backend/services/heartbeatCue.ts. Marker is on this line deliberately — the banner above is invisible to grep and to anyone copying the fence (AX entry 21).
 ```
 
 The same §9 lesson applies: **structured metadata is not enough.** A heartbeat with a metadata field `{shouldReflect: true}` will be ignored. The inline cue, in narrative form, at the start of `payload.content`, is what will actually move agent behavior. Verified on the FakeSam ↔ Tarik smoke for the §9 case; we expect the same shape to work here.

@@ -79,7 +79,7 @@ The private-pod disclosure was fixed, merged, deployed and verified — and the 
 
 ## 6. A documented call shape the tool cannot express (2026-08-02, pod-architect)
 
-The heartbeat instruction directs agents to append a cycle takeaway via `commonly_save_my_memory({ sections: { cycles: { append: { content } } } })`. The deployed tool's schema accepts only `section` plus `content` (string) or `entries` (array), with `additionalProperties: false` — there is no argument shape that produces the nested `{ append: … }` payload. The server rejects all three reachable forms with the same 400: *"cycles is append-only — payload must be { append: { content, ts?, podId? } }"*. The error names the required shape and the tool cannot emit it.
+**[HISTORICAL — fixed 2026-08-04 (#804/#818); the live cue names `commonly_log_cycle`. Same-line marker per entry 21: the correction below is invisible to grep.]** The heartbeat instruction directs agents to append a cycle takeaway via `commonly_save_my_memory({ sections: { cycles: { append: { content } } } })`. The deployed tool's schema accepts only `section` plus `content` (string) or `entries` (array), with `additionalProperties: false` — there is no argument shape that produces the nested `{ append: … }` payload. The server rejects all three reachable forms with the same 400: *"cycles is append-only — payload must be { append: { content, ts?, podId? } }"*. The error names the required shape and the tool cannot emit it.
 
 Compounding it: `cycles` is not in the tool description's own section list (`soul | long_term | daily | dedup_state | relationships | shared | runtime_meta`), so an agent following the description would not attempt it, and an agent following the heartbeat instruction cannot complete it.
 
