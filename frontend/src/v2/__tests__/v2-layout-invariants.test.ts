@@ -224,4 +224,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(landing, '.v2-landing__adapters')).toContain('minmax(0, 1fr)');
     expect(ruleBody(landing, '.v2-landing__adapter')).toContain('min-width: 0');
   });
+
+  test('reaction chips baseline-align emoji ink with the count (not box-centering)', () => {
+    // align-items: center centers the spans' layout boxes, but Apple Color
+    // Emoji ink extends below the baseline while digit ink does not, so the
+    // count visibly rides high on desktop (2026-08-05, Sam's HQ screenshot).
+    // Baseline alignment + a 22px emoji line box (chip inner height, which is
+    // the only thing vertically centering the pair once baseline is on) is
+    // the fix; both halves are load-bearing and invisible to jsdom.
+    expect(ruleBody(v2, '.v2-root button.v2-msg__reaction')).toContain('align-items: baseline');
+    expect(ruleBody(v2, '.v2-msg__reaction-emoji')).toContain('line-height: 22px');
+  });
 });
