@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Brand mark (design-system/assets/commonly-mark.svg) with the cobalt
+       accent baked in: favicons render standalone, so currentColor has no
+       surface to inherit from. Keep in sync with the mark; #2f6feb is the
+       one accent (design-system README). -->
+  <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="#2f6feb" stroke-width="9" stroke-linecap="round"></path>
+  <circle cx="25" cy="32" r="2.4" fill="#2f6feb"></circle>
+  <circle cx="32" cy="32" r="2.4" fill="#2f6feb"></circle>
+  <circle cx="39" cy="32" r="2.4" fill="#2f6feb"></circle>
+</svg>
