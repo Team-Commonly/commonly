@@ -89,8 +89,18 @@ spec:
             # re-arms the boot-blocking prompt loop at the next auth expiry — fail loud at
             # deploy time instead); the other two degrade silently by design and get a
             # searchable WARNING instead of a dead proxy. All patches idempotent; pattern
-            # drift on upstream bumps prints per-patch and never half-applies.
-            python3 -c "
+            # drift AND missing-file on upstream bumps both print per-patch (missing file
+            # = not-effective, criticality decides) and never half-apply.
+            #
+            # Interpreter choice (review finding, #857): run the patcher with the PROXY'S
+            # interpreter (/app/.venv/bin/python3) so target resolution is correct BY
+            # CONSTRUCTION, not by assuming bare python3 shares the venv's site-packages.
+            # Falls back to bare python3 (printed) only if the venv path itself moves —
+            # in which case PATH-resolved 'exec litellm' below has moved with it, and the
+            # effect-check remains the real guard.
+            PYBIN=/app/.venv/bin/python3
+            [ -x "$PYBIN" ] || { echo "litellm-patches: venv python not found at $PYBIN, falling back to PATH python3"; PYBIN=python3; }
+            "$PYBIN" -c "
             import os, sys
             cwd=os.getcwd()
             sys.path=[p for p in sys.path if p not in ('', cwd)]
@@ -128,7 +138,8 @@ spec:
                         print('LiteLLM %s patch applied: %s' % (p['name'],f))
                     else:
                         print('LiteLLM %s patch: pattern not found in %s (version changed?)' % (p['name'],f))
-                if p['marker'] not in open(proxy_target).read():
+                effective=os.path.exists(proxy_target) and p['marker'] in open(proxy_target).read()
+                if not effective:
                     if p['critical']:
                         print('FATAL: LiteLLM %s patch NOT effective in proxy-resolved copy: %s' % (p['name'],proxy_target))
                         fatal=True
