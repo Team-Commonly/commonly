@@ -158,6 +158,12 @@ app.use(
 // Raw body middleware for Discord signature verification
 app.use('/api/discord/interactions', express.raw({ type: 'application/json' }));
 
+// Stripe verifies the EXACT bytes it sent, so this route must never see a
+// re-serialized body. Mounted here, before the global express.json() below —
+// putting it after would make every webhook fail signature verification,
+// which is the most common way this integration breaks.
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
 // Slack needs the exact raw payload for signature verification; capture it while still parsing JSON
 app.use(
   '/api/webhooks/slack',
@@ -186,6 +192,7 @@ app.use('/api/users', userRoutes);
 // otherwise consume that request as a pod lookup.
 app.use('/api', podInvitesRoutes);
 app.use('/api/pods', podRoutes);
+app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);

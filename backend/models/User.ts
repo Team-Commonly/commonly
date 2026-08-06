@@ -83,7 +83,21 @@ export interface IUser extends Document {
     // BYO agents are NEVER gated by this: "agents you bring connect free and
     // unlimited" is the product's standing promise, and a per-agent cap is the
     // thing this pricing model exists to avoid.
+    // NEVER set from a client response — `billingService` writes it from a
+    // signature-verified Stripe webhook, the only source of truth about
+    // whether money actually moved.
     pro: boolean;
+  };
+  // Stripe linkage. `customerId` is the join key from webhook -> user; it is
+  // set at checkout creation so an event can always be resolved even if the
+  // session metadata is missing. `subscriptionStatus` mirrors Stripe rather
+  // than being derived, so support can see WHY someone lost access.
+  billing?: {
+    customerId?: string;
+    subscriptionId?: string;
+    subscriptionStatus?: string;
+    currentPeriodEnd?: Date;
+    cancelAtPeriodEnd?: boolean;
   };
   apiToken?: string;
   apiTokenCreatedAt?: Date;
@@ -188,6 +202,14 @@ const userSchema = new Schema<IUser>({
   entitlements: {
     cloudAgents: { type: Boolean, default: false },
     pro: { type: Boolean, default: false },
+  },
+  billing: {
+    // Indexed: every webhook resolves a user by this in the hot path.
+    customerId: { type: String, index: true, sparse: true },
+    subscriptionId: { type: String },
+    subscriptionStatus: { type: String },
+    currentPeriodEnd: { type: Date },
+    cancelAtPeriodEnd: { type: Boolean, default: false },
   },
   // `select: false` so a live bearer credential can never ride along on an
   // incidental `findById().select('-password')` or a populate(). Queries that

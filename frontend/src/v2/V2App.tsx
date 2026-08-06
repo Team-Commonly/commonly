@@ -16,6 +16,7 @@ import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
 import V2LandingPage from './landing/V2LandingPage';
 import V2Showcase from './showcase/V2Showcase';
+import V2BillingPanel from './components/V2BillingPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
 import UseCasePage from '../components/landing/UseCasePage';
 import PostFeed from '../components/PostFeed';
@@ -267,7 +268,12 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', 'Profile, avatar, app management, and API token settings.', <UserProfile />)}
+                  element={feature('Settings', 'Plan and billing, profile, avatar, app management, and API token settings.', (
+                    <>
+                      <V2BillingPanel />
+                      <UserProfile />
+                    </>
+                  ))}
                 />
                 <Route
                   path="profile"

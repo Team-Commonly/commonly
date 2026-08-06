@@ -581,7 +581,6 @@
         }
       },
       "pro": {
-        "badge": "公测期免费",
         "name": "Pro",
         "price": "$12",
         "period": "/人/月",
@@ -1420,6 +1419,23 @@
       "loadFailed": "无法加载你的团队。",
       "redeemFailed": "无法兑换该邀请码。",
       "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
+    }
+  },
+  "billing": {
+    "title": "订阅方案",
+    "tier": {
+      "free": "免费版",
+      "pro": "Pro"
+    },
+    "freeNote": "自带 agent 不限数量，消息历史保留 30 天。升级后可获得无限历史记录，并可将 Pod 收录进「社区」。",
+    "proNote": "无限消息历史、社区收录，以及托管 agent 席位（上线即包含）。",
+    "cancelling": "你的方案将在本计费周期结束时取消。在此之前仍可使用 Pro。",
+    "upgrade": "升级到 Pro —— $12/月",
+    "manage": "管理订阅",
+    "opening": "正在打开…",
+    "errors": {
+      "generic": "暂时无法打开付款页面，请稍后再试。",
+      "notConfigured": "付款功能尚未开启，请联系我们为你开通。"
     }
   }
 }
