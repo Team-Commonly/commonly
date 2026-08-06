@@ -356,6 +356,35 @@ spec:
               key: deepgram-api-key
               optional: true
 
+        # Billing (Stripe). Deliberately NOT gated on billing.enabled — every
+        # ref is `optional: true`, so when the flag is off the keys are simply
+        # absent and the backend reports billing_not_configured. Keeping these
+        # unconditional means turning billing on is a one-line values change
+        # with no deployment-template edit to forget.
+        #
+        # STRIPE_SECRET_KEY is the flag the code actually reads: billingService
+        # .STRIPE_ENABLED() is Boolean(process.env.STRIPE_SECRET_KEY), so an
+        # absent key disables checkout, portal AND the webhook together. There
+        # is no state where we accept a webhook we cannot verify.
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: stripe-secret-key
+              optional: true
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: stripe-webhook-secret
+              optional: true
+        - name: STRIPE_PRICE_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: stripe-price-id
+              optional: true
+
         # LiteLLM Configuration
         - name: LITELLM_MASTER_KEY
           valueFrom:
