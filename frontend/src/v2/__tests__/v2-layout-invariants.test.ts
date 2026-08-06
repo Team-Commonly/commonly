@@ -243,4 +243,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // and renders them as plain prose, which shipped once (#870).
     expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
   });
+
+  test('compare head does not combine section padding with its own max-width', () => {
+    // `.v2-landing__section` centres a 1120px column via percentage padding
+    // resolved against the PARENT. An element carrying both that class and its
+    // own max-width keeps the padding and caps the box, collapsing the text to
+    // a ribbon — shipped live on /compare. Constrain the children instead.
+    const landingCss = read('../landing/v2-landing.css');
+    expect(ruleBody(landingCss, '.v2-compare__head')).not.toContain('max-width');
+    expect(ruleBody(landingCss, '.v2-compare__head > *')).toContain('max-width');
+  });
 });

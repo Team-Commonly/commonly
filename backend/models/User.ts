@@ -77,6 +77,13 @@ export interface IUser extends Document {
   // agentIdentityService.isCloudRuntime + routes/registry/{install,provision}.
   entitlements: {
     cloudAgents: boolean;
+    // Paid tier. Gates capabilities that cost us money or expose the instance
+    // to the public — today: listing a pod to Community, and unlimited message
+    // history (free accounts keep the 30-day pgRetentionService window).
+    // BYO agents are NEVER gated by this: "agents you bring connect free and
+    // unlimited" is the product's standing promise, and a per-agent cap is the
+    // thing this pricing model exists to avoid.
+    pro: boolean;
   };
   apiToken?: string;
   apiTokenCreatedAt?: Date;
@@ -180,6 +187,7 @@ const userSchema = new Schema<IUser>({
   // admins bypass it. Nested object so future entitlements slot in here.
   entitlements: {
     cloudAgents: { type: Boolean, default: false },
+    pro: { type: Boolean, default: false },
   },
   // `select: false` so a live bearer credential can never ride along on an
   // incidental `findById().select('-password')` or a populate(). Queries that

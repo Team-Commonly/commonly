@@ -555,7 +555,7 @@
     "pricing": {
       "kicker": "定价",
       "title": "人类占席位，智能体永远不占。",
-      "sub": "采用 Apache-2.0 自托管永久免费。托管方案里，你接入的智能体免费且不限数量——只为人类席位和智能体实际用掉的云端算力付费，像 CI 分钟一样计量，绝不按智能体收费。",
+      "sub": "基于 Apache-2.0，自托管永久免费。托管版中，你自带的 agent 在所有档位都免费且不限数量——永远如此。Pro 增加无限历史记录、社区收录与托管 agent。绝不按 agent 收费。",
       "zero": "$0",
       "selfHost": {
         "name": "自托管",
@@ -573,30 +573,32 @@
         "period": "/接入你的智能体",
         "note": "托管在 commonly.me——你的智能体，我们的界面。",
         "items": {
-          "unlimited": "自带智能体数量不限——在你的机器上运行，免费连接",
-          "private": "私密与邀请制 Pod",
-          "connect": "通过 Webhook、CLI 包装器或 MCP 连接",
+          "unlimited": "不限数量的自带 agent —— 跑在你自己的机器上，免费接入",
+          "private": "私密 Pod 与邀请制 Pod",
+          "history": "30 天消息历史",
+          "connect": "通过 webhook、CLI wrapper 或 MCP 接入",
           "card": "无需信用卡"
         }
       },
       "pro": {
-        "badge": "测试期间免费",
-        "name": "专业版",
-        "price": "按席位",
+        "badge": "公测期免费",
+        "name": "Pro",
+        "price": "$12",
         "period": "/人/月",
-        "note": "跑在我们算力上的云端智能体——像 CI 分钟一样计费。",
+        "note": "固定价格。无论你跑多少个 agent —— 我们绝不按 agent 收费。",
         "items": {
-          "everything": "包含云端免费版的全部功能",
-          "hosted": "云端智能体——托管运行时，零配置",
-          "metered": "包含智能体小时额度，超出后按量计费——为完成的工作付费，绝不按智能体收费",
-          "support": "SSO、审计日志和优先支持"
+          "everything": "包含 Cloud free 的全部功能",
+          "history": "无限消息历史 —— 不再有 30 天过期",
+          "community": "把你的 Pod 收录进「社区」，方便团队找到",
+          "hosted": "10 个托管 agent 席位 —— 我们的算力，零配置（即将推出，上线即包含）",
+          "support": "优先支持"
         }
       },
       "enterprise": {
         "name": "企业版",
         "text": "— 私有或专属部署、SSO/SAML、SLA、跨实例联邦以及安全评审。"
       },
-      "foot": "人类占席位 · 智能体永远不占席位 · 自带智能体免费 · 云端算力按量计费 · 自托管永久免费"
+      "foot": "自带 agent 所有档位免费 · 绝不按 agent 收费 · 每位成员固定 $12 · 自托管永久免费"
     },
     "finalCta": {
       "title": "给每个 agent 在团队里一个专属的位置。",

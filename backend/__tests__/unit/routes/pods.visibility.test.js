@@ -39,7 +39,9 @@ jest.mock('../../../models/Pod', () => ({
 
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({
-    select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve({ role: 'user' })) })),
+    select: jest.fn(() => ({
+      lean: jest.fn(() => Promise.resolve({ role: 'user', entitlements: { pro: true } })),
+    })),
   })),
 }));
 
@@ -142,7 +144,10 @@ describe('POST /api/pods/:id/visibility', () => {
     test('a global admin may act on a pod they do not own', async () => {
       const User = require('../../../models/User');
       User.findById.mockReturnValue({
-        select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve({ role: 'admin' })) })),
+        select: jest.fn(() => ({
+          // No `pro` entitlement — an admin must bypass the paywall too.
+          lean: jest.fn(() => Promise.resolve({ role: 'admin' })),
+        })),
       });
       const res = await setVisibility('community', 'admin-9');
       expect(res.status).toBe(200);
@@ -201,6 +206,62 @@ describe('POST /api/pods/:id/visibility', () => {
       expect(layer).toBeTruthy();
       // auth + limiter + handler — more than just auth and the handler.
       expect(layer.route.stack.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  // Listing to Community is a paid capability (Pro). The asymmetry below is
+  // the important part: promotion is gated, demotion never is.
+  describe('Community listing is gated on the Pro entitlement', () => {
+    const asFreeUser = () => {
+      const User = require('../../../models/User');
+      User.findById.mockReturnValue({
+        select: jest.fn(() => ({
+          lean: jest.fn(() => Promise.resolve({ role: 'user', entitlements: { pro: false } })),
+        })),
+      });
+    };
+
+    test('a free owner gets 402 and the pod is not written', async () => {
+      asFreeUser();
+      const res = await setVisibility('community');
+      expect(res.status).toBe(402);
+      expect(res.body.error).toBe('pro_required');
+      expect(podSave).not.toHaveBeenCalled();
+      expect(mockPod.value.communityListed).toBe(false);
+    });
+
+    test('a user with no entitlements object at all is treated as free', async () => {
+      const User = require('../../../models/User');
+      User.findById.mockReturnValue({
+        select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve({ role: 'user' })) })),
+      });
+      const res = await setVisibility('community');
+      expect(res.status).toBe(402);
+    });
+
+    // Paywalling the exit would turn a lapsed subscription into an unwanted
+    // permanent disclosure. A free user must always be able to un-publish.
+    test('a free owner can ALWAYS demote to private', async () => {
+      asFreeUser();
+      mockPod.value = pod({ publicRead: true, communityListed: true });
+      const res = await setVisibility('private');
+      expect(res.status).toBe(200);
+      expect(mockPod.value.publicRead).toBe(false);
+      expect(mockPod.value.communityListed).toBe(false);
+    });
+
+    test('a Pro owner promotes normally', async () => {
+      // Explicit: jest.clearAllMocks() resets calls but KEEPS implementations,
+      // so the free-user mock from the tests above would otherwise leak here.
+      const User = require('../../../models/User');
+      User.findById.mockReturnValue({
+        select: jest.fn(() => ({
+          lean: jest.fn(() => Promise.resolve({ role: 'user', entitlements: { pro: true } })),
+        })),
+      });
+      const res = await setVisibility('community');
+      expect(res.status).toBe(200);
+      expect(mockPod.value.communityListed).toBe(true);
     });
   });
 });

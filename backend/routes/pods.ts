@@ -547,15 +547,32 @@ router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq
     if (!pod) return res.status(404).json({ error: 'Pod not found' });
 
     const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
-    let isGlobalAdmin = false;
-    if (!isCreator && userId) {
-      const userRow = await User.findById(userId).select('role').lean() as { role?: string } | null;
-      isGlobalAdmin = userRow?.role === 'admin';
-    }
+    const actor = userId
+      ? await User.findById(userId).select('role entitlements').lean() as {
+        role?: string; entitlements?: { pro?: boolean };
+      } | null
+      : null;
+    const isGlobalAdmin = actor?.role === 'admin';
     if (!isCreator && !isGlobalAdmin) {
       return res.status(403).json({
         error: 'not_pod_owner',
         message: 'Only the pod creator or a global admin may change pod visibility',
+      });
+    }
+
+    // Listing to Community is a paid capability. Gated on the entitlement
+    // rather than on payment state directly, so the check stays identical
+    // however billing is wired later (today an admin sets the flag, same shape
+    // as the invite-code path for cloudAgents).
+    //
+    // DEMOTION IS NEVER GATED. A user whose subscription lapses must always be
+    // able to make their own room private again — paywalling the exit turns a
+    // billing event into an unwanted permanent disclosure.
+    if (tier === 'community' && !isGlobalAdmin && actor?.entitlements?.pro !== true) {
+      return res.status(402).json({
+        error: 'pro_required',
+        message: 'Listing a pod in Community is part of the paid plan. '
+          + 'Your pod stays private and everything already in it is unaffected.',
       });
     }
 

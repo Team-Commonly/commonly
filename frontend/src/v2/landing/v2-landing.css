@@ -787,7 +787,15 @@
 /* Cards, not a checkmark grid. A table we win every row of invites the
    cherry-picked-rows objection; prose also stacks cleanly on mobile without a
    grid-template override. See docs/commonly-vs-alternatives.md. */
-.v2-compare__head { max-width: 920px; margin: 0 auto; padding-top: 56px; }
+/* NO max-width here. This element also carries `.v2-landing__section`, whose
+ * padding is `max(24px, calc((100% - 1120px) / 2))` — percentage padding
+ * resolves against the PARENT's width, so on a wide viewport it is 200-400px
+ * per side. Adding max-width:920px on the same element capped the border box
+ * while that padding stayed, squeezing the text to a ~110px ribbon (live on
+ * /compare until 2026-08-06). The section's own padding already centres the
+ * column; constrain the CONTENT, never the element that carries the padding. */
+.v2-compare__head { padding-top: 56px; }
+.v2-compare__head > * { max-width: 920px; margin-left: auto; margin-right: auto; }
 .v2-compare__title {
   margin: 8px 0 0;
   font-family: var(--v2-font-display, var(--v2-font));
