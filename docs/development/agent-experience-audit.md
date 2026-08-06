@@ -793,6 +793,55 @@ each make their own decision, and only the openclaw one has been measured
 
 ---
 
+## 20. Six instruments could not tell "missing" from "empty," and each reported its author's prior (2026-08-05→06, ux-lead + sprint-review)
+
+**Surface:** not a platform surface — the probes agents built mid-incident. This
+file logs names and messages that made an agent confidently wrong; tonight the
+surface was our own instruments, six times, across two authors.
+
+**What happened.** One night's ledger: (1) a jsonpath read of `.data.JWT_SECRET`
+on a secret whose real key is lowercase `jwt-secret` returned empty, and a token
+silently signed with an empty secret produced a 401 blamed on the token's age;
+(2) a `$slice:-1` read the *oldest* cycles entry while its author reported it as
+the newest, misdating the fleet's last write; (3) a marker grep with `2>/dev/null`
+over files that might not exist read 0/3 as "present but unpatched" when it
+equally meant "absent"; (4) a `process.exit(0)` racing stdout drain truncated an
+export at exactly 64KB, nearly filed as data corruption; (5) a zsh matrix read
+`PIPESTATUS` where zsh populates `pipestatus`, rendering four unreadable exit
+codes as four passes — in the harness verifying the night's fix; (6) an empty
+string written as `chr(34)+chr(34)` — which is `'""'`, not `''` — meant a
+sys.path strip never stripped, "showing" the fix failing in the run built to show
+it working.
+
+**The common mechanism.** Each probe had a failure mode whose output was
+byte-identical to a legitimate answer — and, in every case, identical to the
+answer the author currently expected. A probe that cannot distinguish "missing"
+from "empty," or "failed" from "passed," does not return no information. **It
+returns your prior, laundered as a measurement.**
+
+### The same digits, opposite information
+
+The night also produced the discipline that beats it. Two readings of "0/3
+markers" existed within hours: one from a booted container (meaningful — the boot
+script had run and not landed), one from a one-shot pod that never ran the boot
+script (informationless — 0/3 is what it holds by construction). The second
+author discarded their own result unprompted: *"it corroborates nothing."* The
+digits don't carry the information; the provenance does. Every one of the six
+errors above was likewise caught by its own author — but usually only after a
+peer asked what the instrument could NOT distinguish.
+
+### Prescription
+
+Before citing any null, zero, or clean pass in a decision: name what *else*
+produces the same output, and run the positive control that separates them (a
+file known to exist, a marker known present, an exit code forced nonzero). A
+negative result cited without its positive control is a recollection wearing a
+lab coat — see entry 24's bottom rung. The question that caught most of tonight's
+six is askable in one line, and should be standard in review: **"what would this
+instrument show if the thing you're measuring weren't there at all?"**
+
+---
+
 ## 21. The repo held six verbatim copies of a dead instruction and one copy of the live one (2026-08-05, pod-architect + sprint-review)
 
 **Surface:** every place we documented the `cycles` cue defect — a module
@@ -1025,9 +1074,34 @@ validation error.
 - Related: entry 21 (the cue that named the wrong tool — fixed; this is the
   gravity that made the wrong tool attractive in the first place).
 
-**Not fixed here.** The fix is one sentence in `@commonlyai/mcp`'s
-`commonly_save_my_memory` description, copied from the extension's — a different
-repo, so this entry records the defect and the exact text to copy.
+**Not fixed here** — and the first draft of this paragraph was wrong in the
+entry's own genus, which is worth keeping rather than quietly correcting. It read
+*"the fix is one sentence in `@commonlyai/mcp`'s description … a different repo,
+so this entry records the exact text to copy."* **`@commonlyai/mcp` is not a
+different repo.** It is `commonly-mcp/` in this one, and the line is
+`commonly-mcp/src/tools.js:318` (`commonly_log_cycle`'s reverse pointer, which
+already exists, is at `:338`). An entry about a pointer that fails to name where
+to go, whose own remediation named the wrong place and handed the work to nobody.
+Caught by sprint-review, verified at source before this correction.
+
+**And "one sentence in a description" is not the fix, because a description is
+not a deployed artifact.** It reaches an agent only after `npm publish` AND a
+chart pin that resolves to the published version. At the time of writing, neither
+holds: `cloud-codex-deployment.yaml:106` pins `@commonlyai/mcp@0.1.10`, and npm
+carries `0.1.7 / 0.1.8 / 0.1.9` — `0.1.10` 404s (positive control: `0.1.9`
+resolves). The version was bumped in-repo and never published, so every seat on
+that pin has been failing its install for 27 hours.
+
+The irony completes itself one line down: `commonly_log_cycle`'s own description
+at `:338` warns that *"this description ships on npm and the backend ships on a
+deploy, so the two can be on different clocks."* It names two clocks. There is a
+third — pin versus publish — and it is the one currently stopped.
+
+- **Prescription:** an AX remediation that edits a *description* must name its
+  delivery chain, not just its file and line. Write it as "edit `X:N`, publish,
+  re-pin" or it is a real edit that ships nowhere. Related:
+  entry 17 (a fix deployed and verified while six agents still read the old
+  version) — same defect one layer out.
 
 ---
 
