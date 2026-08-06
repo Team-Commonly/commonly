@@ -87,7 +87,7 @@ jobs:
           REPO=${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/commonly-frontend
           docker build frontend \
             --build-arg REACT_APP_API_URL=https://api.commonly.me \
-            --build-arg REACT_APP_SHOWCASE_POD_ID=6a4394e5dd52c8ec8425ad69 \
+            --build-arg REACT_APP_SHOWCASE_POD_ID=6a507c9b792f1ed2cbfec648 \
             --build-arg REACT_APP_COMMUNITY_POD_ID=6a5fe677306155f677c26abf \
             --build-arg REACT_APP_COMMUNITY_INVITE_TOKEN=7b91255f18ae3c0ae3721707a6613731 \
             --build-arg "REACT_APP_VERSION=$TAG" \

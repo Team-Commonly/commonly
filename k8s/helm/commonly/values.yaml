@@ -72,6 +72,9 @@ backend:
     # Optional instance community Pod. Empty keeps self-hosted registration
     # independent of community wiring.
     communityPodId: ""
+    # Comma-separated pod ids the PG message-retention cron skips (publicly
+    # linked rooms whose history is a product surface). Empty = no exemptions.
+    retentionExemptPodIds: ""
     # Base URL presented to OAuth providers as the redirect_uri origin.
     # Empty = derive from the request host (fine when the API has one host).
     oauthCallbackBaseUrl: ""

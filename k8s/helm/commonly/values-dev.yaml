@@ -43,6 +43,11 @@ backend:
     frontendUrl: "https://commonly.me"
     backendUrl: "https://api.commonly.me"
     communityPodId: "6a5fe677306155f677c26abf"
+    # Retention-exempt: the landing-page showroom (Eng Milestone) and HQ.
+    # Both are publicly readable; the 30-day cron emptied the previous
+    # showroom silently (2026-08-05). Replace with per-account retention
+    # entitlements when the paid tier lands.
+    retentionExemptPodIds: "6a507c9b792f1ed2cbfec648,6a5fe677306155f677c26abf"
     # Must match the callback URL registered on the GitHub/Google OAuth apps.
     oauthCallbackBaseUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
