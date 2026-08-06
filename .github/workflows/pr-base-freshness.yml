@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}  # github.ref fallback deliberately left: pull_request-only trigger, so it is unreachable (0 runs on main). cf. tests.yml
   cancel-in-progress: true
 
 env:

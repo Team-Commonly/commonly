@@ -10,8 +10,26 @@ on:
 permissions:
   contents: read
 
+# The push fallback is github.sha, NOT github.ref. On a push event `github.ref`
+# is the *branch*, so every commit merged to main shared one concurrency group
+# and each merge cancelled the previous commit's still-running verification.
+# Measured across 39 Tests runs on main (2026-08-04 → 08-06): 18 cancelled.
+#
+# The loss is ordered by job depth, not random, which is what makes it worth
+# fixing rather than tolerating:
+#
+#   Chart Lint        no needs,  ~8s      survived 12 of 14
+#   Test & Coverage   no needs,  ~5.5min  survived  3 of 14
+#   Service Tests     needs:test, starts ~5.5min in   survived 0 of 14
+#
+# Service Tests is the ADR-009 Tier 1 real-DB tier — the deepest job, and the
+# only one that never once completed in a cancelled run. So the tier main was
+# silently skipping is the tier hardest to reproduce anywhere else.
+#
+# Per-SHA grouping lets every commit finish; PR runs still supersede correctly
+# because pull_request.number short-circuits before the fallback is read.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
