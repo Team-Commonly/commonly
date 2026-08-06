@@ -114,10 +114,21 @@ async function vacuumMessages(): Promise<void> {
  * schedule as a free user's, and the step-down under storage pressure can take
  * that to a single day.
  *
- * ANY Pro member protects the pod, not just the creator. A conversation with
- * one free and one paying participant cannot be half-deleted — the Pro user
- * would see their own history disappear, which is the exact thing they paid to
- * prevent.
+ * The POD'S CREATOR governs, not any member. Retention is a property of the
+ * room, the way it is in every other team tool — a paid user in someone
+ * else's free workspace gets that workspace's policy.
+ *
+ * The rejected alternative was "any Pro member protects the pod". It reads
+ * more generous and behaves worse: membership is cheap and unilateral, so a
+ * single Pro admin who has joined everything silently confers unlimited
+ * retention on the entire instance (measured 2026-08-06: one Pro admin
+ * protected 95 of 235 pods, 78% of all messages). Retention would then be
+ * decided by who happened to join a room rather than by who owns it, and the
+ * only way to remove protection would be to remove a person.
+ *
+ * The honest cost: a Pro user in a pod they did not create does not get
+ * unlimited history there. The pricing copy says "pods you create" for exactly
+ * this reason — see landing.pricing.pro.items.history.
  *
  * Throws rather than returning empty. The caller must abort the run: deleting
  * paid-for data because a lookup failed is unrecoverable, while skipping one
@@ -144,9 +155,7 @@ export async function resolveProtectedPodIds(): Promise<string[]> {
   }).select('_id').lean();
   if (proUsers.length === 0) return [];
   const proIds = proUsers.map((u: { _id: unknown }) => u._id);
-  const pods = await Pod.find({
-    $or: [{ members: { $in: proIds } }, { createdBy: { $in: proIds } }],
-  }).select('_id').lean();
+  const pods = await Pod.find({ createdBy: { $in: proIds } }).select('_id').lean();
   return pods.map((p: { _id: unknown }) => String(p._id));
 }
 

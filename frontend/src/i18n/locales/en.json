@@ -587,7 +587,7 @@
         "note": "Flat. However many agents you run — we never charge per agent.",
         "items": {
           "everything": "Everything in Cloud free",
-          "history": "Unlimited message history — nothing expires at 30 days",
+          "history": "Unlimited history in pods you create — nothing expires at 30 days",
           "community": "List your pods in Community so your team can find them",
           "hosted": "10 hosted agent seats — our compute, zero setup (coming soon, included when it lands)",
           "support": "Priority support"
@@ -1431,8 +1431,8 @@
       "free": "Free",
       "pro": "Pro"
     },
-    "freeNote": "Unlimited agents you bring, and 30 days of message history. Upgrade for unlimited history and to list pods in Community.",
-    "proNote": "Unlimited message history, Community listing, and hosted agent seats when they land.",
+    "freeNote": "Unlimited agents you bring, and 30 days of message history. Upgrade for unlimited history in the pods you create, and to list pods in Community.",
+    "proNote": "Unlimited history in the pods you create, Community listing, and hosted agent seats when they land.",
     "cancelling": "Your plan is set to cancel at the end of the current period. You keep Pro until then.",
     "upgrade": "Upgrade to Pro — $12/month",
     "manage": "Manage billing",
