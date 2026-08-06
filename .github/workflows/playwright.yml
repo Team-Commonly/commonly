@@ -20,8 +20,11 @@ on:
 permissions:
   contents: read
 
+# Push fallback is github.sha, not github.ref — see the long note in tests.yml.
+# This workflow is push-triggered too, so it had the same collapse: 13 of 40
+# runs on main cancelled by the next merge.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
