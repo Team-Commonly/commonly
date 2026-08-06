@@ -9,7 +9,7 @@
 
 ## Decision, in one paragraph
 
-A pod's audience is described by two orthogonal axes — **kind** (dm / room, derived from `type`) and **visibility** (an ordered tier: `private` → `showcase` → `community`, derived from `publicRead` + `communityListed`) — plus one constrained setting, **joinPolicy**. Storage does not change: the tiers are a *vocabulary and a set of invariants* over the existing boolean flags, enforced at every writer, never a schema migration. UI and API surfaces speak in tiers; only writers that can prove the invariants may touch the underlying flags.
+A pod's audience is described by two orthogonal axes — **kind** (dm / room, derived from `type`) and **visibility** (an ordered tier: `private` → `showcase` → `community`, derived from `publicRead` + `communityListed`) — plus one constrained setting, **joinPolicy**. **Users see two of those three tiers.** `showcase` is an operator publish action, not a rung a user climbs — see *Showcase is not a user tier* below. Storage does not change: the tiers are a *vocabulary and a set of invariants* over the existing boolean flags, enforced at every writer, never a schema migration. UI and API surfaces speak in tiers; only writers that can prove the invariants may touch the underlying flags.
 
 ## The axes
 
@@ -38,6 +38,50 @@ An earlier draft called `agent-admin` a plain room, which overstated its reachab
 | `community` | `publicRead:true, communityListed:true` | anyone | any authenticated user, via Discover |
 
 `{publicRead:false, communityListed:true}` is **not a state**. It is the joinable-but-invisible bug (#772). The lattice is linear on purpose: monotone audience growth means "which tier is this pod in" is always answerable and each promotion is a strictly bigger disclosure, which is what the audit log records.
+
+#### Showcase is not a user tier — it is an operator publish action
+
+The lattice above is sound as a *model of audience*, and it was wrong as a
+*model of the product*. Corrected 2026-08-06 (Sam), from production:
+
+| tier | pods | created by |
+|---|---:|---|
+| `private` | 230 | users and operators |
+| `showcase` | **2** | **operator only** — the landing-page showroom and its predecessor |
+| `community` | **3** | **operator only** — HQ, Bug Reports, Feature Requests |
+
+**No user has ever created a showcase pod**, and the two that exist are
+marketing surfaces. Presenting `showcase` as the middle rung of a user-facing
+ladder makes it read as a mild step between private and community. It is the
+opposite: it is the only state readable with **no account at all**, and the
+admin route's own comment states the stakes — *"this room is now public
+forever, including everything said in it from now on."*
+
+It is also a different concept, not an intermediate amount of the same one:
+
+- `community` answers **"can my team find this?"** — a directory question.
+- `showcase` answers **"can anyone with the URL read this, forever?"** — a
+  link-sharing question, and the thing a user actually wants when they say
+  "share this room with someone outside the team" is a *share link* with its
+  own lifetime, not a permanent world-readable flag on the pod.
+
+**Therefore:**
+
+1. **The user-facing vocabulary is two words: Private and Community.** UI,
+   docs, agent-authored copy and the guide agent (#871) never say "showcase"
+   to a user.
+2. `showcase` remains in the model because the flag pair is real and the
+   operator surface needs to express it — but it is reached only through
+   `POST /api/admin/pods/:id/showcase`, and it is an **action**
+   ("publish this room to the public web"), not a tier a user selects.
+3. The owner-writable control (`POST /api/pods/:id/visibility`, #872) offers
+   exactly `private` and `community` and refuses `showcase` — not as a
+   permission cut on a shared ladder, but because the rung is not on the
+   user's ladder at all.
+
+If a real user need for link-sharing appears, it should be designed as a
+share-link primitive with its own expiry and revocation, and **not** by
+exposing this flag.
 
 ### Join — one setting, gated by the tier
 
@@ -131,8 +175,8 @@ Rooms: 3 tiers × 2 join policies = **6 states**, all meaningful:
 |---|---|---|---|---|---|---|
 | 1 | private | invite-only | members | no | no | Invite-only |
 | 2 | private | open | members | no | no (dormant) | Invite-only (open once listed) |
-| 3 | showcase | invite-only | world | no | no | Showcase |
-| 4 | showcase | open | world | no | no (dormant) | Showcase (open once listed) |
+| 3 | showcase | invite-only | world | no | no | Showcase *(operator-only; not offered to users)* |
+| 4 | showcase | open | world | no | no (dormant) | Showcase, open once listed *(operator-only)* |
 | 5 | community | invite-only | world | **no** (until H5) | no | Listed, invite-only |
 | 6 | community | open | world | yes | **yes** | Open via Community |
 
@@ -219,6 +263,7 @@ The `members` clause is also subtly unsafe here rather than merely redundant: th
 |---|---|---|---|
 | `POST /api/admin/pods/:id/showcase` | tier ↔ private/showcase | admin; refuses dm kinds; unlist cascade | live (PR #766-era + #779 cascade) |
 | `POST /api/admin/pods/:id/listing` | tier ↔ showcase/community | admin; 409 below showcase; refuses dm kinds | PR #779 |
+| `POST /api/pods/:id/visibility` | tier ↔ private/community, **one atomic write** | pod owner or admin; 10/hour; audited; refuses dm kinds and `showcase` | PR #872 (#768) |
 | Creation flow presets (#770 deliverable 2) | joinPolicy at creation; tier stays `private` | presets express **2** states — not the state space; see below | parked until this ADR ratifies |
 | Owner "request listing" | asks an admin for tier promotion | H5 request-access shape | phase 2, explicitly out of scope here |
 
