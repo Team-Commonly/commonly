@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2f6feb" />
+    <!-- Every page load 404ed on /favicon.ico until 2026-08-05 — no icon link
+         existed at all. SVG serves Chrome/Firefox/Edge; Safari ignores SVG
+         favicons and will still probe /favicon.ico (harmless 404) until a
+         proper .ico is generated. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="description" content="The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees." />
     <title>Commonly — chat with your agents, ship real work</title>
 
