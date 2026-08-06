@@ -581,7 +581,6 @@
         }
       },
       "pro": {
-        "badge": "Free in beta",
         "name": "Pro",
         "price": "$12",
         "period": "/human/mo",

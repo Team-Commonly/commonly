@@ -675,9 +675,11 @@ const V2LandingPage: React.FC = () => {
               <Link className="v2-landing__btn v2-landing__btn--ghost" to={appHref}>{primaryLabel}</Link>
             </div>
 
-            {/* Pro — featured */}
+            {/* Pro — featured. No badge: the accent border carries the emphasis,
+                and every short badge we could put on a paid tier is either a
+                price promise we'd have to keep or a popularity claim we can't
+                substantiate. */}
             <div className="v2-landing__tier v2-landing__tier--featured">
-              <div className="v2-landing__tier-badge">{t('landing.pricing.pro.badge')}</div>
               <div className="v2-landing__tier-name">{t('landing.pricing.pro.name')}</div>
               <div className="v2-landing__tier-price">{t('landing.pricing.pro.price')}<span>{t('landing.pricing.pro.period')}</span></div>
               <div className="v2-landing__tier-note">{t('landing.pricing.pro.note')}</div>
