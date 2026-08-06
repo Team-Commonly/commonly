@@ -202,7 +202,11 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const [showCreate, setShowCreate] = useState(false);
   const [newPodName, setNewPodName] = useState('');
   const [newPodGoal, setNewPodGoal] = useState('');
-  const [newPodJoinPolicy, setNewPodJoinPolicy] = useState<'open' | 'invite-only'>('open');
+  // Every pod is born private and unlisted (ADR-016). `joinPolicy: 'open'`
+  // below the community tier is a DORMANT declaration — "open once listed" —
+  // not an audience the creator is choosing here. Creation asks for name and
+  // purpose only; visibility is set later, on a pod that has something in it.
+  const newPodJoinPolicy = 'open' as const;
   const [createError, setCreateError] = useState<string | null>(null);
   // Pod IDs an agent is currently typing into. Set, not bool, because
   // multiple agents could type at once. Cleared after 30s safety in case the
@@ -443,7 +447,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         }
         setNewPodName('');
         setNewPodGoal('');
-        setNewPodJoinPolicy('open');
         setShowCreate(false);
         selectPod(pod._id);
       } else {
@@ -477,7 +480,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             className="v2-pods__new-btn"
             onClick={() => {
               setShowCreate((next) => !next);
-              setNewPodJoinPolicy('open');
               setCreateError(null);
             }}
             disabled={creating}
@@ -489,32 +491,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           </button>
           {showCreate && (
             <form className="v2-pods__create" onSubmit={handleCreatePod}>
-              <div className="v2-pods__create-options">
-                <button
-                  type="button"
-                  className={`v2-pods__create-option${newPodJoinPolicy === 'open' ? ' v2-pods__create-option--active' : ''}`}
-                  aria-pressed={newPodJoinPolicy === 'open'}
-                  onClick={() => {
-                    setNewPodJoinPolicy('open');
-                    setCreateError(null);
-                  }}
-                >
-                  <strong>{t('podsSidebar.create.teamOption')}</strong>
-                  <span>{t('podsSidebar.create.teamDescription')}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`v2-pods__create-option${newPodJoinPolicy === 'invite-only' ? ' v2-pods__create-option--active' : ''}`}
-                  aria-pressed={newPodJoinPolicy === 'invite-only'}
-                  onClick={() => {
-                    setNewPodJoinPolicy('invite-only');
-                    setCreateError(null);
-                  }}
-                >
-                  <strong>{t('podsSidebar.create.privateOption')}</strong>
-                  <span>{t('podsSidebar.create.privateDescription')}</span>
-                </button>
-              </div>
               <input
                 className="v2-pods__create-input"
                 type="text"
@@ -537,7 +513,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                   className="v2-pods__create-cancel"
                   onClick={() => {
                     setShowCreate(false);
-                    setNewPodJoinPolicy('open');
                     setCreateError(null);
                   }}
                 >

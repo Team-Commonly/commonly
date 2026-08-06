@@ -714,72 +714,16 @@
   margin-bottom: 14px;
 }
 
-.v2-pods__create-options {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-}
-
-/* .v2-root button. prefix, not bare .v2-pods__create-option: the global
- * button reset (.v2-root button:not(.MuiButtonBase-root), specificity 0-2-1)
- * beats a bare class (0-1-0) and strips border/background/padding — so both
- * options rendered as PLAIN PROSE with zero selection feedback, live, until
- * 2026-08-06 (Sam: "no distinction at all", the night before the YC
- * interview). Same war the reaction chips and filter segments already fought;
- * this panel never got the workaround. Every rule here that must survive the
- * reset carries the prefix. */
-.v2-root button.v2-pods__create-option {
-  display: flex;
-  min-height: 48px;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 10px;
-  background: #ffffff;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-secondary);
-  text-align: left;
-  transition: background 80ms ease, border-color 80ms ease;
-}
-
-.v2-root button.v2-pods__create-option:hover {
-  border-color: var(--v2-border-strong);
-}
-
-.v2-pods__create-option strong {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.v2-pods__create-option span {
-  color: var(--v2-text-tertiary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-/* Selected = the accent, unambiguously: soft fill + accent border + a dot
- * beside the label. The original --active used border-color:
- * var(--v2-border-strong) — gray — which would have been near-invisible even
- * without the reset eating it. */
-.v2-root button.v2-pods__create-option--active {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent);
-  color: var(--v2-accent-text);
-}
-
-.v2-root button.v2-pods__create-option--active strong::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--v2-accent);
-  flex: none;
-}
+/* Creation no longer asks about audience (ADR-016 / #768): every pod is born
+ * private, and visibility is set later on a pod that has content worth
+ * disclosing. The two option cards and their styles are gone with it — along
+ * with the selected-state dot, which was a fourth signal saying what the
+ * accent fill, border and text colour already said.
+ *
+ * Kept as a note rather than silence because the rules that lived here fought
+ * the global button reset (.v2-root button:not(.MuiButtonBase-root), 0-2-1),
+ * and anything reintroducing option buttons in this panel will need the same
+ * `.v2-root button.` prefix or it will render as plain prose again (#870). */
 
 .v2-pods__create-input {
   width: 100%;

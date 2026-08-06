@@ -73,7 +73,11 @@ describe('V2PodsSidebar create flow', () => {
     });
   });
 
-  it('creates a real invite-only Pod and marks it for the starter panel', async () => {
+  it('creates a Pod from name + purpose alone, born private', async () => {
+    // ADR-016 / #768: creation asks for intent, not audience. Every pod is
+    // born private and unlisted; `joinPolicy: 'open'` is the DORMANT
+    // declaration ("open once listed"), not a choice the creator made here.
+    // Visibility moves to a later, deliberate act via POST /pods/:id/visibility.
     const podsState = {
       pods: [],
       loading: false,
@@ -89,12 +93,12 @@ describe('V2PodsSidebar create flow', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
-    expect(screen.getByRole('button', { name: /Open to join/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('Anyone can join if this pod is listed in Community.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Invite-only/ }));
-    expect(screen.getByRole('button', { name: /Invite-only/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('Only people you invite can join.')).toBeInTheDocument();
+    // The audience choice is gone — it set one field, could not be honoured
+    // for non-admins, and asked a stranger to decide before they had content.
+    expect(screen.queryByRole('button', { name: /Open to join/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Invite-only/ })).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByPlaceholderText('Pod name'), {
       target: { value: 'Launch circle' },
     });
@@ -108,14 +112,14 @@ describe('V2PodsSidebar create flow', () => {
         'Launch circle',
         'Prepare the launch',
         'team',
-        'invite-only',
+        'open',
       );
     });
     expect(sessionStorage.getItem('v2.justCreated.new-private-pod')).toBe('1');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/new-private-pod');
   });
 
-  it('renders both policy helpers from the Simplified Chinese catalog', async () => {
+  it('the simplified create form still localizes (zh-CN)', async () => {
     await act(async () => {
       await i18n.changeLanguage('zh-CN');
     });
@@ -134,10 +138,12 @@ describe('V2PodsSidebar create flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建 Pod' }));
 
-    expect(screen.getByRole('button', { name: /开放加入/ })).toBeInTheDocument();
-    expect(screen.getByText('列入「社区」后，任何人都可以加入。')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /仅限邀请/ })).toBeInTheDocument();
-    expect(screen.getByText('只有你邀请的人才能加入。')).toBeInTheDocument();
+    // Audience options are gone in every locale — a zh-only regression here
+    // would mean the removal was done in the component but not the catalog.
+    expect(screen.queryByRole('button', { name: /开放加入/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /仅限邀请/ })).not.toBeInTheDocument();
 
+    // What SHOULD localize: the fields creation still asks for.
+    expect(screen.getByPlaceholderText('Pod 名称')).toBeInTheDocument();
   });
 });

@@ -236,14 +236,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg__reaction-emoji')).toContain('line-height: 22px');
   });
 
-  test('create-pod options carry the .v2-root button. prefix or the reset erases them', () => {
-    // The global reset (.v2-root button:not(.MuiButtonBase-root), 0-2-1)
-    // beats any bare class (0-1-0) and strips border/background/padding. The
-    // create-pod option buttons shipped bare and rendered as plain prose with
-    // no selection feedback — found live the night before the YC interview.
-    // Selection must be the accent, not a gray border, or "selected" is
-    // invisible even when it wins the cascade.
-    expect(ruleBody(v2, '.v2-root button.v2-pods__create-option')).toContain('border: 1px solid');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__create-option--active')).toContain('var(--v2-accent)');
+  test('create-pod panel no longer ships audience options (ADR-016 / #768)', () => {
+    // Creation asks name + purpose only; visibility is a later act. If option
+    // buttons ever come back to this panel they MUST carry the
+    // `.v2-root button.` prefix — the global reset (0-2-1) beats a bare class
+    // and renders them as plain prose, which shipped once (#870).
+    expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
   });
 });

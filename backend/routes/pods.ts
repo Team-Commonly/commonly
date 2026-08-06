@@ -14,6 +14,10 @@ const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, rem
 const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const AuditLog = require('../models/AuditLog');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { NON_LISTABLE_POD_TYPES } = require('../services/podListing') as { NON_LISTABLE_POD_TYPES: readonly string[] };
+// eslint-disable-next-line global-require
 const DMService = require('../services/dmService');
 // eslint-disable-next-line global-require
 const Announcement = require('../models/Announcement');
@@ -33,6 +37,10 @@ interface AuthReq {
   query?: Record<string, string>;
   body?: Record<string, unknown>;
   file?: { path: string };
+  // Present on every express request; declared because the visibility route
+  // records them on the AuditLog row that publishing a pod produces.
+  ip?: string;
+  headers?: Record<string, string | undefined>;
 }
 interface Res {
   status: (n: number) => Res;
@@ -475,6 +483,120 @@ router.get('/:param', auth, async (req: AuthReq, res: Res) => {
   if (isObjectId) { req.params!.id = param || ''; return getPodById(req, res); }
   req.params!.type = param || '';
   return getPodsByType(req, res);
+});
+
+// Promoting a room to Community makes it world-readable AND discoverable, so
+// it is rate-limited harder than ordinary pod admin actions: this is the one
+// owner-writable control that publishes content to people who are not members
+// and do not have an account.
+const podVisibilityRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
+/**
+ * POST /api/pods/:id/visibility  { tier: 'private' | 'community' }
+ *
+ * ADR-016's ordered tier (private -> showcase -> community), owner-writable
+ * for the two ends. Before this, `communityListed` was settable ONLY from
+ * `routes/admin/pods.ts` behind adminAuth, which made the creation flow's most
+ * prominent choice inert for every non-admin: a user picking "Open to join"
+ * got `joinPolicy: 'open'` on a pod nobody could find, because
+ * `self-joinable <=> community AND open` and they could not reach community
+ * (#768).
+ *
+ * ONE ATOMIC WRITE, both flags together — deliberately, and not the admin
+ * route's two steps. The admin surface separates them because `showcase`
+ * (publicRead without listing) is a real curated state it needs to express.
+ * An owner cannot reach that state: `showcase` is admin-only, so an owner-side
+ * two-step would 409 on `listing_requires_public_read` forever with no way to
+ * clear it. Writing the pair together is also what ADR-016 invariant 1
+ * (listed => readable) asks of any writer that can prove it.
+ *
+ * Deliberately NOT exposed to agents: this is a `dualAuth`-free human route.
+ * An agent that could publish its own pod could exfiltrate a private room's
+ * entire future history with one call.
+ */
+router.post('/:id/visibility', podVisibilityRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = req.userId || (req as unknown as { user?: { id?: string } }).user?.id;
+    const { tier } = (req.body || {}) as { tier?: string };
+
+    if (tier !== 'private' && tier !== 'community') {
+      return res.status(400).json({
+        error: 'invalid_tier',
+        // `showcase` is intentionally absent: it publishes every future
+        // message to anonymous readers and stays an audited admin action.
+        message: "tier must be 'private' or 'community'",
+      });
+    }
+
+    const podId = req.params?.id;
+    if (!podId) return res.status(400).json({ error: 'Pod id is required' });
+
+    const pod = await Pod.findById(podId) as {
+      _id: { toString: () => string };
+      type?: string;
+      publicRead?: boolean;
+      communityListed?: boolean;
+      createdBy?: { toString: () => string };
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    let isGlobalAdmin = false;
+    if (!isCreator && userId) {
+      const userRow = await User.findById(userId).select('role').lean() as { role?: string } | null;
+      isGlobalAdmin = userRow?.role === 'admin';
+    }
+    if (!isCreator && !isGlobalAdmin) {
+      return res.status(403).json({
+        error: 'not_pod_owner',
+        message: 'Only the pod creator or a global admin may change pod visibility',
+      });
+    }
+
+    // DM kinds are terminally private (ADR-001 s3.10 / ADR-016 invariant 3).
+    // Guarded here as well as at the admin writer because this is now a
+    // second door into the same flags.
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(400).json({
+        error: 'pod_type_not_listable',
+        message: `Cannot change Community visibility for a personal pod type (${pod.type})`,
+      });
+    }
+
+    const listed = tier === 'community';
+    pod.publicRead = listed;
+    pod.communityListed = listed;
+    await pod.save();
+
+    try {
+      await AuditLog.create({
+        action: listed ? 'community.list' : 'community.unlist',
+        target: pod._id.toString(),
+        detail: `tier=${tier} publicRead=${listed} communityListed=${listed} type=${pod.type} via=owner`,
+        userId,
+        ip: req.ip,
+        userAgent: req.headers?.['user-agent'],
+      });
+    } catch (auditErr) {
+      console.warn('[pods] visibility audit log write failed (non-fatal):', (auditErr as Error).message);
+    }
+
+    return res.json({
+      id: pod._id.toString(),
+      tier,
+      publicRead: pod.publicRead,
+      communityListed: pod.communityListed,
+    });
+  } catch (err) {
+    console.error('[pods] visibility change error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
 });
 
 router.get('/:type/:id', auth, getPodById);
