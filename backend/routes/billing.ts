@@ -21,6 +21,37 @@ const checkoutLimit = rateLimit({
 const FRONTEND = () => process.env.FRONTEND_URL || 'https://commonly.me';
 
 /**
+ * Did Stripe reject the request because the CUSTOMER we named does not exist?
+ *
+ * `billing.customerId` is a cache of a Stripe-side object, not identity — and
+ * the two can diverge. A customer created under test keys does not exist under
+ * live ones, so the first checkout after a test -> live cutover names a ghost;
+ * the same happens if a customer is deleted in the dashboard or the account is
+ * migrated. Without this the user gets `checkout_failed` forever, with no
+ * recovery short of a database edit.
+ *
+ * `param` is what makes this safe to act on. `resource_missing` also fires for
+ * a missing PRICE — which is exactly what a half-finished cutover produces —
+ * and treating that as a stale customer would churn out a new Stripe customer
+ * on every attempt while still failing. Only `param === 'customer'` is ours.
+ */
+const isMissingCustomer = (err: any): boolean => {
+  const e = err?.raw || err;
+  return e?.code === 'resource_missing' && e?.param === 'customer';
+};
+
+/** Create a Stripe customer for this user and persist the id. */
+const attachCustomer = async (stripe: any, user: any): Promise<string> => {
+  const customer = await stripe.customers.create({
+    email: user.email,
+    metadata: { userId: String(user._id), username: user.username || '' },
+  });
+  user.billing = { ...(user.billing || {}), customerId: customer.id };
+  await user.save();
+  return customer.id;
+};
+
+/**
  * POST /api/billing/checkout — start a subscription.
  *
  * Creates (or reuses) a Stripe customer, stamps `billing.customerId` BEFORE
@@ -43,16 +74,7 @@ router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
     if (user.isBot) return res.status(400).json({ error: 'Agents do not hold subscriptions' });
 
     const stripe = billingService.stripe();
-    let customerId = user.billing?.customerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: { userId: String(user._id), username: user.username || '' },
-      });
-      customerId = customer.id;
-      user.billing = { ...(user.billing || {}), customerId };
-      await user.save();
-    }
+    let customerId = user.billing?.customerId || await attachCustomer(stripe, user);
 
     // No `automatic_tax` on purpose. Stripe Tax is not activated on the
     // account, and enabling it here would fail session creation outright.
@@ -61,9 +83,9 @@ router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
     // turning Stripe Tax on later changes what we remit, never the sticker
     // price. Enabling it also requires `customer_update: { address: 'auto' }`,
     // since an existing customer needs an address before tax can be computed.
-    const session = await stripe.checkout.sessions.create({
+    const openSession = (customer: string) => stripe.checkout.sessions.create({
       mode: 'subscription',
-      customer: customerId,
+      customer,
       line_items: [{ price: priceId, quantity: 1 }],
       // Both, deliberately: `client_reference_id` survives places metadata does
       // not, and the webhook reads either.
@@ -74,6 +96,18 @@ router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
       cancel_url: `${FRONTEND()}/v2/settings?upgrade=cancelled`,
       allow_promotion_codes: true,
     });
+
+    let session;
+    try {
+      session = await openSession(customerId);
+    } catch (err) {
+      if (!isMissingCustomer(err)) throw err;
+      // Stale id — re-attach and retry ONCE. A second failure is not staleness,
+      // and must surface rather than loop.
+      console.warn('[billing] stored customer id unknown to Stripe; re-creating');
+      customerId = await attachCustomer(stripe, user);
+      session = await openSession(customerId);
+    }
 
     return res.json({ url: session.url });
   } catch (err) {
@@ -104,6 +138,14 @@ router.post('/portal', checkoutLimit, auth, async (req: any, res: any) => {
     });
     return res.json({ url: session.url });
   } catch (err) {
+    // Unlike checkout, a stale customer is NOT re-created here: a fresh
+    // customer has no subscription, so the portal would open empty and imply
+    // the subscription vanished. `no_subscription` is both true and
+    // actionable — the UI tells them to subscribe.
+    if (isMissingCustomer(err)) {
+      console.warn('[billing] portal requested for a customer unknown to Stripe');
+      return res.status(400).json({ error: 'no_subscription' });
+    }
     console.error('[billing] portal failed:', (err as Error).message);
     return res.status(500).json({ error: 'portal_failed' });
   }
