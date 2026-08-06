@@ -92,14 +92,19 @@ spec:
             # drift AND missing-file on upstream bumps both print per-patch (missing file
             # = not-effective, criticality decides) and never half-apply.
             #
-            # Interpreter choice (review finding, #857): run the patcher with the PROXY'S
+            # Interpreter choice (review findings, #857): run the patcher with the PROXY'S
             # interpreter (/app/.venv/bin/python3) so target resolution is correct BY
             # CONSTRUCTION, not by assuming bare python3 shares the venv's site-packages.
-            # Falls back to bare python3 (printed) only if the venv path itself moves —
-            # in which case PATH-resolved 'exec litellm' below has moved with it, and the
-            # effect-check remains the real guard.
+            # HARD-REQUIRE, no fallback: proxy_target derives from $PYBIN's litellm, so a
+            # fallback interpreter carrying a different litellm would patch AND verify the
+            # wrong copy — 'EFFECT verified' printed, proxy untouched, the v2 failure
+            # verbatim. The effect-check cannot guard wrong-interpreter because it resolves
+            # through the interpreter; aborting when the venv python is missing is refusing
+            # to boot when the FATAL check below would be meaningless. If a future image
+            # restructures the venv, this fails loud at deploy time — extract the
+            # interpreter from the PATH-resolved litellm script's shebang then, not at 1am.
             PYBIN=/app/.venv/bin/python3
-            [ -x "$PYBIN" ] || { echo "litellm-patches: venv python not found at $PYBIN, falling back to PATH python3"; PYBIN=python3; }
+            [ -x "$PYBIN" ] || { echo "FATAL: litellm-patches: proxy interpreter not found at $PYBIN — cannot verify patch effect against the copy the proxy imports. Refusing to boot unverifiable."; exit 1; }
             "$PYBIN" -c "
             import os, sys
             cwd=os.getcwd()
