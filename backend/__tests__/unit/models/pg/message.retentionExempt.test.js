@@ -77,4 +77,43 @@ describe('Message.deleteOlderThan retention exemption', () => {
     expect(await Message.deleteOlderThan(NaN)).toEqual({ deleted: 0 });
     expect(pool.query).not.toHaveBeenCalled();
   });
+
+  /*
+   * The Pro tier sells "Unlimited message history — nothing expires at 30
+   * days". These pin the mechanism that makes that sentence true.
+   */
+  describe('Pro-protected pods', () => {
+    const PRO_A = '6b111111111111111111111a';
+    const PRO_B = '6b222222222222222222222b';
+
+    it('protected pods are excluded even with no env list', async () => {
+      await Message.deleteOlderThan(30, [PRO_A, PRO_B]);
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toMatch(/pod_id != ALL\(\$2\)/);
+      expect(params[1]).toEqual([PRO_A, PRO_B]);
+    });
+
+    // Operator-pinned and paid pods are exempt for different reasons; one
+    // must never silently replace the other.
+    it('unions with the env list rather than replacing it', async () => {
+      process.env.PG_RETENTION_EXEMPT_POD_IDS = `${SHOWCASE},${HQ}`;
+      await Message.deleteOlderThan(30, [PRO_A]);
+      const [, params] = pool.query.mock.calls[0];
+      expect(params[1]).toEqual([SHOWCASE, HQ, PRO_A]);
+    });
+
+    it('a pod in both lists is exempted once, not twice', async () => {
+      process.env.PG_RETENTION_EXEMPT_POD_IDS = SHOWCASE;
+      await Message.deleteOlderThan(30, [SHOWCASE, PRO_A]);
+      const [, params] = pool.query.mock.calls[0];
+      expect(params[1]).toEqual([SHOWCASE, PRO_A]);
+    });
+
+    it('no protected pods and no env is still the unconditional delete', async () => {
+      await Message.deleteOlderThan(30, []);
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).not.toMatch(/pod_id/);
+      expect(params).toEqual(['30 days']);
+    });
+  });
 });

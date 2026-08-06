@@ -214,14 +214,25 @@ class Message {
    * smallest honest stopgap that cannot drift into being a second tier
    * system — it names specific operator-owned pods, nothing more.
    */
-  static async deleteOlderThan(days: number): Promise<{ deleted: number }> {
+  /*
+   * `protectedPodIds` is the entitlement half the comment above anticipated.
+   * The caller resolves it (retention policy is not this model's business, and
+   * the answer lives in Mongo), and it is UNIONED with the env list rather
+   * than replacing it — operator-pinned pods and paid pods are both exempt,
+   * for different reasons.
+   */
+  static async deleteOlderThan(
+    days: number,
+    protectedPodIds: string[] = [],
+  ): Promise<{ deleted: number }> {
     if (!Number.isFinite(days) || days <= 0) {
       return { deleted: 0 };
     }
-    const exempt = String(process.env.PG_RETENTION_EXEMPT_POD_IDS || '')
+    const fromEnv = String(process.env.PG_RETENTION_EXEMPT_POD_IDS || '')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+    const exempt = [...new Set([...fromEnv, ...protectedPodIds.map(String).filter(Boolean)])];
     const query = exempt.length > 0
       ? `DELETE FROM messages WHERE created_at < NOW() - $1::interval AND pod_id != ALL($2) RETURNING id`
       : `DELETE FROM messages WHERE created_at < NOW() - $1::interval RETURNING id`;

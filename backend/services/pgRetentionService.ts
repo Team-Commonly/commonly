@@ -19,8 +19,12 @@
 const cron = require('node-cron');
 // eslint-disable-next-line global-require
 const Message = require('../models/pg/Message') as {
-  deleteOlderThan: (days: number) => Promise<{ deleted: number }>;
+  deleteOlderThan: (days: number, protectedPodIds?: string[]) => Promise<{ deleted: number }>;
 };
+// eslint-disable-next-line global-require
+const User = require('../models/User');
+// eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const { pool } = require('../config/db-pg') as {
   pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> };
@@ -88,6 +92,34 @@ async function vacuumMessages(): Promise<void> {
   }
 }
 
+/**
+ * Pods whose history the Pro tier promises to keep.
+ *
+ * The landing page sells "Unlimited message history — nothing expires at 30
+ * days" as the headline Pro feature. This is what makes that true; without it
+ * the cron below deletes a paying customer's messages on exactly the same
+ * schedule as a free user's, and the step-down under storage pressure can take
+ * that to a single day.
+ *
+ * ANY Pro member protects the pod, not just the creator. A conversation with
+ * one free and one paying participant cannot be half-deleted — the Pro user
+ * would see their own history disappear, which is the exact thing they paid to
+ * prevent.
+ *
+ * Throws rather than returning empty. The caller must abort the run: deleting
+ * paid-for data because a lookup failed is unrecoverable, while skipping one
+ * night of cleanup costs nothing.
+ */
+export async function resolveProtectedPodIds(): Promise<string[]> {
+  const proUsers = await User.find({ 'entitlements.pro': true }).select('_id').lean();
+  if (proUsers.length === 0) return [];
+  const proIds = proUsers.map((u: { _id: unknown }) => u._id);
+  const pods = await Pod.find({
+    $or: [{ members: { $in: proIds } }, { createdBy: { $in: proIds } }],
+  }).select('_id').lean();
+  return pods.map((p: { _id: unknown }) => String(p._id));
+}
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(2)} MiB`;
@@ -110,17 +142,31 @@ export async function runMessageRetention(): Promise<void> {
     const stepDays = resolveStepDays();
     const targetBytes = Math.floor(capacity * (targetPct / 100));
 
+    // Resolved ONCE per run and threaded through every tier below, including
+    // the step-down. A failure here aborts before a single row is deleted —
+    // see resolveProtectedPodIds.
+    let protectedPodIds: string[];
+    try {
+      protectedPodIds = await resolveProtectedPodIds();
+    } catch (err) {
+      console.error(
+        '[pg-retention] ABORT: could not resolve Pro-protected pods, refusing to delete: %s',
+        (err as Error).message,
+      );
+      return;
+    }
+
     const initialSize = await getDatabaseSizeBytes();
     console.log(
       `[pg-retention] start: size=${initialSize !== null ? formatBytes(initialSize) : 'unknown'} ` +
       `target=${formatBytes(targetBytes)} (${targetPct}% of ${formatBytes(capacity)}) ` +
-      `retention=${startDays}d step=${stepDays}d`,
+      `retention=${startDays}d step=${stepDays}d protectedPods=${protectedPodIds.length}`,
     );
 
     let totalDeleted = 0;
     let currentDays = Math.max(FLOOR_DAYS, Math.trunc(startDays));
 
-    const first = await Message.deleteOlderThan(currentDays);
+    const first = await Message.deleteOlderThan(currentDays, protectedPodIds);
     totalDeleted += first.deleted || 0;
     await vacuumMessages();
     let size = await getDatabaseSizeBytes();
@@ -146,7 +192,7 @@ export async function runMessageRetention(): Promise<void> {
       }
       const sizeBefore = size;
       currentDays = Math.max(FLOOR_DAYS, currentDays - stepDays);
-      const tierResult = await Message.deleteOlderThan(currentDays);
+      const tierResult = await Message.deleteOlderThan(currentDays, protectedPodIds);
       totalDeleted += tierResult.deleted || 0;
       await vacuumMessages();
       size = await getDatabaseSizeBytes();
