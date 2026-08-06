@@ -199,13 +199,36 @@ class Message {
    * Bulk-delete messages older than `days` days. Used by the retention cron
    * (pgRetentionService) to enforce the 30-day message retention window on
    * the PostgreSQL chat store.
+   *
+   * Pods named in PG_RETENTION_EXEMPT_POD_IDS (comma-separated) are skipped.
+   * The exemption exists because the delete used to be unconditional and, on
+   * 2026-08-05, was discovered to have silently emptied the public showcase
+   * pod the landing page points at — the room the product uses to prove
+   * itself was erased by the product's own retention policy, and nothing
+   * anywhere said so. A showroom, or any publicly-linked pod, must not be on
+   * a rolling 30-day self-destruct.
+   *
+   * Env-var rather than a pod flag, deliberately, for now: the paid tier
+   * being designed makes retention a per-account entitlement, and THAT
+   * mechanism should own per-pod retention when it lands. An env list is the
+   * smallest honest stopgap that cannot drift into being a second tier
+   * system — it names specific operator-owned pods, nothing more.
    */
   static async deleteOlderThan(days: number): Promise<{ deleted: number }> {
     if (!Number.isFinite(days) || days <= 0) {
       return { deleted: 0 };
     }
-    const query = `DELETE FROM messages WHERE created_at < NOW() - $1::interval RETURNING id`;
-    const result = await (pool as PgPool).query(query, [`${Math.trunc(days)} days`]);
+    const exempt = String(process.env.PG_RETENTION_EXEMPT_POD_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const query = exempt.length > 0
+      ? `DELETE FROM messages WHERE created_at < NOW() - $1::interval AND pod_id != ALL($2) RETURNING id`
+      : `DELETE FROM messages WHERE created_at < NOW() - $1::interval RETURNING id`;
+    const params: unknown[] = exempt.length > 0
+      ? [`${Math.trunc(days)} days`, exempt]
+      : [`${Math.trunc(days)} days`];
+    const result = await (pool as PgPool).query(query, params);
     const deleted = typeof result.rowCount === 'number'
       ? result.rowCount
       : (Array.isArray(result.rows) ? result.rows.length : 0);
