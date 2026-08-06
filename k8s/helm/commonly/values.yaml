@@ -18,6 +18,22 @@ createNamespace: true
 errorTracking:
   enabled: false
 
+# Paid tier (Stripe). Opt-in, and OFF by default so self-hosted deployments
+# never reach for billing credentials they do not have.
+#
+# Flipping this to true makes the api-keys ExternalSecret reference three
+# remote keys — commonly-dev-stripe-{secret-key,webhook-secret,price-id}. ESO
+# rejects the WHOLE ExternalSecret when any referenced key is missing, so every
+# other secret in it (JWT, LiteLLM, OAuth) would stop syncing too. Populate all
+# three in Secret Manager BEFORE enabling. `gcloud secrets versions list <name>`
+# must show at least one version for each; an empty secret container is not
+# enough.
+#
+# The backend degrades honestly when this is off: STRIPE_SECRET_KEY is absent,
+# so /api/billing/* returns 503 billing_not_configured rather than half-working.
+billing:
+  enabled: false
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true
