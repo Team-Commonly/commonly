@@ -54,6 +54,13 @@ router.post('/checkout', checkoutLimit, auth, async (req: any, res: any) => {
       await user.save();
     }
 
+    // No `automatic_tax` on purpose. Stripe Tax is not activated on the
+    // account, and enabling it here would fail session creation outright.
+    // The price is configured `tax_behavior: inclusive`, so the customer pays
+    // exactly the advertised $12 whether or not tax is ever calculated —
+    // turning Stripe Tax on later changes what we remit, never the sticker
+    // price. Enabling it also requires `customer_update: { address: 'auto' }`,
+    // since an existing customer needs an address before tax can be computed.
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
