@@ -103,6 +103,22 @@ spec:
             # to boot when the FATAL check below would be meaningless. If a future image
             # restructures the venv, this fails loud at deploy time — extract the
             # interpreter from the PATH-resolved litellm script's shebang then, not at 1am.
+            #
+            # LOAD-BEARING SPLIT — read this before "simplifying" the two lines below.
+            # The paragraph above argues at length for the interpreter pin. The pin is NOT
+            # what fixes the bug. The sys.path CWD strip inside the python block is.
+            # Measured 2026-08-06 in a one-shot pod from the deployed image ref:
+            #     bare python3 + strip -> .../site-packages/litellm   (what the proxy imports)
+            #     venv python3 + strip -> .../site-packages/litellm   (same)
+            #     bare python3, no strip -> /app/litellm              (the v2 failure)
+            #     venv python3, no strip -> /app/litellm              (the v2 failure)
+            # So keeping the pin and dropping the strip reintroduces the 79h outage
+            # verbatim, silently, with 'EFFECT verified' printed over it. Keep BOTH: the
+            # strip is the fix, the pin is what keeps the fix honest (a fallback or wrong
+            # interpreter would patch and verify the same wrong copy — see above).
+            # NOT measured: whether bare python3 is the same BINARY as the venv python.
+            # Equal resolution was measured; equal identity was not, and it would be an
+            # image accident either way — re-measure both on any base-image bump.
             PYBIN=/app/.venv/bin/python3
             [ -x "$PYBIN" ] || { echo "FATAL: litellm-patches: proxy interpreter not found at $PYBIN — cannot verify patch effect against the copy the proxy imports. Refusing to boot unverifiable."; exit 1; }
             "$PYBIN" -c "
