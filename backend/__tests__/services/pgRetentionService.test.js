@@ -6,6 +6,21 @@ jest.mock('../../models/pg/Message', () => ({
 }));
 jest.mock('node-cron', () => ({ schedule: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })) }));
 
+// `find().select().lean()` — chainable, so the service's real call shape works.
+const mockChain = (result) => ({ select: () => ({ lean: () => result }) });
+const mockProUsers = { value: [] };
+const mockProPods = { value: [] };
+jest.mock('../../models/User', () => ({
+  find: jest.fn(() => mockChain(
+    mockProUsers.value instanceof Error
+      ? Promise.reject(mockProUsers.value)
+      : Promise.resolve(mockProUsers.value),
+  )),
+}));
+jest.mock('../../models/Pod', () => ({
+  find: jest.fn(() => mockChain(Promise.resolve(mockProPods.value))),
+}));
+
 const { pool } = require('../../config/db-pg');
 const Message = require('../../models/pg/Message');
 const cron = require('node-cron');
@@ -42,6 +57,8 @@ describe('pgRetentionService.runMessageRetention', () => {
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockProUsers.value = [];
+    mockProPods.value = [];
   });
 
   afterEach(() => {
@@ -72,7 +89,7 @@ describe('pgRetentionService.runMessageRetention', () => {
     await runMessageRetention();
 
     expect(Message.deleteOlderThan).toHaveBeenCalledTimes(1);
-    expect(Message.deleteOlderThan).toHaveBeenCalledWith(30);
+    expect(Message.deleteOlderThan).toHaveBeenCalledWith(30, []);
     const vacuumCalls = pool.query.mock.calls.filter(([sql]) => /^VACUUM/i.test(sql));
     expect(vacuumCalls).toHaveLength(1);
     expect(vacuumCalls[0][0]).toMatch(/VACUUM ANALYZE messages/i);
@@ -143,7 +160,7 @@ describe('pgRetentionService.runMessageRetention', () => {
     await runMessageRetention();
 
     expect(Message.deleteOlderThan).toHaveBeenCalledTimes(1);
-    expect(Message.deleteOlderThan).toHaveBeenCalledWith(30);
+    expect(Message.deleteOlderThan).toHaveBeenCalledWith(30, []);
   });
 
   it('uses custom capacity and target via env', async () => {
@@ -165,7 +182,65 @@ describe('pgRetentionService.runMessageRetention', () => {
     await expect(runMessageRetention()).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledWith('[pg-retention] failed:', 'db down');
   });
+  /*
+   * The Pro tier's headline promise is "Unlimited message history — nothing
+   * expires at 30 days". Until this landed, the cron deleted a paying
+   * customer's messages on exactly the free-tier schedule, and the step-down
+   * under storage pressure could take that to a single day.
+   */
+  describe('Pro-protected pods', () => {
+    it('passes the protected pod ids to the delete', async () => {
+      mockProUsers.value = [{ _id: 'u-pro' }];
+      mockProPods.value = [{ _id: 'pod-1' }, { _id: 'pod-2' }];
+      mockSizeQueries([1, 1]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 0 });
+
+      await runMessageRetention();
+      expect(Message.deleteOlderThan).toHaveBeenCalledWith(30, ['pod-1', 'pod-2']);
+    });
+
+    // The step-down is the dangerous path: it is where a paying user's window
+    // would otherwise walk from 30 days toward the 1-day floor.
+    it('every step-down tier keeps the same protection', async () => {
+      mockProUsers.value = [{ _id: 'u-pro' }];
+      mockProPods.value = [{ _id: 'pod-1' }];
+      // Stays over target so the loop steps down repeatedly.
+      mockSizeQueries([7.9, 7.9, 7.9, 7.9, 7.9, 7.9]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 1 });
+
+      await runMessageRetention();
+      expect(Message.deleteOlderThan.mock.calls.length).toBeGreaterThan(1);
+      Message.deleteOlderThan.mock.calls.forEach(([, protectedIds]) => {
+        expect(protectedIds).toEqual(['pod-1']);
+      });
+    });
+
+    // The property worth more than the feature: never destroy paid data
+    // because a lookup failed. A skipped night of cleanup is recoverable.
+    it('ABORTS the entire run when the lookup fails, deleting nothing', async () => {
+      mockProUsers.value = new Error('mongo unreachable');
+      mockSizeQueries([7.9, 7.9]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 99 });
+
+      await runMessageRetention();
+      expect(Message.deleteOlderThan).not.toHaveBeenCalled();
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ABORT'),
+        expect.stringContaining('mongo unreachable'),
+      );
+    });
+
+    it('with no Pro users the delete is unchanged', async () => {
+      mockProUsers.value = [];
+      mockSizeQueries([1, 1]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 0 });
+
+      await runMessageRetention();
+      expect(Message.deleteOlderThan).toHaveBeenCalledWith(30, []);
+    });
+  });
 });
+
 
 describe('pgRetentionService.initPgRetention', () => {
   beforeEach(() => {
