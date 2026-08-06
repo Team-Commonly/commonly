@@ -98,6 +98,10 @@ export interface IUser extends Document {
     subscriptionStatus?: string;
     currentPeriodEnd?: Date;
     cancelAtPeriodEnd?: boolean;
+    // When Pro last ended. Features stop at once; the retention cron keeps
+    // this account's history for PRO_DATA_GRACE_DAYS past this instant, so a
+    // failed card payment does not destroy history overnight.
+    proEndedAt?: Date;
   };
   apiToken?: string;
   apiTokenCreatedAt?: Date;
@@ -210,6 +214,8 @@ const userSchema = new Schema<IUser>({
     subscriptionStatus: { type: String },
     currentPeriodEnd: { type: Date },
     cancelAtPeriodEnd: { type: Boolean, default: false },
+    // Indexed: the nightly retention run queries lapsed-but-in-grace accounts.
+    proEndedAt: { type: Date, index: true, sparse: true },
   },
   // `select: false` so a live bearer credential can never ride along on an
   // incidental `findById().select('-password')` or a populate(). Queries that

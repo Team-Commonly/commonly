@@ -35,6 +35,11 @@ const DEFAULT_CAPACITY_BYTES = 8 * 1024 * 1024 * 1024; // Cloud SQL tier: 8 GiB
 const DEFAULT_USAGE_TARGET_PCT = 75;
 const DEFAULT_STEP_DAYS = 1;
 const FLOOR_DAYS = 1;
+// How long a lapsed Pro account keeps its history after the entitlement ends.
+// Deliberately NOT tied to PG_MESSAGE_RETENTION_DAYS: that window is the free
+// tier's product, this one is a win-back runway, and squeezing free-tier
+// storage should never shorten it.
+const DEFAULT_PRO_GRACE_DAYS = 30;
 
 interface CronJob {
   start(): void;
@@ -62,6 +67,14 @@ function resolveUsageTargetPct(): number {
   const pct = resolvePositiveNumber(process.env.PG_USAGE_TARGET_PCT, DEFAULT_USAGE_TARGET_PCT);
   if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) return DEFAULT_USAGE_TARGET_PCT;
   return pct;
+}
+
+function resolveGraceDays(): number {
+  const days = resolvePositiveNumber(process.env.PRO_DATA_GRACE_DAYS, DEFAULT_PRO_GRACE_DAYS);
+  // A bad env value must not silently shorten the window to zero and delete a
+  // lapsed customer's history — fall back to the documented default.
+  if (!Number.isFinite(days) || days <= 0) return DEFAULT_PRO_GRACE_DAYS;
+  return days;
 }
 
 function resolveStepDays(): number {
@@ -111,7 +124,24 @@ async function vacuumMessages(): Promise<void> {
  * night of cleanup costs nothing.
  */
 export async function resolveProtectedPodIds(): Promise<string[]> {
-  const proUsers = await User.find({ 'entitlements.pro': true }).select('_id').lean();
+  /*
+   * Lapsed accounts keep their DATA for a grace window after their FEATURES
+   * stop. Otherwise one failed card payment flips the subscription to
+   * `past_due` and that night's run deletes everything older than 30 days —
+   * before the customer has seen the dunning email, and irreversibly if they
+   * fix the card the next morning. Winning them back is impossible once their
+   * history is gone; holding bytes for a month is nearly free.
+   *
+   * `billing.proEndedAt` is stamped on the true -> false edge by
+   * billingService.applySubscriptionState.
+   */
+  const graceCutoff = new Date(Date.now() - resolveGraceDays() * 24 * 60 * 60 * 1000);
+  const proUsers = await User.find({
+    $or: [
+      { 'entitlements.pro': true },
+      { 'billing.proEndedAt': { $gte: graceCutoff } },
+    ],
+  }).select('_id').lean();
   if (proUsers.length === 0) return [];
   const proIds = proUsers.map((u: { _id: unknown }) => u._id);
   const pods = await Pod.find({

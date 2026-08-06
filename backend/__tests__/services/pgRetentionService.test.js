@@ -10,12 +10,13 @@ jest.mock('node-cron', () => ({ schedule: jest.fn(() => ({ start: jest.fn(), sto
 const mockChain = (result) => ({ select: () => ({ lean: () => result }) });
 const mockProUsers = { value: [] };
 const mockProPods = { value: [] };
+const mockUserQuery = { value: null };
 jest.mock('../../models/User', () => ({
-  find: jest.fn(() => mockChain(
+  find: jest.fn((q) => { mockUserQuery.value = q; return mockChain(
     mockProUsers.value instanceof Error
       ? Promise.reject(mockProUsers.value)
       : Promise.resolve(mockProUsers.value),
-  )),
+  ); }),
 }));
 jest.mock('../../models/Pod', () => ({
   find: jest.fn(() => mockChain(Promise.resolve(mockProPods.value))),
@@ -188,6 +189,53 @@ describe('pgRetentionService.runMessageRetention', () => {
    * customer's messages on exactly the free-tier schedule, and the step-down
    * under storage pressure could take that to a single day.
    */
+  /*
+   * Losing Pro stops the FEATURES at once, but deleting the history the same
+   * night means a single failed card payment is unrecoverable. The grace
+   * window is the win-back runway.
+   */
+  describe('lapsed-Pro data grace', () => {
+    const runAndGetQuery = async () => {
+      mockSizeQueries([1, 1]);
+      Message.deleteOlderThan.mockResolvedValue({ deleted: 0 });
+      await runMessageRetention();
+      return mockUserQuery.value;
+    };
+
+    it('protects accounts still inside the grace window', async () => {
+      const q = await runAndGetQuery();
+      const clause = q.$or.find((c) => c['billing.proEndedAt']);
+      expect(clause).toBeDefined();
+      const cutoff = clause['billing.proEndedAt'].$gte;
+      const daysAgo = (Date.now() - cutoff.getTime()) / 86400000;
+      expect(daysAgo).toBeGreaterThan(29.9);
+      expect(daysAgo).toBeLessThan(30.1);
+    });
+
+    it('still protects currently-active Pro accounts', async () => {
+      const q = await runAndGetQuery();
+      expect(q.$or).toContainEqual({ 'entitlements.pro': true });
+    });
+
+    it('honours PRO_DATA_GRACE_DAYS', async () => {
+      process.env.PRO_DATA_GRACE_DAYS = '60';
+      const q = await runAndGetQuery();
+      const clause = q.$or.find((c) => c['billing.proEndedAt']);
+      const daysAgo = (Date.now() - clause['billing.proEndedAt'].$gte.getTime()) / 86400000;
+      expect(daysAgo).toBeGreaterThan(59.9);
+    });
+
+    // A malformed env must not collapse the window to zero and delete a
+    // lapsed customer's history tonight.
+    it('a bad PRO_DATA_GRACE_DAYS falls back to 30 rather than 0', async () => {
+      process.env.PRO_DATA_GRACE_DAYS = 'nonsense';
+      const q = await runAndGetQuery();
+      const clause = q.$or.find((c) => c['billing.proEndedAt']);
+      const daysAgo = (Date.now() - clause['billing.proEndedAt'].$gte.getTime()) / 86400000;
+      expect(daysAgo).toBeGreaterThan(29.9);
+    });
+  });
+
   describe('Pro-protected pods', () => {
     it('passes the protected pod ids to the delete', async () => {
       mockProUsers.value = [{ _id: 'u-pro' }];

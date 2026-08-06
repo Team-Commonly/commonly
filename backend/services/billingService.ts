@@ -83,6 +83,28 @@ export const applySubscriptionState = async ({
   if (!user) return { outcome: 'unmapped' };
 
   const pro = statusGrantsPro(status);
+  const wasPro = user.entitlements?.pro === true;
+
+  /*
+   * When Pro ends, the FEATURES stop immediately but the DATA gets a grace
+   * window — see pgRetentionService.PRO_DATA_GRACE_DAYS.
+   *
+   * `proEndedAt` is the clock for that. Without it, a single failed card
+   * payment flips status to `past_due`, and the retention cron that night
+   * permanently deletes everything older than 30 days — before the customer
+   * has even seen the dunning email, and with no way back if they fix the card
+   * the next morning.
+   *
+   * Stamped only on a true -> false EDGE, so repeated `past_due` webhooks (and
+   * Stripe's three-day retries) do not keep pushing the deadline outward.
+   * Cleared on re-subscribe so a later cancellation gets a fresh window rather
+   * than an expired one.
+   */
+  const proEndedAt = (() => {
+    if (pro) return undefined;
+    if (wasPro) return new Date();
+    return user.billing?.proEndedAt;
+  })();
 
   user.entitlements = { ...(user.entitlements || {}), pro };
   user.billing = {
@@ -92,6 +114,7 @@ export const applySubscriptionState = async ({
     subscriptionStatus: status || undefined,
     currentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd * 1000) : user.billing?.currentPeriodEnd,
     cancelAtPeriodEnd: Boolean(cancelAtPeriodEnd),
+    proEndedAt,
   };
   await user.save();
 

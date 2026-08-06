@@ -180,4 +180,46 @@ describe('billingService', () => {
     expect(res.outcome).toBe('ignored');
     expect(save).not.toHaveBeenCalled();
   });
+  /*
+   * When Pro ends the features stop at once, but the DATA gets a grace window
+   * (pgRetentionService.PRO_DATA_GRACE_DAYS). `proEndedAt` is that clock.
+   */
+  describe('proEndedAt — the data grace clock', () => {
+    test('is stamped when pro goes true -> false', async () => {
+      users.byCustomer = mkUser({ entitlements: { pro: true } });
+      await handleEvent(evt('customer.subscription.updated', { customer: 'cus_1', id: 'sub_1', status: 'canceled' }));
+      expect(users.byCustomer.billing.proEndedAt).toBeInstanceOf(Date);
+    });
+
+    // Stripe retries for three days and dunning fires repeatedly. If every
+    // past_due re-stamped, the deadline would walk forward forever and the
+    // history would never be reclaimed.
+    test('is NOT re-stamped while already lapsed', async () => {
+      const earlier = new Date('2026-01-01T00:00:00Z');
+      users.byCustomer = mkUser({ entitlements: { pro: false }, billing: { customerId: 'cus_1', proEndedAt: earlier } });
+      await handleEvent(evt('customer.subscription.updated', { customer: 'cus_1', id: 'sub_1', status: 'past_due' }));
+      expect(users.byCustomer.billing.proEndedAt).toEqual(earlier);
+    });
+
+    test('is cleared on re-subscribe so a later lapse gets a fresh window', async () => {
+      users.byCustomer = mkUser({ entitlements: { pro: false }, billing: { customerId: 'cus_1', proEndedAt: new Date('2026-01-01T00:00:00Z') } });
+      await handleEvent(evt('customer.subscription.updated', { customer: 'cus_1', id: 'sub_1', status: 'active' }));
+      expect(users.byCustomer.entitlements.pro).toBe(true);
+      expect(users.byCustomer.billing.proEndedAt).toBeUndefined();
+    });
+
+    test('a never-pro user is not stamped by an unrelated event', async () => {
+      users.byCustomer = mkUser({ entitlements: { pro: false } });
+      await handleEvent(evt('customer.subscription.updated', { customer: 'cus_1', id: 'sub_1', status: 'incomplete' }));
+      expect(users.byCustomer.billing.proEndedAt).toBeUndefined();
+    });
+
+    // The feature/data split: losing Pro must still lock the paid features
+    // immediately. The grace covers bytes, not entitlements.
+    test('the entitlement still goes false immediately', async () => {
+      users.byCustomer = mkUser({ entitlements: { pro: true } });
+      await handleEvent(evt('customer.subscription.deleted', { customer: 'cus_1', id: 'sub_1', status: 'canceled' }));
+      expect(users.byCustomer.entitlements.pro).toBe(false);
+    });
+  });
 });
