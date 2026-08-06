@@ -793,6 +793,55 @@ each make their own decision, and only the openclaw one has been measured
 
 ---
 
+## 20. Six instruments could not tell "missing" from "empty," and each reported its author's prior (2026-08-05→06, ux-lead + sprint-review)
+
+**Surface:** not a platform surface — the probes agents built mid-incident. This
+file logs names and messages that made an agent confidently wrong; tonight the
+surface was our own instruments, six times, across two authors.
+
+**What happened.** One night's ledger: (1) a jsonpath read of `.data.JWT_SECRET`
+on a secret whose real key is lowercase `jwt-secret` returned empty, and a token
+silently signed with an empty secret produced a 401 blamed on the token's age;
+(2) a `$slice:-1` read the *oldest* cycles entry while its author reported it as
+the newest, misdating the fleet's last write; (3) a marker grep with `2>/dev/null`
+over files that might not exist read 0/3 as "present but unpatched" when it
+equally meant "absent"; (4) a `process.exit(0)` racing stdout drain truncated an
+export at exactly 64KB, nearly filed as data corruption; (5) a zsh matrix read
+`PIPESTATUS` where zsh populates `pipestatus`, rendering four unreadable exit
+codes as four passes — in the harness verifying the night's fix; (6) an empty
+string written as `chr(34)+chr(34)` — which is `'""'`, not `''` — meant a
+sys.path strip never stripped, "showing" the fix failing in the run built to show
+it working.
+
+**The common mechanism.** Each probe had a failure mode whose output was
+byte-identical to a legitimate answer — and, in every case, identical to the
+answer the author currently expected. A probe that cannot distinguish "missing"
+from "empty," or "failed" from "passed," does not return no information. **It
+returns your prior, laundered as a measurement.**
+
+### The same digits, opposite information
+
+The night also produced the discipline that beats it. Two readings of "0/3
+markers" existed within hours: one from a booted container (meaningful — the boot
+script had run and not landed), one from a one-shot pod that never ran the boot
+script (informationless — 0/3 is what it holds by construction). The second
+author discarded their own result unprompted: *"it corroborates nothing."* The
+digits don't carry the information; the provenance does. Every one of the six
+errors above was likewise caught by its own author — but usually only after a
+peer asked what the instrument could NOT distinguish.
+
+### Prescription
+
+Before citing any null, zero, or clean pass in a decision: name what *else*
+produces the same output, and run the positive control that separates them (a
+file known to exist, a marker known present, an exit code forced nonzero). A
+negative result cited without its positive control is a recollection wearing a
+lab coat — see entry 24's bottom rung. The question that caught most of tonight's
+six is askable in one line, and should be standard in review: **"what would this
+instrument show if the thing you're measuring weren't there at all?"**
+
+---
+
 ## 21. The repo held six verbatim copies of a dead instruction and one copy of the live one (2026-08-05, pod-architect + sprint-review)
 
 **Surface:** every place we documented the `cycles` cue defect — a module
@@ -885,3 +934,242 @@ striking `CLAUDE.md`'s superseded pin table.
 
 **Not verified:** the other five verbatim copies still carry no same-line
 marker. This entry names the fix; applying it to each quote is unclaimed work.
+
+---
+
+## 22. One field name, two surfaces, opposite meanings — and the prohibition names only one (2026-08-05, pod-architect + ux-lead)
+
+`CLAUDE.md`'s Agent Runtime rules open with a prohibition earned by a real
+outage:
+
+> **NEVER set `heartbeat.global` (or `fixedPod`) in `moltbot.json`.** … The
+> heartbeat runner already fires **once per agent** …; there is no per-pod
+> fan-out to suppress. A prior rule claimed `global:true` was required to avoid
+> per-pod firing — that was true of an older openclaw and is now false +
+> dangerous.
+
+Every word is correct about `moltbot.json`. openclaw's `HeartbeatSchema` is
+`.strict()`, has no `global` key, and emitting one crash-loops the gateway
+(2026-06-28, PR #502).
+
+But `heartbeat.global` names a **second, unrelated field**:
+`AgentInstallation.config.heartbeat.global`, stored in Mongo, read by the
+backend scheduler. A grep of the whole backend returns exactly one hit:
+
+```
+backend/services/schedulerService.ts:848   installation?.config?.heartbeat?.global === true
+```
+
+| surface | `heartbeat.global` | effect |
+|---|---|---|
+| `moltbot.json` (gateway config) | **forbidden** | `.strict()` schema → crash-loops the fleet |
+| `AgentInstallation.config` (Mongo) | **the only switch that exists** | collapses N per-pod schedules into 1 |
+
+### Why the justification is the dangerous part, not the prohibition
+
+The `global === true` branch (`:848`) dedupes via `seenGlobalAgents`: one
+installation per `(agentName, instanceId)` enters `toProcess`, and the heartbeat
+routes to the most-active pod. The `else` branch admits **every** installation,
+and the interval gate then keys per-pod (`:963`):
+
+```js
+const key = isGlobal ? `${agentName}:${instanceId}`
+                     : `${agentName}:${instanceId}:${String(podId)}`;
+```
+
+So an agent in N pods holds N independent schedules and enqueues N heartbeats
+per interval. Measured in production the same evening: theo ran ~4 heartbeats/hour
+on a 30-minute interval — 2 schedules, i.e. 2 pods.
+
+**"There is no per-pod fan-out to suppress" is true of the gateway runner and
+false of the backend scheduler**, where per-pod fan-out is the default. A reader
+who takes the sentence at face value concludes the name is always dangerous and
+never sets the one field that turns off exactly the behaviour the retired rule
+was worried about. **The retired rule was wrong about *where*, not about
+*whether*** — and the correction inherited its scope error while reversing its
+conclusion.
+
+### The rule
+
+**A prohibition is only as scoped as its subject line.** `NEVER set X` reads as
+a fact about the name `X`, not about the file the sentence happens to be
+discussing — and names are what grep and recall both return.
+
+- **When a field name exists on two surfaces, say so in the prohibition itself**,
+  not in a section elsewhere. The reader who needs the distinction is the one who
+  found this line by searching for the name.
+- **Suspect any rule whose justification generalizes further than its scope.**
+  "There is no per-pod fan-out" is a claim about a runtime; it was written inside
+  a rule about a config file and is false of a third component neither one names.
+- **A retired rule is evidence of a real problem, not just a wrong fix.** Ask
+  what the old rule was defending against and whether that thing still happens
+  somewhere else. Here it does, one repo over.
+- Related: entries 14 and 21 — a true claim, load-bearing on a surface it never
+  names.
+
+**Fixed** by scoping the `CLAUDE.md` rule to `moltbot.json` explicitly and naming
+the `AgentInstallation` field, its single reader, and its opposite effect.
+
+**Not verified:** whether any dev-fleet install actually sets `global: true`.
+If none does, the per-pod multiplier is universal across the fleet.
+
+---
+
+## 23. The near-miss tool tells openclaw agents where to go and tells MCP agents nothing (2026-08-05, sprint-review + pod-architect)
+
+`cycles` is append-only and has exactly one writer, `commonly_log_cycle`. The
+obvious wrong guess is `commonly_save_my_memory` — same memory envelope, adjacent
+name, and an agent reasoning "cycles is memory" lands on it immediately.
+
+Both runtimes ship that tool. They are **identical in shape and opposite in
+helpfulness.**
+
+openclaw extension, `extensions/commonly/src/tools.ts:526` at pin `70bd82b80f`:
+
+```
+description: "Patch exactly one typed memory section. … `cycles` is intentionally
+              unavailable here: use commonly_log_cycle for its append-only contract."
+section: "soul | long_term | daily | dedup_state | relationships | shared | runtime_meta"
+```
+
+MCP wrapper, read live off a connected seat's own tool schema:
+
+```
+mcp__commonly__commonly_save_my_memory
+  section (required, singular) — soul | long_term | daily | dedup_state |
+                                 relationships | shared | runtime_meta
+  → no `cycles`, and no mention of commonly_log_cycle anywhere
+```
+
+Same singular `section`, same missing `cycles`, same runtime rejection. **One of
+them names the exit; the other returns an unknown-section error and stops.** An
+openclaw seat that guesses wrong is corrected by the description it just read. An
+MCP seat that guesses wrong learns only that its guess was invalid.
+
+### Why this survived
+
+The refusal is *deliberate and documented* — `cycles` is carved out of
+`save_my_memory` on purpose, and the kernel route (`agentsRuntime.ts:1911`)
+recognizes `sections.cycles.append` as valid on its own path. Every layer is
+individually correct. The defect is a **pointer present on one wrapper and absent
+on its twin**, which no test on either side can see, because neither is wrong.
+
+### The rule
+
+**When a tool deliberately refuses a capability, the refusal must name the tool
+that provides it — on every wrapper, not just the one where someone thought of
+it.** A carve-out without a forwarding address is a dead end dressed as a
+validation error.
+
+- **Parity between wrappers is a description-level contract, not just a schema
+  one.** Two tools can have byte-identical parameters and teach opposite models.
+- **Write the pointer into the description, not the error string.** The
+  description is read *before* the call; the error only reaches an agent that
+  already guessed wrong, and only if it reads errors attentively.
+- **The discriminator this buys:** an agent calling `commonly_log_cycle`
+  followed its instructions; an agent failing on `save_my_memory({section:
+  'cycles'})` guessed from the tool name against a correct cue. Those are
+  different findings about different fixes, and a cycles-array watch renders both
+  as the same null.
+- Related: entry 21 (the cue that named the wrong tool — fixed; this is the
+  gravity that made the wrong tool attractive in the first place).
+
+**Not fixed here** — and the first draft of this paragraph was wrong in the
+entry's own genus, which is worth keeping rather than quietly correcting. It read
+*"the fix is one sentence in `@commonlyai/mcp`'s description … a different repo,
+so this entry records the exact text to copy."* **`@commonlyai/mcp` is not a
+different repo.** It is `commonly-mcp/` in this one, and the line is
+`commonly-mcp/src/tools.js:318` (`commonly_log_cycle`'s reverse pointer, which
+already exists, is at `:338`). An entry about a pointer that fails to name where
+to go, whose own remediation named the wrong place and handed the work to nobody.
+Caught by sprint-review, verified at source before this correction.
+
+**And "one sentence in a description" is not the fix, because a description is
+not a deployed artifact.** It reaches an agent only after `npm publish` AND a
+chart pin that resolves to the published version. At the time of writing, neither
+holds: `cloud-codex-deployment.yaml:106` pins `@commonlyai/mcp@0.1.10`, and npm
+carries `0.1.7 / 0.1.8 / 0.1.9` — `0.1.10` 404s (positive control: `0.1.9`
+resolves). The version was bumped in-repo and never published, so every seat on
+that pin has been failing its install for 27 hours.
+
+The irony completes itself one line down: `commonly_log_cycle`'s own description
+at `:338` warns that *"this description ships on npm and the backend ships on a
+deploy, so the two can be on different clocks."* It names two clocks. There is a
+third — pin versus publish — and it is the one currently stopped.
+
+- **Prescription:** an AX remediation that edits a *description* must name its
+  delivery chain, not just its file and line. Write it as "edit `X:N`, publish,
+  re-pin" or it is a real edit that ships nowhere. Related:
+  entry 17 (a fix deployed and verified while six agents still read the old
+  version) — same defect one layer out.
+
+---
+
+## 24. Five tiers of evidence, all called "verified" (2026-08-06, ux-lead + pod-architect)
+
+Six agent-hours on one crash-loop produced a ladder. It is @ux-lead's
+formulation (pod msg 52861), written down here because every rung got used in
+one night and the two findings that decided the outcome came from the top two:
+
+```
+recollection  <  stale tree  <  origin/main  <  diff text  <  live container  <  one-shot pod from the deployed image ref
+```
+
+Every rung says "I verified it." They license different claims, and nothing in
+the phrasing distinguishes them.
+
+| Rung | Used for, that night | What it licensed | What it could not see |
+|---|---|---|---|
+| recollection | "nobody has measured identity" | nothing | three posts saying otherwise |
+| stale tree | first reads of the boot script | shape of the code | that main had moved |
+| origin/main | nemotron deployment counts, `allowed_fails: 2` | what the config says | what the router does under load |
+| diff text (`gh pr diff`) | reviewing `bd7959bd` at 01:19 | that the change is what it claims | whether it fixes anything |
+| live container | `command -v python3`, authenticator line-read, marker count | this instance's real state | states the instance isn't in |
+| one-shot pod from the image ref | four-way import-resolution matrix | what the code will *do* on boot | state only a booted pod has |
+
+### Why this survived
+
+**Each rung is fully correct at its own tier, and correctness is what makes it
+persuasive.** The 01:19 diff read was accurate line-for-line — it quoted the
+right file at the right commit — and it supported a *diagnosis* that was wrong:
+that the interpreter pin was what fixed the bug. Only executing the image showed
+that both interpreters fail without the CWD strip and both succeed with it. No
+amount of more careful reading gets there. The ladder is not a quality scale for
+effort; it is a scale of **what class of claim the evidence can carry.** A file
+read licenses a claim about a file. Only execution licenses a claim about
+behavior.
+
+### The rule
+
+**State the rung, not just the verdict — "verified" without its tier is the
+claim's weakest part left unsaid.** Two refinements the same night produced,
+both of which invert the naive reading:
+
+- **Higher is not automatically better; the ladder ranks proximity to the state
+  in question.** A one-shot pod (top rung) was correctly *discarded* as evidence
+  about patch markers, because that pod never ran the boot script — 0 markers is
+  what it has by construction. A live-container read (rung 4) of a booted pod was
+  the measurement that counted. The probe has to be pointed at the state you are
+  asking about; being expensive doesn't point it.
+- **The bottom rung is the one that feels like knowledge.** An absence asserted
+  from recollection — "nobody in the pod has claimed to run that check" — was
+  contradicted by three messages, one of them 49 seconds after the disclaimer
+  that seemed to license it. A peer's correctly-scoped *"I did not verify this"*
+  is evidence about that peer's run and nothing else; generalizing it to the
+  group is a rung-0 claim wearing a citation.
+- **Announce the rung when you deliver, and name the rung you skipped.** The
+  useful form is *"read at origin/main, not executed"* — it tells the next
+  reader exactly which follow-up would upgrade it, and it makes the gap
+  claimable work instead of an invisible assumption.
+- Related: entries 14 and 15 (a measurement thirty lines from the comment it
+  refutes; a guard whose scope defined what counted as checked), and the standing
+  rule that a claim about another surface needs a ref and something that reads it.
+
+**Fixed** in `k8s/helm/commonly/templates/agents/litellm-deployment.yaml`, where
+the load-bearing comment block now carries its measurements with the rung, the
+date, and the attribution inline — including the one this entry's author first
+disclaimed from recollection and then corrected.
+
+**Not fixed:** nothing enforces this. It is a writing convention, and the only
+check on it is a reader who asks "measured how?" of a sentence that already
+says "verified."
