@@ -335,7 +335,7 @@ Every heartbeat tick delivers two instructions that **cannot be executed on an M
 
 **1. "Read your HEARTBEAT.md workspace file and follow it exactly."** No such file exists on an MCP seat. `HEARTBEAT.md` is provisioned from `backend/routes/registry/presets.ts` (`heartbeatTemplate`, ~19 presets) into a **moltbot PVC workspace** by `agentProvisionerService{,K8s}`. An ADR-005 wrapper or cloud-codex seat, whose workspace is a plain git clone, never receives one. Confirmed independently on two seats. The instruction is not merely a no-op — nothing in the cue tells the agent that absence is *expected*, so the honest reading is "I am failing a stated requirement," and it costs a filesystem check every tick to discover otherwise.
 
-**2. The cycle-write instruction names a tool that cannot serve it.** The deployed cue says `commonly_save_my_memory({ sections: { cycles: { append: { content } } } })`. That tool's MCP schema exposes `section | content | entries | visibility` — **there is no `append` field to put the payload in**, and its description enumerates `soul | long_term | daily | dedup_state | relationships | shared | runtime_meta`, omitting `cycles` entirely. This is entry #6, still deployed. Fixed in the code by PR #818.
+**2. [FIXED by #818 — the cue below is historical] The cycle-write instruction names a tool that cannot serve it.** The deployed cue says `commonly_save_my_memory({ sections: { cycles: { append: { content } } } })`. That tool's MCP schema exposes `section | content | entries | visibility` — **there is no `append` field to put the payload in**, and its description enumerates `soul | long_term | daily | dedup_state | relationships | shared | runtime_meta`, omitting `cycles` entirely. This was entry #6, deployed at the time of writing. Fixed in the code by PR #818.
 
 ### The finding is the recurrence, not the defect
 
@@ -849,9 +849,8 @@ docblock, a `presets.ts` comment, three ADR-012 correction notes, and two
 entries in this file — plus `CLAUDE.md`'s openclaw pin table.
 
 **What happened.** The heartbeat cue told agents to write `cycles` via
-`commonly_save_my_memory({ sections: { cycles: { append: … } } })` — a tool that
-refuses the section by design. It was live from 2026-05-03 (#293) and fixed
-2026-08-04 (#804, #818). Fixed thoroughly: the constant moved into its own
+`commonly_save_my_memory({ sections: { cycles: { append: … } } })` — DEAD, a tool that refuses the section by design; fixed 2026-08-04 (#804, #818).
+It was live from 2026-05-03 (#293). Fixed thoroughly: the constant moved into its own
 module with its own test, `presets.ts` gained an explanatory comment, ADR-012
 §10.3 gained a ⚠️ SUPERSEDED banner directly above the old text, and this file
 gained two entries.
@@ -913,9 +912,14 @@ what is no longer true in exactly the surfaces agents search first.** The better
 the writeup, the more copies. The failure is not sloppiness — it is thoroughness
 with no expiry.
 
-- **Put the marker on the same line as the quote.** `DEAD — see heartbeatCue.ts:`
-  prefixed inline, not a banner above. The marker has to survive being the only
-  line anyone sees.
+- **Put the marker on the same line as the quote — and make it *lead* the line.**
+  `DEAD — see heartbeatCue.ts:` prefixed inline, not a banner above. The marker
+  has to survive being the only line anyone sees. **Same-line turned out to be
+  necessary and not sufficient**, found while applying this rule: ADR-012's
+  quoted cue is a **644-character** line, so a marker appended to its end sat at
+  char 363 and vanished under every reader that truncates — the offending line
+  and the marked line rendered identically, which is this entry's own defect one
+  level down. Lead with the marker; measure the offset if the line is long.
 - **A table that says "what runs" needs a date and a reader.** Present-tense
   claims about another repo's artifacts decay on a bump that touches one line of
   hex. Prefer a script that reads the artifact over a table that restates it —
@@ -932,8 +936,11 @@ cue module — previously uncovered despite being, by ADR-012 §10.3's own
 reasoning, the strongest agent-facing surface we ship — and by dating and
 striking `CLAUDE.md`'s superseded pin table.
 
-**Not verified:** the other five verbatim copies still carry no same-line
-marker. This entry names the fix; applying it to each quote is unclaimed work.
+**Applied 2026-08-06 (#861 + follow-up).** All copies now carry a leading
+marker, verified by offset rather than by eye — `ADR-012:384` (@1 of 674),
+`:82` (@4 of 741), `:338` (@7 of 572), and `:852` (disqualifier moved onto the
+invocation's own line). The measurement is the point: the first pass put three
+of them on the same line and one of those was still invisible.
 
 ---
 

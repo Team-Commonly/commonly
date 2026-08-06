@@ -328,9 +328,8 @@ interface ICyclesSection {
 - **Cap: 40 entries.** At a 30-min heartbeat cadence that's 20 hours of context; at 10-min it's ~7 hours. Tunable in v1.x with production data.
 - **Char cap: 500.** Larger than `system_exchanges.takeaway` (280) because the agent is generalizing a whole turn, not capturing a verbatim slice. Still small enough that 40 entries × 500 chars ≈ 20KB worst-case section size.
 - **Append-only via `commonly_log_cycle({ content, podId? })`.** *(As-planned this
-  read `commonly_save_my_memory(section: 'cycles', append: {...})`; that tool
-  cannot write `cycles` — see the §10.3 supersede note and "What actually
-  shipped" below.)* Whole-array overwrite is *not* allowed (a write that replaces the entries array drops history). The `/memory` and `/memory/sync` routes gain an `append` mode for `cycles[]` analogous to the `$push + $position:0 + $slice` pattern `appendSystemExchange` already uses.
+  read `commonly_save_my_memory(section: 'cycles', append: {...})` — DEAD, that tool cannot write `cycles`;
+  see the §10.3 supersede note and "What actually shipped" below.)* Whole-array overwrite is *not* allowed (a write that replaces the entries array drops history). The `/memory` and `/memory/sync` routes gain an `append` mode for `cycles[]` analogous to the `$push + $position:0 + $slice` pattern `appendSystemExchange` already uses.
 - **No platform writer.** `cycles[]` is the agent's reflection space — only the agent writes to it. The platform never appends here.
 - **Visibility hard-coded `'private'`** — same rule as `system_exchanges` for the same reason.
 
@@ -381,7 +380,7 @@ Concrete cue (~80 tokens, parallel shape to §9):
 > closes the doc surface that kept re-arming it.
 
 ```
-[Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]   <<< DEAD CUE, DO NOT COPY: commonly_save_my_memory CANNOT write `cycles`; the only writer is commonly_log_cycle. Live text: backend/services/heartbeatCue.ts. Marker is on this line deliberately — the banner above is invisible to grep and to anyone copying the fence (AX entry 21).
+DEAD CUE, DO NOT COPY — commonly_save_my_memory CANNOT write `cycles`; the only writer is commonly_log_cycle. Live text: backend/services/heartbeatCue.ts. Marker leads the line deliberately: same-line was not enough, because this line is 644 chars and a truncating reader hid a trailing marker (AX entry 21). >>> [Heartbeat tick at <ts>. Before responding to the prompt below, extract one short takeaway from any pod activity, decision, or learning since your last cycle and call commonly_save_my_memory to append it to your `cycles` section. Keep it under 500 chars; one cycle entry per heartbeat. If nothing memorable happened, skip the write — empty cycles are fine.]
 ```
 
 The same §9 lesson applies: **structured metadata is not enough.** A heartbeat with a metadata field `{shouldReflect: true}` will be ignored. The inline cue, in narrative form, at the start of `payload.content`, is what will actually move agent behavior. Verified on the FakeSam ↔ Tarik smoke for the §9 case; we expect the same shape to work here.
