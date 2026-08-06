@@ -52,48 +52,94 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
           - |
-            # Patch litellm's OpenAI responses-input transform to wrap a bare string
-            # `input` into a [{"role":"user","content":...}] list. OpenAI's Codex /responses
-            # backend rejects a raw string ("Input must be a list"); the chatgpt provider
-            # inherits this openai transform. Path resolved via litellm.__file__ (the server
-            # imports from /app/litellm — an earlier hardcoded /usr/lib path made this a
-            # silent no-op). Idempotent; no-ops cleanly if the upstream signature changes.
+            # --- LiteLLM source patches (ONE runner, ONE resolution — read this first) ---
+            #
+            # Three boot-time patches share this runner: (1) responses-input — wrap a bare
+            # string `input` into a [{"role":"user","content":...}] list, because OpenAI's
+            # Codex /responses backend rejects a raw string and the chatgpt provider
+            # inherits the openai transform; (2) tool-index — disable
+            # LiteLLM_SpendLogToolIndex population (1.88.0 inserts one row per tool-call
+            # with NO retention/cleanup/disable flag; hit 6.4M rows / ~4 GB on dev 2026-06;
+            # SpendLogs itself is still pruned upstream, only the un-prunable sibling is
+            # disabled — we don't use the tool-usage dashboard); (3) device-login-disable
+            # (gated on CHATGPT_DISABLE_DEVICE_LOGIN) — make _login_device_code raise
+            # immediately so dead codex auth degrades to the router's nemotron fallback
+            # instead of blocking boot at an interactive device-code prompt.
+            #
+            # WHY one runner: target RESOLUTION is where every previous version of these
+            # patches failed, three separate times, each printing success (AX entries; the
+            # 79h SEV of 2026-08-02/05):
+            #   v0: hardcoded /usr/lib path — wrong dir, silent no-op.
+            #   v1 (device-login): env-gated os.getenv INSIDE litellm — litellm rebuilds
+            #       os.environ at startup and drops the var; silent no-op (~10-day outage
+            #       2026-06-24/25).
+            #   v2: resolve via litellm.__file__ from this boot shell — WRONG COPY. This
+            #       container holds TWO litellm trees: the /app/litellm source checkout
+            #       (WORKDIR /app; shadows imports when CWD is /app, which is true for
+            #       'python3 -c' here) and the venv site-packages copy the proxy actually
+            #       imports (/app/.venv/bin/litellm is exec'd as a SCRIPT, so its sys.path
+            #       starts at the script dir, never the CWD). All three patches landed on
+            #       the shadow; every self-check read back the file it had just written.
+            #       Verified 2026-08-05 in the live container: shadow 3/3 markers,
+            #       site-packages 0/3.
+            # v3 (this): strip CWD from sys.path so resolution matches the proxy's, patch
+            # EVERY copy found (proxy target + shadow — so exec-shell humans see what the
+            # proxy sees), then verify the EFFECT: marker present in the file the PROXY
+            # resolves. Effect-failure is FATAL only for device-login-disable (its absence
+            # re-arms the boot-blocking prompt loop at the next auth expiry — fail loud at
+            # deploy time instead); the other two degrade silently by design and get a
+            # searchable WARNING instead of a dead proxy. All patches idempotent; pattern
+            # drift on upstream bumps prints per-patch and never half-applies.
             python3 -c "
-            import litellm, os
-            f=os.path.join(os.path.dirname(litellm.__file__),'llms','openai','responses','transformation.py')
-            s=open(f).read()
-            old='        # Input is expected to be either str or List, no single BaseModel expected\n        return input'
-            new='        # Input is expected to be either str or List, no single BaseModel expected\n        if isinstance(input, str):  # commonly: wrap bare str for chatgpt /responses\n            return [{\"role\": \"user\", \"content\": input}]\n        return input'
-            if 'commonly: wrap bare str' in s:
-                print('LiteLLM responses-input patch: already applied')
-            elif old in s:
-                open(f,'w').write(s.replace(old,new,1))
-                print('LiteLLM responses-input patch applied: bare-str input -> list for chatgpt /responses')
-            else:
-                print('LiteLLM responses-input patch: pattern not found (version changed?) - review needed')
-            "
-            # Disable LiteLLM_SpendLogToolIndex population. LiteLLM (1.88.0) inserts one
-            # row per tool-call into this table but provides NO retention, cleanup, or
-            # disable flag for it, so it grows unbounded (hit 6.4M rows / ~4 GB on dev,
-            # 2026-06). SpendLogs itself is still pruned by LiteLLM's own
-            # maximum_spend_logs_retention_period; only this un-prunable sibling is disabled
-            # (we don't use the tool-usage dashboard). Path resolved via litellm.__file__
-            # (the server imports from /app/litellm, not site-packages). No-ops cleanly if
-            # the upstream signature changes.
-            python3 -c "
-            import litellm, os
-            f=os.path.join(os.path.dirname(litellm.__file__),'proxy','db','spend_log_tool_index.py')
-            s=open(f).read()
-            old='async def process_spend_logs_tool_usage(\n    prisma_client: PrismaClient,\n    logs_to_process: List[Dict[str, Any]],\n) -> None:'
-            new=old+'\n    return  # commonly: disabled (LiteLLM never prunes SpendLogToolIndex; unbounded)'
-            if 'commonly: disabled' in s:
-                print('LiteLLM tool-index patch: already applied')
-            elif old in s:
-                open(f,'w').write(s.replace(old,new,1))
-                print('LiteLLM tool-index patch applied: SpendLogToolIndex population disabled')
-            else:
-                print('LiteLLM tool-index patch: pattern not found (version changed?) - review needed')
-            "
+            import os, sys
+            cwd=os.getcwd()
+            sys.path=[p for p in sys.path if p not in ('', cwd)]
+            import litellm
+            proxy_root=os.path.dirname(litellm.__file__)
+            shadow_root=os.path.join(cwd,'litellm')
+            device_login_disable=len(sys.argv)>1 and sys.argv[1].strip()!=''
+            PATCHES=[
+              {'name':'responses-input','rel':('llms','openai','responses','transformation.py'),
+               'marker':'commonly: wrap bare str','enabled':True,'critical':False,
+               'old':'        # Input is expected to be either str or List, no single BaseModel expected\n        return input',
+               'new':'        # Input is expected to be either str or List, no single BaseModel expected\n        if isinstance(input, str):  # commonly: wrap bare str for chatgpt /responses\n            return [{\"role\": \"user\", \"content\": input}]\n        return input'},
+              {'name':'tool-index','rel':('proxy','db','spend_log_tool_index.py'),
+               'marker':'commonly: disabled','enabled':True,'critical':False,
+               'old':'async def process_spend_logs_tool_usage(\n    prisma_client: PrismaClient,\n    logs_to_process: List[Dict[str, Any]],\n) -> None:',
+               'new':'async def process_spend_logs_tool_usage(\n    prisma_client: PrismaClient,\n    logs_to_process: List[Dict[str, Any]],\n) -> None:\n    return  # commonly: disabled (LiteLLM never prunes SpendLogToolIndex; unbounded)'},
+              {'name':'device-login-disable','rel':('llms','chatgpt','authenticator.py'),
+               'marker':'commonly: device-login hard-disabled','enabled':device_login_disable,'critical':True,
+               'old':'    def _login_device_code(self) -> Dict[str, str]:',
+               'new':'    def _login_device_code(self) -> Dict[str, str]:\n        raise GetAccessTokenError(401, \"ChatGPT interactive device-login is disabled in this headless pod; re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")  # commonly: device-login hard-disabled'},
+            ]
+            fatal=False
+            for p in PATCHES:
+                if not p['enabled']:
+                    print('LiteLLM %s patch: skipped (gate off)' % p['name'])
+                    continue
+                proxy_target=os.path.join(proxy_root,*p['rel'])
+                shadow_target=os.path.join(shadow_root,*p['rel'])
+                for f in [t for t in dict.fromkeys([proxy_target, shadow_target]) if os.path.exists(t)]:
+                    s=open(f).read()
+                    if p['marker'] in s:
+                        print('LiteLLM %s patch: already applied: %s' % (p['name'],f))
+                    elif p['old'] in s:
+                        open(f,'w').write(s.replace(p['old'],p['new'],1))
+                        print('LiteLLM %s patch applied: %s' % (p['name'],f))
+                    else:
+                        print('LiteLLM %s patch: pattern not found in %s (version changed?)' % (p['name'],f))
+                if p['marker'] not in open(proxy_target).read():
+                    if p['critical']:
+                        print('FATAL: LiteLLM %s patch NOT effective in proxy-resolved copy: %s' % (p['name'],proxy_target))
+                        fatal=True
+                    else:
+                        print('WARNING: LiteLLM %s patch NOT effective in proxy-resolved copy: %s (known silent-degrade path; boot continues)' % (p['name'],proxy_target))
+                else:
+                    print('LiteLLM %s patch EFFECT verified in proxy-resolved copy: %s' % (p['name'],proxy_target))
+            if fatal:
+                print('Refusing to boot into a device-code prompt loop. Fix the patch or unset CHATGPT_DISABLE_DEVICE_LOGIN.')
+                sys.exit(1)
+            " "${CHATGPT_DISABLE_DEVICE_LOGIN:-}" || exit 1
             # Write the custom callback that signals the rotator on 429s.
             # LiteLLM's get_instance_fn resolves callbacks via spec_from_file_location
             # relative to the config file's directory (/app/), NOT via importlib.
@@ -172,43 +218,13 @@ spec:
             # written here — it now uses the NATIVE `litellm_content_filter` guardrail
             # (configured in litellm-config.yaml) which ships with LiteLLM. The old
             # hand-rolled /app/prompt_injection_guard.py was removed.
-            # Hard-disable ChatGPT interactive device-login in this headless pod so a dead
-            # codex auth degrades gracefully (router codex->nemotron fallback) instead of
-            # hanging startup.
-            #
-            # History (this patch was WRONG once — read before changing): the first version
-            # added an env-gated guard INSIDE get_access_token:
-            #     if os.getenv("CHATGPT_DISABLE_DEVICE_LOGIN"): raise ...
-            # That was a silent NO-OP in the live proxy. litellm rebuilds its runtime
-            # os.environ at startup and drops CHATGPT_DISABLE_DEVICE_LOGIN, so the runtime
-            # os.getenv() never saw it (the guard fires in an isolated python import, but
-            # NOT inside litellm). Device-login still fired -> _login_device_code prints a
-            # code + BLOCKS 15 min polling -> startup probe SIGKILL -> crash loop -> 429
-            # endpoint lockout. That was the ~10-day OUTAGE (2026-06-24/25): the proxy never
-            # bound :4000, so the codex->nemotron fallback never got a turn.
-            #
-            # Robust fix: gate at STARTUP in the shell (which reads the env reliably) and
-            # patch _login_device_code to raise UNCONDITIONALLY — no runtime os.getenv, so
-            # litellm's env rebuild can't no-op it. get_access_token -> _login_device_code
-            # -> immediate raise -> litellm boots, marks codex unhealthy, fallback serves.
-            # Operator re-auth is OUT OF BAND via the codex-cli sidecar (separate codex
-            # process, unaffected). Idempotent; no-ops if the upstream signature changes.
-            if [ -n "${CHATGPT_DISABLE_DEVICE_LOGIN:-}" ]; then
-            python3 -c "
-            import litellm, os
-            f=os.path.join(os.path.dirname(litellm.__file__),'llms','chatgpt','authenticator.py')
-            s=open(f).read()
-            old='    def _login_device_code(self) -> Dict[str, str]:'
-            new=old+'\n        raise GetAccessTokenError(401, \"ChatGPT interactive device-login is disabled in this headless pod; re-auth out-of-band via the codex-cli sidecar. Requests fall back per router fallbacks.\")  # commonly: device-login hard-disabled'
-            if 'commonly: device-login hard-disabled' in s:
-                print('LiteLLM chatgpt device-login-disable patch: already applied')
-            elif old in s:
-                open(f,'w').write(s.replace(old,new,1))
-                print('LiteLLM chatgpt device-login-disable patch applied: _login_device_code -> raise')
-            else:
-                print('LiteLLM chatgpt device-login-disable patch: pattern not found (version changed?) - review needed')
-            "
-            fi
+            # NOTE: the device-login hard-disable patch — and the v1 os.getenv no-op /
+            # v2 wrong-copy failure history that earned it — lives in the consolidated
+            # patch runner at the TOP of this script (grep 'device-login-disable'). It is
+            # env-gated on CHATGPT_DISABLE_DEVICE_LOGIN there, effect-verified against the
+            # proxy-resolved copy, and FATAL on miss. Do not re-add a standalone patch
+            # block here: three separate blocks sharing one broken resolution is exactly
+            # how all three were silently ineffective until 2026-08-05.
             # Defensive: strip stray CR/LF from provider API keys before litellm reads them.
             # A trailing newline in OPENROUTER_API_KEY (the GCP SM secret had been stored
             # with one) made httpx reject the outgoing Authorization header ("Newline,
