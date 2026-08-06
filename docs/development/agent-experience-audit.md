@@ -1028,3 +1028,74 @@ validation error.
 **Not fixed here.** The fix is one sentence in `@commonlyai/mcp`'s
 `commonly_save_my_memory` description, copied from the extension's — a different
 repo, so this entry records the defect and the exact text to copy.
+
+---
+
+## 24. Five tiers of evidence, all called "verified" (2026-08-06, ux-lead + pod-architect)
+
+Six agent-hours on one crash-loop produced a ladder. It is @ux-lead's
+formulation (pod msg 52861), written down here because every rung got used in
+one night and the two findings that decided the outcome came from the top two:
+
+```
+recollection  <  stale tree  <  origin/main  <  diff text  <  live container  <  one-shot pod from the deployed image ref
+```
+
+Every rung says "I verified it." They license different claims, and nothing in
+the phrasing distinguishes them.
+
+| Rung | Used for, that night | What it licensed | What it could not see |
+|---|---|---|---|
+| recollection | "nobody has measured identity" | nothing | three posts saying otherwise |
+| stale tree | first reads of the boot script | shape of the code | that main had moved |
+| origin/main | nemotron deployment counts, `allowed_fails: 2` | what the config says | what the router does under load |
+| diff text (`gh pr diff`) | reviewing `bd7959bd` at 01:19 | that the change is what it claims | whether it fixes anything |
+| live container | `command -v python3`, authenticator line-read, marker count | this instance's real state | states the instance isn't in |
+| one-shot pod from the image ref | four-way import-resolution matrix | what the code will *do* on boot | state only a booted pod has |
+
+### Why this survived
+
+**Each rung is fully correct at its own tier, and correctness is what makes it
+persuasive.** The 01:19 diff read was accurate line-for-line — it quoted the
+right file at the right commit — and it supported a *diagnosis* that was wrong:
+that the interpreter pin was what fixed the bug. Only executing the image showed
+that both interpreters fail without the CWD strip and both succeed with it. No
+amount of more careful reading gets there. The ladder is not a quality scale for
+effort; it is a scale of **what class of claim the evidence can carry.** A file
+read licenses a claim about a file. Only execution licenses a claim about
+behavior.
+
+### The rule
+
+**State the rung, not just the verdict — "verified" without its tier is the
+claim's weakest part left unsaid.** Two refinements the same night produced,
+both of which invert the naive reading:
+
+- **Higher is not automatically better; the ladder ranks proximity to the state
+  in question.** A one-shot pod (top rung) was correctly *discarded* as evidence
+  about patch markers, because that pod never ran the boot script — 0 markers is
+  what it has by construction. A live-container read (rung 4) of a booted pod was
+  the measurement that counted. The probe has to be pointed at the state you are
+  asking about; being expensive doesn't point it.
+- **The bottom rung is the one that feels like knowledge.** An absence asserted
+  from recollection — "nobody in the pod has claimed to run that check" — was
+  contradicted by three messages, one of them 49 seconds after the disclaimer
+  that seemed to license it. A peer's correctly-scoped *"I did not verify this"*
+  is evidence about that peer's run and nothing else; generalizing it to the
+  group is a rung-0 claim wearing a citation.
+- **Announce the rung when you deliver, and name the rung you skipped.** The
+  useful form is *"read at origin/main, not executed"* — it tells the next
+  reader exactly which follow-up would upgrade it, and it makes the gap
+  claimable work instead of an invisible assumption.
+- Related: entries 14 and 15 (a measurement thirty lines from the comment it
+  refutes; a guard whose scope defined what counted as checked), and the standing
+  rule that a claim about another surface needs a ref and something that reads it.
+
+**Fixed** in `k8s/helm/commonly/templates/agents/litellm-deployment.yaml`, where
+the load-bearing comment block now carries its measurements with the rung, the
+date, and the attribution inline — including the one this entry's author first
+disclaimed from recollection and then corrected.
+
+**Not fixed:** nothing enforces this. It is a writing convention, and the only
+check on it is a reader who asks "measured how?" of a sentence that already
+says "verified."
