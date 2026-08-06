@@ -14,6 +14,7 @@
     "lint:fix:backend": "cd backend && npm run lint:fix",
     "lint:fix:frontend": "cd frontend && npm run lint:fix",
     "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
+    "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
     "prepare": "husky"
   },
   "devDependencies": {

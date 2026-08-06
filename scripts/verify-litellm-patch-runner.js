@@ -157,11 +157,26 @@ function introspectPatches(runnerSrc, fixture) {
  * matching `"$PYBIN" -c "…" "${CHATGPT_DISABLE_DEVICE_LOGIN:-}"`.
  */
 function runPython(src, fixture, argv) {
-  return spawnSync('python3', ['-c', src, ...argv], {
+  const res = spawnSync('python3', ['-c', src, ...argv], {
     cwd: fixture.app, // mirrors the container WORKDIR (/app)
     env: { ...process.env, PYTHONPATH: fixture.site, PYTHONDONTWRITEBYTECODE: '1' },
     encoding: 'utf8',
   });
+
+  // A missing interpreter has to name itself. Without this the first caller dies on
+  // `res.stdout` being undefined and the stack points at chart introspection — the
+  // guard blaming the artifact it guards for its own absent dependency. It already
+  // exited non-zero (so CI goes red either way, and this guard is not decoration);
+  // what was wrong was the cause it named.
+  if (res.error || typeof res.stdout !== 'string') {
+    const why = res.error ? res.error.code || res.error.message : 'produced no stdout';
+    fail(
+      `cannot run python3 (${why}).\n` +
+        '  This guard reproduces the boot block by executing it, so it needs a python3 on PATH.\n' +
+        '  Nothing was verified — treat this as UNKNOWN, not as a passing chart.'
+    );
+  }
+  return res;
 }
 
 /**
