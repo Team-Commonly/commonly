@@ -157,6 +157,61 @@ describe('/api/billing', () => {
       expect(arg.subscription_data.metadata.userId).toBe('u-1');
     });
 
+    // A customer created under test keys does not exist under live ones. This
+    // is not hypothetical: the first checkout after the 2026-08-06 test -> live
+    // cutover named a customer Stripe had never heard of.
+    describe('a stored customer id Stripe does not recognise', () => {
+      const missingCustomer = () => Object.assign(new Error("No such customer: 'cus_gone'"), {
+        code: 'resource_missing', param: 'customer',
+      });
+
+      test('is replaced and the checkout succeeds', async () => {
+        mockSessionsCreate
+          .mockRejectedValueOnce(missingCustomer())
+          .mockResolvedValueOnce({ url: 'https://checkout.stripe.test/s/2' });
+        mockCustomersCreate.mockResolvedValue({ id: 'cus_fresh' });
+
+        const res = await request(app).post('/api/billing/checkout').send({});
+        expect(res.status).toBe(200);
+        expect(res.body.url).toContain('/s/2');
+        expect(mockCurrentUser.value.billing.customerId).toBe('cus_fresh');
+        // The retry must use the NEW id, or it fails identically.
+        expect(mockSessionsCreate.mock.calls[1][0].customer).toBe('cus_fresh');
+      });
+
+      test('is retried exactly once, never in a loop', async () => {
+        mockSessionsCreate.mockRejectedValue(missingCustomer());
+        mockCustomersCreate.mockResolvedValue({ id: 'cus_fresh' });
+
+        const res = await request(app).post('/api/billing/checkout').send({});
+        expect(res.status).toBe(500);
+        expect(mockSessionsCreate).toHaveBeenCalledTimes(2);
+        expect(mockCustomersCreate).toHaveBeenCalledTimes(1);
+      });
+
+      // The dangerous false positive: a half-finished cutover leaves a TEST
+      // price id against LIVE keys, which also raises resource_missing. Minting
+      // a new customer for that would churn customers and still fail.
+      test('a missing PRICE is not mistaken for a stale customer', async () => {
+        mockSessionsCreate.mockRejectedValue(Object.assign(new Error('No such price'), {
+          code: 'resource_missing', param: 'line_items[0][price]',
+        }));
+        const res = await request(app).post('/api/billing/checkout').send({});
+        expect(res.status).toBe(500);
+        expect(mockCustomersCreate).not.toHaveBeenCalled();
+        expect(mockSessionsCreate).toHaveBeenCalledTimes(1);
+      });
+
+      test('the portal reports no_subscription rather than 500', async () => {
+        mockPortalCreate.mockRejectedValue(missingCustomer());
+        const res = await request(app).post('/api/billing/portal').send({});
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('no_subscription');
+        // Never silently mint a customer here — the portal would open empty.
+        expect(mockCustomersCreate).not.toHaveBeenCalled();
+      });
+    });
+
     test('agents cannot subscribe', async () => {
       mockCurrentUser.value = { _id: 'b-1', isBot: true, save: mockSave };
       const res = await request(app).post('/api/billing/checkout').send({});
