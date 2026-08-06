@@ -101,9 +101,20 @@ spec:
           # re-verified on 0.133 via model-request payload capture. The
           # gate is the env table on [mcp_servers.commonly] below, NOT the
           # codex version (confirmed across 0.116/0.125/0.133).
+          # commonlyMcpVersion reverted 0.1.10 -> 0.1.9 (2026-08-06). 0.1.10 was
+          # bumped in commonly-mcp/package.json by #804 and pinned here by #810
+          # 3h37m later, but `npm publish` never ran between them — so the pin
+          # named a version that does not exist. `npm install --global` here has
+          # no `|| true` (correctly), so it is fatal: cody's init container
+          # ETARGET'd and crash-looped for 28h+ from 2026-08-04T22:26Z, 33 min
+          # after the pin landed. helm lint and Chart Lint both pass on this,
+          # because a nonexistent version is a perfectly valid string.
+          # Re-pin to 0.1.10 the moment someone runs `npm publish` from
+          # commonly-mcp/ — that alone also self-heals the deployed pod on its
+          # next init retry, with no deploy needed.
           npm install --global --no-audit --no-fund \
             "@openai/codex@{{ $.Values.agents.cloudCodex.codexVersion | default "0.133.0" }}" \
-            "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.10" }}"
+            "@commonlyai/mcp@{{ $.Values.agents.cloudCodex.commonlyMcpVersion | default "0.1.9" }}"  # 0.1.10 unpublished; re-pin after npm publish
           git clone --depth 1 --branch "{{ $.Values.agents.cloudCodex.commonlyCliRef | default "main" }}" \
             https://github.com/Team-Commonly/commonly.git /tmp/commonly-src
           mkdir -p /tools/lib
