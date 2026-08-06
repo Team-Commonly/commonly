@@ -720,20 +720,37 @@
   gap: 6px;
 }
 
-.v2-pods__create-option {
+/* .v2-root button. prefix, not bare .v2-pods__create-option: the global
+ * button reset (.v2-root button:not(.MuiButtonBase-root), specificity 0-2-1)
+ * beats a bare class (0-1-0) and strips border/background/padding — so both
+ * options rendered as PLAIN PROSE with zero selection feedback, live, until
+ * 2026-08-06 (Sam: "no distinction at all", the night before the YC
+ * interview). Same war the reaction chips and filter segments already fought;
+ * this panel never got the workaround. Every rule here that must survive the
+ * reset carries the prefix. */
+.v2-root button.v2-pods__create-option {
   display: flex;
   min-height: 48px;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 7px 9px;
+  padding: 8px 10px;
+  background: #ffffff;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
   color: var(--v2-text-secondary);
   text-align: left;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-root button.v2-pods__create-option:hover {
+  border-color: var(--v2-border-strong);
 }
 
 .v2-pods__create-option strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 700;
 }
@@ -745,10 +762,23 @@
   line-height: 1.35;
 }
 
-.v2-pods__create-option--active {
+/* Selected = the accent, unambiguously: soft fill + accent border + a dot
+ * beside the label. The original --active used border-color:
+ * var(--v2-border-strong) — gray — which would have been near-invisible even
+ * without the reset eating it. */
+.v2-root button.v2-pods__create-option--active {
   background: var(--v2-accent-soft);
-  border-color: var(--v2-border-strong);
+  border-color: var(--v2-accent);
   color: var(--v2-accent-text);
+}
+
+.v2-root button.v2-pods__create-option--active strong::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+  flex: none;
 }
 
 .v2-pods__create-input {
