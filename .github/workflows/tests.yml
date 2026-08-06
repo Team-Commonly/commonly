@@ -54,6 +54,14 @@ jobs:
       - name: Verify moltbot tool contract
         run: npm run verify:moltbot-tools
 
+      # Executes the litellm boot block's patch runner against a two-tree fixture,
+      # so the 79-hour SEV class (patcher and proxy resolving `import litellm` to
+      # different copies) fails here instead of in a crash-looping pod. Needs a
+      # python3 on PATH — ubuntu-latest ships one; if that ever stops being true
+      # the guard says so by name rather than passing quietly.
+      - name: Verify litellm patch runner
+        run: npm run verify:litellm-patch-runner
+
       - name: Backend TypeScript check
         run: |
           cd backend
