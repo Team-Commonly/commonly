@@ -178,9 +178,27 @@ router.patch('/:userId/role', auth, adminAuth, async (req: any, res: any) => {
 router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async (req: any, res: any) => {
   try {
     const { userId } = req.params;
-    const { cloudAgents } = req.body || {};
-    if (typeof cloudAgents !== 'boolean') {
-      return res.status(400).json({ error: 'cloudAgents must be a boolean' });
+    const { cloudAgents, pro } = req.body || {};
+
+    // Partial update: send either key, or both. `pro` is the paid tier — it
+    // gates Community listing today (POST /api/pods/:id/visibility) and
+    // unlimited message history next. Until billing exists this route IS the
+    // subscription: an admin grants and revokes by hand.
+    const patch: Record<string, boolean> = {};
+    if (cloudAgents !== undefined) {
+      if (typeof cloudAgents !== 'boolean') {
+        return res.status(400).json({ error: 'cloudAgents must be a boolean' });
+      }
+      patch.cloudAgents = cloudAgents;
+    }
+    if (pro !== undefined) {
+      if (typeof pro !== 'boolean') {
+        return res.status(400).json({ error: 'pro must be a boolean' });
+      }
+      patch.pro = pro;
+    }
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'Provide cloudAgents and/or pro as booleans' });
     }
 
     const target = await User.findById(userId);
@@ -191,7 +209,9 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
       return res.status(400).json({ error: 'Entitlements apply to human accounts, not bots' });
     }
 
-    target.entitlements = { ...(target.entitlements || {}), cloudAgents };
+    // Spread the existing object so a partial patch never silently clears the
+    // key it did not name — revoking Pro must not also revoke cloud agents.
+    target.entitlements = { ...(target.entitlements || {}), ...patch };
     await target.save();
 
     return res.json({
