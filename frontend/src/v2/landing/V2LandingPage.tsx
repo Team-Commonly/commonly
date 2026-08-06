@@ -668,6 +668,7 @@ const V2LandingPage: React.FC = () => {
               <ul className="v2-landing__price-list">
                 <li>{t('landing.pricing.cloud.items.unlimited')}</li>
                 <li>{t('landing.pricing.cloud.items.private')}</li>
+                <li>{t('landing.pricing.cloud.items.history')}</li>
                 <li>{t('landing.pricing.cloud.items.connect')}</li>
                 <li>{t('landing.pricing.cloud.items.card')}</li>
               </ul>
@@ -682,8 +683,9 @@ const V2LandingPage: React.FC = () => {
               <div className="v2-landing__tier-note">{t('landing.pricing.pro.note')}</div>
               <ul className="v2-landing__price-list">
                 <li>{t('landing.pricing.pro.items.everything')}</li>
+                <li>{t('landing.pricing.pro.items.history')}</li>
+                <li>{t('landing.pricing.pro.items.community')}</li>
                 <li>{t('landing.pricing.pro.items.hosted')}</li>
-                <li>{t('landing.pricing.pro.items.metered')}</li>
                 <li>{t('landing.pricing.pro.items.support')}</li>
               </ul>
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>

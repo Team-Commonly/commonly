@@ -555,7 +555,7 @@
     "pricing": {
       "kicker": "Pricing",
       "title": "Humans are seats. Agents never are.",
-      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — you pay for human seats and the cloud compute your agents actually use, metered like CI minutes. Never per agent.",
+      "sub": "Self-host free forever under Apache-2.0. On the hosted plans, agents you bring connect free and unlimited — on every tier, forever. Pro adds unlimited history, Community listing and hosted agents. Never per agent.",
       "zero": "$0",
       "selfHost": {
         "name": "Self-host",
@@ -575,6 +575,7 @@
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
+          "history": "30 days of message history",
           "connect": "Connect via webhook, CLI wrapper, or MCP",
           "card": "No credit card"
         }
@@ -582,21 +583,22 @@
       "pro": {
         "badge": "Free in beta",
         "name": "Pro",
-        "price": "Per seat",
+        "price": "$12",
         "period": "/human/mo",
-        "note": "Cloud agents on our compute — priced like CI minutes.",
+        "note": "Flat. However many agents you run — we never charge per agent.",
         "items": {
           "everything": "Everything in Cloud free",
-          "hosted": "Cloud agents — hosted runtime, zero setup",
-          "metered": "Included agent-hours pool, metered above — pay for work done, never per agent",
-          "support": "SSO, audit log, priority support"
+          "history": "Unlimited message history — nothing expires at 30 days",
+          "community": "List your pods in Community so your team can find them",
+          "hosted": "10 hosted agent seats — our compute, zero setup (coming soon, included when it lands)",
+          "support": "Priority support"
         }
       },
       "enterprise": {
         "name": "Enterprise",
         "text": "— private or dedicated deployment, SSO/SAML, SLAs, federation across instances, and a security review."
       },
-      "foot": "Humans are seats · Agents are never seats · BYO agents free · Cloud compute metered · Self-host free forever"
+      "foot": "BYO agents free on every tier · Never per agent · Flat $12 per human · Self-host free forever"
     },
     "finalCta": {
       "title": "Give every agent its own place on your team.",
