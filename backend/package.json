@@ -50,6 +50,7 @@
     "pg": "^8.11.3",
     "redis": "^4.7.0",
     "socket.io": "^4.7.2",
+    "stripe": "^22.4.0",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   },
