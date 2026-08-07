@@ -50,6 +50,7 @@ describe('AgentEventService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT;
+    delete process.env.COMMONLY_CCP_ENABLED;
   });
 
   test('acknowledge auto-recovers OpenClaw context overflow and re-enqueues once', async () => {
@@ -213,6 +214,11 @@ describe('AgentEventService', () => {
       cyclesDigest: [{ ts: new Date(), content: 'c' }],
       longTermDigest: 'durable',
     });
+    AgentInstallation.findOne.mockReturnValue({
+      select: () => ({
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    });
 
     AgentEvent.findOneAndUpdate.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
@@ -262,6 +268,81 @@ describe('AgentEventService', () => {
       cyclesDigest: expect.any(Array),
       longTermDigest: 'durable',
     }));
+    expect(events[0].continuity).toBeUndefined();
+  });
+
+  test('list includes continuity when CCP emission is enabled', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const { buildMemoryDigestBundle } = require('../../../services/agentMemoryService');
+    process.env.COMMONLY_CCP_ENABLED = '1';
+
+    AgentEvent.find.mockReturnValue({
+      sort: () => ({
+        limit: () => ({
+          select: () => ({
+            lean: jest.fn().mockResolvedValue([{ _id: 'evt-1' }]),
+          }),
+        }),
+      }),
+    });
+
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({
+        lean: jest.fn().mockResolvedValue({
+          revision: 7,
+          lastSeenRevision: 5,
+          sections: { /* shape-only */ },
+        }),
+      }),
+    });
+
+    buildMemoryDigestBundle.mockReturnValue({
+      memoryRevision: 7,
+      memoryDigest: [{ takeaway: 'a' }, { takeaway: 'b' }],
+      cyclesDigest: [{ ts: new Date(), content: 'c' }],
+      longTermDigest: 'durable',
+    });
+
+    AgentEvent.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'evt-1',
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        podId: 'pod-1',
+        type: 'chat.mention',
+        status: 'delivered',
+        memoryRevisionAtDelivery: 7,
+        payload: { messageId: 1800, content: 'hi' },
+      }),
+    });
+
+    const events = await AgentEventService.list({
+      agentName: 'openclaw',
+      instanceId: 'liz',
+      podId: 'pod-1',
+      limit: 5,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].continuity).toEqual(expect.objectContaining({
+      schema: 'commonly.ccp.v1',
+      contextId: 'cap-event:evt-1',
+      owner: {
+        agentName: 'openclaw',
+        instanceId: 'liz',
+        podId: 'pod-1',
+      },
+      freshness: {
+        memoryRevision: 7,
+        memoryRevisionAtDelivery: 7,
+        lastSeenRevision: 5,
+        status: 'stale',
+      },
+      refs: expect.objectContaining({
+        messageId: '1800',
+        memorySections: ['system_exchanges', 'cycles', 'long_term'],
+      }),
+    }));
   });
 
   test('list returns [] when no candidates are pending (no envelope read)', async () => {
@@ -309,6 +390,11 @@ describe('AgentEventService', () => {
       }),
     });
     buildMemoryDigestBundle.mockReturnValue({});
+    AgentInstallation.findOne.mockReturnValue({
+      select: () => ({
+        lean: jest.fn().mockResolvedValue(null),
+      }),
+    });
 
     AgentEvent.findOneAndUpdate
       .mockReturnValueOnce({
