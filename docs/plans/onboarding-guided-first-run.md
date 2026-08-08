@@ -64,6 +64,10 @@ and `neiss-badi` did.
 one way to make My Workspace non-empty; it is not the only way, and it is the
 one that is currently blocked. Seeding that room needs no model at all.
 
+**And there is already a surface doing this job — see the correction below.
+It ships today and a single click deletes it permanently.** That is the bug,
+and it is smaller and more urgent than anything else in this plan.
+
 ---
 
 ## This was already decided — and it has been blocked on one thing for a month
@@ -140,37 +144,58 @@ tour teaches clicking. The one behaviour our funnel says users never learn is
 agent. That is also the product's only real claim, demonstrated instead of
 described.
 
-### Phase 1 — Fix the entry surface (needs no model, no runtime, ships now)
+### Correction: the onboarding already exists, and we delete it on a stray click
 
-This is the sprint. None of it waits on a decision.
+**Do not build a first-run flow. There is one, it is good, and it is fully
+translated.** `V2FirstRunHero` ships today with exactly the right three steps —
+*connect your agent* → *start your agent* → **say hello** — plus `zh-CN`
+throughout (`接入你的智能体` / `启动智能体` / `先打声招呼`).
 
-1. **Seed My Workspace so it is not empty.** At signup, alongside pod creation:
-   a pinned welcome that says in one line what Commonly is for, and D4's three
-   starter tasks on the existing task board — *attach your agent*, *tell it
-   what you're working on*, *invite a teammate*. Reuses task primitives; builds
-   no checklist component.
-2. **Put the attach command in the room, pre-filled.** The BYO one-liner with
-   their real podId and token, as a message they can copy. Today it is behind
-   Agents → Bring your own agent, which a confused user never reaches. This is
-   the single step 15 people completed and 55 did not.
-3. **Land them in My Workspace, not HQ.** HQ becomes somewhere you visit, not
-   where you arrive.
-4. **Stop the agent-join announcements in HQ**, or collapse them into a quiet
-   system line. A quarter of the public room is bots introducing themselves,
-   which makes the busiest room look like a bot pen.
-5. **Fix the `wokeGreeter` outcome bug** (above) and **fall back to a static
-   greeting** when a woken greeter produces nothing within ~60s. A template,
-   not an LLM turn. Silence is the one outcome we can always avoid.
-6. **Alert on the gap** — a woken-but-silent greeter is invisible today.
+The defect is how it is dismissed. Three separate actions call the same
+`dismiss()`:
 
-Every item is static content or a bug fix. **zh-CN from the start**, since both
-users who asked were writing Chinese.
+| trigger | code | persists |
+|---|---|---|
+| **click anywhere outside the card** | `onMouseDown={dismiss}` on the overlay | **permanently** |
+| **Escape** | keydown handler | **permanently** |
+| "Skip for now" | button | permanently (this one is intentional) |
 
-### Phase 1.5 — Ship it in the language the confusion happened in
+`dismiss()` writes `v2.firstRun.dismissed = '1'` to localStorage. No expiry, no
+"remind me", no return when the user still has not connected. The only way back
+is a **Guide** item inside the feedback menu, which nobody hunting for help will
+find.
 
-The pinned welcome, the three tasks, and the attach instructions all go through
-the existing i18n bundles. Not a follow-up: two of two confused users wrote
-Chinese, and the guarded-copy test already exists to keep the locales honest.
+So a new user is shown the entire product explanation, and the most reflexive
+possible gesture — clicking once, anywhere — destroys it for good. Then they are
+alone in two empty rooms.
+
+**This matches the funnel exactly.** Step 3 of the hero is *say hello*, which is
+precisely the attach→first-message conversion. The 15 who attached and never
+spoke are people who completed step 1 and never saw step 3 again.
+
+### Phase 1 — Stop destroying the onboarding (small, unblocked, ships now)
+
+1. **Remove click-outside dismissal.** One line. Highest leverage change in this
+   document.
+2. **Escape means "later", not "never".** Close the overlay for the session;
+   do not write the permanent flag.
+3. **Only "Skip for now" is permanent** — and even then, bring it back if the
+   user still has no agent connected after N days.
+4. **Make the reopen findable.** "Guide" belongs where a confused person looks,
+   not in the feedback menu.
+5. **Fix the `wokeGreeter` outcome bug** (above), add a **static fallback**
+   when a woken greeter produces nothing within ~60s, and **alert on the gap**.
+
+### Phase 1.5 — Then make the rooms non-empty
+
+Only after the above, because the hero is the primary surface and these are the
+backstop for when it is skipped:
+
+1. **Seed My Workspace.** A pinned line saying what this is for, and D4's three
+   starter tasks on the existing task board.
+2. **Land users in My Workspace, not HQ.**
+3. **Mute the agent-join announcements in HQ** — a quarter of the public room
+   is bots introducing themselves.
 
 ### Phase 2 — A hosted guide that opens the conversation
 
@@ -253,7 +278,8 @@ Worth a proper research pass before Phase 3, not before Phase 1.
 
 | | work | depends on |
 |---|---|---|
-| **this sprint** | seed My Workspace · pre-filled attach command · land in Workspace not HQ · mute HQ join spam · `wokeGreeter` fix + static fallback + alert · zh-CN throughout | **nothing** |
+| **this sprint** | stop dismissing the existing first-run hero on click-outside/Escape · make the reopen findable · `wokeGreeter` fix + static fallback + alert | **nothing** |
+| **then** | seed My Workspace · land in Workspace not HQ · mute HQ join spam | nothing |
 | **next** | one healthy model route + budget cap (D4's blocker) | Sam |
 | **then** | guide agent per D4, first-contact conversation | model route |
 | **later** | intent fork, mobile path | guide agent |
