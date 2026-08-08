@@ -155,7 +155,9 @@ describe('V2FirstRunHero', () => {
       podId: 'workspace-1',
     });
     expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/room-1');
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    // Completing writes the same timestamp shape as an explicit skip, so no
+    // path leaves a legacy '1' that a later read would treat as expired.
+    expect(Number(localStorage.getItem(FIRST_RUN_DISMISSED_KEY))).toBeGreaterThan(0);
   });
 
   test('stops polling after unmount', async () => {
@@ -204,8 +206,8 @@ describe('V2FirstRunHero', () => {
     });
   });
 
-  test('dismissal persists and avoids starting the poll', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+  test('an explicit recent skip persists and avoids starting the poll', async () => {
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
     renderHero();
     await flush();
 
@@ -213,31 +215,76 @@ describe('V2FirstRunHero', () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
-  test('dismisses the first-run modal with Escape', async () => {
+  /*
+   * The guide used to be suppressed forever. These pin the two ways it now
+   * comes back for someone who never connected — the only population the
+   * expiry can reach, since `issued: true` hides it regardless.
+   */
+  test('a skip older than the TTL stops suppressing the guide', async () => {
+    const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000;
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(eightDaysAgo));
+    renderHero();
+    await flush();
+
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
+  });
+
+  test("a legacy '1' flag no longer suppresses forever", async () => {
+    // Written by the version where any stray click set a permanent flag. Those
+    // users are exactly the ones we lost; treat the flag as long expired.
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    renderHero();
+    await flush();
+
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
+  });
+
+  test('Escape closes for this view and persists nothing', async () => {
     const priorControl = document.createElement('button');
     document.body.appendChild(priorControl);
     priorControl.focus();
-    renderHero();
+    const { unmount } = renderHero();
     await flush();
 
     expect(screen.getByRole('dialog', { name: 'Bring your agent into the room' })).toHaveFocus();
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
     expect(priorControl).toHaveFocus();
     priorControl.remove();
+
+    // The property that matters: it comes back.
+    unmount();
+    renderHero();
+    await flush();
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
   });
 
-  test('dismisses the first-run modal from the backdrop', async () => {
-    renderHero();
+  /*
+   * This is the defect that shipped: `onMouseDown={dismiss}` on the overlay
+   * meant one stray click destroyed the only explanation of the product a new
+   * user ever sees, permanently. 15 users attached an agent and never sent a
+   * message, and step 3 of this card is "say hello".
+   */
+  test('a backdrop click closes for this view and the guide returns', async () => {
+    const { unmount } = renderHero();
     await flush();
 
     const dialog = screen.getByRole('dialog', { name: 'Bring your agent into the room' });
     fireEvent.mouseDown(dialog.parentElement as HTMLElement);
 
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBeNull();
+
+    unmount();
+    renderHero();
+    await flush();
+    expect(await screen.findByRole('dialog', { name: 'Bring your agent into the room' }))
+      .toBeInTheDocument();
   });
 
   test.each([
@@ -255,7 +302,7 @@ describe('V2FirstRunHero', () => {
     status,
     readyControl,
   }) => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
     mockGet.mockResolvedValue(status);
     renderHero();
     await flush();
@@ -279,7 +326,8 @@ describe('V2FirstRunHero', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(localStorage.getItem(FIRST_RUN_DISMISSED_KEY)).toBe('1');
+    // Only the explicit button persists, and it stores when — not a forever bit.
+    expect(Number(localStorage.getItem(FIRST_RUN_DISMISSED_KEY))).toBeGreaterThan(0);
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBeNull();
   });
 
@@ -337,7 +385,7 @@ describe('V2Layout first-run placement', () => {
   });
 
   test('keeps the shell unblocked when first-run was already dismissed', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
     render(
       <MemoryRouter initialEntries={['/v2/pods/hq']}>
         <Routes>
@@ -354,7 +402,7 @@ describe('V2Layout first-run placement', () => {
   });
 
   test('reopens the dismissed guide from the rail and restores onboarding suppression', async () => {
-    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, '1');
+    localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(Date.now()));
     render(
       <MemoryRouter initialEntries={['/v2/pods/hq']}>
         <Routes>
