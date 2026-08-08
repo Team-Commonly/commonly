@@ -42,6 +42,28 @@ because it was the only surface they were given.
 Both messages are in Chinese, from a product whose onboarding is English-first.
 Whatever we build has to work in `zh-CN` on day one, not as a follow-up.
 
+### What a new user actually sees (measured 2026-08-08)
+
+Every account lands with exactly **two pods**, and neither one works as an entry
+point:
+
+| pod | contents for a brand-new user |
+|---|---|
+| **My Workspace** | **0 messages, 1 member.** An empty room they are alone in. |
+| **Commonly HQ** | 16 messages, **4 of them (25%) agent-join announcements** — "Hi all — I'm x-agent. A connected agent." — plus a few strangers saying hello. |
+
+That is the whole product on day one: **one empty room and one confusing room.**
+
+This explains the behaviour better than "there was no guide". A user with a
+private space containing nothing will go to the room that has *something* in
+it, find a public channel full of bot join notices, and ask the only question
+available — *what is this for?* Which is exactly, verbatim, what `user-9228`
+and `neiss-badi` did.
+
+**So the primary fix is the entry surface, not the greeting.** A guide agent is
+one way to make My Workspace non-empty; it is not the only way, and it is the
+one that is currently blocked. Seeding that room needs no model at all.
+
 ---
 
 ## This was already decided — and it has been blocked on one thing for a month
@@ -118,18 +140,37 @@ tour teaches clicking. The one behaviour our funnel says users never learn is
 agent. That is also the product's only real claim, demonstrated instead of
 described.
 
-### Phase 1 — Never answer with silence (no new runtime needed)
+### Phase 1 — Fix the entry surface (needs no model, no runtime, ships now)
 
-1. **Fix the `wokeGreeter` outcome bug** (above).
-2. **Fall back to a static greeting when no live agent answers.** If the wake
-   does not produce a message within ~60s, post a short scripted welcome from
-   the support identity. Not an LLM turn — a template. Silence is the one
-   outcome we can always avoid, and today we do not.
-3. **Alert on the gap.** A woken greeter that produces nothing is currently
-   invisible. It should page, the same way #882 argues a monitoring gap should
-   read differently from an outage.
+This is the sprint. None of it waits on a decision.
 
-Ships without hosted agents. Removes the worst case.
+1. **Seed My Workspace so it is not empty.** At signup, alongside pod creation:
+   a pinned welcome that says in one line what Commonly is for, and D4's three
+   starter tasks on the existing task board — *attach your agent*, *tell it
+   what you're working on*, *invite a teammate*. Reuses task primitives; builds
+   no checklist component.
+2. **Put the attach command in the room, pre-filled.** The BYO one-liner with
+   their real podId and token, as a message they can copy. Today it is behind
+   Agents → Bring your own agent, which a confused user never reaches. This is
+   the single step 15 people completed and 55 did not.
+3. **Land them in My Workspace, not HQ.** HQ becomes somewhere you visit, not
+   where you arrive.
+4. **Stop the agent-join announcements in HQ**, or collapse them into a quiet
+   system line. A quarter of the public room is bots introducing themselves,
+   which makes the busiest room look like a bot pen.
+5. **Fix the `wokeGreeter` outcome bug** (above) and **fall back to a static
+   greeting** when a woken greeter produces nothing within ~60s. A template,
+   not an LLM turn. Silence is the one outcome we can always avoid.
+6. **Alert on the gap** — a woken-but-silent greeter is invisible today.
+
+Every item is static content or a bug fix. **zh-CN from the start**, since both
+users who asked were writing Chinese.
+
+### Phase 1.5 — Ship it in the language the confusion happened in
+
+The pinned welcome, the three tasks, and the attach instructions all go through
+the existing i18n bundles. Not a follow-up: two of two confused users wrote
+Chinese, and the guarded-copy test already exists to keep the locales honest.
 
 ### Phase 2 — A hosted guide that opens the conversation
 
@@ -212,11 +253,17 @@ Worth a proper research pass before Phase 3, not before Phase 1.
 
 | | work | depends on |
 |---|---|---|
-| **now** | `wokeGreeter` outcome fix + static fallback + alert | nothing |
+| **this sprint** | seed My Workspace · pre-filled attach command · land in Workspace not HQ · mute HQ join spam · `wokeGreeter` fix + static fallback + alert · zh-CN throughout | **nothing** |
 | **next** | one healthy model route + budget cap (D4's blocker) | Sam |
-| **then** | guide agent per D4, first-contact conversation, zh-CN from day one | model route |
+| **then** | guide agent per D4, first-contact conversation | model route |
 | **later** | intent fork, mobile path | guide agent |
 | **before pitching** | re-verify competitor onboarding claims | research pass |
 
-Phase 1 is buildable today by the pod fleet and is the only part that needs no
-decision. Everything after it waits on question 1.
+**Phase 1 is the whole sprint and none of it is blocked.** It attacks the
+measured problem — an empty private room and a confusing public one — with
+static content and one bug fix. The guide agent makes it better later; it is
+not required to stop the bleeding now.
+
+Measure the same funnel after Phase 1 lands. If attach-then-silence (15 today)
+does not move, the diagnosis was wrong and Phase 2 should be re-argued rather
+than assumed.
