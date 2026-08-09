@@ -302,6 +302,22 @@ spec:
               name: api-keys
               key: gemini-api-key
               optional: true
+        # Cloudflare Workers AI. Both are required together — the account id is
+        # part of the request path, so a token without it is unusable. Not
+        # secret, but an infra identifier, so it lives in Secret Manager rather
+        # than the chart.
+        - name: CLOUDFLARE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: cloudflare-workers-ai-token
+              optional: true
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: cloudflare-account-id
+              optional: true
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:

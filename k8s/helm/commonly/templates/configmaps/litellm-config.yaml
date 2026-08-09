@@ -12,6 +12,39 @@ data:
     # Docs: https://docs.litellm.ai/docs/proxy/configs
 
     model_list:
+      # --- Cloudflare Workers AI (guide agent / first-party native runtime) ---
+      # Added 2026-08-08 to unblock the guide agent, which had no working model:
+      # every other provider in this file was returning 401 (OpenRouter's account
+      # was gone, OpenAI/Anthropic keys are literal "placeholder" strings). This
+      # runs on our OWN Cloudflare account, so nobody else can revoke it — which
+      # is exactly how the OpenRouter route died.
+      #
+      # Verified with a live inference call before landing: both models below
+      # returned 200.
+      #
+      # WHY THIS MODEL, chosen by testing rather than spec sheet. Every cheap
+      # alternative on Workers AI is a REASONING model — qwen3-30b, gpt-oss-20b
+      # and gemma-4 all return OpenAI-shaped output with `content: null` and the
+      # answer buried in a `reasoning` field, and on a short budget they hit the
+      # token limit before producing any content at all. The deepseek r1 distill
+      # is the same shape via <think> tags, and at $4.881/M output costs 17x this
+      # one. A first greeting must be short, clean and cheap; a reasoning model
+      # is the wrong tool and leaks chain-of-thought into a stranger's first
+      # impression of the product.
+      #
+      # Verified live: this returned a correct, natural Chinese greeting that
+      # asked exactly one question, with no reasoning leakage. Both users who
+      # asked "what is this for" wrote Chinese, so that was the test that
+      # mattered.
+      #
+      # Do NOT swap this for a reasoning model without adding content-extraction
+      # and reasoning-stripping first.
+      - model_name: cloudflare/llama-3.1-8b
+        litellm_params:
+          model: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
+          api_key: os.environ/CLOUDFLARE_API_KEY
+          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
+
       # --- Gemini (direct google provider) ---
       - model_name: google/gemini-2.5-flash
         litellm_params:
