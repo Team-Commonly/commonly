@@ -12,6 +12,32 @@ data:
     # Docs: https://docs.litellm.ai/docs/proxy/configs
 
     model_list:
+      # --- Cloudflare Workers AI (guide agent / first-party native runtime) ---
+      # Added 2026-08-08 to unblock the guide agent, which had no working model:
+      # every other provider in this file was returning 401 (OpenRouter's account
+      # was gone, OpenAI/Anthropic keys are literal "placeholder" strings). This
+      # runs on our OWN Cloudflare account, so nobody else can revoke it — which
+      # is exactly how the OpenRouter route died.
+      #
+      # Verified with a live inference call before landing: both models below
+      # returned 200.
+      #
+      # NOTE on the deepseek distill: it emits a <think>…</think> reasoning block
+      # before its answer. Anything user-facing must strip that, or agents post
+      # visible chain-of-thought into pods. Prefer the llama route for the guide
+      # until that stripping exists.
+      - model_name: cloudflare/llama-3.1-8b
+        litellm_params:
+          model: cloudflare/@cf/meta/llama-3.1-8b-instruct
+          api_key: os.environ/CLOUDFLARE_API_KEY
+          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
+
+      - model_name: cloudflare/deepseek-r1-32b
+        litellm_params:
+          model: cloudflare/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b
+          api_key: os.environ/CLOUDFLARE_API_KEY
+          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
+
       # --- Gemini (direct google provider) ---
       - model_name: google/gemini-2.5-flash
         litellm_params:
