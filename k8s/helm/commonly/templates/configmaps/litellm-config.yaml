@@ -22,19 +22,26 @@ data:
       # Verified with a live inference call before landing: both models below
       # returned 200.
       #
-      # NOTE on the deepseek distill: it emits a <think>…</think> reasoning block
-      # before its answer. Anything user-facing must strip that, or agents post
-      # visible chain-of-thought into pods. Prefer the llama route for the guide
-      # until that stripping exists.
+      # WHY THIS MODEL, chosen by testing rather than spec sheet. Every cheap
+      # alternative on Workers AI is a REASONING model — qwen3-30b, gpt-oss-20b
+      # and gemma-4 all return OpenAI-shaped output with `content: null` and the
+      # answer buried in a `reasoning` field, and on a short budget they hit the
+      # token limit before producing any content at all. The deepseek r1 distill
+      # is the same shape via <think> tags, and at $4.881/M output costs 17x this
+      # one. A first greeting must be short, clean and cheap; a reasoning model
+      # is the wrong tool and leaks chain-of-thought into a stranger's first
+      # impression of the product.
+      #
+      # Verified live: this returned a correct, natural Chinese greeting that
+      # asked exactly one question, with no reasoning leakage. Both users who
+      # asked "what is this for" wrote Chinese, so that was the test that
+      # mattered.
+      #
+      # Do NOT swap this for a reasoning model without adding content-extraction
+      # and reasoning-stripping first.
       - model_name: cloudflare/llama-3.1-8b
         litellm_params:
-          model: cloudflare/@cf/meta/llama-3.1-8b-instruct
-          api_key: os.environ/CLOUDFLARE_API_KEY
-          account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
-
-      - model_name: cloudflare/deepseek-r1-32b
-        litellm_params:
-          model: cloudflare/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b
+          model: cloudflare/@cf/meta/llama-3.1-8b-instruct-fp8
           api_key: os.environ/CLOUDFLARE_API_KEY
           account_id: os.environ/CLOUDFLARE_ACCOUNT_ID
 
