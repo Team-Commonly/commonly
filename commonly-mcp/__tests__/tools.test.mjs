@@ -377,10 +377,21 @@ describe('agent-facing tone contract', () => {
     expect(desc).toMatch(/No section headers/);
   });
 
-  it('allows splitting but caps it, so the length rule cannot be gamed', () => {
-    // Without the cap, "under 400 chars" invites either truncation or a spray.
+  /*
+   * The length rule's dangerous reading is "say less". Splitting has to be the
+   * MECHANISM for complying, not an exception to it — the first version framed
+   * it as permission, buried it last, and closed on a warning against it, which
+   * left "cut content" as the cheapest way to obey.
+   */
+  it('forbids hitting the limit by cutting content', () => {
+    expect(desc).toMatch(/NEVER hit that by cutting content/);
+    expect(desc).toMatch(/send another message/);
+  });
+
+  it('caps the rate without discouraging a legitimate split', () => {
     expect(desc).toMatch(/3 messages per minute/);
-    expect(desc).toMatch(/not a way to post the same/i);
+    // The old anti-gaming clause chilled the behaviour it should permit.
+    expect(desc).not.toMatch(/not a way to post the same/i);
   });
 
   it('tells the agent to post the result rather than its reasoning', () => {
