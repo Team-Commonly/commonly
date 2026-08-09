@@ -25,11 +25,52 @@ export interface AgentConnectionStatus {
   connectedAgent: ConnectedAgent | null;
 }
 
+/**
+ * How long an explicit "Skip for now" suppresses the guide.
+ *
+ * It expires rather than persisting forever, and the expiry only matters for
+ * someone who never issued a token — `visible` already gates on
+ * `status.issued === false`, so a user who did connect never sees it again
+ * regardless of this clock. The people it brings back are exactly the ones who
+ * skipped and then never managed to connect.
+ */
+const DISMISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 const readFlag = (key: string): boolean => {
   try {
     return localStorage.getItem(key) === '1';
   } catch {
     return false;
+  }
+};
+
+/**
+ * Was the guide skipped, and is that skip still in force?
+ *
+ * Legacy `'1'` values were written by the version where any stray click set a
+ * permanent flag. They are treated as long-expired on purpose: those users are
+ * indistinguishable from ones who deliberately skipped, and if they connected
+ * successfully the `issued` gate keeps the guide hidden anyway. The only people
+ * this re-reaches are the ones we lost.
+ */
+const readDismissed = (now: number): boolean => {
+  try {
+    const raw = localStorage.getItem(FIRST_RUN_DISMISSED_KEY);
+    if (!raw) return false;
+    if (raw === '1') return false;
+    const at = Number(raw);
+    return Number.isFinite(at) && now - at < DISMISS_TTL_MS;
+  } catch {
+    return false;
+  }
+};
+
+const writeDismissedAt = (at: number | null): void => {
+  try {
+    if (at === null) localStorage.removeItem(FIRST_RUN_DISMISSED_KEY);
+    else localStorage.setItem(FIRST_RUN_DISMISSED_KEY, String(at));
+  } catch {
+    // Storage unavailable; this render still behaves, only persistence is lost.
   }
 };
 
@@ -59,7 +100,17 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   const navigate = useNavigate();
   const dialogRef = useRef<HTMLElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const [dismissed, setDismissed] = useState(() => readFlag(FIRST_RUN_DISMISSED_KEY));
+  const [dismissed, setDismissed] = useState(() => readDismissed(Date.now()));
+  // Closing is not skipping. Clicking away or pressing Escape hides the card
+  // for this view only and writes nothing — it returns on the next load. Only
+  // the explicit Skip button persists anything.
+  //
+  // This split is the whole point of the component's second version: the first
+  // one dismissed permanently on `onMouseDown` anywhere on the overlay, so the
+  // most reflexive gesture a person makes when a modal appears destroyed the
+  // only explanation of the product they were ever shown. 15 users attached an
+  // agent and never sent a message; step 3 of this card is "say hello".
+  const [closed, setClosed] = useState(false);
   // `engaged` is a session latch. Once a zero-install user sees the hero, an
   // install appearing during the poll must advance the card to Waiting / Say
   // hello rather than make it disappear mid-flow. The persisted started flag
@@ -84,10 +135,16 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   // Reserve the empty-state slot while the ownership probe is unresolved,
   // but do not flash the full onboarding card for an established user.
   const shouldProbe = !dismissed && (engaged || status === null || status.issued === false);
-  const visible = !dismissed && (engaged || status?.issued === false);
+  const visible = !dismissed && !closed && (engaged || status?.issued === false);
 
-  const dismiss = useCallback(() => {
-    writeFlag(FIRST_RUN_DISMISSED_KEY, true);
+  /** Hide for this view only. Writes nothing; returns on the next load. */
+  const close = useCallback(() => {
+    setClosed(true);
+  }, []);
+
+  /** The explicit Skip button: suppress for DISMISS_TTL_MS, then re-offer. */
+  const skip = useCallback(() => {
+    writeDismissedAt(Date.now());
     writeFlag(FIRST_RUN_STARTED_KEY, false);
     setDismissed(true);
   }, []);
@@ -97,9 +154,12 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       // Clearing dismissal alone does not reopen for an established owner:
       // issued=true makes the normal first-run gate false. Reusing the started
       // latch keeps one visibility model for both new and connected users.
-      writeFlag(FIRST_RUN_DISMISSED_KEY, false);
+      writeDismissedAt(null);
       writeFlag(FIRST_RUN_STARTED_KEY, true);
       setDismissed(false);
+      // Also clear a session close, or asking for the guide from the menu does
+      // nothing for anyone who clicked away earlier in the same visit.
+      setClosed(false);
       setEngaged(true);
       setStatusError(null);
       setRoomError(null);
@@ -160,7 +220,8 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        dismiss();
+        // Escape means "not now", never "never". It used to persist.
+        close();
         return;
       }
       if (event.key !== 'Tab' || !dialog) return;
@@ -190,7 +251,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       previousFocusRef.current?.focus();
       previousFocusRef.current = null;
     };
-  }, [dismiss, visible]);
+  }, [close, visible]);
 
   if (!visible) return null;
 
@@ -212,7 +273,10 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
       });
       const roomId = data.room?._id;
       if (!roomId) throw new Error('Agent room not returned');
-      writeFlag(FIRST_RUN_DISMISSED_KEY, true);
+      // Completion, not a skip — but it writes the same timestamp so no code
+      // path leaves a legacy '1' behind. A user who got here has issued:true,
+      // so the `visible` gate keeps the guide away regardless of the clock.
+      writeDismissedAt(Date.now());
       writeFlag(FIRST_RUN_STARTED_KEY, false);
       navigate(`/v2/pods/${roomId}`);
     } catch (error) {
@@ -224,7 +288,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
   };
 
   return (
-    <div className="v2-first-run__overlay" onMouseDown={dismiss}>
+    <div className="v2-first-run__overlay" onMouseDown={close}>
       <section
         ref={dialogRef}
         className="v2-first-run"
@@ -243,7 +307,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
               {t('firstRun.lede')}
             </p>
           </div>
-          <button type="button" className="v2-first-run__skip" onClick={dismiss}>{t('firstRun.skip')}</button>
+          <button type="button" className="v2-first-run__skip" onClick={skip}>{t('firstRun.skip')}</button>
         </div>
 
         <ol className="v2-first-run__steps">
