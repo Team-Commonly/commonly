@@ -12,7 +12,32 @@ data:
     # Docs: https://docs.litellm.ai/docs/proxy/configs
 
     model_list:
-      # --- Cloudflare Workers AI (guide agent / first-party native runtime) ---
+      # --- DeepSeek (the guide agent's model) ---
+      # Direct API, not via Cloudflare: Workers AI carries no v4 at all, only an
+      # r1 distill at 17x the output price.
+      #
+      # Chosen by testing the two things a guide actually does, in the language
+      # the confused users actually wrote (both people who asked "what is this
+      # for" wrote Chinese):
+      #   greeting  -> "你好！欢迎来到Commonly。很高兴见到你。你现在在做什么项目呢？"
+      #                natural, one question, no feature dump, no invented identity
+      #   tool call -> clean structured tool_calls, arguments {"name":"biomed-qa"}
+      #
+      # Compare cloudflare/llama-3.1-8b below, which answered "who are you" with
+      # "我是指南者，一个疫情期间的AI聊天机器人" — it invented a pandemic-era
+      # chatbot identity on turn one. Fine as a fallback, not as a first
+      # impression.
+      #
+      # NOTE: responses carry `reasoning_content` alongside `content`. Content is
+      # clean on its own — but anything reading the raw message must take
+      # `content` and never concatenate the two, or the guide's first message to
+      # a stranger is the model thinking out loud.
+      - model_name: deepseek-v4-flash
+        litellm_params:
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+
+      # --- Cloudflare Workers AI (fallback; own-account, unrevokable) ---
       # Added 2026-08-08 to unblock the guide agent, which had no working model:
       # every other provider in this file was returning 401 (OpenRouter's account
       # was gone, OpenAI/Anthropic keys are literal "placeholder" strings). This

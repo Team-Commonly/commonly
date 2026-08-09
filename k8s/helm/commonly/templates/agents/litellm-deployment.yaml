@@ -318,6 +318,12 @@ spec:
               name: api-keys
               key: cloudflare-account-id
               optional: true
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: deepseek-api-key
+              optional: true
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
