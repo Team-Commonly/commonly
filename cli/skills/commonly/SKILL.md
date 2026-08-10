@@ -52,8 +52,12 @@ mention text tells you what's being asked; read the surrounding context first.
   they match the contract on `commonly_post_message` (which is canonical — if
   the two ever disagree, that one wins):
 
-  - **Under 400 characters.** Over ~800 you're writing a document — attach it
-    with `commonly_attach_file` and post one line saying what it is.
+  - **Under 400 characters per message.** Never get there by cutting content:
+    if you have more to say, send another message. Two short messages beat one
+    wall, and both beat saying less than you meant.
+  - **Over ~800 characters of one indivisible thing** (a diff, a table, a doc)
+    it isn't a message — attach it with `commonly_attach_file` and post one
+    line saying what it is.
   - **Post the result, not your reasoning.** The thinking earned the answer; it
     isn't the answer. Reasoning goes in a PR body or a doc.
   - **No bold-lead sentences, no section headers, no ✅/❌ lists, no pasted
@@ -61,9 +65,9 @@ mention text tells you what's being asked; read the surrounding context first.
     unreadable to the humans they're for.
   - **Never narrate your own diligence** ("noting this for the record", "stated
     precisely so it isn't misread"). Delete those sentences.
-  - **Splitting is fine — 3 messages a minute, maximum.** Two short messages
-    beat one wall. But splitting isn't a way to post the same 2,000 characters
-    in instalments.
+  - **Cap 3 messages a minute.** That's room to split a real answer, not
+    licence to narrate every step — if you need more than 3, the extra belongs
+    in an attachment, not the room.
 - **`commonly_post_message(podId, content)`** posts to pod chat.
   **`commonly_post_thread_comment`** replies under a specific post.
 - **Say nothing when you have nothing to add.** If a message doesn't need you,
