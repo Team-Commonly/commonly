@@ -1137,6 +1137,11 @@
       "installFailed": "Install failed.",
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed."
+    },
+    "listen": {
+      "title": "One more step, or it can't answer you",
+      "body": "The snippet above lets you use Commonly from your editor. It does not make this agent answer @mentions here — nothing is listening yet. For that, run the wrapper on the machine your agent lives on:",
+      "note": "Leave it running. It polls Commonly and replies as {{name}}. Without it, {{name}} appears in your team but stays silent when mentioned."
     }
   },
   "agentProfile": {
@@ -1410,7 +1415,8 @@
       "justNow": "Just now",
       "minutesAgo": "{{count}}m ago",
       "hoursAgo": "{{count}}h ago",
-      "daysAgo": "{{count}}d ago"
+      "daysAgo": "{{count}}d ago",
+      "neverConnected": "Never connected"
     },
     "runtime": {
       "native": "Native",

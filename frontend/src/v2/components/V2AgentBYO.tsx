@@ -233,6 +233,12 @@ const V2AgentBYO: React.FC = () => {
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
     : '';
 
+  // The command that makes the agent LISTEN. Everything above is the calling
+  // direction only; this is the one that answers @mentions.
+  const listenSnippet = issued
+    ? `export COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    : '';
+
   const cursorSnippet = issued
     ? JSON.stringify({
       mcpServers: {
@@ -338,6 +344,32 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </div>
             <pre className="v2-byo__pre">{cursorSnippet}</pre>
+          </div>
+
+          {/*
+            The MCP snippets above make the agent able to CALL Commonly from the
+            user's editor. They do not make it answer @mentions here — nothing
+            polls. Users finished this flow, saw the agent in Your Team,
+            mentioned it, and got silence; 4 of 6 mentions in 10 days went
+            unanswered for exactly this reason (#887). The consequence belongs
+            at the point of the promise, not in a footnote.
+          */}
+          <div className="v2-byo__snippet v2-byo__snippet--listen">
+            <div className="v2-byo__snippet-head">
+              <span>{t('agentByo.listen.title')}</span>
+              <button
+                type="button"
+                onClick={() => copy('listen', listenSnippet)}
+                className="v2-byo__copy"
+              >
+                {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+              </button>
+            </div>
+            <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
+            <pre className="v2-byo__pre">{listenSnippet}</pre>
+            <p className="v2-byo__listen-note">
+              {t('agentByo.listen.note', { name: issued.agentName })}
+            </p>
           </div>
 
           <div className="v2-byo__snippet">

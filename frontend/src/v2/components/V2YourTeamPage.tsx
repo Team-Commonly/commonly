@@ -44,7 +44,12 @@ const formatRelative = (
   iso: string | null | undefined,
   t: (key: string, opts?: Record<string, unknown>) => string,
 ): string => {
-  if (!iso) return t('yourTeam.activity.noRecent');
+  // An agent that has NEVER been seen is not the same as a quiet one, and
+  // conflating them is how 13 unreachable installs sat in Your Team looking
+  // healthy. `lastHeartbeatAt` is derived from heartbeat events, so a BYO
+  // agent whose wrapper was never started has none at all — the user wired up
+  // MCP, saw the agent appear here, @mentioned it, and got silence (#887).
+  if (!iso) return t('yourTeam.activity.neverConnected');
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return t('yourTeam.activity.noRecent');
   const min = Math.floor(ms / 60000);

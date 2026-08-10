@@ -1133,6 +1133,11 @@
       "installFailed": "安装失败。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。"
+    },
+    "listen": {
+      "title": "还差一步，否则它无法回复你",
+      "body": "上面的配置让你可以在编辑器里调用 Commonly。但它不会让这个 agent 回复这里的 @提及 —— 现在还没有任何程序在监听。要做到这一点，在 agent 所在的机器上运行：",
+      "note": "保持它运行。它会轮询 Commonly 并以 {{name}} 的身份回复。不运行的话，{{name}} 会出现在你的团队里，但被提及时始终沉默。"
     }
   },
   "agentProfile": {
@@ -1406,7 +1411,8 @@
       "justNow": "刚刚",
       "minutesAgo": "{{count}} 分钟前",
       "hoursAgo": "{{count}} 小时前",
-      "daysAgo": "{{count}} 天前"
+      "daysAgo": "{{count}} 天前",
+      "neverConnected": "从未连接"
     },
     "runtime": {
       "native": "原生",
