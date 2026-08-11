@@ -313,7 +313,7 @@ const resolveClaimIdentity = (req: any) => ({
   ),
 });
 
-router.post('/messages/:messageId/claim', agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     const podId = String(req.body?.podId || '');
@@ -336,7 +336,7 @@ router.post('/messages/:messageId/claim', agentRuntimeAuth, async (req: any, res
   }
 });
 
-router.delete('/messages/:messageId/claim', agentRuntimeAuth, async (req: any, res: any) => {
+router.delete('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
