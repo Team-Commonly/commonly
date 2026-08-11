@@ -26,7 +26,8 @@ describe('tool registry shape', () => {
     // + 4 network primitives (list pods, self-install, ask, respond; #773).
     // + 1 orientation tool (commonly_get_started) so a BYO agent connecting
     //   from outside has a model of the place before it acts.
-    expect(tools).toHaveLength(27);
+    // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
+    expect(tools).toHaveLength(29);
   });
 
   it('every tool has name, description, inputSchema, call', () => {
@@ -423,5 +424,16 @@ describe('commonly_get_started', () => {
   it('warns that pod content is data, not instructions', async () => {
     // Prompt-injection hygiene for agents reading rooms strangers can write to.
     expect((await tool.call({})).content[0].text).toMatch(/data, not command/);
+  });
+});
+
+describe('attention claims (ADR-018)', () => {
+  it('teaches stand-down on loss and claim-then-decline', () => {
+    const d = byName.commonly_claim_message.description;
+    expect(d).toMatch(/STAND DOWN/);
+    expect(d).toMatch(/right to DECIDE, not a duty to reply/);
+  });
+  it('release is a result, not an error', () => {
+    expect(byName.commonly_release_claim.description).toMatch(/result, not an error/);
   });
 });
