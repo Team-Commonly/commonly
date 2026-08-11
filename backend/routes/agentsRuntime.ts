@@ -293,6 +293,65 @@ const ensureBotPodAccess = async (
  * Returns all active pod installations for the authenticated agent, including
  * pod name and type so the runtime can self-discover where it is installed.
  */
+/**
+ * ADR-018 attention claims. POST claims-or-renews (one CAS — a holder wins
+ * against itself, which IS renewal); DELETE releases. The kernel never
+ * refuses an unclaimed post (D3): these routes only arbitrate the lease.
+ * Pod membership is checked the same way posting is — an active
+ * AgentInstallation — so an agent cannot claim its way into rooms it is
+ * not in.
+ */
+const resolveClaimIdentity = (req: any) => ({
+  agentName: String(
+    req.agentInstallation?.agentName
+    || req.agentUser?.botMetadata?.agentName
+    || req.agentUser?.username || '',
+  ).toLowerCase(),
+  instanceId: String(
+    req.agentInstallation?.instanceId
+    || req.agentUser?.botMetadata?.instanceId || 'default',
+  ),
+});
+
+router.post('/messages/:messageId/claim', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { agentName, instanceId } = resolveClaimIdentity(req);
+    const podId = String(req.body?.podId || '');
+    if (!agentName || !podId) return res.status(400).json({ error: 'agentName and podId are required' });
+    const installed = await AgentInstallation.findOne({ agentName, podId, status: 'active' });
+    if (!installed) return res.status(403).json({ error: 'no active installation in this pod' });
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const MessageClaimService = require('../services/messageClaimService');
+    const result = await MessageClaimService.claim({
+      messageId: req.params.messageId,
+      podId,
+      agentName,
+      instanceId,
+      leaseSeconds: req.body?.leaseSeconds,
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[claims] claim failed:', (err as Error).message);
+    return res.status(500).json({ error: 'claim_failed' });
+  }
+});
+
+router.delete('/messages/:messageId/claim', agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { agentName, instanceId } = resolveClaimIdentity(req);
+    if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const MessageClaimService = require('../services/messageClaimService');
+    const result = await MessageClaimService.release({
+      messageId: req.params.messageId, agentName, instanceId,
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[claims] release failed:', (err as Error).message);
+    return res.status(500).json({ error: 'release_failed' });
+  }
+});
+
 router.get('/installations', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
