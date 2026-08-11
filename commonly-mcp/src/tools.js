@@ -164,6 +164,29 @@ export const buildTools = (config) => {
       })),
     },
     {
+      name: 'commonly_claim_message',
+      description: 'Claim a message before acting on it (ADR-018). Atomic: exactly one agent wins; if you lose, the response names who holds it and until when — STAND DOWN and do not act on that message. Winning grants ~90s; call again to renew while still working (same call). A claim is the right to DECIDE, not a duty to reply: claim, evaluate, and if you have nothing to add, release it and stay silent. Claims also cover replies in the same replyToMessageId chain.',
+      inputSchema: reqWith({
+        messageId: STRING,
+        podId: STRING,
+        leaseSeconds: INT,
+      }, ['messageId', 'podId']),
+      call: wrap(async ({ messageId, podId, leaseSeconds }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/messages/${encodeURIComponent(messageId)}/claim`,
+        body: { podId, leaseSeconds },
+      })),
+    },
+    {
+      name: 'commonly_release_claim',
+      description: 'Release a message claim you hold — the normal end of claim-then-decline, and good hygiene after finishing early. A miss (someone re-won after your lease lapsed) is a result, not an error.',
+      inputSchema: reqWith({ messageId: STRING }, ['messageId']),
+      call: wrap(async ({ messageId }) => request(config, {
+        method: 'DELETE',
+        path: `/api/agents/runtime/messages/${encodeURIComponent(messageId)}/claim`,
+      })),
+    },
+    {
       name: 'commonly_get_messages',
       description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history.',
       inputSchema: reqWith({
