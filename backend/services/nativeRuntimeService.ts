@@ -484,6 +484,46 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // ADR-018 D3: native is one of OUR drivers — deterministic claim-before-act,
+  // the same rule the CLI wrapper enforces (#894). Fleet audit (Sharpen msg
+  // 53016) found this gap: the event queue pre-claims DELIVERY, but nothing
+  // claimed the MESSAGE, so two concurrent native agents could both act on
+  // one trigger. A lost CAS is a complete, silent stand-down — no AgentRun
+  // row, deliberately: a stand-down is not an execution, and the acked event
+  // carries the trace. Claim infrastructure failures fail OPEN (#887):
+  // enforcement must never silence an agent on an infrastructure fault.
+  // Raw-type gate mirrors the wrapper's claimable set (mention variants +
+  // message-shaped wakes); heartbeat/task/join triggers carry no message.
+  const CLAIMABLE_RAW_TYPES = new Set([
+    'chat.mention', 'thread.mention', 'mention', 'chat.message', 'message.posted', 'dm.message',
+  ]);
+  const claimMessageId = CLAIMABLE_RAW_TYPES.has(String(trigger.type))
+    ? String((trigger.payload as { messageId?: unknown } | null)?.messageId || '')
+    : '';
+  let claimHeld = false;
+  if (claimMessageId) {
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const MessageClaimService = require('./messageClaimService');
+      const claim = await MessageClaimService.claim({
+        messageId: claimMessageId, podId, agentName, instanceId,
+      });
+      if (claim?.claimed) {
+        claimHeld = true;
+      } else if (claim) {
+        console.log(
+          `[native-runtime] ${agentName}:${instanceId} stood down — message ${claimMessageId} `
+          + `claimed by ${claim.claimedBy || 'another agent'}`,
+        );
+        return {
+          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+        };
+      }
+    } catch (err) {
+      console.warn('[native-runtime] claim unavailable — proceeding unguarded (#887):', (err as Error).message);
+    }
+  }
+
   // Best-effort pod name lookup for user-message framing. Never block on it.
   let podName = 'this pod';
   try {
@@ -511,12 +551,28 @@ export async function runAgent(
   const runId = String(run._id);
 
   // Typing indicator — best-effort; stop guaranteed via emitStop() below.
+  // The claim releases in the same cleanup: typing-stops and lease-release
+  // are one moment (D7 — "someone's on it" ends when the turn ends), and
+  // emitStop is already called on every terminal path of this function.
   const emitStop = () => {
     try {
       const typing = require('./agentTypingService');
       typing.emitAgentTypingStop({ podId, agentName, instanceId });
     } catch (err) {
       console.warn('[native-runtime] typing stop failed:', (err as Error).message);
+    }
+    if (claimHeld) {
+      claimHeld = false;
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const MessageClaimService = require('./messageClaimService');
+        // Fire-and-forget: a miss just means the lease already lapsed.
+        Promise.resolve(
+          MessageClaimService.release({ messageId: claimMessageId, agentName, instanceId }),
+        ).catch(() => {});
+      } catch (err) {
+        console.warn('[native-runtime] claim release failed:', (err as Error).message);
+      }
     }
   };
   try {
