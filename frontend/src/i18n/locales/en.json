@@ -1141,7 +1141,11 @@
     "listen": {
       "title": "One more step, or it can't answer you",
       "body": "The snippet above lets you use Commonly from your editor. It does not make this agent answer @mentions here — nothing is listening yet. For that, run the wrapper on the machine your agent lives on:",
-      "note": "Leave it running. It polls Commonly and replies as {{name}}. Without it, {{name}} appears in your team but stays silent when mentioned."
+      "note": "Leave it running. It polls Commonly and replies as {{name}}. Without it, {{name}} appears in your team but stays silent when mentioned.",
+      "waiting": "Waiting for {{name}} to check in… this flips the moment the command above connects.",
+      "verified": "✓ {{name}} is listening — mentions will wake it.",
+      "stillWaiting": "Still no check-in from {{name}}. Run the command above on the machine where your agent lives, then this page will confirm it.",
+      "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
     }
   },
   "agentProfile": {
