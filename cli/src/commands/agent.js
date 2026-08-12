@@ -40,11 +40,14 @@ import {
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
 import {
+  ADDRESSED_EVENT_TYPES,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
+  createClaimHandicap,
   createClaimKeeper,
   deliverChatReply,
+  peerHoldsFrame,
 } from '../lib/enforcement.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
@@ -623,6 +626,8 @@ export const performRun = ({
   cascadeResetMs = 10 * 60 * 1000,
   chatCharLimit = 400,
   maxChatChunks = 3,
+  claimYieldDelayMs = 3000,
+  sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -638,6 +643,8 @@ export const performRun = ({
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
   const cascadeGovernor = createCascadeGovernor({ cap: cascadeCap, resetMs: cascadeResetMs });
+  // Fairness: recent broadcast-race winners start the next race from the back.
+  const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
   // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
   // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
@@ -714,13 +721,28 @@ export const performRun = ({
     }
 
     // ── ADR-018 enforcement: claim-before-act ───────────────────────────────
-    // Losing the claim is a complete turn (stand down, ack): the holder owns
-    // the conversation, and liveness on holder death comes from the HOLDER's
-    // own event staying unacked, not from ours. Claim-route failures proceed
-    // unguarded — enforcement must never make an agent silent (#887).
+    // Losing a BROADCAST race is a complete turn (stand down, ack): the
+    // holder owns the conversation, and liveness on holder death comes from
+    // the HOLDER's own event staying unacked, not from ours. Losing while
+    // DIRECTLY ADDRESSED is different — a human chose this seat, and that
+    // outranks being beaten to a CAS: the seat still gets its turn, peer-aware
+    // (add your view only if materially different). Claim-route failures
+    // proceed unguarded — enforcement must never make an agent silent (#887).
     let claimKeeper = null;
+    let peerFrame = null;
     const claimMessageId = event.payload?.messageId;
     if (claimMessageId && CLAIMABLE_EVENT_TYPES.has(event.type)) {
+      // Fairness: the winner of this pod's previous broadcast race enters the
+      // next one after a jittered delay. Everyone still claims — a hard
+      // cooldown could leave a message with NO claimant, which is #887
+      // self-inflicted — recent winners just start from the back.
+      if (event.type === 'message.posted') {
+        const yieldMs = claimHandicap.yieldDelayMs(eventPodId);
+        if (yieldMs > 0) {
+          log(`[${event.type}] yielding ${yieldMs}ms before claiming — won this pod's previous broadcast race`);
+          await sleepImpl(yieldMs);
+        }
+      }
       claimKeeper = createClaimKeeper(client, {
         messageId: claimMessageId,
         podId: eventPodId,
@@ -731,10 +753,20 @@ export const performRun = ({
       });
       const claim = await claimKeeper.acquire();
       if (!claim.claimed && !claim.failOpen) {
-        log(`[${event.type}] message ${claimMessageId} already claimed by ${claim.holder} — standing down`);
-        return { outcome: 'no_action', reason: 'claim-held' };
-      }
-      if (claim.claimed) {
+        if (ADDRESSED_EVENT_TYPES.has(event.type)) {
+          log(
+            `[${event.type}] message ${claimMessageId} held by ${claim.holder} — `
+            + 'proceeding peer-aware (this seat was directly addressed)',
+          );
+          peerFrame = peerHoldsFrame(claim.holder, claimMessageId);
+          claimKeeper = null; // nothing held: no renewal, no release, no isLost gate
+        } else {
+          claimHandicap.recordLoss(eventPodId);
+          log(`[${event.type}] message ${claimMessageId} already claimed by ${claim.holder} — standing down`);
+          return { outcome: 'no_action', reason: 'claim-held' };
+        }
+      } else if (claim.claimed) {
+        if (event.type === 'message.posted') claimHandicap.recordWin(eventPodId);
         claimKeeper.startRenewal();
       } else {
         log(`[${event.type}] claim unavailable (${claim.error?.message || 'unknown error'}) — proceeding unguarded`);
@@ -743,7 +775,13 @@ export const performRun = ({
 
     try {
       return await runTurn({
-        event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+        event,
+        eventPodId,
+        prompt: peerFrame ? `${peerFrame}\n\n${prompt}` : prompt,
+        preSpawnIds,
+        snapshotMessages,
+        claimKeeper,
+        trigger,
       });
     } finally {
       await claimKeeper?.release();

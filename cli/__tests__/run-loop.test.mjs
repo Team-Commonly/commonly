@@ -1472,9 +1472,13 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
-  test('a lost claim stands the turn down: no spawn, no post, acked no_action', async () => {
+  test('a lost claim on a BROADCAST wake stands the turn down: no spawn, no post, acked no_action', async () => {
+    // Was a chat.mention event before the fairness ruling (Sam, 2026-08-12:
+    // "loser may never get a chance to speak") — addressed losses now proceed
+    // peer-aware (own test below); the hard stand-down contract continues to
+    // hold for broadcast wakes, asserted here.
     const { post, del } = makeClient({
-      events: [makeClaimEvent()],
+      events: [makeClaimEvent({ type: 'message.posted' })],
       claimResult: { claimed: false, claimedBy: 'nova', expiresAt: 'later' },
     });
     const spawn = jest.fn();
@@ -1626,7 +1630,9 @@ describe('performRun — ADR-018 enforcement', () => {
 
     const batches = [
       [makeEvent({ _id: 'evt-fail-1' })],
-      [makeClaimEvent({ _id: 'evt-held' })],
+      // Broadcast wake, post-fairness: addressed claim-losses now spawn
+      // peer-aware, so the stand-down under test must ride message.posted.
+      [makeClaimEvent({ _id: 'evt-held', type: 'message.posted' })],
       [makeEvent({ _id: 'evt-fail-2' })],
       [],
     ];
@@ -1657,6 +1663,72 @@ describe('performRun — ADR-018 enforcement', () => {
       .filter((e) => e.code === 'agent_spawn_retry_scheduled')
       .map((e) => e.consecutiveFailures);
     expect(streaks).toEqual([1, 2]);
+  });
+
+  test('fairness: a claim LOSS on a direct mention proceeds peer-aware instead of standing down', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent()], // chat.mention — the seat was addressed
+      claimResult: { claimed: false, claimedBy: 'nova' },
+    });
+    const spawn = jest.fn(async () => ({ text: 'a materially different take' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    // The addressed seat still spoke — peer-aware, not silenced.
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('@nova');
+    expect(prompt).toContain('materially different');
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'a materially different take' },
+    );
+    expect(del).not.toHaveBeenCalled(); // nothing was held
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('fairness: a claim LOSS on a broadcast wake still stands down hard', async () => {
+    const { post } = makeClient({
+      events: [makeClaimEvent({ type: 'message.posted' })],
+      claimResult: { claimed: false, claimedBy: 'nova' },
+    });
+    const spawn = jest.fn();
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    );
+  });
+
+  test('fairness: winning a broadcast race handicaps the NEXT race in that pod', async () => {
+    const sleeps = [];
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-w1', type: 'message.posted' }),
+        makeClaimEvent({ _id: 'evt-w2', type: 'message.posted', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { sleepImpl: (ms) => { sleeps.push(ms); return Promise.resolve(); } },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // First race: no handicap. Second race, same pod, after a win: yielded.
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(sleeps).toHaveLength(1);
+    expect(sleeps[0]).toBeGreaterThanOrEqual(3000);
+    expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(2);
   });
 
   test('#896: a content-less event WITH a messageId spawns a recovery turn instead of a silent ack', async () => {

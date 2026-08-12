@@ -14,10 +14,13 @@
 
 import { jest } from '@jest/globals';
 import {
+  ADDRESSED_EVENT_TYPES,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
+  createClaimHandicap,
   createClaimKeeper,
+  peerHoldsFrame,
   splitForChat,
   deliverChatReply,
 } from '../src/lib/enforcement.js';
@@ -357,6 +360,53 @@ describe('deliverChatReply', () => {
     expect(post).toHaveBeenCalledTimes(res.messages);
     expect(post.mock.calls.map((c) => c[1].content).join('\n\n')).toBe(text);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('older server'));
+  });
+});
+
+describe('createClaimHandicap', () => {
+  test('no handicap before any win; a win adds a jittered delay to the NEXT race', () => {
+    let clock = 0;
+    const handicap = createClaimHandicap({
+      delayMs: 3000, jitterMs: 1000, now: () => clock, random: () => 0.5,
+    });
+    expect(handicap.yieldDelayMs('pod-1')).toBe(0);
+    handicap.recordWin('pod-1');
+    expect(handicap.yieldDelayMs('pod-1')).toBe(3500);
+    expect(handicap.yieldDelayMs('pod-2')).toBe(0); // per pod
+  });
+
+  test('a loss clears the handicap — you are only the monopolist while winning', () => {
+    const handicap = createClaimHandicap({ delayMs: 3000, jitterMs: 0 });
+    handicap.recordWin('pod-1');
+    handicap.recordLoss('pod-1');
+    expect(handicap.yieldDelayMs('pod-1')).toBe(0);
+  });
+
+  test('the handicap decays after windowMs of quiet', () => {
+    let clock = 0;
+    const handicap = createClaimHandicap({
+      delayMs: 3000, jitterMs: 0, windowMs: 1000, now: () => clock,
+    });
+    handicap.recordWin('pod-1');
+    clock = 1001;
+    expect(handicap.yieldDelayMs('pod-1')).toBe(0);
+  });
+});
+
+describe('peerHoldsFrame / ADDRESSED_EVENT_TYPES', () => {
+  test('addressed types are the human-chose-you set; broadcast wakes are not in it', () => {
+    expect(ADDRESSED_EVENT_TYPES.has('chat.mention')).toBe(true);
+    expect(ADDRESSED_EVENT_TYPES.has('thread.mention')).toBe(true);
+    expect(ADDRESSED_EVENT_TYPES.has('dm.message')).toBe(true);
+    expect(ADDRESSED_EVENT_TYPES.has('message.posted')).toBe(false);
+  });
+
+  test('the peer frame names the holder, the message, and the raised bar', () => {
+    const frame = peerHoldsFrame('nova', '52997');
+    expect(frame).toContain('@nova');
+    expect(frame).toContain('52997');
+    expect(frame).toContain('materially different');
+    expect(frame).toContain('NO_REPLY');
   });
 });
 
