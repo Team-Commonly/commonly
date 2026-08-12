@@ -21,6 +21,9 @@ export interface ITask extends Document {
   status: TaskStatus;
   claimedBy?: string | null;
   claimedAt?: Date | null;
+  // ADR-018 D4: a claim is a lease, never permanent. Null on legacy claims —
+  // readers derive their effective expiry from claimedAt + the route's lease.
+  claimExpiresAt?: Date | null;
   completedAt?: Date | null;
   prUrl?: string | null;
   notes?: string | null;
@@ -50,6 +53,7 @@ const TaskSchema = new Schema<ITask>(
     },
     claimedBy: { type: String, default: null },
     claimedAt: { type: Date, default: null },
+    claimExpiresAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
     prUrl: { type: String, default: null },
     notes: { type: String, default: null },
