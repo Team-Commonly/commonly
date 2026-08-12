@@ -99,7 +99,13 @@ router.post('/agents/events', auth, async (req: AuthReq, res: Res) => {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
-    if (!isMember(pod, req.user?._id)) {
+    // Both auth paths set req.userId and req.user.id; NEITHER sets
+    // req.user._id, which this read used exclusively — so the route denied
+    // every authenticated caller since the auth shape changed (checklist §7:
+    // a value one layer reads that another layer only promises in prose).
+    // Found live 2026-08-12 seeding the wake/claim test.
+    const callerId = (req as { userId?: string }).userId || req.user?._id || req.user?.id;
+    if (!isMember(pod, callerId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
