@@ -62,8 +62,15 @@ const V2AgentBYO: React.FC = () => {
   }, [defaultAgentName]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string } | null>(null);
+  const [issued, setIssued] = useState<{ token: string; agentName: string; podId: string; issuedAt: number } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Live listening verification (#887 class, second half). #888 made the
+  // listening step legible; this makes it CHECKABLE — the page polls the
+  // kernel until THIS agent's runtime token authenticates for the first time
+  // after issuance, then flips the step to a checkmark. Without it, users
+  // finish the page, mention the agent, and get silence with no way to know
+  // which step they missed. 'waiting' → 'listening' | 'timeout'.
+  const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
 
   // Load the user's pods so they can pick which one to install into.
   // We only show pods they're a member of — install requires membership
@@ -149,7 +156,10 @@ const V2AgentBYO: React.FC = () => {
       if (!tok) {
         setError(t('agentByo.errors.tokenEmpty'));
       } else {
-        setIssued({ token: tok, agentName: cleanName, podId });
+        setIssued({
+          token: tok, agentName: cleanName, podId, issuedAt: Date.now(),
+        });
+        setListenState('waiting');
         setMemoryText('');
         setMemoryDone(false);
         setMemoryError(null);
@@ -215,6 +225,39 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
+  // Poll the kernel for THIS agent's first authenticated check-in after
+  // issuance. `/api/users/me/agent-connection` reports the caller's latest
+  // agent connection (name + lastUsedAt); the name match plus the
+  // issuedAt time-fence means a pre-existing connected agent can never flip
+  // the checkmark for the one just issued. 4s cadence sits well inside the
+  // endpoint's 60/min budget; polling stops on success, page leave, or after
+  // 15 minutes (the user has clearly walked away — leave a static hint).
+  useEffect(() => {
+    if (!issued || listenState !== 'waiting') return undefined;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const timer = setInterval(async () => {
+      if (cancelled) return;
+      if (Date.now() - startedAt > 15 * 60 * 1000) {
+        setListenState('timeout');
+        return;
+      }
+      try {
+        const { data } = await axios.get('/api/users/me/agent-connection');
+        if (cancelled || !data?.connected) return;
+        const sameAgent = String(data.connectedAgent?.agentName || '').toLowerCase()
+          === issued.agentName.toLowerCase();
+        const afterIssue = data.lastUsedAt
+          && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000; // clock-skew slack
+        if (sameAgent && afterIssue) setListenState('listening');
+      } catch {
+        // Transient read failure — keep polling; the checkmark can only be
+        // late, never wrong.
+      }
+    }, 4000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [issued, listenState]);
+
   const copy = async (key: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
@@ -234,9 +277,12 @@ const V2AgentBYO: React.FC = () => {
     : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling
-  // direction only; this is the one that answers @mentions.
+  // direction only; this is the one that answers @mentions. The CLI-install
+  // line rides INSIDE the snippet: it used to live in a footnote on the
+  // previous screen, so first-time users hit "command not found" one step
+  // after we stopped watching (#887 class).
   const listenSnippet = issued
-    ? `export COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    ? `# first time on this machine: ${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
     : '';
 
   const cursorSnippet = issued
@@ -367,6 +413,17 @@ const V2AgentBYO: React.FC = () => {
             </div>
             <p className="v2-byo__listen-body">{t('agentByo.listen.body')}</p>
             <pre className="v2-byo__pre">{listenSnippet}</pre>
+            {listenState === 'listening' ? (
+              <p className="v2-byo__memory-done" data-testid="byo-listen-ok">
+                {t('agentByo.listen.verified', { name: issued.agentName })}
+              </p>
+            ) : (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-waiting">
+                {listenState === 'timeout'
+                  ? t('agentByo.listen.stillWaiting', { name: issued.agentName })
+                  : t('agentByo.listen.waiting', { name: issued.agentName })}
+              </p>
+            )}
             <p className="v2-byo__listen-note">
               {t('agentByo.listen.note', { name: issued.agentName })}
             </p>
@@ -421,6 +478,15 @@ const V2AgentBYO: React.FC = () => {
             >
               {t('agentByo.actions.goToPod')}
             </button>
+            {listenState !== 'listening' && (
+              // Honest copy at the point of departure (#891 principle 6):
+              // never block the button — MCP-only setups are legitimate —
+              // but a user leaving before the checkmark must know mentions
+              // will not be answered yet.
+              <span className="v2-byo__listen-note" data-testid="byo-cta-warning">
+                {t('agentByo.listen.ctaWarning', { name: issued.agentName })}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => { setIssued(null); }}
