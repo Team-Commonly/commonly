@@ -59,10 +59,19 @@ thresholds, and the only row that catches a dead-on-arrival install
   live.
 - **`runtimeType` goes through `normalizeRuntimeIdentity`** — it is unset on
   88% of stored installs; a rule reading the raw field inspects 24 of 200.
-- **States need a precedence rule.** Misconfigured (webhook, no URL) and
-  Never-connected fire together on the same 14 installs today — and two of
-  those 14 have the freshest `lastUsedAt` in the whole fleet. Structural
-  states outrank inferred ones.
+- **Liveness and config are orthogonal axes, not one enum.** The first
+  revision resolved the Misconfigured/Never-connected collision with
+  "structural states outrank inferred ones" — which the second-pass review
+  showed inverts the finding it cites (53004): under that rule the two
+  freshest agents in the fleet (webhook rows with no URL, `lastUsedAt` 0s/2s)
+  render *Misconfigured*, in principle 6's most-confident flat-declarative
+  register — precisely the false positive 52988's finding B raised. And with
+  `runtimeType` unset on 88% of installs, "webhook, no URL" is usually an
+  unpopulated field, not a declaration. The resolution (53006): render the
+  axes separately — an alive-but-misconfigured agent is *working* with a
+  config-attention chip, never *broken*. Precedence rules only existed
+  because the enum flattened two dimensions; where a genuine conflict
+  remains, live evidence outranks static config (decision 6 below).
 - **Never-connected needs a test-debris exclusion.** Whole-fleet it returns
   143 of 304 bots, dominated by `byo-e2e-*`/`byo-smoke-*`.
 - **Ack telemetry carries zero information.** 7-day ack rate is ~100% for
@@ -111,9 +120,11 @@ agent's own cadence), with hysteresis so one slow poll doesn't flap the state.
    the **send-time inline line** stays as the fallback for paste/mobile;
    and for components a human never mentions (event- and schedule-triggered —
    two of three shipped first-party apps, 52987), the **presence state in the
-   room** (surface 3's dot, made load-bearing) is the moment. A mention-only
-   surface reaches a third of the fleet and none of ADR-001's
-   EventHandler/ScheduledJob components.
+   room** (surface 3's dot, made load-bearing) is the moment. Measured scope
+   (53008 corrected the first revision's overgeneralization): the 1-of-3
+   figure is the three shipped native apps — fleet-wide trigger distribution
+   across 304 bots is unmeasured — and a mention-only surface structurally
+   reaches none of ADR-001's EventHandler/ScheduledJob components.
 
 3. **Health is a dimension, not a decoration — and calm is a tier, not a
    color.** Your Team gets **three** groups (52986): broken-by-construction
@@ -177,11 +188,25 @@ the showcase affordance ships when the tokens do, as a consumer, not a fork.
 4. **Route capture in `agentRuntimeAuth`** — one field on an existing write;
    unlocks Degraded for every outbound-authenticating class.
 5. **Test-debris exclusion** for fleet-level state counts.
+6. **Liveness/config as orthogonal render axes** (53006), with live evidence
+   outranking static config where a single verdict is forced (53005) —
+   replaces the first revision's "structural outranks inferred" precedence,
+   which the second-pass review refuted by counterexample (53004: it marks
+   the fleet's two freshest agents broken, in the most-confident copy
+   register).
 
 ## Process
 
 The fleet review ran 2026-08-12 in the Sharpen pod (msgs 52986–52991) under
 the 0.2.0 tone contract — it doubled as that contract's first live test
 (verdict logged separately: the contract did not bind; deterministic wrapper
-enforcement shipped as #894). Sam ratifies this revision; implementation is
-sliced after that, surface 1 first.
+enforcement shipped as #894).
+
+A **second fleet pass** (same day, msgs 53002–53011) verified this fold
+against each reviewer's own findings, through the shipped claim/wake
+machinery. Verdicts: faithful on every lane, with two corrections applied in
+this revision — the precedence caveat that inverted finding B (53004→53006,
+now decision 6) and the :115 scope overgeneralization (53008). Sprint
+Review's pre-registered falsifier fired against its own §2 and confirmed the
+fold's version (53009). Sam ratifies this revision; implementation is sliced
+after that, surface 1 first.
