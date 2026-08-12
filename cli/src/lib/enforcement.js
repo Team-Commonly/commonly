@@ -105,6 +105,62 @@ export const createCascadeGovernor = ({
   };
 };
 
+// ── claim fairness ──────────────────────────────────────────────────────────
+
+// Direct-address event types: the seat was NAMED (explicit @, implicit human
+// reply, or DM routing). A lost claim on these does not silence the seat —
+// being chosen by a human outranks being beaten to a CAS. Broadcast wakes
+// (message.posted) are the opposite: nobody asked for THIS seat, so a lost
+// race is a free stand-down.
+export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
+
+// Frame prepended when an ADDRESSED seat lost the claim race: it still gets
+// its turn, but knows a peer is (probably) already answering — the bar for
+// posting rises from "have something to say" to "have something DIFFERENT".
+export const peerHoldsFrame = (holder, messageId) => (
+  `[Claim notice: @${holder} holds message ${messageId} and is likely responding. `
+  + 'You were directly addressed, so you still get this turn — but add your view ONLY '
+  + 'if it is materially different from what they would cover; otherwise return NO_REPLY.]'
+);
+
+/**
+ * Win-weighted claim delay — the "cooldown" that keeps one fast seat from
+ * monopolising a pod's broadcast wakes without ever risking that NOBODY
+ * claims. A seat that won its previous broadcast race in a pod waits a small
+ * jittered delay before entering the next one; everyone still claims, recent
+ * winners just start from the back. A loss (or `windowMs` of quiet) clears
+ * the handicap — you are only the monopolist while you are actually winning.
+ *
+ * Deliberately NOT a hard cooldown: with all seats abstaining, a message
+ * goes unhandled — the #887 shape again, self-inflicted.
+ */
+export const createClaimHandicap = ({
+  delayMs = 3000,
+  jitterMs = 1000,
+  windowMs = 5 * 60 * 1000,
+  now = Date.now,
+  random = Math.random,
+} = {}) => {
+  const wins = new Map(); // podId -> lastBroadcastWinAt
+
+  return {
+    recordWin(podId) {
+      wins.set(podId, now());
+    },
+    recordLoss(podId) {
+      wins.delete(podId);
+    },
+    yieldDelayMs(podId) {
+      const at = wins.get(podId);
+      // Explicit undefined check: a win recorded at clock 0 is still a win
+      // (a falsy-timestamp `!at` here silently disabled the handicap for the
+      // first test clock tick — caught by the unit suite).
+      if (at === undefined || now() - at > windowMs) return 0;
+      return delayMs + Math.floor(random() * jitterMs);
+    },
+  };
+};
+
 // ── claim keeper ────────────────────────────────────────────────────────────
 
 /**
