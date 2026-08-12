@@ -1462,7 +1462,9 @@ describe('AgentMentionService', () => {
         userId: 'user-1',
         username: 'alice',
       });
-      expect(res).toEqual({ enqueued: [], implicit: [], skipped: [] });
+      expect(res).toEqual({
+        enqueued: [], implicit: [], skipped: [], woken: [],
+      });
       expect(AgentEventService.enqueue).not.toHaveBeenCalled();
     });
 
@@ -1515,7 +1517,9 @@ describe('AgentMentionService', () => {
         message: { content: 'hello' },
         userId: 'user-1',
         username: 'alice',
-      })).resolves.toEqual({ enqueued: [], implicit: [], skipped: [] });
+      })).resolves.toEqual({
+        enqueued: [], implicit: [], skipped: [], woken: [],
+      });
     });
   });
   // ── the greeter naming its own handle must not re-trigger itself ─────────

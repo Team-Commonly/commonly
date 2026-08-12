@@ -71,6 +71,9 @@ interface EnqueueResult {
   enqueued: string[];
   implicit: string[];
   skipped: string[];
+  // ADR-018 D8 wake-on-message targets — additive so existing callers that
+  // destructure only the mention fields keep working unchanged.
+  woken: string[];
 }
 
 interface EnqueueDmResult {
@@ -777,6 +780,143 @@ const resolveImplicitReplyTarget = async (
   };
 };
 
+// Pod types that auto-route every message to non-sender members as a
+// chat.mention event. Adding a new private 1:1 type without listing it
+// here silently drops every message; mirrored in
+// `messageController.createMessage` and called out in
+// docs/agents/AGENT_RUNTIME.md "Routing Invariants".
+const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
+// ── ADR-018 D8: wake-on-message ─────────────────────────────────────────────
+//
+// Per-install opt-in (`config.wakeOnMessage.enabled === true`, default OFF,
+// revertible — a setting, not a ratchet). An opted-in agent wakes on every
+// message in the pod as a `message.posted` event; the claim layer (#892/#894)
+// arbitrates who acts, so "all wake, one acts". The kernel side is
+// deliberately dumb: it fans out and lets claims + the wrapper cascade cap do
+// the coordination. Nothing here fires for installs that never opted in.
+
+// Inline cue, not metadata (the payload.content rule): a woken agent must
+// know it was NOT named, that silence is the default, and that acting starts
+// with a claim. `message.posted` is already in the CLI wrapper's prompt set,
+// so deployed wrappers hear this without a driver change (D5).
+const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
+  + 'this pod — nobody named you. Most messages need nothing from you; act '
+  + 'only when you add material value, otherwise return NO_REPLY. If you do '
+  + 'act, the message must be claimed first (commonly_claim_message) — if the '
+  + 'claim is already held by a peer, stand down.]';
+
+const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
+  (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
+    ?.config?.wakeOnMessage?.enabled === true
+);
+
+// #508's shape, pointed at the wake path: a BOT-authored message that would
+// wake a target already woken >MENTION_LOOP_MAX times in the window is a wake
+// storm, not collaboration. Human-authored messages are never dampened —
+// callers only invoke this for bot senders. Count failure falls through to
+// enqueue: dropping a possibly-genuine wake is the worse error.
+const isWakeLoopDampened = async (
+  target: { agentName: string; instanceId?: string },
+  podId: string,
+): Promise<boolean> => {
+  try {
+    const count = await AgentEvent.countDocuments({
+      agentName: target.agentName.toLowerCase(),
+      instanceId: target.instanceId || 'default',
+      podId,
+      type: 'message.posted',
+      createdAt: { $gte: new Date(Date.now() - MENTION_LOOP_WINDOW_MS) },
+    });
+    if (count > MENTION_LOOP_MAX) {
+      console.warn(
+        `[wake-dampener] suppressed bot-authored wake storm — `
+        + `target=${target.agentName.toLowerCase()}:${target.instanceId || 'default'} pod=${podId} count=${count}`,
+      );
+      return true;
+    }
+  } catch (err) {
+    console.warn('[wake-dampener] loop count check failed (allowing through):', (err as Error).message);
+  }
+  return false;
+};
+
+/**
+ * Fan a message out to the pod's wake-on-message opt-ins. Skips the sender's
+ * own identity (an agent never wakes on its own post), anything the mention
+ * path already enqueued this message (a mention is the stronger cue — double
+ * delivery would burn a second model turn on the same trigger), and DM-shaped
+ * pods (enqueueDmEvent already routes every message there).
+ *
+ * The zero-opt-in fast path costs nothing beyond the installations array the
+ * caller already loaded — no queries, no pod lookup.
+ */
+const enqueueWakeOnMessage = async ({
+  podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame,
+}: {
+  podId: string;
+  message: EnqueueMentionsOptions['message'];
+  rawContent: string;
+  userId: string;
+  username: string;
+  source: string;
+  installations: Array<Record<string, unknown>>;
+  sender: SenderRow | null;
+  excludeKeys: Set<string> | null;
+  authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
+}): Promise<string[]> => {
+  const woken: string[] = [];
+  const targets = (installations || []).filter(wakeOnMessageEnabled);
+  if (targets.length === 0) return woken;
+
+  let podType: string | null = null;
+  try {
+    const podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
+    podType = podRow?.type || null;
+  } catch {
+    // Cannot verify the pod shape — skip rather than risk double-delivering
+    // into a DM pod that enqueueDmEvent already covers.
+    return woken;
+  }
+  if (podType && DM_POD_TYPES.has(podType)) return woken;
+
+  const senderKey = sender?.isBot
+    ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
+    : null;
+
+  await Promise.all(targets.map(async (inst) => {
+    const agentName = String(inst.agentName || '').toLowerCase();
+    if (!agentName) return;
+    const instanceId = String(inst.instanceId || 'default');
+    const key = `${agentName}:${instanceId.toLowerCase()}`;
+    if (key === senderKey) return;
+    if (excludeKeys?.has(key)) return;
+    if (senderKey && await isWakeLoopDampened({ agentName, instanceId }, podId)) return;
+    try {
+      await AgentEventService.enqueue({
+        agentName,
+        instanceId,
+        podId,
+        type: 'message.posted',
+        payload: {
+          messageId: authorFrame.messageId,
+          content: `${formatAuthorFrame(authorFrame.username, authorFrame.createdAt, authorFrame.messageId)}\n${WAKE_ON_MESSAGE_FRAME}\n\n${rawContent}`,
+          userId,
+          username,
+          source,
+          messageType: message?.messageType || message?.message_type || 'text',
+          createdAt: message?.createdAt || message?.created_at || new Date(),
+          wakeOnMessage: true,
+        },
+      });
+      woken.push(agentName);
+    } catch (error) {
+      console.warn('Failed to enqueue wake-on-message event:', (error as Error).message);
+    }
+  }));
+  return woken;
+};
+
 const enqueueMentions = async ({
   podId,
   message,
@@ -808,7 +948,9 @@ const enqueueMentions = async ({
   // composition is correct for that target's runtime.
   const rawMentions = extractMentions(rawContent);
   if (!podId) {
-    return { enqueued: [], implicit: [], skipped: [] };
+    return {
+      enqueued: [], implicit: [], skipped: [], woken: [],
+    };
   }
   // "Routed" means the message already names its recipient — an @mention, or
   // a reply that the #703 path resolves. Everything else reaches nobody, and
@@ -876,7 +1018,21 @@ const enqueueMentions = async ({
   }
 
   if (!isRouted) {
-    return { enqueued: [], implicit: [], skipped: [] };
+    // D8: an unrouted message reaches nobody on the mention path, but it is
+    // exactly what a wake-on-message opt-in asked to hear about.
+    let woken: string[] = [];
+    try {
+      woken = await enqueueWakeOnMessage({
+        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: null, authorFrame,
+      });
+    } catch (error) {
+      // The message is already persisted — a wake failure must never turn a
+      // successful send into a 500.
+      console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
+    }
+    return {
+      enqueued: [], implicit: [], skipped: [], woken,
+    };
   }
 
   const enqueued: string[] = [];
@@ -1171,15 +1327,23 @@ const enqueueMentions = async ({
     }
   }
 
-  return { enqueued, implicit, skipped };
-};
+  // D8: after the mention path has spoken for its targets, wake the opt-ins
+  // it did not reach. A mention-enqueued agent is excluded — the mention is
+  // the stronger cue, and double delivery would burn a second model turn on
+  // the same trigger message.
+  let woken: string[] = [];
+  try {
+    woken = await enqueueWakeOnMessage({
+      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame,
+    });
+  } catch (error) {
+    console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
+  }
 
-// Pod types that auto-route every message to non-sender members as a
-// chat.mention event. Adding a new private 1:1 type without listing it
-// here silently drops every message; mirrored in
-// `messageController.createMessage` and called out in
-// docs/agents/AGENT_RUNTIME.md "Routing Invariants".
-const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+  return {
+    enqueued, implicit, skipped, woken,
+  };
+};
 
 /**
  * Auto-enqueue a DM-origin chat.mention event for every user message in a
