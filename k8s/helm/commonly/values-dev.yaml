@@ -195,6 +195,9 @@ agents:
         adapter: codex
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
+        # Parked 2026-08-12 (Sam: the working fleet is the Sharpen pod).
+        # Identity, PVC, and token secret stay; flip to 1 to revive.
+        replicas: 0
 
 rbac:
   create: true

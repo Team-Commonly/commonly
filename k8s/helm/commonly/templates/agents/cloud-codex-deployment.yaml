@@ -58,7 +58,13 @@ metadata:
     app: cloud-codex
     agent: {{ $name }}
 spec:
-  replicas: 1
+  # Per-agent off-switch. `replicas: 0` parks the agent — Deployment, PVC,
+  # token secret, and AgentInstallation identity all stay — where deleting
+  # the values block would tear the state down with it. Needed because a
+  # manual `kubectl scale --replicas=0` is drift the next `helm upgrade`
+  # silently reverts (that is how Cody resurrected on the 2026-08-12 deploy
+  # after being deliberately parked).
+  replicas: {{ if hasKey $cfg "replicas" }}{{ $cfg.replicas }}{{ else }}1{{ end }}
   # Recreate so the PVC (single-writer RWO) reattaches cleanly on update.
   strategy:
     type: Recreate
