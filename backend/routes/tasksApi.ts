@@ -285,7 +285,17 @@ router.post('/:podId', rateLimit({
 // identical semantics to message claims (messageClaimService).
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
-router.post('/:podId/:taskId/claim', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/:taskId/claim', rateLimit({
+  windowMs: 60_000,
+  // Higher than task-create's 20: a claimant renews by re-claiming, and a
+  // busy agent can be racing several tasks in a minute. Still low enough
+  // that a runaway loop hits the wall inside one lease window.
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({ error: 'rate limit exceeded: 30 task claims per 60s' }),
+}), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
