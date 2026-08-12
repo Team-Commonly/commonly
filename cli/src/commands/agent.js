@@ -515,7 +515,24 @@ export const runMemoryImport = async ({
 const extractPrompt = (event) => {
   const p = event.payload || {};
   if (PROMPT_EVENT_TYPES.has(event.type)) {
-    return p.content || p.prompt || p.text || null;
+    const content = p.content || p.prompt || p.text || null;
+    if (content) return content;
+    // #896: a message-shaped event with a messageId but NO content used to be
+    // acked silently as "no prompt — no-op", which reads exactly like a
+    // swallowed wake (the pilot's boot-backlog mystery — repro'd 2026-08-12:
+    // cold starts were healthy; content-less payloads were the whole story).
+    // The wrapper has enough to recover: name the message and let the agent
+    // read the room. Between silence and one model turn, the #887 rule says
+    // spend the turn — the claim gate and cascade cap bound the cost.
+    if (p.messageId) {
+      return [
+        `[Recovered wake: this ${event.type} event named message ${p.messageId} but carried no content — `
+        + 'a producer bug, not your fault. Read the recent messages before deciding anything.]',
+        'Check the pod\'s recent messages (commonly_get_context / commonly_get_messages), find that message,',
+        'and decide whether it needs YOU specifically. Most likely it does not: return NO_REPLY.',
+      ].join('\n');
+    }
+    return null;
   }
   if (event.type === 'heartbeat') {
     return p.content || [
@@ -636,8 +653,20 @@ export const performRun = ({
     if (!prompt || !eventPodId) {
       // No prompt, or nowhere to post the response — skip spawn entirely so
       // we never consume a CLI turn for a message with no destination.
+      // Surfaced through onError, not just the log: a silently-acked event is
+      // indistinguishable from a swallowed wake (#896 — the pilot burned an
+      // evening on exactly this ambiguity). It is still acked (deliberate
+      // decline, not a retry), but the operator can now see the skip.
       log(`[${event.type}] no prompt — no-op`);
-      return { outcome: 'no_action' };
+      onError?.(Object.assign(
+        new Error(
+          `${event.type} event ${event._id} was acked WITHOUT a spawn: `
+          + `${!eventPodId ? 'no podId to post into' : 'payload carried no content and no messageId'}. `
+          + 'If this wake mattered, its producer is sending an unusable payload.',
+        ),
+        { code: 'agent_event_skipped_no_prompt', eventId: event._id },
+      ));
+      return { outcome: 'no_action', reason: 'no-prompt' };
     }
 
     // Snapshot the pod's recent messages so that, after the spawn, we can

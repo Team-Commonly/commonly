@@ -681,7 +681,7 @@ describe('performRun', () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-nopod/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
   });
@@ -869,7 +869,7 @@ describe('performRun', () => {
     expect(scheduled[0].delayMs).toBe(10000);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-no-prompt/ack',
-      { result: { outcome: 'no_action' } },
+      { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
   });
 
@@ -1657,6 +1657,47 @@ describe('performRun — ADR-018 enforcement', () => {
       .filter((e) => e.code === 'agent_spawn_retry_scheduled')
       .map((e) => e.consecutiveFailures);
     expect(streaks).toEqual([1, 2]);
+  });
+
+  test('#896: a content-less event WITH a messageId spawns a recovery turn instead of a silent ack', async () => {
+    const { post } = makeClient({
+      events: [makeEvent({ _id: 'evt-bare', payload: { messageId: 'msg-1' } })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('Recovered wake');
+    expect(prompt).toContain('msg-1');
+    expect(prompt).toContain('NO_REPLY');
+    // It flows through the normal enforcement path — the claim was taken.
+    expect(post).toHaveBeenCalledWith(CLAIM_PATH, expect.anything());
+  });
+
+  test('#896: a truly-empty event is still acked but the skip is surfaced through onError', async () => {
+    const errors = [];
+    const { post } = makeClient({
+      events: [makeEvent({ _id: 'evt-empty', payload: {} })],
+    });
+    const spawn = jest.fn();
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { onError: (e) => errors.push(e) },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-empty/ack',
+      { result: { outcome: 'no_action', reason: 'no-prompt' } },
+    );
+    const skip = errors.find((e) => e.code === 'agent_event_skipped_no_prompt');
+    expect(skip).toBeTruthy();
+    expect(skip.message).toContain('evt-empty');
   });
 
   test('length gate: an over-limit reply is split into ordered messages at post time', async () => {
