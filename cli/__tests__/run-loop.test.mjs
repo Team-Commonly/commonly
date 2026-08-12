@@ -61,11 +61,12 @@ const makeEvent = (overrides = {}) => ({
 const noopTimeout = () => 0;
 
 // Let the initial tick() promise chain drain before stopping. The longest
-// chain is currently:  get(/events) → get(/memory) → adapter.spawn →
-// post(/messages) → post(/memory/sync) → post(/events/:id/ack)  — 6 await
+// chain is currently:  get(/events) → get(/messages snapshot) → post(claim)
+// → get(/memory) → adapter.spawn → get(/messages) → post(/messages) →
+// del(claim) → post(/memory/sync) → post(/events/:id/ack)  — 10 await
 // boundaries. Loop DRAIN_DEPTH setImmediates so each level resolves. Bump
 // this if another phase extends the chain.
-const DRAIN_DEPTH = 10;
+const DRAIN_DEPTH = 16;
 const drainMicrotasks = async () => {
   for (let i = 0; i < DRAIN_DEPTH; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -1397,5 +1398,283 @@ describe('performRun', () => {
     const ctx = spawn.mock.calls[0][1];
     expect(ctx.runtimeToken).toBe('cm_agent_specific_token');
     expect(ctx.instanceUrl).toBe('https://api-dev.commonly.me');
+  });
+});
+
+// ── ADR-018 wrapper enforcement (claim-before-act, cascade cap, length gate) ─
+//
+// The 2026-08-11 pilot showed advisory guidance does not bind: zero claims
+// taken, 3,614-char median, a mention cascade killed by hand. These tests pin
+// the deterministic wrapper behavior that replaced it.
+describe('performRun — ADR-018 enforcement', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
+  });
+
+  const CLAIM_PATH = '/api/agents/runtime/messages/msg-1/claim';
+
+  const makeClaimEvent = (overrides = {}) => makeEvent({
+    payload: { content: 'please look at this', messageId: 'msg-1' },
+    ...overrides,
+  });
+
+  // Route-aware client mock: events/messages/memory GETs, claim-aware POSTs.
+  const makeClient = ({
+    events,
+    messages = [{ _id: 'msg-1', isBot: false, self: false }],
+    claimResult = { claimed: true, expiresAt: 'later' },
+  }) => {
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/claim')) {
+        if (claimResult instanceof Error) throw claimResult;
+        return typeof claimResult === 'function' ? claimResult() : claimResult;
+      }
+      return {};
+    });
+    const del = jest.fn(async () => ({ released: true }));
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages };
+      return { events };
+    });
+    createClient.mockReturnValue({ get, post, del });
+    return { get, post, del };
+  };
+
+  const run = (adapter, opts = {}) => performRun({
+    instanceUrl: 'http://localhost:5000',
+    token: 'cm_agent_test',
+    adapter,
+    agentName: 'my-stub',
+    setTimeoutImpl: noopTimeout,
+    ...opts,
+  });
+
+  test('claims the trigger message before spawning, then releases after posting', async () => {
+    const { post, del } = makeClient({ events: [makeClaimEvent()] });
+    const spawn = jest.fn(async () => {
+      // The claim must already be held when the CLI turn starts.
+      expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
+      return { text: 'on it' };
+    });
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(CLAIM_PATH, { podId: 'pod-abc', leaseSeconds: 90 });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', { content: 'on it' });
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('a lost claim stands the turn down: no spawn, no post, acked no_action', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent()],
+      claimResult: { claimed: false, claimedBy: 'nova', expiresAt: 'later' },
+    });
+    const spawn = jest.fn();
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
+    expect(del).not.toHaveBeenCalled(); // nothing held, nothing to release
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    );
+  });
+
+  test('a claim-route failure fails OPEN: the turn proceeds unguarded (#887 rule)', async () => {
+    const { post } = makeClient({
+      events: [makeClaimEvent()],
+      claimResult: Object.assign(new Error('Not found'), { status: 404 }),
+    });
+    const spawn = jest.fn(async () => ({ text: 'still answering' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'still answering' },
+    );
+  });
+
+  test('a claim lost mid-turn suppresses the wrapper post (stand down at post time)', async () => {
+    let claimCalls = 0;
+    const { post, del } = makeClient({
+      events: [makeClaimEvent()],
+      claimResult: () => {
+        claimCalls += 1;
+        return claimCalls === 1
+          ? { claimed: true, expiresAt: 'later' } // acquire
+          : { claimed: false, claimedBy: 'nova' }; // renewal — a peer re-won
+      },
+    });
+    let renew = null;
+    const spawn = jest.fn(async () => {
+      await renew(); // the lease lapses while the CLI is still running
+      return { text: 'a reply the pod must not see twice' };
+    });
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { setIntervalImpl: (fn) => { renew = fn; return 7; }, clearIntervalImpl: () => {} },
+    );
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      expect.anything(),
+    );
+    expect(del).not.toHaveBeenCalled(); // lost claims are not released
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('events without a messageId are never claimed', async () => {
+    const { post } = makeClient({ events: [makeEvent({ type: 'heartbeat', payload: {} })] });
+    const spawn = jest.fn(async () => ({ text: 'HEARTBEAT_OK' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls.some(([r]) => r.endsWith('/claim'))).toBe(false);
+  });
+
+  test('cascade cap: agent-triggered turns beyond the cap are declined without a spawn or a claim', async () => {
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a' }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+      // Both trigger messages are BOT-authored — this is a mention cascade.
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: true, self: false },
+      ],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn }, { cascadeCap: 1 });
+    await drainMicrotasks();
+    stop();
+
+    // First agent-triggered turn runs; the second hits the cap.
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-b/ack',
+      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+    );
+    // The declined event never reached the claim step.
+    expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
+  });
+
+  test('human-triggered turns are never cascade-capped', async () => {
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a' }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: false, self: false }, // a human spoke
+      ],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn }, { cascadeCap: 1 });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-b/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('an enforcement stand-down does not reset the spawn-failure streak (#782 invariant)', async () => {
+    // Failure → stand-down (claim held) → failure. The stand-down never
+    // exercised the model, so the second failure must report streak 2, not 1.
+    let scheduled = 0;
+    const boundedTimeout = (cb) => {
+      scheduled += 1;
+      if (scheduled > 6) return 0;
+      setImmediate(cb);
+      return 0;
+    };
+    const wait = async () => {
+      for (let i = 0; i < 60; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+
+    const batches = [
+      [makeEvent({ _id: 'evt-fail-1' })],
+      [makeClaimEvent({ _id: 'evt-held' })],
+      [makeEvent({ _id: 'evt-fail-2' })],
+      [],
+    ];
+    let batch = 0;
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/claim')) return { claimed: false, claimedBy: 'nova' };
+      return {};
+    });
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [{ _id: 'msg-1', isBot: false, self: false }] };
+      const events = batches[Math.min(batch, batches.length - 1)];
+      batch += 1;
+      return { events };
+    });
+    createClient.mockReturnValue({ get, post, del: jest.fn() });
+
+    const errors = [];
+    const spawn = jest.fn(async () => { throw new Error('model down'); });
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { setTimeoutImpl: boundedTimeout, onError: (e) => errors.push(e) },
+    );
+    await wait();
+    stop();
+
+    const streaks = errors
+      .filter((e) => e.code === 'agent_spawn_retry_scheduled')
+      .map((e) => e.consecutiveFailures);
+    expect(streaks).toEqual([1, 2]);
+  });
+
+  test('length gate: an over-limit reply is split into ordered messages at post time', async () => {
+    const chunkA = `alpha ${'a'.repeat(380)}`;
+    const chunkB = `beta ${'b'.repeat(380)}`;
+    const { post } = makeClient({ events: [makeEvent()] }); // no messageId — gate is claim-independent
+    const spawn = jest.fn(async () => ({ text: `${chunkA}\n\n${chunkB}` }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    const posts = post.mock.calls.filter(([r]) => r === '/api/agents/runtime/pods/pod-abc/messages');
+    expect(posts).toHaveLength(2);
+    expect(posts[0][1].content).toBe(chunkA);
+    expect(posts[1][1].content).toBe(chunkB);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'posted' } },
+    );
   });
 });
