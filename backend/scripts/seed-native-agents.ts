@@ -35,6 +35,55 @@ const INSTALLED_BY_USER_ID = '67a9ceb240f8f53015944a05'; // xcjsam admin
 const VERSION = '1.0.0';
 const HELLO_NATIVE_AGENT_NAME = 'hello-native';
 
+/**
+ * Project a first-party app manifest into AgentInstallation.config.
+ *
+ * The heartbeat block is the load-bearing part. Heartbeat dispatch is opt-in
+ * (#833: `config.heartbeat.enabled === true`, nothing else fires), and a
+ * manifest that declares `triggers: ['heartbeat']` IS that choice — the
+ * author wrote it down. #833's migration read the unset install flag as
+ * "nobody chose this" and silently unplugged pod-summarizer, whose only
+ * trigger is the heartbeat: zero runs from the 2026-08-04 deploy until this
+ * fix (the reviews on #891 surfaced it as an 8-day first-party outage).
+ *
+ * The interval rides along as `heartbeat.everyMinutes` — the key the
+ * scheduler actually reads (`resolveHeartbeatIntervalMinutes`). The old
+ * top-level `heartbeatIntervalMinutes` copy was read by NOTHING:
+ * pod-summarizer declared 360 and ran hourly on the scheduler's default for
+ * four months. One projected field, one reader, no second copy to drift.
+ *
+ * Apps whose manifests do not declare a heartbeat trigger (task-clerk:
+ * mention, pod-welcomer: pod.join) get no heartbeat block — before #833 they
+ * ran on default-on heartbeats they never asked for, and restoring that
+ * would re-break #833's contract. pod-welcomer staying dark is the separate
+ * `pod.join`-has-no-producer bug, not a heartbeat problem.
+ */
+export function buildInstallationConfig(
+  app: NativeAgentDefinition,
+): Record<string, unknown> {
+  const configObj: Record<string, unknown> = {
+    runtime: { runtimeType: 'native' },
+    systemPrompt: app.systemPrompt,
+    model: app.model,
+    tools: app.tools || [],
+    triggers: app.triggers || [],
+  };
+  if ((app.triggers || []).includes('heartbeat')) {
+    configObj.heartbeat = {
+      enabled: true,
+      ...(typeof app.heartbeatIntervalMinutes === 'number'
+        ? { everyMinutes: app.heartbeatIntervalMinutes }
+        : {}),
+    };
+  }
+  if (typeof app.maxTurns === 'number') configObj.maxTurns = app.maxTurns;
+  if (typeof app.maxTokens === 'number') configObj.maxTokens = app.maxTokens;
+  if (typeof app.maxWallClockMs === 'number') {
+    configObj.maxWallClockMs = app.maxWallClockMs;
+  }
+  return configObj;
+}
+
 export async function seedNativeAgents(): Promise<void> {
   try {
     console.log(
@@ -301,21 +350,7 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
   //
   //    Config is stored as a plain object; Mongoose's Map<String, Mixed>
   //    schema accepts POJOs transparently, matching Round-1 conventions.
-  const configObj: Record<string, unknown> = {
-    runtime: { runtimeType: 'native' },
-    systemPrompt: app.systemPrompt,
-    model: app.model,
-    tools: app.tools || [],
-    triggers: app.triggers || [],
-  };
-  if (typeof app.heartbeatIntervalMinutes === 'number') {
-    configObj.heartbeatIntervalMinutes = app.heartbeatIntervalMinutes;
-  }
-  if (typeof app.maxTurns === 'number') configObj.maxTurns = app.maxTurns;
-  if (typeof app.maxTokens === 'number') configObj.maxTokens = app.maxTokens;
-  if (typeof app.maxWallClockMs === 'number') {
-    configObj.maxWallClockMs = app.maxWallClockMs;
-  }
+  const configObj = buildInstallationConfig(app);
 
   try {
     await AgentInstallation.findOneAndUpdate(
@@ -376,4 +411,4 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
 // CJS compat so `require('./scripts/seed-native-agents').seedNativeAgents(...)`
 // works the same as the rest of the backend.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { seedNativeAgents };
+module.exports = { seedNativeAgents, buildInstallationConfig };
