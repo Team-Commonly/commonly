@@ -323,16 +323,24 @@ export const deliverChatReply = async ({
   text,
   limit = 400,
   maxChunks = 3,
+  attachThreshold = 800,
   uploadName = 'reply.md',
   log = () => {},
 }) => {
   const messagesPath = `/api/agents/runtime/pods/${podId}/messages`;
   const chunks = splitForChat(text, { limit });
-  if (chunks.length <= 1) {
+  // An atomic unit (a fenced block, an unbreakable word-run) can exceed the
+  // limit by construction — splitForChat keeps it whole rather than breaking
+  // its rendering. The tone contract's own rule covers it: over ~800 chars of
+  // ONE indivisible thing is a document, not a message — attach it. Without
+  // this check a 659-char fence rode the single/split branches straight past
+  // the gate (found by the fleet's implementation audit, Sharpen msg 53018).
+  const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
+  if (chunks.length <= 1 && !hasIndivisibleOversize) {
     await client.post(messagesPath, { content: chunks[0] ?? text });
     return { mode: 'single', messages: 1 };
   }
-  if (chunks.length <= maxChunks) {
+  if (chunks.length <= maxChunks && !hasIndivisibleOversize) {
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
       await client.post(messagesPath, { content: chunk }); // in order, so the reply reads top-down
@@ -348,7 +356,13 @@ export const deliverChatReply = async ({
     });
     const u = uploaded || {};
     const directive = `[[upload:${u.fileName || uploadName}|${u.originalName || uploadName}|${u.size ?? Buffer.byteLength(String(text))}|${u.kind || 'document'}]]`;
-    await client.post(messagesPath, { content: `${chunks[0]}\n\n${directive}` });
+    // Lead with the reply's own opening — unless that opening is itself the
+    // oversized atomic unit (a fence-only reply), in which case a generic
+    // line keeps the message under the gate and the card carries the content.
+    const lead = chunks[0] && chunks[0].length <= limit
+      ? chunks[0]
+      : '(reply too large for chat — attached in full)';
+    await client.post(messagesPath, { content: `${lead}\n\n${directive}` });
     return { mode: 'attach', messages: 1 };
   } catch (err) {
     log(`attach fallback failed (${err.message}) — posting ${chunks.length} split messages instead`);

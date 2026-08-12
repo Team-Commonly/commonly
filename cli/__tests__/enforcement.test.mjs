@@ -296,6 +296,55 @@ describe('deliverChatReply', () => {
     expect(content).toContain('[[upload:srv-name.md|reply.md|2000|document]]');
   });
 
+  test('a document-sized single fence attaches — it cannot ride the single-post branch (msg 53018)', async () => {
+    const post = jest.fn().mockResolvedValue({});
+    const upload = jest.fn().mockResolvedValue({
+      fileName: 'srv.md', originalName: 'reply.md', size: 950, kind: 'document',
+    });
+    const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``; // ~945 chars, one atomic chunk
+    const res = await deliverChatReply({
+      client: { post, upload }, podId: 'pod-1', text: fence, uploadName: 'reply.md',
+    });
+    expect(res.mode).toBe('attach');
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+    const { content } = post.mock.calls[0][1];
+    // The lead must not be the giant fence itself — generic line + file card.
+    expect(content).toContain('attached in full');
+    expect(content).toContain('[[upload:srv.md');
+    expect(content.length).toBeLessThan(500);
+  });
+
+  test('the contract gray zone: a 400-800 char indivisible fence posts as ONE message', async () => {
+    // "Aim under 400 … NEVER hit that by cutting content" + "over ~800 of one
+    // indivisible thing → attach": between those lines, an unsplittable fence
+    // is a sanctioned single message — splitting would break its rendering,
+    // attaching a snippet-sized block would be worse UX than one long post.
+    const post = jest.fn().mockResolvedValue({});
+    const upload = jest.fn();
+    const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(50)}\`\`\``; // ~660 chars
+    const res = await deliverChatReply({
+      client: { post, upload }, podId: 'pod-1', text: fence,
+    });
+    expect(res.mode).toBe('single');
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  test('an oversized fence inside a small split also forces the attach path', async () => {
+    const post = jest.fn().mockResolvedValue({});
+    const upload = jest.fn().mockResolvedValue({
+      fileName: 'srv.md', originalName: 'reply.md', size: 1200, kind: 'document',
+    });
+    const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(70)}\`\`\``; // ~920 chars atomic
+    const text = `Here is the diff:\n\n${fence}`;
+    const res = await deliverChatReply({
+      client: { post, upload }, podId: 'pod-1', text, uploadName: 'reply.md',
+    });
+    expect(res.mode).toBe('attach');
+    // The prose opening is under the limit, so it stays the lead.
+    expect(post.mock.calls[0][1].content).toContain('Here is the diff:');
+  });
+
   test('upload failure degrades to posting every chunk — flood beats truncation or silence', async () => {
     const post = jest.fn().mockResolvedValue({});
     const upload = jest.fn().mockRejectedValue(new Error('older server'));
