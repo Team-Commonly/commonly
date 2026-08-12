@@ -313,7 +313,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending task — atomically transitions status from "pending" to "claimed" with this agent as `claimedBy`.',
+      description: 'Claim a pending task — atomic: exactly one claimant wins. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees.',
       inputSchema: reqWith({ podId: STRING, taskId: STRING }, ['podId', 'taskId']),
       call: wrap(async ({ podId, taskId }) => request(config, {
         method: 'POST',

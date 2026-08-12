@@ -180,12 +180,13 @@ router.post('/:podId', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     if (sourceRef) {
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef }) as { status?: string; assignee?: string; claimedAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), sourceRef }) as { status?: string; assignee?: string; claimedAt?: Date | null; claimExpiresAt?: Date | null; notes?: string; updates: Array<{ text: string; author: string; authorId: string | null; createdAt: Date }>; save: () => Promise<void>; toObject: () => unknown } | null;
       if (existing) {
         if (existing.status === 'done') {
           existing.status = 'pending';
           existing.assignee = assignee || undefined;
           existing.claimedAt = null;
+          existing.claimExpiresAt = null;
           existing.notes = 'Reopened — previously completed but issue is still open.';
           existing.updates.push({ text: 'Reopened: task was done but linked issue is still open — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
           await existing.save();
@@ -276,7 +277,25 @@ router.post('/:podId', rateLimit({
   }
 });
 
-router.post('/:podId/:taskId/claim', auth, async (req: AuthReq, res: Res) => {
+// ADR-018 D4: a task claim is a LEASE, not a tenure. Before this, claimedBy
+// had no deadline — a dead claimant (closed laptop, killed wrapper) held the
+// task forever, invisibly. 30 minutes matches the pod convention that peers
+// race on work stalled ~30 min ("claim-the-orphan"), and renewal is the same
+// call: a holder re-claiming wins against itself and gets a fresh lease —
+// identical semantics to message claims (messageClaimService).
+const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
+
+router.post('/:podId/:taskId/claim', rateLimit({
+  windowMs: 60_000,
+  // Higher than task-create's 20: a claimant renews by re-claiming, and a
+  // busy agent can be racing several tasks in a minute. Still low enough
+  // that a runaway loop hits the wall inside one lease window.
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({ error: 'rate limit exceeded: 30 task claims per 60s' }),
+}), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
@@ -284,12 +303,35 @@ router.post('/:podId/:taskId/claim', auth, async (req: AuthReq, res: Res) => {
     const claimedBy = agentId || userId?.toString() || '';
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
-    const update = { $set: { status: 'claimed', claimedBy, claimedAt: new Date() }, $push: { updates: { text: `Claimed by ${claimedBy}`, author: claimedBy, authorId: userId?.toString() || null, createdAt: new Date() } } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: 'pending' }, update, { new: true });
+    const now = new Date();
+    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: { updates: { text: `Claimed by ${claimedBy}`, author: claimedBy, authorId: userId?.toString() || null, createdAt: now } } };
+    // One CAS, four ways to win: the task is unclaimed; the caller already
+    // holds it (renewal); the holder's lease lapsed; or the claim predates
+    // leases entirely (claimExpiresAt null) and is older than one lease —
+    // legacy claims get their effective expiry derived from claimedAt, so no
+    // migration and no instant steal of work someone claimed minutes ago.
+    const task = await Task.findOneAndUpdate({
+      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+      taskId,
+      $or: [
+        { status: 'pending' },
+        { status: 'claimed', claimedBy },
+        { status: 'claimed', claimExpiresAt: { $lt: now } },
+        { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+      ],
+    }, update, { new: true });
     if (!task) {
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string } | null;
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
-      return res.status(409).json({ error: 'Task already claimed', claimedBy: existing.claimedBy, status: existing.status });
+      // Name the live holder AND when the lease frees — a loser standing
+      // down should know when racing again is legitimate (D3: informed, not
+      // blind).
+      return res.status(409).json({
+        error: 'Task already claimed',
+        claimedBy: existing.claimedBy,
+        status: existing.status,
+        claimExpiresAt: existing.claimExpiresAt || null,
+      });
     }
     emitTaskUpdated(podId, task, 'updated');
     return res.json({ task });
