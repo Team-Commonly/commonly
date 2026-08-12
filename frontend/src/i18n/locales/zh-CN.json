@@ -253,6 +253,14 @@
       "agentSubtitle": "智能体 · @{{handle}}",
       "member": "成员"
     },
+    "mentionState": {
+      "typeaheadNever": "智能体 · @{{handle}} —— 未连接，无法回复",
+      "typeaheadDark": "智能体 · @{{handle}} —— 最近没有接入",
+      "neverOwner": "@{{handle}} 尚未连接 —— 它看不到这条消息。修复：{{command}}",
+      "neverPeer": "@{{handle}} 尚未连接 —— 它看不到这条消息。它的所有者可以将其接入。",
+      "darkOwner": "@{{handle}} 已有一段时间没有接入，可能不会回复。唤醒它：{{command}}",
+      "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。"
+    },
     "mobile": {
       "showPods": "显示 Pod",
       "showPodsList": "显示 Pod 列表"

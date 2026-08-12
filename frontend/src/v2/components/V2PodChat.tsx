@@ -73,7 +73,23 @@ interface MentionItem {
   // Value inserted after `@`. For agents, prefer instanceId so mentions land
   // on the right instance ("@nova" not "@openclaw").
   value: string;
+  // #891 surface 1: reachability shown at compose time, so nobody offers a
+  // mention that can't land without saying so.
+  reach?: AgentReachState;
 }
+
+// #891 surface 1 — per-agent reachability from /api/pods/:podId/agent-states.
+// Only the states the kernel can derive HONESTLY for the agent's runtime
+// class arrive here; 'reachable'/'unknown' render nothing.
+type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
+interface AgentStateRow {
+  agentName: string;
+  instanceId: string;
+  state: AgentReachState;
+  isOwner: boolean;
+  fixCommand?: string;
+}
+const REACH_NEEDS_WARNING = new Set<AgentReachState>(['gone-dark', 'never-connected']);
 
 interface TypingAgentEntry {
   key: string;
@@ -221,6 +237,38 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionStart, setMentionStart] = useState(-1);
   const [mentionIndex, setMentionIndex] = useState(0);
+
+  // #891 surface 1: agent reachability at the moment of composing a mention.
+  // Best-effort — a failed read renders nothing rather than something wrong,
+  // and 60s refresh keeps the states honest without hammering the endpoint.
+  const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = await api.get<{ agents?: AgentStateRow[] }>(`/api/pods/${podId}/agent-states`);
+        if (!cancelled) setAgentStates(data?.agents || []);
+      } catch {
+        // Honesty surface is best-effort: silence over a wrong dot.
+      }
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [pod?._id, api]);
+
+  // Lookup by every handle a mention could use: instanceId (what the
+  // dropdown inserts for non-default instances) and agentName.
+  const agentStateByHandle = useMemo(() => {
+    const map = new Map<string, AgentStateRow>();
+    agentStates.forEach((s) => {
+      map.set(s.agentName.toLowerCase(), s);
+      if (s.instanceId && s.instanceId !== 'default') map.set(s.instanceId.toLowerCase(), s);
+    });
+    return map;
+  }, [agentStates]);
 
   useEffect(() => {
     if (pod) setMode(readMode(pod._id));
@@ -430,14 +478,25 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         ? instance
         : rawName.toLowerCase();
       const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
+      // Compose-time honesty (#891 surface 1): a mention that can't land says
+      // so in the picker itself — certainty-matched copy (never-connected is
+      // structural and flat; gone-dark is inferred and hedged).
+      const reach = agentStateByHandle.get(mentionValue)?.state
+        || agentStateByHandle.get(rawName.toLowerCase())?.state;
+      const subtitle = reach === 'never-connected'
+        ? t('podChat.mentionState.typeaheadNever', { handle: mentionValue })
+        : reach === 'gone-dark'
+          ? t('podChat.mentionState.typeaheadDark', { handle: mentionValue })
+          : t('podChat.mentions.agentSubtitle', { handle: mentionValue });
       return {
         id: username,
         label: display,
         labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
-        subtitle: t('podChat.mentions.agentSubtitle', { handle: mentionValue }),
+        subtitle,
         avatar,
         isAgent: true,
         value: mentionValue,
+        reach,
       };
     };
 
@@ -476,7 +535,25 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     });
 
     return items;
-  }, [members, agents, t]);
+  }, [members, agents, t, agentStateByHandle]);
+
+  // #891 surface 1, send-time half: which mentioned agents in the current
+  // draft cannot hear it? Dependency-keyed explanation for everyone; the fix
+  // command only ever arrives for owners (the endpoint enforces the split).
+  const unreachableMentioned = useMemo(() => {
+    if (!draft.includes('@')) return [] as AgentStateRow[];
+    const tokens = draft.match(/@([a-z0-9][\w-]*)/gi) || [];
+    const seen = new Set<string>();
+    const rows: AgentStateRow[] = [];
+    tokens.forEach((token) => {
+      const handle = token.slice(1).toLowerCase();
+      const state = agentStateByHandle.get(handle);
+      if (!state || !REACH_NEEDS_WARNING.has(state.state) || seen.has(handle)) return;
+      seen.add(handle);
+      rows.push({ ...state, agentName: handle });
+    });
+    return rows;
+  }, [draft, agentStateByHandle]);
 
   const filteredMentions: MentionItem[] = useMemo(() => {
     if (!mentionOpen) return [];
@@ -1223,6 +1300,21 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
               {composerError && (
                 <div className="v2-chat__composer-footer">
                   <span className="v2-chat__composer-error">{composerError}</span>
+                </div>
+              )}
+              {unreachableMentioned.length > 0 && (
+                <div className="v2-chat__composer-footer" data-testid="mention-state-warning">
+                  {unreachableMentioned.map((row) => (
+                    <span key={row.agentName} className="v2-chat__composer-hint">
+                      {row.state === 'never-connected'
+                        ? (row.fixCommand
+                          ? t('podChat.mentionState.neverOwner', { handle: row.agentName, command: row.fixCommand })
+                          : t('podChat.mentionState.neverPeer', { handle: row.agentName }))
+                        : (row.fixCommand
+                          ? t('podChat.mentionState.darkOwner', { handle: row.agentName, command: row.fixCommand })
+                          : t('podChat.mentionState.darkPeer', { handle: row.agentName }))}
+                    </span>
+                  ))}
                 </div>
               )}
               <div className="v2-chat__composer-hint">

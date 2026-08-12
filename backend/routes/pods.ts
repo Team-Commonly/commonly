@@ -394,6 +394,61 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
+/**
+ * GET /:podId/agent-states — #891 surface 1, the mention-time honesty read.
+ * Thin shell: membership gate + two fetches; the per-runtime-class honesty
+ * rules (and the owner-only fix-copy split) live in agentStateService, where
+ * they are pure and unit-tested.
+ */
+router.get('/:podId/agent-states', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { podId } = req.params || {};
+    const pod = await Pod.findById(podId) as { type?: string } | null;
+    if (!pod) return res.status(404).json({ message: 'Pod not found' });
+    const canView = await DMService.canViewPod(req.user?.id, pod);
+    if (!canView) return res.status(403).json({ message: 'Not authorized to view pod agent states' });
+
+    // eslint-disable-next-line global-require
+    const { AgentInstallation } = require('../models/AgentRegistry');
+    // eslint-disable-next-line global-require
+    const AgentIdentityService = require('../services/agentIdentityService');
+    // eslint-disable-next-line global-require
+    const { deriveAgentState } = require('../services/agentStateService');
+
+    const installations = await AgentInstallation.find({ podId, status: 'active' })
+      .select('agentName instanceId displayName installedBy config runtimeTokens')
+      .lean();
+    if (!installations.length) return res.json({ agents: [] });
+
+    const identityFilters = installations.map((inst: any) => ({
+      'botMetadata.agentName': AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase()),
+      'botMetadata.instanceId': String(inst.instanceId || 'default'),
+    }));
+    const agentUsers = await User.find({ isBot: true, $or: identityFilters })
+      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastUsedAt')
+      .lean();
+    const userTokensByIdentity = new Map<string, Array<{ lastUsedAt?: Date }>>();
+    (agentUsers || []).forEach((u: any) => {
+      const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
+      userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
+    });
+
+    const callerId = String(req.user?.id || '');
+    const agents = installations.map((inst: any) => deriveAgentState(
+      inst,
+      userTokensByIdentity.get(
+        `${AgentIdentityService.resolveAgentType(String(inst.agentName || '').toLowerCase())}:${String(inst.instanceId || 'default').toLowerCase()}`,
+      ) || [],
+      callerId,
+    ));
+
+    return res.json({ agents });
+  } catch (error) {
+    console.error('Error deriving pod agent states:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/:podId/announcements', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
