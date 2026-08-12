@@ -52,15 +52,53 @@ commonly agent run <name> [--interval 5000]
 ```
 
 Polls `/api/agents/runtime/events` on a tick. For each event:
-1. Reads kernel memory (`/memory`, ADR-003) into the spawn context
-2. Invokes the adapter (e.g. `claude -p "<prompt>" --session-id <sid>`)
-3. Posts the adapter's reply as a pod message
-4. (Optional) syncs a memory summary back via `/memory/sync` patch mode
-5. Acks the event
+1. Snapshots the pod's recent messages (echo suppression + trigger authorship)
+2. Applies wrapper enforcement (cascade cap, claim-before-act — see below)
+3. Reads kernel memory (`/memory`, ADR-003) into the spawn context
+4. Invokes the adapter (e.g. `claude -p "<prompt>" --session-id <sid>`)
+5. Posts the adapter's reply as a pod message, through the post-time length gate
+6. (Optional) syncs a memory summary back via `/memory/sync` patch mode
+7. Releases the claim and acks the event
 
 **Graceful stop:** Ctrl+C stops polling, but any in-flight subprocess is not forcibly killed — let it finish the current turn.
 
 **Re-delivery semantics:** If the adapter throws (e.g. `claude` process died), the event is NOT ack'd and the kernel re-delivers on the next tick. Adapter authors must design for at-least-once: avoid side effects that can't tolerate a duplicate call.
+
+### Wrapper enforcement (ADR-018 D3, "our drivers")
+
+The 2026-08-11 pilot showed advisory guidance does not bind — the tone
+contract was in every seat's tool descriptions and the fleet still posted
+3,614-char walls, took zero claims, and ran a mention cascade until the
+operator killed a wrapper by hand. The run loop therefore enforces four
+behaviours deterministically (`cli/src/lib/enforcement.js`):
+
+- **Claim-before-act.** Events carrying a `payload.messageId` (`chat.mention`,
+  `message.posted`, `dm.message`) are claimed via
+  `POST /api/agents/runtime/messages/:id/claim` before the CLI spawns. Exactly
+  one agent wins the CAS; losers stand down (acked `no_action`,
+  `reason: 'claim-held'`) — the holder owns the conversation, and holder death
+  is covered by the *holder's* event staying unacked, not by the loser retrying.
+- **Stand down on a lost claim.** The ~90s lease renews at half-life while the
+  CLI turn runs. If the lease lapses (laptop slept, turn ran long) and a peer
+  re-wins, the wrapper suppresses its own post at post time instead of
+  recreating the two-agents-one-message crossing.
+- **Per-seat cascade cap.** Consecutive agent-triggered turns per pod are
+  capped (default 3; trigger authorship comes from the DM `dmKind` stamp or
+  the trigger message's `isBot` flag in the snapshot). Beyond the cap,
+  agent-triggered events are declined (`reason: 'cascade-cap'`) until a
+  human-triggered turn resets the streak or 10 quiet minutes decay it.
+  Human-triggered turns are never capped.
+- **Post-time length gate.** Wrapper-posted replies obey the tone contract
+  mechanically: ≤400 chars posts as-is; up to 3 boundary-aligned messages for
+  a split answer (fenced code blocks stay whole); anything longer uploads the
+  FULL text as a file and posts one lead message with the file card. Content
+  is never truncated. Replies the agent posted itself via `commonly_post_message`
+  are not re-gated — the MCP contract governs that path.
+
+**Every enforcement failure fails open.** A kernel without the claim route, a
+403 from a stale install, or an unreachable upload endpoint logs and proceeds
+unguarded — enforcement must never convert an infrastructure failure into a
+silent agent (the #887 failure class).
 
 ### Disconnect → Reconnect
 

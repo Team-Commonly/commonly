@@ -39,6 +39,13 @@ import {
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../lib/spawn-retry.js';
+import {
+  CLAIMABLE_EVENT_TYPES,
+  classifyTrigger,
+  createCascadeGovernor,
+  createClaimKeeper,
+  deliverChatReply,
+} from '../lib/enforcement.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
 
@@ -563,6 +570,20 @@ const extractPrompt = (event) => {
  * the kernel re-delivers. This diverges from `startPoller` (which acks all
  * outcomes) — the local-CLI wrapper needs re-delivery on spawn failure because
  * spawn failure is a runtime problem, not a "processed and declined" outcome.
+ *
+ * ADR-018 D3 (our-drivers row) — deterministic enforcement, added after the
+ * 2026-08-11 pilot showed advisory guidance does not bind:
+ *   - claim-before-act: message-bearing events are claimed before the spawn;
+ *     a lost claim stands the turn down (acked no_action — the holder owns
+ *     the conversation, and ITS unacked event covers holder death).
+ *   - stand down on lost claim: the lease renews while the CLI runs; if it
+ *     lapses and a peer re-wins, the wrapper suppresses its post.
+ *   - cascade cap: consecutive agent-triggered turns per pod are capped so a
+ *     mention ping-pong damps itself instead of needing a manual kill.
+ *   - length gate at post time: wrapper-posted replies are split (never cut)
+ *     per the tone contract; document-sized replies attach as a file.
+ * Every enforcement failure fails OPEN — a kernel without the claim route or
+ * an unreachable upload endpoint must never produce a silent agent (#887).
  */
 export const performRun = ({
   instanceUrl,
@@ -577,7 +598,14 @@ export const performRun = ({
   log = () => {},
   onError,
   setTimeoutImpl = setTimeout,
+  setIntervalImpl = setInterval,
+  clearIntervalImpl = clearInterval,
   retryJitterRatio,
+  claimLeaseSeconds = 90,
+  cascadeCap = 3,
+  cascadeResetMs = 10 * 60 * 1000,
+  chatCharLimit = 400,
+  maxChatChunks = 3,
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -590,6 +618,9 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutiveSpawnFailures = 0;
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
+  // Per-seat cascade state — lives with the process, like the session store.
+  // A wrapper restart forgets the streak; the decay window covers that gap.
+  const cascadeGovernor = createCascadeGovernor({ cap: cascadeCap, resetMs: cascadeResetMs });
 
   // Adapters default `ctx.cwd` to this path. Node's child_process.spawn
   // rejects with "spawn <bin> ENOENT" when cwd does not exist — same shape
@@ -608,11 +639,6 @@ export const performRun = ({
       log(`[${event.type}] no prompt — no-op`);
       return { outcome: 'no_action' };
     }
-
-    const sessionId = getSession(agentName, eventPodId);
-    // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
-    // and (if the adapter returns a summary) patch-sync back after.
-    const memoryLongTerm = await readLongTerm(client, { onError });
 
     // Snapshot the pod's recent messages so that, after the spawn, we can
     // tell whether the agent posted itself via commonly_post_message. If it
@@ -636,11 +662,74 @@ export const performRun = ({
     // A consult request's final output is routed to the ask-response endpoint,
     // never echoed into the pod. It therefore does not need pod-message
     // snapshotting (and cannot be detected through that channel anyway).
+    // The snapshot doubles as the cascade governor's authorship source, so it
+    // runs BEFORE enforcement.
     const shouldSnapshotMessages = event.type !== 'agent.ask';
     const preSpawn = shouldSnapshotMessages ? await snapshotMessages() : null;
     const preSpawnIds = preSpawn
       ? new Set(preSpawn.map((m) => String(m._id || m.id)))
       : null;
+
+    // ── ADR-018 enforcement: cascade cap ────────────────────────────────────
+    // Refusing here is a deliberate, permanent decline (acked no_action): a
+    // capped agent-triggered event is exactly the traffic we want dropped.
+    // Human-triggered turns are never capped.
+    const trigger = classifyTrigger(event, preSpawn);
+    const admission = cascadeGovernor.admit(eventPodId, trigger);
+    if (!admission.allowed) {
+      log(
+        `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
+        + `turns in pod ${eventPodId} — standing down until a human speaks or the streak decays`,
+      );
+      return { outcome: 'no_action', reason: 'cascade-cap' };
+    }
+
+    // ── ADR-018 enforcement: claim-before-act ───────────────────────────────
+    // Losing the claim is a complete turn (stand down, ack): the holder owns
+    // the conversation, and liveness on holder death comes from the HOLDER's
+    // own event staying unacked, not from ours. Claim-route failures proceed
+    // unguarded — enforcement must never make an agent silent (#887).
+    let claimKeeper = null;
+    const claimMessageId = event.payload?.messageId;
+    if (claimMessageId && CLAIMABLE_EVENT_TYPES.has(event.type)) {
+      claimKeeper = createClaimKeeper(client, {
+        messageId: claimMessageId,
+        podId: eventPodId,
+        leaseSeconds: claimLeaseSeconds,
+        log: (line) => log(`[${event.type}] ${line}`),
+        setIntervalImpl,
+        clearIntervalImpl,
+      });
+      const claim = await claimKeeper.acquire();
+      if (!claim.claimed && !claim.failOpen) {
+        log(`[${event.type}] message ${claimMessageId} already claimed by ${claim.holder} — standing down`);
+        return { outcome: 'no_action', reason: 'claim-held' };
+      }
+      if (claim.claimed) {
+        claimKeeper.startRenewal();
+      } else {
+        log(`[${event.type}] claim unavailable (${claim.error?.message || 'unknown error'}) — proceeding unguarded`);
+      }
+    }
+
+    try {
+      return await runTurn({
+        event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+      });
+    } finally {
+      await claimKeeper?.release();
+    }
+  };
+
+  // The spawn → post-decision half of a turn, split out so the claim release
+  // above is a plain finally instead of threading through every return path.
+  const runTurn = async ({
+    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+  }) => {
+    const sessionId = getSession(agentName, eventPodId);
+    // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
+    // and (if the adapter returns a summary) patch-sync back after.
+    const memoryLongTerm = await readLongTerm(client, { onError });
 
     log(`[${event.type}] spawning ${adapter.name}`);
     const result = await adapter.spawn(prompt, {
@@ -747,12 +836,31 @@ export const performRun = ({
         + `(avoids double-post; matched message ${suppressedBy.id} by ${suppressedBy.author} `
         + `via ${suppressedBy.basis})`,
       );
+    } else if (claimKeeper?.isLost()) {
+      // ADR-018 D3: the lease lapsed mid-turn and a peer re-won the message —
+      // that peer owns the conversation now, so posting would recreate the
+      // two-agents-one-message crossing the claim exists to prevent.
+      log(
+        `[${event.type}] stood down — claim lost mid-turn to ${claimKeeper.getHolder()}; `
+        + `reply suppressed (${Buffer.byteLength(replyText)} bytes not posted)`,
+      );
     } else {
-      await client.post(`/api/agents/runtime/pods/${eventPodId}/messages`, {
-        content: replyText,
+      // ADR-018 length gate: the tone contract is enforced here, where the
+      // wrapper is the one posting. Split, attach — never truncate.
+      const delivery = await deliverChatReply({
+        client,
+        podId: eventPodId,
+        text: replyText,
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        uploadName: `${agentName}-reply-${event._id}.md`,
+        log: (line) => log(`[${event.type}] ${line}`),
       });
       delivered = true;
-      log(`[${event.type}] posted ${Buffer.byteLength(replyText)} bytes`);
+      log(
+        `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
+        + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
+      );
     }
     if (result.memorySummary) {
       try {
@@ -766,6 +874,10 @@ export const performRun = ({
         onError?.(new Error(`memory sync failed: ${err.message}`, { cause: err }));
       }
     }
+    // The turn completed — count it toward (or reset) the pod's cascade
+    // streak. Recording only on completion means a spawn failure that gets
+    // redelivered never double-counts toward the cap.
+    cascadeGovernor.record(eventPodId, trigger);
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
@@ -822,8 +934,11 @@ export const performRun = ({
           }
           // Only a completed model turn proves the local runtime and delivery
           // path recovered. A malformed/no-destination event is still acked,
-          // but must not erase the failure streak without exercising either.
-          if (eventWillSpawn) consecutiveSpawnFailures = 0;
+          // but must not erase the failure streak without exercising either —
+          // and neither may an enforcement stand-down (cascade cap, lost
+          // claim), which returns before any spawn happens.
+          const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
+          if (eventWillSpawn && !stoodDown) consecutiveSpawnFailures = 0;
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.

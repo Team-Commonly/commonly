@@ -48,7 +48,30 @@ export const createClient = ({ instance = null, token = null } = {}) => {
     headers: headers(authToken),
   }).then(handleResponse);
 
-  return { get, post, del, baseUrl };
+  // Multipart upload via native FormData/Blob (Node 18+) — no runtime deps.
+  // Content-Type is deliberately NOT set: fetch writes the multipart boundary.
+  const upload = (path, {
+    fileBuffer, fileName, contentType, fileField = 'file', fields = {},
+  }) => {
+    const form = new FormData();
+    form.append(
+      fileField,
+      new Blob([fileBuffer], { type: contentType || 'application/octet-stream' }),
+      fileName,
+    );
+    for (const [k, v] of Object.entries(fields)) {
+      if (v !== undefined && v !== null) form.append(k, String(v));
+    }
+    return fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      body: form,
+    }).then(handleResponse);
+  };
+
+  return {
+    get, post, del, upload, baseUrl,
+  };
 };
 
 // Convenience: login doesn't need a token
