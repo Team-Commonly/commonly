@@ -128,17 +128,22 @@ class MessageClaimService {
    */
   static async release(options: {
     messageId: string; agentName: string; instanceId?: string;
-  }): Promise<{ released: boolean }> {
+  }): Promise<{ released: boolean; podId?: string }> {
     const { messageId, agentName, instanceId = 'default' } = options;
     if (!messageId || !agentName) throw new Error('messageId and agentName are required');
     await ensureTable();
+    // pod_id rides back so the route can clear the D7 typing indicator —
+    // the DELETE takes no podId (holder-only delete is the guard), and the
+    // claim row is the only place the pod is recorded.
     const res = await pool.query(
       `DELETE FROM message_claims
        WHERE message_id = $1 AND claimed_by = $2 AND instance_id = $3
-       RETURNING message_id`,
+       RETURNING message_id, pod_id`,
       [String(messageId), agentName.toLowerCase(), instanceId],
     );
-    return { released: res.rows.length > 0 };
+    return res.rows.length > 0
+      ? { released: true, podId: res.rows[0].pod_id }
+      : { released: false };
   }
 
   /** Who holds a message right now? Expired leases read as unheld. */

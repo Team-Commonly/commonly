@@ -66,7 +66,14 @@ export function bindSocketIO(io: SocketIOLike): void {
   ioRef = io;
 }
 
-export function emitAgentTypingStart(agent: TypingAgent): void {
+/**
+ * `timeoutMs` overrides the safety window for callers whose "working" state
+ * has its own deadline — ADR-018 D7 rides the claim lease on this: the
+ * indicator lives exactly as long as the lease, so "✳ agent is typing"
+ * and "someone holds this message" stay one honest signal. Clamped to
+ * [1s, 10min] (10min mirrors MAX_LEASE_SECONDS on the claim side).
+ */
+export function emitAgentTypingStart(agent: TypingAgent, timeoutMs: number = TIMEOUT_MS): void {
   if (!ioRef) return;
   const normalized = normalizeStart(agent);
   if (!normalized) return;
@@ -76,6 +83,9 @@ export function emitAgentTypingStart(agent: TypingAgent): void {
     console.warn('[agent-typing] emit start failed:', (err as Error).message);
     return;
   }
+  const safeTimeout = Number.isFinite(timeoutMs)
+    ? Math.min(Math.max(Math.trunc(timeoutMs), 1_000), 600_000)
+    : TIMEOUT_MS;
   const k = podKey(normalized);
   const existing = activeTimers.get(k);
   if (existing) clearTimeout(existing);
@@ -88,7 +98,7 @@ export function emitAgentTypingStart(agent: TypingAgent): void {
         agentName: normalized.agentName,
         instanceId: normalized.instanceId,
       });
-    }, TIMEOUT_MS),
+    }, safeTimeout),
   );
 }
 

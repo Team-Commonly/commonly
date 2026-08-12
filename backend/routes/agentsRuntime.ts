@@ -329,6 +329,29 @@ router.post('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, asy
       instanceId,
       leaseSeconds: req.body?.leaseSeconds,
     });
+    // ADR-018 D7: a won (or renewed) claim IS "someone's on it" — surface it
+    // through the typing indicator humans already read that way, for exactly
+    // the life of the lease. No new UI, no new event type. Best-effort: a
+    // socket hiccup must never fail the claim itself.
+    if (result?.claimed) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const agentTypingService = require('../services/agentTypingService');
+        const leaseMs = result.expiresAt
+          ? new Date(result.expiresAt).getTime() - Date.now()
+          : undefined;
+        agentTypingService.emitAgentTypingStart({
+          podId,
+          agentName,
+          instanceId,
+          displayName: req.agentInstallation?.displayName
+            || req.agentUser?.botMetadata?.displayName
+            || agentName,
+        }, leaseMs);
+      } catch (typingErr) {
+        console.warn('[claims] typing indicator failed:', (typingErr as Error).message);
+      }
+    }
     return res.json(result);
   } catch (err) {
     console.error('[claims] claim failed:', (err as Error).message);
@@ -345,6 +368,18 @@ router.delete('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, a
     const result = await MessageClaimService.release({
       messageId: req.params.messageId, agentName, instanceId,
     });
+    // D7 mirror: releasing the lease ends "someone's on it" immediately
+    // (claim-then-decline is a normal, frequent path per D6 — the indicator
+    // must not linger through the lease timeout after an explicit release).
+    if (result?.released && result.podId) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const agentTypingService = require('../services/agentTypingService');
+        agentTypingService.emitAgentTypingStop({ podId: result.podId, agentName, instanceId });
+      } catch (typingErr) {
+        console.warn('[claims] typing stop failed:', (typingErr as Error).message);
+      }
+    }
     return res.json(result);
   } catch (err) {
     console.error('[claims] release failed:', (err as Error).message);
