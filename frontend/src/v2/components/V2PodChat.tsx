@@ -542,7 +542,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // command only ever arrives for owners (the endpoint enforces the split).
   const unreachableMentioned = useMemo(() => {
     if (!draft.includes('@')) return [] as AgentStateRow[];
-    const tokens = draft.match(/@([a-z0-9][\w-]*)/gi) || [];
+    const tokens: string[] = draft.match(/@([a-z0-9][\w-]*)/gi) || [];
     const seen = new Set<string>();
     const rows: AgentStateRow[] = [];
     tokens.forEach((token) => {

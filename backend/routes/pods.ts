@@ -400,7 +400,16 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
  * rules (and the owner-only fix-copy split) live in agentStateService, where
  * they are pure and unit-tested.
  */
-router.get('/:podId/agent-states', auth, async (req: AuthReq, res: Res) => {
+const agentStatesRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  // The composer polls at 60s per open pod, so even a user with several pods
+  // open sits far under this; the ceiling exists for runaway tabs and scripts.
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+
+router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const pod = await Pod.findById(podId) as { type?: string } | null;
