@@ -42,6 +42,13 @@ jest.mock('../../../services/messageClaimService', () => ({
   release: (...a) => mockRelease(...a),
 }));
 
+const mockTypingStart = jest.fn();
+const mockTypingStop = jest.fn();
+jest.mock('../../../services/agentTypingService', () => ({
+  emitAgentTypingStart: (...a) => mockTypingStart(...a),
+  emitAgentTypingStop: (...a) => mockTypingStop(...a),
+}));
+
 const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime', require('../../../routes/agentsRuntime'));
@@ -78,5 +85,52 @@ describe('claim routes', () => {
     const res = await request(app).delete('/api/agents/runtime/messages/52907/claim');
     expect(res.status).toBe(200);
     expect(mockRelease).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'ux-lead' }));
+  });
+
+  // ── ADR-018 D7: the claim IS the visibility signal ─────────────────────────
+
+  test('a won claim fires the typing indicator for the life of the lease', async () => {
+    const expiresAt = new Date(Date.now() + 90_000).toISOString();
+    mockClaim.mockResolvedValue({ claimed: true, expiresAt });
+    const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockTypingStart).toHaveBeenCalledTimes(1);
+    const [agent, timeoutMs] = mockTypingStart.mock.calls[0];
+    expect(agent).toMatchObject({ podId: 'p1', agentName: 'ux-lead' });
+    expect(agent.displayName).toBeTruthy();
+    // Lease-derived window: ~90s, not the service's 30s default.
+    expect(timeoutMs).toBeGreaterThan(80_000);
+    expect(timeoutMs).toBeLessThanOrEqual(90_000);
+  });
+
+  test('a LOST claim fires nothing — the holder is the one typing, not us', async () => {
+    mockClaim.mockResolvedValue({ claimed: false, claimedBy: 'nova' });
+    const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockTypingStart).not.toHaveBeenCalled();
+  });
+
+  test('a typing-indicator failure never fails the claim itself', async () => {
+    mockClaim.mockResolvedValue({ claimed: true, expiresAt: new Date().toISOString() });
+    mockTypingStart.mockImplementation(() => { throw new Error('socket down'); });
+    const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({ podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(res.body.claimed).toBe(true);
+  });
+
+  test('release clears the indicator using the pod the claim row carried', async () => {
+    mockRelease.mockResolvedValue({ released: true, podId: 'p1' });
+    const res = await request(app).delete('/api/agents/runtime/messages/52907/claim');
+    expect(res.status).toBe(200);
+    expect(mockTypingStop).toHaveBeenCalledWith(
+      expect.objectContaining({ podId: 'p1', agentName: 'ux-lead' }),
+    );
+  });
+
+  test('a release miss (lease already re-won) clears nothing', async () => {
+    mockRelease.mockResolvedValue({ released: false });
+    const res = await request(app).delete('/api/agents/runtime/messages/52907/claim');
+    expect(res.status).toBe(200);
+    expect(mockTypingStop).not.toHaveBeenCalled();
   });
 });
