@@ -112,14 +112,22 @@ describe('resolveApproval lifecycle', () => {
     expect(mockPodCreate).not.toHaveBeenCalled();
   });
 
-  test('expiry fails closed: 410, row marked expired, nothing executes', async () => {
+  test('a decision past expiresAt is honored and stamped decidedAfterExpiry (ADR-017:201)', async () => {
+    // Expiry is advisory age, not refusal — refusing would convert
+    // fail-closed into fail-silent (the owner's explicit intent dropped
+    // because a timer won). Caught as an ADR-017/ADR-020 conflict by
+    // pod-architect in the 2026-08-13 fleet review; ADR-017 wins.
     const row = flaggedRow({ expiresAt: new Date(Date.now() - 1000) });
     mockApprovalFindById.mockResolvedValue(row);
-    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
-    expect(res.status).toBe(410);
-    expect(row.status).toBe('expired');
-    expect(row.save).toHaveBeenCalled();
-    expect(mockPodCreate).not.toHaveBeenCalled();
+    const resolved = flaggedRow({ status: 'resolved', decision: 'declined', decidedAfterExpiry: true });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'declined' });
+
+    expect(res.status).toBe(200);
+    const [, update] = mockApprovalFindOneAndUpdate.mock.calls[0];
+    expect(update.$set.decidedAfterExpiry).toBe(true);
+    expect(update.$set.status).toBe('resolved');
   });
 
   test('losing the atomic transition race returns 409 without executing', async () => {
@@ -174,7 +182,30 @@ describe('approved create_pod execution — D2: user authority owns', () => {
       { $push: { members: 'guide-bot-1' } },
     );
     expect(resolved.executedAt).toBeInstanceOf(Date);
-    expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-1' }));
+    expect(resolved.executionResult).toEqual(expect.objectContaining({ podId: 'newpod-1', agentJoined: true }));
+  });
+
+  test('agent-join failure is carried in the result, never a clean "done" (sprint-review finding)', async () => {
+    // The pod is real (user owns it), but membership without an installation
+    // 403s every post — a lied face here is unrecoverable because execution
+    // is at-most-once. The result must carry the partial truth.
+    mockApprovalFindById.mockResolvedValue(flaggedRow());
+    const resolved = flaggedRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockPodCreate.mockResolvedValue({ _id: 'newpod-2', name: 'Design Studio' });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    mockInstallUpsert.mockRejectedValue(new Error('install collection offline'));
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executedAt).toBeInstanceOf(Date);
+    expect(resolved.executionResult).toEqual(expect.objectContaining({
+      podId: 'newpod-2',
+      agentJoined: false,
+      agentJoinError: expect.stringContaining('install collection offline'),
+    }));
+    expect(resolved.executionError).toBeUndefined();
   });
 
   test('execution failure keeps the decision and records the error honestly', async () => {

@@ -45,6 +45,10 @@ export interface IApprovalAction extends Document {
   decision?: ApprovalDecision;
   resolvedBy?: Types.ObjectId;
   resolvedAt?: Date;
+  // ADR-017:201 — expiry is advisory age, not refusal. A decision landed
+  // past expiresAt is honored AND stamped, so the audit record carries the
+  // staleness fact.
+  decidedAfterExpiry?: boolean;
   executedAt?: Date;
   executionResult?: unknown;
   executionError?: string;
@@ -73,6 +77,7 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     decision: { type: String, enum: ['approved', 'declined'] },
     resolvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     resolvedAt: { type: Date },
+    decidedAfterExpiry: { type: Boolean },
     executedAt: { type: Date },
     executionResult: { type: Schema.Types.Mixed },
     executionError: { type: String },

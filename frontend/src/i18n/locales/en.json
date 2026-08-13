@@ -939,11 +939,12 @@
     "decline": "Decline",
     "deciding": "Deciding…",
     "waitingForOwner": "Waiting for the workspace owner to decide.",
+    "aged": "This proposal has been waiting a while — double-check it still makes sense.",
     "approved": "✓ Approved — done.",
     "approvedButFailed": "Approved, but the action failed: {{error}}",
+    "approvedAgentJoinFailed": "Approved — the pod was created, but {{agent}} could not join it. Open the pod and re-add the agent.",
     "declined": "Declined.",
     "expired": "Expired without a decision.",
-    "moot": "No longer applicable.",
     "openResult": "Open the new pod",
     "errors": {
       "expired": "This approval expired before the decision landed.",

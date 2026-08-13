@@ -934,11 +934,12 @@
     "decline": "拒绝",
     "deciding": "处理中…",
     "waitingForOwner": "等待工作区所有者决定。",
+    "aged": "该提议已等待较久 — 请确认它仍然适用。",
     "approved": "✓ 已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
+    "approvedAgentJoinFailed": "已批准 — Pod 已创建，但 {{agent}} 未能加入。请打开该 Pod 重新添加智能体。",
     "declined": "已拒绝。",
     "expired": "已过期，未做出决定。",
-    "moot": "已不再适用。",
     "openResult": "打开新 Pod",
     "errors": {
       "expired": "该批准在决定生效前已过期。",

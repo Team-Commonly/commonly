@@ -31,10 +31,19 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const payload = message.payload || {};
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
-  const expired = status === 'flagged' && payload.expiresAt
-    ? new Date(payload.expiresAt).getTime() < Date.now()
-    : status === 'expired';
-  const resultPodId = (payload.executionResult as { podId?: string } | undefined)?.podId;
+  // ADR-017:201 — expiry is advisory AGE, not refusal. A flagged card past
+  // expiresAt stays decidable; it renders an age warning beside live buttons
+  // rather than dead ones. Only an explicitly-transitioned 'expired' status
+  // renders the terminal face.
+  const aged = status === 'flagged' && !!payload.expiresAt
+    && new Date(payload.expiresAt).getTime() < Date.now();
+  const execution = payload.executionResult as
+    | { podId?: string; agentJoined?: boolean; agentJoinError?: string }
+    | undefined;
+  const resultPodId = execution?.podId;
+  // Partial success is its own truth: the pod exists (user owns it) but the
+  // agent couldn't join and would 403 on every post — say so, don't say done.
+  const agentJoinFailed = execution?.agentJoined === false;
 
   const decide = async (decision: 'approved' | 'declined') => {
     if (deciding || !payload.approvalId) return;
@@ -61,36 +70,45 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         </div>
         <div className="v2-approval__summary">{payload.summary || message.content}</div>
 
-        {status === 'flagged' && !expired && (
-          isOwner ? (
-            <div className="v2-approval__actions">
-              <button
-                type="button"
-                className="v2-approval__btn v2-approval__btn--approve"
-                disabled={deciding}
-                onClick={() => decide('approved')}
-              >
-                {deciding ? t('approvalCard.deciding') : t('approvalCard.approve')}
-              </button>
-              <button
-                type="button"
-                className="v2-approval__btn v2-approval__btn--decline"
-                disabled={deciding}
-                onClick={() => decide('declined')}
-              >
-                {t('approvalCard.decline')}
-              </button>
-            </div>
-          ) : (
-            <div className="v2-approval__state">{t('approvalCard.waitingForOwner')}</div>
-          )
+        {status === 'flagged' && (
+          <>
+            {aged && (
+              <div className="v2-approval__state v2-approval__state--expired">
+                {t('approvalCard.aged')}
+              </div>
+            )}
+            {isOwner ? (
+              <div className="v2-approval__actions">
+                <button
+                  type="button"
+                  className="v2-approval__btn v2-approval__btn--approve"
+                  disabled={deciding}
+                  onClick={() => decide('approved')}
+                >
+                  {deciding ? t('approvalCard.deciding') : t('approvalCard.approve')}
+                </button>
+                <button
+                  type="button"
+                  className="v2-approval__btn v2-approval__btn--decline"
+                  disabled={deciding}
+                  onClick={() => decide('declined')}
+                >
+                  {t('approvalCard.decline')}
+                </button>
+              </div>
+            ) : (
+              <div className="v2-approval__state">{t('approvalCard.waitingForOwner')}</div>
+            )}
+          </>
         )}
 
         {status === 'resolved' && payload.decision === 'approved' && (
-          <div className="v2-approval__state v2-approval__state--approved">
+          <div className={`v2-approval__state ${payload.executionError || agentJoinFailed ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
             {payload.executionError
               ? t('approvalCard.approvedButFailed', { error: payload.executionError })
-              : t('approvalCard.approved')}
+              : agentJoinFailed
+                ? t('approvalCard.approvedAgentJoinFailed', { agent: payload.agentName || 'agent' })
+                : t('approvalCard.approved')}
             {resultPodId && !payload.executionError && (
               <button
                 type="button"
@@ -109,17 +127,15 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           </div>
         )}
 
-        {(status === 'expired' || (status === 'flagged' && expired)) && (
+        {status === 'expired' && (
           <div className="v2-approval__state v2-approval__state--expired">
             {t('approvalCard.expired')}
           </div>
         )}
-
-        {status === 'moot' && (
-          <div className="v2-approval__state v2-approval__state--expired">
-            {t('approvalCard.moot')}
-          </div>
-        )}
+        {/* No 'moot' face: its only writer is the delivery-failure branch,
+            which fires precisely when no card message exists to render it
+            (pod-architect, fleet review 2026-08-13). The model keeps the
+            state for audit; the UI declares only reachable faces. */}
 
         {error && <div className="v2-approval__error" role="alert">{error}</div>}
       </div>

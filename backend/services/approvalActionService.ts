@@ -225,13 +225,14 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     };
   }
 
-  if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
-    row.status = 'expired';
-    await row.save();
-    await updateCardEverywhere(row);
-    // Fail closed: "retiring an escalation is never an approval."
-    return { status: 410, body: { error: 'Approval expired', approval: buildCardPayload(row) } };
-  }
+  // ADR-017:201 — expired stays DECIDABLE. Refusing a late decision would
+  // convert fail-closed into fail-silent: the owner's explicit intent
+  // dropped because a timer won. `expiresAt` is advisory age the card
+  // renders as a warning; a decision past it is honored and stamped
+  // `decidedAfterExpiry` so the audit record carries the staleness fact.
+  // (ADR-020's original no-op-on-expiry contradicted the ADR it implements
+  // — caught by pod-architect in the 2026-08-13 fleet review.)
+  const decidedAfterExpiry = !!(row.expiresAt && row.expiresAt.getTime() < Date.now());
 
   // Atomic transition — the status filter makes a concurrent double-resolve
   // lose cleanly instead of double-executing.
@@ -239,7 +240,11 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     { _id: row._id, status: 'flagged' },
     {
       $set: {
-        status: 'resolved', decision, resolvedBy: callerUserId, resolvedAt: new Date(),
+        status: 'resolved',
+        decision,
+        resolvedBy: callerUserId,
+        resolvedAt: new Date(),
+        ...(decidedAfterExpiry ? { decidedAfterExpiry: true } : {}),
       },
     },
     { new: true },
@@ -309,7 +314,13 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
   }
 
   // Bring the proposing agent along: clone its origin-pod installation shape
-  // into the new pod, then add its bot user to members.
+  // into the new pod, then add its bot user to members. A join failure must
+  // NOT be swallowed into a clean "done" — the pod is real (user owns it),
+  // but a membership-without-installation agent 403s on every post, so the
+  // card must carry the partial truth (sprint-review finding, 2026-08-13:
+  // execution is at-most-once, so a lied face here is unrecoverable).
+  let agentJoined = false;
+  let agentJoinError: string | undefined;
   try {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentIdentityService = require('./agentIdentityService');
@@ -348,12 +359,22 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
         { _id: pod._id, members: { $ne: botUser._id } },
         { $push: { members: botUser._id } },
       );
+      agentJoined = true;
+    } else {
+      agentJoinError = 'agent identity could not be resolved';
     }
   } catch (agentErr) {
-    console.warn('[approval] create_pod agent-join failed:', (agentErr as Error).message);
+    agentJoinError = (agentErr as Error).message?.slice(0, 200) || 'agent join failed';
+    console.warn('[approval] create_pod agent-join failed:', agentJoinError);
   }
 
-  return { podId: String(pod._id), podName: pod.name, podType: type };
+  return {
+    podId: String(pod._id),
+    podName: pod.name,
+    podType: type,
+    agentJoined,
+    ...(agentJoinError ? { agentJoinError } : {}),
+  };
 };
 
 export default { proposeAction, resolveApproval, buildCardPayload };

@@ -6943,6 +6943,11 @@
   font-weight: 600;
 }
 
+.v2-approval__state--attention {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .v2-approval__state--expired {
   color: var(--v2-text-muted);
   font-style: italic;
