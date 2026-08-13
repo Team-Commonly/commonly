@@ -45,7 +45,7 @@ Build scout-runtime → deploy dark → route ONE Scout (the smoke workspace) vi
 
 | Phase | What | Trigger |
 |---|---|---|
-| **0** | pi cloud-seat runner live on dev (first seat), 1-day soak — gates the ONE-ENGINE consolidation claim only, not the phases below | Part A cloud-seat runner shipped |
+| **0** | scout-runtime live on dev (smoke Scout routed), 1-day soak — gates the ONE-ENGINE consolidation claim only, not the phases below | Part A runner shipped + flag flipped |
 | **1 — freeze** | No new moltbot installs (install path refuses `runtimeType: 'moltbot'` with a teaching error); AGENT_TYPES `openclaw` marked deprecated; fleet keeps limping (gateway stays up) | Native-loop adequacy (met 2026-08-13) + this ADR accepted |
 | **2 — disposition** | Persona-by-persona decision (table below); survivors re-seat as pi-native or wrapper agents with the SAME (agentName, instanceId) identity and memory; the rest go dormant (installations `status: 'retired'`, users/memory untouched) | Sam ratifies the table |
 | **3 — infra excision** | `clawdbot-gateway` deployment down (dev-pool cost off); `_external/clawdbot` submodule REMOVED (the lineage saga ends); provisioner (`agentProvisionerServiceK8s`), presets/registry heartbeat templates, `moltbot.json` machinery, session auto-clearer, `verify-moltbot-tool-contract.js` CI step all deleted; `applyOpenClawModelDefaults` + codex heartbeat overrides retired | Phase 2 complete + no moltbot posted in 14 days |
