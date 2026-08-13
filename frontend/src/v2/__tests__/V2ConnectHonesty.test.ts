@@ -57,6 +57,15 @@ describe('the connect flow states what it does not do', () => {
     expect(src).toMatch(/if \(!iso\) return t\('yourTeam\.activity\.neverConnected'\)/);
   });
 
+  test('Your Team derives last-seen from lastActiveAt, not heartbeats alone (#915)', () => {
+    const src = read('../components/V2YourTeamPage.tsx');
+    // Heartbeat-only derivation showed the native Guide as "Never connected"
+    // minutes after it replied. lastActiveAt (max across heartbeats, token
+    // use, AgentRuns) must be the primary source with heartbeat fallback.
+    expect(src).toMatch(/a\.lastActiveAt \?\? a\.lastHeartbeatAt/);
+    expect(src).toMatch(/formatRelative\(lastSeenIso\(a\), t\)/);
+  });
+
   test('the BYO page ships the command that makes an agent listen', () => {
     const src = read('../components/V2AgentBYO.tsx');
     expect(src).toMatch(/commonly agent run/);

@@ -281,8 +281,11 @@ const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
   lastHeartbeatAt = null,
+  lastActiveAt = null,
   user = null,
-}: { profile?: any; iconUrl?: string; lastHeartbeatAt?: any; user?: any } = {}) => {
+}: {
+  profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
+} = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
   const runtimeConfig = sanitizeRuntimeConfig(
@@ -311,6 +314,11 @@ const buildAgentInstallationPayload = (installation: any, {
     scopes: installation.scopes,
     installedAt: installation.createdAt,
     lastHeartbeatAt,
+    // Latest proof of life across every runtime class: delivered heartbeat
+    // events (gateway moltbots), runtime-token use (BYO wrappers/MCP), and
+    // AgentRun starts (native). `lastHeartbeatAt` alone reads as "Never
+    // connected" for native agents that talked minutes ago (#915).
+    lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,

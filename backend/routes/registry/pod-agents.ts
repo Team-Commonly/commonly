@@ -154,6 +154,37 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
     );
 
+    // Native agents never heartbeat and never use a runtime token — their
+    // proof of life is AgentRun rows. Same key shape as heartbeatMap; uses
+    // the { podId, agentName, instanceId, startedAt } index. Aggregation
+    // $match does not cast, so podId must be an ObjectId (#915).
+    let runRows: any[] = [];
+    try {
+      const AgentRun = require('../../models/AgentRun');
+      const mongoose = require('mongoose');
+      runRows = await AgentRun.aggregate([
+        {
+          $match: {
+            podId: new mongoose.Types.ObjectId(String(podId)),
+            agentName: { $in: installations.map((i: any) => i.agentName) },
+          },
+        },
+        { $sort: { startedAt: -1 } },
+        {
+          $group: {
+            _id: { agentName: '$agentName', instanceId: '$instanceId' },
+            lastRunAt: { $first: '$startedAt' },
+          },
+        },
+      ]);
+    } catch (runErr) {
+      // Activity enrichment is advisory — never fail the roster over it.
+      console.warn('[pod-agents] AgentRun activity lookup failed:', (runErr as Error).message);
+    }
+    const runMap = new Map(
+      runRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId || 'default'}`, r.lastRunAt]),
+    );
+
     const registryEntries = await AgentRegistry.find({
       agentName: { $in: installations.map((i: any) => i.agentName) },
     }).select('agentName iconUrl').lean();
@@ -206,7 +237,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
     const userRows = usernameSet.size > 0
       ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select('username botMetadata')
+        .select('username botMetadata agentRuntimeTokens.lastUsedAt')
         .lean()
       : [];
     const userByUsername = new Map<string, any>(
@@ -222,10 +253,22 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const instanceKey = `${i.agentName}:${i.instanceId || 'default'}`;
         const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
         const user = userByUsername.get(username) || null;
+        // Max across the three proof-of-life sources; each covers a runtime
+        // class the others miss (heartbeats: gateway; token use: BYO/MCP;
+        // runs: native).
+        const tokenTimes = (user?.agentRuntimeTokens || [])
+          .map((tok: any) => (tok?.lastUsedAt ? new Date(tok.lastUsedAt).getTime() : 0));
+        const candidates = [
+          heartbeatMap.get(instanceKey), runMap.get(instanceKey), ...tokenTimes,
+        ]
+          .map((v: any) => (v ? new Date(v).getTime() : 0))
+          .filter((v: number) => Number.isFinite(v) && v > 0);
+        const lastActiveAt = candidates.length > 0 ? new Date(Math.max(...candidates)) : null;
         return buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',
           lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
+          lastActiveAt,
           user,
         });
       }),
