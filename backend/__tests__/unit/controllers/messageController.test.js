@@ -85,7 +85,9 @@ describe('messageController', () => {
       await messageController.createMessage(req, res);
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
-        agentDelivery: { enqueued: 0, implicit: [], agentsInPod: 2 },
+        agentDelivery: {
+          enqueued: 0, implicit: [], agentsInPod: 2, woken: 0,
+        },
       });
       expect(AgentMentionService.enqueueMentions).toHaveBeenCalled();
       expect(AgentMentionService.enqueueDmEvent).not.toHaveBeenCalled();
@@ -116,7 +118,35 @@ describe('messageController', () => {
       });
       expect(res.json).toHaveBeenCalledWith({
         ...mockMessage,
-        agentDelivery: { enqueued: 1, implicit: [], agentsInPod: 2 },
+        agentDelivery: {
+          enqueued: 1, implicit: [], agentsInPod: 2, woken: 0,
+        },
+      });
+    });
+
+    it('counts wake-on-message targets so the composer hint stays truthful (#914)', async () => {
+      const mockMessage = { id: 4, content: 'hello with no mention' };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue(mockMessage);
+      // The Guide's wake-on-message path: nothing mention-enqueued, one woken.
+      AgentMentionService.enqueueMentions.mockResolvedValueOnce({
+        enqueued: [], implicit: [], skipped: [], woken: ['guide'],
+      });
+      AgentInstallation.countDocuments.mockResolvedValueOnce(1);
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: 'hello with no mention' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        ...mockMessage,
+        agentDelivery: {
+          enqueued: 0, implicit: [], agentsInPod: 1, woken: 1,
+        },
       });
     });
 

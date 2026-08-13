@@ -1,12 +1,13 @@
 // @ts-nocheck
 import React, { useState } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2PodChat from '../components/V2PodChat';
 import { AuthContext } from '../../context/AuthContext';
 
+let mockSocketValue = { socket: null, connected: false };
 jest.mock('../../context/SocketContext', () => ({
-  useSocket: () => ({ socket: null, connected: false }),
+  useSocket: () => mockSocketValue,
 }));
 
 jest.mock('axios', () => {
@@ -30,6 +31,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   sessionStorage.clear();
+  mockSocketValue = { socket: null, connected: false };
 });
 
 const authValue = {
@@ -127,6 +129,9 @@ describe('V2PodChat agent delivery hint', () => {
 
   test.each([
     ['an agent was enqueued', { enqueued: 1, implicit: [], agentsInPod: 1 }],
+    ['a wake-on-message agent was woken (#914)', {
+      enqueued: 0, implicit: [], agentsInPod: 1, woken: 1,
+    }],
     ['the backend omits delivery metadata', undefined],
   ])('stays hidden when %s', async (_label, agentDelivery) => {
     const response = makeMessage('ordinary send', agentDelivery);
@@ -138,5 +143,33 @@ describe('V2PodChat agent delivery hint', () => {
     await screen.findByText('ordinary send');
 
     expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+  });
+
+  test('clears the visible hint the moment an agent starts typing (#914)', async () => {
+    const handlers = {};
+    mockSocketValue = {
+      socket: {
+        on: (event, fn) => { handlers[event] = fn; },
+        off: jest.fn(),
+        emit: jest.fn(),
+      },
+      connected: true,
+    };
+    const response = makeMessage('hello room', {
+      enqueued: 0, implicit: [], agentsInPod: 1,
+    });
+    renderHarness(response);
+
+    sendDraft('hello room');
+    const hint = await screen.findByRole('status');
+    expect(hint).toHaveTextContent('No agent was notified');
+
+    act(() => {
+      handlers.agent_typing_start({ podId: 'pod-1', agentName: 'guide', displayName: 'Guide' });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
+    });
   });
 });
