@@ -50,6 +50,8 @@ try {
 - **`postedViaTool` semantics carry over** (post/propose mark it; fallback-post only when unset) — the double-post guard is engine-independent.
 - **Guardrails:** LiteLLM-side guardrails ride the provider call unchanged (they live at the proxy, not the loop).
 - **Isolation:** session-per-run + `dispose()` + ephemeral `agentDir` means no cross-user state can accumulate in the engine layer. This is the first concrete D5 step; per-manifest worker-process execution is the next one and is out of scope here.
+- **Tool surface (amended 2026-08-13, Sam):** pi-Scout targets the kernel-blessed **MCP toolset** — the same `commonly_*` surface BYO/MCP agents get — not just the seven native-loop tools. Implementation stays defineTool wrappers over our own handlers (same dispatch authority, same D1 manifest-allowlist filtering); MCP is the contract, not necessarily the wire. The weiaodi incident (你好 into an agentless room) is the standing reminder of why the per-user agent must be a first-class citizen of the full kernel surface.
+- **Workspace isolation (amended 2026-08-13, Sam):** each session gets an ephemeral per-user workspace directory as its `cwd`/`agentDir` (created per run, destroyed with `dispose()`); a worker-process pool for true OS-level isolation is the named Phase 2 of this track — NOT a wrapper-process-per-user, which cannot scale to the 96 Scouts now installed. The scheduler-multiplexed session model IS the per-user pattern; the CLI wrapper pattern remains for heavyweight cloud seats.
 - **Session resume** (pi `-c`, spike-validated) is deliberately **not** in v1 — today's loop is stateless per run; resume is a later phase with its own ADR note when conversational memory-in-engine is wanted.
 
 ### Rollout
@@ -58,7 +60,7 @@ Merge dark → flip `PI_ENGINE_ENABLED=1` on dev in a quiet window → Scout run
 
 ## Part B — OpenClaw retirement, staged and gated
 
-**Gate for everything below: Part A live and soaked (Phase 0).** Identity rule throughout (CLAUDE.md rule 8): retiring a runtime NEVER deletes User rows, memory envelopes, or pod history — identity outlives the driver.
+**Gating amended 2026-08-13 (Sam + review): Phases 1–2 gate on the NATIVE loop being an adequate host for survivors — already proven — not on pi.** Retirement and the pi engine proceed on independent timelines; only the one-engine consolidation waits for Part A. Phase 0 below becomes the gate for the consolidation claim, not for the freeze. Identity rule throughout (CLAUDE.md rule 8): retiring a runtime NEVER deletes User rows, memory envelopes, or pod history — identity outlives the driver.
 
 | Phase | What | Trigger |
 |---|---|---|
