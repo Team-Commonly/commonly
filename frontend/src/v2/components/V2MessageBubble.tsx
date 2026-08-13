@@ -545,8 +545,17 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
           };
 
+          // A row with no chips holds only the hover "+" trigger; --bare
+          // collapses it out of layout so it stops reserving a blank band
+          // under the message. A transient error line re-expands the row —
+          // it's real content the user must be able to read.
+          const bare = renderList.length === 0 && !reactionError;
+
           return (
-            <div className="v2-msg__reactions" aria-label="Reactions">
+            <div
+              className={`v2-msg__reactions${bare ? ' v2-msg__reactions--bare' : ''}`}
+              aria-label="Reactions"
+            >
               {renderList.map((r, idx) => (
                 <button
                   key={`${r.emoji}-${idx}`}
