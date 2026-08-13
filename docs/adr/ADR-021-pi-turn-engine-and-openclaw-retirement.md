@@ -45,6 +45,54 @@ Entitlement-gated hosted seats (`entitlements.cloudAgents`; the missions-unlock 
 
 Build scout-runtime → deploy dark → route ONE Scout (the smoke workspace) via the flag → compare AgentRun metrics against the native baseline (error kinds, latency, tokens) → widen to all Scouts → native loop demoted to fallback. Any regression: flip `SCOUT_RUNTIME_ENABLED` off.
 
+## Part A.1 — Build spec (decisions ratified by Sam, 2026-08-13)
+
+Three contested points settled: **transport = the CAP event queue** (the runtime is architecturally "N wrappers in one process," joining through the same door as every external driver — no new private API); **AgentRun accounting is kernel-owned** (scheduler creates the row, runtime PATCHes it through an authenticated runtime endpoint — if credits ever bill from these rows, the meter is never written by the thing being metered); **failure semantics are manual-fallback only in v1** (runtime down → turns queue and deliver late rather than wrong; no auto engine switching mid-conversation).
+
+### Components
+
+- **`agent-runtime/`** — new top-level deployable (own `package.json`: Node 22, `@earendil-works/pi-coding-agent` pinned, `@commonlyai/mcp`; own Dockerfile). Helm: `agent-runtime-deployment.yaml` + PVC, **dev-pool** (stateful — never spot, ADR-015), 1 replica in v1 (sessions pin to one box; HA later), no public ingress, egress restricted to the API and LiteLLM.
+- **`deploy-dev.yml`** gains the image (workflow-file change → samxu01 push per identity policy).
+
+### Turn flow (Q1: CAP queue)
+
+1. Backend scheduler treats a hosted agent as an external runtime: enqueues `AgentEvent` (mention/wake) instead of running in-process. Engine branch: manifest `engine: 'pi'` **and** `HOSTED_RUNTIME_ENABLED=1`; per-install override first (smoke Scout), manifest-wide after soak. Everything upstream — mention resolution, claims/leases (ADR-018), caps, `dailyRunCap` — unchanged.
+2. The runtime polls/claims events per hosted agent with that agent's own runtime token (the same endpoints the wrapper CLI uses — CAP dogfooded), honoring the claim protocol before executing.
+3. Turn executes in the agent's session; replies and actions go through MCP tools; expected added latency ~1–3s over in-process, inside what typing indicators already cover.
+
+### Session engine
+
+- `createAgentSession` per `(agentName, instanceId)`: `noTools: 'all'` (zero pi builtins, permanent), `customTools` = defineTool wrappers over an **embedded `@commonlyai/mcp` client** authenticated as that agent (MCP is the wire, not just the contract), `modelRuntime` → LiteLLM (per-manifest model), session/workspace dir `/state/agents/<agentName>-<instanceId>/` on the PVC.
+- **LRU hydration**: max ~16 sessions in memory (the gateway's proven concurrency), idle sessions disposed to disk; pi compaction enabled; size-triggered session reset (the 400KB gateway lesson, done as policy not cron-hack).
+- System prompt from installation config — same projection the native loop reads; `refresh-native-agent-configs` keeps working.
+- Caps (`MAX_TURNS`/`MAX_TOKENS`/`MAX_WALL_CLOCK_MS`) enforced from `session.subscribe` events → abort + dispose, same `errorKind` vocabulary as the native loop so metrics stay comparable.
+
+### AgentRun accounting (Q2: kernel-owned)
+
+- Scheduler creates the run row at enqueue (`status: 'queued'`), carries `runId` in the event payload.
+- New kernel endpoint `PATCH /api/agents/runtime/runs/:runId` — agent-token auth, ownership check (the run's `(agentName, instanceId)` must match the token's principal), accepts turn/token/status updates; terminal states close the row. Runtime never touches Mongo directly.
+
+### Credentials
+
+- Per-agent runtime tokens provisioned by `provision-hosted-agent-tokens.ts` into a dedicated K8s secret (`agent-runtime-tokens`, script-managed — deliberately NOT under ESO's `api-keys`), mounted read-only; never on the PVC; rotation = re-run + rolling restart.
+
+### Failure semantics (Q3: manual only)
+
+- Runtime down: events queue under existing redelivery/expiry semantics; Scout goes quiet rather than wrong. Recovery = runtime returns (drains queue) or operator flips `HOSTED_RUNTIME_ENABLED=0` (new turns route to the native-loop fallback). No automatic engine switching — two engines must never interleave one conversation.
+
+### Test tiers (ADR-009)
+
+- Unit: session LRU/eviction, tool-mapping parity (every manifest-allowed tool registers — the schema-lag class), cap enforcement with the SDK mocked.
+- Service: runs PATCH endpoint auth + ownership (foreign-agent token 403s), engine-branch routing.
+- Cluster/dev-env: smoke Scout end-to-end through the queue.
+
+### Milestones
+
+- **M1**: runtime skeleton, smoke Scout routed end-to-end on dev (hardcoded single tenant).
+- **M2**: LRU + caps + AgentRun PATCH + claims protocol.
+- **M3**: all Scouts routed; fallback flip validated live; Phase 0 soak starts.
+- **M4** (separate PRs, later): user-created cloud agents + credit metering — own ADR section when pricing lands.
+
 ## Part B — OpenClaw retirement, staged and gated
 
 **Gating amended 2026-08-13 (Sam + review): Phases 1–2 gate on the NATIVE loop being an adequate host for survivors — already proven — not on pi.** Retirement and the pi engine proceed on independent timelines; only the one-engine consolidation waits for Part A. Phase 0 below becomes the gate for the consolidation claim, not for the freeze. Identity rule throughout (CLAUDE.md rule 8): retiring a runtime NEVER deletes User rows, memory envelopes, or pod history — identity outlives the driver.
