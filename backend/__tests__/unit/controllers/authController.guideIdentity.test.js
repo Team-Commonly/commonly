@@ -45,25 +45,35 @@ jest.mock('../../../services/agentMessageService', () => ({
   postMessage: (...args) => mockPostMessage(...args),
 }));
 
+const { createHash } = require('crypto');
 const authController = require('../../../controllers/authController');
+
+// The per-user-agent identity convention (Sam, 2026-08-13): short, stable,
+// and OPAQUE — the raw userId must not survive into any identity tier.
+const conventionId = (userId) => `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
 
 describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  test('installs the guide under a userId-derived instanceId, never default', async () => {
+  test('installs the guide under the convention instanceId — short, opaque, never default', async () => {
     await authController.createDefaultWorkspacePod('User-1');
+    const expected = conventionId('User-1');
 
     const [filter, update] = mockInstallUpsert.mock.calls[0];
-    expect(filter.instanceId).toBe('uuser-1');
-    expect(update.$setOnInsert.instanceId).toBe('uuser-1');
+    expect(filter.instanceId).toBe(expected);
+    expect(update.$setOnInsert.instanceId).toBe(expected);
     expect(filter.instanceId).not.toBe('default');
+    // Convention shape: u + 10 hex. Neither the raw userId nor its lowercase
+    // form may appear in the identity.
+    expect(filter.instanceId).toMatch(/^u[a-f0-9]{10}$/);
+    expect(filter.instanceId).not.toContain('user-1');
 
     expect(mockGetOrCreateAgentUser).toHaveBeenCalledWith('guide', expect.objectContaining({
-      instanceId: 'uuser-1',
+      instanceId: expected,
     }));
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
       agentName: 'guide',
-      instanceId: 'uuser-1',
+      instanceId: expected,
     }));
   });
 
@@ -72,7 +82,7 @@ describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
     await authController.createDefaultWorkspacePod('bbbb2222');
 
     const ids = mockInstallUpsert.mock.calls.map(([filter]) => filter.instanceId);
-    expect(ids).toEqual(['uaaaa1111', 'ubbbb2222']);
+    expect(ids).toEqual([conventionId('aaaa1111'), conventionId('bbbb2222')]);
     expect(new Set(ids).size).toBe(2);
   });
 });

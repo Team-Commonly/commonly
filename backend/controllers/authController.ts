@@ -168,11 +168,21 @@ const createDefaultWorkspacePod = async (userId: any) => {
       // ADR-003 keys the memory envelope by (agentName, instanceId) — so a
       // shared instanceId would give every user's Guide ONE memory doc: user
       // A's "my repo is X" surfacing in user B's workspace. Same leak class
-      // as the 2026-07-03 BYO incident, caught pre-data this time. The
-      // userId-derived instanceId forks memory, AgentRuns, caps, and the bot
-      // User row per user; displayName stays "Guide" everywhere (per-user
-      // guides never share a pod, so no render collision exists).
-      const guideInstanceId = `u${String(userId).toLowerCase()}`;
+      // as the 2026-07-03 BYO incident, caught pre-data this time.
+      //
+      // CONVENTION (Sam, 2026-08-13 — this is the per-user-agent identity
+      // rule, not a guide special case): `u` + first 10 hex of
+      // sha256(userId). Short enough to live in a mention handle, stable and
+      // derivable at signup with no lookup, and OPAQUE — the raw ObjectId
+      // must not survive into any identity tier (the first cut used
+      // u<userId> verbatim and leaked it through instanceId, username, and
+      // the collision-suffixed displayName; fleet review measured all
+      // three). 10 hex = 40 bits; the (agentName, podId, instanceId) upsert
+      // plus per-user uniqueness makes the astronomically-unlikely collision
+      // a visible install conflict, not a silent identity merge.
+      // eslint-disable-next-line global-require
+      const { createHash } = require('crypto');
+      const guideInstanceId = `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
 
       await AgentInstallation.findOneAndUpdate(
         { agentName: guideApp.agentName, podId: pod._id, instanceId: guideInstanceId },

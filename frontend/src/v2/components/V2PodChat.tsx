@@ -474,7 +474,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       const username = buildAgentUsername(rawName, a.instanceId);
       const display = a.displayName || a.profile?.displayName || rawName;
       const instance = (a.instanceId || 'default').toLowerCase();
-      const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
+      // Shortest-unambiguous handle — mirrors the backend's mention map,
+      // which resolves a bare agentName whenever the pod has exactly one
+      // installation of it. Per-user agents carry opaque instanceIds
+      // (guide/u3f9c2a1b7d); surfacing those as THE handle made "@guide"
+      // read as "@u3f9c2a1b7d" (Sam, 2026-08-13). instanceId handles exist
+      // for the case they were built for: two instances of one agent
+      // actually sharing a pod.
+      const sameNameCount = (agents || [])
+        .filter((other) => ((other as { name?: string; agentName?: string }).name || other.agentName || '').toLowerCase() === rawName.toLowerCase())
+        .length;
+      const mentionValue = sameNameCount > 1 && instance && instance !== 'default' && instance !== rawName.toLowerCase()
         ? instance
         : rawName.toLowerCase();
       const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
@@ -778,7 +788,15 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       if (created) {
         const delivery = created.agentDelivery;
         const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
-        const rawMentionHandle = exampleAgent?.instanceId
+        // Same shortest-unambiguous rule as the typeahead: suggest the bare
+        // agentName unless this pod actually holds two instances of it — a
+        // per-user agent's opaque instanceId must never be the suggested
+        // handle ("Try @u3f9c2a1b7d").
+        const exampleNameCount = agents
+          .filter((agent) => (agent.agentName || '').toLowerCase() === (exampleAgent?.agentName || '').toLowerCase())
+          .length;
+        const rawMentionHandle = exampleNameCount > 1
+          && exampleAgent?.instanceId
           && exampleAgent.instanceId.toLowerCase() !== 'default'
           ? exampleAgent.instanceId
           : exampleAgent?.agentName;
