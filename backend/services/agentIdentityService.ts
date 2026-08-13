@@ -311,6 +311,16 @@ interface GetOrCreateOptions {
  * we don't compare it against itself (would always return canonical and
  * never apply a suffix).
  */
+/**
+ * Opaque per-user instance tokens (`u` + sha256(userId) prefix, or the
+ * legacy long form) are machine identity, never human-facing copy — the
+ * same convention the mention-handle rule enforces on the frontend
+ * (isOpaqueInstanceToken in V2PodChat, #930). Keep the two regexes
+ * identical.
+ */
+const isOpaquePerUserToken = (instanceId: string): boolean =>
+  /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase());
+
 async function resolveCollisionFreeDisplayName(
   desiredName: string,
   instanceId: string,
@@ -318,6 +328,14 @@ async function resolveCollisionFreeDisplayName(
 ): Promise<string> {
   const trimmed = (desiredName || '').trim();
   if (!trimmed) return trimmed;
+  // Per-user agents (opaque instance tokens) keep the bare name. Every
+  // user's Guide is displayName "Guide" — suffixing the collision would
+  // put the opaque token in every chat byline of every user except the
+  // first ("Guide (U0da521ab41)", observed live 2026-08-13). Their pods
+  // are the owner's own surfaces, so two users' same-named agents never
+  // co-render; if a shared-pod surface ever needs disambiguation, the
+  // honest label is the OWNER, not the token (ADR-020 follow-up).
+  if (isOpaquePerUserToken(instanceId)) return trimmed;
   // If the name already carries a parenthetical suffix, treat as
   // already-disambiguated and pass through. Avoids "Pixel (Pixel-Demo) (Pixel-Demo)"
   // loops when the same install reprovisions.

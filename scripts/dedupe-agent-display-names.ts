@@ -56,6 +56,18 @@ const looksAlreadyDisambiguated = (displayName: string): boolean => (
   /\([^)]+\)\s*$/.test(displayName.trim())
 );
 
+// Opaque per-user instance tokens (`u` + sha256(userId) prefix, or the
+// legacy long form) are machine identity, never human-facing copy. Their
+// agents are excluded from dedup entirely: every user's Guide shares the
+// displayName "Guide" by design, their pods are the owner's own surfaces
+// (no co-render ambiguity), and a token suffix in a byline is exactly the
+// leak the #930 convention exists to prevent. Keep this regex identical
+// to isOpaquePerUserToken in agentIdentityService (the inline resolver)
+// and isOpaqueInstanceToken in V2PodChat.
+const isOpaquePerUserToken = (instanceId: string): boolean => (
+  /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((instanceId || '').toLowerCase())
+);
+
 const pickCanonical = (users: BotUser[]): BotUser => {
   // Deterministic preference: shortest instanceId wins (so "pixel" beats
   // "pixel-demo"); ties resolved alphabetically. Stable across re-runs.
@@ -84,6 +96,8 @@ async function main() {
   for (const u of bots) {
     const display = (u.botMetadata?.displayName || '').trim();
     if (!display) continue;
+    // Per-user agents neither receive a suffix nor force one on peers.
+    if (isOpaquePerUserToken(u.botMetadata?.instanceId || '')) continue;
     if (!groups.has(display)) groups.set(display, []);
     groups.get(display)!.push(u);
   }

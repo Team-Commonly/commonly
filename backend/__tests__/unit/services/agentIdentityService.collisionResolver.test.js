@@ -188,6 +188,41 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata.displayName).toBe('Pixel (Pixel-Demo)');
   });
 
+  test('opaque per-user token colliding with a canonical peer keeps the bare name', async () => {
+    // Every user's Guide is displayName "Guide" by design. Suffixing the
+    // collision puts the opaque token in every chat byline of every user
+    // except the first ("Guide (U0da521ab41)", observed live 2026-08-13).
+    // Opaque tokens are machine identity — same convention as the #930
+    // mention-handle rule — so the resolver must skip them entirely.
+    mockPeers = [
+      {
+        _id: 'first-users-guide',
+        botMetadata: { displayName: 'Guide', instanceId: 'u11aa22bb33' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('guide', {
+      instanceId: 'u0da521ab41',
+      displayName: 'Guide',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Guide');
+  });
+
+  test('legacy long-form opaque token also keeps the bare name', async () => {
+    mockPeers = [
+      {
+        _id: 'first-users-guide',
+        botMetadata: { displayName: 'Guide', instanceId: 'u11aa22bb33' },
+      },
+    ];
+    await AgentIdentityService.getOrCreateAgentUser('guide', {
+      instanceId: 'u6a7d154b0ec237d4b15dd28b',
+      displayName: 'Guide',
+    });
+    expect(mockSaved.length).toBe(1);
+    expect(mockSaved[0].botMetadata.displayName).toBe('Guide');
+  });
+
   test('new install IS canonical (shorter instanceId than existing peer) — keeps bare name', async () => {
     // pixel-stub-x already has displayName="Pixel" with longer instanceId
     mockPeers = [
