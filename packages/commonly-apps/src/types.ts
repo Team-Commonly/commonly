@@ -61,4 +61,17 @@ export interface NativeAgentDefinition {
   maxTurns?: number;
   maxTokens?: number;
   maxWallClockMs?: number;
+
+  /**
+   * Per-user apps (the Guide) publish a registry row but are NOT installed
+   * into the demo pod by the seeder — installation happens per workspace at
+   * signup.
+   */
+  perUser?: boolean;
+
+  /** Hard ceiling on runs per installation per day. Absent = uncapped. */
+  dailyRunCap?: number;
+
+  /** ADR-018 D8: opt installations into wake-on-message at install time. */
+  wakeOnMessage?: boolean;
 }

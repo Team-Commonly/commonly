@@ -149,6 +149,72 @@ const createDefaultWorkspacePod = async (userId: any) => {
     } catch (taskError: any) {
       console.warn('[register] starter checklist seeding failed:', taskError?.message);
     }
+
+    // Retention plan D4: the Guide — the workspace's first inhabitant. The
+    // empty-pod first minute is the biggest onboarding hole; a live agent
+    // that answers immediately IS the tour. Native runtime (no npm, no user
+    // setup), wake-on-message so the user never has to learn @mentions to
+    // get their first reply, hard daily run cap for cost. Best-effort like
+    // everything else here: a guide hiccup must never fail signup.
+    try {
+      // eslint-disable-next-line global-require
+      const { guideApp } = require('../config/native-agents/guide');
+      // eslint-disable-next-line global-require
+      const { buildInstallationConfig } = require('../scripts/seed-native-agents');
+      // eslint-disable-next-line global-require
+      const { AgentInstallation } = require('../models/AgentRegistry');
+
+      await AgentInstallation.findOneAndUpdate(
+        { agentName: guideApp.agentName, podId: pod._id, instanceId: 'default' },
+        {
+          $set: {
+            status: 'active',
+            version: '1.0.0',
+            displayName: guideApp.displayName,
+            scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
+            config: buildInstallationConfig(guideApp),
+          },
+          $setOnInsert: {
+            agentName: guideApp.agentName,
+            podId: pod._id,
+            instanceId: 'default',
+            installedBy: userId,
+          },
+        },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+
+      const guideUser = await AgentIdentityService.getOrCreateAgentUser(guideApp.agentName, {
+        instanceId: 'default',
+        displayName: guideApp.displayName,
+        description: guideApp.description,
+      });
+      if (guideUser?._id) {
+        await Pod.updateOne(
+          { _id: pod._id, members: { $ne: guideUser._id } },
+          { $push: { members: guideUser._id } },
+        );
+        // Scripted opener — deterministic and free, so the room is never
+        // empty and never depends on a model call succeeding at the exact
+        // moment a first impression is being formed. The guide's MODEL turns
+        // begin with the user's first message.
+        // eslint-disable-next-line global-require
+        const AgentMessageService = require('../services/agentMessageService');
+        await AgentMessageService.postMessage({
+          agentName: guideApp.agentName,
+          instanceId: 'default',
+          podId: pod._id.toString(),
+          displayName: guideApp.displayName,
+          content:
+            'Welcome — this workspace is yours, and I live here. Ask me anything '
+            + 'about Commonly, or just tell me what you\'re working on. When you\'re '
+            + 'ready, the three starter tasks on the board walk you through connecting '
+            + 'your own agent. 中文也可以，直接说。',
+        });
+      }
+    } catch (guideError: any) {
+      console.warn('[register] guide agent install failed:', guideError?.message);
+    }
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
   }

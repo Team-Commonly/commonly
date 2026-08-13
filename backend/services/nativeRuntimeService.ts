@@ -484,6 +484,37 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // D4 cost ceiling: per-installation daily run cap, enforced before any
+  // claim or model work. The Guide runs on a paid model in every new user's
+  // workspace — bounded by construction, not by hope. Count failure fails
+  // OPEN (#887's shape: an infrastructure fault must not silence an agent);
+  // only an actual at-cap count declines, loudly.
+  const dailyRunCap = Number(cfg.dailyRunCap);
+  if (Number.isFinite(dailyRunCap) && dailyRunCap > 0) {
+    try {
+      const AgentRunModel = require('../models/AgentRun');
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const runsToday = await AgentRunModel.countDocuments({
+        podId: installation.podId,
+        agentName,
+        instanceId,
+        startedAt: { $gte: dayStart },
+      });
+      if (runsToday >= dailyRunCap) {
+        console.warn(
+          `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
+          + `in pod ${podId} — declining until UTC midnight`,
+        );
+        return {
+          runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+        };
+      }
+    } catch (err) {
+      console.warn('[native-runtime] daily-cap count failed — proceeding unguarded:', (err as Error).message);
+    }
+  }
+
   // ADR-018 D3: native is one of OUR drivers — deterministic claim-before-act,
   // the same rule the CLI wrapper enforces (#894). Fleet audit (Sharpen msg
   // 53016) found this gap: the event queue pre-claims DELIVERY, but nothing
