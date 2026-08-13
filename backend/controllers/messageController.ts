@@ -27,6 +27,9 @@ interface NormalizedMessage {
   user_id: string;
   content: string;
   message_type: string;
+  // ADR-020 D3: structured card payload — must survive the Mongo fallback's
+  // whitelist or cards silently vanish on that path.
+  payload?: unknown;
   created_at: unknown;
   updated_at: unknown;
   user?: { username: string; profile_picture?: string };
@@ -57,6 +60,7 @@ const normalizeMongo = (m: Record<string, unknown>): NormalizedMessage => {
     user_id: idSource ? (idSource as { toString(): string }).toString() : '',
     content: m.content as string,
     message_type: (m.messageType as string) || 'text',
+    ...(m.payload != null ? { payload: m.payload } : {}),
     created_at: m.createdAt,
     updated_at: m.updatedAt,
     user: populatedUsername

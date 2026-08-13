@@ -14,6 +14,9 @@ interface MessageRow {
   user_id: string;
   content: string;
   message_type: string;
+  // ADR-020 D3: structured component payload (approval cards). JSONB; null
+  // for ordinary messages.
+  payload?: unknown;
   reply_to_message_id?: string;
   created_at: unknown;
   updated_at?: unknown;
@@ -79,18 +82,20 @@ class Message {
     content: string,
     messageType = 'text',
     replyToMessageId: string | null = null,
+    payload: unknown = null,
   ): Promise<MessageRow> {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
     });
     const query = `
-      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
     try {
       const result = await (pool as PgPool).query(query, [
         podId, userId, content || '', messageType, replyToMessageId || null,
+        payload == null ? null : JSON.stringify(payload),
       ]);
       await (pool as PgPool).query(
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
@@ -118,7 +123,7 @@ class Message {
     try {
       let query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type,
+          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
           m.reply_to_message_id, m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
@@ -151,7 +156,7 @@ class Message {
     try {
       const query = `
         SELECT
-          m.id, m.pod_id, m.user_id, m.content, m.message_type,
+          m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
           m.reply_to_message_id, m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture,
           rm.id as reply_msg_id, rm.content as reply_content,
@@ -180,6 +185,21 @@ class Message {
       RETURNING *
     `;
     const result = await (pool as PgPool).query(query, [content, id]);
+    return result.rows[0] as unknown as MessageRow | undefined;
+  }
+
+  // ADR-020 D3: card status transitions rewrite the message's payload so
+  // every client (and late loaders) see the authoritative card face.
+  static async updatePayload(id: string, payload: unknown): Promise<MessageRow | undefined> {
+    const query = `
+      UPDATE messages
+      SET payload = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+      RETURNING *
+    `;
+    const result = await (pool as PgPool).query(query, [
+      payload == null ? null : JSON.stringify(payload), id,
+    ]);
     return result.rows[0] as unknown as MessageRow | undefined;
   }
 

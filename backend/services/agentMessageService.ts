@@ -95,6 +95,10 @@ interface PostMessageOptions {
   content: string;
   metadata?: MetadataDoc;
   messageType?: string;
+  // ADR-020 D3: structured component payload (approval cards). Bypasses
+  // sanitizeAgentContent by design — content stays the sanitized fallback
+  // text; payload is server-composed, never model prose.
+  payload?: unknown;
   instanceId?: string;
   displayName?: string;
   replyToMessageId?: string | null;
@@ -108,6 +112,7 @@ interface PostTargetOptions {
   content: string;
   messageType?: string;
   metadata?: MetadataDoc;
+  payload?: unknown;
   agentUser: AgentUserDoc;
   displayName?: string;
   replyToMessageId?: string | null;
@@ -153,6 +158,7 @@ interface MessageNormalized {
   self?: boolean;
   createdAt: Date | string;
   metadata?: MetadataDoc;
+  payload?: unknown;
   profile_picture?: string;
   replyTo?: { id: string; content: string; username: string; userId: string } | null;
 }
@@ -808,6 +814,7 @@ class AgentMessageService {
       content,
       metadata = {},
       messageType = 'text',
+      payload = null,
       instanceId = 'default',
       displayName,
       replyToMessageId = null,
@@ -1228,6 +1235,7 @@ class AgentMessageService {
       content: sanitizedContent,
       messageType,
       metadata,
+      payload,
       agentUser,
       displayName,
       replyToMessageId,
@@ -1287,7 +1295,7 @@ class AgentMessageService {
   static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
     const {
       agentName, instanceId = 'default', podId, content, messageType = 'text',
-      metadata = {}, agentUser, displayName, replyToMessageId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
+      metadata = {}, payload = null, agentUser, displayName, replyToMessageId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1322,13 +1330,14 @@ class AgentMessageService {
           console.warn('[agent-msg] PG pod backfill skipped:', (syncErr as Error).message);
         }
         const newMessage = await (PGMessage as {
-          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null): Promise<Record<string, unknown>>;
+          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null, payload?: unknown): Promise<Record<string, unknown>>;
         }).create(
           String(podId),
           String(agentUser._id),
           content,
           messageType,
           replyToMessageId,
+          payload,
         );
 
         // The raw INSERT row carries no reply JOIN, so a replying agent's
@@ -1363,6 +1372,7 @@ class AgentMessageService {
           profile_picture: agentUser.profilePicture,
           createdAt: newMessage.created_at as Date,
           metadata,
+          ...(payload != null ? { payload: newMessage.payload ?? payload } : {}),
         };
       } catch (pgError) {
         console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
@@ -1376,6 +1386,7 @@ class AgentMessageService {
         podId,
         messageType,
         metadata,
+        ...(payload != null ? { payload } : {}),
       });
 
       await mongoMessage.save();
@@ -1447,6 +1458,9 @@ class AgentMessageService {
         profile_picture: (message as MessageNormalized).profile_picture || agentUser.profilePicture,
         createdAt: (message as MessageNormalized).createdAt,
         metadata: (message as MessageNormalized).metadata || metadata,
+        // ADR-020 D3: card payloads ride the broadcast, same reason as
+        // replyTo below — the literal is a whitelist, absent fields vanish.
+        payload: (message as MessageNormalized).payload ?? payload ?? null,
         // Reply quote rides the broadcast so live viewers see the quoted
         // context without a reload (#646).
         replyTo: (message as MessageNormalized).replyTo ?? null,

@@ -1,12 +1,23 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type MessageType = 'text' | 'image' | 'system';
+// 'card' (ADR-020 D3): a message whose meaning lives in `payload`, not
+// regex-sniffed out of `content`. The union and the schema enum below are
+// declared independently — change BOTH.
+export type MessageType = 'text' | 'image' | 'system' | 'card';
 
 export interface IMessage extends Document {
   podId: Types.ObjectId;
   userId: Types.ObjectId;
   content: string;
   messageType: MessageType;
+  // Structured component payload (approval cards). Mixed like
+  // AgentEvent.payload; null/absent for ordinary messages.
+  payload?: unknown;
+  // Free-form service metadata. agentMessageService has passed this to the
+  // constructor since forever, but strict-mode Mongoose silently DROPPED it
+  // because the schema never declared it — declared now so the Mongo
+  // fallback path stops losing it.
+  metadata?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,9 +28,11 @@ const MessageSchema = new Schema<IMessage>({
   content: { type: String, required: true },
   messageType: {
     type: String,
-    enum: ['text', 'image', 'system'],
+    enum: ['text', 'image', 'system', 'card'],
     default: 'text',
   },
+  payload: { type: Schema.Types.Mixed },
+  metadata: { type: Schema.Types.Mixed },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

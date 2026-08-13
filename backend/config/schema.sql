@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS users (
 -- Migration: add is_bot column to existing tables (safe to run repeatedly)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 
+-- ADR-020 D3: structured message payload (approval cards and future
+-- server-defined message components). Self-applies at boot, same pattern
+-- as is_bot above. NULL for ordinary messages.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS payload JSONB;
+
 -- Sprint B5: message reactions. One row per (message, user, emoji) — a user
 -- can stack different emojis on the same message but each emoji is binary
 -- (toggle on/off). PG-only; Mongo fallback path doesn't get reactions in v1.
