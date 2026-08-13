@@ -14,7 +14,22 @@ Three lines converged this week:
 
 House rule that gates everything below (CLAUDE.md design rule 2): **never deprecate until the replacement is live.**
 
-## Part A — pi turn engine wiring spec (D1)
+## Part A — pi as the CLOUD-SEAT runtime (retargeted 2026-08-13, Sam)
+
+**Primary target: the hosted cloud seat (Tier 2), not Scout.** Sam's clarification: pi support means Commonly-hosted agents — few, heavyweight, entitlement-gated (`entitlements.cloudAgents`, currently default-false) — not the per-user Scout, whose native loop is adequate for its job (agreed 2026-08-13).
+
+### Cloud-seat architecture
+
+- **Shape: the cloud-codex pattern** — one isolated container + PVC per seat (`k8s/helm` per-agent Deployment template), which is the REAL workspace isolation: OS-level, per principal. pi replaces codex CLI as the brain.
+- **Runner:** a thin Node-22 process embedding the **pi SDK** (`createAgentSession`) — NOT a `pi -p` subprocess, because the community MCP extension fails headless (spike finding); tools must be registered programmatically. The runner polls CAP like every ADR-005 wrapper and executes turns in-session.
+- **Toolset:** the kernel-blessed `commonly_*` MCP surface, wired as defineTool wrappers over an MCP client against the instance API — MCP is the contract, defineTool is the wire.
+- **Model:** LiteLLM via the models.json-style provider config the spike validated — single auth surface, single quota pool, guardrails at the proxy.
+- **Session continuity:** pi `-c` resume semantics (SDK session persistence on the seat PVC) — a cloud seat is long-lived by design, unlike Scout runs.
+- **Entitlement + product tie-in:** seats are the concrete prize for the missions→hosted-agent-unlock track; provisioning stays per-Helm-values (or a later provisioner) gated on `entitlements.cloudAgents`.
+
+### Appendix — Scout engine swap (deferred, spec kept)
+
+The in-process session-per-run spec below was verified against the real SDK and remains the documented path IF Scout's job ever outgrows the native loop (compaction, resume, long-horizon admin work). It is explicitly NOT current work.
 
 Verified against the real SDK (`@earendil-works/pi-coding-agent@0.84.1`, types read from dist, pinned exactly — upstream releases every few days).
 
