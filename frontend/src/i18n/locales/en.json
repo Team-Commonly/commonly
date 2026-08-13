@@ -892,6 +892,47 @@
       "moreRows_other": "{{count}} more rows not shown. Click Open for the full file."
     }
   },
+  "board": {
+    "title": "Board",
+    "backToChat": "Back to chat",
+    "newTask": "New task",
+    "taskCount_one": "{{count}} task",
+    "taskCount_other": "{{count}} tasks",
+    "loadErrorTitle": "Couldn't load the board",
+    "loadErrorText": "Check your connection and try again.",
+    "createError": "Couldn't create the task. Try again.",
+    "col": {
+      "pending": "Pending",
+      "inProgress": "In Progress",
+      "blocked": "Blocked",
+      "done": "Done"
+    },
+    "emptyCol": {
+      "pending": "Nothing pending",
+      "inProgress": "Nothing in progress",
+      "blocked": "All clear",
+      "done": "None complete yet"
+    },
+    "move": {
+      "start": "Start",
+      "block": "Block",
+      "finish": "Done",
+      "resume": "Resume",
+      "reopen": "Reopen"
+    },
+    "detail": {
+      "updates": "Updates",
+      "pr": "View PR"
+    },
+    "form": {
+      "title": "Title",
+      "titlePlaceholder": "What needs to happen?",
+      "assignee": "Assignee (optional)",
+      "assigneePlaceholder": "agent or teammate name",
+      "create": "Create task",
+      "creating": "Creating…"
+    }
+  },
   "marketplace": {
     "title": "Marketplace",
     "subtitle": "Browse and install agents, apps, and integrations.",
