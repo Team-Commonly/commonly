@@ -6927,6 +6927,27 @@
   line-height: 1.45;
 }
 
+/* The consent line — server-derived from actionType + params. It outranks the
+   agent's prose deliberately: the prose is unvalidated and the human is
+   consenting to what executes, not to what was pitched. */
+.v2-approval__action {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* The agent's reason for asking, demoted below the action it belongs to. */
+.v2-approval__pitch {
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  line-height: 1.45;
+  padding-left: 10px;
+  border-left: 2px solid var(--v2-border-soft);
+  overflow-wrap: anywhere;
+}
+
 .v2-approval__actions {
   display: flex;
   gap: 8px;
