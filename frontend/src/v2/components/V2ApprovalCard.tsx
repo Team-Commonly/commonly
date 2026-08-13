@@ -61,7 +61,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   };
 
   return (
-    <div className="v2-msg v2-msg--system" data-testid="approval-card">
+    <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
       <div className="v2-approval">
         <div className="v2-approval__head">
           <span className="v2-approval__badge">{t('approvalCard.badge')}</span>

@@ -46,6 +46,48 @@ interface Res {
   json: (d: unknown) => void;
 }
 
+// Pending approvals for a pod, from the ApprovalAction rows — NOT the card
+// messages. Chat messages retire under the 30-day PG retention window while
+// approval rows never expire, so "scroll up and find the card" is unreliable
+// by construction; this is the durable index the inspector renders. Read
+// gate = pod visibility (members); DECIDING stays owner-only in resolve.
+router.get('/pending', approvalResolveLimit, auth, async (req: AuthedReq & { query?: Record<string, string> }, res: Res) => {
+  try {
+    const podId = String((req as { query?: Record<string, string> }).query?.podId || '');
+    const callerUserId = String(req.userId || req.user?._id || req.user?.id || '');
+    if (!callerUserId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!/^[a-f0-9]{24}$/i.test(podId)) {
+      return res.status(400).json({ error: 'podId is required' });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Pod = require('../models/Pod');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const DMService = require('../services/dmService');
+    const pod = await Pod.findById(podId);
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    const canView = await DMService.canViewPod(callerUserId, pod);
+    if (!canView) return res.status(403).json({ error: 'Access denied' });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ApprovalAction = require('../models/ApprovalAction');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { buildCardPayload } = require('../services/approvalActionService');
+    const rows = await ApprovalAction.find({ podId, status: 'flagged' })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    return res.status(200).json({
+      approvals: rows.map((row: unknown) => ({
+        ...buildCardPayload(row),
+        messageId: (row as { messageId?: string }).messageId || null,
+        createdAt: (row as { createdAt?: Date }).createdAt || null,
+      })),
+    });
+  } catch (err) {
+    console.error('GET /approvals/pending error:', err);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+
 router.post('/:approvalId/resolve', approvalResolveLimit, auth, async (req: AuthedReq, res: Res) => {
   try {
     const approvalId = String(req.params?.approvalId || '');

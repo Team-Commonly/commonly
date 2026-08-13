@@ -817,6 +817,63 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     socket.on('task_updated', onTaskUpdated);
     return () => { socket.off('task_updated', onTaskUpdated); };
   }, [pod?._id, socket, connected]);
+
+  // ADR-020 D3: pending approvals from the ApprovalAction rows — the durable
+  // index. Card MESSAGES retire under the 30-day retention window; a flagged
+  // approval must stay findable regardless of how far the card scrolled
+  // (Sam, 2026-08-13). Refetches on the same socket event that patches chat.
+  interface PendingApproval {
+    approvalId: string;
+    summary: string;
+    agentName: string;
+    ownerUserId: string;
+    expiresAt?: string;
+    createdAt?: string;
+  }
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [approvalRefresh, setApprovalRefresh] = useState(0);
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId) { setPendingApprovals([]); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<{ approvals: PendingApproval[] }>(
+          `/api/approvals/pending?podId=${encodeURIComponent(podId)}`,
+        );
+        if (!cancelled) setPendingApprovals(data.approvals || []);
+      } catch {
+        if (!cancelled) setPendingApprovals([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pod?._id, api, approvalRefresh]);
+
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId || !socket || !connected) return undefined;
+    const onCardUpdated = (payload: { podId?: string } | null) => {
+      if (!payload || (payload.podId && payload.podId !== podId)) return;
+      setApprovalRefresh((n) => n + 1);
+    };
+    socket.on('messageCardUpdated', onCardUpdated);
+    return () => { socket.off('messageCardUpdated', onCardUpdated); };
+  }, [pod?._id, socket, connected]);
+
+  const decideApproval = async (approvalId: string, decision: 'approved' | 'declined') => {
+    if (decidingApprovalId) return;
+    setDecidingApprovalId(approvalId);
+    try {
+      await api.post(`/api/approvals/${encodeURIComponent(approvalId)}/resolve`, { decision });
+    } catch {
+      // The refetch below shows the authoritative state either way.
+    } finally {
+      setDecidingApprovalId(null);
+      setApprovalRefresh((n) => n + 1);
+    }
+  };
   const [privateError, setPrivateError] = useState<string | null>(null);
   // ADR-001 §3.10 + Sprint B1: agent-DM pods involving the currently-inspected
   // agent. Surfaces clickable links so humans can observe agent↔agent
@@ -1766,6 +1823,53 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
 
               {tab === 'overview' && (
                 <>
+                  {pendingApprovals.length > 0 && (
+                    <section className="v2-inspector__section" data-testid="inspector-approvals">
+                      <div className="v2-inspector__section-title">
+                        {t('inspector.approvals.title', { count: pendingApprovals.length })}
+                      </div>
+                      <div className="v2-inspector__approvals">
+                        {pendingApprovals.map((appr) => {
+                          const isApprovalOwner = !!currentUser?._id
+                            && String(currentUser._id) === String(appr.ownerUserId);
+                          return (
+                            <div key={appr.approvalId} className="v2-inspector__approval-row">
+                              <div className="v2-inspector__approval-summary" title={appr.summary}>
+                                {appr.summary}
+                              </div>
+                              <div className="v2-inspector__approval-meta">
+                                <span className="v2-inspector__approval-agent">{appr.agentName}</span>
+                                {isApprovalOwner ? (
+                                  <span className="v2-inspector__approval-actions">
+                                    <button
+                                      type="button"
+                                      className="v2-approval__btn v2-approval__btn--approve"
+                                      disabled={decidingApprovalId === appr.approvalId}
+                                      onClick={() => decideApproval(appr.approvalId, 'approved')}
+                                    >
+                                      {t('approvalCard.approve')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="v2-approval__btn v2-approval__btn--decline"
+                                      disabled={decidingApprovalId === appr.approvalId}
+                                      onClick={() => decideApproval(appr.approvalId, 'declined')}
+                                    >
+                                      {t('approvalCard.decline')}
+                                    </button>
+                                  </span>
+                                ) : (
+                                  <span className="v2-inspector__approval-waiting">
+                                    {t('inspector.approvals.waiting')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
                   {progressSection}
                   {nowSection}
                   {pod.description && goalSection}
