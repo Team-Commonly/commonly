@@ -26,22 +26,22 @@ describe('toolsForConfig', () => {
     }
   });
 
-  test('the guide manifest grants propose_action', () => {
+  test('the scout manifest grants propose_action', () => {
     // eslint-disable-next-line global-require
-    const { guideApp } = require('../../../config/native-agents/guide');
-    const tools = toolsForConfig({ tools: [...guideApp.tools] });
+    const { scoutApp } = require('../../../config/native-agents/scout');
+    const tools = toolsForConfig({ tools: [...scoutApp.tools] });
     expect(names(tools)).toContain('commonly_propose_action');
     // The manifest and the runtime's schema must agree — a declared tool with
     // no schema would silently vanish here.
-    expect(tools.length).toBe(guideApp.tools.length);
+    expect(tools.length).toBe(scoutApp.tools.length);
   });
 
   test('agent_status is declaration-gated like every other tool', () => {
     // Scout declares it; a legacy config or a minimal allowlist does not
     // receive it implicitly.
     // eslint-disable-next-line global-require
-    const { guideApp } = require('../../../config/native-agents/guide');
-    expect(names(toolsForConfig({ tools: [...guideApp.tools] }))).toContain('commonly_agent_status');
+    const { scoutApp } = require('../../../config/native-agents/scout');
+    expect(names(toolsForConfig({ tools: [...scoutApp.tools] }))).toContain('commonly_agent_status');
     expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_agent_status');
   });
 

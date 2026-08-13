@@ -158,7 +158,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
     // everything else here: a guide hiccup must never fail signup.
     try {
       // eslint-disable-next-line global-require
-      const { guideApp } = require('../config/native-agents/guide');
+      const { scoutApp } = require('../config/native-agents/scout');
       // eslint-disable-next-line global-require
       const { buildInstallationConfig } = require('../scripts/seed-native-agents');
       // eslint-disable-next-line global-require
@@ -182,37 +182,37 @@ const createDefaultWorkspacePod = async (userId: any) => {
       // a visible install conflict, not a silent identity merge.
       // eslint-disable-next-line global-require
       const { createHash } = require('crypto');
-      const guideInstanceId = `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
+      const scoutInstanceId = `u${createHash('sha256').update(String(userId)).digest('hex').slice(0, 10)}`;
 
       await AgentInstallation.findOneAndUpdate(
-        { agentName: guideApp.agentName, podId: pod._id, instanceId: guideInstanceId },
+        { agentName: scoutApp.agentName, podId: pod._id, instanceId: scoutInstanceId },
         {
           $set: {
             status: 'active',
             version: '1.0.0',
-            displayName: guideApp.displayName,
+            displayName: scoutApp.displayName,
             scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-            config: buildInstallationConfig(guideApp),
+            config: buildInstallationConfig(scoutApp),
           },
           $setOnInsert: {
-            agentName: guideApp.agentName,
+            agentName: scoutApp.agentName,
             podId: pod._id,
-            instanceId: guideInstanceId,
+            instanceId: scoutInstanceId,
             installedBy: userId,
           },
         },
         { upsert: true, setDefaultsOnInsert: true },
       );
 
-      const guideUser = await AgentIdentityService.getOrCreateAgentUser(guideApp.agentName, {
-        instanceId: guideInstanceId,
-        displayName: guideApp.displayName,
-        description: guideApp.description,
+      const scoutUser = await AgentIdentityService.getOrCreateAgentUser(scoutApp.agentName, {
+        instanceId: scoutInstanceId,
+        displayName: scoutApp.displayName,
+        description: scoutApp.description,
       });
-      if (guideUser?._id) {
+      if (scoutUser?._id) {
         await Pod.updateOne(
-          { _id: pod._id, members: { $ne: guideUser._id } },
-          { $push: { members: guideUser._id } },
+          { _id: pod._id, members: { $ne: scoutUser._id } },
+          { $push: { members: scoutUser._id } },
         );
         // Scripted opener — deterministic and free, so the room is never
         // empty and never depends on a model call succeeding at the exact
@@ -221,10 +221,10 @@ const createDefaultWorkspacePod = async (userId: any) => {
         // eslint-disable-next-line global-require
         const AgentMessageService = require('../services/agentMessageService');
         await AgentMessageService.postMessage({
-          agentName: guideApp.agentName,
-          instanceId: guideInstanceId,
+          agentName: scoutApp.agentName,
+          instanceId: scoutInstanceId,
           podId: pod._id.toString(),
-          displayName: guideApp.displayName,
+          displayName: scoutApp.displayName,
           content:
             'Welcome — I\'m Scout. This workspace is yours, and I live here. Ask me '
             + 'anything about Commonly, or just tell me what you\'re working on. When '
@@ -232,8 +232,8 @@ const createDefaultWorkspacePod = async (userId: any) => {
             + 'connecting your own agent — I can set that up for you too. 中文也可以，直接说。',
         });
       }
-    } catch (guideError: any) {
-      console.warn('[register] guide agent install failed:', guideError?.message);
+    } catch (scoutError: any) {
+      console.warn('[register] guide agent install failed:', scoutError?.message);
     }
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);

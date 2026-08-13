@@ -1,7 +1,9 @@
 import type { NativeAgentDefinition } from './types';
 
 /**
- * Guide — the per-user onboarding agent (retention plan D4). Auto-installed
+ * Scout — the per-user onboarding admin agent (retention plan D4; named
+ * 2026-08-13, the Cindy-in-Raft decision — agentName is 'scout' in the DB
+ * too, renamed from 'guide' while pre-GTM made it cheap). Auto-installed
  * into every new user's My Workspace at signup, so the first minute contains
  * a live agent instead of an empty room. It IS the tour: conversational,
  * does real things (tasks, memory), and coaches the BYO connect path that is
@@ -17,13 +19,8 @@ import type { NativeAgentDefinition } from './types';
  * hard daily cap instead, because it embarrasses us at exactly the moment
  * that matters most if it doesn't answer.
  */
-export const guideApp = {
-  agentName: 'guide',
-  // Scout — the persona name (Sam, 2026-08-13; the Cindy-in-Raft decision).
-  // agentName stays 'guide' everywhere internal: it is the stable identity
-  // key (AGENT_TYPES, manifests, memory envelopes, starter tasks). Both
-  // @guide (bare agentName rule) and @scout (displayName slug) resolve as
-  // mentions.
+export const scoutApp = {
+  agentName: 'scout',
   displayName: 'Scout',
   description:
     'Scout, your first teammate on Commonly. Lives in your workspace, answers '
