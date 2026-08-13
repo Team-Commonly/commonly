@@ -58,7 +58,11 @@ const makeMessage = (content, agentDelivery) => ({
   ...(agentDelivery ? { agentDelivery } : {}),
 });
 
-const DeliveryHarness = ({ response, sendSpy }) => {
+const DEFAULT_AGENTS = [{
+  agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', status: 'active',
+}];
+
+const DeliveryHarness = ({ response, sendSpy, agents = DEFAULT_AGENTS }) => {
   const [messages, setMessages] = useState([]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
@@ -69,9 +73,7 @@ const DeliveryHarness = ({ response, sendSpy }) => {
     pod: { _id: 'pod-1', name: 'Launch Room', type: 'chat' },
     members: [{ _id: 'u1', username: 'alice', isBot: false }],
     messages,
-    agents: [{
-      agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', status: 'active',
-    }],
+    agents,
     sendMessage,
     loading: false,
     error: null,
@@ -106,8 +108,38 @@ describe('V2PodChat agent delivery hint', () => {
 
     const hint = await screen.findByRole('status');
     expect(hint).toHaveTextContent('No agent was notified');
+    // A human-chosen instanceId ("aria") IS the identity — it stays the
+    // handle; agentName ("openclaw") is the runtime label we never surface.
     expect(hint).toHaveTextContent('@aria');
     expect(sessionStorage.getItem('v2.agentDeliveryHint.pod-1')).toBe('1');
+  });
+
+  test('an opaque per-user instance token is never the suggested handle', async () => {
+    // The u+sha10 convention (and its legacy long form) is a machine key.
+    // The backend resolves the bare agentName for single-install agents, so
+    // "@guide" both reads right and lands — "@u3f9c2a1b7d" does neither.
+    const response = makeMessage('hello guide', {
+      enqueued: 0, implicit: [], agentsInPod: 1,
+    });
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <DeliveryHarness
+            response={response}
+            sendSpy={jest.fn()}
+            agents={[{
+              agentName: 'guide', instanceId: 'u3f9c2a1b7d', displayName: 'Guide', status: 'active',
+            }]}
+          />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    sendDraft('hello guide');
+
+    const hint = await screen.findByRole('status');
+    expect(hint).toHaveTextContent('@guide');
+    expect(hint).not.toHaveTextContent('u3f9c2a1b7d');
   });
 
   test('shows at most once per pod per browser session', async () => {
