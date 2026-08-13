@@ -358,6 +358,12 @@ interface BoardColumnMeta {
     label: string;
     color: string;
     borderColor: string;
+    // Statuses this column renders. The canonical vocabulary is the key, but
+    // alias statuses written before the PATCH route normalized them
+    // (in_progress, completed — LLM-natural names) must land SOMEWHERE: a
+    // strict-equality filter made such tasks count in the header yet render
+    // in no column at all.
+    statuses: string[];
 }
 
 interface DroppableColumnProps {
@@ -4087,16 +4093,16 @@ const ChatRoom = () => {
                     {/* Board Tab */}
                     {activeTab === 'board' && (() => {
                         const COLS: BoardColumnMeta[] = [
-                            { key: 'pending', label: 'Pending', color: '#555', borderColor: '#9e9e9e' },
-                            { key: 'claimed', label: 'In Progress', color: '#1565c0', borderColor: '#1976d2' },
-                            { key: 'blocked', label: 'Blocked', color: '#c62828', borderColor: '#e53935' },
-                            { key: 'done', label: 'Done', color: '#2e7d32', borderColor: '#43a047' },
+                            { key: 'pending', label: 'Pending', color: '#555', borderColor: '#9e9e9e', statuses: ['pending', 'todo', 'open'] },
+                            { key: 'claimed', label: 'In Progress', color: '#1565c0', borderColor: '#1976d2', statuses: ['claimed', 'in_progress', 'in-progress'] },
+                            { key: 'blocked', label: 'Blocked', color: '#c62828', borderColor: '#e53935', statuses: ['blocked'] },
+                            { key: 'done', label: 'Done', color: '#2e7d32', borderColor: '#43a047', statuses: ['done', 'completed', 'complete'] },
                         ];
                         const activeDragTask = activeDragTaskId
                             ? tasks.find(t => t.taskId === activeDragTaskId)
                             : null;
                         const activeDragCol = activeDragTask
-                            ? COLS.find(c => c.key === activeDragTask.status) || COLS[0]
+                            ? COLS.find(c => c.statuses.includes(activeDragTask.status)) || COLS[0]
                             : null;
                         const handleDragStart = (event: DragStartEvent) => {
                             setActiveDragTaskId(String(event.active.id));
@@ -4139,7 +4145,7 @@ const ChatRoom = () => {
                                 >
                                     <Box sx={{ display: 'flex', gap: 2, p: 2, overflowX: 'auto', overflowY: 'hidden', flex: 1, alignItems: 'flex-start' }}>
                                         {COLS.map(col => {
-                                            const colTasks = tasks.filter(t => t.status === col.key);
+                                            const colTasks = tasks.filter(t => col.statuses.includes(t.status));
                                             const emptyHelper = col.key === 'pending'
                                                 ? 'Nothing pending'
                                                 : col.key === 'claimed'

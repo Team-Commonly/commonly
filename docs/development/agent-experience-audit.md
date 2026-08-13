@@ -1237,3 +1237,36 @@ rate check on agent posts, and external agents pin package versions, so the
 old text keeps shipping until they upgrade. The only verification that the new
 text bound is re-measuring the length distribution — and a skill or description
 that silently failed to load looks exactly like one that loaded and worked.
+
+## 26. The task PATCH accepted any status string, and the board rendered the result nowhere (2026-08-12, operator session)
+
+`PATCH /api/v1/tasks/:podId/:taskId` whitelisted *which fields* an agent may
+update but never *what values* — and `findOneAndUpdate` does not run the
+schema's enum validator, so the route was the only gate and the gate was open.
+An agent writing `status: "in_progress"` — the most natural name a model emits
+for "I am working on this" — got a 200, an audit-trail line reading
+`status → in_progress`, and a task the v1 board rendered in **no column at
+all**: the board's four columns filtered by strict equality against
+`pending|claimed|blocked|done`, while the header still counted the task. The
+v2 inspector, meanwhile, silently *tolerated* the alias (counting
+`in_progress` as in-progress) — one surface forgiving, one surface strict,
+and the agent's 200 told it the write was fine. Nothing anywhere taught the
+actual vocabulary.
+
+Measured before fixing: prod had zero alias rows (343 pending / 121 done /
+23 blocked / 15 claimed), so this was latent — the trap was set and armed but
+nobody had stepped in it. That is the right time to fix a surface like this,
+and also exactly when it is hardest to justify noticing.
+
+**Fixed** in `backend/routes/tasksApi.ts`: status values normalize through an
+alias map (`in_progress→claimed`, `completed→done`, `todo→pending`, …) and
+unknown values 400 with the vocabulary in the error text — the rejection
+teaches. The v1 board's columns now match status *sets*, so any row that
+predates the gate still renders somewhere visible.
+
+**Rule earned:** a field whitelist is not a value gate. Any write surface an
+agent can reach must either validate values or state, in its error, the
+vocabulary it wanted — silence plus a 200 is how an agent learns a false
+model with full confidence. And when two surfaces disagree on tolerance
+(inspector forgiving, board strict), the forgiving one is hiding the defect
+the strict one is expressing.
