@@ -57,10 +57,12 @@ const tokenFile = (name) => join(tokensDir(), `${name}.json`);
 
 export const saveAgentToken = (name, record) => {
   if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true });
+  // mode applies on create only — the record carries a live cm_agent_* secret,
+  // same handling as performInit's .commonly-env.
   writeFileSync(
     tokenFile(name),
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
-    'utf8',
+    { encoding: 'utf8', mode: 0o600 },
   );
 };
 
@@ -77,6 +79,91 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+};
+
+// ── env-var bootstrap for `agent run` (#913) ────────────────────────────────
+// The BYO connect page hands a fresh user two env exports and
+// `commonly agent run <name>` — on a machine that has never run
+// `commonly agent attach`, so no token file exists and run used to dead-end.
+// The runtime token IS the identity: everything else in the record either
+// comes from `GET /api/agents/runtime/installations` (agentName, instanceId,
+// podId) or is a local fact (which CLI binary to wrap). Returns a record ready
+// for saveAgentToken, or null when COMMONLY_AGENT_TOKEN isn't set (caller
+// falls back to the attach hint).
+export const BOOTSTRAP_ADAPTER_DETECT_ORDER = ['claude', 'codex'];
+
+export const bootstrapAgentRecordFromEnv = async ({
+  name,
+  env = process.env,
+  clientFactory = createClient,
+  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterOverride = null,
+  log = () => {},
+}) => {
+  const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
+  if (!runtimeToken) return null;
+  if (!runtimeToken.startsWith('cm_agent_')) {
+    throw new Error('COMMONLY_AGENT_TOKEN is set but is not a runtime token (expected cm_agent_… prefix).');
+  }
+  const instanceUrl = (env.COMMONLY_API_URL || '').trim() || resolveInstanceUrl(undefined);
+
+  let identity;
+  try {
+    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
+      .get('/api/agents/runtime/installations');
+  } catch (err) {
+    throw new Error(
+      `Could not resolve the agent behind COMMONLY_AGENT_TOKEN against ${instanceUrl}: ${err.message}. `
+      + 'Check the token was copied whole and the URL matches the instance that issued it.',
+    );
+  }
+
+  const installs = Array.isArray(identity?.installations) ? identity.installations : [];
+  const primary = installs.find((i) => i.type === 'installation' && i.status === 'active')
+    || installs[0] || null;
+
+  // The adapter names a binary on THIS machine — the one fact the server
+  // cannot know. Explicit --adapter wins; otherwise probe the known CLIs.
+  let adapterName = adapterOverride;
+  if (adapterOverride) {
+    const adapter = adapterRegistry.getAdapter(adapterOverride);
+    if (!adapter) {
+      throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${adapterRegistry.listAdapterNames().join(', ')}`);
+    }
+    if (!await adapter.detect()) {
+      throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
+    }
+  } else {
+    for (const candidate of BOOTSTRAP_ADAPTER_DETECT_ORDER) {
+      const adapter = adapterRegistry.getAdapter(candidate);
+      // eslint-disable-next-line no-await-in-loop
+      if (adapter && await adapter.detect()) { adapterName = candidate; break; }
+    }
+    if (!adapterName) {
+      throw new Error(
+        `No supported agent CLI found on PATH (looked for: ${BOOTSTRAP_ADAPTER_DETECT_ORDER.join(', ')}). `
+        + 'Install one, or pass --adapter <name>.',
+      );
+    }
+  }
+
+  // The token's identity wins over the CLI argument — a mistyped name must
+  // not fork a second identity for the same token.
+  const agentName = identity?.agentName || name;
+  if (String(agentName).toLowerCase() !== String(name).toLowerCase()) {
+    log(`token belongs to '${agentName}', not '${name}' — using the token's identity`);
+  }
+
+  return {
+    agentName,
+    instanceId: identity?.instanceId || primary?.instanceId || 'default',
+    podId: primary?.podId || null,
+    instanceUrl,
+    runtimeToken,
+    adapter: adapterName,
+    environment: buildDefaultEnvironment(adapterName),
+    workspacePath: null,
+  };
 };
 
 /**
@@ -1552,11 +1639,33 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
+    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
     .action(async (name, opts) => {
-      const record = loadAgentToken(name);
+      let record = loadAgentToken(name);
       if (!record) {
-        console.error(`No token for '${name}'. Run: commonly agent attach <adapter> --pod <podId> --name ${name}`);
-        process.exit(1);
+        // First run on this machine: the BYO connect page hands out env vars,
+        // not a token file — bootstrap the record from them (#913).
+        try {
+          record = await bootstrapAgentRecordFromEnv({
+            name,
+            adapterOverride: opts.adapter || null,
+            log: (line) => console.log(`[${name}] ${line}`),
+          });
+        } catch (err) {
+          console.error(err.message);
+          process.exit(1);
+        }
+        if (record) {
+          saveAgentToken(record.agentName, record);
+          console.log(`[${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+        } else {
+          console.error(
+            `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
+            + ` (shown on the Connect your own agent page) and re-run, or:`
+            + ` commonly agent attach <adapter> --pod <podId> --name ${name}`,
+          );
+          process.exit(1);
+        }
       }
 
       const adapter = getAdapter(record.adapter);
