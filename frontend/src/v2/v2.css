@@ -5738,6 +5738,35 @@
   }
 }
 
+/* A reactions row with no chips (--bare) holds only the invisible hover
+ * "+" — but it still reserved 24px + 6px margin under EVERY message, and
+ * that phantom band is what made the approval card sit visibly far from
+ * the text that triggered it (Sam, 2026-08-13). Bare rows collapse to
+ * zero height and the trigger floats at the row's top-right, in the empty
+ * space beside the author line — no layout shift on hover, nothing
+ * overlapped (head content is all left-aligned). Rows with chips, or a
+ * transient error line, stay in flow: those are content, not chrome.
+ * The picker keeps anchoring to the add-wrap and opens above it. */
+.v2-msg {
+  position: relative;
+}
+.v2-msg__reactions--bare {
+  height: 0;
+  margin-top: 0;
+}
+.v2-msg__reactions--bare .v2-msg__reaction-add-wrap {
+  position: absolute;
+  top: 10px;
+  right: 4px;
+}
+/* With the trigger at the row's right edge, a left-anchored picker grows
+ * rightward out of the chat column (measured jutting over the inspector);
+ * anchor it right so it opens leftward into the chat area instead. */
+.v2-msg__reactions--bare .v2-msg__reaction-picker {
+  left: auto;
+  right: 0;
+}
+
 .v2-msg__reaction-picker {
   position: absolute;
   bottom: calc(100% + 6px);

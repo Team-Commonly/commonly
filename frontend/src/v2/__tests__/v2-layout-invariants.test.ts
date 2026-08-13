@@ -240,6 +240,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg__reaction-emoji')).toContain('line-height: 22px');
   });
 
+  test('the bare reactions row collapses instead of reserving a blank band', () => {
+    // A no-chips row holds only the opacity-0 hover "+", but it used to keep
+    // 24px + 6px of layout space under EVERY message — the phantom band that
+    // pushed approval cards visibly away from their trigger text (2026-08-13).
+    // Both halves are load-bearing: height 0 removes the band; the absolute
+    // add-wrap keeps the trigger reachable without re-expanding the row. The
+    // rule looks inert in isolation — do not "clean it up".
+    expect(ruleBody(v2, '.v2-msg__reactions--bare')).toContain('height: 0');
+    expect(ruleBody(v2, '.v2-msg__reactions--bare .v2-msg__reaction-add-wrap')).toContain(
+      'position: absolute',
+    );
+  });
+
   test('create-pod panel no longer ships audience options (ADR-016 / #768)', () => {
     // Creation asks name + purpose only; visibility is a later act. If option
     // buttons ever come back to this panel they MUST carry the
