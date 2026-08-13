@@ -92,8 +92,15 @@ describe('Auth Routes Integration Tests', () => {
       expect(pod.name).toBe('My Workspace');
       expect(pod.type).toBe('chat');
       expect(pod.joinPolicy).toBe('invite-only');
-      // Creator is the sole member.
-      expect(pod.members.map((m) => m.toString())).toEqual([user._id.toString()]);
+      // Membership changed by plan D4 (the Guide, PR #911): the workspace's
+      // first inhabitants are the creator AND the per-user guide agent — the
+      // "sole member" assertion encoded the pre-Guide behavior.
+      const memberIds = pod.members.map((m) => m.toString());
+      expect(memberIds).toContain(user._id.toString());
+      const guideUser = await User.findOne({ isBot: true, 'botMetadata.agentName': 'guide' });
+      expect(guideUser).toBeTruthy();
+      expect(memberIds).toContain(guideUser._id.toString());
+      expect(memberIds).toHaveLength(2);
     });
 
     it('defaults entitlements.cloudAgents to false for new signups', async () => {
