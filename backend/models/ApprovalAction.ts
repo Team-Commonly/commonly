@@ -13,8 +13,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *   - transitions are one-way and idempotent: a card resolves at most once,
  *     and execution happens at most once (executedAt set exactly when the
  *     approved action ran)
- *   - past expiresAt, resolution fails closed (410) and the row is marked
- *     expired on read — "retiring an escalation is never an approval"
+ *   - expiresAt is advisory AGE, never refusal (ADR-017:201): a decision
+ *     past it is honored and stamped `decidedAfterExpiry`. Nothing writes
+ *     status 'expired' in v1 — the state exists for future sweeps only.
  *
  * The resolved row IS the AuthorizedAction record from ADR-020 D2: it links
  * the approving user, the executing agent identity, the action + params, and

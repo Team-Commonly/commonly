@@ -2,7 +2,8 @@
  * ADR-020 D2/D3 — the approval lifecycle's load-bearing invariants:
  *  - only the owner decides; agents (isBot) never decide even as owner
  *  - one-way transitions: resolve at most once, execute at most once
- *  - expiry fails closed ("retiring an escalation is never an approval")
+ *  - expiry is advisory age (ADR-017:201): late decisions are honored and
+ *    stamped decidedAfterExpiry — never refused
  *  - decline never executes
  *  - the executor creates resources owned by the USER, never the bot
  */
