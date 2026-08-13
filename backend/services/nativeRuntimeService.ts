@@ -424,7 +424,7 @@ async function dispatchTool(
         // One derivation, shared with the pod-agents roster route — the
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
         const { AgentInstallation } = require('../models/AgentRegistry');
-        const { collectPodAgentActivity, deriveAgentState } = require('./agentStateService');
+        const { collectPodAgentActivity, deriveActivityBucket } = require('./agentStateService');
         const installations = await AgentInstallation.find({
           podId: ctx.podId,
           status: 'active',
@@ -438,7 +438,7 @@ async function dispatchTool(
             name: i.displayName || i.agentName,
             agentName: i.agentName,
             runtime: runtimeType,
-            state: deriveAgentState(lastActiveAt, runtimeType),
+            state: deriveActivityBucket(lastActiveAt, runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
           };
         });

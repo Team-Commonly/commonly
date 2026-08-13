@@ -1,24 +1,127 @@
 /**
- * agentStateService — the ONE derivation of "is this agent alive?".
+ * agentStateService — #891 surface 1's derivation, kept pure.
  *
- * Proof of life comes from three sources, each covering a runtime class the
- * others miss: heartbeat AgentEvents (gateway moltbots), runtime-token
- * lastUsedAt (BYO wrappers / MCP seats), AgentRun rows (native in-process
- * agents). The pod-agents roster route and the native runtime's
- * commonly_agent_status tool both call THIS module — the Raft comparison
- * (P4, 2026-08-12) flagged that we derive status in multiple places with
- * different vocabulary; this is the consolidation point. Do not fork the
- * bucket thresholds into a surface-local copy.
+ * Answers, per agent install: can it actually respond to a mention right
+ * now? States are PER RUNTIME CLASS because the #891 review measured
+ * `lastUsedAt` lying for every class except the polling one:
+ *
+ *   - BYO wrapper/MCP installs (host 'byo' or legacy local-cli, no
+ *     webhookUrl): the wrapper polls every ~5s while alive, so lastUsedAt is
+ *     an honest reachability signal. null → never-connected · fresh →
+ *     listening · stale → gone-dark.
+ *   - push webhooks (webhookUrl set) and native runtime: reachable by
+ *     construction — no dot, no guess.
+ *   - everything else (gateway moltbots, cloud): 'unknown'. The gateway
+ *     stamps one shared boot timestamp for a whole fleet (finding A);
+ *     pretending to know is the false positive the ratified doc bans.
+ *
+ * Split key (decision 1): the state is the EXPLANATION and goes to any pod
+ * viewer; `fixCommand` is an instruction and attaches only for the owner —
+ * an instruction addressed to someone who cannot perform it is the P1/P2
+ * contradiction the review caught.
+ *
+ * lastUsedAt is the max across BOTH token stores (User.agentRuntimeTokens
+ * and AgentInstallation.runtimeTokens) — the legacy/new split that made
+ * live agents read null (finding D). Pure function: callers fetch, this
+ * derives; the seam is what makes the honesty rules testable without a DB.
  */
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const mongoose = require('mongoose');
+
+export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
+
+export type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
+
+interface TokenRow { lastUsedAt?: Date | string | null }
+
+interface InstallationRow {
+  agentName?: string;
+  instanceId?: string;
+  displayName?: string;
+  installedBy?: unknown;
+  config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
+  runtimeTokens?: TokenRow[];
+}
+
+export interface AgentStateRow {
+  agentName: string;
+  instanceId: string;
+  displayName: string;
+  state: AgentReachState;
+  lastUsedAt: string | null;
+  isOwner: boolean;
+  fixCommand?: string;
+}
+
+const latestUse = (tokenLists: TokenRow[][]): Date | null => {
+  let latest: Date | null = null;
+  for (const list of tokenLists) {
+    for (const row of list || []) {
+      if (!row?.lastUsedAt) continue;
+      const used = new Date(row.lastUsedAt as string);
+      if (Number.isNaN(used.getTime())) continue;
+      if (!latest || used > latest) latest = used;
+    }
+  }
+  return latest;
+};
+
+export function deriveAgentState(
+  installation: InstallationRow,
+  userTokens: TokenRow[],
+  callerId: string,
+  now: number = Date.now(),
+): AgentStateRow {
+  const agentName = String(installation.agentName || '').toLowerCase();
+  const instanceId = String(installation.instanceId || 'default');
+  const runtime = installation.config?.runtime || {};
+  const runtimeType = String(runtime.runtimeType || '').toLowerCase();
+  const isByo = runtime.host === 'byo' || runtimeType === 'local-cli';
+  const isPushWebhook = Boolean(runtime.webhookUrl);
+  const isNative = runtimeType === 'native';
+
+  let state: AgentReachState;
+  let lastUsedAt: Date | null = null;
+  if (isNative || isPushWebhook) {
+    state = 'reachable';
+  } else if (!isByo) {
+    state = 'unknown';
+  } else {
+    lastUsedAt = latestUse([installation.runtimeTokens || [], userTokens || []]);
+    if (!lastUsedAt) state = 'never-connected';
+    else if (now - lastUsedAt.getTime() <= AGENT_LISTENING_STALE_MS) state = 'listening';
+    else state = 'gone-dark';
+  }
+
+  const isOwner = String(installation.installedBy || '') === String(callerId || '');
+  const needsFix = state === 'never-connected' || state === 'gone-dark';
+  return {
+    agentName,
+    instanceId,
+    displayName: installation.displayName || agentName,
+    state,
+    lastUsedAt: lastUsedAt ? lastUsedAt.toISOString() : null,
+    isOwner,
+    ...(isOwner && needsFix ? { fixCommand: `commonly agent run ${agentName}` } : {}),
+  };
+}
+
+// ── activity buckets (Raft P4, added 2026-08-13) ────────────────────────────
+// A SECOND derivation lives here deliberately, under a DIFFERENT name.
+// `deriveAgentState` above answers "can a mention land right now?" (per
+// runtime class, honesty-first). `deriveActivityBucket` below answers "when
+// was this agent last alive, in coarse buckets?" for rosters and Scout's
+// commonly_agent_status tool. The first version of this addition was
+// written as a NEW FILE at this same path and silently clobbered the #891
+// service AND its same-named test (the test that would have caught it) —
+// every pod page crashed on the string payload (2026-08-13 live incident).
+// Never add a "new" service without reading the path first; never name two
+// exports the same thing because they feel similar.
 
 const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // active within 10 minutes
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
-export type AgentStateBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
+export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
 
-interface InstallationLike {
+interface ActivityInstallationLike {
   agentName: string;
   instanceId?: string;
   config?: { runtime?: { runtimeType?: string } };
@@ -26,14 +129,16 @@ interface InstallationLike {
 
 /**
  * Batch: max(last heartbeat, last run, last token use) per (agentName,
- * instanceId) for one pod. Extracted verbatim from the pod-agents route so
- * the route and the tool cannot drift. Advisory by contract — throws are the
- * caller's to soften; each internal source degrades to "no signal".
+ * instanceId) for one pod — heartbeats cover gateway moltbots, AgentRuns
+ * cover native agents, token lastUsedAt covers BYO/MCP wrappers. Shared by
+ * the pod-agents roster route and commonly_agent_status.
  */
 export const collectPodAgentActivity = async (
   podId: string,
-  installations: InstallationLike[],
+  installations: ActivityInstallationLike[],
 ): Promise<Map<string, Date | null>> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mongoose = require('mongoose');
   const key = (agentName: string, instanceId?: string) => `${agentName}:${instanceId || 'default'}`;
   const result = new Map<string, Date | null>();
   if (!installations.length) return result;
@@ -95,9 +200,8 @@ export const collectPodAgentActivity = async (
   }
 
   // Token lastUsedAt lives on the bot User rows. buildAgentUsername is a
-  // NAMED export (not a static on the default service class) — destructure,
-  // or the token source silently drops out of the max (caught by the #915
-  // regression suite during extraction).
+  // NAMED export — destructure, or the token source silently drops out of
+  // the max (caught by the #915 regression suite).
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildAgentUsername } = require('./agentIdentityService');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -132,15 +236,14 @@ export const collectPodAgentActivity = async (
 };
 
 /**
- * The bucket vocabulary every surface speaks. `ready` is the honest word for
- * a native in-process agent with no runs yet — it has no connection to make,
- * it runs when addressed; calling it "never connected" (#915's bug) taught
- * users a false model.
+ * Coarse activity vocabulary for rosters and Scout's status tool. `ready`
+ * is the honest word for a native in-process agent with no runs yet — it
+ * has no connection to make (#915 lesson).
  */
-export const deriveAgentState = (
+export const deriveActivityBucket = (
   lastActiveAt: Date | null | undefined,
   runtimeType?: string,
-): AgentStateBucket => {
+): AgentActivityBucket => {
   if (!lastActiveAt) {
     return runtimeType === 'native' ? 'ready' : 'never-connected';
   }
@@ -150,7 +253,9 @@ export const deriveAgentState = (
   return 'stale';
 };
 
-export default { collectPodAgentActivity, deriveAgentState };
+export default {
+  deriveAgentState, AGENT_LISTENING_STALE_MS, collectPodAgentActivity, deriveActivityBucket,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);
