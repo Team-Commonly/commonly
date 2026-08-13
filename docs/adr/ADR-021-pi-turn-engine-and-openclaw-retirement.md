@@ -1,8 +1,8 @@
 # ADR-021: pi turn engine (the wiring spec) + staged OpenClaw retirement
 
-- **Status:** Proposed (Sam to ratify; drafted 2026-08-13)
+- **Status:** Accepted (ratified by Sam 2026-08-13; drafted 2026-08-13)
 - **Depends on:** ADR-020 D4 (pi SDK ratified as Scout's turn engine), #937 (backend Node 18 → 22, merged — the SDK's hard `engines` floor)
-- **Supersedes when accepted:** ADR-010's paused "Phase 2+" openclaw→MCP migration track (retirement makes migration moot); the moltbot rows of the runtime-tier table in CLAUDE.md
+- **Supersedes** (in force on ratification; the CLAUDE.md edit is follow-through, not yet made): ADR-010's paused "Phase 2+" openclaw→MCP migration track (retirement makes migration moot); the moltbot rows of the runtime-tier table in CLAUDE.md
 
 ## Context
 
