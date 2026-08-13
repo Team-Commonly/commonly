@@ -164,8 +164,18 @@ const createDefaultWorkspacePod = async (userId: any) => {
       // eslint-disable-next-line global-require
       const { AgentInstallation } = require('../models/AgentRegistry');
 
+      // Per-user identity fork. Identity is the join key for EVERYTHING —
+      // ADR-003 keys the memory envelope by (agentName, instanceId) — so a
+      // shared instanceId would give every user's Guide ONE memory doc: user
+      // A's "my repo is X" surfacing in user B's workspace. Same leak class
+      // as the 2026-07-03 BYO incident, caught pre-data this time. The
+      // userId-derived instanceId forks memory, AgentRuns, caps, and the bot
+      // User row per user; displayName stays "Guide" everywhere (per-user
+      // guides never share a pod, so no render collision exists).
+      const guideInstanceId = `u${String(userId).toLowerCase()}`;
+
       await AgentInstallation.findOneAndUpdate(
-        { agentName: guideApp.agentName, podId: pod._id, instanceId: 'default' },
+        { agentName: guideApp.agentName, podId: pod._id, instanceId: guideInstanceId },
         {
           $set: {
             status: 'active',
@@ -177,7 +187,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
           $setOnInsert: {
             agentName: guideApp.agentName,
             podId: pod._id,
-            instanceId: 'default',
+            instanceId: guideInstanceId,
             installedBy: userId,
           },
         },
@@ -185,7 +195,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
       );
 
       const guideUser = await AgentIdentityService.getOrCreateAgentUser(guideApp.agentName, {
-        instanceId: 'default',
+        instanceId: guideInstanceId,
         displayName: guideApp.displayName,
         description: guideApp.description,
       });
@@ -202,7 +212,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
         const AgentMessageService = require('../services/agentMessageService');
         await AgentMessageService.postMessage({
           agentName: guideApp.agentName,
-          instanceId: 'default',
+          instanceId: guideInstanceId,
           podId: pod._id.toString(),
           displayName: guideApp.displayName,
           content:
