@@ -80,6 +80,16 @@ backend:
     # via /chatgpt-auth/auth.json (rotator-managed). Pairs with
     # litellm.codexBypassLitellm: false + litellm.codexAuthRotator.enabled: true.
     codexBypassLitellm: "false"
+    # injection-guard ONLY (2026-08-13). The default pair includes
+    # openai-moderation-enforce, whose OPENAI_API_KEY is the literal
+    # "placeholder" — every guarded native run has 401'd on the guardrail
+    # BEFORE reaching its model (found by the Guide smoke test; also the
+    # probable cause of the native fleet's 98% July failure rate, which
+    # predates the August LiteLLM outage). injection-guard is LiteLLM-native
+    # (no key, no external service) and keeps the prompt-injection block for
+    # untrusted input. Restore the pair only after a real OpenAI moderation
+    # key lands in the api-keys secret.
+    nativeRuntimeGuardrails: "injection-guard"
 
 frontend:
   replicaCount: 1

@@ -416,6 +416,15 @@ spec:
           value: {{ .Values.backend.env.agentSessionMaxSizeKb | quote }}
         {{- end }}
 
+        # Native-runtime guardrail set (comma-separated; see
+        # docs/runbooks/litellm-guardrails.md). Helm-tracked so the value
+        # survives deploys — a kubectl-set env is drift the next upgrade
+        # silently reverts (the cloud-codex replicas lesson, PR #900).
+        {{- if .Values.backend.env.nativeRuntimeGuardrails }}
+        - name: NATIVE_RUNTIME_GUARDRAILS
+          value: {{ .Values.backend.env.nativeRuntimeGuardrails | quote }}
+        {{- end }}
+
         # GCP Secret Manager credentials
         {{- if .Values.externalSecrets.enabled }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
