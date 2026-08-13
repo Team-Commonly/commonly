@@ -179,7 +179,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(snippet).toContain('height: 16px');
     expect(snippet).toContain('white-space: nowrap');
     expect(snippet).toContain('text-overflow: ellipsis');
-    expect(time).toContain('width: 44px');
+    // The slot must fit the longest current English clock labels. A narrower
+    // reservation visibly elided AM/PM and made a clock ambiguous (#928).
+    expect(time).toContain('width: 56px');
     expect(v2).toContain('.v2-pods__row--pinned .v2-pods__item-time');
   });
 

@@ -1099,7 +1099,9 @@
    second line is reserved entirely for the message preview. */
 .v2-pods__item-time {
   flex-shrink: 0;
-  width: 44px;
+  /* 56px keeps the longest current relative-time labels ("Yesterday" and
+     "11:59 PM") legible while preserving a stable title/hover geometry. */
+  width: 56px;
   font-size: 11px;
   color: var(--v2-text-tertiary);
   font-variant-numeric: tabular-nums;
