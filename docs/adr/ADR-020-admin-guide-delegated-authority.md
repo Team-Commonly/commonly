@@ -55,7 +55,14 @@ never an approval; fail closed**. Concretely:
 - Messages gain a real structured `payload` (Mongo + PG both — today neither store has a
   metadata column and every "card" is a regex sentinel in the content string).
 - Cards are actionable by the workspace owner only; execution is idempotent (a card executes
-  at most once — approve-after-expiry and double-taps are no-ops with honest copy).
+  at most once — double-taps and concurrent resolves lose cleanly with honest copy).
+- **Expiry is advisory age, not refusal** (amended 2026-08-13, fleet review): per
+  ADR-017:201 an expired card stays *decidable* — refusing a late decision would convert
+  fail-closed into fail-silent, dropping the owner's explicit intent because a timer won.
+  The card renders an age warning beside live owner controls; a late decision is honored
+  and stamped `decidedAfterExpiry` on the audit record. This ADR's original
+  approve-after-expiry-is-a-no-op wording contradicted the ADR it implements — caught by
+  pod-architect reviewing the first kernel PR.
 - Interaction follows the proven reaction-chip pattern: click → authenticated POST →
   server-state change → socket fanout.
 - `agent.ask` (agent→agent, CLI-only) is unchanged; its shape informed the design and its
