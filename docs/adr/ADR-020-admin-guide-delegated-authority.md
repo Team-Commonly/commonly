@@ -1,6 +1,6 @@
 # ADR-020: The Admin Guide — harness embedding, delegated authority, and approval cards
 
-**Status:** Proposed (design settled in founder grill, 2026-08-13; awaiting review of this text)
+**Status:** Accepted (design settled in founder grill 2026-08-13; ratified by Sam same night — "build them full")
 **Deciders:** Sam (product), session grill 2026-08-13
 **Relates to:** ADR-017 (this implements its card, v1), ADR-003 (identity keying — see the
 2026-08-13 shared-envelope incident), ADR-001 (manifest carries the new fields), ADR-011
