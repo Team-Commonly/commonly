@@ -15,7 +15,8 @@ export type CommonlyTool =
   | 'commonly_read_memory'
   | 'commonly_write_memory'
   | 'commonly_post_message'
-  | 'commonly_create_task';
+  | 'commonly_create_task'
+  | 'commonly_propose_action';
 
 export interface NativeAgentDefinition {
   /** Canonical agent name. Kebab-case. Used as AgentRegistry.agentName. */

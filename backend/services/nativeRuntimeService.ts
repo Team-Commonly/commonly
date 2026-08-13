@@ -173,7 +173,57 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'commonly_propose_action',
+      description:
+        'Propose an action that needs the workspace owner\'s approval. Posts an '
+        + 'approval card to the pod; the action runs only if the owner approves. '
+        + 'Use for anything that creates a surface others can see or join — '
+        + 'currently: create_pod. Do NOT also post a separate chat message about '
+        + 'the proposal; the card IS the message.',
+      parameters: {
+        type: 'object',
+        properties: {
+          actionType: {
+            type: 'string',
+            enum: ['create_pod'],
+            description: 'The action being proposed',
+          },
+          summary: {
+            type: 'string',
+            description: 'One sentence, in the user\'s language: what will happen if they approve',
+          },
+          params: {
+            type: 'object',
+            description: 'Action parameters. For create_pod: { name (required), description?, type? ("chat"|"team") }',
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              type: { type: 'string', enum: ['chat', 'team'] },
+            },
+          },
+        },
+        required: ['actionType', 'summary', 'params'],
+      },
+    },
+  },
 ];
+
+// ADR-020 D1: the manifest's `tools` list is the capability boundary, and it
+// must be ENFORCED here, not just declared. Before this filter, TOOLS went
+// unfiltered to every native agent — the allowlist in each agent definition
+// was decorative (caught in the 2026-08-13 build recon). Installs that
+// predate tool lists (no cfg.tools) keep the pre-gate surface minus
+// approval proposing, which is opt-in by declaration only.
+export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): typeof TOOLS => {
+  const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
+  if (!declared) {
+    return TOOLS.filter((t) => t.function.name !== 'commonly_propose_action');
+  }
+  return TOOLS.filter((t) => declared.includes(t.function.name));
+};
 
 // --- tool dispatcher -------------------------------------------------------
 
@@ -317,6 +367,36 @@ async function dispatchTool(
             taskId: String(created.taskId),
             taskNum: created.taskNum,
             _id: String(created._id),
+          },
+        };
+      }
+
+      case 'commonly_propose_action': {
+        // ADR-020 D1/D3: outward-visible actions go through an approval card.
+        // proposeAction validates, creates the ApprovalAction row, and posts
+        // the card message itself — the tool-loop marks postedViaTool so the
+        // fallback never double-posts narration beside the card.
+        const { proposeAction } = require('./approvalActionService');
+        const result = await proposeAction({
+          podId: String(ctx.podId),
+          agentName: ctx.agentName,
+          instanceId: ctx.instanceId,
+          displayName: ctx.displayName,
+          actionType: String(args.actionType || ''),
+          params: (args.params && typeof args.params === 'object'
+            ? args.params : {}) as Record<string, unknown>,
+          summary: String(args.summary || ''),
+          installationConfig: ctx.installationConfig,
+        });
+        if (!result.ok) {
+          return { content: { ok: false, error: result.error }, error: 'propose_failed' };
+        }
+        return {
+          content: {
+            ok: true,
+            proposed: true,
+            approvalId: result.approvalId,
+            note: 'Approval card posted. The action runs only if the owner approves — do not post another message about it.',
           },
         };
       }
@@ -689,7 +769,8 @@ export async function runAgent(
           {
             model,
             messages,
-            tools: TOOLS,
+            // ADR-020 D1: the manifest's tool allowlist, enforced.
+            tools: toolsForConfig(cfg),
             tool_choice: 'auto',
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
@@ -781,6 +862,13 @@ export async function runAgent(
             finalMessage = typeof (parsedArgs as any)?.content === 'string'
               ? String((parsedArgs as any).content)
               : undefined;
+          }
+          // Proposing posts the card message itself — without this, the
+          // fallback below would double-post the model's narration next to
+          // the card (the exact double-post class commonly_post_message's
+          // special case exists for).
+          if (tc.function?.name === 'commonly_propose_action' && !result.error) {
+            postedViaTool = true;
           }
           messages.push({
             role: 'tool',

@@ -51,6 +51,12 @@ export const guideApp = {
     + '- DO things instead of describing them. Asked to track something → '
     + 'commonly_create_task. Told a durable preference ("I prefer zh-CN", '
     + '"my repo is X") → commonly_write_memory, once, without narrating it.\n'
+    + '- PROPOSE, never just do, anything that creates a surface others can '
+    + 'see or join. Asked for a new pod → commonly_propose_action with '
+    + 'actionType create_pod; an approval card appears and the pod is created '
+    + 'only if the user approves. The card IS your reply — do not post a '
+    + 'separate message describing the proposal, and never claim the pod '
+    + 'exists before the card shows approved.\n'
     + '- Read the room first when history matters: commonly_read_context '
     + 'before answering questions about what happened here.\n'
     + '- Silence is a valid turn. If a message needs nothing from you — the '
@@ -74,6 +80,8 @@ export const guideApp = {
     'commonly_write_memory',
     'commonly_post_message',
     'commonly_create_task',
+    // ADR-020: outward-visible actions (create_pod) via approval card only.
+    'commonly_propose_action',
   ],
   iconUrl: '',
   categories: ['onboarding', 'utility'],
