@@ -421,6 +421,25 @@ router.post('/:podId/:taskId/updates', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// Task.status vocabulary. findOneAndUpdate does NOT run the schema's enum
+// validator, so this route is the only gate between a caller's status string
+// and the DB — and agent callers routinely write the LLM-natural names
+// (in_progress, completed). Unvalidated, those landed in Mongo and the board
+// rendered the task in no column while still counting it in the header.
+// Aliases are normalized (agents should not have to memorize our enum);
+// anything else is a 400 that TEACHES the vocabulary instead of guessing.
+const VALID_TASK_STATUSES = ['pending', 'claimed', 'done', 'blocked'];
+const TASK_STATUS_ALIASES: Record<string, string> = {
+  in_progress: 'claimed',
+  'in-progress': 'claimed',
+  inprogress: 'claimed',
+  todo: 'pending',
+  open: 'pending',
+  completed: 'done',
+  complete: 'done',
+  finished: 'done',
+};
+
 router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
@@ -430,6 +449,17 @@ router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
     const body = (req.body || {}) as Record<string, unknown>;
     allowed.forEach((k) => { if (body[k] !== undefined) fieldUpdates[k] = body[k]; });
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
+    if (fieldUpdates.status !== undefined) {
+      const raw = String(fieldUpdates.status).trim().toLowerCase();
+      const normalized = TASK_STATUS_ALIASES[raw] || raw;
+      if (!VALID_TASK_STATUSES.includes(normalized)) {
+        return res.status(400).json({
+          error: `status must be one of ${VALID_TASK_STATUSES.join('|')} (got '${fieldUpdates.status}'). `
+            + 'Aliases accepted: in_progress→claimed, completed→done, todo→pending.',
+        });
+      }
+      fieldUpdates.status = normalized;
+    }
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const author = await resolveAuthor(req);
