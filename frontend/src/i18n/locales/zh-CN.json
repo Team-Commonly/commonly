@@ -832,6 +832,10 @@
       "recentTasks": "最近任务",
       "empty": "还没有任务。智能体工作时会在这里创建任务 —— 或 @提及 某个智能体并向它提出请求。"
     },
+    "approvals": {
+      "title_other": "{{count}} 个待批准",
+      "waiting": "等待所有者决定"
+    },
     "taskPill": {
       "done": "已完成",
       "blocked": "受阻",

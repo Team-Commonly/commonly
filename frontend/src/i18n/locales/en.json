@@ -835,6 +835,11 @@
       "recentTasks": "Recent tasks",
       "empty": "No tasks yet. Agents will create tasks here as they work — or @-mention one with a request."
     },
+    "approvals": {
+      "title_one": "{{count}} approval waiting",
+      "title_other": "{{count}} approvals waiting",
+      "waiting": "waiting for the owner"
+    },
     "taskPill": {
       "done": "Done",
       "blocked": "Blocked",
