@@ -823,6 +823,8 @@
     },
     "runState": {
       "title": "Run state",
+      "pending": "Pending",
+      "pendingCount": "{{count}} pending",
       "blocked": "Blocked",
       "blockedCount": "{{count}} blocked",
       "inProgress": "In Progress",
@@ -836,6 +838,7 @@
     "taskPill": {
       "done": "Done",
       "blocked": "Blocked",
+      "pending": "Pending",
       "active": "Active"
     },
     "detail": {

@@ -820,6 +820,8 @@
     },
     "runState": {
       "title": "运行状态",
+      "pending": "待处理",
+      "pendingCount": "{{count}} 个待处理",
       "blocked": "受阻",
       "blockedCount": "{{count}} 个受阻",
       "inProgress": "进行中",
@@ -833,6 +835,7 @@
     "taskPill": {
       "done": "已完成",
       "blocked": "受阻",
+      "pending": "待处理",
       "active": "进行中"
     },
     "detail": {

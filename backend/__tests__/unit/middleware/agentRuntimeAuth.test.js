@@ -14,13 +14,20 @@ const mockSecret = { hash: jest.fn(), randomSecret: jest.fn() };
 jest.mock('../../../utils/secret', () => mockSecret);
 
 const mockUserFindOne = jest.fn();
+const mockUserUpdateOne = jest.fn();
 const mockInstallationFindOne = jest.fn();
 const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
+const mockCompleteStarterTask = jest.fn();
+
+jest.mock('../../../services/starterTaskService', () => ({
+  completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
+}));
 
 jest.mock('../../../models/User', () => {
   function User() {}
   User.findOne = (...args) => mockUserFindOne(...args);
+  User.updateOne = (...args) => mockUserUpdateOne(...args);
   return User;
 });
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -54,9 +61,13 @@ beforeEach(() => {
   mockSecret.hash.mockReset();
   mockSecret.hash.mockReturnValue('hashed-token');
   mockUserFindOne.mockReset();
+  mockUserUpdateOne.mockReset();
+  mockUserUpdateOne.mockResolvedValue({});
   mockInstallationFindOne.mockReset();
   mockInstallationFind.mockReset();
   mockInstallationUpdateOne.mockReset();
+  mockCompleteStarterTask.mockReset();
+  mockCompleteStarterTask.mockResolvedValue(undefined);
 });
 
 describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
@@ -95,6 +106,71 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
     expect(req.agentAuthorizedPodIds).toEqual(['pod-a', 'pod-b']);
     expect(req.agentInstallation).toBe(matchedInstall);
     expect(next).toHaveBeenCalled();
+    // The matched token had no lastUsedAt → first-ever use → the
+    // connect-agent starter task fires for every authorized pod (#916).
+    expect(mockCompleteStarterTask).toHaveBeenCalledWith({
+      podIds: ['pod-a', 'pod-b'],
+      agentLabel: 'codex',
+    });
+  });
+
+  test('does not fire the starter hook when the token was used before (#916)', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+    mockInstallationFindOne.mockResolvedValue({
+      _id: 'install-a',
+      agentName: 'codex',
+      instanceId: 'cody',
+      podId: { toString: () => 'pod-a' },
+      runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date('2026-08-01T00:00:00Z') }],
+    });
+    mockInstallationFind.mockResolvedValue([]);
+    mockInstallationUpdateOne.mockResolvedValue({});
+
+    await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
+
+    expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#916)', () => {
+  const buildAgentUser = (lastUsedAt) => ({
+    _id: 'bot-user-1',
+    username: 'my-byo-agent',
+    isBot: true,
+    botMetadata: { agentName: 'my-byo-agent', instanceId: 'default', displayName: 'My BYO Agent' },
+    agentRuntimeTokens: [{ tokenHash: 'hashed-token', ...(lastUsedAt ? { lastUsedAt } : {}) }],
+  });
+
+  test('fires once, with the installation podIds and the display label', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(null));
+    mockInstallationFind.mockReturnValue({
+      lean: async () => [
+        { podId: { toString: () => 'pod-workspace' }, status: 'active' },
+      ],
+    });
+
+    const req = buildReq('cm_agent_test');
+    const next = jest.fn();
+    await agentRuntimeAuth(req, buildRes(), next);
+
+    expect(next).toHaveBeenCalled();
+    expect(mockCompleteStarterTask).toHaveBeenCalledWith({
+      podIds: ['pod-workspace'],
+      agentLabel: 'My BYO Agent',
+    });
+  });
+
+  test('stays silent on every subsequent authentication', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({
+      lean: async () => [
+        { podId: { toString: () => 'pod-workspace' }, status: 'active' },
+      ],
+    });
+
+    await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
+
+    expect(mockCompleteStarterTask).not.toHaveBeenCalled();
   });
 
   test('returns 401 when token doesnt match any install OR user', async () => {

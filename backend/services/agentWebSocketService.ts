@@ -71,6 +71,7 @@ interface InstallationDoc {
   instanceId?: string;
   podId?: unknown;
   status?: string;
+  displayName?: string;
   runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
 }
 
@@ -309,6 +310,13 @@ class AgentWebSocketService {
         }) as AgentUserDoc | null;
 
         if (agentUser) {
+          // Pre-update: no lastUsedAt = first-ever authentication. The WS
+          // transport stamps the same field the HTTP middleware does, so
+          // skipping the hook here would swallow the first-use signal for
+          // WS-first agents permanently (#916).
+          const wsTokenRecord = (agentUser.agentRuntimeTokens || [])
+            .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
+          const isFirstTokenUse = !wsTokenRecord?.lastUsedAt;
           try {
             await User.updateOne(
               { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
@@ -321,6 +329,22 @@ class AgentWebSocketService {
           const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
           if (agentName) {
+            if (isFirstTokenUse) {
+              try {
+                const installs = await AgentInstallation.find({
+                  agentName, instanceId, status: 'active',
+                }).select('podId').lean() as Array<{ podId?: { toString: () => string } }>;
+                // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+                const { completeConnectAgentStarterTask } = require('./starterTaskService');
+                void completeConnectAgentStarterTask({
+                  podIds: installs.map((i) => i?.podId?.toString()),
+                  agentLabel: (agentUser as { botMetadata?: { displayName?: string } })
+                    .botMetadata?.displayName || agentName,
+                });
+              } catch (starterErr) {
+                console.warn('[agent-ws] starter-task hook failed:', (starterErr as Error).message);
+              }
+            }
             return { agentName, instanceId, agentUserId: String(agentUser._id || '') };
           }
         }
@@ -331,6 +355,9 @@ class AgentWebSocketService {
         }) as InstallationDoc | null;
 
         if (installation) {
+          const wsInstallTokenRecord = (installation.runtimeTokens || [])
+            .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
+          const isFirstLegacyUse = !wsInstallTokenRecord?.lastUsedAt;
           try {
             await AgentInstallation.updateOne(
               { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
@@ -338,6 +365,19 @@ class AgentWebSocketService {
             );
           } catch (err) {
             console.warn('Failed to update agent token usage:', (err as Error).message);
+          }
+
+          if (isFirstLegacyUse) {
+            try {
+              // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+              const { completeConnectAgentStarterTask } = require('./starterTaskService');
+              void completeConnectAgentStarterTask({
+                podIds: [installation.podId ? String(installation.podId) : null],
+                agentLabel: installation.displayName || installation.agentName,
+              });
+            } catch (starterErr) {
+              console.warn('[agent-ws] starter-task hook failed:', (starterErr as Error).message);
+            }
           }
 
           return {
