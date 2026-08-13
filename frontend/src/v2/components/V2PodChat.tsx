@@ -285,8 +285,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const agentStateByHandle = useMemo(() => {
     const map = new Map<string, AgentStateRow>();
     agentStates.forEach((s) => {
-      map.set(s.agentName.toLowerCase(), s);
-      if (s.instanceId && s.instanceId !== 'default') map.set(s.instanceId.toLowerCase(), s);
+      // Defensive on shape: this surface promises "silence over a wrong
+      // dot", and that must include a malformed payload. A backend
+      // regression that returned bare strings here crashed the ENTIRE pod
+      // page via this exact line (2026-08-13 agentStateService clobber) —
+      // degrade to no-dots, never to an error boundary.
+      const agentName = typeof s?.agentName === 'string' ? s.agentName : '';
+      if (!agentName) return;
+      map.set(agentName.toLowerCase(), s);
+      if (typeof s.instanceId === 'string' && s.instanceId && s.instanceId !== 'default') {
+        map.set(s.instanceId.toLowerCase(), s);
+      }
     });
     return map;
   }, [agentStates]);
