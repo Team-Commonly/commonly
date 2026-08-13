@@ -631,6 +631,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       if (!payload || (payload.podId && payload.podId !== podId)) return;
       const agentName = payload.agentName || payload.username;
       if (!agentName) return;
+      // An agent typing in this pod falsifies "No agent was notified" — the
+      // hint must not sit above a landing reply (#914).
+      setAgentDeliveryHint(null);
       const key = keyFor({ agentName, instanceId: payload.instanceId });
       scheduleAutoStop(key);
       setTypingAgents((prev) => {
@@ -783,6 +786,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         if (
           delivery
           && delivery.enqueued === 0
+          // A wake-on-message agent (the Guide in every fresh workspace) WAS
+          // notified — "No agent was notified" would be false on screen while
+          // it's already typing (#914).
+          && (delivery.woken ?? 0) === 0
           && delivery.agentsInPod > 0
           && mentionHandle
         ) {

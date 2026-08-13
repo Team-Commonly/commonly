@@ -35,6 +35,8 @@ export interface V2Message {
     enqueued: number;
     implicit: string[];
     agentsInPod: number;
+    // Wake-on-message targets (#914). Optional: older backends omit it.
+    woken?: number;
   };
   // Sprint B5: per-message reactions, aggregated server-side.
   // Each entry is `{emoji, count, mine, users?}` — `users` is the

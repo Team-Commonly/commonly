@@ -266,7 +266,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // version of this rule.
     const isDmPod = pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm';
     let responseMessage: NormalizedMessage | (NormalizedMessage & {
-      agentDelivery: { enqueued: number; implicit: string[]; agentsInPod: number };
+      agentDelivery: {
+        enqueued: number; implicit: string[]; agentsInPod: number; woken: number;
+      };
     }) = message;
     if (isDmPod) {
       await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
@@ -292,6 +294,11 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
           enqueued: mentionResult.enqueued.length,
           implicit: mentionResult.implicit || [],
           agentsInPod,
+          // Wake-on-message targets (ADR-018 D8). Without this count the
+          // composer's "No agent was notified" hint fires in the one pod
+          // every new user starts in — while the Guide is already waking on
+          // the very same message (#914).
+          woken: mentionResult.woken?.length ?? 0,
         },
       };
     }
