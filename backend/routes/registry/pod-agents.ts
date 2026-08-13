@@ -132,7 +132,18 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
 
     const installations = await AgentInstallation.getInstalledAgents(podId);
 
-    // Batch-fetch last heartbeat timestamp per agent/instance from agentevents
+    // One derivation for proof-of-life (heartbeats ∪ runs ∪ token use) —
+    // shared with the native runtime's commonly_agent_status tool via
+    // agentStateService. Advisory: never fail the roster over it.
+    let activityMap = new Map<string, Date | null>();
+    try {
+      const { collectPodAgentActivity } = require('../../services/agentStateService');
+      activityMap = await collectPodAgentActivity(String(podId), installations);
+    } catch (activityErr) {
+      console.warn('[pod-agents] activity lookup failed:', (activityErr as Error).message);
+    }
+    // Heartbeat-only timestamps still ride the payload (lastHeartbeatAt is
+    // its own field); fetch them cheaply from the same event source.
     const heartbeatRows = await AgentEvent.aggregate([
       {
         $match: {
@@ -152,37 +163,6 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     ]);
     const heartbeatMap = new Map(
       heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
-    );
-
-    // Native agents never heartbeat and never use a runtime token — their
-    // proof of life is AgentRun rows. Same key shape as heartbeatMap; uses
-    // the { podId, agentName, instanceId, startedAt } index. Aggregation
-    // $match does not cast, so podId must be an ObjectId (#915).
-    let runRows: any[] = [];
-    try {
-      const AgentRun = require('../../models/AgentRun');
-      const mongoose = require('mongoose');
-      runRows = await AgentRun.aggregate([
-        {
-          $match: {
-            podId: new mongoose.Types.ObjectId(String(podId)),
-            agentName: { $in: installations.map((i: any) => i.agentName) },
-          },
-        },
-        { $sort: { startedAt: -1 } },
-        {
-          $group: {
-            _id: { agentName: '$agentName', instanceId: '$instanceId' },
-            lastRunAt: { $first: '$startedAt' },
-          },
-        },
-      ]);
-    } catch (runErr) {
-      // Activity enrichment is advisory — never fail the roster over it.
-      console.warn('[pod-agents] AgentRun activity lookup failed:', (runErr as Error).message);
-    }
-    const runMap = new Map(
-      runRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId || 'default'}`, r.lastRunAt]),
     );
 
     const registryEntries = await AgentRegistry.find({
@@ -253,17 +233,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const instanceKey = `${i.agentName}:${i.instanceId || 'default'}`;
         const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
         const user = userByUsername.get(username) || null;
-        // Max across the three proof-of-life sources; each covers a runtime
-        // class the others miss (heartbeats: gateway; token use: BYO/MCP;
-        // runs: native).
-        const tokenTimes = (user?.agentRuntimeTokens || [])
-          .map((tok: any) => (tok?.lastUsedAt ? new Date(tok.lastUsedAt).getTime() : 0));
-        const candidates = [
-          heartbeatMap.get(instanceKey), runMap.get(instanceKey), ...tokenTimes,
-        ]
-          .map((v: any) => (v ? new Date(v).getTime() : 0))
-          .filter((v: number) => Number.isFinite(v) && v > 0);
-        const lastActiveAt = candidates.length > 0 ? new Date(Math.max(...candidates)) : null;
+        const lastActiveAt = activityMap.get(instanceKey) || null;
         return buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',

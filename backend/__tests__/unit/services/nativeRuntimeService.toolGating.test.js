@@ -35,4 +35,22 @@ describe('toolsForConfig', () => {
     // no schema would silently vanish here.
     expect(tools.length).toBe(guideApp.tools.length);
   });
+
+  test('agent_status is declaration-gated like every other tool', () => {
+    // Scout declares it; a legacy config or a minimal allowlist does not
+    // receive it implicitly.
+    // eslint-disable-next-line global-require
+    const { guideApp } = require('../../../config/native-agents/guide');
+    expect(names(toolsForConfig({ tools: [...guideApp.tools] }))).toContain('commonly_agent_status');
+    expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_agent_status');
+  });
+
+  test('the propose_action schema teaches both action types', () => {
+    // The enum in the tool schema is what the model sees — if the schema
+    // lags the service's KNOWN_ACTION_TYPES, Scout can never propose the
+    // new action no matter what the prompt says.
+    const tools = toolsForConfig({ tools: ['commonly_propose_action'] });
+    const schema = tools[0].function.parameters.properties.actionType;
+    expect(schema.enum.sort()).toEqual(['connect_local_agent', 'create_pod']);
+  });
 });

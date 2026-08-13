@@ -38,9 +38,22 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const aged = status === 'flagged' && !!payload.expiresAt
     && new Date(payload.expiresAt).getTime() < Date.now();
   const execution = payload.executionResult as
-    | { podId?: string; agentJoined?: boolean; agentJoinError?: string }
+    | {
+      podId?: string;
+      agentJoined?: boolean;
+      agentJoinError?: string;
+      connectPath?: string;
+      alreadyInstalled?: boolean;
+    }
     | undefined;
-  const resultPodId = execution?.podId;
+  // connect_local_agent's result carries a connectPath — the seat exists,
+  // but the token step is a human-in-browser act on the connect page; the
+  // card's job is to hand the user there, never to carry a credential.
+  // Payload is DB data: only navigate an in-app /v2/ path, never a value
+  // that could steer the click off-origin.
+  const rawConnectPath = execution?.connectPath;
+  const connectPath = rawConnectPath && rawConnectPath.startsWith('/v2/') ? rawConnectPath : undefined;
+  const resultPodId = connectPath ? undefined : execution?.podId;
   // Partial success is its own truth: the pod exists (user owns it) but the
   // agent couldn't join and would 403 on every post — say so, don't say done.
   const agentJoinFailed = execution?.agentJoined === false;
@@ -108,7 +121,18 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               ? t('approvalCard.approvedButFailed', { error: payload.executionError })
               : agentJoinFailed
                 ? t('approvalCard.approvedAgentJoinFailed', { agent: payload.agentName || 'agent' })
-                : t('approvalCard.approved')}
+                : connectPath
+                  ? t('approvalCard.approvedSeatReady')
+                  : t('approvalCard.approved')}
+            {connectPath && !payload.executionError && (
+              <button
+                type="button"
+                className="v2-approval__result-link"
+                onClick={() => navigate(connectPath)}
+              >
+                {t('approvalCard.openConnect')}
+              </button>
+            )}
             {resultPodId && !payload.executionError && (
               <button
                 type="button"

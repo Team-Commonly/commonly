@@ -142,6 +142,35 @@ describe('V2PodChat agent delivery hint', () => {
     expect(hint).not.toHaveTextContent('u3f9c2a1b7d');
   });
 
+  test('a persona displayName becomes the suggested handle for opaque-token agents', async () => {
+    // Scout (agentName 'guide', displayName 'Scout') — the handle should be
+    // the persona slug @scout, not the internal agentName. The backend
+    // mention map indexes displaySlug for every installation, so it lands.
+    const response = makeMessage('hello scout', {
+      enqueued: 0, implicit: [], agentsInPod: 1,
+    });
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <DeliveryHarness
+            response={response}
+            sendSpy={jest.fn()}
+            agents={[{
+              agentName: 'guide', instanceId: 'u3f9c2a1b7d', displayName: 'Scout', status: 'active',
+            }]}
+          />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    sendDraft('hello scout');
+
+    const hint = await screen.findByRole('status');
+    expect(hint).toHaveTextContent('@scout');
+    expect(hint).not.toHaveTextContent('u3f9c2a1b7d');
+    expect(hint).not.toHaveTextContent('@guide');
+  });
+
   test('shows at most once per pod per browser session', async () => {
     const first = renderHarness(makeMessage('first send', {
       enqueued: 0, implicit: [], agentsInPod: 1,

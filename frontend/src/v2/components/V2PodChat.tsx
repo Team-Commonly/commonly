@@ -42,9 +42,22 @@ const normalizeAgentSegment = (value: string | undefined): string =>
 // the legacy long form) — machine keys, never identities. A moltbot's
 // instanceId ("aria") is the opposite: the human-chosen name, with agentName
 // as the runtime label we must never surface. So handle preference is:
-// human-meaningful instanceId wins; opaque token falls back to agentName.
+// human-meaningful instanceId wins; opaque token falls back to the
+// displayName slug (the backend mention map indexes displaySlug for every
+// installation), then agentName. That's how Scout gets @scout while
+// agentName stays 'guide' — and both handles land.
 const isOpaqueInstanceToken = (value: string | undefined): boolean =>
   /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((value || '').toLowerCase());
+
+// Mirrors the backend mention map's slugify (agentMentionService) — keep the
+// two identical or a typed handle can render but not resolve.
+const slugifyHandle = (value: string | undefined): string => (value || '')
+  .toString()
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9-]/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-+|-+$/g, '');
 
 // Mirrors backend AgentIdentityService.buildAgentUsername — instance suffix
 // elides when default/empty/equal to base name. Used to wire a mention back
@@ -485,13 +498,13 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       // Handle preference: a human-chosen instanceId ("aria") IS the
       // identity and stays the handle — agentName there is the runtime label
       // we never surface. An OPAQUE per-user token (guide/u3f9c2a1b7d) is a
-      // machine key and must never be the handle; the backend's mention map
-      // resolves the bare agentName for it (single-install rule), so
-      // "@guide" both reads right and lands (Sam, 2026-08-13).
+      // machine key and must never be the handle; fall back to the persona's
+      // displayName slug (@scout — the mention map indexes displaySlug),
+      // then the bare agentName (single-install rule).
       const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
         && !isOpaqueInstanceToken(instance)
         ? instance
-        : rawName.toLowerCase();
+        : (slugifyHandle(display) || rawName.toLowerCase());
       const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
       // Compose-time honesty (#891 surface 1): a mention that can't land says
       // so in the picker itself — certainty-matched copy (never-connected is
@@ -795,12 +808,14 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
         // Same handle rule as the typeahead: human-chosen instanceId is the
         // identity and stays; an opaque per-user token must never be the
-        // suggested handle ("Try @u3f9c2a1b7d").
+        // suggested handle ("Try @u3f9c2a1b7d") — persona displayName slug
+        // first (@scout), then agentName.
         const rawMentionHandle = exampleAgent?.instanceId
           && exampleAgent.instanceId.toLowerCase() !== 'default'
           && !isOpaqueInstanceToken(exampleAgent.instanceId)
           ? exampleAgent.instanceId
-          : exampleAgent?.agentName;
+          : (slugifyHandle(exampleAgent?.displayName || exampleAgent?.profile?.displayName)
+            || exampleAgent?.agentName);
         const mentionHandle = normalizeAgentSegment(rawMentionHandle);
         if (
           delivery

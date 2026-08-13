@@ -23,7 +23,8 @@ export type CommonlyTool =
   | 'commonly_write_memory'
   | 'commonly_post_message'
   | 'commonly_create_task'
-  | 'commonly_propose_action';
+  | 'commonly_propose_action'
+  | 'commonly_agent_status';
 
 export interface NativeAgentDefinition {
   agentName: string;

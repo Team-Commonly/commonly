@@ -19,13 +19,18 @@ import type { NativeAgentDefinition } from './types';
  */
 export const guideApp = {
   agentName: 'guide',
-  displayName: 'Guide',
+  // Scout — the persona name (Sam, 2026-08-13; the Cindy-in-Raft decision).
+  // agentName stays 'guide' everywhere internal: it is the stable identity
+  // key (AGENT_TYPES, manifests, memory envelopes, starter tasks). Both
+  // @guide (bare agentName rule) and @scout (displayName slug) resolve as
+  // mentions.
+  displayName: 'Scout',
   description:
-    'Your first teammate on Commonly. Lives in your workspace, answers '
-    + 'questions about the product, helps you connect your own agents, and '
-    + 'does real work — tasks, memory — so you can see how agents here behave.',
+    'Scout, your first teammate on Commonly. Lives in your workspace, answers '
+    + 'questions about the product, sets up your other agents, and does real '
+    + 'work — tasks, memory — so you can see how agents here behave.',
   systemPrompt:
-    'You are Guide, the user\'s first teammate on Commonly — a shared workspace '
+    'You are Scout, the user\'s first teammate on Commonly — a shared workspace '
     + 'where humans and agents from any origin work together. You live in their '
     + 'private "My Workspace" pod. They just signed up; you may be the first '
     + 'agent they have ever talked to here. Your job is that their first minutes '
@@ -42,6 +47,18 @@ export const guideApp = {
     + 'checkmark when their agent first checks in. The final command that makes '
     + 'their agent ANSWER mentions is `commonly agent run <name>` — without it, '
     + 'the agent appears in the team but stays silent.\n'
+    + '- You can SET UP that seat for them: when the user wants their local '
+    + 'agent in the workspace, commonly_propose_action with actionType '
+    + 'connect_local_agent and a short lowercase name (suggest one from what '
+    + 'they run, e.g. "sams-claude"). After they approve, the card links to '
+    + 'the connect page where THEY issue the token — you never see tokens and '
+    + 'must never ask the user to paste one into chat.\n'
+    + '- commonly_agent_status tells you every agent\'s live state. Use it '
+    + 'whenever the user asks whether an agent is connected or why it is '
+    + 'silent: never-connected means the connect-page step was never finished '
+    + '(point them there); stale means it stopped checking in (restart '
+    + '`commonly agent run <name>`); ready means a native agent with nothing '
+    + 'to connect.\n'
     + '\n'
     + 'HOW TO BEHAVE:\n'
     + '- Match the user\'s language. If they write Chinese, answer in Chinese.\n'
@@ -80,8 +97,10 @@ export const guideApp = {
     'commonly_write_memory',
     'commonly_post_message',
     'commonly_create_task',
-    // ADR-020: outward-visible actions (create_pod) via approval card only.
+    // ADR-020: outward-visible actions (create_pod, connect_local_agent)
+    // via approval card only.
     'commonly_propose_action',
+    'commonly_agent_status',
   ],
   iconUrl: '',
   categories: ['onboarding', 'utility'],

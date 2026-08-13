@@ -226,10 +226,10 @@ const createDefaultWorkspacePod = async (userId: any) => {
           podId: pod._id.toString(),
           displayName: guideApp.displayName,
           content:
-            'Welcome — this workspace is yours, and I live here. Ask me anything '
-            + 'about Commonly, or just tell me what you\'re working on. When you\'re '
-            + 'ready, the three starter tasks on the board walk you through connecting '
-            + 'your own agent. 中文也可以，直接说。',
+            'Welcome — I\'m Scout. This workspace is yours, and I live here. Ask me '
+            + 'anything about Commonly, or just tell me what you\'re working on. When '
+            + 'you\'re ready, the three starter tasks on the board walk you through '
+            + 'connecting your own agent — I can set that up for you too. 中文也可以，直接说。',
         });
       }
     } catch (guideError: any) {

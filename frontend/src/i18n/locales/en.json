@@ -948,9 +948,11 @@
     "approved": "✓ Approved — done.",
     "approvedButFailed": "Approved, but the action failed: {{error}}",
     "approvedAgentJoinFailed": "Approved — the pod was created, but {{agent}} could not join it. Open the pod and re-add the agent.",
+    "approvedSeatReady": "Approved — the seat is ready. Link your local agent from the connect page.",
     "declined": "Declined.",
     "expired": "Expired without a decision.",
     "openResult": "Open the new pod",
+    "openConnect": "Open the connect page",
     "errors": {
       "expired": "This approval expired before the decision landed.",
       "failed": "Couldn't record the decision. Try again."
