@@ -810,7 +810,13 @@
 
 .v2-pods__filters {
   display: grid;
-  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.7fr);
+  /* Three equal segments + one content-sized. The previous hand-tuned
+     fractions (0.75/1/1.15/1.7) sized every column to its English label —
+     four random widths reading as ragged (Sam, 2026-08-13). True equal
+     quarters can't hold "Community" at legible size in this rail, so the
+     long label gets the one deliberate auto column; whether that label
+     changes is the design pass's call. */
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 4px;
   padding: 0;
   margin-bottom: 18px;
