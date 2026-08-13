@@ -30,7 +30,11 @@ const read = (rel: string): string =>
 // Grab the body of the first `<selector> { ... }` block. Selectors here have no
 // nested braces, so a naive slice to the next `}` is sufficient.
 const ruleBody = (css: string, selector: string): string => {
-  const start = css.indexOf(`${selector} {`);
+  // Prefer a selector at the start of a CSS line. A descendant selector can
+  // contain the same text (`.parent .target {`) and is not the rule being
+  // pinned.
+  const lineStart = css.indexOf(`\n${selector} {`);
+  const start = lineStart === -1 ? css.indexOf(`${selector} {`) : lineStart + 1;
   if (start === -1) return '';
   const end = css.indexOf('}', start);
   return end === -1 ? '' : css.slice(start, end);
@@ -139,13 +143,55 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // mobile drawer). A four-column grid keeps Community beside the existing
     // filters without horizontal scrolling or wrapping in either locale.
     // Pattern updated 2026-08-13 (Sam's raggedness flag): three EQUAL
-    // segments + one content-sized auto column for the long label — the
-    // per-label hand-tuned fractions read as four random widths. The
-    // invariant's intent (one row, no wrap) is unchanged.
+    // segments + one content-sized, capped Community column — the per-label
+    // hand-tuned fractions read as four random widths. The invariant's intent
+    // (one row, no wrap) is unchanged.
     const rule = ruleBody(v2, '.v2-pods__filters');
     expect(rule).toContain('display: grid');
-    expect(rule).toContain('grid-template-columns: repeat(3, minmax(0, 1fr)) auto');
+    expect(rule).toContain('grid-template-columns: repeat(3, minmax(0, 1fr)) fit-content(92px)');
     expect(rule).toContain('overflow: visible');
+    expect(ruleBody(v2, '.v2-pods__filter')).toContain('text-overflow: ellipsis');
+  });
+
+  test('accent treatment is a wash, never a message rail', () => {
+    // Accent rails made otherwise ordinary cards look like generic callouts.
+    // Message mentions retain their semantic wash, while quote edges stay
+    // neutral structural affordances.
+    expect(v2).not.toMatch(/border-left:\s*[^;]*var\(--v2-accent\)/);
+    const mention = ruleBody(v2, '.v2-msg--mention');
+    expect(mention).toContain('background: var(--v2-accent-soft)');
+    expect(mention).toContain('border-radius: var(--v2-radius-sm)');
+  });
+
+  test('quote edges share the same neutral 3px structural weight', () => {
+    expect(ruleBody(v2, '.v2-msg__content blockquote')).toContain('border-left: 3px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-msg__quote')).toContain('border-left: 3px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-board__detail-updates li')).toContain('border-left: 3px solid var(--v2-border)');
+  });
+
+  test('pod rows reserve one preview line and a fixed meta slot', () => {
+    const row = ruleBody(v2, '.v2-pods__item');
+    const snippet = ruleBody(v2, '.v2-pods__item-snippet');
+    const time = ruleBody(v2, '.v2-pods__item-time');
+
+    expect(row).toContain('height: 64px');
+    expect(row).toContain('overflow: hidden');
+    expect(snippet).toContain('height: 16px');
+    expect(snippet).toContain('white-space: nowrap');
+    expect(snippet).toContain('text-overflow: ellipsis');
+    expect(time).toContain('width: 44px');
+    expect(v2).toContain('.v2-pods__row--pinned .v2-pods__item-time');
+  });
+
+  test('the inspector activity pulse uses semantic tokens, not raw color literals', () => {
+    const pulse = ruleBody(v2, '.v2-inspector__now-pulse');
+    expect(pulse).toContain('var(--v2-success-ring-strong)');
+    expect(v2.slice(v2.indexOf('@keyframes v2-now-pulse'), v2.indexOf('.v2-inspector__now-meta')))
+      .toContain('var(--v2-success-ring)');
+  });
+
+  test('v2 focus treatment reuses the shared focus-ring token', () => {
+    expect(ruleBody(v2, '.v2-board__field input:focus')).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
   test('the Community sub-tabs and Discover rows shrink inside the narrow sidebar', () => {
