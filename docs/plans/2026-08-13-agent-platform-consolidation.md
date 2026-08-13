@@ -48,16 +48,35 @@ Producer surface today is an in-process native tool only. Order within W1:
    (actionType + key params — already on the wire in `buildCardPayload`,
    currently unrendered) as the PRIMARY consent line, proposer prose demoted
    to pitch. "Inert without the owner" covers execution, not mislabeling.
+   **Round-2 upgrade (sprint-review, verified at source): the mislabeling gap
+   is LIVE today, not BYO-only** — summary is caller-supplied (empty-reject +
+   500-truncate is the entire validation) and renders as the headline, while
+   Scout runs on injectable workspace input. Frontend-only fix (pod-architect:
+   params/actionType already on the wire) — it does not block the route and
+   may land ahead of it.
+2b. **Decider lifecycle (round 2, ux-lead + pod-architect):** membership churn
+   recreates undecidability regardless of derivation — nothing cascades pod
+   membership onto ApprovalAction, so an owner leaving strands cards. Three
+   agreed semantics: (i) an explicit **empty-decider face** (attention tone,
+   names the fix) — needed regardless; (ii) per-viewer decidability computes
+   in the **GET pending route** (per-caller), NEVER broadcast in CardPayload
+   (the reaction-`mine` lesson, already inscribed in that file); (iii)
+   decide-time re-derivation **widens** as well as repairs (a later-joining
+   human becomes decider) — allow and **stamp the audit row** (the
+   `decidedAfterExpiry` precedent), don't refuse.
 3. `commonly_propose_action` into `@commonlyai/mcp` → **0.4.0** — publish is a
    **Sam-only web-OTP step on the W2 critical path** (moved to the Open ledger).
 4. Later, same pattern for `commonly_agent_status`.
 
 **Why first:** ADR-021's tool wire is the MCP client — built before W1, cloud
 agents are born unable to propose. W1 is upstream of W2-M1.
-**Acceptance:** a BYO wrapper proposes; the owner approves; **the card visibly
-attributes origin and renders the server's parse**; pinned by a
-`reactionController.test.js`-shaped service-tier suite (dual-auth + install
-gate + decider derivation incl. bot-created-pod refusal).
+**Acceptance:** a BYO wrapper proposes **through the PUBLISHED MCP package**
+(sprint-review: an HTTP-only E2E passes while the npm tool is unpublished —
+the exact artifact-vs-source class the smoke rule exists for); the owner
+approves; **the card visibly attributes origin and renders the server's
+parse**; pinned by a `reactionController.test.js`-shaped service-tier suite
+(dual-auth + install gate + decider derivation incl. bot-created-pod refusal).
+Remedy verified on all four installedBy write paths (sprint-review).
 
 ### W2 — agent-runtime (ADR-021 Part A.1) · GATED ON #938 MERGE
 Milestones amended after review: **M1 = skeleton + smoke Scout + the CLAIMS
