@@ -14,64 +14,30 @@ Three lines converged this week:
 
 House rule that gates everything below (CLAUDE.md design rule 2): **never deprecate until the replacement is live.**
 
-## Part A — pi as the CLOUD-SEAT runtime (retargeted 2026-08-13, Sam)
+## Part A — Scout IS the cloud pi agent: the scout-runtime service
 
-**Primary target: the hosted cloud seat (Tier 2), not Scout.** Sam's clarification: pi support means Commonly-hosted agents — few, heavyweight, entitlement-gated (`entitlements.cloudAgents`, currently default-false) — not the per-user Scout, whose native loop is adequate for its job (agreed 2026-08-13).
+*(Final form 2026-08-13 after three rounds with Sam — supersedes the two intermediate retargets in this PR's history: Scout-engine-in-backend, then a separate cloud-seat tier. Sam's intent: the per-user Scout itself runs as a Commonly-hosted pi agent with the commonly CLI/MCP surface and workspace isolation. Users' own local agents stay on their own harnesses via the wrapper CLI — pi is for OUR hosted agent.)*
 
-### Cloud-seat architecture
+### Shape
 
-- **Shape: the cloud-codex pattern** — one isolated container + PVC per seat (`k8s/helm` per-agent Deployment template), which is the REAL workspace isolation: OS-level, per principal. pi replaces codex CLI as the brain.
-- **Runner:** a thin Node-22 process embedding the **pi SDK** (`createAgentSession`) — NOT a `pi -p` subprocess, because the community MCP extension fails headless (spike finding); tools must be registered programmatically. The runner polls CAP like every ADR-005 wrapper and executes turns in-session.
-- **Toolset:** the kernel-blessed `commonly_*` MCP surface, wired as defineTool wrappers over an MCP client against the instance API — MCP is the contract, defineTool is the wire.
-- **Model:** LiteLLM via the models.json-style provider config the spike validated — single auth surface, single quota pool, guardrails at the proxy.
-- **Session continuity:** pi `-c` resume semantics (SDK session persistence on the seat PVC) — a cloud seat is long-lived by design, unlike Scout runs.
-- **Entitlement + product tie-in:** seats are the concrete prize for the missions→hosted-agent-unlock track; provisioning stays per-Helm-values (or a later provisioner) gated on `entitlements.cloudAgents`.
+A dedicated **`scout-runtime` Deployment** — separate from the backend — Node 22, embedding the pi SDK (`@earendil-works/pi-coding-agent`, pinned; 0.84.1 at drafting), multiplexing **one persistent session per user** with state on a PVC. This is the structural successor to clawdbot-gateway (which hosted 25 moltbots the same way) rebuilt on pi + MCP with per-user isolation. NOT a container per user (does not scale past dozens) and NOT in the backend process (shared blast radius — the 2026-08-13 clobber incident is the standing example).
 
-### Appendix — Scout engine swap (deferred, spec kept)
+### Contract
 
-The in-process session-per-run spec below was verified against the real SDK and remains the documented path IF Scout's job ever outgrows the native loop (compaction, resume, long-horizon admin work). It is explicitly NOT current work.
+- **Backend stays the scheduler.** Wake → claim → caps → `AgentRun` accounting unchanged. `nativeRuntimeService` gains an engine branch: `scout-runtime` (internal HTTP call carrying the trigger + dispatch context) vs the existing native loop, selected per-manifest + `SCOUT_RUNTIME_ENABLED` env kill-switch. The native loop remains the flagged fallback during transition — flip back without a deploy.
+- **Sessions are per-user and persistent** (pi session files on the PVC, keyed by the opaque instance token): Scout REMEMBERS the conversation across turns — a product upgrade over today's stateless runs, and the reason the engine swap is worth doing at all. ADR-003 memory envelopes remain the durable cross-runtime memory; pi sessions are working conversational state.
+- **Tools:** the kernel-blessed `commonly_*` MCP surface (not the seven-tool native subset), wired as `defineTool` wrappers — MCP is the contract, defineTool is the wire (the community pi MCP extension fails headless; SDK registration is the proven path). `noTools: 'all'`: zero pi builtins, ever. Manifest allowlist filters the surface exactly as today (D1 discipline).
+- **Authority:** the runner authenticates per-Scout with that Scout's runtime credentials — one principal per user end to end; the ADR-020 approval-card boundary is untouched (propose-only for outward acts, humans decide).
+- **Model:** LiteLLM (the spike-validated provider config) — single auth surface, single quota pool, guardrails at the proxy. `dailyRunCap` still enforced by the scheduler.
+- **Isolation ladder, named:** v1 = per-user session/workspace dirs inside scout-runtime + service-level separation from the API; v2 = worker-process pool (each turn executes in a worker chrooted to the user's dir); v3 = per-user sandboxes if scale/threat model ever demands. Ship v1; v2 is the tracked follow-up.
 
-Verified against the real SDK (`@earendil-works/pi-coding-agent@0.84.1`, types read from dist, pinned exactly — upstream releases every few days).
+### Heavyweight cloud seats (sibling, not a separate technology)
 
-### Seam
-
-`nativeRuntimeService.executeRun` gains one branch before the existing while-loop:
-
-```ts
-if (engineForConfig(cfg) === 'pi') return runPiTurn(engineInput);
-// existing LiteLLM loop — untouched, remains the default
-```
-
-- `engineForConfig(cfg)`: `'pi'` iff `cfg.engine === 'pi'` **and** `process.env.PI_ENGINE_ENABLED === '1'`. Manifest field `engine?: 'native' | 'pi'` added to `NativeAgentDefinition`; Scout declares `'pi'` first. Env is the ops kill-switch — merging D1 changes nothing until flipped.
-- Backend remains the scheduler: wake/claim/caps/`AgentRun` rows/typing/`dailyRunCap` are all upstream of the seam and unchanged.
-
-### `runPiTurn` contract
-
-```ts
-const session = await createAgentSession({
-  noTools: 'all',                    // ZERO pi builtins: no bash/read/edit/write, ever
-  customTools: commonlyToolsFor(cfg, dispatchCtx),  // defineTool(...) wrappers
-  modelRuntime,                      // LiteLLM as an OpenAI-compatible provider
-  agentDir: <ephemeral scratch>,     // never ~/.pi — no shared state between principals
-});
-try {
-  const unsub = session.subscribe(onEvent);   // → AgentRun turns/tokens/toolCalls
-  await session.prompt(userMessage, { ... }); // system prompt via session config
-} finally { session.dispose(); }              // session-per-run; no reuse in v1
-```
-
-- **Tool mapping:** each entry in the existing `TOOLS` array wraps into a pi `ToolDefinition` — `name`/`description` copied verbatim, `parameters` passed through (TypeBox schemas are JSON-Schema-shaped; a parity test asserts every gated tool registers), `execute(toolCallId, params)` → the existing `dispatchTool(name, params, dispatchCtx)`. **One dispatcher, two engines** — capability boundary (D1 gating via `toolsForConfig`) applies before mapping, so the pi session sees exactly the manifest allowlist.
-- **Caps:** `MAX_TURNS` / `MAX_TOKENS` / `MAX_WALL_CLOCK_MS` enforced by the wrapper from subscribe-events; breach → abort + `dispose()` + the same `errorKind` vocabulary (`turn_cap` / `token_cap` / `timeout`) so AgentRun metrics stay comparable across engines.
-- **`postedViaTool` semantics carry over** (post/propose mark it; fallback-post only when unset) — the double-post guard is engine-independent.
-- **Guardrails:** LiteLLM-side guardrails ride the provider call unchanged (they live at the proxy, not the loop).
-- **Isolation:** session-per-run + `dispose()` + ephemeral `agentDir` means no cross-user state can accumulate in the engine layer. This is the first concrete D5 step; per-manifest worker-process execution is the next one and is out of scope here.
-- **Tool surface (amended 2026-08-13, Sam):** pi-Scout targets the kernel-blessed **MCP toolset** — the same `commonly_*` surface BYO/MCP agents get — not just the seven native-loop tools. Implementation stays defineTool wrappers over our own handlers (same dispatch authority, same D1 manifest-allowlist filtering); MCP is the contract, not necessarily the wire. The weiaodi incident (你好 into an agentless room) is the standing reminder of why the per-user agent must be a first-class citizen of the full kernel surface.
-- **Workspace isolation (amended 2026-08-13, Sam):** each session gets an ephemeral per-user workspace directory as its `cwd`/`agentDir` (created per run, destroyed with `dispose()`); a worker-process pool for true OS-level isolation is the named Phase 2 of this track — NOT a wrapper-process-per-user, which cannot scale to the 96 Scouts now installed. The scheduler-multiplexed session model IS the per-user pattern; the CLI wrapper pattern remains for heavyweight cloud seats.
-- **Session resume** (pi `-c`, spike-validated) is deliberately **not** in v1 — today's loop is stateless per run; resume is a later phase with its own ADR note when conversational memory-in-engine is wanted.
+Entitlement-gated hosted seats (`entitlements.cloudAgents`; the missions-unlock prize) run the SAME runner packaged one-per-container with its own PVC — the cloud-codex pattern. One runtime technology, two packaging densities: multiplexed for the 96 light Scouts, dedicated containers for the few heavy seats.
 
 ### Rollout
 
-Merge dark → flip `PI_ENGINE_ENABLED=1` on dev in a quiet window → Scout runs one day on pi with AgentRun metrics compared against the native-loop baseline (error kinds, latency, tokens) → leave on. Any regression: flip the env off; no deploy needed.
+Build scout-runtime → deploy dark → route ONE Scout (the smoke workspace) via the flag → compare AgentRun metrics against the native baseline (error kinds, latency, tokens) → widen to all Scouts → native loop demoted to fallback. Any regression: flip `SCOUT_RUNTIME_ENABLED` off.
 
 ## Part B — OpenClaw retirement, staged and gated
 
