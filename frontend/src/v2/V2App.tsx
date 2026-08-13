@@ -29,6 +29,7 @@ import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
 import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2AgentBYO from './components/V2AgentBYO';
+import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
 import ActivityFeedPage from '../components/activity/ActivityFeedPage';
 import AnalyticsDashboard from '../components/analytics/AnalyticsDashboard';
@@ -194,6 +195,20 @@ const V2App: React.FC = () => {
                 <Route
                   path="dashboard"
                   element={feature('Dashboard', 'Your dashboard tools, kept inside the v2 shell.', <Dashboard />)}
+                />
+                {/* Board must precede the param routes: the static "board"
+                    segment outranks both pods/:podId and pods/:podType/:roomId
+                    in v6 matching, but keeping it first makes intent legible. */}
+                <Route
+                  path="pods/:podId/board"
+                  element={feature(
+                    'Board',
+                    'Pod task board inside the v2 shell.',
+                    <V2PodBoard />,
+                    false,
+                    /* V2PodBoard owns its own header (pod name + back). */
+                    false,
+                  )}
                 />
                 <Route path="pods/:podId" element={<V2PodIdRoute />} />
                 <Route

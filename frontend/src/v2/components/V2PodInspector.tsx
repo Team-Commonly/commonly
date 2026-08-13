@@ -1425,16 +1425,14 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         </div>
       </div>
       {(runState.blocked + runState.inProgress + runState.pending + runState.complete) > 0 ? (
-        // Tasks exist — link to run-board AND surface the recent task list.
-        // (View run board target route still falls back to `/v2/pods/chat/<id>`
-        // v1 chat view since v2 has no dedicated tasks-board route — but
-        // when there's at least one task the link has somewhere meaningful
-        // to go.)
+        // Tasks exist — link to the v2-native board AND surface the recent
+        // task list. (This used to exit the shell into the v1 Pod Tools
+        // ChatRoom — the only v2 surface whose primary action left v2.)
         <>
           <button
             type="button"
             className="v2-inspector__link v2-inspector__link--block"
-            onClick={() => navigate(`/v2/pods/${pod.type || 'chat'}/${pod._id}`)}
+            onClick={() => navigate(`/v2/pods/${pod._id}/board`)}
           >
             {t('inspector.runState.viewRunBoard')}
           </button>

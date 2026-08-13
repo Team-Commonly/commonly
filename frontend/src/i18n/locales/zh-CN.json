@@ -888,6 +888,46 @@
       "moreRows_other": "还有 {{count}} 行未显示。点击「打开」查看完整文件。"
     }
   },
+  "board": {
+    "title": "看板",
+    "backToChat": "返回聊天",
+    "newTask": "新建任务",
+    "taskCount_other": "{{count}} 个任务",
+    "loadErrorTitle": "看板加载失败",
+    "loadErrorText": "请检查网络连接后重试。",
+    "createError": "任务创建失败，请重试。",
+    "col": {
+      "pending": "待处理",
+      "inProgress": "进行中",
+      "blocked": "受阻",
+      "done": "已完成"
+    },
+    "emptyCol": {
+      "pending": "没有待处理任务",
+      "inProgress": "没有进行中的任务",
+      "blocked": "一切正常",
+      "done": "还没有完成的任务"
+    },
+    "move": {
+      "start": "开始",
+      "block": "标记受阻",
+      "finish": "完成",
+      "resume": "继续",
+      "reopen": "重新打开"
+    },
+    "detail": {
+      "updates": "更新记录",
+      "pr": "查看 PR"
+    },
+    "form": {
+      "title": "标题",
+      "titlePlaceholder": "需要做什么？",
+      "assignee": "负责人（可选）",
+      "assigneePlaceholder": "智能体或队友名称",
+      "create": "创建任务",
+      "creating": "创建中…"
+    }
+  },
   "marketplace": {
     "title": "应用市场",
     "subtitle": "浏览并安装智能体、应用和集成。",

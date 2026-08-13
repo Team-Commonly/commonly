@@ -6512,3 +6512,325 @@
   opacity: 0.7;
   cursor: default;
 }
+
+/* ── V2 Pod Board — /v2/pods/:podId/board ──────────────────────────────── */
+
+.v2-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--v2-bg-subtle);
+}
+
+.v2-board__head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  background: var(--v2-bg);
+  border-bottom: 1px solid var(--v2-border);
+}
+
+.v2-root button.v2-board__back {
+  border: none;
+  background: none;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.v2-root button.v2-board__back:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-board__title-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.v2-board__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-board__subtitle {
+  font-size: 12.5px;
+  color: var(--v2-text-tertiary);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-board__new {
+  border: none;
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.v2-root button.v2-board__new:hover {
+  background: var(--v2-accent-strong);
+}
+
+.v2-board__columns {
+  display: flex;
+  gap: 14px;
+  padding: 16px 20px 24px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  align-items: flex-start;
+}
+
+.v2-board__col {
+  flex: 1 1 0;
+  min-width: 230px;
+  max-width: 340px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.v2-board__col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.v2-board__col-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--v2-text-secondary);
+}
+
+.v2-board__col-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-tertiary);
+  background: var(--v2-surface-tint);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.v2-board__col-empty {
+  font-size: 13px;
+  color: var(--v2-text-muted);
+  padding: 14px 6px;
+  text-align: center;
+}
+
+.v2-board__card {
+  border: 1px solid var(--v2-border);
+  border-radius: 10px;
+  background: var(--v2-bg);
+  overflow: hidden;
+}
+
+.v2-root button.v2-board__card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  padding: 10px 12px 6px;
+}
+
+.v2-root button.v2-board__card-main:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-board__card-id {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--v2-text-muted);
+  letter-spacing: 0.03em;
+}
+
+.v2-board__card-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--v2-text-primary);
+  line-height: 1.35;
+}
+
+.v2-board__card-assignee {
+  font-size: 12px;
+  color: var(--v2-accent-text);
+  font-weight: 500;
+}
+
+.v2-board__card-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 10px;
+}
+
+.v2-root button.v2-board__card-move {
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.v2-root button.v2-board__card-move:hover {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-board__detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.v2-board__detail-pr {
+  font-size: 12.5px;
+  color: var(--v2-accent-text);
+  font-weight: 500;
+}
+
+.v2-board__detail-notes {
+  font-size: 13.5px;
+  color: var(--v2-text-secondary);
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.v2-board__detail-moves {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.v2-board__detail-updates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.v2-board__detail-updates li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+  border-left: 2px solid var(--v2-border);
+  padding-left: 10px;
+}
+
+.v2-board__detail-update-author {
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  font-size: 11.5px;
+}
+
+.v2-board__detail-update-text {
+  color: var(--v2-text-secondary);
+}
+
+.v2-board__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.v2-board__field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+
+.v2-board__field input {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+}
+
+.v2-board__field input:focus {
+  outline: none;
+  border-color: var(--v2-accent);
+  box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.14);
+}
+
+.v2-root button.v2-board__create-submit {
+  border: none;
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.v2-root button.v2-board__create-submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.v2-root button.v2-board__create-submit:not(:disabled):hover {
+  background: var(--v2-accent-strong);
+}
+
+@media (max-width: 760px) {
+  .v2-board__head {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .v2-board__columns {
+    padding: 12px 14px 20px;
+  }
+
+  .v2-board__col {
+    min-width: 250px;
+    max-width: none;
+    flex: 0 0 78vw;
+  }
+}
