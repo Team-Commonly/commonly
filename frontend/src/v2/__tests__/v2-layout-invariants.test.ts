@@ -261,6 +261,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
   });
 
+  test('the approval card visually outranks the action over the agent prose', () => {
+    // The consent fix is render ORDER plus visual rank. The order lives in
+    // V2ApprovalCard and a render test pins it; the rank lives only here.
+    // If the pitch ever styles up to match the action, the two lines read as
+    // equals again and a human re-consents to prose — the exact defect,
+    // silently restored, with the render test still green.
+    expect(ruleBody(v2, '.v2-approval__action')).toContain('font-weight: 600');
+    const pitch = ruleBody(v2, '.v2-approval__pitch');
+    expect(pitch).toContain('border-left');
+    expect(pitch).toMatch(/font-size: 13px/);
+  });
+
   test('compare head does not combine section padding with its own max-width', () => {
     // `.v2-landing__section` centres a 1120px column via percentage padding
     // resolved against the PARENT. An element carrying both that class and its

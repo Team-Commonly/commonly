@@ -20,6 +20,47 @@ interface V2ApprovalCardProps {
   time: string | null;
 }
 
+// The consent line is derived from the fields the executor actually reads —
+// `actionType` + `params` — and never from `summary`.
+//
+// `summary` is caller-supplied prose whose entire server-side validation is
+// empty-reject plus 500-truncate (approvalActionService:151-152, :176).
+// Nothing checks that the sentence describes the action, so an agent can send
+// actionType 'create_pod' with summary "just tidying up your notes" and the
+// human consents to the sentence while the params execute. That gap is live
+// today — it is not a BYO-only forecast (sprint-review, fleet review
+// 2026-08-13).
+//
+// The prose stays: it is the agent's reason for asking, and that is worth
+// reading. It renders as a pitch beneath the action, never as the headline.
+const describeAction = (
+  actionType?: string | null,
+  params?: Record<string, unknown> | null,
+): { key: string; vars: Record<string, string> } | null => {
+  if (!actionType) return null;
+  const p = params || {};
+  if (actionType === 'create_pod') {
+    return {
+      key: 'approvalCard.action.createPod',
+      vars: { name: String(p.name ?? ''), type: String(p.type || 'chat') },
+    };
+  }
+  if (actionType === 'connect_local_agent') {
+    return {
+      key: 'approvalCard.action.connectLocalAgent',
+      vars: { name: String(p.name ?? '') },
+    };
+  }
+  // An actionType we have no phrasing for is still not licence to promote
+  // prose back into the action slot. Name it and show the params verbatim:
+  // ugly beats wrong on a consent surface, and it degrades safely when the
+  // kernel gains an action type before the shell learns its wording.
+  return {
+    key: 'approvalCard.action.unknown',
+    vars: { actionType, params: JSON.stringify(p) },
+  };
+};
+
 const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, time }) => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
@@ -57,6 +98,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   // Partial success is its own truth: the pod exists (user owns it) but the
   // agent couldn't join and would 403 on every post — say so, don't say done.
   const agentJoinFailed = execution?.agentJoined === false;
+  const action = describeAction(payload.actionType, payload.params);
+  const prose = payload.summary || message.content;
 
   const decide = async (decision: 'approved' | 'declined') => {
     if (deciding || !payload.approvalId) return;
@@ -81,7 +124,19 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>
-        <div className="v2-approval__summary">{payload.summary || message.content}</div>
+        {action ? (
+          <>
+            <div className="v2-approval__action" data-testid="approval-action">
+              {t(action.key, action.vars)}
+            </div>
+            {prose && <div className="v2-approval__pitch">{prose}</div>}
+          </>
+        ) : (
+          // Only reachable for a payload with no actionType at all, which the
+          // server never mints. Rendering the prose alone beats rendering
+          // nothing, and there is no action to misrepresent.
+          <div className="v2-approval__summary">{prose}</div>
+        )}
 
         {status === 'flagged' && (
           <>

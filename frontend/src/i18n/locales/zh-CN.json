@@ -934,6 +934,11 @@
   },
   "approvalCard": {
     "badge": "需要批准",
+    "action": {
+      "createPod": "创建一个名为“{{name}}”的 Pod（类型：{{type}}）",
+      "connectLocalAgent": "连接一个名为“{{name}}”的本地智能体座位",
+      "unknown": "执行“{{actionType}}”，参数：{{params}}"
+    },
     "approve": "批准",
     "decline": "拒绝",
     "deciding": "处理中…",

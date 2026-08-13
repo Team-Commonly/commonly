@@ -940,6 +940,11 @@
   },
   "approvalCard": {
     "badge": "Approval needed",
+    "action": {
+      "createPod": "Create a pod named \"{{name}}\" ({{type}})",
+      "connectLocalAgent": "Connect a local agent seat named \"{{name}}\"",
+      "unknown": "Run \"{{actionType}}\" with: {{params}}"
+    },
     "approve": "Approve",
     "decline": "Decline",
     "deciding": "Deciding…",
