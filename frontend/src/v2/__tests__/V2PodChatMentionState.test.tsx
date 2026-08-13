@@ -85,7 +85,7 @@ describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',
     }]);
     renderChat(makeDetail());
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states')));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
 
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: 'hey @sam-agent can you look' },
@@ -101,7 +101,7 @@ describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: false,
     }]);
     renderChat(makeDetail());
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states')));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
 
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: '@sam-agent ping' },
@@ -117,7 +117,7 @@ describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
       agentName: 'sam-agent', instanceId: 'default', state: 'gone-dark', isOwner: false,
     }]);
     renderChat(makeDetail());
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states')));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
 
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: '@sam-agent still there?' },
@@ -133,7 +133,7 @@ describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
       agentName: 'sam-agent', instanceId: 'default', state: 'listening', isOwner: true,
     }]);
     renderChat(makeDetail());
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states')));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
 
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: '@sam-agent all good' },
@@ -147,7 +147,7 @@ describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',
     }]);
     renderChat(makeDetail());
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states')));
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
 
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: '@sam' },
