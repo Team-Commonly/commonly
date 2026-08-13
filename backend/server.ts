@@ -194,6 +194,8 @@ app.use('/api', podInvitesRoutes);
 app.use('/api/pods', podRoutes);
 app.use('/api/billing', require('./routes/billing'));
 app.use('/api/messages', messageRoutes);
+// ADR-020 D3: approval-card decisions (human-only; see routes/approvals.ts)
+app.use('/api/approvals', require('./routes/approvals'));
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);

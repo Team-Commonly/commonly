@@ -161,6 +161,7 @@ const setupPgDb = async () => {
         user_id VARCHAR(24) NOT NULL,
         content TEXT NOT NULL,
         message_type VARCHAR(50) DEFAULT 'text',
+        payload JSONB,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);

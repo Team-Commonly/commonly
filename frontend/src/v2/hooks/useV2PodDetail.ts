@@ -52,6 +52,23 @@ export interface V2Message {
     mine: boolean;
     users?: Array<{ id: string; username: string; displayName?: string }>;
   }>;
+  // ADR-020 D3: structured component payload. `kind` discriminates renderers
+  // (approval-card first). Server-composed; survives normalizeMessage via
+  // the `...raw` spread — declared here so consumers can read it typed.
+  payload?: {
+    kind?: string;
+    approvalId?: string;
+    actionType?: string;
+    summary?: string;
+    params?: Record<string, unknown>;
+    status?: string;
+    decision?: string;
+    ownerUserId?: string;
+    agentName?: string;
+    expiresAt?: string;
+    executionResult?: { podId?: string; podName?: string } | Record<string, unknown>;
+    executionError?: string;
+  } | null;
 }
 
 export interface V2Agent {
@@ -341,11 +358,25 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
           : m
       )));
     };
+    // ADR-020 D3: card status transitions. Same patch discipline as
+    // reactions — one field on one message; the server's payload is
+    // authoritative (card faces are shared state, never per-viewer).
+    const handleCardUpdate = (update: { messageId: string; podId?: string; payload?: V2Message['payload'] }) => {
+      if (!update || !update.messageId) return;
+      if (update.podId && update.podId !== podId) return;
+      setMessages((prev) => prev.map((m) => (
+        String(m.id) === String(update.messageId)
+          ? { ...m, payload: update.payload }
+          : m
+      )));
+    };
     socket.on('newMessage', handleNewMessage);
     socket.on('messageReaction', handleReactionChange);
+    socket.on('messageCardUpdated', handleCardUpdate);
     return () => {
       socket.off('newMessage', handleNewMessage);
       socket.off('messageReaction', handleReactionChange);
+      socket.off('messageCardUpdated', handleCardUpdate);
       leavePod(podId);
     };
   }, [podId, socket, connected, joinPod, leavePod, currentUser?._id]);

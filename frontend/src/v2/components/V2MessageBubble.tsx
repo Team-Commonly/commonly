@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
+import V2ApprovalCard from './V2ApprovalCard';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
@@ -306,6 +307,13 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
+
+  // ADR-020 D3: payload-driven components render from structure, not
+  // content regex — the first message class where `payload` is the truth
+  // and `content` is only the plain-text fallback for legacy surfaces.
+  if (message.payload?.kind === 'approval-card') {
+    return <V2ApprovalCard message={message} authorLabel={author} time={time} />;
+  }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only
   // posts this exact form), so we don't depend on a metadata column the PG

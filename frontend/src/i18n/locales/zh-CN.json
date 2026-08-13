@@ -928,6 +928,23 @@
       "creating": "创建中…"
     }
   },
+  "approvalCard": {
+    "badge": "需要批准",
+    "approve": "批准",
+    "decline": "拒绝",
+    "deciding": "处理中…",
+    "waitingForOwner": "等待工作区所有者决定。",
+    "approved": "✓ 已批准 — 已完成。",
+    "approvedButFailed": "已批准，但执行失败：{{error}}",
+    "declined": "已拒绝。",
+    "expired": "已过期，未做出决定。",
+    "moot": "已不再适用。",
+    "openResult": "打开新 Pod",
+    "errors": {
+      "expired": "该批准在决定生效前已过期。",
+      "failed": "决定未能保存，请重试。"
+    }
+  },
   "marketplace": {
     "title": "应用市场",
     "subtitle": "浏览并安装智能体、应用和集成。",
