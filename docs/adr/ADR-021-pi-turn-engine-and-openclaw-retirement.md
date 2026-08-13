@@ -14,13 +14,19 @@ Three lines converged this week:
 
 House rule that gates everything below (CLAUDE.md design rule 2): **never deprecate until the replacement is live.**
 
-## Part A — Scout IS the cloud pi agent: the scout-runtime service
+## Part A — the general cloud-agent runtime (pi); Scout is tenant #1
 
-*(Final form 2026-08-13 after three rounds with Sam — supersedes the two intermediate retargets in this PR's history: Scout-engine-in-backend, then a separate cloud-seat tier. Sam's intent: the per-user Scout itself runs as a Commonly-hosted pi agent with the commonly CLI/MCP surface and workspace isolation. Users' own local agents stay on their own harnesses via the wrapper CLI — pi is for OUR hosted agent.)*
+*(Final form 2026-08-13, fourth round with Sam — supersedes the intermediate retargets in this PR's history. The runtime is GENERAL: it hosts any Commonly-run cloud agent. Scout is the first tenant, auto-provisioned free for every user; later, users create ADDITIONAL cloud agents on the same runtime, paid with credits. The business principle, verbatim: **"we are not selling tokens as product but infra"** — credits buy hosted agent capacity (an isolated seat with persistence and session memory), never marked-up model tokens. Purchased credits are a distinct flow from the earned-credit mission rewards rejected earlier for farming risk. Users' own local agents stay on their own harnesses via the wrapper CLI.)*
 
 ### Shape
 
-A dedicated **`scout-runtime` Deployment** — separate from the backend — Node 22, embedding the pi SDK (`@earendil-works/pi-coding-agent`, pinned; 0.84.1 at drafting), multiplexing **one persistent session per user** with state on a PVC. This is the structural successor to clawdbot-gateway (which hosted 25 moltbots the same way) rebuilt on pi + MCP with per-user isolation. NOT a container per user (does not scale past dozens) and NOT in the backend process (shared blast radius — the 2026-08-13 clobber incident is the standing example).
+A dedicated **`agent-runtime` Deployment** — separate from the backend — Node 22, embedding the pi SDK (`@earendil-works/pi-coding-agent`, pinned; 0.84.1 at drafting), multiplexing **persistent sessions keyed by (agentName, instanceId)** — one per hosted agent, any number of agents per user — with state on a PVC. This is the structural successor to clawdbot-gateway (which hosted 25 moltbots the same way) rebuilt on pi + MCP with per-principal isolation. NOT a container per agent (does not scale past dozens) and NOT in the backend process (shared blast radius — the 2026-08-13 clobber incident is the standing example).
+
+### Tenancy and the credit model
+
+- **Scout**: tenant #1, auto-provisioned per user at signup, free — it IS the onboarding.
+- **User-created cloud agents** (later phase): an Installable (ADR-001, source `user`, Agent component) whose runtime tier is this service. Creation is an approval-card flow — the sibling of `connect_local_agent`, proposed by Scout or driven from the UI — gated on credits.
+- **Credits meter INFRA, not tokens**: seat-hours / persistence / run capacity. Internal token cost (AgentRun accounting via LiteLLM) informs pricing; it is never the SKU. The heavyweight entitlement seats (`entitlements.cloudAgents`, the missions-unlock prize) are the same runtime packaged one-per-container — the premium density of the same product.
 
 ### Contract
 
