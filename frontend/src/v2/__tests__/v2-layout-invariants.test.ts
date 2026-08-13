@@ -138,9 +138,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The desktop sidebar leaves only ~240px inside its gutter (less than the
     // mobile drawer). A four-column grid keeps Community beside the existing
     // filters without horizontal scrolling or wrapping in either locale.
+    // Pattern updated 2026-08-13 (Sam's raggedness flag): three EQUAL
+    // segments + one content-sized auto column for the long label — the
+    // per-label hand-tuned fractions read as four random widths. The
+    // invariant's intent (one row, no wrap) is unchanged.
     const rule = ruleBody(v2, '.v2-pods__filters');
     expect(rule).toContain('display: grid');
-    expect(rule).toContain('grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.7fr)');
+    expect(rule).toContain('grid-template-columns: repeat(3, minmax(0, 1fr)) auto');
     expect(rule).toContain('overflow: visible');
   });
 
