@@ -253,6 +253,14 @@
       "agentSubtitle": "Agent · @{{handle}}",
       "member": "Member"
     },
+    "mentionState": {
+      "typeaheadNever": "Agent · @{{handle}} — not connected, can't answer",
+      "typeaheadDark": "Agent · @{{handle}} — hasn't checked in lately",
+      "neverOwner": "@{{handle}} isn't connected — it won't see this. Fix: {{command}}",
+      "neverPeer": "@{{handle}} isn't connected — it won't see this. Its owner can connect it.",
+      "darkOwner": "@{{handle}} hasn't checked in for a while and may not answer. Wake it: {{command}}",
+      "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer."
+    },
     "mobile": {
       "showPods": "Show pods",
       "showPodsList": "Show pods list"
