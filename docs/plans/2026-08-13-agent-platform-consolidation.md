@@ -28,47 +28,97 @@ backfill + npm).
 ## Workstreams
 
 ### W1 — Approvals become CAP (the universality gap) · SMALL, FIRST
-Producer surface today is an in-process native tool only. Fix per the reactions
-precedent (dual-surface rule):
-1. `POST /api/agents/runtime/pods/:podId/propose-action` — `agentRuntimeAuth`,
-   active-installation gate (same as posting), principal from the token. Safe for
-   any proposer by construction: proposals are inert without the human owner.
-2. `commonly_propose_action` into `@commonlyai/mcp` → **0.4.0** (publish needs
-   Sam's web-OTP).
-3. Later, same pattern for `commonly_agent_status` (second instance, lower urgency).
+*(Amended after fleet review 2026-08-13 — pod-architect blocker + ux-lead UX half.)*
+Producer surface today is an in-process native tool only. Order within W1:
+0. **FIRST COMMIT — fix the decider derivation** (pod-architect, BLOCKING,
+   measured & independently reproduced: 63/261 prod pods are bot-created).
+   `ownerUserId = pod.createdBy` + the human-only rule makes cards in those
+   pods undecidable by construction. Fix in the SERVICE: derive the decider
+   from the accountable human (`AgentInstallation.installedBy` when human;
+   REFUSE to mint when no human decider resolves — refusal is honest, an
+   undecidable card is the exact failure this line exists to prevent). The
+   same fix pre-solves W5's multi-human case, and the WAITING face must never
+   render for an impossible owner (ux-lead: fails-silent on a consent surface).
+1. `POST /api/agents/runtime/pods/:podId/propose-action` — `agentRuntimeAuth`
+   **+ `phase4RateLimit`** (sibling mutating-route convention; propose is more
+   expensive than post), active-installation gate, principal from the token.
+2. **The UX half ships WITH the route, before 0.4.0** (ux-lead): origin cue
+   mapped to **ADR-001's `source` axis** (first-party quiet; BYO renders
+   "connected by @<installer>") + the **server-derived structured action**
+   (actionType + key params — already on the wire in `buildCardPayload`,
+   currently unrendered) as the PRIMARY consent line, proposer prose demoted
+   to pitch. "Inert without the owner" covers execution, not mislabeling.
+3. `commonly_propose_action` into `@commonlyai/mcp` → **0.4.0** — publish is a
+   **Sam-only web-OTP step on the W2 critical path** (moved to the Open ledger).
+4. Later, same pattern for `commonly_agent_status`.
 
 **Why first:** ADR-021's tool wire is the MCP client — built before W1, cloud
 agents are born unable to propose. W1 is upstream of W2-M1.
-**Acceptance:** a BYO wrapper proposes a card that the owner approves, E2E.
+**Acceptance:** a BYO wrapper proposes; the owner approves; **the card visibly
+attributes origin and renders the server's parse**; pinned by a
+`reactionController.test.js`-shaped service-tier suite (dual-auth + install
+gate + decider derivation incl. bot-created-pod refusal).
 
 ### W2 — agent-runtime (ADR-021 Part A.1) · GATED ON #938 MERGE
-Milestones as ratified: M1 skeleton + smoke Scout through the CAP queue → M2
-LRU/caps/AgentRun-PATCH/claims → M3 all Scouts + fallback validated + soak →
-M4 user-created cloud agents + credits (priced separately; "infra, not tokens").
-Depends on W1 for a complete toolset at M1.
+Milestones amended after review: **M1 = skeleton + smoke Scout + the CLAIMS
+protocol** (pod-architect: delivered events requeue at 10min up to 3× — claims
+one milestone downstream of that hazard is one engine interleaving itself) →
+M2 LRU/caps/AgentRun-PATCH → M3 all Scouts + fallback validated + soak → M4
+user-created agents + credits. Depends on W1 for the toolset **and the 0.4.0
+publish (Sam's OTP, critical path)**. Failure semantics are now DEFINED in
+#938 (trigger/mechanism/owner/granularity) — no longer decided in name only.
+Named migration traps (sprint-review + follow-up):
+- Boot seeder re-asserts `runtimeType: 'native'` each deploy for the three
+  demo first-party apps (Scout exempt — per-user installs are not
+  seeder-managed, verified negative). Any of the three following Scout onto
+  the runtime requires the seeder change FIRST — no test fails today, the
+  symptom is the runtime going quiet.
+- `refresh-native-agent-configs` re-projects manifest config onto installs:
+  an M1 per-install engine override survives boot but NOT a config refresh —
+  the override must live outside projected config before the smoke flip.
+Test tier: service-tier on the queue-transport swap (the partial-flip
+surface); the M3 soak is dev-env and does not substitute.
 
 ### W3 — OpenClaw retirement (ADR-021 Part B) · PARALLEL AFTER RATIFICATION
 Decoupled from pi (gates on native adequacy — met). Freeze → disposition (needs
-**Sam's row-by-row call** on the 25-agent table) → infra excision (gateway down,
-submodule removed; 14-day quiet gate) → docs sweep. Identity rule 8 absolute.
+**Sam's row-by-row call** on the 25-agent table) → infra excision → docs sweep.
+Identity rule 8 absolute. Review amendments (sprint-review):
+- **`verify:moltbot-tools` retires in the SAME PR as the submodule excision**
+  — the CI step exits 2 the moment the submodule goes; the guard exists
+  because of the submodule and dies with it.
+- **The 14-day quiet gate becomes falsifiable**: a cluster-tier assertion of
+  zero events dispatched to moltbot runtimes across the window, not an
+  eyeballed waiting period.
 
-### W4 — Onboarding funnel follow-ups · INDEPENDENT QUICK WINS
-- **Stalled-connect trigger**: token issued + unused ≥15min → attention event wakes
-  Scout to post the fix (ADR-017-shaped; needs a 1-page spec — the event source and
-  the no-spam rule). All three real casualties would have been caught by this.
-- **`host: 'byo'` stamp** on self-serve webhook installs — today they read
-  "unknown" in agent-states while actively polling (one-line install-route fix +
-  test).
-- **Opener conversion**: 2 of 2 Scout users never typed; copy experiment on the
-  opener's closing line.
-- **`lastLogin` tracking** — observability gap; we cannot tell returns.
-- **Nudge decision** (Sam): whether to email the three stranded users now that
-  their instructions work.
+### W4 — Onboarding funnel follow-ups · INSTRUMENT-FIRST (order inverted, ux-lead)
+1. **`host: 'byo'` stamp** — one line + test; fixes an active honesty-surface
+   lie (live pollers reading "unknown").
+2. **`lastLogin` tracking** — the instrument; without it nothing downstream
+   has an outcome measure.
+3. **Stalled-connect trigger** — highest user value (all three casualties
+   caught). **Spec claimed by ux-lead**: once per token-episode (reset on
+   reissue), one post + presence escalation (no repeats), 15min patience,
+   flat copy (never-used is structurally certain). Also converts "nobody's
+   first mention has ever failed" from color into a monitored state — that
+   line goes stale silently now that the funnel is whole.
+4. **Opener redesign — judgment, NOT an experiment at n=2** (ux-lead): close
+   with one concrete low-stakes offer scoped to something Scout observed in
+   THEIR workspace; define typed-within-24h-of-opener now; measure the next
+   cohort as a baseline, no attribution claims. Real-browser check required.
+5. **Nudge decision** (Sam): whether to email the three stranded users.
 
-### W5 — ADR-020 remainder · TRIGGER NOT YET MET
+### W5 — ADR-020 remainder · TRIGGER NOT YET MET (and currently UNWATCHED)
 D6 second half (second human joins → auto-open user↔Scout DM, migrate cards).
-Spec-before-build when the first multi-human Scout workspace appears; touches
-§3.10 DM invariants and card routing.
+Spec-before-build. Review amendments:
+- **The trigger has no producer** (sprint-review): nothing watches
+  human-membership transitions — "parked until trigger" is a permanent park.
+  The detector derives where D6's first half already runs. Named work, Open.
+- §3.10 is clean (pod-architect: one agent-room per human satisfies
+  `DM_POD_TYPES_GUARD` by construction); W1's decider fix pre-solves the
+  multi-human owner problem.
+- **Card migration must re-post and re-point `messageId`** — rewriting
+  `podId` alone strands the rendered card in the origin pod while socket
+  updates go to the destination (pod-architect).
 
 ## Sequencing
 
@@ -82,13 +132,16 @@ W5: parked until trigger
 
 ## Decision ledger
 
-| Decided (do not relitigate) | Open (owner: Sam) |
+| Decided (do not relitigate) | Open |
 |---|---|
-| Scout = tenant #1 on a general cloud-agent runtime; credits buy infra, not tokens | Merge #938 (starts W2 + W3) |
-| CAP-queue transport; kernel-owned AgentRun; manual fallback | Disposition rows (any moltbot survivors?) |
-| Scout stays native until runtime soak; native loop = fallback | Nudge the three stranded users? |
-| Retirement decoupled from pi | Phase-3 teardown timing vs GTM |
-| Smoke the shipped artifact, never repo source | The pending "Sprint Planning" card |
+| Scout = tenant #1 on a general cloud-agent runtime; credits buy infra, not tokens | Merge #938 (starts W2 + W3) — Sam |
+| CAP-queue transport; kernel-owned AgentRun | Disposition rows (any moltbot survivors?) — Sam |
+| Manual fallback — **now DEFINED in #938** (trigger/mechanism/owner/granularity), was name-only | Nudge the three stranded users? — Sam |
+| Scout stays native until runtime soak; native loop = fallback | Phase-3 teardown timing vs GTM — Sam |
+| Retirement decoupled from pi | The pending "Sprint Planning" card — Sam |
+| Smoke the shipped artifact, never repo source | **mcp 0.4.0 publish (web-OTP, W2 critical path)** — Sam |
+| W1 decider = accountable human, never blind `pod.createdBy` | W5 trigger detector — named work, unowned |
+| Claims protocol is M1, not M2 | W3 CI-guard pairing — rides the Phase-3 PR |
 
 ## Risks
 
