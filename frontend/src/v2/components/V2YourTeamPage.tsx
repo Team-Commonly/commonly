@@ -19,6 +19,9 @@ interface AgentInstallationSummary {
   status?: string;
   installedAt?: string;
   lastHeartbeatAt?: string | null;
+  // Max across heartbeats, runtime-token use, and native AgentRuns (#915).
+  // Older backends omit it — fall back to lastHeartbeatAt via lastSeenTime.
+  lastActiveAt?: string | null;
   runtime?: { runtimeType?: string; provider?: string } | null;
   category?: string | null;
   podId?: string;
@@ -46,9 +49,10 @@ const formatRelative = (
 ): string => {
   // An agent that has NEVER been seen is not the same as a quiet one, and
   // conflating them is how 13 unreachable installs sat in Your Team looking
-  // healthy. `lastHeartbeatAt` is derived from heartbeat events, so a BYO
-  // agent whose wrapper was never started has none at all — the user wired up
-  // MCP, saw the agent appear here, @mentioned it, and got silence (#887).
+  // healthy (#887). Callers pass lastSeenIso() — the max across heartbeat
+  // events, runtime-token use, and native AgentRuns — because any single
+  // source lies for the runtime classes it doesn't cover: heartbeat-only
+  // showed the Guide as "Never connected" minutes after it replied (#915).
   if (!iso) return t('yourTeam.activity.neverConnected');
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return t('yourTeam.activity.noRecent');
@@ -61,6 +65,14 @@ const formatRelative = (
   return t('yourTeam.activity.daysAgo', { count: d });
 };
 
+const lastSeenIso = (a: AgentInstallationSummary): string | null =>
+  a.lastActiveAt ?? a.lastHeartbeatAt ?? null;
+
+const lastSeenTime = (a: AgentInstallationSummary): number => {
+  const iso = lastSeenIso(a);
+  return iso ? new Date(iso).getTime() : 0;
+};
+
 const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSummary[] => {
   const seen = new Map<string, AgentInstallationSummary>();
   for (const a of agents) {
@@ -70,9 +82,7 @@ const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSumm
       seen.set(key, a);
       continue;
     }
-    const prev = existing.lastHeartbeatAt ? new Date(existing.lastHeartbeatAt).getTime() : 0;
-    const next = a.lastHeartbeatAt ? new Date(a.lastHeartbeatAt).getTime() : 0;
-    if (next > prev) seen.set(key, a);
+    if (lastSeenTime(a) > lastSeenTime(existing)) seen.set(key, a);
   }
   return Array.from(seen.values());
 };
@@ -181,11 +191,7 @@ const V2YourTeamPage: React.FC = () => {
   }, []);
 
   const sortedAgents = useMemo(() => {
-    return [...agents].sort((a, b) => {
-      const ta = a.lastHeartbeatAt ? new Date(a.lastHeartbeatAt).getTime() : 0;
-      const tb = b.lastHeartbeatAt ? new Date(b.lastHeartbeatAt).getTime() : 0;
-      return tb - ta;
-    });
+    return [...agents].sort((a, b) => lastSeenTime(b) - lastSeenTime(a));
   }, [agents]);
 
   // Available categories — derived from loaded agents. Order: deterministic
@@ -363,7 +369,7 @@ const V2YourTeamPage: React.FC = () => {
           const display = a.displayName || a.name;
           const podLabel = a.podName || t('yourTeam.untitledProject');
           const runtimeLabel = formatRuntime(a, t);
-          const lastSeen = formatRelative(a.lastHeartbeatAt, t);
+          const lastSeen = formatRelative(lastSeenIso(a), t);
           const cardKey = `${a.name}:${a.instanceId}`;
           const isOpening = opening === cardKey;
           const onCardClick = () => {
