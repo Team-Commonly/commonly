@@ -903,7 +903,7 @@
   opacity: 1;
 }
 
-/* The pin overlays the fixed time slot, so revealing it cannot reflow the
+/* The pin overlays the reserved time slot, so revealing it cannot reflow the
    title or preview. */
 .v2-pods__row:hover .v2-pods__item-time,
 .v2-pods__row--pinned .v2-pods__item-time {
@@ -1099,16 +1099,14 @@
    second line is reserved entirely for the message preview. */
 .v2-pods__item-time {
   flex-shrink: 0;
-  /* 56px keeps the longest current relative-time labels ("Yesterday" and
-     "11:59 PM") legible while preserving a stable title/hover geometry. */
-  width: 56px;
+  /* Relative-time formatting follows the viewer's browser locale. Do not
+     cap it to an English measurement: title ellipsis is safer than clipping
+     a clock, and visibility:hidden still reserves this row's slot on hover. */
   font-size: 11px;
   color: var(--v2-text-tertiary);
   font-variant-numeric: tabular-nums;
   align-self: baseline;
-  overflow: hidden;
   text-align: right;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

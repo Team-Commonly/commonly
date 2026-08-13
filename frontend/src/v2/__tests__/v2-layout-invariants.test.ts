@@ -169,7 +169,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-board__detail-updates li')).toContain('border-left: 3px solid var(--v2-border)');
   });
 
-  test('pod rows reserve one preview line and a fixed meta slot', () => {
+  test('pod rows reserve one preview line and a locale-shaped time slot', () => {
     const row = ruleBody(v2, '.v2-pods__item');
     const snippet = ruleBody(v2, '.v2-pods__item-snippet');
     const time = ruleBody(v2, '.v2-pods__item-time');
@@ -179,9 +179,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(snippet).toContain('height: 16px');
     expect(snippet).toContain('white-space: nowrap');
     expect(snippet).toContain('text-overflow: ellipsis');
-    // The slot must fit the longest current English clock labels. A narrower
-    // reservation visibly elided AM/PM and made a clock ambiguous (#928).
-    expect(time).toContain('width: 56px');
+    // Relative time comes from the viewer's browser locale, so a fixed English
+    // pixel width will eventually clip a clock. Keep its intrinsic width and
+    // let the already-ellipsized title absorb the remaining line.
+    expect(time).toContain('flex-shrink: 0');
+    expect(time).toContain('white-space: nowrap');
+    expect(time).not.toContain('width:');
     expect(v2).toContain('.v2-pods__row--pinned .v2-pods__item-time');
   });
 
