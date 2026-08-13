@@ -38,6 +38,14 @@ const podMarkFor = (name: string, type: string | undefined, dmLabel: string): st
 const normalizeAgentSegment = (value: string | undefined): string =>
   (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
 
+// Per-user agents carry OPAQUE instance tokens (the u+sha10 convention, plus
+// the legacy long form) — machine keys, never identities. A moltbot's
+// instanceId ("aria") is the opposite: the human-chosen name, with agentName
+// as the runtime label we must never surface. So handle preference is:
+// human-meaningful instanceId wins; opaque token falls back to agentName.
+const isOpaqueInstanceToken = (value: string | undefined): boolean =>
+  /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((value || '').toLowerCase());
+
 // Mirrors backend AgentIdentityService.buildAgentUsername — instance suffix
 // elides when default/empty/equal to base name. Used to wire a mention back
 // to the agent's User row username.
@@ -474,7 +482,14 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       const username = buildAgentUsername(rawName, a.instanceId);
       const display = a.displayName || a.profile?.displayName || rawName;
       const instance = (a.instanceId || 'default').toLowerCase();
+      // Handle preference: a human-chosen instanceId ("aria") IS the
+      // identity and stays the handle — agentName there is the runtime label
+      // we never surface. An OPAQUE per-user token (guide/u3f9c2a1b7d) is a
+      // machine key and must never be the handle; the backend's mention map
+      // resolves the bare agentName for it (single-install rule), so
+      // "@guide" both reads right and lands (Sam, 2026-08-13).
       const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
+        && !isOpaqueInstanceToken(instance)
         ? instance
         : rawName.toLowerCase();
       const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
@@ -778,8 +793,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       if (created) {
         const delivery = created.agentDelivery;
         const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
+        // Same handle rule as the typeahead: human-chosen instanceId is the
+        // identity and stays; an opaque per-user token must never be the
+        // suggested handle ("Try @u3f9c2a1b7d").
         const rawMentionHandle = exampleAgent?.instanceId
           && exampleAgent.instanceId.toLowerCase() !== 'default'
+          && !isOpaqueInstanceToken(exampleAgent.instanceId)
           ? exampleAgent.instanceId
           : exampleAgent?.agentName;
         const mentionHandle = normalizeAgentSegment(rawMentionHandle);
