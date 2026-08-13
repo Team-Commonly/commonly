@@ -135,6 +135,45 @@ const findForeignLocalAgentOwner = async (
   return !!foreign;
 };
 
+/**
+ * The decider is the accountable HUMAN — not whoever happens to have created
+ * the pod.
+ *
+ * `ownerUserId = pod.createdBy` was the original derivation and it is wrong at
+ * scale: 63 of 261 production pods are bot-created, so a card proposed in one
+ * was undecidable by construction. The owner-only resolve gate refused a
+ * decider who could never exist, and the card sat on the WAITING face forever.
+ * On a consent surface that fails silent, which is the one failure mode a
+ * consent surface may not have.
+ *
+ * Candidates are tried in accountability order: whoever installed this agent
+ * here answers for what it proposes; the pod's creator is the fallback.
+ *
+ * Each candidate must RESOLVE to a non-bot User, which is stricter than
+ * testing the field for presence, and deliberately so — `installedBy` is not
+ * reliably a human. `agentsRuntime`'s auto-install paths store a bot `_id`
+ * (:2850, :2907, :2997), and `seed-native-agents` stores a hardcoded admin id
+ * that simply does not exist on a self-hosted instance, where it is a dangling
+ * ref rather than a bot. A presence check catches neither; resolution catches
+ * both.
+ *
+ * Returning null means refuse to mint. That is the honest outcome: an
+ * undecidable card is the exact failure this derivation exists to prevent, and
+ * a refusal at propose time tells the agent something it can act on.
+ */
+const resolveHumanDecider = async (candidates: unknown[]): Promise<string | null> => {
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const key = candidate ? String(candidate) : '';
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    // eslint-disable-next-line no-await-in-loop
+    const user = await User.findById(key);
+    if (user && user.isBot !== true) return String(user._id);
+  }
+  return null;
+};
+
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
@@ -151,14 +190,29 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   const trimmedSummary = String(summary || '').trim();
   if (!trimmedSummary) return { ok: false, error: 'summary is required' };
 
-  // The decider is the pod's owner — for the Guide's workspace, the user.
-  // A pod with no resolvable owner cannot host approval cards.
   const pod = await Pod.findById(podId).select('createdBy').lean() as { createdBy?: unknown } | null;
-  if (!pod?.createdBy) return { ok: false, error: 'pod has no resolvable owner' };
+  if (!pod) return { ok: false, error: 'pod not found' };
+
+  // See resolveHumanDecider: installer first, pod creator as fallback, and the
+  // winner must resolve to a real non-bot User.
+  const install = await AgentInstallation.findOne({
+    agentName: String(agentName).toLowerCase(),
+    podId,
+    instanceId: instanceId || 'default',
+    status: 'active',
+  });
+  const ownerUserId = await resolveHumanDecider([install?.installedBy, pod.createdBy]);
+  if (!ownerUserId) {
+    return {
+      ok: false,
+      error: 'no accountable human owns this pod, so an approval card here would be undecidable — '
+        + 'a human must install the agent or own the pod before it can propose actions',
+    };
+  }
 
   if (actionType === 'connect_local_agent') {
     const requestedName = String((params || {}).name || '').trim().toLowerCase();
-    if (await findForeignLocalAgentOwner(requestedName, pod.createdBy)) {
+    if (await findForeignLocalAgentOwner(requestedName, ownerUserId)) {
       return {
         ok: false,
         error: `the agent name "${requestedName}" is already in use by another user — pick a different name`,
@@ -168,7 +222,7 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
 
   const row = await ApprovalAction.create({
     podId,
-    ownerUserId: pod.createdBy,
+    ownerUserId,
     agentName: String(agentName).toLowerCase(),
     instanceId: instanceId || 'default',
     actionType,
