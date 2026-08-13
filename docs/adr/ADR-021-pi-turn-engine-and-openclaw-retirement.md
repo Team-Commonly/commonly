@@ -54,11 +54,12 @@ Three contested points settled: **transport = the CAP event queue** (the runtime
 - **`agent-runtime/`** — new top-level deployable (own `package.json`: Node 22, `@earendil-works/pi-coding-agent` pinned, `@commonlyai/mcp`; own Dockerfile). Helm: `agent-runtime-deployment.yaml` + PVC, **dev-pool** (stateful — never spot, ADR-015), 1 replica in v1 (sessions pin to one box; HA later), no public ingress, egress restricted to the API and LiteLLM.
 - **`deploy-dev.yml`** gains the image (workflow-file change → samxu01 push per identity policy).
 
-### Turn flow (Q1: CAP queue)
+### Turn flow (Q1: CAP queue) — amended after fleet review 2026-08-13
 
-1. Backend scheduler treats a hosted agent as an external runtime: enqueues `AgentEvent` (mention/wake) instead of running in-process. Engine branch: manifest `engine: 'pi'` **and** `HOSTED_RUNTIME_ENABLED=1`; per-install override first (smoke Scout), manifest-wide after soak. Everything upstream — mention resolution, claims/leases (ADR-018), caps, `dailyRunCap` — unchanged.
-2. The runtime polls/claims events per hosted agent with that agent's own runtime token (the same endpoints the wrapper CLI uses — CAP dogfooded), honoring the claim protocol before executing.
-3. Turn executes in the agent's session; replies and actions go through MCP tools; expected added latency ~1–3s over in-process, inside what typing indicators already cover.
+1. Backend scheduler treats a hosted agent as an external runtime: enqueues `AgentEvent` (mention/wake) instead of running in-process. Engine branch: manifest `engine: 'pi'` **and** `HOSTED_RUNTIME_ENABLED=1`; per-install override first (smoke Scout), manifest-wide after soak. **The per-install override must live OUTSIDE projected config** — `refresh-native-agent-configs` re-projects manifests onto installs and would silently revert an in-config override (fleet finding). Everything upstream — mention resolution, claims/leases (ADR-018), caps, `dailyRunCap` — unchanged.
+2. The runtime polls/claims events per hosted agent with that agent's own runtime token (the same endpoints the wrapper CLI uses — CAP dogfooded), honoring the claim protocol before executing. **The claim protocol is M1, not M2** (pod-architect): delivered events requeue after ~10 min up to 3 attempts, so a >10-min hosted turn without claims is one engine interleaving itself — the exact thing this ADR forbids.
+3. **Hosted events get a dedicated pending-TTL** exempting them from the default 30-minute `AGENT_EVENT_STALE_PENDING_MINUTES` deleteMany (pod-architect: under the default, "turns queue and deliver late" silently becomes "turns vanish" after 30 minutes of runtime outage). TTL set above the tolerated-outage window; expired hosted events retire to `failed` (visible), never silent deletion.
+4. Turn executes in the agent's session; replies and actions go through MCP tools; expected added latency ~1–3s over in-process, inside what typing indicators already cover.
 
 ### Session engine
 
@@ -76,9 +77,14 @@ Three contested points settled: **transport = the CAP event queue** (the runtime
 
 - Per-agent runtime tokens provisioned by `provision-hosted-agent-tokens.ts` into a dedicated K8s secret (`agent-runtime-tokens`, script-managed — deliberately NOT under ESO's `api-keys`), mounted read-only; never on the PVC; rotation = re-run + rolling restart.
 
-### Failure semantics (Q3: manual only)
+### Failure semantics (Q3: manual only) — DEFINED, not name-only (fleet finding)
 
-- Runtime down: events queue under existing redelivery/expiry semantics; Scout goes quiet rather than wrong. Recovery = runtime returns (drains queue) or operator flips `HOSTED_RUNTIME_ENABLED=0` (new turns route to the native-loop fallback). No automatic engine switching — two engines must never interleave one conversation.
+- **Trigger**: operator judgment on observable signals — hosted-event queue depth, AgentRun error rate, or runtime pod down. No automatic switching, ever.
+- **Mechanism**: flip `HOSTED_RUNTIME_ENABLED=0` — new turns route to the native-loop fallback; queued hosted events drain when the runtime returns or retire to `failed` at the hosted TTL (visible either way, per the amended turn flow).
+- **Owner**: the operator (Sam / on-call session). The flip is an env change — no deploy.
+- **Granularity**: M1 = the single smoke-Scout install (override outside projected config); M3 = manifest-wide. **Revert procedure is named**: flipping the env is complete in itself — per-install `runtimeType`/engine rows are NOT rewritten under pressure; the branch reads env first.
+- **Recovery hazard closed** (pod-architect): the 7-day stale-install sweep keys on token use / events — a down runtime produces neither, so recovery could restore the process but not the routing. Hosted installs are exempted from the sweep (or re-activated as an explicit recovery step).
+- Two engines must never interleave one conversation — unchanged, and now mechanically protected by claims-in-M1.
 
 ### Test tiers (ADR-009)
 
@@ -88,8 +94,8 @@ Three contested points settled: **transport = the CAP event queue** (the runtime
 
 ### Milestones
 
-- **M1**: runtime skeleton, smoke Scout routed end-to-end on dev (hardcoded single tenant).
-- **M2**: LRU + caps + AgentRun PATCH + claims protocol.
+- **M1**: runtime skeleton, smoke Scout routed end-to-end on dev (hardcoded single tenant), **including the claims protocol** (moved from M2 — see amended turn flow).
+- **M2**: LRU + caps + AgentRun PATCH.
 - **M3**: all Scouts routed; fallback flip validated live; Phase 0 soak starts.
 - **M4** (separate PRs, later): user-created cloud agents + credit metering — own ADR section when pricing lands.
 
