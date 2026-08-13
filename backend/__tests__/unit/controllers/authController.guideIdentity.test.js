@@ -68,11 +68,11 @@ describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
     expect(filter.instanceId).toMatch(/^u[a-f0-9]{10}$/);
     expect(filter.instanceId).not.toContain('user-1');
 
-    expect(mockGetOrCreateAgentUser).toHaveBeenCalledWith('guide', expect.objectContaining({
+    expect(mockGetOrCreateAgentUser).toHaveBeenCalledWith('scout', expect.objectContaining({
       instanceId: expected,
     }));
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-      agentName: 'guide',
+      agentName: 'scout',
       instanceId: expected,
     }));
   });

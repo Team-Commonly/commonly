@@ -181,14 +181,16 @@ const TOOLS = [
         'Propose an action that needs the workspace owner\'s approval. Posts an '
         + 'approval card to the pod; the action runs only if the owner approves. '
         + 'Use for anything that creates a surface others can see or join — '
-        + 'currently: create_pod. Do NOT also post a separate chat message about '
-        + 'the proposal; the card IS the message.',
+        + 'create_pod (a new pod), connect_local_agent (a seat for an agent that '
+        + 'runs on the user\'s own machine; after approval the user links it from '
+        + 'the connect page — you never see or handle its token). Do NOT also '
+        + 'post a separate chat message about the proposal; the card IS the message.',
       parameters: {
         type: 'object',
         properties: {
           actionType: {
             type: 'string',
-            enum: ['create_pod'],
+            enum: ['create_pod', 'connect_local_agent'],
             description: 'The action being proposed',
           },
           summary: {
@@ -197,7 +199,9 @@ const TOOLS = [
           },
           params: {
             type: 'object',
-            description: 'Action parameters. For create_pod: { name (required), description?, type? ("chat"|"team") }',
+            description: 'Action parameters. For create_pod: { name (required), description?, '
+              + 'type? ("chat"|"team") }. For connect_local_agent: { name (required — '
+              + 'lowercase letters/digits/dashes, e.g. "sams-claude") }',
             properties: {
               name: { type: 'string' },
               description: { type: 'string' },
@@ -207,6 +211,21 @@ const TOOLS = [
         },
         required: ['actionType', 'summary', 'params'],
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'commonly_agent_status',
+      description:
+        'Check the connection status of every agent installed in this pod. '
+        + 'Returns each agent\'s runtime kind and state: active (seen in the last '
+        + '10 minutes), idle (last day), stale (silent for over a day), '
+        + 'never-connected (a local/BYO seat whose runtime has never '
+        + 'authenticated — the user still needs to link it from the connect '
+        + 'page), or ready (a native agent; it runs when addressed and has no '
+        + 'connection to make). Use this to answer "is my agent connected?".',
+      parameters: { type: 'object', properties: {} },
     },
   },
 ];
@@ -399,6 +418,31 @@ async function dispatchTool(
             note: 'Approval card posted. The action runs only if the owner approves — do not post another message about it.',
           },
         };
+      }
+
+      case 'commonly_agent_status': {
+        // One derivation, shared with the pod-agents roster route — the
+        // Raft-comparison P4 rule: never fork status vocabulary per surface.
+        const { AgentInstallation } = require('../models/AgentRegistry');
+        const { collectPodAgentActivity, deriveAgentState } = require('./agentStateService');
+        const installations = await AgentInstallation.find({
+          podId: ctx.podId,
+          status: 'active',
+        }).select('agentName instanceId displayName config').lean();
+        const activity = await collectPodAgentActivity(String(ctx.podId), installations);
+        const agents = (installations as Array<Record<string, any>>).map((i) => {
+          const key = `${i.agentName}:${i.instanceId || 'default'}`;
+          const lastActiveAt = activity.get(key) || null;
+          const runtimeType = String(i.config?.runtime?.runtimeType || '') || 'unknown';
+          return {
+            name: i.displayName || i.agentName,
+            agentName: i.agentName,
+            runtime: runtimeType,
+            state: deriveAgentState(lastActiveAt, runtimeType),
+            lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
+          };
+        });
+        return { content: { agents } };
       }
 
       default:

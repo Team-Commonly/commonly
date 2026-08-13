@@ -29,7 +29,7 @@ export type ApprovalDecision = 'approved' | 'declined';
 // executor in services/approvalExecutors.ts — the enum here only widens in
 // the same PR as an executor, so a card can never exist for an action the
 // kernel cannot run.
-export type ApprovalActionType = 'create_pod';
+export type ApprovalActionType = 'create_pod' | 'connect_local_agent';
 
 export interface IApprovalAction extends Document {
   podId: Types.ObjectId;
@@ -67,7 +67,7 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     agentName: { type: String, required: true, lowercase: true, trim: true },
     instanceId: { type: String, default: 'default' },
-    actionType: { type: String, enum: ['create_pod'], required: true },
+    actionType: { type: String, enum: ['create_pod', 'connect_local_agent'], required: true },
     params: { type: Schema.Types.Mixed, default: {} },
     summary: { type: String, required: true, maxlength: 500 },
     status: {

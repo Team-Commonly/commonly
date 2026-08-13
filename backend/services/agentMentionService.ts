@@ -125,7 +125,14 @@ const MENTION_LOOP_MAX = 3; // #508 dampener — >3 mentions to same bot/pod/win
  * Maps @mention aliases to agent types
  * agentType = the runtime type (openclaw, commonly-bot, etc.)
  */
-const MENTION_ALIASES: Record<string, string[]> = {};
+const MENTION_ALIASES: Record<string, string[]> = {
+  // Scout was agentName 'guide' until 2026-08-13 (renamed pre-GTM while a
+  // DB rename was still cheap). A real user onboarded under @guide — the
+  // alias keeps their muscle memory and every old "@guide" in chat history
+  // resolving. Aliases only bind on the single-install rule, so a future
+  // agent actually NAMED 'guide' in the same pod takes precedence.
+  scout: ['guide'],
+};
 
 const buildAliasMap = (): Map<string, string> => {
   const aliasMap = new Map<string, string>();

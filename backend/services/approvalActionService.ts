@@ -25,6 +25,22 @@ const CARD_KIND = 'approval-card';
 // with arbitrary membership breaks the §3.10 invariant.
 const CREATABLE_POD_TYPES = new Set(['chat', 'team']);
 
+const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent']);
+
+// Same shape the registry install route enforces for self-serve names (no
+// scoped @publisher/ names for local seats). Mirrors the BYO page's
+// sanitizeAgentName output alphabet.
+const LOCAL_AGENT_NAME_RE = /^[a-z0-9-]{2,40}$/;
+
+// Scopes the BYO connect page grants a self-serve seat (V2AgentBYO
+// DEFAULT_SCOPES) — the approved seat must be interchangeable with a
+// hand-connected one, or the connect page's token step behaves differently
+// depending on who created the seat.
+const LOCAL_AGENT_SCOPES = [
+  'context:read', 'summaries:read', 'messages:write', 'messages:read',
+  'posts:write', 'posts:read', 'memory:read', 'memory:write',
+];
+
 export interface CardPayload {
   kind: typeof CARD_KIND;
   approvalId: string;
@@ -89,7 +105,34 @@ const validateParams = (actionType: ApprovalActionType, params: Record<string, u
     }
     return null;
   }
+  if (actionType === 'connect_local_agent') {
+    const name = String(params.name || '').trim().toLowerCase();
+    if (!name) return 'params.name is required for connect_local_agent';
+    if (!LOCAL_AGENT_NAME_RE.test(name)) {
+      return 'params.name must be 2-40 chars of lowercase letters, digits, and dashes';
+    }
+    return null;
+  }
   return `unknown actionType '${actionType}'`;
+};
+
+// #609 cross-owner identity guard, propose-time edition: agent identity +
+// memory key on (agentName, instanceId) with no owner dimension, so binding
+// a name any OTHER user already owns would reuse their bot User + memory.
+// Checking at propose time lets the agent pick a new name immediately
+// instead of minting a card doomed to fail; executeConnectLocalAgent
+// re-checks at approval time (state can change in between). Keep both in
+// sync with the registry install route's foreignInstall guard.
+const findForeignLocalAgentOwner = async (
+  agentName: string,
+  ownerUserId: unknown,
+): Promise<boolean> => {
+  const foreign = await AgentInstallation.findOne({
+    agentName,
+    instanceId: 'default',
+    installedBy: { $ne: ownerUserId },
+  });
+  return !!foreign;
 };
 
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
@@ -97,10 +140,13 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
   } = options;
 
-  if (actionType !== 'create_pod') {
-    return { ok: false, error: `unknown actionType '${actionType}' — known: create_pod` };
+  if (!KNOWN_ACTION_TYPES.has(actionType as ApprovalActionType)) {
+    return {
+      ok: false,
+      error: `unknown actionType '${actionType}' — known: ${Array.from(KNOWN_ACTION_TYPES).join(', ')}`,
+    };
   }
-  const paramsError = validateParams(actionType, params || {});
+  const paramsError = validateParams(actionType as ApprovalActionType, params || {});
   if (paramsError) return { ok: false, error: paramsError };
   const trimmedSummary = String(summary || '').trim();
   if (!trimmedSummary) return { ok: false, error: 'summary is required' };
@@ -109,6 +155,16 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   // A pod with no resolvable owner cannot host approval cards.
   const pod = await Pod.findById(podId).select('createdBy').lean() as { createdBy?: unknown } | null;
   if (!pod?.createdBy) return { ok: false, error: 'pod has no resolvable owner' };
+
+  if (actionType === 'connect_local_agent') {
+    const requestedName = String((params || {}).name || '').trim().toLowerCase();
+    if (await findForeignLocalAgentOwner(requestedName, pod.createdBy)) {
+      return {
+        ok: false,
+        error: `the agent name "${requestedName}" is already in use by another user — pick a different name`,
+      };
+    }
+  }
 
   const row = await ApprovalAction.create({
     podId,
@@ -278,7 +334,111 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
 
 const executeAction = async (row: IApprovalAction): Promise<unknown> => {
   if (row.actionType === 'create_pod') return executeCreatePod(row);
+  if (row.actionType === 'connect_local_agent') return executeConnectLocalAgent(row);
   throw new Error(`no executor for actionType '${row.actionType}'`);
+};
+
+/**
+ * connect_local_agent — create a self-serve BYO seat (ADR-006 shape) owned
+ * by the workspace owner, then hand off to the connect page.
+ *
+ * D1 boundary, deliberately drawn: this executor creates the SEAT only —
+ * the registry row and the installation. The runtime token is never minted
+ * here. Credentials are a human-in-browser act on the connect page (which
+ * force-rotates on issue), and chat payloads must never carry one — pod
+ * history is readable by every member and mirrored to two stores.
+ *
+ * Kept in sync with the registry install route's self-serve branch
+ * (routes/registry/install.ts): synthetic ephemeral manifest, #609
+ * foreign-owner guard, webhook runtimeType. An existing ACTIVE install by
+ * the same owner is SUCCESS, not failure — identity continuity, the same
+ * "already installed → fall through to the connect page" behavior the BYO
+ * page implements.
+ */
+const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> => {
+  const params = (row.params || {}) as { name?: string };
+  const agentName = String(params.name || '').trim().toLowerCase();
+  if (!LOCAL_AGENT_NAME_RE.test(agentName)) throw new Error('invalid agent name');
+
+  // Re-check the #609 guard at execution time — another user may have
+  // claimed the name between propose and approve.
+  if (await findForeignLocalAgentOwner(agentName, row.ownerUserId)) {
+    throw new Error(`the agent name "${agentName}" is now in use by another user`);
+  }
+
+  const connectPath = `/v2/agents/byo?pod=${encodeURIComponent(String(row.podId))}&name=${encodeURIComponent(agentName)}`;
+
+  const existing = await AgentInstallation.findOne({
+    agentName,
+    podId: row.podId,
+    instanceId: 'default',
+    status: 'active',
+  });
+  if (existing) {
+    const ownedBySelf = String(existing.installedBy || '') === String(row.ownerUserId);
+    if (!ownedBySelf) throw new Error(`the agent name "${agentName}" is already installed in this pod by another user`);
+    return {
+      agentName, podId: String(row.podId), connectPath, alreadyInstalled: true,
+    };
+  }
+
+  // Ephemeral registry row (ADR-006 self-serve): synthesized when no
+  // published manifest exists; excluded from the marketplace catalog.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentRegistry } = require('../models/AgentRegistry');
+  let registryRow = await AgentRegistry.getByName(agentName);
+  if (registryRow && registryRow.status === 'unpublished') {
+    throw new Error('this agent name belongs to an unpublished manifest');
+  }
+  if (!registryRow) {
+    const synthManifest = {
+      name: agentName,
+      version: '1.0.0',
+      description: 'A connected agent.',
+      capabilities: [],
+      context: { required: [], optional: [] },
+      runtime: { type: 'standalone', connection: 'rest' },
+    };
+    registryRow = await AgentRegistry.create({
+      agentName,
+      displayName: agentName,
+      description: synthManifest.description,
+      manifest: synthManifest,
+      latestVersion: synthManifest.version,
+      versions: [{ version: synthManifest.version, manifest: synthManifest, publishedAt: new Date() }],
+      registry: 'private',
+      publisher: { userId: row.ownerUserId },
+      ephemeral: true,
+    });
+  }
+
+  await AgentInstallation.findOneAndUpdate(
+    { agentName, podId: row.podId, instanceId: 'default' },
+    {
+      $set: {
+        status: 'active',
+        version: registryRow?.latestVersion || '1.0.0',
+        displayName: agentName,
+        scopes: LOCAL_AGENT_SCOPES,
+        config: { runtime: { runtimeType: 'webhook' } },
+      },
+      $setOnInsert: {
+        agentName,
+        podId: row.podId,
+        instanceId: 'default',
+        installedBy: row.ownerUserId,
+      },
+    },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
+  console.log('[cap approval-install]', {
+    owner: String(row.ownerUserId),
+    pod: String(row.podId),
+    agent: agentName,
+    runtime: 'webhook',
+  });
+
+  return { agentName, podId: String(row.podId), connectPath };
 };
 
 const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {

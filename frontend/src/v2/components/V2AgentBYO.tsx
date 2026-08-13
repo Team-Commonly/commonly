@@ -48,8 +48,19 @@ const V2AgentBYO: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
+  // Deep-link prefill (?pod=&name=) — the approved connect_local_agent card
+  // lands here with the seat Scout proposed already selected, so the user's
+  // only remaining act is the token step. Sanitized through the same rules
+  // as typed input; an unknown pod id simply falls back to the default pick.
+  const prefill = (() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      pod: (params.get('pod') || '').replace(/[^a-f0-9]/gi, ''),
+      name: sanitizeAgentName(params.get('name') || ''),
+    };
+  })();
   const [pods, setPods] = useState<V2Pod[]>([]);
-  const [podId, setPodId] = useState<string>('');
+  const [podId, setPodId] = useState<string>(prefill.pod);
   // Personalized default: a global-namespace collision guard (#613) means a
   // shared literal default ("my-mcp-agent") 409s for every user after the
   // first one to accept it. Seed from the username so defaults never collide.
@@ -58,7 +69,7 @@ const V2AgentBYO: React.FC = () => {
     const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
     return u ? `${u}-agent` : DEFAULT_AGENT_NAME;
   })();
-  const [name, setName] = useState<string>(defaultAgentName);
+  const [name, setName] = useState<string>(prefill.name || defaultAgentName);
   // currentUser can resolve after mount — refresh the default if untouched.
   useEffect(() => {
     setName((prev) => (prev === DEFAULT_AGENT_NAME && defaultAgentName !== DEFAULT_AGENT_NAME ? defaultAgentName : prev));
@@ -99,7 +110,10 @@ const V2AgentBYO: React.FC = () => {
           && p.publicRead !== true
         ));
         setPods(installablePods);
-        if (!podId && installablePods.length > 0) {
+        // A prefilled pod (?pod= deep-link) the user can't actually install
+        // into (not in their list) must not survive as a phantom selection.
+        const podKnown = podId && installablePods.some((p) => p._id === podId);
+        if ((!podId || !podKnown) && installablePods.length > 0) {
           // Default to the user's OWN pod (their private workspace), never the
           // most-active pod. Fall back to the first non-public pod only if the
           // user somehow owns none.

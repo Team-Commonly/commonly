@@ -2,7 +2,7 @@ import type { NativeAgentDefinition } from './types';
 import { podWelcomerApp } from './pod-welcomer';
 import { taskClerkApp } from './task-clerk';
 import { podSummarizerApp } from './pod-summarizer';
-import { guideApp } from './guide';
+import { scoutApp } from './scout';
 
 export type { NativeAgentDefinition, NativeAgentTrigger, CommonlyTool } from './types';
 
@@ -25,5 +25,5 @@ export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [
   podWelcomerApp,
   taskClerkApp,
   podSummarizerApp,
-  guideApp,
+  scoutApp,
 ];

@@ -33,10 +33,16 @@ jest.mock('../../../models/User', () => ({
 
 const mockInstallFindOne = jest.fn();
 const mockInstallUpsert = jest.fn();
+const mockRegistryGetByName = jest.fn();
+const mockRegistryCreate = jest.fn();
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     findOne: (...args) => mockInstallFindOne(...args),
     findOneAndUpdate: (...args) => mockInstallUpsert(...args),
+  },
+  AgentRegistry: {
+    getByName: (...args) => mockRegistryGetByName(...args),
+    create: (...args) => mockRegistryCreate(...args),
   },
 }));
 
@@ -220,5 +226,84 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     expect(res.status).toBe(200);
     expect(resolved.executionError).toContain('mongo down');
     expect(resolved.executedAt).toBeUndefined();
+  });
+});
+
+describe('approved connect_local_agent execution — the seat, never the token', () => {
+  const seatRow = (over = {}) => flaggedRow({
+    actionType: 'connect_local_agent',
+    params: { name: 'sams-claude' },
+    summary: 'Set up a seat for your local Claude',
+    ...over,
+  });
+
+  test('creates the seat owned by the USER and hands back a connect path — no credential anywhere', async () => {
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    // #609 foreign-owner probe (bare findOne), then the active-install probe.
+    mockInstallFindOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    mockRegistryGetByName.mockResolvedValue(null);
+    mockRegistryCreate.mockResolvedValue({ latestVersion: '1.0.0' });
+    mockInstallUpsert.mockResolvedValue({});
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    // Ephemeral registry row published under the OWNER (ADR-006 self-serve).
+    expect(mockRegistryCreate).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'sams-claude',
+      ephemeral: true,
+      publisher: { userId: OWNER },
+    }));
+    // Installation installedBy the OWNER with the webhook runtime.
+    expect(mockInstallUpsert).toHaveBeenCalledWith(
+      { agentName: 'sams-claude', podId: 'pod-1', instanceId: 'default' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          status: 'active',
+          config: { runtime: { runtimeType: 'webhook' } },
+        }),
+        $setOnInsert: expect.objectContaining({ installedBy: OWNER }),
+      }),
+      expect.anything(),
+    );
+    expect(resolved.executionResult).toEqual(expect.objectContaining({
+      agentName: 'sams-claude',
+      connectPath: '/v2/agents/byo?pod=pod-1&name=sams-claude',
+    }));
+    // D1: the executor never mints or returns a credential — the token step
+    // stays a human-in-browser act on the connect page.
+    expect(JSON.stringify(resolved.executionResult)).not.toMatch(/token/i);
+  });
+
+  test('an existing install by the same owner is success (identity continuity), not failure', async () => {
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockInstallFindOne
+      .mockResolvedValueOnce(null) // foreign probe
+      .mockResolvedValueOnce({ installedBy: OWNER }); // active install, own
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executionResult).toEqual(expect.objectContaining({ alreadyInstalled: true }));
+    expect(resolved.executionError).toBeUndefined();
+    expect(mockInstallUpsert).not.toHaveBeenCalled();
+  });
+
+  test('a name claimed by ANOTHER user between propose and approve fails honestly (#609 re-check)', async () => {
+    mockApprovalFindById.mockResolvedValue(seatRow());
+    const resolved = seatRow({ status: 'resolved', decision: 'approved' });
+    mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
+    mockInstallFindOne.mockResolvedValueOnce({ installedBy: STRANGER }); // foreign probe hits
+
+    const res = await resolveApproval({ approvalId: 'appr-1', callerUserId: OWNER, decision: 'approved' });
+
+    expect(res.status).toBe(200);
+    expect(resolved.executionError).toContain('in use by another user');
+    expect(mockInstallUpsert).not.toHaveBeenCalled();
   });
 });
