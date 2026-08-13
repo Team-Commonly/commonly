@@ -52,6 +52,23 @@ describe('buildInstallationConfig', () => {
     }
   });
 
+  test('a manifest wake-on-message opt-in projects onto the flag the producer reads (ADR-018 D8)', () => {
+    const config = buildInstallationConfig({
+      ...baseApp,
+      triggers: ['mention', 'chat.message'],
+      wakeOnMessage: true,
+      dailyRunCap: 60,
+    });
+    expect(config.wakeOnMessage).toEqual({ enabled: true });
+    expect(config.dailyRunCap).toBe(60);
+  });
+
+  test('apps that do not declare wake-on-message get no flag — D8 stays opt-in', () => {
+    const config = buildInstallationConfig({ ...baseApp, triggers: ['mention'] });
+    expect(config.wakeOnMessage).toBeUndefined();
+    expect(config.dailyRunCap).toBeUndefined();
+  });
+
   test('runtime, prompt, tools, triggers, and limits project as before', () => {
     const config = buildInstallationConfig({
       ...baseApp,

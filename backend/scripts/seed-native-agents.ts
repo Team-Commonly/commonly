@@ -81,6 +81,10 @@ export function buildInstallationConfig(
   if (typeof app.maxWallClockMs === 'number') {
     configObj.maxWallClockMs = app.maxWallClockMs;
   }
+  // Same manifest-is-the-choice rule as heartbeat: a declared wake-on-message
+  // opt-in projects onto the flag the producer actually reads (ADR-018 D8).
+  if (app.wakeOnMessage === true) configObj.wakeOnMessage = { enabled: true };
+  if (typeof app.dailyRunCap === 'number') configObj.dailyRunCap = app.dailyRunCap;
   return configObj;
 }
 
@@ -308,6 +312,15 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
       (err as { message?: string })?.message || err,
     );
     // Non-fatal — registry row is in place; marketplace projection is best-effort.
+  }
+
+  // Per-user apps (the Guide) stop here: registry row + Installable
+  // projection only. Their installation is per workspace, at signup
+  // (authController.createDefaultWorkspacePod) — installing them into the
+  // demo pod would be a second, unowned copy.
+  if (app.perUser) {
+    console.log(`[native-seed]   ${appLabel} is per-user — registry published, demo-pod install skipped`);
+    return;
   }
 
   // 2. Demo pod must exist; if not, skip the install step gracefully.
