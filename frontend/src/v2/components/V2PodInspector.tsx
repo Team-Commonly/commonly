@@ -8,6 +8,7 @@ import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import type { InspectorView } from './V2Layout';
@@ -799,6 +800,23 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const [agentTasks, setAgentTasks] = useState<AgentTaskMap>({});
   const [runState, setRunState] = useState<RunStateCounts>({ blocked: 0, inProgress: 0, complete: 0, pending: 0 });
   const [recentTasks, setRecentTasks] = useState<TaskItem[]>([]);
+  // Bumped by task_updated socket events so the tab count / run state /
+  // recent list track the board live. Without it, tasks fetched once per
+  // pod-open — a task created mid-conversation ("it's task #4") sat next to
+  // a tab still saying "Tasks 3" until a full reload (#916).
+  const [taskRefresh, setTaskRefresh] = useState(0);
+  const { socket, connected } = useSocket();
+
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId || !socket || !connected) return undefined;
+    const onTaskUpdated = (payload: { podId?: string } | null) => {
+      if (!payload || (payload.podId && payload.podId !== podId)) return;
+      setTaskRefresh((n) => n + 1);
+    };
+    socket.on('task_updated', onTaskUpdated);
+    return () => { socket.off('task_updated', onTaskUpdated); };
+  }, [pod?._id, socket, connected]);
   const [privateError, setPrivateError] = useState<string | null>(null);
   // ADR-001 §3.10 + Sprint B1: agent-DM pods involving the currently-inspected
   // agent. Surfaces clickable links so humans can observe agent↔agent
@@ -960,7 +978,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       }
     })();
     return () => { cancelled = true; };
-  }, [pod?._id, agents, api]);
+  }, [pod?._id, agents, api, taskRefresh]);
 
   useEffect(() => {
     const podId = pod?._id;
@@ -1384,14 +1402,22 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
   const runStateSection = (
     <section className="v2-inspector__section">
       <div className="v2-inspector__section-title">{t('inspector.runState.title')}</div>
+      {/* Same four buckets, same order, as the board's columns — the two
+          surfaces sit one click apart, and folding `pending` into "In
+          Progress" here read as "3 in progress" beside a board showing the
+          same three tasks as Pending (#916). */}
       <div className="v2-inspector__runstate">
+        <div className="v2-inspector__runstate-row">
+          <span className="v2-inspector__runstate-label">{t('inspector.runState.pendingCount', { count: runState.pending })}</span>
+          <span className="v2-inspector__pill v2-inspector__pill--progress">{t('inspector.runState.pending')}</span>
+        </div>
+        <div className="v2-inspector__runstate-row">
+          <span className="v2-inspector__runstate-label">{t('inspector.runState.inProgressCount', { count: runState.inProgress })}</span>
+          <span className="v2-inspector__pill v2-inspector__pill--progress">{t('inspector.runState.inProgress')}</span>
+        </div>
         <div className="v2-inspector__runstate-row">
           <span className="v2-inspector__runstate-label">{t('inspector.runState.blockedCount', { count: runState.blocked })}</span>
           <span className="v2-inspector__pill v2-inspector__pill--blocked">{t('inspector.runState.blocked')}</span>
-        </div>
-        <div className="v2-inspector__runstate-row">
-          <span className="v2-inspector__runstate-label">{t('inspector.runState.inProgressCount', { count: runState.inProgress + runState.pending })}</span>
-          <span className="v2-inspector__pill v2-inspector__pill--progress">{t('inspector.runState.inProgress')}</span>
         </div>
         <div className="v2-inspector__runstate-row">
           <span className="v2-inspector__runstate-label">{t('inspector.runState.completeCount', { count: runState.complete })}</span>
@@ -1418,12 +1444,21 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               {recentTasks.map((task) => {
                 const isDone = task.status === 'done' || task.status === 'completed';
                 const isBlocked = task.status === 'blocked';
+                const isPending = task.status === 'pending';
                 const pillClass = isDone
                   ? TASK_PILL_CLASS.complete
                   : isBlocked
                     ? TASK_PILL_CLASS.blocked
                     : TASK_PILL_CLASS.progress;
-                const pillLabel = isDone ? t('inspector.taskPill.done') : isBlocked ? t('inspector.taskPill.blocked') : t('inspector.taskPill.active');
+                // A pending task labelled "Active" was the third distinct
+                // status mapping on this rail (#916) — say what the board says.
+                const pillLabel = isDone
+                  ? t('inspector.taskPill.done')
+                  : isBlocked
+                    ? t('inspector.taskPill.blocked')
+                    : isPending
+                      ? t('inspector.taskPill.pending')
+                      : t('inspector.taskPill.active');
                 const assignee = task.assignee ? `@${task.assignee}` : null;
                 return (
                   <div key={task.taskId} className="v2-inspector__task-row">

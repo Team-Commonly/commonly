@@ -68,6 +68,10 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       if (tokenRecord?.expiresAt && tokenRecord.expiresAt < new Date()) {
         return res.status(401).json({ message: 'Session token expired' });
       }
+      // Pre-update value: a token with no lastUsedAt is authenticating for
+      // the very first time — the #909 verified-listening moment. Observed
+      // once per token; drives the connect-agent starter task below (#916).
+      const isFirstTokenUse = !tokenRecord?.lastUsedAt;
 
       try {
         await User.updateOne(
@@ -100,6 +104,15 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentInstallations = installations as never[];
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
+
+      if (isFirstTokenUse) {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
+        void completeConnectAgentStarterTask({
+          podIds: installationPodIds,
+          agentLabel: agentUser.botMetadata?.displayName || agentName,
+        });
+      }
       return next();
     }
 
@@ -111,6 +124,11 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     if (!installation) {
       return res.status(401).json({ message: 'Invalid agent token' });
     }
+
+    // Same first-use observation as the User-token path above (#916).
+    const legacyTokenRecord = (installation.runtimeTokens || [])
+      .find((t: { tokenHash?: string }) => t.tokenHash === tokenHash);
+    const isFirstLegacyTokenUse = !legacyTokenRecord?.lastUsedAt;
 
     try {
       await AgentInstallation.updateOne(
@@ -142,6 +160,15 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     req.agentAuthorizedPodIds = allActiveInstallations
       .map((inst: { podId?: { toString: () => string } }) => inst?.podId?.toString())
       .filter(Boolean) as string[];
+
+    if (isFirstLegacyTokenUse) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
+      void completeConnectAgentStarterTask({
+        podIds: req.agentAuthorizedPodIds,
+        agentLabel: installation.displayName || installation.agentName,
+      });
+    }
 
     // Also resolve and attach the bot User so downstream routes that derive
     // `req.agentUser._id` (file-upload uploaderId, message authorship) work
