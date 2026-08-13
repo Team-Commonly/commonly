@@ -30,6 +30,7 @@ const {
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
+  bootstrapAgentRecordFromEnv,
 } = await import('../src/commands/agent.js');
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
@@ -227,5 +228,135 @@ describe('saveAgentToken / loadAgentToken', () => {
 
   test('loadAgentToken returns null when the file does not exist', () => {
     expect(loadAgentToken('never-attached')).toBeNull();
+  });
+});
+
+// ── #913: bootstrap the token record from env vars on first `agent run` ─────
+describe('bootstrapAgentRecordFromEnv', () => {
+  const identityResponse = {
+    agentName: 'smoke-agent',
+    instanceId: 'default',
+    installations: [
+      { podId: 'pod-dm', podType: 'agent-admin', instanceId: 'default', status: 'active', type: 'dm' },
+      { podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active', type: 'installation' },
+    ],
+  };
+
+  const makeRegistry = ({ claudeFound = true, codexFound = true } = {}) => ({
+    getAdapter: (n) => ({
+      claude: { name: 'claude', detect: async () => (claudeFound ? { path: '/bin/claude', version: '1' } : null) },
+      codex: { name: 'codex', detect: async () => (codexFound ? { path: '/bin/codex', version: '1' } : null) },
+    }[n] || null),
+    listAdapterNames: () => ['stub', 'claude', 'codex'],
+  });
+
+  const makeFactory = (response = identityResponse) => {
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/installations') return response;
+      throw new Error(`unexpected GET ${route}`);
+    });
+    return jest.fn(() => ({ get }));
+  };
+
+  test('returns null when COMMONLY_AGENT_TOKEN is not set', async () => {
+    const record = await bootstrapAgentRecordFromEnv({ name: 'smoke-agent', env: {} });
+    expect(record).toBeNull();
+  });
+
+  test('rejects a non-runtime token instead of sending it anywhere', async () => {
+    const factory = makeFactory();
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'eyJhbGciOi-user-jwt' },
+      clientFactory: factory,
+    })).rejects.toThrow(/cm_agent_/);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  test('synthesizes a full record from the installations endpoint + detected adapter', async () => {
+    const factory = makeFactory();
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: {
+        COMMONLY_AGENT_TOKEN: 'cm_agent_abc123',
+        COMMONLY_API_URL: 'https://api.example.test',
+      },
+      clientFactory: factory,
+      adapterRegistry: makeRegistry(),
+    });
+
+    expect(factory).toHaveBeenCalledWith({ instance: 'https://api.example.test', token: 'cm_agent_abc123' });
+    expect(record.agentName).toBe('smoke-agent');
+    expect(record.instanceId).toBe('default');
+    // podId prefers the real installation over the agent-admin DM row
+    expect(record.podId).toBe('pod-main');
+    expect(record.instanceUrl).toBe('https://api.example.test');
+    expect(record.runtimeToken).toBe('cm_agent_abc123');
+    expect(record.adapter).toBe('claude');
+    expect(record.workspacePath).toBeNull();
+    // environment matches what attach would have written for the same adapter
+    expect(record.environment.mcp[0].name).toBe('commonly');
+    expect(record.environment.mcp[0].env.COMMONLY_AGENT_TOKEN).toBe('${COMMONLY_AGENT_TOKEN}');
+  });
+
+  test('falls through the detect order when the first CLI is absent', async () => {
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false }),
+    });
+    expect(record.adapter).toBe('codex');
+  });
+
+  test('errors with install guidance when no CLI is on PATH', async () => {
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry({ claudeFound: false, codexFound: false }),
+    })).rejects.toThrow(/No supported agent CLI found on PATH/);
+  });
+
+  test('honors --adapter override and validates it', async () => {
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry(),
+      adapterOverride: 'codex',
+    });
+    expect(record.adapter).toBe('codex');
+
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry(),
+      adapterOverride: 'gemini',
+    })).rejects.toThrow(/Unknown adapter 'gemini'/);
+  });
+
+  test("the token's identity wins over a mistyped CLI argument", async () => {
+    const log = jest.fn();
+    const record = await bootstrapAgentRecordFromEnv({
+      name: 'smoke-agnet',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: makeFactory(),
+      adapterRegistry: makeRegistry(),
+      log,
+    });
+    expect(record.agentName).toBe('smoke-agent');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("token belongs to 'smoke-agent'"));
+  });
+
+  test('wraps identity-resolution failures with the URL and a copy hint', async () => {
+    const get = jest.fn(async () => { throw new Error('HTTP 401'); });
+    await expect(bootstrapAgentRecordFromEnv({
+      name: 'smoke-agent',
+      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
+      clientFactory: () => ({ get }),
+      adapterRegistry: makeRegistry(),
+    })).rejects.toThrow(/against https:\/\/api\.example\.test: HTTP 401/);
   });
 });

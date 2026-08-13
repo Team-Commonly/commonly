@@ -29,7 +29,10 @@ const DEFAULT_SCOPES = [
 ];
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 const DEFAULT_POD_TYPE = 'chat';
-const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli';
+// @latest matters: `agent run` learned to bootstrap from these env vars in
+// 0.1.9 — a machine with an older global install must upgrade, not skip the
+// line because the binary already resolves.
+const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
 const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
@@ -282,7 +285,7 @@ const V2AgentBYO: React.FC = () => {
   // previous screen, so first-time users hit "command not found" one step
   // after we stopped watching (#887 class).
   const listenSnippet = issued
-    ? `# first time on this machine: ${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
+    ? `# install or update the CLI first: ${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName}`
     : '';
 
   const cursorSnippet = issued
