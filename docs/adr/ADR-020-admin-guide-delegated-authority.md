@@ -69,6 +69,13 @@ never an approval; fail closed**. Concretely:
   human-facing gap is closed by this card, not by extending it.
 
 ### D4 — Runtime: backend stays the scheduler, pi SDK becomes the turn engine
+
+> **SUPERSEDED by ADR-021 (2026-08-13).** Scout keeps the native loop, which proved
+> adequate for its stateless-turn job; pi became the **general cloud-agent runtime**
+> (`agent-runtime` service — CAP-queue transport, persistent per-agent sessions,
+> MCP-contract tools). The in-process-session design below is preserved in ADR-021's
+> appendix as the deferred path if Scout's job ever outgrows the loop. Do not build
+> from this section.
 The event path (wake-on-message → claim → daily cap → `AgentRun` accounting) is untouched.
 The bespoke chat/completions loop is replaced by an embedded, **version-pinned** pi
 `AgentSession` per run: in-process, no reserved capacity, no per-user pollers ("slots"
@@ -79,6 +86,11 @@ Model routing stays LiteLLM (`deepseek-v4-flash` alias), keeping keys, quotas, g
 and observability on the single surface.
 
 ### D5 — Isolation: logical tier now, process tier as a manifest flag
+
+> **Amended 2026-08-13:** tier (a) shipped as written. The tier-(b) process flag was
+> never built here and is **absorbed by ADR-021's agent-runtime** (service-level
+> separation now; worker-process pool as that track's named follow-up). This section's
+> trigger condition still stands and now routes to ADR-021.
 Tier (a) — per-user identity (#923), per-workspace session files, per-run scoped
 credentials, a per-user concurrency semaphore, and the daily run cap — is the default. The
 agent manifest gains an isolation field so any single agent can be flipped to tier (b),
