@@ -858,8 +858,21 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
       if (!payload || (payload.podId && payload.podId !== podId)) return;
       setApprovalRefresh((n) => n + 1);
     };
+    // A NEW proposal arrives as a newMessage carrying a card payload — not a
+    // messageCardUpdated — so without this the index missed fresh proposals
+    // until reload (caught in the round-2 live verify).
+    const onNewMessage = (message: { pod_id?: string; podId?: string; payload?: { kind?: string } | null } | null) => {
+      if (!message) return;
+      const msgPodId = message.pod_id || message.podId;
+      if (msgPodId && msgPodId !== podId) return;
+      if (message.payload?.kind === 'approval-card') setApprovalRefresh((n) => n + 1);
+    };
     socket.on('messageCardUpdated', onCardUpdated);
-    return () => { socket.off('messageCardUpdated', onCardUpdated); };
+    socket.on('newMessage', onNewMessage);
+    return () => {
+      socket.off('messageCardUpdated', onCardUpdated);
+      socket.off('newMessage', onNewMessage);
+    };
   }, [pod?._id, socket, connected]);
 
   const decideApproval = async (approvalId: string, decision: 'approved' | 'declined') => {
