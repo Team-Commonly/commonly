@@ -1,6 +1,6 @@
 # ADR-022: Persona colleagues — separating who an agent is from where it runs
 
-- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by fable-lead, pod-architect, sprint-review + ux-lead 2026-08-14 and **corrected twice** (D1 false by construction; D5 overclaimed enforcement). **Not ready to ratify D5** until the empty-`usage` cause is found — one run's logs away.
+- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by fable-lead, pod-architect, sprint-review + ux-lead 2026-08-14 and **corrected twice** (D1 false by construction; D5 overclaimed enforcement). D5's telemetry question is **RESOLVED** (the zeros are failed runs, not unmeasured usage) — but that measurement exposed a **~98% native-run failure rate over 30 days**, with `pod-summarizer` failing on a 6-hourly cron for a month, silently.
 - **Depends on:** ADR-001 (Installable taxonomy — `source` / `components[]`), ADR-021 (hosted runtime, credits)
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
@@ -235,7 +235,22 @@ In v1 (Scout only, one install) per-install equals per-user by construction, so 
 
 So the true daily ceiling is `60 × ~17k ≈ 1.05M tokens/user/day`, which on a flash-tier model sits **comfortably under the $1 figure** — the allowance has roughly 3–10× headroom over worst case, not zero.
 
-**The 4,399 runs with `totalTokens === 0` are the open question** (fable-lead). `Number(usage.total_tokens || 0)` converts *unmeasured* into *zero*, and **a zero that means unmeasured reads as free**. The ticket is not "populate the fields" — it is *"find why `usage` is empty and make unmeasured loud"*: a distinct `errorKind` or warning, never a manufactured zero.
+**RESOLVED — the zeros are not unmeasured usage, and there is no telemetry bug.** fable-lead and sprint-review both suspected `Number(usage.total_tokens || 0)` was converting *unmeasured* into *zero*. Measured 2026-08-14, splitting the zero-token runs by status:
+
+| status / errorKind | count |
+|---|---|
+| `failed` / `llm_error` | **4,395** |
+| `running` / none (in flight) | 3 |
+| `failed` / `guardrail_blocked` | 1 |
+
+**A failed LLM call has no usage to record, so zero is correct for all of them.** The accounting path works; earliest run carrying tokens is 2026-04-12. The $1 estimate rests on 2,225 *successful* runs and stands.
+
+**But the number that produced this answer is the actual finding, and it is worse than the question.** Over the last 30 days: **891 native runs, 19 with tokens — a ~98% failure rate.** The newest zero-token runs are `pod-summarizer`, failing `llm_error` with 0 turns **every six hours on a cron** (04:00, 10:00, 16:00, 22:00 UTC), for at least a month, entirely silently. Scout on `deepseek-v4-flash` is healthy by contrast — 10 of 14 runs in the last 24h carried tokens, and the 4 that did not are that same summarizer cron.
+
+Two consequences:
+
+1. **This independently validates retiring `pod-summarizer`** (decision 5). It is not merely redundant — it has been failing on schedule for a month and nobody noticed, which is the strongest possible argument that a scheduled resident nobody asked for is a liability rather than a feature.
+2. **Silent scheduled failure is the same family as the at-cap `status:'succeeded'` and the swallowed broadcast claim.** Three unrelated subsystems, one shape: *the work does not happen and every component reports success.* That deserves a named kernel invariant, not three separate fixes.
 
 **At-cap persists nothing, and reports the opposite of the truth** (pod-architect, sprint-review). The decline path at `:633` returns:
 
