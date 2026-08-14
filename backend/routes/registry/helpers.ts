@@ -266,6 +266,67 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
 // sync via the same fallback chain: botMetadata.displayName → instanceId
 // (when not 'default') → username → fallback. Never falls back to
 // botMetadata.agentName (runtime-leaning).
+/**
+ * The install intro, composed so its promise matches reality.
+ *
+ * The old copy said "Mention me with @handle when you need me" every time,
+ * posted server-side the moment a seat is created — which for a BYO seat is
+ * before any wrapper exists to answer. Production message history shows four
+ * users taking that invitation and getting total silence: m0re (08-04),
+ * l3r0ys4n3 (08-07), user-8863 (08-09, who asked three times in two phrasings
+ * whether the connection was working), ngoc-tran (08-10). None came back.
+ *
+ * Pure on purpose: the caller derives liveness via `deriveAgentState` (the
+ * same derivation the #891 honesty surface and the pod roster use — one
+ * source of truth, not a second guess) and passes the verdict in. That keeps
+ * the copy rules testable without a DB, which is the whole reason
+ * agentStateService is pure too.
+ */
+const composeInstallIntro = ({
+  displayName, blurb, handle, state, fixCommand,
+}: {
+  displayName: string;
+  blurb?: string;
+  handle: string;
+  // The `deriveAgentState` enum, passed WHOLE rather than flattened to a
+  // boolean. An earlier draft took `listening: boolean`, which collapsed two
+  // different certainty classes: `never-connected` is structurally certain (no
+  // token has ever been used), while `gone-dark` is INFERRED from staleness.
+  // Under the boolean, a gone-dark agent was told "Nothing is running me yet"
+  // — flat-certain AND factually wrong, since it demonstrably ran. Asserting a
+  // guess in the agent's own voice is the very defect this function exists to
+  // remove, so the hedge is not decoration (ux-lead, fleet review 2026-08-14).
+  state: string;
+  fixCommand: string;
+}): string => {
+  // Older CLI versions seeded description from displayName, producing intros
+  // like "Hi all — I'm bot. bot Ping me ...". Drop a blurb that just repeats
+  // the name.
+  const trimmed = String(blurb || '').trim().replace(/\s+/g, ' ');
+  const meaningless = !trimmed
+    || trimmed.toLowerCase() === String(displayName).toLowerCase();
+  const lead = meaningless
+    ? `Hi all — I'm ${displayName}, just joined the pod.`
+    : `Hi all — I'm ${displayName}. ${trimmed}`;
+
+  // Certain, and never ran: flat declarative.
+  if (state === 'never-connected') {
+    return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
+      + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
+      + `where I should live — then @${handle} will get through.`;
+  }
+  // Inferred, and it DID run: hedge the claim, keep the instruction.
+  if (state === 'gone-dark') {
+    return `${lead} I don't look connected right now — I was running earlier and `
+      + `have gone quiet, so a mention may not reach me. Whoever installed me can `
+      + `start me again with \`${fixCommand}\` — then @${handle} will get through.`;
+  }
+  // reachable / listening / unknown — anything we cannot show to be down keeps
+  // the invitation. Wrongly telling a live agent's room that nothing listens is
+  // the opposite lie.
+  return `${lead} Mention me with @${handle} when you need me.`;
+};
+
 const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
   if (!user) return fallback;
   const meta = user.botMetadata || {};
@@ -567,6 +628,7 @@ module.exports = {
   resolveInstallation,
   buildAgentProfileId,
   resolveRuntimeInstanceId,
+  composeInstallIntro,
 };
 
 export {};
