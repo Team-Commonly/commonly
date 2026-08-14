@@ -313,6 +313,32 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         runtimeConfig.runtimeType = manifestRuntimeType;
       }
     }
+    // Stamp `host: 'byo'` on self-serve polling seats.
+    //
+    // Every self-serve BYO seat is currently born MISLABELLED, and it is one
+    // mismatch: the connect page posts `runtimeType: 'webhook'` (ADR-006's
+    // self-serve branch requires that value to synthesize a manifest) while the
+    // user never runs a webhook — they run `commonly agent run`, which POLLS.
+    // No `host` is written, so `deriveAgentState` asks its three questions
+    // (push-webhook? native? byo?), gets no to all three, and returns
+    // 'unknown'.
+    //
+    // Measured cost: 202 of 314 active installs derive 'unknown', and every
+    // real BYO user seat is in that 202 — including all four users who
+    // mentioned a dead seat and got silence (pod-architect, fleet review
+    // 2026-08-14). The honesty surface, the install intro (#943) and W4's
+    // stalled-connect trigger all read that derivation, so all three are inert
+    // for exactly the population they exist to protect.
+    //
+    // Discriminator: a PUSH webhook must supply `webhookUrl` — no registry
+    // route ever writes that field, it only ever arrives in caller config — so
+    // webhook-typed WITHOUT a URL is a polling seat. Never overwrite an
+    // explicit host; the CLI attach path already sets it correctly.
+    if (!runtimeConfig.host
+      && String(runtimeConfig.runtimeType || '').toLowerCase() === 'webhook'
+      && !runtimeConfig.webhookUrl) {
+      runtimeConfig.host = 'byo';
+    }
     if (Object.keys(runtimeConfig).length) {
       installConfig.runtime = runtimeConfig;
     }
