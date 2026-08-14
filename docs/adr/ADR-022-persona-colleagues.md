@@ -193,6 +193,31 @@ That number is not a new budget; it is what the shipped configuration already en
 
 So a seat-denominated allowance needs a **per-user ceiling in addition to the per-installation cap**. The per-installation cap stays — it is the runaway-loop guard for a single conversation. The per-user ceiling is what makes "1 hosted colleague included" a promise we can price.
 
+**It multiplies in TWO directions, not one** (fable-lead). N hires = N × cap, *and* one hire placed in M rooms = M `AgentInstallation` rows = M × cap. So under D2's "pick room(s)" step, **a single colleague working in three rooms is silently three colleagues' worth of spend.**
+
+> **Invariant.** A per-user daily ceiling — keyed on `installedBy`, summed across all hosted installs — is a **prerequisite for offering the second hosted seat or multi-room placement of a hosted hire.** Not a fast-follow.
+
+In v1 (Scout only, one install) per-install equals per-user by construction, so nothing needs building now; the invariant exists so the where-step cannot outrun the ledger. **Ledger shape when built: ceiling per user, fairness per hire beneath it, per-pod never** — a colleague in three rooms is one colleague.
+
+**Presentation does not change; enforcement does.** Present the seat, never the arithmetic. A seat that silently multiplies is an enforcement bug, and bugs do not get fixed in copy.
+
+**Correction — telemetry EXISTS, and the $1 is now measured rather than guessed.** An earlier draft of this ADR said "the fields exist and nothing populates them." That was wrong, and the error was mine: the accounting code runs on main (`nativeRuntimeService:865-867` per turn, `:926/:936` accumulating into `run.totalTokens`), and my query checked a root-level `promptTokens` that the code never writes. Measured properly, 2026-08-14:
+
+| metric | value |
+|---|---|
+| runs with token data | **2,225** of 6,624 |
+| median tokens/run | **8,146** |
+| mean tokens/run | 17,418 |
+| p90 / max | 51,748 / 54,398 |
+
+So the true daily ceiling is `60 × ~17k ≈ 1.05M tokens/user/day`, which on a flash-tier model sits **comfortably under the $1 figure** — the allowance has roughly 3–10× headroom over worst case, not zero.
+
+**The 4,399 runs with `totalTokens === 0` are the open question** (fable-lead). `Number(usage.total_tokens || 0)` converts *unmeasured* into *zero*, and **a zero that means unmeasured reads as free**. The ticket is not "populate the fields" — it is *"find why `usage` is empty and make unmeasured loud"*: a distinct `errorKind` or warning, never a manufactured zero.
+
+**At-cap persists nothing** (pod-architect). The decline path returns a synthetic success with `runId: ''` and writes **no `AgentRun` row**, so a capped turn is indistinguishable from an ordinary quiet one in the data. D7's quota axis therefore has **no signal to read** — either it recomputes the count per viewer, or the runtime must record the state. Recording it is the better answer, because a cap-hit is also the tripwire below.
+
+**The cap must not be reachable inside a single engaged first-day conversation** (fable-lead). "Surface only on hit" is designed for a *backstop*, and holds only while the cap stays one. If real cost rises, the levers in order are **model choice, then per-run `maxTokens`/`maxTurns`** — degrade per-turn spend, never continuity. A colleague that thinks in smaller steps is still a colleague; one that stops mid-conversation on day one is a meter, and softer copy in that world is just a meter with manners. So do not redesign the copy for that world — build the tripwire: **alert when any user caps out within 24h of signup, or first-day hit-rate exceeds ~1%, and treat a first-day cap-hit as an incident (the allowance is wrong), not a UX state.**
+
 **The abuse surface is account creation, not usage.** At ~0.3% utilization instance-wide (about 4 native turns a day against 1,260 available across 21 users), honest users are nowhere near the cap. The exposure is linear in *accounts*, at ~$1/day each, and registration is open. Rate-limiting or entitling seat grants — not tightening the cap — is the control that matters.
 
 ## D7. At-cap is a new AXIS, not a liveness state (ux-lead)
@@ -203,7 +228,9 @@ Quota does **not** go inside the `AgentReachState` enum. `(liveness, config, quo
 
 > "At today's limit — answers again at HH:MM"
 
-**The boundary is UTC midnight** — `nativeRuntimeService:621` does `dayStart.setUTCHours(0,0,0,0)`, verified rather than assumed. Worth stating plainly because for our Chinese users that reset lands **mid-morning local**, which is a strange thing to show without thought. Whether to display UTC, local, or a relative "in 6 hours" is a copy decision that follows from surfacing the real boundary instead of writing "midnight."
+**The boundary is UTC midnight** — `nativeRuntimeService:621` does `dayStart.setUTCHours(0,0,0,0)`, verified rather than assumed.
+
+**And the boundary is arguably wrong, not just awkward to phrase** (pod-architect). UTC midnight is **08:00 in UTC+8**, so a Chinese user's cap resets *at the start of their workday*. Exhaust it by 10am and they are dark for **22 hours** — the worst possible phase for exactly the audience this copy exists to serve, and two of the users this ADR is built on wrote Chinese. **Argue the boundary before the copy commits to a time.** A rolling 24h window, or a reset keyed to the user's own timezone, may be the actual fix; "which words describe UTC midnight" is the wrong question to answer first.
 
 Never currency, per D5. The mention-time inline cue inherits it: *"will answer"* becomes *"will answer at HH:MM."* **Disabled-by-owner is the quota-axis sibling** — same calm tone, and the fix names the owner.
 
@@ -214,6 +241,10 @@ The awaiting-seat member card is **ambient** (persistence); the stalled-connect 
 1. Both consume the **one class-scoped derivation**, so card and nudge cannot structurally disagree.
 2. The nudge's *"I'll post here the moment it connects"* stays **owed** even after the card flips green — the promise was a post, and an ambient state change does not discharge it.
 3. **Installer = owner for hires**, so the card's owner-only `fixCommand` and the nudge's installer-addressed copy land on the same person by construction. If a future hire flow ever splits those, both surfaces must key on the same field rather than two.
+
+**Pin 3 verified, with a hole** (pod-architect). `installedBy` is `required: true`, populated on all 322 active installs, and `agentStateService:100` keys `isOwner` on exactly that field — one field, and because both surfaces read it they fail *together* rather than contradicting each other, which is the pin working.
+
+**But 53 of 322 have a BOT as `installedBy`** (mostly `commonly-bot`). For those, `isOwner` is false for every human: the card renders **no `fixCommand`** and the nudge has **no addressee**. That is the same class of defect as `pod.createdBy` in #939, one field over — and #939's remedy (resolve to a non-bot human, refuse rather than render an impossible owner) is the shape to reuse. For the funnel population it is small: **1 of 20** self-serve seats.
 
 ## Do now, regardless of ratification (fable-lead)
 
