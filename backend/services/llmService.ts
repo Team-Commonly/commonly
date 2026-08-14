@@ -4,6 +4,7 @@ import GlobalModelConfigService from './globalModelConfigService';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_ORCAROUTER_BASE_URL = 'https://api.orcarouter.ai/v1';
 const DEFAULT_MAX_OUTPUT_TOKENS = 2048;
 const DEFAULT_LLM_TIMEOUT_MS = Number(process.env.LLM_REQUEST_TIMEOUT_MS) || 120000;
 
@@ -34,6 +35,12 @@ interface LiteLLMConfig {
 }
 
 interface OpenRouterConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+interface OrcaRouterConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -95,6 +102,32 @@ const getOpenRouterConfig = (globalConfig: Record<string, unknown> | null = null
   ).trim();
   if (!apiKey) {
     throw new Error('OpenRouter API key is required');
+  }
+  return {
+    baseUrl,
+    apiKey,
+    model,
+  };
+};
+
+const getOrcaRouterConfig = (globalConfig: Record<string, unknown> | null = null): OrcaRouterConfig => {
+  const settings = globalConfig || {};
+  const orcaRouterSettings = (settings?.llmService as unknown as Record<string, unknown>)?.orcarouter as unknown as Record<string, unknown> || {};
+  const baseUrl = String(
+    orcaRouterSettings.baseUrl
+    || process.env.ORCAROUTER_BASE_URL
+    || DEFAULT_ORCAROUTER_BASE_URL,
+  ).trim().replace(/\/$/, '');
+  const apiKey = String(process.env.ORCAROUTER_API_KEY || '').trim();
+  const model = String(
+    orcaRouterSettings.model
+    || (settings?.llmService as unknown as Record<string, unknown>)?.model
+    || (settings?.llmService as unknown as Record<string, unknown>)?.defaultModel
+    || process.env.ORCAROUTER_MODEL
+    || DEFAULT_MODEL,
+  ).trim();
+  if (!apiKey) {
+    throw new Error('OrcaRouter API key is required');
   }
   return {
     baseUrl,
@@ -173,8 +206,20 @@ const parseOpenRouterModel = (modelName: unknown): string => {
   return normalized;
 };
 
+const parseOrcaRouterModel = (modelName: unknown): string => {
+  const normalized = String(modelName || '').trim();
+  if (!normalized) return '';
+  if (normalized.startsWith('orcarouter/')) {
+    return normalized.slice('orcarouter/'.length);
+  }
+  if (normalized.startsWith('orcarouter:')) {
+    return normalized.slice('orcarouter:'.length);
+  }
+  return normalized;
+};
+
 const stripProviderPrefix = (modelName: unknown): string => {
-  const stripped = parseOpenRouterModel(modelName);
+  const stripped = parseOrcaRouterModel(parseOpenRouterModel(modelName));
   // Also strip provider org prefixes like "anthropic/claude-3" -> not valid for Gemini
   // If it contains a slash and doesn't start with "gemini", it's not a Gemini model
   if (stripped.includes('/') && !stripped.startsWith('gemini')) {
@@ -204,6 +249,32 @@ const generateViaOpenRouter = async (
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.OPENROUTER_HTTP_REFERER || process.env.FRONTEND_URL || 'https://commonly.me',
         'X-Title': process.env.OPENROUTER_APP_TITLE || 'Commonly',
+      },
+      timeout: options.timeout || DEFAULT_LLM_TIMEOUT_MS,
+    },
+  );
+  return parseLiteLLMResponse(response.data);
+};
+
+const generateViaOrcaRouter = async (
+  prompt: string,
+  options: GenerateOptions = {},
+  globalConfig: Record<string, unknown> | null = null,
+): Promise<string> => {
+  const config = getOrcaRouterConfig(globalConfig);
+  const selectedModel = parseOrcaRouterModel(options.model || config.model);
+  const response = await axios.post(
+    `${config.baseUrl}/chat/completions`,
+    {
+      model: selectedModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: options.temperature ?? 0.4,
+      max_tokens: options.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json',
       },
       timeout: options.timeout || DEFAULT_LLM_TIMEOUT_MS,
     },
@@ -241,6 +312,26 @@ export const generateText = async (prompt: string, options: GenerateOptions = {}
       const err = error as LLMProviderError;
       console.warn(
         `[llm-service] OpenRouter failed (model=${selectedModel}): ${err.message}${err.providerCode ? ` [code=${err.providerCode}]` : ''}`,
+      );
+      if (process.env.GEMINI_API_KEY) {
+        const geminiOptions = { ...runOptions, model: stripProviderPrefix(selectedModel) };
+        console.warn(`[llm-service] Falling back to Gemini (model=${geminiOptions.model})`);
+        return generateViaGemini(prompt, geminiOptions);
+      }
+      throw error;
+    }
+  }
+
+  const shouldUseOrcaRouter = configuredProvider === 'orcarouter'
+    || String(selectedModel).startsWith('orcarouter/')
+    || String(selectedModel).startsWith('orcarouter:');
+  if (shouldUseOrcaRouter) {
+    try {
+      return await generateViaOrcaRouter(prompt, runOptions, globalModelConfig as unknown as Record<string, unknown>);
+    } catch (error) {
+      const err = error as LLMProviderError;
+      console.warn(
+        `[llm-service] OrcaRouter failed (model=${selectedModel}): ${err.message}${err.providerCode ? ` [code=${err.providerCode}]` : ''}`,
       );
       if (process.env.GEMINI_API_KEY) {
         const geminiOptions = { ...runOptions, model: stripProviderPrefix(selectedModel) };

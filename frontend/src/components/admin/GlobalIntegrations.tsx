@@ -106,6 +106,10 @@ const GlobalIntegrations = () => {
         baseUrl: 'https://openrouter.ai/api/v1',
         model: '',
       },
+      orcarouter: {
+        baseUrl: 'https://api.orcarouter.ai/v1',
+        model: '',
+      },
     },
     openclaw: {
       provider: 'google',
@@ -222,6 +226,10 @@ const GlobalIntegrations = () => {
               baseUrl: nextModelPolicy?.llmService?.openrouter?.baseUrl || 'https://openrouter.ai/api/v1',
               model: nextModelPolicy?.llmService?.openrouter?.model || '',
             },
+            orcarouter: {
+              baseUrl: nextModelPolicy?.llmService?.orcarouter?.baseUrl || 'https://api.orcarouter.ai/v1',
+              model: nextModelPolicy?.llmService?.orcarouter?.model || '',
+            },
           },
           openclaw: {
             provider: nextModelPolicy?.openclaw?.provider || 'google',
@@ -263,6 +271,10 @@ const GlobalIntegrations = () => {
         openrouter: {
           baseUrl: modelPolicy?.llmService?.openrouter?.baseUrl || '',
           model: modelPolicy?.llmService?.openrouter?.model || '',
+        },
+        orcarouter: {
+          baseUrl: modelPolicy?.llmService?.orcarouter?.baseUrl || '',
+          model: modelPolicy?.llmService?.orcarouter?.model || '',
         },
       },
       openclaw: {
@@ -878,6 +890,7 @@ const GlobalIntegrations = () => {
                   <MenuItem value="anthropic">Anthropic</MenuItem>
                   <MenuItem value="litellm">LiteLLM</MenuItem>
                   <MenuItem value="openrouter">OpenRouter</MenuItem>
+                  <MenuItem value="orcarouter">OrcaRouter</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -950,6 +963,47 @@ const GlobalIntegrations = () => {
                     fullWidth
                     size="small"
                     helperText="Example: openai/gpt-4.1-mini"
+                  />
+                </Grid>
+              </>
+            )}
+            {modelPolicy.llmService.provider === 'orcarouter' && (
+              <>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    label="OrcaRouter Base URL"
+                    value={modelPolicy.llmService.orcarouter.baseUrl}
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      llmService: {
+                        ...modelPolicy.llmService,
+                        orcarouter: {
+                          ...modelPolicy.llmService.orcarouter,
+                          baseUrl: event.target.value,
+                        },
+                      },
+                    })}
+                    fullWidth
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    label="OrcaRouter Model"
+                    value={modelPolicy.llmService.orcarouter.model}
+                    onChange={(event) => setModelPolicy({
+                      ...modelPolicy,
+                      llmService: {
+                        ...modelPolicy.llmService,
+                        orcarouter: {
+                          ...modelPolicy.llmService.orcarouter,
+                          model: event.target.value,
+                        },
+                      },
+                    })}
+                    fullWidth
+                    size="small"
+                    helperText="Example: openai/gpt-5.5"
                   />
                 </Grid>
               </>

@@ -7,11 +7,17 @@ export interface OpenRouterServiceConfig {
   model: string;
 }
 
+export interface OrcaRouterServiceConfig {
+  baseUrl: string;
+  model: string;
+}
+
 export interface LlmServiceConfig {
   provider: string;
   model: string;
   contextLimit: number;
   openrouter: OpenRouterServiceConfig;
+  orcarouter: OrcaRouterServiceConfig;
 }
 
 export interface CommunityAgentModel {
@@ -34,11 +40,15 @@ export interface GlobalModelConfig {
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
   llmService: {
-    provider: 'auto', // auto | gemini | litellm | openrouter
+    provider: 'auto', // auto | gemini | litellm | openrouter | orcarouter
     model: 'gemini-2.5-flash',
     contextLimit: 128000, // max input tokens for the configured model
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
+      model: '',
+    },
+    orcarouter: {
+      baseUrl: 'https://api.orcarouter.ai/v1',
       model: '',
     },
   },
@@ -70,7 +80,7 @@ let cachedAt = 0;
 
 const normalizeProvider = (value: unknown): string => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (['auto', 'gemini', 'litellm', 'openrouter', 'openai', 'anthropic'].includes(normalized)) {
+  if (['auto', 'gemini', 'litellm', 'openrouter', 'orcarouter', 'openai', 'anthropic'].includes(normalized)) {
     return normalized;
   }
   return DEFAULT_CONFIG.llmService.provider;
@@ -171,6 +181,13 @@ const sanitize = (candidate: Partial<GlobalModelConfig> = {}): GlobalModelConfig
         ),
         model: normalizeModel(llm?.openrouter?.model),
       },
+      orcarouter: {
+        baseUrl: normalizeModel(
+          llm?.orcarouter?.baseUrl,
+          DEFAULT_CONFIG.llmService.orcarouter.baseUrl,
+        ),
+        model: normalizeModel(llm?.orcarouter?.model),
+      },
     },
     openclaw: {
       provider: normalizeOpenClawProvider(oc?.provider),
@@ -223,6 +240,10 @@ class GlobalModelConfigService {
             ...defaults.llmService.openrouter,
             ...(stored.llmService?.openrouter || {}),
           },
+          orcarouter: {
+            ...defaults.llmService.orcarouter,
+            ...(stored.llmService?.orcarouter || {}),
+          },
         },
         openclaw: {
           ...defaults.openclaw,
@@ -247,6 +268,10 @@ class GlobalModelConfigService {
         openrouter: {
           ...current.llmService.openrouter,
           ...((patch && patch.llmService && patch.llmService.openrouter) || {}),
+        },
+        orcarouter: {
+          ...current.llmService.orcarouter,
+          ...((patch && patch.llmService && patch.llmService.orcarouter) || {}),
         },
       },
       openclaw: {

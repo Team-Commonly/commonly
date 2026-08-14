@@ -23,6 +23,10 @@ describe('globalModelConfigService', () => {
       baseUrl: 'https://openrouter.ai/api/v1',
       model: '',
     });
+    expect(result.llmService.orcarouter).toEqual({
+      baseUrl: 'https://api.orcarouter.ai/v1',
+      model: '',
+    });
     expect(result.openclaw.provider).toBe('google');
     expect(result.openclaw.model).toBe('google/gemini-2.5-flash');
     expect(result.openclaw.fallbackModels).toEqual([
@@ -102,5 +106,45 @@ describe('globalModelConfigService', () => {
 
     const updateArg = SystemSetting.findOneAndUpdate.mock.calls[0][1];
     expect(updateArg.$set.value.openclaw.model).toBe('openrouter/arcee-ai/trinity-large-preview:free');
+  });
+
+  it('drops stored OrcaRouter key and keeps only routing fields', async () => {
+    SystemSetting.findOne.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValueOnce({
+        key: 'llm.globalModelConfig',
+        value: {
+          llmService: {
+            provider: 'orcarouter',
+            model: 'openai/gpt-5.5',
+            orcarouter: {
+              baseUrl: 'https://api.orcarouter.ai/v1',
+              model: 'openai/gpt-5.5',
+              apiKey: 'sk-orca-existing',
+            },
+          },
+        },
+      }),
+    });
+    SystemSetting.findOneAndUpdate.mockResolvedValueOnce({});
+
+    const result = await GlobalModelConfigService.setConfig({
+      llmService: {
+        provider: 'orcarouter',
+        model: 'openai/gpt-5.5',
+        orcarouter: {
+          model: 'anthropic/claude-sonnet-5',
+          apiKey: 'sk-orca-new-value',
+        },
+      },
+    }, 'u1');
+
+    const updateArg = SystemSetting.findOneAndUpdate.mock.calls[0][1];
+    expect(updateArg.$set.value.llmService.orcarouter).toEqual({
+      baseUrl: 'https://api.orcarouter.ai/v1',
+      model: 'anthropic/claude-sonnet-5',
+    });
+    expect(updateArg.$set.value.llmService.orcarouter.apiKey).toBeUndefined();
+    expect(result.llmService.provider).toBe('orcarouter');
+    expect(result.llmService.orcarouter.apiKey).toBeUndefined();
   });
 });
