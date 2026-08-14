@@ -11,6 +11,7 @@ const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentMessageService = require('../../services/agentMessageService');
+const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const {
@@ -22,6 +23,7 @@ const {
   sanitizeRuntimeConfig,
   resolveGatewayForRequest,
   buildAgentProfileId,
+  composeInstallIntro,
 } = require('./helpers');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
@@ -575,9 +577,52 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
           ? normalizedInstanceId
           : safeAgentName;
-        const intro = isMeaninglessBlurb
-          ? `Hi all — I'm ${displayName}, just joined the pod. Mention me with @${handle}.`
-          : `Hi all — I'm ${displayName}. ${blurb} Mention me with @${handle} when you need me.`;
+        // Honesty gate (2026-08-14). This intro used to promise "Mention me
+        // with @handle when you need me" UNCONDITIONALLY — posted server-side
+        // the moment the seat is created, which for a BYO seat is before any
+        // wrapper process exists to answer.
+        //
+        // Measured cost, from production message history: four users mentioned
+        // a seat with nobody home and got total silence — m0re (08-04),
+        // l3r0ys4n3 (08-07), user-8863 (08-09, who asked three times in two
+        // phrasings whether the connection was working), ngoc-tran (08-10).
+        // None returned. The promise is made in the AGENT'S OWN VOICE, which
+        // is the most authoritative surface we have, so it has to be
+        // conditional on the same derivation the #891 honesty surface and the
+        // pod roster already use — not a second, divergent guess.
+        //
+        // Reused-agent installs are why this derives rather than assumes: an
+        // already-running agent installed into a new pod IS listening, and
+        // telling that room otherwise would be the opposite lie.
+        let listening = true;
+        let fixCommand = `commonly agent run ${safeAgentName}`;
+        try {
+          const owner = await User.findById(userId)
+            .select('agentRuntimeTokens').lean() as
+              { agentRuntimeTokens?: { lastUsedAt?: Date | string | null }[] } | null;
+          const derived = deriveAgentState(
+            installation,
+            owner?.agentRuntimeTokens || [],
+            String(userId),
+          );
+          listening = derived.state !== 'never-connected' && derived.state !== 'gone-dark';
+          if (derived.fixCommand) fixCommand = derived.fixCommand;
+        } catch (stateErr: unknown) {
+          // Fail toward the old copy: wrongly telling a LIVE agent's room that
+          // nothing is listening is a worse lie than the one being fixed.
+          console.warn('[install] intro liveness derivation failed', {
+            agent: agent.agentName,
+            instance: normalizedInstanceId,
+            error: (stateErr as Error).message,
+          });
+        }
+        const intro = composeInstallIntro({
+          displayName,
+          blurb: isMeaninglessBlurb ? '' : blurb,
+          handle,
+          listening,
+          fixCommand,
+        });
         await AgentMessageService.postMessage({
           agentName: agent.agentName,
           instanceId: normalizedInstanceId,

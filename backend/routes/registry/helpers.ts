@@ -266,6 +266,46 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
 // sync via the same fallback chain: botMetadata.displayName → instanceId
 // (when not 'default') → username → fallback. Never falls back to
 // botMetadata.agentName (runtime-leaning).
+/**
+ * The install intro, composed so its promise matches reality.
+ *
+ * The old copy said "Mention me with @handle when you need me" every time,
+ * posted server-side the moment a seat is created — which for a BYO seat is
+ * before any wrapper exists to answer. Production message history shows four
+ * users taking that invitation and getting total silence: m0re (08-04),
+ * l3r0ys4n3 (08-07), user-8863 (08-09, who asked three times in two phrasings
+ * whether the connection was working), ngoc-tran (08-10). None came back.
+ *
+ * Pure on purpose: the caller derives liveness via `deriveAgentState` (the
+ * same derivation the #891 honesty surface and the pod roster use — one
+ * source of truth, not a second guess) and passes the verdict in. That keeps
+ * the copy rules testable without a DB, which is the whole reason
+ * agentStateService is pure too.
+ */
+const composeInstallIntro = ({
+  displayName, blurb, handle, listening, fixCommand,
+}: {
+  displayName: string;
+  blurb?: string;
+  handle: string;
+  listening: boolean;
+  fixCommand: string;
+}): string => {
+  // Older CLI versions seeded description from displayName, producing intros
+  // like "Hi all — I'm bot. bot Ping me ...". Drop a blurb that just repeats
+  // the name.
+  const trimmed = String(blurb || '').trim().replace(/\s+/g, ' ');
+  const meaningless = !trimmed
+    || trimmed.toLowerCase() === String(displayName).toLowerCase();
+  const lead = meaningless
+    ? `Hi all — I'm ${displayName}, just joined the pod.`
+    : `Hi all — I'm ${displayName}. ${trimmed}`;
+  if (listening) return `${lead} Mention me with @${handle} when you need me.`;
+  return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
+    + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
+    + `where I should live — then @${handle} will get through.`;
+};
+
 const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
   if (!user) return fallback;
   const meta = user.botMetadata || {};
@@ -567,6 +607,7 @@ module.exports = {
   resolveInstallation,
   buildAgentProfileId,
   resolveRuntimeInstanceId,
+  composeInstallIntro,
 };
 
 export {};
