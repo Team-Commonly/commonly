@@ -46,26 +46,9 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
       q, category, verified, registry, limit = 20, offset = 0,
     } = req.query;
 
-    // Default to VERIFIED-ONLY. `search()` already excludes ephemeral rows,
-    // but that was never the leak: measured 2026-08-14, this endpoint returned
-    // 66 rows of which 52 were unverified, and among them every internal and
-    // smoke-test agent we have ever created — `smoke-claude`, `demo-target`,
-    // `demo-clean2`, the `smokea50698-*` family, `test-agent`, `test-agent2`,
-    // plus our own working seats `pod-architect`, `cl-critic`, `cl-strategist`,
-    // `claude-on-dev`, `sam-claude`, `sam-local-codex`, `nova-claude`,
-    // `hq-support`, `carol`.
-    //
-    // The landing footer links this endpoint, so a logged-out visitor could
-    // browse our test fixtures. `verified` is exactly the axis that separates
-    // them: every one of those rows is `commonly-community` + unverified,
-    // while the curated set is verified.
-    //
-    // An explicit `?verified=false` still works, so nothing is unreachable —
-    // the default just stops being "show everything we ever wrote."
-    const verifiedFilter = parseVerifiedFilter(verified);
     const agents = await AgentRegistry.search(q, {
       category,
-      verified: verifiedFilter === null ? true : verifiedFilter,
+      verified: parseVerifiedFilter(verified),
       registry: registry || null,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
