@@ -39,6 +39,7 @@ const mongoose = require('mongoose');
 const { AgentInstallation } = require('../models/AgentRegistry');
 
 const APPLY = process.argv.includes('--apply');
+const INCLUDE_INACTIVE = process.argv.includes('--include-inactive');
 
 const main = async () => {
   const uri = process.env.MONGO_URI;
@@ -74,13 +75,37 @@ const main = async () => {
     return runtime && typeof runtime === 'object' ? runtime : null;
   };
 
-  const candidates = rows.filter((row: any) => {
+  // ACTIVE only, unless --include-inactive is passed.
+  //
+  // Measured on production before the first apply: 191 rows matched the shape
+  // but split 136 uninstalled / 39 stale / 16 active, and the uninstalled set
+  // is almost entirely dead `byo-smoke-*` / `byo-e2e-*` fixtures. Stamping
+  // those is harmless and pointless — it writes 136 rows nothing reads, and it
+  // inflates the reported number so the next person cannot tell how many real
+  // seats were affected.
+  //
+  // The 16 active rows are the ones the honesty surface, the stalled-connect
+  // trigger and `commonly_agent_status` actually read, and they are the seats
+  // belonging to the users this whole change exists for.
+  const shapeMatches = (row: any) => {
     const runtime = runtimeOf(row);
     if (!runtime) return false;
     if (runtime.host) return false;
     if (runtime.webhookUrl) return false;
     return String(runtime.runtimeType || '').toLowerCase() === 'webhook';
+  };
+  const matched = rows.filter(shapeMatches);
+  const candidates = INCLUDE_INACTIVE
+    ? matched
+    : matched.filter((row: any) => row.status === 'active');
+
+  const byStatus: Record<string, number> = {};
+  matched.forEach((r: any) => {
+    const k = r.status || 'none';
+    byStatus[k] = (byStatus[k] || 0) + 1;
   });
+  console.log(`shape matches by status: ${JSON.stringify(byStatus)}`);
+  if (!INCLUDE_INACTIVE) console.log('(stamping ACTIVE only — pass --include-inactive to widen)');
 
   console.log(`installs scanned:      ${rows.length}`);
   console.log(`already stamped:       ${rows.filter((r: any) => runtimeOf(r)?.host).length}`);
