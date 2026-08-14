@@ -1,6 +1,6 @@
 # ADR-022: Persona colleagues — separating who an agent is from where it runs
 
-- **Status:** Draft — design decided (fable-lead 2026-08-14); **one open decision for Sam: the free hosted-seat allowance**
+- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14: ~$1/day/user, one seat, never shown as currency). Ready for ratification.
 - **Depends on:** ADR-001 (Installable taxonomy — `source` / `components[]`), ADR-021 (hosted runtime, credits)
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
@@ -148,9 +148,20 @@ ADR-021's own ratified principle — *credits buy infra, not tokens* — worn as
 
 **If the allowance lands at zero beyond Scout:** the hosted option says so plainly and BYO is offered *with the awaiting-seat UX*. Same economics as today's `:124`, but the constraint now arrives attached to a colleague the user already chose — which is the entire psychological difference between "paywall on an empty room" and "this hire needs a seat." The consequence below still holds: activation continues to hinge on BYO connect conversion. This redesign moves persona-attachment *before* the setup cost; it cannot delete the cost.
 
+## D6. Scout steers work OUT of My Workspace, and shared-pod personas are mention-only
+
+Two rules, one cost reason and one correctness reason, and the correctness one matters more.
+
+`wakeOnMessage: true` means **every message in My Workspace costs a Scout turn**, addressed to it or not. A team doing real work in there is billed per line. But the code's own rationale for that policy is *"a private **1:1-shaped** room"* — so a team working there is not merely expensive, it is **in the wrong room**, and Scout answering everything is the symptom rather than the problem.
+
+1. **Scout steers.** Today it creates pods only reactively — its prompt says *"Asked for a new pod → propose create_pod."* It waits to be asked. It should instead notice that real work has started and offer the room for it. This is also the better funnel: land in My Workspace → talk to Scout → **Scout helps you make a real pod for real work**, rather than → get pushed toward BYO connect.
+2. **A persona in a shared pod is mention-only, never wake-on-message.** This is D3's "wake policy is identity" as an enforceable rule: a persona that wakes on everything is a 1:1 assistant, one that wakes on mention is a colleague. Same model, different creature — and the shared-pod variant is also the cheap one.
+
 ## Open — Sam
 
-5. **The free hosted allowance.** Some non-zero amount of hosted persona use for unentitled users, or personas gated behind entitlement and free users still landing on BYO. This is the decision the rest depends on, and it is a money decision.
+*(D5 settled the allowance. Nothing here blocks the design; these are sequencing calls.)*
+
+5. Whether the per-user ceiling ships **with** the first multi-persona hire or before it. It is not needed while Scout is the only hire, and it is required the day it is not.
 
 ## Consequences
 
@@ -159,6 +170,18 @@ ADR-021's own ratified principle — *credits buy infra, not tokens* — worn as
 - BYO stops being the default first experience and becomes the graduation step it should always have been — which is also where today's honesty work (#943, #945, #947) pays off, since by then the user has a working agent and is choosing to add another.
 - We take on curation cost: personas are content, and bad ones are worse than none.
 - If the allowance is zero, this ADR delivers a better-shaped catalog and **not** a better activation rate. Worth stating plainly so the outcome is not misread later.
+
+## D5. The allowance is one seat and ~$1/day/user — and the existing cap does NOT scale to it
+
+**Decided (Sam, 2026-08-14): roughly $1/day per user, never shown as currency.**
+
+That number is not a new budget; it is what the shipped configuration already enforces. Scout runs `deepseek-v4-flash` with `dailyRunCap: 60`, `maxTurns: 6`, `maxTokens: 12000` — a worst-case run around 50k tokens, so a flat-out workspace lands under a dollar a day. An earlier proposal of $10/day would have **loosened a working limit by 10×**, which is the opposite of what a ceiling is for.
+
+**The trap this ADR must not walk into.** `nativeRuntimeService:621` counts runs on `{ podId, agentName, instanceId }` — **per installation**. Today that equals per user only because Scout is `perUser: true` with exactly one install per workspace. **The moment a user can hire several personas, N hires means N × 60**, and "per user" quietly becomes "per user per persona."
+
+So a seat-denominated allowance needs a **per-user ceiling in addition to the per-installation cap**. The per-installation cap stays — it is the runaway-loop guard for a single conversation. The per-user ceiling is what makes "1 hosted colleague included" a promise we can price.
+
+**The abuse surface is account creation, not usage.** At ~0.3% utilization instance-wide (about 4 native turns a day against 1,260 available across 21 users), honest users are nowhere near the cap. The exposure is linear in *accounts*, at ~$1/day each, and registration is open. Rate-limiting or entitling seat grants — not tightening the cap — is the control that matters.
 
 ## Do now, regardless of ratification (fable-lead)
 
