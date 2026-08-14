@@ -48,22 +48,43 @@ const main = async () => {
   }
   await mongoose.connect(uri);
 
-  // Deliberately NOT filtered in the query: `config` is a Mixed/Map field
-  // across generations of install rows, so shape-matching in Mongo silently
-  // misses variants. Filter in JS where the shape is inspectable.
-  const rows = await AgentInstallation.find({}).select('agentName instanceId podId config status');
+  // `.lean()` is load-bearing, not an optimization. `config` is declared
+  // `{ type: Map, of: Mixed }` (AgentRegistry.ts:235), so on a live Mongoose
+  // document `config.runtime` is undefined — a Map needs `.get()`. The first
+  // version of this script omitted `.lean()` and its dry run reported
+  // "scanned 545, already stamped 0, candidates 0" against a database where
+  // two seats were demonstrably stamped and ~200 were candidates. Every row
+  // filtered out on a property that cannot exist.
+  //
+  // With `--apply` that would have written nothing and printed success: the
+  // migration-reports-success-and-writes-nothing failure this file already
+  // warns about below, arriving through a different door. The dry run is what
+  // caught it.
+  const rows = await AgentInstallation.find({})
+    .select('agentName instanceId podId config status')
+    .lean();
+
+  const runtimeOf = (row: any) => {
+    const config = row?.config;
+    if (!config) return null;
+    // Defensive both ways: lean() gives a plain object, but a caller that
+    // hands this a live document should degrade to a correct read rather than
+    // a silent empty one.
+    const runtime = typeof config.get === 'function' ? config.get('runtime') : config.runtime;
+    return runtime && typeof runtime === 'object' ? runtime : null;
+  };
 
   const candidates = rows.filter((row: any) => {
-    const runtime = row?.config?.runtime;
-    if (!runtime || typeof runtime !== 'object') return false;
+    const runtime = runtimeOf(row);
+    if (!runtime) return false;
     if (runtime.host) return false;
     if (runtime.webhookUrl) return false;
     return String(runtime.runtimeType || '').toLowerCase() === 'webhook';
   });
 
   console.log(`installs scanned:      ${rows.length}`);
-  console.log(`already stamped:       ${rows.filter((r: any) => r?.config?.runtime?.host).length}`);
-  console.log(`push webhooks skipped: ${rows.filter((r: any) => r?.config?.runtime?.webhookUrl).length}`);
+  console.log(`already stamped:       ${rows.filter((r: any) => runtimeOf(r)?.host).length}`);
+  console.log(`push webhooks skipped: ${rows.filter((r: any) => runtimeOf(r)?.webhookUrl).length}`);
   console.log(`candidates to stamp:   ${candidates.length}`);
   candidates.slice(0, 20).forEach((row: any) => {
     console.log(`  ${row.agentName}:${row.instanceId || 'default'} pod=${row.podId} status=${row.status}`);
@@ -78,15 +99,20 @@ const main = async () => {
 
   let stamped = 0;
   for (const row of candidates) {
-    const runtime = { ...(row.config.runtime || {}), host: 'byo' };
-    // Assign the whole config object back: Mixed paths do not reliably mark
-    // themselves dirty on nested mutation, which is the classic way a
-    // migration reports success and writes nothing.
-    row.config = { ...(row.config || {}), runtime };
-    row.markModified('config');
+    // `updateOne` with a dotted path rather than load-mutate-save. The rows
+    // are lean (see the scan above), so there is no document to save; and a
+    // dotted `$set` on a Map path writes the one key without rewriting the
+    // whole config, so a concurrent install touching another key is not
+    // clobbered. It also sidesteps the Mixed-path dirty-tracking problem that
+    // the load-mutate-save shape has to remember to handle.
     // eslint-disable-next-line no-await-in-loop
-    await row.save();
-    stamped += 1;
+    const res = await AgentInstallation.updateOne(
+      { _id: row._id },
+      { $set: { 'config.runtime.host': 'byo' } },
+    );
+    // Count what the DB says it changed, not what we intended — the whole
+    // reason this script needed a second pass.
+    stamped += (res?.modifiedCount ?? res?.nModified ?? 0);
   }
 
   console.log(`\nstamped ${stamped} installs.`);
