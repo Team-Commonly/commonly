@@ -645,8 +645,33 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
             'botMetadata.instanceId': normalizedInstanceId,
           }).select('agentRuntimeTokens.lastUsedAt').lean() as
               { agentRuntimeTokens?: { lastUsedAt?: Date | string | null }[] } | null;
+          // `config` is `{ type: Map, of: Mixed }` (AgentRegistry.ts:235), so
+          // on a LIVE Mongoose document `installation.config.runtime` is
+          // undefined — a Map needs `.get()`. `deriveAgentState` reads
+          // `config?.runtime` directly, so passing the live doc made it see an
+          // empty runtime, answer `unknown`, and pick the invitation copy.
+          //
+          // Verified live: after the host:'byo' stamp shipped, a seat minted by
+          // the real connect flow derived `never-connected` through
+          // /agent-states (which uses `.lean()`, and lean converts Maps to
+          // plain objects) while this call site still produced "Mention me with
+          // @handle when you need me". Two readers of one field disagreeing
+          // because one of them held a Mongoose document.
+          //
+          // Unit tests could not catch it: they pass plain objects, which is
+          // the shape lean gives and the shape this line did NOT have.
+          // Built field-by-field on purpose: spreading a Mongoose document
+          // copies internals rather than the fields (they live under `_doc`),
+          // which would fail the same silent way.
           const derived = deriveAgentState(
-            installation,
+            {
+              agentName: installation.agentName,
+              instanceId: installation.instanceId,
+              displayName: installation.displayName,
+              installedBy: installation.installedBy,
+              runtimeTokens: installation.runtimeTokens,
+              config: normalizeConfigMap(installation.config) || {},
+            },
             botRow?.agentRuntimeTokens || [],
             String(userId),
           );
