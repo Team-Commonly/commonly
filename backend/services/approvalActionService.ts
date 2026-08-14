@@ -319,6 +319,20 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     content: `[approval needed] ${trimmedSummary}`,
     metadata: { source: 'approval-card', approvalId: String(row._id) },
     installationConfig,
+    // A card is not a summary. `postMessage` otherwise runs every message
+    // through `persistSummaryFromAgentMessage`, and once propose-action opened
+    // an HTTP entry point CodeQL flagged the resulting flow into that path's
+    // Mongo query (js/sql-injection, agentMessageService:775).
+    //
+    // The flow is unreachable in practice — `extractStructuredSummary` reads
+    // `eventId` from METADATA, which is server-built here, and its content
+    // parser returns null unless the text starts with `[BOT_MESSAGE]` while
+    // ours starts with `[approval needed]`. But "unreachable today" is a
+    // property of two guards in another service that nothing obliges to stay
+    // put, and this is a consent surface reachable by any agent token. Not
+    // running summary extraction on a card is correct on its own terms and
+    // removes the question.
+    skipSummaryPersistence: true,
   });
 
   if (!posted?.success || !posted?.message) {
