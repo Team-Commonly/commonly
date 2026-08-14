@@ -1870,6 +1870,55 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
   }
 });
 
+// W1 step 1 — the CAP producer surface for approval cards.
+//
+// Until now `proposeAction` had exactly one caller: the in-process native
+// runtime. Consumers were already universal (any human decides via
+// /api/approvals), so the kernel could be asked for consent by first-party
+// agents only — the universality gap. This route is the thin HTTP shell that
+// closes it, so a BYO wrapper or a hosted runtime proposes through the same
+// service, with the same validation, as a native agent.
+//
+// Deliberately thin: every rule (known actionType, param validation, summary
+// presence, the decider derivation and its refusal) stays in the service.
+// A second copy of any of those in a route handler is how the two surfaces
+// drift apart, and this one is a consent surface.
+router.post('/pods/:podId/propose-action', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { proposeActionForRuntime } = require('../services/approvalActionService');
+    const verdict = await proposeActionForRuntime({
+      podId,
+      installation,
+      podAuthorized: ensurePodMatch(
+        req.agentInstallations || installation,
+        podId,
+        req.agentAuthorizedPodIds,
+      ),
+      body: req.body || {},
+    });
+    return res.status(verdict.status).json(verdict.body);
+  } catch (error: any) {
+    const err = error as Error & { code?: string; statusCode?: number };
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      console.warn('Agent propose-action refused:', { code: err.code, status: err.statusCode });
+      return res.status(err.statusCode).json({
+        message: err.message,
+        ...(err.code ? { code: err.code } : {}),
+      });
+    }
+    console.error('Error proposing agent action:', error);
+    return res.status(500).json({ message: err.message || 'Failed to propose action' });
+  }
+});
+
 router.post('/pods/:podId/summaries', agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;

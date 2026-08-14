@@ -174,6 +174,63 @@ const resolveHumanDecider = async (candidates: unknown[]): Promise<string | null
   return null;
 };
 
+/**
+ * The runtime (HTTP) producer path, kept HERE rather than in the route so the
+ * thing under test is the thing that runs.
+ *
+ * An earlier draft of the route's test re-declared the handler inside the test
+ * file. It passed while proving nothing about the route — the exact
+ * copy-drifts-from-its-source failure this repo has already paid for. The
+ * novel rules of the HTTP surface (active-installation gate,
+ * principal-from-token, refusal mapping) therefore live in the service, and
+ * the route is a five-line adapter over this function.
+ *
+ * Returns an HTTP-shaped verdict rather than throwing: the route's only job is
+ * to spread it onto `res`.
+ */
+export const proposeActionForRuntime = async (input: {
+  podId: string;
+  installation: { agentName?: string; instanceId?: string; displayName?: string; config?: unknown };
+  podAuthorized: boolean;
+  body: { actionType?: string; params?: Record<string, unknown>; summary?: string };
+}): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const { podId, installation, podAuthorized, body } = input;
+
+  if (!podAuthorized) {
+    return { status: 403, body: { message: 'Agent token not authorized for this pod' } };
+  }
+
+  // Token scope alone is not permission to act — the same gate the claim
+  // route applies. An uninstalled agent must not keep proposing.
+  const active = await AgentInstallation.findOne({
+    agentName: installation.agentName,
+    podId,
+    status: 'active',
+  });
+  if (!active) return { status: 403, body: { message: 'no active installation in this pod' } };
+
+  // Principal comes from the token's installation, never from the body — a
+  // caller must not be able to propose as somebody else by naming them.
+  const result = await proposeAction({
+    podId,
+    agentName: String(installation.agentName || ''),
+    instanceId: installation.instanceId || 'default',
+    displayName: installation.displayName,
+    actionType: String(body?.actionType || ''),
+    params: body?.params || {},
+    summary: String(body?.summary || ''),
+    installationConfig: installation.config || null,
+  });
+
+  // Every service refusal is caller-fixable, so it is a 400 carrying the
+  // service's own sentence: an agent told "no accountable human owns this
+  // pod" can act on that, where a bare 400 teaches it nothing.
+  if (!result?.ok) {
+    return { status: 400, body: { message: result?.error || 'could not propose action' } };
+  }
+  return { status: 200, body: { ...result } };
+};
+
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
