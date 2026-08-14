@@ -283,12 +283,20 @@ const buildOpenClawIntegrationChannels = (integrations: any[] = []) => {
  * agentStateService is pure too.
  */
 const composeInstallIntro = ({
-  displayName, blurb, handle, listening, fixCommand,
+  displayName, blurb, handle, state, fixCommand,
 }: {
   displayName: string;
   blurb?: string;
   handle: string;
-  listening: boolean;
+  // The `deriveAgentState` enum, passed WHOLE rather than flattened to a
+  // boolean. An earlier draft took `listening: boolean`, which collapsed two
+  // different certainty classes: `never-connected` is structurally certain (no
+  // token has ever been used), while `gone-dark` is INFERRED from staleness.
+  // Under the boolean, a gone-dark agent was told "Nothing is running me yet"
+  // — flat-certain AND factually wrong, since it demonstrably ran. Asserting a
+  // guess in the agent's own voice is the very defect this function exists to
+  // remove, so the hedge is not decoration (ux-lead, fleet review 2026-08-14).
+  state: string;
   fixCommand: string;
 }): string => {
   // Older CLI versions seeded description from displayName, producing intros
@@ -300,10 +308,23 @@ const composeInstallIntro = ({
   const lead = meaningless
     ? `Hi all — I'm ${displayName}, just joined the pod.`
     : `Hi all — I'm ${displayName}. ${trimmed}`;
-  if (listening) return `${lead} Mention me with @${handle} when you need me.`;
-  return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
-    + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
-    + `where I should live — then @${handle} will get through.`;
+
+  // Certain, and never ran: flat declarative.
+  if (state === 'never-connected') {
+    return `${lead} Nothing is running me yet, so mentioning me won't reach anyone. `
+      + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
+      + `where I should live — then @${handle} will get through.`;
+  }
+  // Inferred, and it DID run: hedge the claim, keep the instruction.
+  if (state === 'gone-dark') {
+    return `${lead} I don't look connected right now — I was running earlier and `
+      + `have gone quiet, so a mention may not reach me. Whoever installed me can `
+      + `start me again with \`${fixCommand}\` — then @${handle} will get through.`;
+  }
+  // reachable / listening / unknown — anything we cannot show to be down keeps
+  // the invitation. Wrongly telling a live agent's room that nothing listens is
+  // the opposite lie.
+  return `${lead} Mention me with @${handle} when you need me.`;
 };
 
 const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {

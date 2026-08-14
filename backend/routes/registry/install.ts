@@ -594,7 +594,13 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         // Reused-agent installs are why this derives rather than assumes: an
         // already-running agent installed into a new pod IS listening, and
         // telling that room otherwise would be the opposite lie.
-        let listening = true;
+        // The state enum is passed through WHOLE. Flattening it to a boolean
+        // collapsed `never-connected` (structurally certain) into `gone-dark`
+        // (inferred from staleness), which made a gone-dark agent announce
+        // "Nothing is running me yet" — flat-certain and factually wrong,
+        // since it demonstrably ran. Asserting an inference in the agent's own
+        // voice is the same defect in a new costume (ux-lead, 2026-08-14).
+        let state = 'unknown';
         let fixCommand = `commonly agent run ${safeAgentName}`;
         try {
           const owner = await User.findById(userId)
@@ -605,11 +611,12 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
             owner?.agentRuntimeTokens || [],
             String(userId),
           );
-          listening = derived.state !== 'never-connected' && derived.state !== 'gone-dark';
+          state = derived.state;
           if (derived.fixCommand) fixCommand = derived.fixCommand;
         } catch (stateErr: unknown) {
-          // Fail toward the old copy: wrongly telling a LIVE agent's room that
-          // nothing is listening is a worse lie than the one being fixed.
+          // Fail toward the invitation: wrongly telling a LIVE agent's room
+          // that nothing is listening is a worse lie than the one being fixed.
+          // 'unknown' is exactly that branch, and it is an honest label here.
           console.warn('[install] intro liveness derivation failed', {
             agent: agent.agentName,
             instance: normalizedInstanceId,
@@ -620,7 +627,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           displayName,
           blurb: isMeaninglessBlurb ? '' : blurb,
           handle,
-          listening,
+          state,
           fixCommand,
         });
         await AgentMessageService.postMessage({
