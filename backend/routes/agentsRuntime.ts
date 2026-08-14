@@ -1883,7 +1883,16 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
 // presence, the decider derivation and its refusal) stays in the service.
 // A second copy of any of those in a route handler is how the two surfaces
 // drift apart, and this one is a consent surface.
-router.post('/pods/:podId/propose-action', agentRuntimeAuth, phase4RateLimit, async (req: any, res: any) => {
+// Limiter BEFORE auth, deliberately diverging from the sibling mutating
+// routes. The plan specified "agentRuntimeAuth + phase4RateLimit (sibling
+// convention)" — but the convention is the flagged one, as the note at the
+// top of this file documents: agentRuntimeAuth does a Mongo lookup, so a
+// limiter placed after it leaves that lookup unprotected, and CodeQL flags it
+// as genuinely under-protected rather than a false positive. It flagged this
+// route too, on its first run. The existing 8 routes are specified to move
+// and simply have not yet; a NEW route has no migration cost, so it starts on
+// the correct side rather than joining the queue of ones to fix.
+router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
     const installation = resolveInstallationForPod(
