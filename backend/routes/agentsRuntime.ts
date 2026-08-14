@@ -168,25 +168,12 @@ const INTEGRATION_PUBLISH_DAILY_LIMIT = parsePositiveInt(
   24,
 );
 
-const ensurePodMatch = (installationOrList: any, podId: any, authorizedPodIds = []) => {
-  const normalizedPodId = podId?.toString?.() || String(podId || '');
-  if (Array.isArray(authorizedPodIds) && authorizedPodIds.length > 0) {
-    return authorizedPodIds.some((id) => String(id) === normalizedPodId);
-  }
-  if (Array.isArray(installationOrList)) {
-    return installationOrList.some((installation) => (
-      installation?.podId?.toString() === normalizedPodId
-    ));
-  }
-  return installationOrList?.podId?.toString() === normalizedPodId;
-};
-
-const resolveInstallationForPod = (installations: any[] = [], fallback: any, podId: any) => {
-  if (!Array.isArray(installations)) return fallback;
-  return installations.find((installation) => (
-    installation?.podId?.toString() === podId.toString()
-  )) || fallback;
-};
+// Moved to services/agentPodScope so the service layer can enforce pod scope
+// with the SAME implementation the routes use. It had zero tests while gating
+// 9 routes; propose-action made it load-bearing for a consent surface, and a
+// consent gate that only a route can call is a gate only a route can test.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ensurePodMatch, resolveInstallationForPod } = require('../services/agentPodScope');
 
 const hasAnyScope = (installation: any, acceptedScopes: any[] = []) => {
   const scopes = Array.isArray(installation?.scopes) ? installation.scopes : [];
@@ -1905,12 +1892,9 @@ router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, as
     const { proposeActionForRuntime } = require('../services/approvalActionService');
     const verdict = await proposeActionForRuntime({
       podId,
+      installations: req.agentInstallations,
       installation,
-      podAuthorized: ensurePodMatch(
-        req.agentInstallations || installation,
-        podId,
-        req.agentAuthorizedPodIds,
-      ),
+      authorizedPodIds: req.agentAuthorizedPodIds,
       body: req.body || {},
     });
     return res.status(verdict.status).json(verdict.body);

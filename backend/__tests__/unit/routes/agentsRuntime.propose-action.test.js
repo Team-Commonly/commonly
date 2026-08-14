@@ -56,14 +56,17 @@ const { proposeActionForRuntime } = require('../../../services/approvalActionSer
 const POD = '6a692a1be833c668acdb84cf';
 const HUMAN = 'aaaaaaaaaaaaaaaaaaaaaaa1';
 
+const OTHER_POD = '6a7d154b0ec237d4b15dd28b';
+
 const installation = (over = {}) => ({
-  agentName: 'scout', instanceId: 'default', displayName: 'Scout', config: null, ...over,
+  agentName: 'scout', instanceId: 'default', displayName: 'Scout', config: null, podId: POD, ...over,
 });
 
 const call = (over = {}) => proposeActionForRuntime({
   podId: POD,
+  installations: [installation()],
   installation: installation(),
-  podAuthorized: true,
+  authorizedPodIds: [],
   body: { actionType: 'create_pod', params: { name: 'Design Studio', type: 'chat' }, summary: 'For design work' },
   ...over,
 });
@@ -108,7 +111,10 @@ describe('propose-action — the runtime producer surface', () => {
   });
 
   test('a token not scoped to this pod is refused before any DB work', async () => {
-    const verdict = await call({ podAuthorized: false });
+    // Drives the REAL ensurePodMatch via raw inputs. The earlier version
+    // passed `podAuthorized: false` and so only proved the service honours a
+    // boolean — a route computing that boolean wrongly sailed through.
+    const verdict = await call({ installations: [installation({ podId: OTHER_POD })] });
 
     expect(verdict.status).toBe(403);
     expect(mockInstallFindOne).not.toHaveBeenCalled();
@@ -123,6 +129,19 @@ describe('propose-action — the runtime producer surface', () => {
 
     expect(verdict.status).toBe(403);
     expect(mockApprovalCreate).not.toHaveBeenCalled();
+  });
+
+  test('the active-install gate pins instanceId, not just agentName', async () => {
+    // sprint-review, fleet review 2026-08-14. Without instanceId the query
+    // asks "is SOME install of this agentName active in this pod" rather than
+    // "is THIS caller's" — and per-user Scout seats make sibling instances of
+    // one agentName the normal shape, so a deactivated caller could ride a
+    // sibling's active row into a consent surface.
+    await call({ installation: { ...installation(), instanceId: 'u-alice' } });
+
+    expect(mockInstallFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({ agentName: 'scout', instanceId: 'u-alice', status: 'active' }),
+    );
   });
 
   test('the decider refusal reaches the caller as a 400 it can act on', async () => {

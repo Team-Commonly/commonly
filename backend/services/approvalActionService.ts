@@ -190,20 +190,38 @@ const resolveHumanDecider = async (candidates: unknown[]): Promise<string | null
  */
 export const proposeActionForRuntime = async (input: {
   podId: string;
-  installation: { agentName?: string; instanceId?: string; displayName?: string; config?: unknown };
-  podAuthorized: boolean;
+  installations?: { podId?: unknown }[];
+  installation: { agentName?: string; instanceId?: string; displayName?: string; config?: unknown; podId?: unknown };
+  authorizedPodIds?: unknown[];
   body: { actionType?: string; params?: Record<string, unknown>; summary?: string };
 }): Promise<{ status: number; body: Record<string, unknown> }> => {
-  const { podId, installation, podAuthorized, body } = input;
+  const {
+    podId, installations, installation, authorizedPodIds, body,
+  } = input;
 
-  if (!podAuthorized) {
+  // The scope check runs HERE, not in the route, and takes the raw inputs.
+  // An earlier draft accepted a pre-computed `podAuthorized` boolean, which
+  // meant the test proved only that the service honours the flag — a route
+  // returning true where it should return false passed untouched. That is the
+  // same test-the-copy mistake this service placement was meant to fix, one
+  // layer up (sprint-review, fleet review 2026-08-14).
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { ensurePodMatch } = require('./agentPodScope');
+  if (!ensurePodMatch(installations || installation, podId, authorizedPodIds || [])) {
     return { status: 403, body: { message: 'Agent token not authorized for this pod' } };
   }
 
   // Token scope alone is not permission to act — the same gate the claim
   // route applies. An uninstalled agent must not keep proposing.
+  //
+  // `instanceId` is pinned deliberately (sprint-review). Without it the query
+  // asks "is SOME install of this agentName active in this pod", not "is THIS
+  // caller's" — and per-user Scout seats make sibling instances of one
+  // agentName the normal shape, so a deactivated caller could ride a sibling's
+  // active row. `findForeignLocalAgentOwner` above already pins it.
   const active = await AgentInstallation.findOne({
     agentName: installation.agentName,
+    instanceId: installation.instanceId || 'default',
     podId,
     status: 'active',
   });
