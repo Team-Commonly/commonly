@@ -600,15 +600,28 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         // "Nothing is running me yet" — flat-certain and factually wrong,
         // since it demonstrably ran. Asserting an inference in the agent's own
         // voice is the same defect in a new costume (ux-lead, 2026-08-14).
+        //
+        // The token store is the BOT's, not the installer's (sprint-impl,
+        // fleet review 2026-08-14). `deriveAgentState` unions
+        // `installation.runtimeTokens` with a USER's `agentRuntimeTokens`, and
+        // the user it means is the agent's bot row — that is where a polling
+        // wrapper stamps `lastUsedAt`. An earlier draft passed the human
+        // installer's tokens, a store a wrapper never writes, so a reused and
+        // demonstrably live seat computed as never-connected and would have
+        // been announced as dead. Same identity match the pod roster uses
+        // (routes/pods.ts:437).
         let state = 'unknown';
         let fixCommand = `commonly agent run ${safeAgentName}`;
         try {
-          const owner = await User.findById(userId)
-            .select('agentRuntimeTokens').lean() as
+          const botRow = await User.findOne({
+            isBot: true,
+            'botMetadata.agentName': agent.agentName,
+            'botMetadata.instanceId': normalizedInstanceId,
+          }).select('agentRuntimeTokens.lastUsedAt').lean() as
               { agentRuntimeTokens?: { lastUsedAt?: Date | string | null }[] } | null;
           const derived = deriveAgentState(
             installation,
-            owner?.agentRuntimeTokens || [],
+            botRow?.agentRuntimeTokens || [],
             String(userId),
           );
           state = derived.state;
