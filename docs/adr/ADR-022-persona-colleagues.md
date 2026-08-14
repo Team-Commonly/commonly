@@ -1,6 +1,6 @@
 # ADR-022: Persona colleagues — separating who an agent is from where it runs
 
-- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by pod-architect + ux-lead 2026-08-14 and **corrected** — see the D1 blocking correction. Ready for ratification.
+- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by fable-lead, pod-architect, sprint-review + ux-lead 2026-08-14 and **corrected twice** (D1 false by construction; D5 overclaimed enforcement). **Not ready to ratify D5** until the empty-`usage` cause is found — one run's logs away.
 - **Depends on:** ADR-001 (Installable taxonomy — `source` / `components[]`), ADR-021 (hosted runtime, credits)
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
@@ -187,7 +187,22 @@ But **nothing derives wake policy from pod type**, and `approvalActionService:64
 
 **Decided (Sam, 2026-08-14): roughly $1/day per user, never shown as currency.**
 
-That number is not a new budget; it is what the shipped configuration already enforces. Scout runs `deepseek-v4-flash` with `dailyRunCap: 60`, `maxTurns: 6`, `maxTokens: 12000` — a worst-case run around 50k tokens, so a flat-out workspace lands under a dollar a day. An earlier proposal of $10/day would have **loosened a working limit by 10×**, which is the opposite of what a ceiling is for.
+**It is an estimate pending one telemetry fix — not, as an earlier draft of this ADR claimed, "what the shipped configuration already enforces."** That claim was mine and it was wrong in three ways (sprint-review, verified at source):
+
+| limit I cited | reality |
+|---|---|
+| `dailyRunCap: 60` | **the only one actually read** (`:616`) |
+| `maxTurns: 6` | **not read anywhere.** `MAX_TURNS = 10` is hardcoded (`:50`) |
+| `maxTokens: 12000` | **not read anywhere.** `MAX_TOKENS = 50_000` is hardcoded (`:51`) |
+| the 50k token ceiling | **inert.** `:794` tests `run.totalTokens >= MAX_TOKENS`, and the `|| 0` at `:926` pins that at 0 whenever `usage` is empty |
+
+The manifest's `maxTurns`/`maxTokens` appear nowhere in `backend/services`. Live bounds are **10 turns / 60s wall-clock / daily cap**.
+
+**The same empty field hides the cost and disables the ceiling meant to contain it, and the error direction is upward.** That is the finding, not the price.
+
+An earlier $10/day proposal would still have loosened the one limit that works by 10×, so the direction of Sam's decision stands. What does not stand is calling ~$1 enforced.
+
+**One measurable input, available today.** `liteLLMCallId` is captured per turn, so **LiteLLM's own spend log is a second source needing no code change** — real cost is a query away, not a feature. And the capture path is already written (`:860-867` reads `llmResponse.usage`, `:927` saves it), so this is a findable bug rather than work to schedule. **Which of three causes empties `usage` is one run's logs away, and changes the fix cost by an order of magnitude.**
 
 **The trap this ADR must not walk into.** `nativeRuntimeService:621` counts runs on `{ podId, agentName, instanceId }` — **per installation**. Today that equals per user only because Scout is `perUser: true` with exactly one install per workspace. **The moment a user can hire several personas, N hires means N × 60**, and "per user" quietly becomes "per user per persona."
 
@@ -198,6 +213,14 @@ So a seat-denominated allowance needs a **per-user ceiling in addition to the pe
 > **Invariant.** A per-user daily ceiling — keyed on `installedBy`, summed across all hosted installs — is a **prerequisite for offering the second hosted seat or multi-room placement of a hosted hire.** Not a fast-follow.
 
 In v1 (Scout only, one install) per-install equals per-user by construction, so nothing needs building now; the invariant exists so the where-step cannot outrun the ledger. **Ledger shape when built: ceiling per user, fairness per hire beneath it, per-pod never** — a colleague in three rooms is one colleague.
+
+**It cannot be built where the cap lives** (sprint-review). `AgentRun` has **no user field at all** — `podId`, `agentName`, `instanceId`, and the index matches. A per-user ceiling therefore needs either a denormalized `userId` (forward-only; no backfill, since the field never existed) or a join on the hot path. Neither is free, which is why this is a prerequisite rather than a fast-follow.
+
+**And the cap fails OPEN by design** (`:614`) — a count failure proceeds rather than declines. That is right for a runaway-loop guard and wrong for a spend ceiling. **Decide it deliberately rather than inherit it**, because the two have opposite safe directions.
+
+**Seat machinery already exists** — `User.entitlements.cloudAgents`, gated at `install.ts:361` — so v1 needs no ledger. But "a promise we can price" needs a unit cost, and that needs the telemetry above. **We avoid M4's ledger and inherit M4's open question.**
+
+**The window is fixed, not rolling** — `dayStart.setUTCHours(0,0,0,0)` with `startedAt >= dayStart`. So 60 runs at 23:59 UTC and 60 more at 00:01 is reachable: the real burst bound is **2 × `dailyRunCap`** across the boundary.
 
 **Presentation does not change; enforcement does.** Present the seat, never the arithmetic. A seat that silently multiplies is an enforcement bug, and bugs do not get fixed in copy.
 
@@ -214,7 +237,15 @@ So the true daily ceiling is `60 × ~17k ≈ 1.05M tokens/user/day`, which on a 
 
 **The 4,399 runs with `totalTokens === 0` are the open question** (fable-lead). `Number(usage.total_tokens || 0)` converts *unmeasured* into *zero*, and **a zero that means unmeasured reads as free**. The ticket is not "populate the fields" — it is *"find why `usage` is empty and make unmeasured loud"*: a distinct `errorKind` or warning, never a manufactured zero.
 
-**At-cap persists nothing** (pod-architect). The decline path returns a synthetic success with `runId: ''` and writes **no `AgentRun` row**, so a capped turn is indistinguishable from an ordinary quiet one in the data. D7's quota axis therefore has **no signal to read** — either it recomputes the count per viewer, or the runtime must record the state. Recording it is the better answer, because a cap-hit is also the tripwire below.
+**At-cap persists nothing, and reports the opposite of the truth** (pod-architect, sprint-review). The decline path at `:633` returns:
+
+```js
+return { runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0 };
+```
+
+**`status: 'succeeded'`.** No `AgentRun` row is written, and the boundary appears nowhere but a `console.warn`. So a capped turn is indistinguishable from a run that completed normally with zero turns, and D7's quota axis has **no signal to read** — it needs a **producer at `:633`** before it needs a chip.
+
+**And look at what that shape is:** a user mentions Scout, Scout is at cap, the run "succeeds," nothing is posted, the room says nothing. **That is the 03:30 user's experience reproduced by the cap instead of by a dead wrapper** — the exact silent-success failure this entire ADR line exists to delete, re-entering through the surface meant to prevent it.
 
 **The cap must not be reachable inside a single engaged first-day conversation** (fable-lead). "Surface only on hit" is designed for a *backstop*, and holds only while the cap stays one. If real cost rises, the levers in order are **model choice, then per-run `maxTokens`/`maxTurns`** — degrade per-turn spend, never continuity. A colleague that thinks in smaller steps is still a colleague; one that stops mid-conversation on day one is a meter, and softer copy in that world is just a meter with manners. So do not redesign the copy for that world — build the tripwire: **alert when any user caps out within 24h of signup, or first-day hit-rate exceeds ~1%, and treat a first-day cap-hit as an incident (the allowance is wrong), not a UX state.**
 
@@ -227,6 +258,8 @@ Quota does **not** go inside the `AgentReachState` enum. `(liveness, config, quo
 **Tone is calm, not attention.** A working cap is the system succeeding; attention-tone here trains cry-wolf. Copy is flat because our own counter is structurally certain — no hedging needed — and it is the one bad state with a **knowable end**, so it carries the reset time:
 
 > "At today's limit — answers again at HH:MM"
+
+**Never "back tomorrow."** For UTC+8 the reset lands at 08:00 local on the *same calendar day*, so "tomorrow" is false for everyone east of UTC — and falsely **pessimistic**, which is the rarer and more damaging direction.
 
 **The boundary is UTC midnight** — `nativeRuntimeService:621` does `dayStart.setUTCHours(0,0,0,0)`, verified rather than assumed.
 
@@ -244,7 +277,24 @@ The awaiting-seat member card is **ambient** (persistence); the stalled-connect 
 
 **Pin 3 verified, with a hole** (pod-architect). `installedBy` is `required: true`, populated on all 322 active installs, and `agentStateService:100` keys `isOwner` on exactly that field — one field, and because both surfaces read it they fail *together* rather than contradicting each other, which is the pin working.
 
-**But 53 of 322 have a BOT as `installedBy`** (mostly `commonly-bot`). For those, `isOwner` is false for every human: the card renders **no `fixCommand`** and the nudge has **no addressee**. That is the same class of defect as `pod.createdBy` in #939, one field over — and #939's remedy (resolve to a non-bot human, refuse rather than render an impossible owner) is the shape to reuse. For the funnel population it is small: **1 of 20** self-serve seats.
+**But 53 of 322 have a BOT as `installedBy`** (mostly `commonly-bot`). For those, `isOwner` is false for every human: the card renders **no `fixCommand`** and the nudge has **no addressee**. For the funnel population it is small — **1 of 20** self-serve seats.
+
+**The pin is true of the field and false of the test, and the divergence already shipped** (sprint-review):
+
+```js
+// card    — agentStateService.ts:94   raw string compare, no load, no isBot check
+String(installation.installedBy || '') === String(callerId || '')
+
+// approvals — approvalActionService.ts:164,172   what #940 shipped
+resolveHumanDecider(candidates)          // installer → pod-creator fallback
+  if (user && user.isBot !== true) …     // loads the User, rejects bots
+```
+
+Same field, **different predicate**. Where `installedBy` is a bot, approvals fall back and find a human while the card's `isOwner` is false for *everyone* — it shows a broken agent and offers the fix to nobody. Where it dangles (the seeder's hardcoded admin id on a self-hosted instance), approvals fall back and the card simply never matches.
+
+**So the pin strengthens from "both key on the same field" to "both use the same resolution."** Otherwise a future hire flow does not have to split the field to split the surfaces — it only has to install via a path that writes a non-human, and three such writers already exist.
+
+**One honest constraint on that fix:** `deriveAgentState` is a pure sync function called inside a `.map()` (`pods.ts:446`), while `resolveHumanDecider` is async because it loads a User. Sharing the resolution needs the resolved owner **precomputed and passed in**, or the card's derivation made async. Worth knowing before anyone writes it down as a small pin.
 
 ## Do now, regardless of ratification (fable-lead)
 
