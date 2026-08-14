@@ -47,6 +47,12 @@ const FILE_DIRECTIVE_SCAN_LIMIT = (() => {
 // the narration within the same turn, so a few minutes is ample.
 const RECENT_ATTACH_WINDOW_MS = 5 * 60 * 1000;
 
+// Prefix length scanned for a false-attach claim. Bounds the polynomial
+// backtracking in the claim pattern (js/polynomial-redos) on agent-authored,
+// therefore attacker-influenced, content. Generous next to the sentence-shaped
+// pattern it feeds, which matches at the start of a statement.
+const ATTACH_CLAIM_SCAN_LIMIT = 2000;
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -771,11 +777,22 @@ class AgentMessageService {
     const start = structured.timeRange?.start ? new Date(structured.timeRange.start) : defaultStart;
     const end = structured.timeRange?.end ? new Date(structured.timeRange.end) : now;
 
-    if (structured.eventId) {
+    // `structured.eventId` comes from caller-supplied metadata and reaches a
+    // Mongo query object, so an object value (`{$ne: null}`) would be operator
+    // injection rather than a lookup. `extractStructuredSummary` only CASTS it
+    // to string in TypeScript, which changes nothing at runtime.
+    //
+    // Sanitized with strip-via-replace rather than `String()` deliberately:
+    // that is the shape CodeQL recognises as a SqlSanitizer for
+    // js/sql-injection, as registry/install.ts:114-120 already documents for
+    // the same reason. It also genuinely fixes it — the coercion collapses a
+    // non-string to a scalar, and the strip leaves an id charset.
+    const safeEventId = String(structured.eventId ?? '').replace(/[^a-zA-Z0-9:_-]/g, '');
+    if (safeEventId) {
       const existing = await Summary.findOne({
         podId,
         type: summaryType,
-        'metadata.eventId': structured.eventId,
+        'metadata.eventId': safeEventId,
       });
       if (existing) return existing;
     }
@@ -869,8 +886,21 @@ class AgentMessageService {
     // "uploaded" / "posted") with a file-object noun nearby AND no
     // `[[upload:` directive in the body.
     if (sanitizedContent && typeof sanitizedContent === 'string') {
+      // Scanned over a BOUNDED prefix, not the whole message. The claim
+      // pattern below contains `\s+` and `[^.\n]{0,80}` runs, which CodeQL
+      // flags as polynomial ReDoS (js/polynomial-redos) — and this input is
+      // agent-authored, so it is attacker-influenced in exactly the way that
+      // matters. Capping the scan makes the work constant regardless of
+      // message size.
+      //
+      // The cap costs nothing real: the pattern targets a first-person or
+      // sentence-initial declarative, which is how such a claim opens. A
+      // false-attach claim buried past the cap goes unwarned — the same
+      // outcome as before for any message that never matched, and strictly
+      // better than a service that can be stalled by a long one.
+      const scanned = sanitizedContent.slice(0, ATTACH_CLAIM_SCAN_LIMIT);
       const hasUploadDirective = /\[\[upload:/i.test(sanitizedContent);
-      const claimsAttachment = /(?:\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|i\s+already)\s+|(?:^|[.!?]\s+|[\r\n]+)(?:done\s*[—-]?\s*)?(?:just\s+)?)(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|runbook|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(sanitizedContent);
+      const claimsAttachment = /(?:\b(?:i(?:'ve| have)?|done\s*[—-]?\s*i|i\s+just|i\s+already)\s+|(?:^|[.!?]\s+|[\r\n]+)(?:done\s*[—-]?\s*)?(?:just\s+)?)(?:attached|uploaded|posted)\b[^.\n]{0,80}\b(?:file|deck|attachment|runbook|pptx|docx|xlsx|pdf|csv|image|artifact)\b/i.test(scanned);
       if (claimsAttachment && !hasUploadDirective) {
         // Suppress the warning when THIS agent genuinely attached a file to
         // this pod moments ago. `commonly_attach_file` posts the clean
