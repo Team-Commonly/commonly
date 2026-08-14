@@ -1,6 +1,6 @@
 # ADR-022: Persona colleagues — separating who an agent is from where it runs
 
-- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14: ~$1/day/user, one seat, never shown as currency). Ready for ratification.
+- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by pod-architect + ux-lead 2026-08-14 and **corrected** — see the D1 blocking correction. Ready for ratification.
 - **Depends on:** ADR-001 (Installable taxonomy — `source` / `components[]`), ADR-021 (hosted runtime, credits)
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
@@ -97,7 +97,15 @@ Retirement must honour ADR-001 identity continuity: uninstalling never deletes t
 
 **The user picks:** which role, what to call it, an avatar from a set, where it runs, which room. Plus at most one length-capped free-text **focus line**, appended like the pod-context frame — *"our stack is React + Node"* is the cheapest thing that makes it **your** reviewer.
 
-**The rename is not cosmetic:** persona = `agentName` (the mold), hire = `instanceId` (the colleague) — exactly the pair the runtime already keys sessions on. Two "Code Reviewer" hires in different pods are different colleagues with separate memory from one mold. That is what makes it staff rather than config.
+**The rename is not cosmetic:** persona = `agentName` (the mold), hire = `instanceId` (the colleague) — exactly the pair the runtime already keys sessions on.
+
+> **CORRECTED before ratification (pod-architect).** The original sentence here read *"two 'Code Reviewer' hires in different pods are different colleagues with separate memory."* **That is false by construction.** `authController:185` derives `instanceId` as `u{sha256(userId)[0:10]}` — **there is no pod component** — while ADR-003 keys memory on `(agentName, instanceId)`. Two hires produce two install rows, **one colleague, one mind.**
+>
+> **Adopted resolution: one colleague per user per persona, present in N rooms, with one memory.** Not a workaround — it is the better product and it matches the portable-identity thesis: a colleague you work with in several rooms is still one person who remembers you. "Separate colleagues per pod" would fragment exactly the memory that makes a hire feel like staff.
+>
+> Two consequences that must ship with it: the hire flow says *"add your Code Reviewer to this pod,"* never *"hire another"* — the UI must not promise an isolation the data model does not provide; and **cross-pod memory bleed becomes a real surface** (a persona in a work pod and a personal pod shares one mind), so ADR-003 memory scoping has to be checked before a second hire is offered, not after.
+
+**A hire's own fields have no typed home yet** (pod-architect, Q1): every field D1 *curates* lives on `NativeAgentDefinition`, and one engine already runs four manifests off it — that half of the claim holds. But the fields the user *picks* (name, avatar, focus line) land in `AgentInstallation.config`, a `Map` of `Mixed`. **Persona-vs-hire is today a convention over an untyped bag.** Typing it is v1 work, not a later cleanup — an untyped bag is how the `config.runtime` Map silently defeated three separate readers earlier today.
 
 **The card carries evidence, not attributes:** a first-person one-liner of what it does in the room; what it will do first when placed ("I'll introduce myself and ask for the repo"); a two-turn sample exchange; the liveness dot. **Zero runtime vocabulary on the card** — hosted/local exists only at the where-step. Model, caps and raw prompt live behind a "how I work" disclosure.
 
@@ -157,6 +165,10 @@ Two rules, one cost reason and one correctness reason, and the correctness one m
 1. **Scout steers.** Today it creates pods only reactively — its prompt says *"Asked for a new pod → propose create_pod."* It waits to be asked. It should instead notice that real work has started and offer the room for it. This is also the better funnel: land in My Workspace → talk to Scout → **Scout helps you make a real pod for real work**, rather than → get pushed toward BYO connect.
 2. **A persona in a shared pod is mention-only, never wake-on-message.** This is D3's "wake policy is identity" as an enforceable rule: a persona that wakes on everything is a 1:1 assistant, one that wakes on mention is a colleague. Same model, different creature — and the shared-pod variant is also the cheap one.
 
+**This is config, not code — and there is already a leak** (pod-architect, Q2). `agentMentionService:816` reads `installation.config.wakeOnMessage.enabled` and `:876` filters on it, **default off**. So rule 2 needs no engine change.
+
+But **nothing derives wake policy from pod type**, and `approvalActionService:644` **clones the origin install's config** when an agent is brought along to a new pod. So a 1:1 Scout's `wakeOnMessage: true` rides into a shared pod today and starts billing every line there. Deriving the default from pod type — 1:1-shaped room wakes, shared pod mention-only — is the fix, and it closes a live cost leak rather than only guarding a future one.
+
 ## Open — Sam
 
 *(D5 settled the allowance. Nothing here blocks the design; these are sequencing calls.)*
@@ -182,6 +194,26 @@ That number is not a new budget; it is what the shipped configuration already en
 So a seat-denominated allowance needs a **per-user ceiling in addition to the per-installation cap**. The per-installation cap stays — it is the runaway-loop guard for a single conversation. The per-user ceiling is what makes "1 hosted colleague included" a promise we can price.
 
 **The abuse surface is account creation, not usage.** At ~0.3% utilization instance-wide (about 4 native turns a day against 1,260 available across 21 users), honest users are nowhere near the cap. The exposure is linear in *accounts*, at ~$1/day each, and registration is open. Rate-limiting or entitling seat grants — not tightening the cap — is the control that matters.
+
+## D7. At-cap is a new AXIS, not a liveness state (ux-lead)
+
+Quota does **not** go inside the `AgentReachState` enum. `(liveness, config, quota)` **compose**; folding quota into liveness recreates the precedence trap decision 6 already paid for. This is what makes fable-lead's *"liveness means will answer, not can execute"* rule true rather than merely asserted — a capped-out native agent is `reachable` **and** at-quota, and the surface reports both.
+
+**Tone is calm, not attention.** A working cap is the system succeeding; attention-tone here trains cry-wolf. Copy is flat because our own counter is structurally certain — no hedging needed — and it is the one bad state with a **knowable end**, so it carries the reset time:
+
+> "At today's limit — answers again at HH:MM"
+
+**The boundary is UTC midnight** — `nativeRuntimeService:621` does `dayStart.setUTCHours(0,0,0,0)`, verified rather than assumed. Worth stating plainly because for our Chinese users that reset lands **mid-morning local**, which is a strange thing to show without thought. Whether to display UTC, local, or a relative "in 6 hours" is a copy decision that follows from surfacing the real boundary instead of writing "midnight."
+
+Never currency, per D5. The mention-time inline cue inherits it: *"will answer"* becomes *"will answer at HH:MM."* **Disabled-by-owner is the quota-axis sibling** — same calm tone, and the fix names the owner.
+
+## D8. Ambient state and the event nudge are layers, not rivals (ux-lead)
+
+The awaiting-seat member card is **ambient** (persistence); the stalled-connect nudge is the single **event**. Ambient-plus-one-post is exactly the #891 pairing, and the stalled-connect spec's episode record governs **posts only, never card state**. Three pins keep them from drifting:
+
+1. Both consume the **one class-scoped derivation**, so card and nudge cannot structurally disagree.
+2. The nudge's *"I'll post here the moment it connects"* stays **owed** even after the card flips green — the promise was a post, and an ambient state change does not discharge it.
+3. **Installer = owner for hires**, so the card's owner-only `fixCommand` and the nudge's installer-addressed copy land on the same person by construction. If a future hire flow ever splits those, both surfaces must key on the same field rather than two.
 
 ## Do now, regardless of ratification (fable-lead)
 
