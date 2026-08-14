@@ -168,25 +168,12 @@ const INTEGRATION_PUBLISH_DAILY_LIMIT = parsePositiveInt(
   24,
 );
 
-const ensurePodMatch = (installationOrList: any, podId: any, authorizedPodIds = []) => {
-  const normalizedPodId = podId?.toString?.() || String(podId || '');
-  if (Array.isArray(authorizedPodIds) && authorizedPodIds.length > 0) {
-    return authorizedPodIds.some((id) => String(id) === normalizedPodId);
-  }
-  if (Array.isArray(installationOrList)) {
-    return installationOrList.some((installation) => (
-      installation?.podId?.toString() === normalizedPodId
-    ));
-  }
-  return installationOrList?.podId?.toString() === normalizedPodId;
-};
-
-const resolveInstallationForPod = (installations: any[] = [], fallback: any, podId: any) => {
-  if (!Array.isArray(installations)) return fallback;
-  return installations.find((installation) => (
-    installation?.podId?.toString() === podId.toString()
-  )) || fallback;
-};
+// Moved to services/agentPodScope so the service layer can enforce pod scope
+// with the SAME implementation the routes use. It had zero tests while gating
+// 9 routes; propose-action made it load-bearing for a consent surface, and a
+// consent gate that only a route can call is a gate only a route can test.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ensurePodMatch, resolveInstallationForPod } = require('../services/agentPodScope');
 
 const hasAnyScope = (installation: any, acceptedScopes: any[] = []) => {
   const scopes = Array.isArray(installation?.scopes) ? installation.scopes : [];
@@ -1867,6 +1854,61 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
     }
     console.error('Error posting agent message:', error);
     return res.status(500).json({ message: err.message || 'Failed to post message' });
+  }
+});
+
+// W1 step 1 — the CAP producer surface for approval cards.
+//
+// Until now `proposeAction` had exactly one caller: the in-process native
+// runtime. Consumers were already universal (any human decides via
+// /api/approvals), so the kernel could be asked for consent by first-party
+// agents only — the universality gap. This route is the thin HTTP shell that
+// closes it, so a BYO wrapper or a hosted runtime proposes through the same
+// service, with the same validation, as a native agent.
+//
+// Deliberately thin: every rule (known actionType, param validation, summary
+// presence, the decider derivation and its refusal) stays in the service.
+// A second copy of any of those in a route handler is how the two surfaces
+// drift apart, and this one is a consent surface.
+// Limiter BEFORE auth, deliberately diverging from the sibling mutating
+// routes. The plan specified "agentRuntimeAuth + phase4RateLimit (sibling
+// convention)" — but the convention is the flagged one, as the note at the
+// top of this file documents: agentRuntimeAuth does a Mongo lookup, so a
+// limiter placed after it leaves that lookup unprotected, and CodeQL flags it
+// as genuinely under-protected rather than a false positive. It flagged this
+// route too, on its first run. The existing 8 routes are specified to move
+// and simply have not yet; a NEW route has no migration cost, so it starts on
+// the correct side rather than joining the queue of ones to fix.
+router.post('/pods/:podId/propose-action', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const { podId } = req.params;
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { proposeActionForRuntime } = require('../services/approvalActionService');
+    const verdict = await proposeActionForRuntime({
+      podId,
+      installations: req.agentInstallations,
+      installation,
+      authorizedPodIds: req.agentAuthorizedPodIds,
+      body: req.body || {},
+    });
+    return res.status(verdict.status).json(verdict.body);
+  } catch (error: any) {
+    const err = error as Error & { code?: string; statusCode?: number };
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      console.warn('Agent propose-action refused:', { code: err.code, status: err.statusCode });
+      return res.status(err.statusCode).json({
+        message: err.message,
+        ...(err.code ? { code: err.code } : {}),
+      });
+    }
+    console.error('Error proposing agent action:', error);
+    return res.status(500).json({ message: err.message || 'Failed to propose action' });
   }
 });
 

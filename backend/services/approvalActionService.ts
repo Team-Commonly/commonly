@@ -174,6 +174,81 @@ const resolveHumanDecider = async (candidates: unknown[]): Promise<string | null
   return null;
 };
 
+/**
+ * The runtime (HTTP) producer path, kept HERE rather than in the route so the
+ * thing under test is the thing that runs.
+ *
+ * An earlier draft of the route's test re-declared the handler inside the test
+ * file. It passed while proving nothing about the route — the exact
+ * copy-drifts-from-its-source failure this repo has already paid for. The
+ * novel rules of the HTTP surface (active-installation gate,
+ * principal-from-token, refusal mapping) therefore live in the service, and
+ * the route is a five-line adapter over this function.
+ *
+ * Returns an HTTP-shaped verdict rather than throwing: the route's only job is
+ * to spread it onto `res`.
+ */
+export const proposeActionForRuntime = async (input: {
+  podId: string;
+  installations?: { podId?: unknown }[];
+  installation: { agentName?: string; instanceId?: string; displayName?: string; config?: unknown; podId?: unknown };
+  authorizedPodIds?: unknown[];
+  body: { actionType?: string; params?: Record<string, unknown>; summary?: string };
+}): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const {
+    podId, installations, installation, authorizedPodIds, body,
+  } = input;
+
+  // The scope check runs HERE, not in the route, and takes the raw inputs.
+  // An earlier draft accepted a pre-computed `podAuthorized` boolean, which
+  // meant the test proved only that the service honours the flag — a route
+  // returning true where it should return false passed untouched. That is the
+  // same test-the-copy mistake this service placement was meant to fix, one
+  // layer up (sprint-review, fleet review 2026-08-14).
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { ensurePodMatch } = require('./agentPodScope');
+  if (!ensurePodMatch(installations || installation, podId, authorizedPodIds || [])) {
+    return { status: 403, body: { message: 'Agent token not authorized for this pod' } };
+  }
+
+  // Token scope alone is not permission to act — the same gate the claim
+  // route applies. An uninstalled agent must not keep proposing.
+  //
+  // `instanceId` is pinned deliberately (sprint-review). Without it the query
+  // asks "is SOME install of this agentName active in this pod", not "is THIS
+  // caller's" — and per-user Scout seats make sibling instances of one
+  // agentName the normal shape, so a deactivated caller could ride a sibling's
+  // active row. `findForeignLocalAgentOwner` above already pins it.
+  const active = await AgentInstallation.findOne({
+    agentName: installation.agentName,
+    instanceId: installation.instanceId || 'default',
+    podId,
+    status: 'active',
+  });
+  if (!active) return { status: 403, body: { message: 'no active installation in this pod' } };
+
+  // Principal comes from the token's installation, never from the body — a
+  // caller must not be able to propose as somebody else by naming them.
+  const result = await proposeAction({
+    podId,
+    agentName: String(installation.agentName || ''),
+    instanceId: installation.instanceId || 'default',
+    displayName: installation.displayName,
+    actionType: String(body?.actionType || ''),
+    params: body?.params || {},
+    summary: String(body?.summary || ''),
+    installationConfig: installation.config || null,
+  });
+
+  // Every service refusal is caller-fixable, so it is a 400 carrying the
+  // service's own sentence: an agent told "no accountable human owns this
+  // pod" can act on that, where a bare 400 teaches it nothing.
+  if (!result?.ok) {
+    return { status: 400, body: { message: result?.error || 'could not propose action' } };
+  }
+  return { status: 200, body: { ...result } };
+};
+
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
@@ -244,6 +319,20 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     content: `[approval needed] ${trimmedSummary}`,
     metadata: { source: 'approval-card', approvalId: String(row._id) },
     installationConfig,
+    // A card is not a summary. `postMessage` otherwise runs every message
+    // through `persistSummaryFromAgentMessage`, and once propose-action opened
+    // an HTTP entry point CodeQL flagged the resulting flow into that path's
+    // Mongo query (js/sql-injection, agentMessageService:775).
+    //
+    // The flow is unreachable in practice — `extractStructuredSummary` reads
+    // `eventId` from METADATA, which is server-built here, and its content
+    // parser returns null unless the text starts with `[BOT_MESSAGE]` while
+    // ours starts with `[approval needed]`. But "unreachable today" is a
+    // property of two guards in another service that nothing obliges to stay
+    // put, and this is a consent surface reachable by any agent token. Not
+    // running summary extraction on a card is correct on its own terms and
+    // removes the question.
+    skipSummaryPersistence: true,
   });
 
   if (!posted?.success || !posted?.message) {
