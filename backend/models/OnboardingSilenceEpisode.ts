@@ -38,6 +38,24 @@ export interface IAgentEventSnapshot {
   targets: string[];
   /** True when nothing was enqueued at all — the producer-bug fingerprint. */
   noneEnqueued: boolean;
+  /**
+   * AgentRuns started in this pod during the same window.
+   *
+   * Without it, "acked and no reply" is one label over at least three
+   * different faults: the runtime declined at its daily cap (which returns
+   * `status:'succeeded'` at nativeRuntimeService:634, BEFORE AgentRun.create
+   * at :695, so there is no run row), another agent won the claim and this
+   * seat stood down, or it genuinely ran and produced nothing. The first two
+   * are "we never ran"; the third is "we ran and stayed silent". Opposite
+   * investigations, and a run count separates them.
+   *
+   * It does NOT separate at-cap from claim-lost — both have zero runs.
+   * `message_claims.claimed_by` is the discriminator for that, and is
+   * deliberately not read here: claim-lost is routine in a multi-agent pod
+   * and the alert would want to re-attribute the failure to the claim holder,
+   * which is a bigger change than a label.
+   */
+  runsStarted: number;
 }
 
 export interface IOnboardingSilenceEpisode extends Document {
@@ -97,6 +115,7 @@ const OnboardingSilenceEpisodeSchema = new Schema<IOnboardingSilenceEpisode>(
         byStatus: { type: Object, default: {} },
         targets: { type: [String], default: [] },
         noneEnqueued: { type: Boolean, default: true },
+        runsStarted: { type: Number, default: 0 },
       }, { _id: false }),
     },
     resolvedAt: { type: Date },

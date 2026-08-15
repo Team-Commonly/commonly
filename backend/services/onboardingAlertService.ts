@@ -62,8 +62,17 @@ const logEpisode = (e: SilenceEpisodeSummary, delivery: string): void => {
 export const diagnose = (e: SilenceEpisodeSummary): string => {
   if (!e.eventSnapshot) return 'unknown';
   if (e.eventSnapshot.noneEnqueued) return 'never-enqueued';
-  const { byStatus } = e.eventSnapshot;
-  if ((byStatus.acked || 0) > 0) return 'acked-but-no-reply';
+  const { byStatus, runsStarted } = e.eventSnapshot;
+  if ((byStatus.acked || 0) > 0) {
+    // "Acked and no reply" is not one fault. With no AgentRun the runtime
+    // never started: it declined at its daily cap (which returns
+    // `succeeded` before writing a run row) or another agent won the claim
+    // and this seat stood down. With a run, it started and produced nothing
+    // — a different investigation entirely. Reporting both as one label
+    // would make the at-cap case read as a runtime failure, and ADR-022 D5
+    // makes at-cap more common rather than less.
+    return (runsStarted || 0) > 0 ? 'ran-but-silent' : 'acked-never-ran';
+  }
   if ((byStatus.failed || 0) > 0) return 'event-failed';
   return 'enqueued-never-answered';
 };

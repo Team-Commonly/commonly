@@ -29,6 +29,9 @@ jest.mock('../../../models/Pod', () => ({ find: (...a) => mockPodFind(...a) }));
 const mockEventFind = jest.fn();
 jest.mock('../../../models/AgentEvent', () => ({ find: (...a) => mockEventFind(...a) }));
 
+const mockRunCount = jest.fn();
+jest.mock('../../../models/AgentRun', () => ({ countDocuments: (...a) => mockRunCount(...a) }));
+
 const mockEpisodeFindOne = jest.fn();
 const mockEpisodeFind = jest.fn();
 const mockEpisodeCreate = jest.fn();
@@ -67,7 +70,9 @@ const setup = ({
   openEpisodes = [],
   existingEpisode = null,
   events = [],
+  runsStarted = 0,
 } = {}) => {
+  mockRunCount.mockResolvedValue(runsStarted);
   mockEpisodeFind.mockReturnValue(limitLean(openEpisodes));
   mockEpisodeFindOne.mockResolvedValue(existingEpisode);
   mockEpisodeCreate.mockImplementation((doc) => Promise.resolve({ _id: 'ep1', ...doc }));
@@ -246,6 +251,21 @@ describe('onboardingSilenceService.scan', () => {
       targets: ['scout/u1'],
       noneEnqueued: false,
     });
+  });
+
+  it('counts AgentRuns in the same window, so "acked" can be split by whether anything ran', async () => {
+    setup({
+      events: [{ agentName: 'scout', instanceId: 'u1', status: 'acked', type: 'chat.mention' }],
+      runsStarted: 3,
+    });
+    const result = await scan({ now: NOW });
+
+    expect(result.opened[0].eventSnapshot.runsStarted).toBe(3);
+    // Bounded to the episode window — a lifetime count would call every pod
+    // with any history "it ran".
+    const [filter] = mockRunCount.mock.calls[0];
+    expect(filter.startedAt.$gte).toEqual(TYPED_AT);
+    expect(filter.startedAt.$lte).toEqual(NOW);
   });
 
   it('records noneEnqueued when the write path never reached the queue', async () => {

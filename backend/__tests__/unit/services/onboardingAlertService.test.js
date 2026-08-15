@@ -38,7 +38,7 @@ const episode = (over = {}) => ({
   accountAgeMinutes: 12,
   messageCount: 2,
   eventSnapshot: {
-    total: 0, byStatus: {}, targets: [], noneEnqueued: true,
+    total: 0, byStatus: {}, targets: [], noneEnqueued: true, runsStarted: 0,
   },
   ...over,
 });
@@ -155,17 +155,25 @@ describe('diagnose', () => {
   it('names a runtime bug when the queue had work and nothing answered', () => {
     expect(diagnose(episode({
       eventSnapshot: {
-        total: 1, byStatus: { pending: 1 }, targets: ['scout/u1'], noneEnqueued: false,
+        total: 1, byStatus: { pending: 1 }, targets: ['scout/u1'], noneEnqueued: false, runsStarted: 0,
       },
     }))).toBe('enqueued-never-answered');
   });
 
-  it('distinguishes an acked event that produced no reply', () => {
-    expect(diagnose(episode({
+  // An acked event with no reply is NOT one fault, and collapsing the two
+  // would report a declined-at-cap runtime as a broken one. ADR-022 D5 makes
+  // at-cap more common, so the bucket would get less accurate over time.
+  it('separates "acked but never ran" from "ran and stayed silent"', () => {
+    const acked = (runsStarted) => episode({
       eventSnapshot: {
-        total: 1, byStatus: { acked: 1 }, targets: ['scout/u1'], noneEnqueued: false,
+        total: 1, byStatus: { acked: 1 }, targets: ['scout/u1'], noneEnqueued: false, runsStarted,
       },
-    }))).toBe('acked-but-no-reply');
+    });
+    // No AgentRun row: declined at the daily cap (which returns `succeeded`
+    // before writing one) or lost the claim to a peer. Never started.
+    expect(diagnose(acked(0))).toBe('acked-never-ran');
+    // A run exists: it started and produced nothing. Different investigation.
+    expect(diagnose(acked(2))).toBe('ran-but-silent');
   });
 
   it('reports unknown rather than guessing when no snapshot survives', () => {

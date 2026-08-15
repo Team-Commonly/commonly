@@ -159,16 +159,26 @@ export const snapshotAgentEvents = async (
   until: Date,
 ): Promise<IAgentEventSnapshot> => {
   const empty: IAgentEventSnapshot = {
-    total: 0, byStatus: {}, targets: [], noneEnqueued: true,
+    total: 0, byStatus: {}, targets: [], noneEnqueued: true, runsStarted: 0,
   };
   if (!mongoose.Types.ObjectId.isValid(podId)) return empty;
   try {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentEvent = require('../models/AgentEvent');
-    const rows = await AgentEvent.find({
-      podId: new mongoose.Types.ObjectId(podId),
-      createdAt: { $gte: since, $lte: until },
-    }).select('agentName instanceId status type').lean();
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRun = require('../models/AgentRun');
+    const objectId = new mongoose.Types.ObjectId(podId);
+
+    const [rows, runsStarted] = await Promise.all([
+      AgentEvent.find({
+        podId: objectId,
+        createdAt: { $gte: since, $lte: until },
+      }).select('agentName instanceId status type').lean(),
+      // See IAgentEventSnapshot.runsStarted: this is what separates "the
+      // runtime declined before creating a run" from "it ran and said
+      // nothing". Indexed by { podId, agentName, instanceId, startedAt }.
+      AgentRun.countDocuments({ podId: objectId, startedAt: { $gte: since, $lte: until } }),
+    ]);
 
     const byStatus: Record<string, number> = {};
     const targets = new Set<string>();
@@ -181,6 +191,7 @@ export const snapshotAgentEvents = async (
       byStatus,
       targets: [...targets],
       noneEnqueued: rows.length === 0,
+      runsStarted,
     };
   } catch (error) {
     // Evidence-gathering must never be the reason an alert fails to fire.
