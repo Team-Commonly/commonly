@@ -16,6 +16,11 @@ jest.mock('../../../services/onboardingSilenceService', () => ({
 const mockSendEmail = jest.fn();
 jest.mock('../../../services/emailService', () => ({ sendEmail: (...a) => mockSendEmail(...a) }));
 
+const mockSettingUpdate = jest.fn();
+jest.mock('../../../models/SystemSetting', () => ({
+  updateOne: (...a) => mockSettingUpdate(...a),
+}));
+
 const mockCount = jest.fn();
 const mockUpdateOne = jest.fn();
 const mockUpdateMany = jest.fn();
@@ -48,16 +53,56 @@ const emptyScan = {
 };
 
 let errSpy;
+let logSpy;
 beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.ONBOARDING_ALERT_EMAIL;
+  mockSettingUpdate.mockResolvedValue({});
+  logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
   mockCount.mockResolvedValue(1);
   mockUpdateOne.mockResolvedValue({});
   mockUpdateMany.mockResolvedValue({});
   mockSendEmail.mockResolvedValue({});
   errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => errSpy.mockRestore());
+afterEach(() => { errSpy.mockRestore(); logSpy.mockRestore(); });
+
+// The detector must be observably alive. Found the hard way on 2026-08-15:
+// the first live pass produced no output at all, so "ran and everything is
+// fine" and "is dead" were indistinguishable — the pod-summarizer failure,
+// inside the service written to catch it.
+describe('liveness', () => {
+  it('records a heartbeat even when it finds nothing', async () => {
+    mockScan.mockResolvedValue(emptyScan);
+
+    await runOnce();
+
+    expect(mockSettingUpdate).toHaveBeenCalledTimes(1);
+    const [filter, update, opts] = mockSettingUpdate.mock.calls[0];
+    expect(filter.key).toBe('onboardingSilence.lastScan');
+    expect(update.$set.value.lastScanAt).toEqual(expect.any(String));
+    expect(opts).toEqual({ upsert: true });
+  });
+
+  it('logs one line per pass regardless of outcome', async () => {
+    mockScan.mockResolvedValue(emptyScan);
+
+    await runOnce();
+
+    const lines = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(lines).toContain('[onboarding-silence] pass');
+  });
+
+  it('does not let a failed heartbeat suppress the alert', async () => {
+    process.env.ONBOARDING_ALERT_EMAIL = 'ops@example.com';
+    mockSettingUpdate.mockRejectedValue(new Error('mongo down'));
+    mockScan.mockResolvedValue({ ...emptyScan, opened: [episode()] });
+
+    const r = await runOnce();
+
+    expect(r.delivered).toBe(1);
+  });
+});
 
 describe('onboardingAlertService.runOnce', () => {
   it('sends one email per stranded user', async () => {

@@ -27,6 +27,11 @@ jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 const mockFind = jest.fn();
 jest.mock('../../../models/OnboardingSilenceEpisode', () => ({ find: (...a) => mockFind(...a) }));
 
+const mockSettingFindOne = jest.fn();
+jest.mock('../../../models/SystemSetting', () => ({
+  findOne: (...a) => mockSettingFindOne(...a),
+}));
+
 const routes = require('../../../routes/admin/analytics');
 
 const chain = (rows) => ({
@@ -54,6 +59,10 @@ describe('GET /api/admin/analytics/silence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRole = 'admin';
+    // Fresh heartbeat by default; individual tests override to test staleness.
+    mockSettingFindOne.mockReturnValue({
+      lean: () => Promise.resolve({ value: { lastScanAt: new Date().toISOString() } }),
+    });
     app = express();
     app.use('/api/admin/analytics', routes);
   });
@@ -101,6 +110,29 @@ describe('GET /api/admin/analytics/silence', () => {
     const res = await request(app).get('/api/admin/analytics/silence?days=9999');
 
     expect(res.body.days).toBe(90);
+  });
+
+  // An empty list means "nothing is broken" ONLY if the detector ran. These two
+  // exist because on 2026-08-15 a live pass produced no output and a dead cron
+  // would have looked exactly the same.
+  it('reports a fresh scan as not stale', async () => {
+    mockFind.mockReturnValue(chain([]));
+
+    const res = await request(app).get('/api/admin/analytics/silence');
+
+    expect(res.body.staleScan).toBe(false);
+    expect(res.body.lastScanAt).toEqual(expect.any(String));
+  });
+
+  it('flags staleScan when the detector has not run, so zero episodes proves nothing', async () => {
+    mockFind.mockReturnValue(chain([]));
+    mockSettingFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+
+    const res = await request(app).get('/api/admin/analytics/silence');
+
+    expect(res.body.totals.episodes).toBe(0);
+    expect(res.body.staleScan).toBe(true);
+    expect(res.body.lastScanAt).toBeNull();
   });
 
   it('403s non-admins', async () => {

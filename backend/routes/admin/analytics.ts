@@ -262,7 +262,18 @@ router.get('/silence', adminReadLimiter, auth, adminAuth, async (req: any, res: 
     // eslint-disable-next-line global-require
     const { SILENCE_THRESHOLD_MINUTES } = require('../../services/onboardingSilenceService');
     // eslint-disable-next-line global-require
-    const { diagnose } = require('../../services/onboardingAlertService');
+    const { diagnose, HEARTBEAT_KEY } = require('../../services/onboardingAlertService');
+    // eslint-disable-next-line global-require
+    const SystemSetting = require('../../models/SystemSetting');
+
+    // "0 stranded users" is only good news if something is still looking.
+    // Without this, a healthy funnel and a dead cron render identically — the
+    // failure mode this whole endpoint exists to report on.
+    const beat = await SystemSetting.findOne({ key: HEARTBEAT_KEY }).lean() as
+      { value?: { lastScanAt?: string } } | null;
+    const lastScanAt = beat?.value?.lastScanAt || null;
+    const staleScan = !lastScanAt
+      || (Date.now() - new Date(lastScanAt).getTime()) > 15 * 60 * 1000;
 
     const episodes = await OnboardingSilenceEpisode.find({ detectedAt: { $gte: since } })
       .sort({ detectedAt: -1 }).limit(500).lean();
@@ -296,6 +307,9 @@ router.get('/silence', adminReadLimiter, auth, adminAuth, async (req: any, res: 
       since: since.toISOString(),
       thresholdMinutes: SILENCE_THRESHOLD_MINUTES,
       alertRecipientConfigured: Boolean((process.env.ONBOARDING_ALERT_EMAIL || '').trim()),
+      lastScanAt,
+      // True means: do not read `episodes: []` as "nothing is broken".
+      staleScan,
       totals: {
         episodes: shaped.length,
         open: open.length,
@@ -309,6 +323,7 @@ router.get('/silence', adminReadLimiter, auth, adminAuth, async (req: any, res: 
         'only a bot author counts as a reply; a human answering is recorded as human-rescued',
         'pods without an active AgentInstallation are never counted — nothing there could answer',
         'diagnosis is only meaningful when captured at fire time; agent events are GC-ed at 30 min',
+        'staleScan=true means the detector itself has not run recently — an empty list proves nothing',
       ],
     });
   } catch (err: any) {
