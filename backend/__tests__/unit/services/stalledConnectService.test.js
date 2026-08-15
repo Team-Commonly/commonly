@@ -76,7 +76,7 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
   mockEpFind.mockReturnValue({ limit: () => ({ lean: () => Promise.resolve(open) }) });
   mockEpCreate.mockImplementation((d) => Promise.resolve({ _id: 'ep1', ...d }));
   mockEpUpdate.mockResolvedValue({});
-  mockPost.mockResolvedValue({ id: 'msg1' });
+  mockPost.mockResolvedValue({ success: true, message: { id: 'msg1' } });
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -142,7 +142,10 @@ describe('stalledConnectService.scan', () => {
     setup();
     const order = [];
     mockEpCreate.mockImplementation(async (d) => { order.push('claim'); return { _id: 'ep1', ...d }; });
-    mockPost.mockImplementation(async () => { order.push('post'); return { id: 'm' }; });
+    mockPost.mockImplementation(async () => {
+      order.push('post');
+      return { success: true, message: { id: 'm' } };
+    });
 
     await scan({ now: NOW });
 
@@ -157,6 +160,30 @@ describe('stalledConnectService.scan', () => {
 
     expect(r.nudged).toHaveLength(0);
     expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  // The first live run landed 10 correct messages and recorded 10 empty ids,
+  // because postMessage returns { success, message } and the code read
+  // `posted.id`. The old fixture returned `{ id }` — the shape the bug
+  // expected — so the tests agreed with the bug rather than with the service.
+  it('records the real message id, which is nested under `message`', async () => {
+    setup();
+    await scan({ now: NOW });
+
+    expect(mockEpUpdate).toHaveBeenCalledWith(
+      { _id: 'ep1' },
+      { $set: { nudgeMessageId: 'msg1' } },
+    );
+  });
+
+  it('does not report a nudge when postMessage declined to post', async () => {
+    setup();
+    mockPost.mockResolvedValue({ success: true, skipped: true, reason: 'duplicate_recent' });
+
+    const r = await scan({ now: NOW });
+
+    expect(r.nudged).toHaveLength(0);
+    expect(mockEpUpdate).not.toHaveBeenCalled();
   });
 
   it('records the episode against the token issue time and its source', async () => {
