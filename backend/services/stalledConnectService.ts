@@ -124,6 +124,27 @@ const botTokensFor = async (agentName: string, instanceId: string) => {
   return row?.agentRuntimeTokens || [];
 };
 
+/**
+ * Pull the message id out of an AgentMessageService.postMessage result.
+ *
+ * It is NOT at the top level. The success shape is
+ * `{ success, message, summary }`, so the id lives at `message.id` (PG, the
+ * primary store) or `message._id` (the Mongo fallback path). Reading
+ * `posted.id` yields undefined, which is what the first live run did: ten
+ * nudges landed correctly in ten pods and all ten recorded
+ * `nudgeMessageId: ''`. The messages were fine; the audit trail was not — and
+ * "why did this person never get nudged" is unanswerable without it.
+ *
+ * Returns null rather than '' for the skipped shapes (`{ success, skipped }`),
+ * so a caller can tell "posted" from "declined to post".
+ */
+const extractMessageId = (posted: unknown): string | null => {
+  const msg = (posted as { message?: { id?: unknown; _id?: unknown } })?.message;
+  const raw = msg?.id ?? msg?._id;
+  if (raw === undefined || raw === null || raw === '') return null;
+  return String(raw);
+};
+
 export const scan = async ({
   now = new Date(),
   patienceMinutes = CONNECT_PATIENCE_MINUTES,
@@ -258,9 +279,22 @@ const nudgeOnce = async ({
       content,
       metadata: { kind: 'stalled-connect-nudge' },
     });
+    const messageId = extractMessageId(posted);
+    if (!messageId) {
+      // postMessage can succeed-without-posting (`skipped: true` for duplicate
+      // or suppressed sends). Counting that as delivered is the silent-success
+      // shape: the episode stays claimed either way — correct, since something
+      // decided this room did not need the message — but the caller must not
+      // be told a nudge went out when none did.
+      console.warn(
+        `[stalled-connect] no message id for episode=${episode._id} `
+        + `agent=${derived.agentName} — post skipped or shape changed`,
+      );
+      return;
+    }
     await StalledConnectEpisode.updateOne(
       { _id: episode._id },
-      { $set: { nudgeMessageId: String((posted as any)?.id || (posted as any)?._id || '') } },
+      { $set: { nudgeMessageId: messageId } },
     );
     result.nudged.push({
       episodeId: String(episode._id),
@@ -334,7 +368,7 @@ const resolveConnected = async ({
         }),
         metadata: { kind: 'stalled-connect-resolved' },
       });
-      resolutionMessageId = String((posted as any)?.id || (posted as any)?._id || '');
+      resolutionMessageId = extractMessageId(posted) || '';
     } catch (error) {
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
     }
