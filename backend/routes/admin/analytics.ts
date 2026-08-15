@@ -35,29 +35,12 @@ const adminReadLimiter = rateLimit({
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
-// Who counts as a human, and why it takes TWO signals.
-//
-// Not every bot User row carries botMetadata.agentName. Rows created by the
-// gateway bridge, the summarizer, and several openclaw install paths set
-// botMetadata WITHOUT an agentName key. A filter keyed only on agentName
-// therefore passes them as humans — on the dev instance that was 8 rows
-// (clawdbot-bridge, commonly-summarizer, openclaw-inst-*, socialpulse-*),
-// inflating totalUsers/DAU/WAU/signups ~10% and deflating every funnel rate,
-// because a bot in the denominator can never convert.
-//
-// These two are exact logical complements (De Morgan) — keep them that way.
-// Anything counted as a human here must NOT be counted as a bot there, or
-// the "distinct human posters" metric double-subtracts.
-const HUMAN_FILTER = {
-  isBot: { $ne: true },
-  'botMetadata.agentName': { $exists: false },
-};
-const BOT_FILTER = {
-  $or: [
-    { isBot: true },
-    { 'botMetadata.agentName': { $exists: true } },
-  ],
-};
+// Who counts as a human takes TWO signals, and the definition now lives in
+// services/userClassification.ts because the onboarding-silence alert needs
+// the identical split. It used to be inline here; a second copy of a rule this
+// subtle is how it drifts.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { HUMAN_FILTER, BOT_FILTER } = require('../../services/userClassification');
 
 // Distinct PG user_ids with at least one message, within the candidate set.
 // Isolated so tests can run without a live PostgreSQL (mocked module).
@@ -259,6 +242,78 @@ router.get('/lifecycle', adminReadLimiter, auth, adminAuth, async (_req: any, re
   } catch (err: any) {
     console.error('Lifecycle analytics failed:', err.message);
     return res.status(500).json({ message: 'Failed to compute lifecycle stats' });
+  }
+});
+
+// GET /api/admin/analytics/silence?days=14
+// Newcomers who typed into a room that could have answered, and got nothing.
+//
+// The cron alert (services/onboardingAlertService.ts) pushes; this pulls. Both
+// exist because they fail differently: email needs configuration and can
+// bounce, and an alert you can only receive is one you cannot go back and
+// check. This endpoint is also what makes "did the fix work" answerable
+// without re-reading production transcripts by hand.
+router.get('/silence', adminReadLimiter, auth, adminAuth, async (req: any, res: any) => {
+  try {
+    const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 14));
+    const since = new Date(Date.now() - days * DAY_MS);
+    // eslint-disable-next-line global-require
+    const OnboardingSilenceEpisode = require('../../models/OnboardingSilenceEpisode');
+    // eslint-disable-next-line global-require
+    const { SILENCE_THRESHOLD_MINUTES } = require('../../services/onboardingSilenceService');
+    // eslint-disable-next-line global-require
+    const { diagnose } = require('../../services/onboardingAlertService');
+
+    const episodes = await OnboardingSilenceEpisode.find({ detectedAt: { $gte: since } })
+      .sort({ detectedAt: -1 }).limit(500).lean();
+
+    const shaped = episodes.map((e: any) => ({
+      id: String(e._id),
+      user: e.username || String(e.userId),
+      userId: String(e.userId),
+      pod: e.podName || e.podId,
+      podId: e.podId,
+      firstTypedAt: e.firstTypedAt,
+      accountAgeMinutes: e.accountAgeMinutes,
+      messageCount: e.messageCount,
+      status: e.status,
+      outcome: e.outcome || null,
+      resolutionLagSeconds: e.resolutionLagSeconds ?? null,
+      alerted: Boolean(e.alertSentAt),
+      collapsedIntoRollup: Boolean(e.collapsedIntoRollup),
+      diagnosis: diagnose({
+        firstTypedAt: e.firstTypedAt, eventSnapshot: e.eventSnapshot,
+      } as any),
+      eventSnapshot: e.eventSnapshot || null,
+    }));
+
+    const open = shaped.filter((e: any) => e.status === 'open');
+    const byDiagnosis: Record<string, number> = {};
+    for (const e of shaped) byDiagnosis[e.diagnosis] = (byDiagnosis[e.diagnosis] || 0) + 1;
+
+    return res.json({
+      days,
+      since: since.toISOString(),
+      thresholdMinutes: SILENCE_THRESHOLD_MINUTES,
+      alertRecipientConfigured: Boolean((process.env.ONBOARDING_ALERT_EMAIL || '').trim()),
+      totals: {
+        episodes: shaped.length,
+        open: open.length,
+        resolved: shaped.length - open.length,
+        humanRescued: shaped.filter((e: any) => e.outcome === 'human-rescued').length,
+        byDiagnosis,
+      },
+      episodes: shaped,
+      notes: [
+        'an episode is one (user, pod) run of silence, not one message',
+        'only a bot author counts as a reply; a human answering is recorded as human-rescued',
+        'pods without an active AgentInstallation are never counted — nothing there could answer',
+        'diagnosis is only meaningful when captured at fire time; agent events are GC-ed at 30 min',
+      ],
+    });
+  } catch (err: any) {
+    console.error('Silence analytics failed:', err.message);
+    return res.status(500).json({ message: 'Failed to compute silence episodes' });
   }
 });
 
