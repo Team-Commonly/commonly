@@ -341,6 +341,37 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // "Signed up, typed, got no reply" — the onboarding-silence alert
+    // (W4 item 2). Every onboarding defect found on 2026-08-14 was found by a
+    // human choosing to read production; this is the part that does not need
+    // anyone to choose. See backend/services/onboardingSilenceService.ts for
+    // the calibration behind the 15-minute threshold.
+    //
+    // Every 5 minutes, not every 15: the threshold is how long silence must
+    // last before it counts, and the period is how long we then wait to say
+    // so. Matching them would double the worst-case time-to-alert.
+    const onboardingSilenceJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const onboardingAlertService = require('./onboardingAlertService');
+          const result = await onboardingAlertService.runOnce();
+          if (result.opened.length > 0 || result.resolved.length > 0) {
+            console.log(
+              `[onboarding-silence] scanned=${result.scannedMessages} `
+              + `opened=${result.opened.length} absorbed=${result.updated} `
+              + `resolved=${result.resolved.length} skippedNoAgent=${result.skippedNoAgent} `
+              + `delivered=${result.delivered} rollup=${result.rollup}`,
+            );
+          }
+        } catch (error) {
+          console.error('[onboarding-silence] Unhandled error:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -355,6 +386,7 @@ class SchedulerService {
       agentSessionSizeCheckJob,
       codexTokenRefreshJob,
       skillsRefreshJob,
+      onboardingSilenceJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -373,6 +405,10 @@ class SchedulerService {
     console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
     console.log('- Codex OAuth token refresh check runs daily at 3 AM UTC (refreshes if expiring within 3 days)');
     console.log('- Stale agent events are garbage-collected every 10 minutes');
+    console.log(
+      '- Onboarding-silence scan runs every 5 minutes'
+      + `${process.env.ONBOARDING_ALERT_EMAIL ? '' : ' (LOG-ONLY: ONBOARDING_ALERT_EMAIL unset)'}`,
+    );
     console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
 
     setTimeout(() => {
