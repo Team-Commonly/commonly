@@ -24,6 +24,49 @@ import {
 const RECIPIENT = () => (process.env.ONBOARDING_ALERT_EMAIL || '').trim();
 const ROLLING_WINDOW_MS = 60 * 60 * 1000;
 
+/** Where the liveness heartbeat lives, so a reader can ask "is this alive?". */
+export const HEARTBEAT_KEY = 'onboardingSilence.lastScan';
+
+/**
+ * Record that a pass happened, whatever it found.
+ *
+ * WHY THIS EXISTS, and it is not decoration. The first live verification of
+ * this service (2026-08-15) produced no log output — and "the scan ran and
+ * everything is fine" was indistinguishable from "the scan is dead". That is
+ * precisely the `pod-summarizer` failure: a cron that failed every six hours
+ * for a month while every component reported success. Shipping it inside the
+ * service built to catch that failure would have been the joke writing itself.
+ *
+ * So a pass always leaves a mark. Zero stranded users is only good news if
+ * something is still looking, and `lastScanAt` is what lets a reader tell the
+ * difference. Surfaced on GET /api/admin/analytics/silence as `staleScan`.
+ */
+const recordHeartbeat = async (now: Date, result: ScanResult): Promise<void> => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const SystemSetting = require('../models/SystemSetting');
+    await SystemSetting.updateOne(
+      { key: HEARTBEAT_KEY },
+      {
+        $set: {
+          key: HEARTBEAT_KEY,
+          value: {
+            lastScanAt: now.toISOString(),
+            scannedMessages: result.scannedMessages,
+            opened: result.opened.length,
+            resolved: result.resolved.length,
+            skippedNoAgent: result.skippedNoAgent,
+          },
+        },
+      },
+      { upsert: true },
+    );
+  } catch (error) {
+    // A heartbeat that throws must never suppress the alert it accompanies.
+    console.warn('[onboarding-silence] heartbeat write failed:', (error as Error).message);
+  }
+};
+
 /**
  * Machine-readable, one line per episode, always emitted.
  *
@@ -116,6 +159,16 @@ export const runOnce = async (
 ): Promise<ScanResult & { delivered: number; rollup: boolean; unconfigured: boolean }> => {
   const now = opts.now || new Date();
   const result = await scan({ ...opts, now });
+  await recordHeartbeat(now, result);
+
+  // One line per pass, unconditionally. 288 lines a day is nothing against this
+  // log volume, and it is the difference between a quiet instrument and a dead
+  // one — which is the whole subject of this service.
+  console.log(
+    `[onboarding-silence] pass scanned=${result.scannedMessages} `
+    + `opened=${result.opened.length} absorbed=${result.updated} `
+    + `resolved=${result.resolved.length} skippedNoAgent=${result.skippedNoAgent}`,
+  );
 
   if (result.resolved.length > 0) {
     for (const r of result.resolved) {
