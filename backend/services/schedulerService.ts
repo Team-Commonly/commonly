@@ -372,6 +372,33 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Stalled-connect nudge (W4 item 3). Tells a USER their seat was never
+    // started — the population the onboarding-silence alert is blind to,
+    // because they never typed. A cron rather than a delayed event on purpose:
+    // re-deriving from state each pass is drop-proof, where a delayed
+    // AgentEvent inherits the pending-GC caveat. See stalledConnectService.
+    const stalledConnectJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const stalledConnectService = require('./stalledConnectService');
+          const r = await stalledConnectService.scan();
+          // Unconditional, for the same reason the silence pass logs
+          // unconditionally: a detector nobody can see is indistinguishable
+          // from a dead one.
+          console.log(
+            `[stalled-connect] pass candidates=${r.candidates} nudged=${r.nudged.length} `
+            + `resolved=${r.resolved.length} tooRecent=${r.skippedTooRecent} `
+            + `notStalled=${r.skippedNotStalled}`,
+          );
+        } catch (error) {
+          console.error('[stalled-connect] Unhandled error:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -387,6 +414,7 @@ class SchedulerService {
       codexTokenRefreshJob,
       skillsRefreshJob,
       onboardingSilenceJob,
+      stalledConnectJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -405,6 +433,7 @@ class SchedulerService {
     console.log('- Agent session size check runs every 10 minutes (clears if > AGENT_SESSION_MAX_SIZE_KB, default 400 KB)');
     console.log('- Codex OAuth token refresh check runs daily at 3 AM UTC (refreshes if expiring within 3 days)');
     console.log('- Stale agent events are garbage-collected every 10 minutes');
+    console.log('- Stalled-connect nudge scan runs every 5 minutes');
     console.log(
       '- Onboarding-silence scan runs every 5 minutes'
       + `${process.env.ONBOARDING_ALERT_EMAIL ? '' : ' (LOG-ONLY: ONBOARDING_ALERT_EMAIL unset)'}`,
