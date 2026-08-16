@@ -101,6 +101,30 @@ describe('validateEnvironmentSpec', () => {
     expect(res.errors.join(' ')).toMatch(/unknown top-level key.*sandbax/);
   });
 
+  // #774: before `model` was an allowed key, the only way to pin a wrapper's
+  // model was a per-process env var that every restart silently dropped. On
+  // 2026-08-16 six of nine live seats had lost their assigned model that way.
+  test('accepts a model pin', () => {
+    expect(validateEnvironmentSpec({ version: 1, model: 'claude-opus-5' }))
+      .toEqual({ ok: true, errors: [] });
+  });
+
+  test('rejects an empty or non-string model', () => {
+    for (const bad of ['', '   ', 42, null, {}]) {
+      const res = validateEnvironmentSpec({ version: 1, model: bad });
+      expect(res.ok).toBe(false);
+      expect(res.errors.join(' ')).toMatch(/model must be a non-empty string/);
+    }
+  });
+
+  // Deliberately NOT validated against a list of known ids: a whitelist here
+  // would reject a valid model the local CLI understands and this file has
+  // never heard of, failing an attach over a fact it is not the authority on.
+  test('accepts an unrecognised model id, leaving validity to the CLI', () => {
+    expect(validateEnvironmentSpec({ version: 1, model: 'some-future-model-9' }).ok)
+      .toBe(true);
+  });
+
   test('rejects bad sandbox.mode', () => {
     const res = validateEnvironmentSpec({ sandbox: { mode: 'rocket' } });
     expect(res.ok).toBe(false);
