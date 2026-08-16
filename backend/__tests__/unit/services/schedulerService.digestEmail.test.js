@@ -66,4 +66,16 @@ describe('scheduler daily digest delivery', () => {
     expect(dailyDigestService.generateAllDailyDigests.mock.invocationCallOrder[0])
       .toBeLessThan(digestEmailService.sendDigestEmails.mock.invocationCallOrder[0]);
   });
+
+  it('owns cron jobs once per process even if a second scheduler instance starts', () => {
+    schedulerService.start();
+    const scheduledByFirstStart = require('node-cron').schedule.mock.calls.length;
+    const SchedulerService = schedulerService.constructor;
+    const secondInstance = new SchedulerService();
+
+    secondInstance.start();
+
+    expect(require('node-cron').schedule).toHaveBeenCalledTimes(scheduledByFirstStart);
+    expect(secondInstance.isRunning).toBe(false);
+  });
 });

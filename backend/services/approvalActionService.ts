@@ -14,6 +14,7 @@
 import ApprovalAction, { IApprovalAction, ApprovalActionType } from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
+import { resolveWakePolicy } from './wakePolicyService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -641,7 +642,7 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
           version: originInstall?.version || '1.0.0',
           displayName: originInstall?.displayName,
           scopes: originInstall?.scopes || ['context:read', 'messages:write'],
-          config: originInstall?.config || {},
+          config: resolveWakePolicy(originInstall?.config || {}, pod),
         },
         $setOnInsert: {
           agentName: row.agentName,

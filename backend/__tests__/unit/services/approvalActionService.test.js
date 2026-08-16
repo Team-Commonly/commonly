@@ -161,8 +161,13 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     mockApprovalFindById.mockResolvedValue(flaggedRow());
     const resolved = flaggedRow({ status: 'resolved', decision: 'approved' });
     mockApprovalFindOneAndUpdate.mockResolvedValue(resolved);
-    mockPodCreate.mockResolvedValue({ _id: 'newpod-1', name: 'Design Studio' });
-    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({ displayName: 'Guide', scopes: ['context:read'], config: {}, version: '1.0.0' }) });
+    mockPodCreate.mockResolvedValue({ _id: 'newpod-1', name: 'Design Studio', type: 'chat', members: [OWNER] });
+    mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+      displayName: 'Guide',
+      scopes: ['context:read'],
+      config: { wakeOnMessage: { enabled: true } },
+      version: '1.0.0',
+    }) });
     mockInstallUpsert.mockResolvedValue({});
     mockGetOrCreateAgentUser.mockResolvedValue({ _id: 'guide-bot-1' });
     mockPodUpdateOne.mockResolvedValue({});
@@ -184,6 +189,9 @@ describe('approved create_pod execution — D2: user authority owns', () => {
       expect.anything(),
       expect.anything(),
     );
+    // A newly-created chat begins personal (owner + agent) and keeps the
+    // explicit opt-in; later fan-out re-resolves this when membership changes.
+    expect(mockInstallUpsert.mock.calls[0][1].$set.config.wakeOnMessage.enabled).toBe(true);
     expect(mockPodUpdateOne).toHaveBeenCalledWith(
       { _id: 'newpod-1', members: { $ne: 'guide-bot-1' } },
       { $push: { members: 'guide-bot-1' } },

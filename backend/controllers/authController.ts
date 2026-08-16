@@ -8,6 +8,7 @@ const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
+const { resolveWakePolicy } = require('../services/wakePolicyService');
 
 const joinCommunityPodBestEffort = (userId: any) => {
   void ensureUserInCommunityPod(userId).catch((err: Error) => {
@@ -192,7 +193,7 @@ const createDefaultWorkspacePod = async (userId: any) => {
             version: '1.0.0',
             displayName: scoutApp.displayName,
             scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
-            config: buildInstallationConfig(scoutApp),
+            config: resolveWakePolicy(buildInstallationConfig(scoutApp), pod),
           },
           $setOnInsert: {
             agentName: scoutApp.agentName,
