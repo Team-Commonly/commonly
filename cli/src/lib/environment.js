@@ -29,8 +29,19 @@ import { homedir } from 'os';
 // exposes `$HOME` layout for zero server-side benefit. Callers pass
 // `envFileDir` as a separate argument to resolveWorkspace / mountSkills.
 
+// `model` closes issue #774. Before it, the only way to pin a wrapper's model
+// was `ANTHROPIC_MODEL` exported at `commonly agent run` time — per-process,
+// never persisted, and silently dropped by any restart. Measured consequence on
+// 2026-08-16: six of nine live seats had lost their assigned model, including
+// ux-lead, which was supposed to be on Fable and had been running the CLI
+// default for days with nothing recording the drift.
+//
+// Putting it in the env spec makes the model a persisted, server-side fact that
+// survives restarts and is readable by the platform — which is what ADR-022's
+// "persona and runtime are chosen separately" requires to mean anything for a
+// BYO seat, and what lets an identity card answer "what is this running".
 const ALLOWED_TOP_KEYS = new Set([
-  'version', 'workspace', 'sandbox', 'skills', 'mcp',
+  'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model',
 ]);
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
@@ -110,6 +121,18 @@ export const validateEnvironmentSpec = (spec) => {
 
   if (spec.version !== undefined && spec.version !== 1) {
     errors.push(`version must be 1, got ${JSON.stringify(spec.version)}`);
+  }
+
+  // Validated as an opaque non-empty string, deliberately not against a list of
+  // known model ids. A whitelist here would need editing every time a provider
+  // ships a model, and would reject a valid id the local CLI understands and
+  // this file does not — failing the user's attach for a fact it is not the
+  // authority on. The adapter passes it through to `--model`; the CLI is the
+  // thing that knows what is valid, and its error is the honest one.
+  if (spec.model !== undefined) {
+    if (typeof spec.model !== 'string' || spec.model.trim() === '') {
+      errors.push('model must be a non-empty string');
+    }
   }
 
   if (spec.workspace !== undefined) {
