@@ -8,23 +8,25 @@
 
 ### What a user actually experiences today
 
-Measured on production 2026-08-14, from message history, not inference.
+Measured on production 2026-08-14 from message history; funnel re-measured 2026-08-16 against production + Cloudflare. Not inference.
 
 A user registered at 03:09. In their own workspace they asked Scout two questions in Chinese and got substantive answers in four and five seconds — including a refusal to invent an answer it could not know ("我没有办法查看自己底层具体的模型型号…不会瞎猜一个型号给你"). That is the product working.
 
 Eighteen minutes later they went to add an agent, landed on the v1 catalog, installed the `claude-code` template, never started a local session, and asked it the same question three times across two pods. Silence. They left.
 
-They are not unusual. Across 21 real signups since 2026-08-01:
+They are not unusual. At drafting (2026-08-14) the funnel read: 21 real signups since 2026-08-01, 21 verified, 21 with a workspace, 5 ever typed, **0 ever received a reply to something they said**. Four of the five who typed had `@`-mentioned a BYO seat with no process running. The fifth greeted a Scout that was in dormant silent-mode at the time.
+
+**Re-measured 2026-08-09 → 08-16 (production + Cloudflare), after the connect-honesty fixes #943/#945/#947 — the bottleneck has moved upstream:**
 
 | stage | count |
 |---|---|
-| signed up | 21 |
-| verified email | 21 |
-| got a workspace | 21 |
-| ever typed anything | 5 |
-| **ever received a reply to something they said** | **0** |
+| unique visitors | 1,440 (trending up, 230→320/day) |
+| signed up | **19** (1.32%) |
+| typed anything | **11** (58% of signups — up from 27% lifetime) |
+| lost at the landing page | 1,421 |
+| lost after signing up | 8 |
 
-Four of the five who typed had `@`-mentioned a BYO seat with no process running. The fifth greeted a Scout that was in dormant silent-mode at the time.
+All-time: 103 real humans, 28 ever typed, 4 ever had a genuine back-and-forth, **1 ever returned on a second day**. The signup-side leak this ADR attacks is closing; the landing-side leak (178:1) is now the larger number — which makes the v1 cast two-turn samples load-bearing beyond the catalog: they double as the landing proof strip. Retention — one second-day return in 103 humans — is the depth the activation path exists to move.
 
 ### The structural cause
 
