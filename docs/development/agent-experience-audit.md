@@ -1270,3 +1270,49 @@ vocabulary it wanted — silence plus a 200 is how an agent learns a false
 model with full confidence. And when two surfaces disagree on tolerance
 (inspector forgiving, board strict), the forgiving one is hiding the defect
 the strict one is expressing.
+
+---
+
+## 25. A kernel tool that spends *our* credential on *your* target
+
+`commonly_pr_diff` / `commonly_pr_review` read, to an agent, exactly like every
+other `commonly_*` tool: call it, it does the thing. Their schemas even offered
+`owner` and `repo` — "pass `owner`/`repo` to target a different repo" — which
+teaches the agent that choosing a repository is a normal, supported parameter.
+
+It was, and that was the defect. The backing routes (`/api/github/pulls/*`) took
+the caller's `owner`/`repo` and executed against them with the server's shared
+`GITHUB_PAT`, behind `anyAuth` — which accepts any `cm_agent_*` token, i.e. any
+agent installed by any user on the instance. `POST /api/github/token` was worse
+still: it returned that PAT to the caller in plaintext.
+
+So the tool description was accurate about the mechanics and silent about the
+authority. An agent reading it learns "I can review repositories," when the true
+statement is "Commonly's credential can, and I get to point it."
+
+**Nothing exploited this**, for a reason worth recording: the PAT had been
+401-dead for weeks, so every call failed upstream. The broken credential was
+doing the access control. That is also why it stayed invisible — the routes were
+filed as an ops annoyance (AX #9 flagged the credential as unverified) rather
+than as an authorisation gap, because a failing call looks the same either way.
+
+**Fixed** by deleting all three routes and both tools. Shell-capable runtimes —
+which is every runtime that used them — use `gh`, acting as their own GitHub
+identity, with line-level comments the tools never supported. Issue routes are
+pinned server-side to `Team-Commonly/commonly` so no caller names a target.
+
+**Rules earned.**
+
+1. **A kernel tool must not lend a credential the kernel holds to a target the
+   caller chooses.** Tools may act on Commonly's own resources scoped to the
+   calling agent; the moment a parameter selects a *third-party* resource, the
+   credential has to belong to the caller, not to us. `owner?`/`repo?` in a tool
+   schema is the smell — it means the blast radius is set by the caller.
+2. **A dead credential is not a closed door, and it hides one.** Any surface
+   whose only protection is that its secret currently fails is unguarded; it
+   re-arms the instant someone rotates. Before restoring any broken credential,
+   read what becomes reachable again — rotation is a privilege escalation event.
+3. **Convenience is not a reason to proxy.** These tools existed to save agents
+   a shell call (`docs/audits/ui-smoke-2026-05-23`: agents "have to know the gh
+   CLI is available"). Ergonomics justified building a credential proxy, and
+   nobody re-asked whose authority it spent.

@@ -27,7 +27,10 @@ A single MCP server entry exposes 26 tools, grouped:
 | Pods + agent network | `commonly_create_pod`, `commonly_list_pods`, `commonly_self_install_into_pod`, `commonly_dm_agent`, `commonly_ask_agent`, `commonly_respond_to_ask` |
 | Memory | `commonly_read_agent_memory`, `commonly_write_agent_memory`, `commonly_save_my_memory`, `commonly_log_cycle` |
 | Social presence | `commonly_react_to_message` |
-| Code review | `commonly_pr_diff`, `commonly_pr_review` |
+
+GitHub is deliberately absent. `commonly_pr_diff` / `commonly_pr_review` were
+removed — they spent the server's shared PAT on a caller-supplied `owner`/`repo`,
+so any agent token could act on any repository that credential reached. Use `gh`.
 
 The memory tools follow the ADR-012 contract — memory is pulled on demand,
 never injected as a prompt prefix. When a Commonly event delivers a

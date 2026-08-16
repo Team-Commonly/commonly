@@ -1,8 +1,6 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
-const rateLimit = require('express-rate-limit');
-// eslint-disable-next-line global-require
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
@@ -21,24 +19,19 @@ interface Res {
   json: (d: unknown) => void;
 }
 
-const VALID_NAME = /^[a-zA-Z0-9_.-]+$/;
-const VALID_REVIEW_EVENTS = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
-
-// Per-route limiter on the PR endpoints — they proxy to the GitHub API (which
-// has its own abuse limits on our shared PAT), so bound callers here. Inlined so
-// CodeQL's js/missing-rate-limiting query recognises the guard; skipped under
-// NODE_ENV=test. Mirrors installRateLimit (routes/registry/install.ts).
-const githubPrRateLimit = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
-  handler: (_req: unknown, res: Res) => res.status(429).json({
-    message: 'rate limit exceeded: 30 GitHub PR requests per 60s',
-    code: 'rate_limited',
-  }),
-});
+// The ONLY repository these routes may touch. Previously `owner`/`repo` were
+// caller-supplied with these as defaults, which meant the caller chose the
+// target and our server-held credential supplied the authority — so the blast
+// radius was "every repo the PAT can reach", including private ones, rather
+// than "our issue tracker". Pinned server-side: callers no longer name a target.
+//
+// This also retires the `VALID_NAME` regex that used to validate those inputs.
+// Validating a caller-chosen repo name was always the weaker guard — it made
+// the value well-formed, never authorised — and with nothing caller-supplied
+// left to interpolate there is no input to check. If a per-user-credential path
+// ever reintroduces a caller-chosen repo, it needs authorisation, not a regex.
+const PINNED_OWNER = 'Team-Commonly';
+const PINNED_REPO = 'commonly';
 
 // AX audit #9. Every route below proxies GitHub, and every failure — including
 // GitHub rejecting OUR credential — was collapsed into a 500 whose only true
@@ -130,51 +123,19 @@ function anyAuth(req: AuthReq, res: Res, next: () => void) {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
-router.post('/token', agentRuntimeAuth, async (req: AuthReq, res: Res) => {
-  try {
-    if (GitHubAppService.isPatConfigured()) return res.json(GitHubAppService.getPatToken());
-
-    if (!GitHubAppService.isConfigured()) {
-      return res.status(503).json({ message: 'No GitHub credentials configured. Set GITHUB_PAT or GitHub App env vars.' });
-    }
-
-    const { owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { owner?: string; repo?: string };
-    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) {
-      return res.status(400).json({ message: 'Invalid owner or repo name' });
-    }
-
-    let installationId = process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY;
-    if (owner !== 'Team-Commonly' || repo !== 'commonly') {
-      installationId = await GitHubAppService.getInstallationIdForRepo(owner, repo);
-    }
-
-    const result = await GitHubAppService.getInstallationToken(installationId);
-    return res.json(result);
-  } catch (err) {
-    // The seventh proxying route, and the one where the flattening bit
-    // hardest (@ux-lead, msg 52276): this endpoint's entire job is
-    // credentials, so the caller most likely to hit an upstream 401 here is
-    // someone ALREADY debugging a credential failure — and a 500 tells them to
-    // retry. `getInstallationIdForRepo` and `getInstallationToken` both call
-    // GitHub, so the same mapping applies.
-    const mapped = mapGitHubUpstreamError(err, {
-      fallback: 'Failed to generate GitHub token',
-      notFound: 'GitHub App not installed on this repository',
-    });
-    // `message` is kept alongside the mapped body: this route has always
-    // answered with `message`, and CLI/driver callers read it — so that key
-    // keeps its meaning. `error` does NOT: on main this route alone put the
-    // raw upstream text in `error`, and it now carries the human label while
-    // the raw text moves to `detail`. Not additive, and worth stating plainly
-    // (@sprint-review) — the previous comment said "additive", which is the
-    // sentence someone would cite the next time they touch this file.
-    // The change is right for a different reason than backwards compatibility:
-    // the other six routes already answered `{error: <label>, detail: <raw>}`,
-    // so this normalises the one route that disagreed with the rest.
-    console.error('POST /github/token error:', mapped.body.code, mapped.body.detail);
-    return res.status(mapped.status).json({ ...mapped.body, message: mapped.body.error });
-  }
-});
+// REMOVED — `POST /token`, which handed our GitHub credential to callers.
+//
+// It was guarded by `agentRuntimeAuth` alone, so ANY `cm_agent_*` token — held
+// by an agent installed by ANY user on this instance — could ask for one. With
+// `GITHUB_PAT` set it returned `getPatToken()`, i.e. the raw shared PAT in
+// plaintext; without it, it minted an App installation token for a
+// caller-chosen repo. Both branches give away a credential we then no longer
+// control, and neither asked who was calling or what for.
+//
+// Nothing in this repo called it; only a route-contract test did. There is no
+// safer variant to keep: a token in a client's hands is a token that outlives
+// any check we do here. A shell-less runtime that needs GitHub access needs a
+// per-user App install of its own, not a share of ours.
 
 router.get('/status', auth, async (req: AuthReq, res: Res) => {
   // @github-upstream-exempt: this route touches no upstream — it reads env and
@@ -198,9 +159,8 @@ router.get('/issues', anyAuth, async (req: AuthReq, res: Res) => {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
     }
-    const { owner = 'Team-Commonly', repo = 'commonly', per_page } = (req.query || {}) as { owner?: string; repo?: string; per_page?: string };
-    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
-    const issues = await GitHubAppService.listOpenIssues({ owner, repo, perPage: Number(per_page) || 20 });
+    const { per_page } = (req.query || {}) as { per_page?: string };
+    const issues = await GitHubAppService.listOpenIssues({ owner: PINNED_OWNER, repo: PINNED_REPO, perPage: Number(per_page) || 20 });
     return res.json({ issues: issues.map((i: { number: number; title: string; body: string; html_url: string; labels?: Array<{ name: string }>; milestone?: { title?: string } }) => ({ number: i.number, title: i.title, body: i.body, url: i.html_url, labels: i.labels?.map((l) => l.name), milestone: i.milestone?.title || null })) });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to list issues', notFound: 'Repository not found' });
@@ -214,10 +174,9 @@ router.post('/issues', anyAuth, async (req: AuthReq, res: Res) => {
     if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
       return res.status(503).json({ error: 'No GitHub credentials configured' });
     }
-    const { title, body, labels, owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { title?: string; body?: string; labels?: string[]; owner?: string; repo?: string };
+    const { title, body, labels } = (req.body || {}) as { title?: string; body?: string; labels?: string[] };
     if (!title) return res.status(400).json({ error: 'title is required' });
-    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
-    const issue = await GitHubAppService.createIssue({ owner, repo, title, body, labels });
+    const issue = await GitHubAppService.createIssue({ owner: PINNED_OWNER, repo: PINNED_REPO, title, body, labels });
     return res.status(201).json({ number: issue.number, title: issue.title, url: issue.html_url });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to create issue', notFound: 'Repository not found' });
@@ -229,9 +188,9 @@ router.post('/issues', anyAuth, async (req: AuthReq, res: Res) => {
 router.post('/issues/:number/comment', anyAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
-    const { body, owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { body?: string; owner?: string; repo?: string };
+    const { body } = (req.body || {}) as { body?: string };
     if (!body) return res.status(400).json({ error: 'body is required' });
-    await GitHubAppService.addIssueComment({ owner, repo, issueNumber, body });
+    await GitHubAppService.addIssueComment({ owner: PINNED_OWNER, repo: PINNED_REPO, issueNumber, body });
     return res.json({ ok: true });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to comment', notFound: 'Issue not found' });
@@ -243,8 +202,8 @@ router.post('/issues/:number/comment', anyAuth, async (req: AuthReq, res: Res) =
 router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => {
   try {
     const issueNumber = Number(req.params?.number);
-    const { comment, owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { comment?: string; owner?: string; repo?: string };
-    await GitHubAppService.closeIssue({ owner, repo, issueNumber, comment });
+    const { comment } = (req.body || {}) as { comment?: string };
+    await GitHubAppService.closeIssue({ owner: PINNED_OWNER, repo: PINNED_REPO, issueNumber, comment });
     return res.json({ ok: true, closed: issueNumber });
   } catch (err) {
     const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to close issue', notFound: 'Issue not found' });
@@ -254,49 +213,29 @@ router.post('/issues/:number/close', anyAuth, async (req: AuthReq, res: Res) => 
 });
 
 // ─── Pull Requests ───────────────────────────────────────────────────────
-
-router.get('/pulls/:number/diff', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
-  try {
-    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
-      return res.status(503).json({ error: 'No GitHub credentials configured' });
-    }
-    const pullNumber = Number(req.params?.number);
-    if (!Number.isInteger(pullNumber) || pullNumber <= 0) return res.status(400).json({ error: 'Invalid pull number' });
-    const { owner = 'Team-Commonly', repo = 'commonly' } = (req.query || {}) as { owner?: string; repo?: string };
-    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
-    const diff = await GitHubAppService.getPullDiff({ owner, repo, pullNumber });
-    return res.json({ number: pullNumber, diff });
-  } catch (err) {
-    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to fetch pull diff', notFound: 'Pull request not found' });
-    console.error('GET /github/pulls/diff error:', mapped.body.code, mapped.body.detail);
-    return res.status(mapped.status).json(mapped.body);
-  }
-});
-
-router.post('/pulls/:number/review', githubPrRateLimit, anyAuth, async (req: AuthReq, res: Res) => {
-  try {
-    if (!GitHubAppService.isPatConfigured() && !GitHubAppService.isConfigured()) {
-      return res.status(503).json({ error: 'No GitHub credentials configured' });
-    }
-    const pullNumber = Number(req.params?.number);
-    if (!Number.isInteger(pullNumber) || pullNumber <= 0) return res.status(400).json({ error: 'Invalid pull number' });
-    const { event, body, owner = 'Team-Commonly', repo = 'commonly' } = (req.body || {}) as { event?: string; body?: string; owner?: string; repo?: string };
-    if (!VALID_NAME.test(owner) || !VALID_NAME.test(repo)) return res.status(400).json({ error: 'Invalid owner or repo' });
-    if (!event || !VALID_REVIEW_EVENTS.includes(event)) return res.status(400).json({ error: 'event must be one of APPROVE, REQUEST_CHANGES, COMMENT' });
-    if (event !== 'APPROVE' && !body) return res.status(400).json({ error: 'body is required for REQUEST_CHANGES and COMMENT reviews' });
-    const review = await GitHubAppService.createPullReview({ owner, repo, pullNumber, event: event as 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body });
-    const r = review as { id?: number; state?: string; html_url?: string };
-    return res.status(201).json({ ok: true, id: r?.id, state: r?.state, url: r?.html_url });
-  } catch (err) {
-    // AX #9 left this one explicitly unverified — "whether commonly_pr_review
-    // shares the same broken credential; assume it does until someone checks."
-    // It does: both routes go through GitHubAppService._apiHeaders and the same
-    // GITHUB_PAT, so a rejected credential fails the write path identically.
-    const mapped = mapGitHubUpstreamError(err, { fallback: 'Failed to submit review', notFound: 'Pull request not found' });
-    console.error('POST /github/pulls/review error:', mapped.body.code, mapped.body.detail);
-    return res.status(mapped.status).json(mapped.body);
-  }
-});
+//
+// REMOVED — `GET /pulls/:number/diff` and `POST /pulls/:number/review`, which
+// backed the `commonly_pr_diff` / `commonly_pr_review` MCP tools.
+//
+// Same defect as `/token`, one step less direct: `anyAuth` accepted any
+// `cm_agent_*` token, `owner`/`repo` were caller-supplied with ours as mere
+// defaults, and the call executed under our server-held PAT. So any user's
+// agent could read diffs from — and post reviews, including `APPROVE`, onto —
+// any repository that credential could reach. A rate limit bounds the volume of
+// that, not the authority.
+//
+// Removing them costs no capability. Every runtime that used these has a shell
+// and a GitHub credential of its own: local wrappers use the operator's `gh`
+// keyring auth (PR #963 was opened that way), and cluster runtimes get `gh`
+// plus a credential helper at image build. The tools were an ergonomic wrapper
+// (docs/audits/ui-smoke-2026-05-23: agents "have to know the gh CLI is
+// available"), and convenience is not a reason to proxy a shared credential for
+// untrusted callers.
+//
+// The open question this leaves is deliberate: a shell-LESS runtime — native
+// Tier-1, or a hosted Code Reviewer persona — still has no GitHub path. That
+// case needs per-user GitHub App auth, because reviewing a user's repository
+// with OUR identity is wrong even when it works. See ADR-022's v1 cast.
 
 module.exports = router;
 // Exposed for unit tests: the mapping is the load-bearing part, and testing it
