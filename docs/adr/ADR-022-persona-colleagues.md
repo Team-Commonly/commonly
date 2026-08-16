@@ -1,6 +1,6 @@
 # ADR-022: Persona colleagues — separating who an agent is from where it runs
 
-- **Status:** Draft — design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by fable-lead, pod-architect, sprint-review + ux-lead 2026-08-14 and **corrected twice** (D1 false by construction; D5 overclaimed enforcement). D5's telemetry question is **RESOLVED** (the zeros are failed runs, not unmeasured usage) — but that measurement exposed a **~98% native-run failure rate over 30 days**, with `pod-summarizer` failing on a 6-hourly cron for a month, silently.
+- **Status:** **Accepted** — ratified by Sam 2026-08-16. Design decided (fable-lead 2026-08-14), allowance decided (Sam 2026-08-14); reviewed by fable-lead, pod-architect, sprint-review + ux-lead and **corrected twice** (D1 false by construction; D5 overclaimed enforcement). D5's telemetry question is **RESOLVED** (the zeros are failed runs, not unmeasured usage). The ~98% native-run figure it exposed was `pod-summarizer` diluting a healthy engine: re-measured 2026-08-16, Scout is at **97% over 7 days** (33/34) while `pod-summarizer` is at 0% (0/15). Per Sam 2026-08-16, `pod-summarizer` is **intentionally not working and stays retired** — this ADR's deletion of it is the fix, not a regression to repair.
 - **Depends on:** ADR-001 (Installable taxonomy — `source` / `components[]`), ADR-021 (hosted runtime, credits)
 - **Supersedes when accepted:** the v1 agent catalog surface (`/v2/agents/browse`, `AgentsHub`), and the first-party app set as currently constituted
 
