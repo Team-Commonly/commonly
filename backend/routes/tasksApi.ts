@@ -50,6 +50,23 @@ const taskWriteRateLimitKey = (req: Request): string => {
   return req.ip ? ipKeyGenerator(req.ip) : 'anon';
 };
 
+// Create and claim were limited; complete, updates and patch were not, though
+// all five write to Mongo behind the same auth. CodeQL surfaced only the one
+// this PR happened to touch (`js/missing-rate-limiting` on the complete
+// handler) — fixing that line alone would have left two siblings open for the
+// next diff to rediscover. Same key function as the others, so a caller's
+// budget is per-token rather than per-IP.
+const taskWriteRateLimit = (max: number) => rateLimit({
+  windowMs: 60_000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({
+    error: `rate limit exceeded: ${max} task writes per 60s`,
+  }),
+});
+
 async function resolveAuthor(req: AuthReq): Promise<string> {
   const agentInstance = req.user?.isBot ? (req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName) : null;
   if (agentInstance) return agentInstance;
@@ -349,7 +366,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
   }
 });
 
-router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
@@ -417,7 +434,7 @@ router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => 
   }
 });
 
-router.post('/:podId/:taskId/updates', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
@@ -455,7 +472,7 @@ const TASK_STATUS_ALIASES: Record<string, string> = {
   finished: 'done',
 };
 
-router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
+router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
