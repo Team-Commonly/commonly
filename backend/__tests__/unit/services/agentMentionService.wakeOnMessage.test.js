@@ -76,12 +76,12 @@ const mockInstallations = (installations) => {
   });
 };
 
-const mockPodType = (type) => {
+const mockPod = (type, members = ['user-1', 'seat-a']) => {
   Pod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ type }),
+      lean: jest.fn().mockResolvedValue({ type, members }),
     }),
-    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type }),
+    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type, members }),
   });
 };
 
@@ -115,7 +115,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockHumanSender();
-    mockPodType('project');
+    mockPod('chat');
     AgentEvent.countDocuments.mockResolvedValue(0);
   });
 
@@ -235,12 +235,29 @@ describe('wake-on-message (ADR-018 D8)', () => {
   });
 
   test('DM-shaped pods are excluded — enqueueDmEvent already routes every message there', async () => {
-    mockPodType('agent-room');
+    mockPod('agent-room');
     mockInstallations([install('seat-a', { optIn: true })]);
 
     const res = await AgentMentionService.enqueueMentions({
       podId: 'pod-dm',
       message: { content: 'dm chatter', id: 'msg-6' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(res.woken).toEqual([]);
+    expect(wakeCalls()).toHaveLength(0);
+  });
+
+  test('a historic opt-in is disabled as soon as its chat becomes shared', async () => {
+    // Config was stamped while the room was personal; another human joining
+    // must switch this delivery path to mention-only without reinstalling.
+    mockPod('chat', ['user-1', 'seat-a', 'user-2']);
+    mockInstallations([install('seat-a', { optIn: true })]);
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'team update', id: 'msg-7' },
       userId: 'user-1',
       username: 'alice',
     });
