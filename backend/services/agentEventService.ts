@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import Task from '../models/Task';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -818,6 +819,63 @@ class AgentEventService {
     }
   }
 
+  // Task-board delta cue: use the agent's own most recent `cycles` entry as
+  // the cursor, then surface only the number of audit updates in this pod.
+  // Like the ADR-012 memory cue, this is deliberately a tool hint, not an
+  // inline summary: task bodies can be stale by the time an event is claimed
+  // and can be far larger than a heartbeat budget.
+  //
+  // No prior cycle means no trustworthy "since" boundary. Skip rather than
+  // turning an agent's first heartbeat into a request to re-read every task
+  // update the pod has ever recorded.
+  private static async prependTaskUpdateCue(
+    agentName: string,
+    instanceId: string,
+    podId: unknown,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const content = payload?.content;
+    if (typeof content !== 'string' || content.length === 0) return payload;
+
+    try {
+      const memDoc = await AgentMemory.findOne({
+        agentName: agentName.toLowerCase(),
+        instanceId,
+      })
+        .select({ 'sections.cycles.entries.ts': 1 })
+        .lean() as { sections?: { cycles?: { entries?: Array<{ ts?: unknown }> } } } | null;
+
+      const cycleDates = memDoc?.sections?.cycles?.entries
+        ?.map((entry) => new Date(entry?.ts as string | number | Date))
+        .filter((ts) => !Number.isNaN(ts.getTime())) || [];
+      const lastCycleAt = cycleDates.reduce<Date | null>(
+        (latest, ts) => (!latest || ts > latest ? ts : latest),
+        null,
+      );
+      if (!lastCycleAt) return payload;
+
+      // `podId` reaches scheduled heartbeats as the Pod document's ObjectId.
+      // Keep that value intact: Mongoose does not cast aggregation pipelines,
+      // so stringifying it here would turn a real delta into a false zero.
+      const result = await Task.aggregate([
+        { $match: { podId } },
+        { $unwind: '$updates' },
+        { $match: { 'updates.createdAt': { $gt: lastCycleAt } } },
+        { $count: 'count' },
+      ]) as Array<{ count?: number }>;
+      const delta = Number(result[0]?.count || 0);
+      if (delta <= 0) return payload;
+
+      const cue = `[tasks: ${delta} task ${delta === 1 ? 'update' : 'updates'} since your last cycle — call commonly_get_tasks if relevant.]`;
+      return { ...payload, content: `${cue}\n\n${content}` };
+    } catch (err) {
+      // The cue is observational only. A board query failure must never
+      // suppress a heartbeat or make task delivery depend on analytics.
+      console.warn('[agent-event] task-update-cue prepend skipped:', (err as Error).message);
+      return payload;
+    }
+  }
+
   static async enqueue({
     agentName, podId, type, payload = {}, instanceId = 'default',
   }: EnqueueOptions): Promise<EventDoc> {
@@ -837,9 +895,12 @@ class AgentEventService {
     // Memory-changed cue applies to message-driven events only. Heartbeat
     // already has the HEARTBEAT.md trailer (Phase 2.J) telling agents to
     // pull memory; double-cueing inflates the prompt for no benefit.
-    const eventPayload = (type === 'chat.mention' || type === 'thread.mention')
+    const memoryCuedPayload = (type === 'chat.mention' || type === 'thread.mention')
       ? await this.prependMemoryCue(agentName, instanceId, baseEventPayload)
       : baseEventPayload;
+    const eventPayload = type === 'heartbeat'
+      ? await this.prependTaskUpdateCue(agentName, instanceId, podId, memoryCuedPayload)
+      : memoryCuedPayload;
 
     // Pre-resolve the installation to decide routing. Native-runtime
     // installations skip the external event queue entirely and run the agent
