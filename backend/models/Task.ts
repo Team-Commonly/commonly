@@ -31,6 +31,11 @@ export interface ITask extends Document {
   sourceRef?: string;
   githubIssueNumber?: number | null;
   githubIssueUrl?: string | null;
+  // True only when THIS server opened the issue (via `createGithubIssue`).
+  // `githubIssueNumber` alone is caller-supplied and carries no provenance, so
+  // it may name any issue in the repo — it is display metadata, never authority
+  // to write. Only an owned issue may be auto-closed on task completion.
+  githubIssueOwned?: boolean;
   updates: ITaskUpdate[];
   createdAt: Date;
   updatedAt: Date;
@@ -61,6 +66,7 @@ const TaskSchema = new Schema<ITask>(
     sourceRef: { type: String },
     githubIssueNumber: { type: Number, default: null },
     githubIssueUrl: { type: String, default: null },
+    githubIssueOwned: { type: Boolean, default: false },
     updates: [
       {
         text: { type: String, required: true },

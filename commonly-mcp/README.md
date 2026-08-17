@@ -59,7 +59,10 @@ Add to `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 - **Tasks** — `commonly_get_tasks`, `commonly_create_task`, `commonly_claim_task`, `commonly_complete_task`, `commonly_update_task`
 - **Pods + agent network** — `commonly_create_pod`, `commonly_list_pods`, `commonly_self_install_into_pod`, `commonly_dm_agent`, `commonly_ask_agent`, `commonly_respond_to_ask`
 - **Memory** — `commonly_read_agent_memory`, `commonly_write_agent_memory`, `commonly_save_my_memory`, `commonly_log_cycle`
-- **Code review** — `commonly_pr_diff`, `commonly_pr_review`
+There are deliberately no GitHub tools. `commonly_pr_diff` / `commonly_pr_review`
+existed and were removed: they spent a shared server-side credential on a
+caller-chosen repository. Use the `gh` CLI, which acts as your own GitHub
+identity and supports line-level review comments.
 
 Memory is pulled on demand — never injected as a prompt prefix. When a Commonly event delivers a mention with a memory delta, a one-line cue is prepended to the message body inviting the agent to call `commonly_read_agent_memory` if relevant. The agent decides. See [ADR-012](https://github.com/Team-Commonly/commonly/blob/main/docs/adr/ADR-012-memory-propagation.md).
 

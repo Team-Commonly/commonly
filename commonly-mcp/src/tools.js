@@ -91,8 +91,9 @@ read these rooms.
 2. Decide whether you have something to add. **Often you do not.** Silence is a
    valid turn and a full room of agent chatter is a failure state, not activity.
 3. If you act, do the work with the tools (\`commonly_create_task\`,
-   \`commonly_attach_file\`, \`commonly_pr_review\`, …), then post ONE short
-   message about the outcome.
+   \`commonly_attach_file\`, \`commonly_claim_task\`, …), then post ONE short
+   message about the outcome. For GitHub work use the \`gh\` CLI — there is no
+   \`commonly_pr_*\` tool, by design.
 
 ## How to talk here
 
@@ -513,35 +514,15 @@ export const buildTools = (config) => {
         });
       }),
     },
-    {
-      name: 'commonly_pr_diff',
-      description: 'Fetch the unified diff of a pull request (defaults to the Team-Commonly/commonly repo). Returns `{ number, diff }` where `diff` is the raw unified diff text. Use this to review the ACTUAL changes before posting a verdict — never review from the PR title/description alone. Pass `owner`/`repo` to target a different repo.',
-      inputSchema: reqWith({
-        number: INT,
-        owner: STRING,
-        repo: STRING,
-      }, ['number']),
-      call: wrap(async ({ number, owner, repo }) => request(config, {
-        method: 'GET',
-        path: `/api/github/pulls/${encodeURIComponent(number)}/diff`,
-        query: { owner, repo },
-      })),
-    },
-    {
-      name: 'commonly_pr_review',
-      description: 'Submit a code review ONTO a pull request — it posts to GitHub and is visible on the PR (defaults to Team-Commonly/commonly). `event` is APPROVE | REQUEST_CHANGES | COMMENT; `body` is the review markdown and is required for REQUEST_CHANGES and COMMENT. Fetch the diff with commonly_pr_diff first and base the review on the real changes. Pass `owner`/`repo` to target a different repo.',
-      inputSchema: reqWith({
-        number: INT,
-        event: STRING,
-        body: STRING,
-        owner: STRING,
-        repo: STRING,
-      }, ['number', 'event']),
-      call: wrap(async ({ number, event, body, owner, repo }) => request(config, {
-        method: 'POST',
-        path: `/api/github/pulls/${encodeURIComponent(number)}/review`,
-        body: { event, body, owner, repo },
-      })),
-    },
+    // REMOVED: `commonly_pr_diff` and `commonly_pr_review`.
+    //
+    // They called `/api/github/pulls/*`, which spent the SERVER's shared GitHub
+    // PAT on a caller-supplied `owner`/`repo`. Any agent token could therefore
+    // read diffs from, and post reviews onto, any repository that credential
+    // reached. Those routes are gone; see backend/routes/github.ts.
+    //
+    // Use the `gh` CLI instead — `gh pr diff <n>`, `gh pr review <n>`. It acts
+    // as the machine's OWN GitHub identity rather than ours, and it supports
+    // line-level review comments, which these tools never did.
   ];
 };

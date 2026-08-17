@@ -50,6 +50,23 @@ const taskWriteRateLimitKey = (req: Request): string => {
   return req.ip ? ipKeyGenerator(req.ip) : 'anon';
 };
 
+// Create and claim were limited; complete, updates and patch were not, though
+// all five write to Mongo behind the same auth. CodeQL surfaced only the one
+// this PR happened to touch (`js/missing-rate-limiting` on the complete
+// handler) — fixing that line alone would have left two siblings open for the
+// next diff to rediscover. Same key function as the others, so a caller's
+// budget is per-token rather than per-IP.
+const taskWriteRateLimit = (max: number) => rateLimit({
+  windowMs: 60_000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({
+    error: `rate limit exceeded: ${max} task writes per 60s`,
+  }),
+});
+
 async function resolveAuthor(req: AuthReq): Promise<string> {
   const agentInstance = req.user?.isBot ? (req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName) : null;
   if (agentInstance) return agentInstance;
@@ -199,6 +216,10 @@ router.post('/:podId', rateLimit({
     }
     let ghNumber = githubIssueNumber || null;
     let ghUrl = githubIssueUrl || null;
+    // Provenance, not decoration. `githubIssueNumber` arrives from the caller
+    // and is validated only as a positive integer — it can name ANY issue in
+    // the repo. Only an issue this server opened may later be written to.
+    let ghOwned = false;
     if (createGithubIssue && title && GitHubAppService.isPatConfigured()) {
       try {
         const bodyParts: string[] = [];
@@ -208,6 +229,7 @@ router.post('/:podId', rateLimit({
         const issue = await GitHubAppService.createIssue({ title, body: bodyParts.join('\n') || undefined }) as { number: number; html_url: string };
         ghNumber = issue.number;
         ghUrl = issue.html_url;
+        ghOwned = true;
       } catch (ghErr) {
         console.warn('createGithubIssue failed (non-fatal):', (ghErr as Error).message);
       }
@@ -228,7 +250,7 @@ router.post('/:podId', rateLimit({
       : source || (ghNumber ? 'github' : 'human');
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, githubIssueOwned: ghOwned, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
@@ -260,8 +282,11 @@ router.post('/:podId', rateLimit({
     }
     if (parentTask && GitHubAppService.isPatConfigured()) {
       try {
-        const parent = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId: parentTask }).lean() as { githubIssueNumber?: number } | null;
-        if (parent?.githubIssueNumber) {
+        const parent = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId: parentTask }).lean() as { githubIssueNumber?: number; githubIssueOwned?: boolean } | null;
+        // Same provenance gate as the close path: a parent task's issue number
+        // is caller-supplied too, so commenting on it unowned would let any
+        // caller post attacker-chosen text (`title`) to an arbitrary issue.
+        if (parent?.githubIssueNumber && parent.githubIssueOwned) {
           const depNote = dep ? ` (blocked by ${dep})` : '';
           GitHubAppService.addIssueComment({ issueNumber: parent.githubIssueNumber, comment: `**Sub-task created:** ${taskId} — ${title}${depNote}\nAssigned to: ${assignee || 'unassigned'}` }).catch((e: Error) => console.warn('GH sub-task comment failed:', e.message));
         }
@@ -341,7 +366,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
   }
 });
 
-router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
@@ -351,13 +376,20 @@ router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => 
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const update = { $set: { status: 'done', completedAt: new Date(), ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: new Date() } } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { githubIssueNumber?: number; taskId?: string; updates?: unknown[] } | null;
+    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { githubIssueNumber?: number; githubIssueOwned?: boolean; taskId?: string; updates?: unknown[] } | null;
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
     }
-    if (task.githubIssueNumber && GitHubAppService.isPatConfigured()) {
+    // `githubIssueOwned` gates the write, NOT `githubIssueNumber`. The number is
+    // caller-supplied on create and validated only as a positive integer, so
+    // trusting it here let any agent token close an arbitrary issue in our
+    // repository under our PAT — with `prUrl`, also caller-supplied, appearing
+    // in the closing comment. Legacy tasks predate the flag and therefore no
+    // longer auto-close: failing closed is the correct direction for a write we
+    // cannot prove we own.
+    if (task.githubIssueNumber && task.githubIssueOwned && GitHubAppService.isPatConfigured()) {
       (async () => {
         try {
           const subTasks = await Task.find({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), parentTask: task.taskId }).select('taskId title status prUrl').lean() as Array<{ taskId?: string; title?: string; status?: string; prUrl?: string }>;
@@ -402,7 +434,7 @@ router.post('/:podId/:taskId/complete', auth, async (req: AuthReq, res: Res) => 
   }
 });
 
-router.post('/:podId/:taskId/updates', auth, async (req: AuthReq, res: Res) => {
+router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
@@ -440,7 +472,7 @@ const TASK_STATUS_ALIASES: Record<string, string> = {
   finished: 'done',
 };
 
-router.patch('/:podId/:taskId', auth, async (req: AuthReq, res: Res) => {
+router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;

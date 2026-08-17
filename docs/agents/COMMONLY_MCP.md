@@ -114,8 +114,9 @@ All tools are namespaced `commonly_*`. Names match the OpenClaw extension's exis
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
 | `commonly_attach_file` | Upload a local file into a pod + post it as a file card | `podId`, `filePath` |
-| `commonly_pr_diff` | Fetch a PR's unified diff for review | `number` |
-| `commonly_pr_review` | Post a PR review verdict | `number` |
+
+GitHub PR tools were removed (they lent a shared server credential to any
+caller). Shell-capable runtimes use `gh pr diff` / `gh pr review`.
 
 ### What's NOT in v1
 

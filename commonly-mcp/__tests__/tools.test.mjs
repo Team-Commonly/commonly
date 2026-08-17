@@ -20,14 +20,25 @@ describe('tool registry shape', () => {
     // commonly_log_cycle) so MCP-capable runtimes (Claude Code, Cursor, Codex
     // via wrapper) have the same memory write surface as the openclaw extension.
     // + 1 added by PR #389 (commonly_react_to_message).
-    // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441).
+    // + 2 added for PR code review (commonly_pr_diff, commonly_pr_review, #441)
+    //   and REMOVED again: they spent the server's shared GitHub PAT on a
+    //   caller-supplied owner/repo, so any agent token could review any repo
+    //   that credential reached. Shell-capable runtimes use `gh` instead.
     // + 2 added for agent file access (commonly_list_files, commonly_read_file).
     // + 1 added for agent file upload (commonly_attach_file).
     // + 4 network primitives (list pods, self-install, ask, respond; #773).
     // + 1 orientation tool (commonly_get_started) so a BYO agent connecting
     //   from outside has a model of the place before it acts.
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
-    expect(tools).toHaveLength(29);
+    expect(tools).toHaveLength(27);
+  });
+
+  it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
+    // Named explicitly rather than left to the count above: a future tool
+    // brings the total back to 29 and would silently re-satisfy that assertion
+    // while these two crept back in.
+    expect(byName.commonly_pr_diff).toBeUndefined();
+    expect(byName.commonly_pr_review).toBeUndefined();
   });
 
   it('every tool has name, description, inputSchema, call', () => {
@@ -308,46 +319,13 @@ describe('cross-agent ask tools', () => {
   });
 });
 
-describe('commonly_pr_diff / commonly_pr_review', () => {
-  it('pr_diff GETs /api/github/pulls/:number/diff (number in path)', async () => {
-    const fetchSpy = installFetch(async () => okResponse({ number: 503, diff: 'diff --git ...' }));
-    const result = await byName.commonly_pr_diff.call({ number: 503 });
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://x.example/api/github/pulls/503/diff');
-    expect(init.method).toBe('GET');
-    expect(JSON.parse(result.content[0].text).diff).toBe('diff --git ...');
-  });
-
-  it('pr_diff forwards owner/repo as query params', async () => {
-    const fetchSpy = installFetch(async () => okResponse({ number: 7, diff: '' }));
-    await byName.commonly_pr_diff.call({ number: 7, owner: 'acme', repo: 'widgets' });
-    const [url] = fetchSpy.mock.calls[0];
-    expect(url).toContain('/api/github/pulls/7/diff?');
-    expect(url).toContain('owner=acme');
-    expect(url).toContain('repo=widgets');
-  });
-
-  it('pr_review POSTs event + body to /api/github/pulls/:number/review', async () => {
-    const fetchSpy = installFetch(async () => okResponse({ ok: true, state: 'COMMENTED' }));
-    await byName.commonly_pr_review.call({ number: 503, event: 'COMMENT', body: 'looks good' });
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://x.example/api/github/pulls/503/review');
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({
-      event: 'COMMENT', body: 'looks good', owner: undefined, repo: undefined,
-    });
-  });
-
-  it('pr_review surfaces a backend 400 as MCP isError', async () => {
-    installFetch(async () => ({
-      ok: false, status: 400,
-      text: async () => JSON.stringify({ message: 'event must be one of APPROVE, REQUEST_CHANGES, COMMENT' }),
-    }));
-    const result = await byName.commonly_pr_review.call({ number: 1, event: 'NOPE' });
-    expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).status).toBe(400);
-  });
-});
+// The `commonly_pr_diff` / `commonly_pr_review` suite was deleted with the
+// tools. Their old cases are worth remembering as the shape of the defect:
+// `pr_diff forwards owner/repo as query params` asserted, approvingly, that a
+// caller could aim the server's credential at `acme/widgets`. The test was
+// correct about the behaviour and the behaviour was the bug — which is why the
+// replacement assertion lives in `tool registry shape` above, against the tools
+// being absent, rather than here against how they behaved.
 
 describe('error surfacing — non-HTTP failures', () => {
   it('surfaces a fetch rejection as MCP isError', async () => {
