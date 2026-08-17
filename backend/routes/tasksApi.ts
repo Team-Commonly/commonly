@@ -326,10 +326,11 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const agentId = resolveAgentInstanceId(req);
     const claimedBy = agentId || userId?.toString() || '';
+    const author = await resolveAuthor(req);
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const now = new Date();
-    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: { updates: { text: `Claimed by ${claimedBy}`, author: claimedBy, authorId: userId?.toString() || null, createdAt: now } } };
+    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
     // One CAS, four ways to win: the task is unclaimed; the caller already
     // holds it (renewal); the holder's lease lapsed; or the claim predates
     // leases entirely (claimExpiresAt null) and is older than one lease —
