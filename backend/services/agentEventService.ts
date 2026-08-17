@@ -25,6 +25,12 @@ const {
   buildMemoryDigestBundle,
 } = require('./agentMemoryService');
 
+// At the 10–30 minute heartbeat cadence, cycles' 40-entry retention window
+// represents roughly 7–20 hours of normal activity. A day-old cursor is not
+// a useful delta boundary: it would turn a recovered agent's next heartbeat
+// into an accidental count of historical board churn.
+const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
+
 interface EventDoc {
   _id?: unknown;
   type?: string;
@@ -853,6 +859,9 @@ class AgentEventService {
         null,
       );
       if (!lastCycleAt) return payload;
+      if (Date.now() - lastCycleAt.getTime() > TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS) {
+        return payload;
+      }
 
       // `podId` reaches scheduled heartbeats as the Pod document's ObjectId.
       // Keep that value intact: Mongoose does not cast aggregation pipelines,
