@@ -63,9 +63,21 @@ const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Past the first requeue (10m). The upper bound used to be the 30-minute
- * pending-GC window; #993 removed it, so this number is now a floor plus a
- * judgement about how long a newcomer should wait, not a midpoint.
+ * Floor: past the first requeue (10m), so the alert cannot fire inside a
+ * legitimate retry. That bound is unchanged.
+ *
+ * The ceiling used to be the 30-minute pending-GC window, and #993 removed it.
+ * Left there, the only surviving constraint is ">10", which admits 25 or 60 as
+ * readily as 15 — the value would be right by inertia, with nothing recorded to
+ * stop the next editor moving it.
+ *
+ * So the ceiling is re-derived from the reply distribution instead of from the
+ * collector: every genuine reply measured over 21 days landed inside 107
+ * SECONDS, and the next cluster was 10+ hours. Nothing legitimate lives between
+ * two minutes and ten hours, so waiting beyond the floor buys no accuracy — it
+ * only delays the alert. **Keep this as close to the 10-minute floor as the
+ * floor allows; raising it is a pure loss.** That is a real constraint and it
+ * does not depend on the collector at all.
  */
 export const SILENCE_THRESHOLD_MINUTES = Number(
   process.env.ONBOARDING_SILENCE_THRESHOLD_MINUTES || 15,
