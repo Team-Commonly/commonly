@@ -147,6 +147,25 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakes[0].payload.content).toContain('just thinking out loud here');
   });
 
+  test('a shared room wakes every explicitly opted-in installation', async () => {
+    mockPod('chat', ['user-1', 'seat-a', 'seat-b', 'seat-c']);
+    mockInstallations([
+      install('seat-a', { optIn: true }),
+      install('seat-b', { optIn: true }),
+      install('seat-c'),
+    ]);
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'team update', id: 'msg-shared' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(res.woken).toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a', 'seat-b']);
+  });
+
   test('default is OFF: installs without the flag are never woken', async () => {
     mockInstallations([install('seat-a'), install('seat-b')]);
 
@@ -249,9 +268,9 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakeCalls()).toHaveLength(0);
   });
 
-  test('a historic opt-in is disabled as soon as its chat becomes shared', async () => {
-    // Config was stamped while the room was personal; another human joining
-    // must switch this delivery path to mention-only without reinstalling.
+  test('a historic opt-in continues waking after its chat becomes shared', async () => {
+    // The installation setting is explicit and revertible. A later member
+    // changes who may claim, not whether this opted-in agent wakes.
     mockPod('chat', ['user-1', 'seat-a', 'user-2']);
     mockInstallations([install('seat-a', { optIn: true })]);
 
@@ -262,7 +281,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
       username: 'alice',
     });
 
-    expect(res.woken).toEqual([]);
-    expect(wakeCalls()).toHaveLength(0);
+    expect(res.woken).toEqual(['seat-a']);
+    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a']);
   });
 });

@@ -5,7 +5,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 
-describe('AgentInstallation wake-policy install boundary', () => {
+describe('AgentInstallation wake-on-message opt-in', () => {
   let mongoServer;
   let owner;
   let guide;
@@ -40,7 +40,7 @@ describe('AgentInstallation wake-policy install boundary', () => {
     config: { wakeOnMessage: { enabled: true } },
   });
 
-  test('preserves Guide wake-on-message only for a personal chat', async () => {
+  test('preserves an explicit opt-in for a personal chat', async () => {
     const pod = await Pod.create({
       name: 'My Workspace',
       type: 'chat',
@@ -54,7 +54,7 @@ describe('AgentInstallation wake-policy install boundary', () => {
     expect(installation.config.get('wakeOnMessage')).toEqual({ enabled: true });
   });
 
-  test('normalizes the same manifest opt-in off before it reaches a shared chat row', async () => {
+  test('preserves the same explicit opt-in for a shared, bot-heavy chat', async () => {
     const teammate = await User.create({ username: 'teammate', email: 'teammate@example.com', password: 'placeholder' });
     const pod = await Pod.create({
       name: 'Project',
@@ -66,10 +66,10 @@ describe('AgentInstallation wake-policy install boundary', () => {
     await installGuide(pod._id);
 
     const installation = await AgentInstallation.findOne({ agentName: 'guide', podId: pod._id });
-    expect(installation.config.get('wakeOnMessage')).toEqual({ enabled: false });
+    expect(installation.config.get('wakeOnMessage')).toEqual({ enabled: true });
   });
 
-  test('keeps the install but fails closed if it cannot load the pod shape', async () => {
+  test('does not read pod shape before preserving the installation setting', async () => {
     const pod = await Pod.create({
       name: 'My Workspace',
       type: 'chat',
@@ -83,7 +83,8 @@ describe('AgentInstallation wake-policy install boundary', () => {
     await installGuide(pod._id);
 
     const installation = await AgentInstallation.findOne({ agentName: 'guide', podId: pod._id });
-    expect(installation.config.get('wakeOnMessage')).toEqual({ enabled: false });
+    expect(installation.config.get('wakeOnMessage')).toEqual({ enabled: true });
+    expect(lookup).not.toHaveBeenCalled();
     lookup.mockRestore();
   });
 });
