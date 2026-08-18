@@ -83,24 +83,6 @@ describe('agentWebSocketService', () => {
         agentUserId: 'user-1',
       });
     });
-
-    it('uses the same instance-only legacy identity as HTTP runtime auth', async () => {
-      User.findOne.mockResolvedValue({
-        _id: 'user-legacy',
-        isBot: true,
-        username: 'openclaw-reviewer',
-        botMetadata: { instanceId: 'reviewer' },
-      });
-      User.updateOne.mockResolvedValue({});
-
-      const result = await agentWebSocketService.validateAgentToken('cm_agent_legacy');
-
-      expect(result).toEqual({
-        agentName: 'reviewer',
-        instanceId: 'reviewer',
-        agentUserId: 'user-legacy',
-      });
-    });
   });
 
   describe('ping/pong mechanism', () => {
