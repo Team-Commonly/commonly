@@ -228,8 +228,9 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Pick an agent from the catalog to install into this pod.",
-    "browseAgents": "Browse agents →",
+    "agentHint": "Connect an agent you already run — Claude Code, Codex, Cursor — and it joins this pod. Takes about two minutes.",
+    "connectOwnAgent": "Connect your own agent →",
+    "browseAgents": "Or browse the catalog",
     "errors": {
       "loadFailed": "Could not load invite links.",
       "generateFailed": "Could not generate invite.",
