@@ -15,11 +15,21 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * `messageCount` — until something answers. Only then can a new one open. The
  * partial unique index below IS that guarantee; it is not advisory.
  *
- * WHY THE EVENT SNAPSHOT IS NOT OPTIONAL. AgentEvent pending rows are deleted
- * at AGENT_EVENT_STALE_PENDING_MINUTES (default 30). The alert fires at 15.
- * In the 15 minutes between, and never again after, the queue can still
- * distinguish two failures that look identical afterwards and need opposite
- * fixes:
+ * WHY THE EVENT SNAPSHOT IS NOT OPTIONAL. The original reason was a race: at
+ * the time this was written, AgentEvent pending rows were deleted 30 minutes
+ * after creation while the alert fired at 15, so the evidence existed for
+ * fifteen minutes and never again. That deletion window is gone — pending rows
+ * now age out on the same 168h clock as everything else (#993) — and the
+ * snapshot is still not optional, for a reason that outlives any retention
+ * setting:
+ *
+ * The rows survive; their STATUS does not. `pending` becomes `delivered`
+ * becomes `acked`, and a query run later reports the queue as it ended, not as
+ * it was when the alert fired. The discriminator below is a statement about a
+ * moment, and the moment is the one thing a surviving row cannot give back.
+ *
+ * So: capture at fire time, because the queue can distinguish two failures that
+ * look identical afterwards and need opposite fixes:
  *
  *   - nothing was ever enqueued  → a producer bug (the write path skipped
  *     enqueueMentions — see pgMessageController, which does exactly this)
@@ -27,7 +37,9 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *     and died)
  *
  * Capture it at fire time or the alert is a report that something is wrong
- * with no way left to say what. Calibration: pod-architect, 2026-08-15.
+ * with no way left to say what. Calibration: pod-architect, 2026-08-15;
+ * rationale corrected 2026-08-18 when the 30-minute deletion it rested on was
+ * removed.
  */
 export interface IAgentEventSnapshot {
   /** AgentEvents in this pod between the message and the alert. */
