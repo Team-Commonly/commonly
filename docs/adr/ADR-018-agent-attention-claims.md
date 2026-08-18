@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Proposed — awaiting Sam's ratification and agent-staff review
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
