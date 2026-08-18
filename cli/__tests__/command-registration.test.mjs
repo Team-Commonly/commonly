@@ -1,12 +1,19 @@
 /**
  * Command registration smoke.
  *
- * Why this file exists: `registerAgent` builds its option list at module-eval
- * time, and every other suite imports `performRun` (or a sibling) directly —
- * so nothing in 302 passing tests ever ran the code that wires the commands up.
- * A `.option()` whose help string interpolated an unimported constant threw
- * `ReferenceError` on the first line of `commonly`, with the whole suite green.
- * On this fleet that is a crash-loop on restart, not a bad error message.
+ * Why this file exists: `registerAgent` is a function (`agent.js:1373`) and
+ * every `.option()` call sits INSIDE it, so the option list — and the template
+ * literals in its help strings — is built when the CLI calls it, not when the
+ * module is imported. Every other suite imports `performRun` (a sibling export
+ * of the same module) directly and never calls `registerAgent`, so nothing in
+ * 302 passing tests ever ran the code that wires the commands up.
+ *
+ * That is precisely why the gap was invisible: a `.option()` whose help string
+ * interpolated an unimported constant threw `ReferenceError` on the first line
+ * of `commonly` while the whole suite stayed green. Module-eval would have been
+ * the safer failure — importing `performRun` would have thrown too, and the 302
+ * would have gone red the moment the bug landed. On this fleet the real thing
+ * is a crash-loop on restart, not a bad error message.
  *
  * The assertions are deliberately shallow. This is a "does the binary come up"
  * probe, not a test of what any flag does — those live next to the behaviour.
