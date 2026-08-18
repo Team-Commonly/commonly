@@ -99,6 +99,53 @@ describe('createCascadeGovernor', () => {
   });
 });
 
+describe('cascade governor — addressed grace', () => {
+  const burn = (gov, n, type) => {
+    for (let i = 0; i < n; i += 1) {
+      gov.admit('pod', 'agent', type);
+      gov.record('pod', 'agent');
+    }
+  };
+
+  it('refuses a broadcast at the cap but still admits a direct mention', () => {
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 3, 'message.posted');
+
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+  });
+
+  it('marks the admission so the caller can say the grace was spent', () => {
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
+    expect(gov.admit('pod', 'agent', 'chat.mention').addressed).toBe(true);
+    expect(gov.admit('pod', 'agent', 'message.posted').addressed).toBe(false);
+  });
+
+  it('is a grace, not an exemption — a mention echo still terminates', () => {
+    // The regression this guards: an unbounded pass for addressed events
+    // restores the A-mentions-B-mentions-A loop the governor exists to kill.
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 5, 'chat.mention');
+
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+  });
+
+  it('a human turn still clears the streak for addressed and broadcast alike', () => {
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
+    burn(gov, 2, 'chat.mention');
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+
+    gov.record('pod', 'human');
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(true);
+  });
+
+  it('an unknown event type is treated as a broadcast, not as addressed', () => {
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 5 });
+    burn(gov, 1, 'message.posted');
+    expect(gov.admit('pod', 'agent', undefined).allowed).toBe(false);
+  });
+});
+
 describe('createClaimKeeper', () => {
   const keeperOpts = (overrides = {}) => ({
     messageId: 'msg-1',
