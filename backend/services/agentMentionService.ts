@@ -697,16 +697,44 @@ const isCollaborativePod = (
 // the target is a non-specialist, the collab-pod cue is added too —
 // see formatCollaborativePodCue above.
 //
-// Final shapes (collab denotes the collaborative-pod cue):
-//   chat.mention + non-specialist + collab → [Pod] [CollabPod] [Collab] [Reply] body
-//   chat.mention + non-specialist + solo   → [Pod] [Collab] [Reply] body
-//   chat.mention + specialist              → [Pod] [Reply] body
-//   thread.mention + non-specialist        → [Pod] [Collab] body
-//   thread.mention + specialist            → [Pod] body
+// `message.posted` (wake-on-message, D8) composes here too. It used to
+// build its own prefix inline, which is why it shipped without the
+// pod-context frame for its whole life: the frame is unconditional for
+// every event type that goes through this builder, and the wake path
+// simply wasn't one of them. That cost a woken agent the podId it needs
+// for commonly_attach_file / commonly_read_file, and — the part that
+// isn't a convenience — the post-as-yourself rule, which is the guard
+// against a turn being misattributed to a human. An event type that
+// composes its own frames is an event type that silently misses the
+// next frame added here, so the fix is routing, not a copied string.
+//
+// The two chat.mention-gated cues stay OFF for wakes, and that is a
+// decision rather than an oversight. Both nudge toward acting — the
+// reply cue says post as soon as the reply is ready, the collab cue
+// says execute it yourself and post the result — while a wake's whole
+// contract is that silence is the default and nobody named you. Their
+// stated gating rationale ("thread.mention posts via a different path",
+// "thread.mention is a different posture") does read as though it would
+// admit message.posted, since a wake reply lands on exactly the primary
+// pod-chat path chat.mention does. Widening them is defensible; it is
+// a behavioural change to the busiest event type we emit, so it wants
+// its own measurement rather than a ride on a missing-frame fix.
+//
+// Final shapes (collab denotes the collaborative-pod cue). [Author] is
+// unconditional and was missing from this table until the wake path was
+// routed through here — the table is the thing people read to decide
+// what a given event type carries, so it is kept exhaustive:
+//   chat.mention + non-specialist + collab → [Pod] [Author] [CollabPod] [Collab] [Reply] body
+//   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] body
+//   chat.mention + specialist              → [Pod] [Author] [Reply] body
+//   thread.mention + non-specialist        → [Pod] [Author] [Collab] body
+//   thread.mention + specialist            → [Pod] [Author] body
+//   message.posted + non-specialist        → [Pod] [Author] [Collab] [Wake] body
+//   message.posted + specialist            → [Pod] [Author] [Wake] body
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
-  eventType: 'chat.mention' | 'thread.mention',
+  eventType: 'chat.mention' | 'thread.mention' | 'message.posted',
   targetAgentName: string,
   collaborativePod: boolean,
   // Required, not defaulted: an omitted `author` is what makes the
@@ -732,6 +760,12 @@ const buildContentForTarget = (
   }
   if (eventType === 'chat.mention') {
     frames.push(formatMentionReplyCue(podId));
+  }
+  // Last before the body on purpose: this is the frame that tells the
+  // agent why it is awake at all, and proximity to the body is the one
+  // ordering lever we have.
+  if (eventType === 'message.posted') {
+    frames.push(WAKE_ON_MESSAGE_FRAME);
   }
   return `${frames.join('\n')}\n\n${rawContent}`;
 };
@@ -886,6 +920,12 @@ const enqueueWakeOnMessage = async ({
   }
   if (podRow?.type && DM_POD_TYPES.has(podRow.type)) return woken;
 
+  // Truthful inputs, not a hardcoded false: the collab cue is held off
+  // wakes by its own event-type gate inside buildContentForTarget, so
+  // passing the real value here means widening that gate later is a
+  // one-line change instead of a hunt for a call site that lied.
+  const collaborativePod = isCollaborativePod(podRow?.type, installations);
+
   const senderKey = sender?.isBot
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
     : null;
@@ -906,7 +946,14 @@ const enqueueWakeOnMessage = async ({
         type: 'message.posted',
         payload: {
           messageId: authorFrame.messageId,
-          content: `${formatAuthorFrame(authorFrame.username, authorFrame.createdAt, authorFrame.messageId)}\n${WAKE_ON_MESSAGE_FRAME}\n\n${rawContent}`,
+          content: buildContentForTarget(
+            podId,
+            rawContent,
+            'message.posted',
+            agentName,
+            collaborativePod,
+            authorFrame,
+          ),
           userId,
           username,
           source,
