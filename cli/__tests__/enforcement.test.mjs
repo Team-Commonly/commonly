@@ -15,12 +15,15 @@
 import { jest } from '@jest/globals';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
   createClaimHandicap,
   createClaimKeeper,
   peerHoldsFrame,
+  resolveCascadeSettings,
   splitForChat,
   deliverChatReply,
 } from '../src/lib/enforcement.js';
@@ -465,5 +468,95 @@ describe('CLAIMABLE_EVENT_TYPES', () => {
     expect(CLAIMABLE_EVENT_TYPES.has('first_contact')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('heartbeat')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('agent.ask')).toBe(false);
+  });
+});
+
+
+describe('resolveCascadeSettings', () => {
+  // Pass an explicit empty env everywhere: reading the real process.env would
+  // make these pass or fail depending on the shell that ran them, which is the
+  // one thing a config test must not do.
+  const noEnv = {};
+  const silent = () => {};
+
+  test('with nothing set, resolves the shipped defaults', () => {
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({
+      cap: 3,
+      addressedGrace: 2,
+      resetMs: 10 * 60 * 1000,
+    });
+    // Pinned against CASCADE_DEFAULTS too, so a default changed in one place
+    // and not the other is a failure rather than a silent drift.
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({ ...CASCADE_DEFAULTS });
+  });
+
+  test('env vars are read, and an override outranks them', () => {
+    const env = {
+      [CASCADE_ENV_VARS.cap]: '5',
+      [CASCADE_ENV_VARS.addressedGrace]: '0',
+      [CASCADE_ENV_VARS.resetMs]: '60000',
+    };
+    expect(resolveCascadeSettings({ env, warn: silent })).toEqual({
+      cap: 5, addressedGrace: 0, resetMs: 60000,
+    });
+    expect(resolveCascadeSettings({ env, overrides: { cap: 9 }, warn: silent }).cap).toBe(9);
+  });
+
+  test('zero is honoured, not treated as absent', () => {
+    // The whole point of the grace knob: 0 restores pre-#973 behaviour without
+    // a revert. A `|| default` style resolver would silently ignore it.
+    const settings = resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.addressedGrace]: '0' }, warn: silent,
+    });
+    expect(settings.addressedGrace).toBe(0);
+    const governor = createCascadeGovernor({ ...settings, now: () => 1000 });
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    expect(governor.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+  });
+
+  test('a garbage override falls back and warns, exactly like a garbage env var', () => {
+    // The regression this exists for: overrides used to skip validation, so
+    // `--cascade-cap abc` reached the governor as NaN. `streak < NaN` is false
+    // for every streak, so the seat silently refused every agent turn forever.
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: noEnv,
+      overrides: { cap: Number('abc') },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings.cap).toBe(CASCADE_DEFAULTS.cap);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('--cascade-cap');
+
+    // And the value that reaches the governor still admits a fresh pod, which
+    // is the behaviour NaN destroyed.
+    expect(createCascadeGovernor(settings).admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+  });
+
+  test('out-of-range and non-integer values fall back, naming their source', () => {
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: {
+        [CASCADE_ENV_VARS.cap]: '-1',
+        [CASCADE_ENV_VARS.addressedGrace]: '1.5',
+        [CASCADE_ENV_VARS.resetMs]: '10',
+      },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings).toEqual({ ...CASCADE_DEFAULTS });
+    expect(warnings).toHaveLength(3);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.cap);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.addressedGrace);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.resetMs);
+  });
+
+  test('an empty-string env var is absence, not a zero', () => {
+    // Unset and exported-empty look identical in a shell launch script; the
+    // second must not silently become cap=0 and mute the seat.
+    expect(resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.cap]: '  ' }, warn: silent,
+    }).cap).toBe(CASCADE_DEFAULTS.cap);
   });
 });

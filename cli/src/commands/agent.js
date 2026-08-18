@@ -41,6 +41,8 @@ import {
 } from '../lib/spawn-retry.js';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
@@ -48,6 +50,7 @@ import {
   createClaimKeeper,
   deliverChatReply,
   peerHoldsFrame,
+  resolveCascadeSettings,
 } from '../lib/enforcement.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
@@ -709,9 +712,12 @@ export const performRun = ({
   clearIntervalImpl = clearInterval,
   retryJitterRatio,
   claimLeaseSeconds = 90,
-  cascadeCap = 3,
-  cascadeAddressedGrace = 2,
-  cascadeResetMs = 10 * 60 * 1000,
+  // Undefined means "not overridden" — resolveCascadeSettings falls back to
+  // the env var, then to the shipped default. Passing a value here still
+  // wins, which is how the tests pin a cap of 1.
+  cascadeCap,
+  cascadeAddressedGrace,
+  cascadeResetMs,
   chatCharLimit = 400,
   maxChatChunks = 3,
   claimYieldDelayMs = 3000,
@@ -730,11 +736,15 @@ export const performRun = ({
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
-  const cascadeGovernor = createCascadeGovernor({
-    cap: cascadeCap,
-    addressedGrace: cascadeAddressedGrace,
-    resetMs: cascadeResetMs,
+  const cascadeSettings = resolveCascadeSettings({
+    overrides: {
+      cap: cascadeCap,
+      addressedGrace: cascadeAddressedGrace,
+      resetMs: cascadeResetMs,
+    },
+    warn: (message) => log(`cascade config: ${message}`),
   });
+  const cascadeGovernor = createCascadeGovernor(cascadeSettings);
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
@@ -1744,6 +1754,9 @@ Docs:
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
     .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
+    .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
+    .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
+    .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
       if (!record) {
@@ -1797,6 +1810,12 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
+        // Absent flag stays undefined so the env var still gets its turn;
+        // a present-but-unparseable one becomes NaN, which resolveCascadeSettings
+        // rejects and warns about like any other bad value.
+        cascadeCap: opts.cascadeCap === undefined ? undefined : Number(opts.cascadeCap),
+        cascadeAddressedGrace: opts.cascadeGrace === undefined ? undefined : Number(opts.cascadeGrace),
+        cascadeResetMs: opts.cascadeReset === undefined ? undefined : Number(opts.cascadeReset),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.

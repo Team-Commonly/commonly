@@ -64,6 +64,99 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
 
 // ── cascade governor ────────────────────────────────────────────────────────
 
+export const CASCADE_DEFAULTS = Object.freeze({
+  cap: 3,
+  addressedGrace: 2,
+  resetMs: 10 * 60 * 1000,
+});
+
+// Env names, exported so the CLI help text and the tests quote the same
+// strings rather than two copies that can drift apart.
+export const CASCADE_ENV_VARS = Object.freeze({
+  cap: 'COMMONLY_CASCADE_CAP',
+  addressedGrace: 'COMMONLY_CASCADE_ADDRESSED_GRACE',
+  resetMs: 'COMMONLY_CASCADE_RESET_MS',
+});
+
+// Flag spelling per key, for warning messages. A derived string
+// (key.replace(...)) would silently produce a flag that does not exist the
+// first time a key is renamed; this fails at the same moment the flag does.
+const CASCADE_FLAGS = {
+  cap: '--cascade-cap',
+  addressedGrace: '--cascade-grace',
+  resetMs: '--cascade-reset',
+};
+
+const CASCADE_BOUNDS = {
+  // 0 is meaningful, not a mistake: it refuses every agent-triggered turn in
+  // the pod, which is the "this room is on fire, mute the cascades" setting.
+  cap: { min: 0, max: 1000, integer: true },
+  // 0 restores the pre-#973 behaviour exactly. That is the point of the knob —
+  // the grace can be taken back on one seat, in one restart, without a revert
+  // and without a source edit.
+  addressedGrace: { min: 0, max: 1000, integer: true },
+  resetMs: { min: 1000, max: 24 * 60 * 60 * 1000, integer: true },
+};
+
+/**
+ * Resolve the three governor constants from (in precedence order) an explicit
+ * override, an environment variable, then the shipped default.
+ *
+ * These were literals in `run()`'s signature, reachable only by editing source
+ * — on a fleet whose CLI is a symlink into a live worktree, so "retune the
+ * cap" meant an edit plus a restart of every seat, with nothing recording
+ * which value ran. The sibling dampener one service over
+ * (AGENT_ASK_RATE_LIMIT_PER_HOUR) has always been env-tunable; this is
+ * copying that, not inventing it.
+ *
+ * An unparseable or out-of-range value warns and falls back rather than
+ * throwing. A seat that crash-loops on a typo'd env var is a worse outcome
+ * than one running the default — but a silent fallback would hide the typo,
+ * so it is loud.
+ *
+ * Overrides are validated on the SAME path as env values, deliberately. An
+ * earlier draft trusted them and passed them straight through, which made
+ * `--cascade-cap abc` resolve to NaN — and `streak < NaN` is false for every
+ * streak, so a typo at the command line would have silently refused every
+ * agent-triggered turn the seat ever saw. The louder source is not the safer
+ * one; there is one validator because there is one way to be wrong.
+ */
+export const resolveCascadeSettings = ({
+  env = process.env,
+  overrides = {},
+  warn = (msg) => console.warn(msg),
+} = {}) => {
+  const resolved = {};
+  for (const key of Object.keys(CASCADE_DEFAULTS)) {
+    const bounds = CASCADE_BOUNDS[key];
+    const fallback = CASCADE_DEFAULTS[key];
+    const override = overrides[key];
+    const hasOverride = override !== undefined && override !== null;
+    const raw = hasOverride ? override : env?.[CASCADE_ENV_VARS[key]];
+    // Names the source in the warning, so "which one did I get wrong" is
+    // answered by the message rather than by bisecting the launch command.
+    const label = hasOverride ? CASCADE_FLAGS[key] : CASCADE_ENV_VARS[key];
+
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      resolved[key] = fallback;
+      continue;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || (bounds.integer && !Number.isInteger(parsed))) {
+      warn(`${label}='${raw}' is not an integer — using ${fallback}`);
+      resolved[key] = fallback;
+      continue;
+    }
+    if (parsed < bounds.min || parsed > bounds.max) {
+      warn(`${label}=${parsed} is outside [${bounds.min}, ${bounds.max}] — using ${fallback}`);
+      resolved[key] = fallback;
+      continue;
+    }
+    resolved[key] = parsed;
+  }
+  return resolved;
+};
+
 /**
  * Per-pod damping of agent→agent retrigger chains.
  *
@@ -85,9 +178,9 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
  * actually completed. Human-triggered turns are always admitted.
  */
 export const createCascadeGovernor = ({
-  cap = 3,
-  addressedGrace = 2,
-  resetMs = 10 * 60 * 1000,
+  cap = CASCADE_DEFAULTS.cap,
+  addressedGrace = CASCADE_DEFAULTS.addressedGrace,
+  resetMs = CASCADE_DEFAULTS.resetMs,
   now = Date.now,
 } = {}) => {
   const pods = new Map(); // podId -> { streak, lastAgentTurnAt }

@@ -1631,6 +1631,46 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
   });
 
+  test('cascade cap: the env vars reach the governor, not just the run() params', async () => {
+    // Pins the DELIVERY, not the constant. Extracting the literals into a
+    // resolver is worth nothing if the run loop keeps its own copy — and a
+    // resolver-only unit test cannot tell the difference. Same scenario as the
+    // test above, with the two values arriving from the environment instead.
+    const prior = {
+      cap: process.env.COMMONLY_CASCADE_CAP,
+      grace: process.env.COMMONLY_CASCADE_ADDRESSED_GRACE,
+    };
+    process.env.COMMONLY_CASCADE_CAP = '1';
+    process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = '0';
+    try {
+      const { post } = makeClient({
+        events: [
+          makeClaimEvent({ _id: 'evt-a' }),
+          makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+        ],
+        messages: [
+          { _id: 'msg-1', isBot: true, self: false },
+          { _id: 'msg-2', isBot: true, self: false },
+        ],
+      });
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith(
+        '/api/agents/runtime/events/evt-b/ack',
+        { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      );
+    } finally {
+      if (prior.cap === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior.cap;
+      if (prior.grace === undefined) delete process.env.COMMONLY_CASCADE_ADDRESSED_GRACE;
+      else process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = prior.grace;
+    }
+  });
+
   test('cascade cap: a directly-addressed seat gets a bounded grace, then is capped too', async () => {
     // The failure this fixes, measured 2026-08-18: a seat took 28 consecutive
     // cap refusals, five of them chat.mention. Peers named it and got silence.
