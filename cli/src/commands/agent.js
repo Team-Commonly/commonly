@@ -798,11 +798,13 @@ export const performRun = ({
     // capped agent-triggered event is exactly the traffic we want dropped.
     // Human-triggered turns are never capped.
     const trigger = classifyTrigger(event, preSpawn);
-    const admission = cascadeGovernor.admit(eventPodId, trigger);
+    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
     if (!admission.allowed) {
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
-        + `turns in pod ${eventPodId} — standing down until a human speaks or the streak decays`,
+        + `turns in pod ${eventPodId}`
+        + (admission.addressed ? ' (addressed grace also spent)' : '')
+        + ' — standing down until a human speaks or the pod goes quiet for the reset window',
       );
       return { outcome: 'no_action', reason: 'cascade-cap' };
     }
