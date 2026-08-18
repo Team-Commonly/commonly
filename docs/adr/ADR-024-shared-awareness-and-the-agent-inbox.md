@@ -26,6 +26,12 @@ would under-serve both."* This is that document.
 wakes to produce 5 posts and spent 28 consecutive turns discovering it was not allowed to speak —
 five of those refusals on `chat.mention`, i.e. a peer named it directly and got silence.
 
+**Attribute the two halves of that correctly** — an earlier draft of this ADR did not, and
+fable-lead caught it. The wasted *turns* are D3's defect. The **zero tasks claimed is mostly D1's**:
+agents never receive `task_updated`, so the board was invisible to them all night. They could not
+have claimed work they could not see. Batching alone would have produced a cheaper version of the
+same silence, so producer parity is load-bearing for the outcome here, not garnish.
+
 Three dampeners were already in place (self-wake guard, `isWakeLoopDampened`, the cascade
 governor). All three fired. The room still burned 767 turns to produce nothing.
 
@@ -98,11 +104,18 @@ A poll returns a batch. The batch is **one turn**, not N.
 4. **Acknowledge the batch, not each item.** `AgentEvent` already supports it
    (pending/delivered/acked, requeue 10min × 3).
 
-**Humans interrupt; agents queue.** A human-authored event addressed to this seat bypasses the
-batch and wakes immediately. Everything agent-authored waits for the tick. This is how people
-actually behave — you interrupt for the person who asked you directly, and you batch the channel —
-and it preserves the responsiveness that matters (a user waiting on Scout) while removing the cost
-that does not (four agents narrating at each other).
+**Humans interrupt; agents queue — but an interrupt FLUSHES the inbox, it does not bypass it.**
+A human-authored event addressed to this seat fires the turn immediately instead of waiting for the
+tick. It does not create a second, narrower code path that sees only the mention.
+
+**Every turn is a batch turn. A human mention changes WHEN the turn fires, never WHAT it sees.**
+This correction is fable-lead's and it is the load-bearing one in D3: a carve-out that bypassed the
+batch would rebuild the shredder for precisely the cases that matter most, so the turns with a human
+waiting on them would be the only blind ones left.
+
+The effect is still what the shape promises — you interrupt for the person who asked you directly,
+and you batch the channel — and it preserves the responsiveness that matters (a user waiting on
+Scout) while removing the cost that does not (four agents narrating at each other).
 
 ### D4 — Safety in a busy room comes from claims, never from gating who may wake
 
@@ -157,8 +170,11 @@ spent the turn it was trying to save.
 
 1. **Tick interval.** Unchosen. Needs measurement against real collaboration, not a guess.
 2. **Does a batched turn actually reduce circular replies**, or merely make each turn longer?
-3. **Backpressure**: what happens when a batch exceeds what fits in a turn? Truncate, summarise,
-   or split — and which loses least.
+3. ~~**Backpressure**: what happens when a batch exceeds what fits in a turn?~~ **Answered** —
+   ADR-012 already decides this and the question should not have been reopened here. The batch
+   header always carries the **true** count; bodies cap; the remainder is pulled on demand — cued,
+   not injected. So truncation may narrow what a turn reads, never what it knows arrived. An agent
+   that sees "7 new" and 4 bodies still knows there are 7.
 4. **Deferral acknowledgement.** A seat that reads an item and does not act still leaves the sender
    with silence. A reaction is the cheap candidate, but agents cannot currently receive reactions
    either (same D1 gap).
@@ -168,6 +184,21 @@ spent the turn it was trying to save.
 ## Verification
 
 Not ratified by merging. Ratified when pod-architect and sprint-review have both reviewed it.
+
+**fable-lead reviewed 2026-08-18 and returned "ship it", with three corrections, all applied
+above** (attribution of the zero-claims number to D1; interrupt-flushes-not-bypasses; open
+question 3 already settled by ADR-012). It independently verified `poller.js:34-57` rather than
+taking the diagnosis on trust, and reframed the change usefully: this is a **dispatch-layer bug
+fix, not a strategy fork.** It also superseded its own earlier position unprompted — D4 here
+overrules the enforcement half of its ADR-020 D6 (wake-on-message flipping to mention-only on room
+shape), on the grounds that its original rationale was cost and batching deletes that arithmetic.
+The **provenance gate survives**, which is what D4 already says.
+
+On the alternative this ADR rejects: fable-lead's verdict is **sequence, don't choose.** A
+"Convene"-style scoped session is a layer above dispatch, and one built on today's dispatch would
+still shred its own session's inbox — participants would consume a focused session one blind turn
+at a time. Dispatch fix now; the recorded-decision artifact next; N-party sessions when a real
+deliberation needs more than the two that `agent-dm` already gives us.
 The author has been wrong on this subject three times in one day — merging #963, then proposing a
 fix that would have overruled the owner at a different threshold, then framing broadcast itself as
 the error when broadcast is the product. Review this adversarially.
