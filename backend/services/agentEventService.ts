@@ -70,7 +70,6 @@ interface DeliveryMeta {
 }
 
 interface GarbageCollectOptions {
-  stalePendingMinutes?: number;
   deliveredRetentionHours?: number;
   failedRetentionHours?: number;
   requeueDeliveredMinutes?: number;
@@ -82,7 +81,6 @@ interface GarbageCollectResult {
   deletedDelivered: number;
   deletedFailed: number;
   totalDeleted: number;
-  stalePendingMinutes: number;
   deliveredRetentionHours: number;
   failedRetentionHours: number;
   requeuedDelivered?: number;
@@ -608,14 +606,12 @@ class AgentEventService {
   }
 
   static async garbageCollect({
-    stalePendingMinutes = Number(process.env.AGENT_EVENT_STALE_PENDING_MINUTES || 30),
     deliveredRetentionHours = Number(process.env.AGENT_EVENT_DELIVERED_RETENTION_HOURS || 168),
     failedRetentionHours = Number(process.env.AGENT_EVENT_FAILED_RETENTION_HOURS || 168),
     requeueDeliveredMinutes = Number(process.env.AGENT_EVENT_REQUEUE_DELIVERED_MINUTES || 10),
     requeueMaxAttempts = Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3),
   }: GarbageCollectOptions = {}): Promise<GarbageCollectResult> {
     const now = Date.now();
-    const stalePendingThreshold = new Date(now - (Math.max(stalePendingMinutes, 1) * 60 * 1000));
     const deliveredThreshold = new Date(now - (Math.max(deliveredRetentionHours, 1) * 60 * 60 * 1000));
     const failedThreshold = new Date(now - (Math.max(failedRetentionHours, 1) * 60 * 60 * 1000));
     const requeueThreshold = new Date(now - (Math.max(requeueDeliveredMinutes, 1) * 60 * 1000));
@@ -695,7 +691,28 @@ class AgentEventService {
     // schedule — once an event is past the `delivered` threshold it's stale
     // whether the agent ever explicitly acked or not.
     const [pendingResult, deliveredResult, failedResult] = await Promise.all([
-      AgentEvent.deleteMany({ status: 'pending', createdAt: { $lt: stalePendingThreshold } }),
+      // #993: this used to run on a 30-minute `stalePendingThreshold`, which put
+      // it AHEAD of the retry lifecycle rather than after it. The requeue pass
+      // above sets `status` but not `createdAt`, so an event it had just rescued
+      // walked straight into this delete carrying its original age — rescue and
+      // destruction in the same Promise.all, keyed on different fields. Measured
+      // over one hour: 38 pending events destroyed, with the log pairing the two
+      // per run (11:00 requeued 17, then deleted 17).
+      //
+      // Pending now ages out on the same horizon as everything else. That is not
+      // just "longer": it has to be the SAME instant, because any shorter pending
+      // window re-opens the race — against an 18-minute retry ceiling, against a
+      // seat restart, against a quota outage that resets at a wall-clock hour.
+      // Giving the lifecycle room also makes the cap reachable for the first
+      // time, so cap-exhausted events reach `failed` with a reason instead of
+      // vanishing (which is the dead-letter surface this had no other way to get).
+      //
+      // AGENT_EVENT_STALE_PENDING_MINUTES is deliberately NOT read here any more.
+      // It still governs the admin dashboard's stale-pending COUNT
+      // (routes/admin/agentEvents.ts), where "pending for over 30 minutes" is a
+      // useful thing to look at — and is now actionable, because seeing it no
+      // longer means the row is about to be destroyed.
+      AgentEvent.deleteMany({ status: 'pending', createdAt: { $lt: deliveredThreshold } }),
       AgentEvent.deleteMany({ status: { $in: ['delivered', 'acked'] }, createdAt: { $lt: deliveredThreshold } }),
       AgentEvent.deleteMany({ status: 'failed', createdAt: { $lt: failedThreshold } }),
     ]) as Array<{ deletedCount?: number }>;
@@ -709,7 +726,6 @@ class AgentEventService {
       deletedDelivered,
       deletedFailed,
       totalDeleted: deletedPending + deletedDelivered + deletedFailed,
-      stalePendingMinutes: Math.max(stalePendingMinutes, 1),
       deliveredRetentionHours: Math.max(deliveredRetentionHours, 1),
       failedRetentionHours: Math.max(failedRetentionHours, 1),
       requeuedDelivered,

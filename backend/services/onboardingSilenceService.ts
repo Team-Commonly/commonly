@@ -22,10 +22,15 @@ import { HUMAN_FILTER, BOT_FILTER } from './userClassification';
  *   than from the observed reply spread, because the spread is a sample of a
  *   system that mostly worked and the constants stay true when the sample
  *   changes. AGENT_EVENT_REQUEUE_DELIVERED_MINUTES is 10, so anything under
- *   ~12 fires inside a legitimate retry; AGENT_EVENT_STALE_PENDING_MINUTES is
- *   30, past which the evidence is deleted along with the answer. 15 sits
- *   between them. (Observed replies agree: every genuine one in 21 days landed
- *   inside 107 seconds, and the next cluster was 10+ hours.)
+ *   ~12 fires inside a legitimate retry. The upper bracket was
+ *   AGENT_EVENT_STALE_PENDING_MINUTES at 30, past which the evidence used to be
+ *   deleted along with the answer; 15 sat between the two. That upper bracket
+ *   is gone as of 2026-08-18 — pending rows now age out on the 168h clock
+ *   (#993) — so only the lower constraint still derives this number, and 15 is
+ *   now a floor plus a judgement about how long a newcomer should wait, not a
+ *   midpoint. Re-deriving it from the constants alone will no longer reproduce
+ *   it. (Observed replies agree with the value: every genuine one in 21 days
+ *   landed inside 107 seconds, and the next cluster was 10+ hours.)
  *
  * - **Not idle-gated.** "Fire only if the user has since gone idle" would be
  *   measured by `lastActive`, which over-counts — V2PodChat polls every 60s,
@@ -57,7 +62,23 @@ import { HUMAN_FILTER, BOT_FILTER } from './userClassification';
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Past the first requeue (10m), inside the pending-GC window (30m). */
+/**
+ * Floor: past the first requeue (10m), so the alert cannot fire inside a
+ * legitimate retry. That bound is unchanged.
+ *
+ * The ceiling used to be the 30-minute pending-GC window, and #993 removed it.
+ * Left there, the only surviving constraint is ">10", which admits 25 or 60 as
+ * readily as 15 — the value would be right by inertia, with nothing recorded to
+ * stop the next editor moving it.
+ *
+ * So the ceiling is re-derived from the reply distribution instead of from the
+ * collector: every genuine reply measured over 21 days landed inside 107
+ * SECONDS, and the next cluster was 10+ hours. Nothing legitimate lives between
+ * two minutes and ten hours, so waiting beyond the floor buys no accuracy — it
+ * only delays the alert. **Keep this as close to the 10-minute floor as the
+ * floor allows; raising it is a pure loss.** That is a real constraint and it
+ * does not depend on the collector at all.
+ */
 export const SILENCE_THRESHOLD_MINUTES = Number(
   process.env.ONBOARDING_SILENCE_THRESHOLD_MINUTES || 15,
 );

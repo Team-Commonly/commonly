@@ -94,8 +94,11 @@ const logEpisode = (e: SilenceEpisodeSummary, delivery: string): void => {
 };
 
 /**
- * The one inference this service makes, and it is only possible before the
- * 30-minute pending-GC deletes the evidence.
+ * The one inference this service makes. It used to be possible only before the
+ * 30-minute pending-GC deleted the evidence; #993 removed that deletion, and
+ * the inference is still time-bound for two reasons that outlast it — rows age
+ * out at 168h, and `status` moves (`pending` → `delivered` → `acked`) so a
+ * later query reports the queue as it ended rather than as it was.
  *
  * `never-enqueued` and `enqueued-never-answered` need opposite fixes — a
  * producer bug in the write path versus a runtime that did not run — and after
