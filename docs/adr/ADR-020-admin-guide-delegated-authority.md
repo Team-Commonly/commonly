@@ -104,6 +104,20 @@ a workspace gains a second human, the kernel auto-opens the user↔Guide `agent-
 **approval cards migrate there** — owner-only decisions don't belong in a room teammates
 read. Admin powers never fire from shared pods (D1 surfaces + prompt-injection scope).
 
+> **Scope boundary — read before implementing against this decision.** D6 governs where
+> the *Guide's admin authority* and *approval cards* live. It says nothing about whether
+> ordinary agents may respond without being mentioned; **that is ADR-018 D8**
+> (wake-on-message is a per-install setting, "a setting, not a ratchet", and claims are
+> what make a busy room safe — all wake, one acts).
+>
+> Note also that "1:1-shaped" here counts **humans**, not members: a workspace with one
+> human and several agents is still single-human.
+>
+> This note exists because PR #963 read D6 as the governing rule for wake policy, gated
+> wake-on-message on `members.length <= 2`, and demoted every multi-agent workspace to
+> mention-only in production. ADR-018 was the governing document but sat at Proposed
+> while this one was Accepted. Fixed in #967; ADR-018 ratified in #968.
+
 ### D7 — First slice (agile order)
 One end-to-end line, forcing each primitive into existence minimally: message `payload`
 column → ADR-017 card render → approve action → Guide executes `create_pod` with
