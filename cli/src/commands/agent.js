@@ -1089,8 +1089,26 @@ export const performRun = ({
               circuitOpen: retry.circuitOpen,
               eventId: event._id,
             });
-            log(`[${event.type}] ${wrapped.message}`);
-            onError?.(wrapped);
+            // ONE emission, not two. `wrapped.message` already opens with the
+            // event type, so the log copy added a second prefix and a second
+            // line of identical text into the same merged stream — enough that
+            // `grep -c 'session limit'` returned 8 for 4 failures, and a reader
+            // counting hits per event id saw 2 and inferred two deliveries.
+            // On 2026-08-18 that count pointed at the wrong cause for #993:
+            // two deliveries per event puts `attempts` at 2 and the requeue cap
+            // one step away. It did not decide anything — the cap was ruled out
+            // from the DB, where a capped event would have left a `failed` row
+            // and none existed — but it corroborated the wrong theory, and the
+            // doubling had to be spotted by hand before the count could be
+            // discounted. A log that inflates is worse than one that is silent,
+            // because it argues.
+            //
+            // Routed to the error channel when a caller provides one, and to
+            // the log when it doesn't, so neither contract loses the failure:
+            // an embedder that passes no `onError` still sees it, and `agent
+            // run` — which always passes one — stops printing it twice.
+            if (onError) onError(wrapped);
+            else log(`[${event.type}] ${wrapped.message}`);
             break;
           }
           // Only a completed model turn proves the local runtime and delivery
@@ -1306,6 +1324,24 @@ export const performDetach = async ({
 
   return { backend: backendResult, localCleaned: true };
 };
+
+/**
+ * Every line a seat emits lands in one file, because the fleet is launched as
+ * `nohup commonly agent run <name> > <log> 2>&1`. Until now none of those lines
+ * carried a time.
+ *
+ * That is not a cosmetic gap. On 2026-08-18 a fleet-wide quota stall destroyed
+ * 38 queued events (#993), and the seat log was the ONLY surviving trace —
+ * the kernel rows were deleted, so nothing else recorded that those turns had
+ * been attempted. The log records `(4 consecutive)` and `next probe in 2.0m`
+ * and gives no way to place either on a clock: the investigation had to date
+ * events by decoding ObjectId prefixes instead, because the file that named
+ * them could not say when.
+ *
+ * ISO-8601 so stamps sort lexically, diff cleanly, and line up with the
+ * kernel's own timestamps without conversion.
+ */
+const stamp = () => new Date().toISOString();
 
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
@@ -1656,10 +1692,10 @@ Docs:
           record = await bootstrapAgentRecordFromEnv({
             name,
             adapterOverride: opts.adapter || null,
-            log: (line) => console.log(`[${name}] ${line}`),
+            log: (line) => console.log(`${stamp()} [${name}] ${line}`),
           });
         } catch (err) {
-          console.error(err.message);
+          console.error(`${stamp()} [${name}] ${err.message}`);
           process.exit(1);
         }
         if (record) {
@@ -1693,8 +1729,21 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
-        log: (line) => console.log(`[${name}] ${line}`),
-        onError: (err) => console.error(`[${name}] ${err.message}`),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        // Both sinks are stamped, and both must be. A spawn failure is emitted
+        // through `log` AND `onError` — they serve different contracts, the
+        // narrative line keeping the event-type prefix and the error channel
+        // being what an embedder hooks — so each failure already prints twice
+        // into this one merged stream.
+        //
+        // Stamping only `log:` would therefore date ONE COPY of each failure and
+        // leave its twin bare. That is worse to read than no stamps at all: a
+        // stamped line beside an identical unstamped one looks like two events
+        // at two times, so the artifact that already inflates the count would
+        // start inflating the timeline too. Stamped on both, the pair collapses
+        // — same message, same millisecond, one event — where `grep -c
+        // 'session limit'` previously returned 8 for 4 failures.
+        onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
       });
 
       process.on('SIGINT', () => {
