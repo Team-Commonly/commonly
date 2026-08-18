@@ -224,8 +224,9 @@ export async function maybeFireWelcomeWake({
         // `pod.first_message` would be silently dropped by every
         // already-deployed wrapper — the #611 failure mode. (The boundary is
         // the branch, not the set: extractPrompt also handles heartbeat,
-        // agent.ask and agent.ask.response outside PROMPT_EVENT_TYPES.) An additive payload flag costs nothing and works on
-        // drivers shipped before this existed.
+        // agent.ask and agent.ask.response outside PROMPT_EVENT_TYPES.) An
+        // additive payload flag costs nothing and works on drivers shipped
+        // before this existed.
         type: 'chat.mention',
         payload: {
           messageId: messageId ? String(messageId) : undefined,
