@@ -1712,13 +1712,19 @@ Docs:
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
-        // Both sinks are stamped, and both must be: a spawn failure is emitted
-        // through `log` AND `onError` (they serve different contracts — the
-        // narrative line keeps the event-type prefix, the error channel is what
-        // an embedder hooks). Stamping only the first would leave every FAILURE
-        // line undated, which is the exact class the stamps exist for. It also
-        // makes the pair legible: two identical messages at the same
-        // millisecond read as one event, where before `grep -c` counted two.
+        // Both sinks are stamped, and both must be. A spawn failure is emitted
+        // through `log` AND `onError` — they serve different contracts, the
+        // narrative line keeping the event-type prefix and the error channel
+        // being what an embedder hooks — so each failure already prints twice
+        // into this one merged stream.
+        //
+        // Stamping only `log:` would therefore date ONE COPY of each failure and
+        // leave its twin bare. That is worse to read than no stamps at all: a
+        // stamped line beside an identical unstamped one looks like two events
+        // at two times, so the artifact that already inflates the count would
+        // start inflating the timeline too. Stamped on both, the pair collapses
+        // — same message, same millisecond, one event — where `grep -c
+        // 'session limit'` previously returned 8 for 4 failures.
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
       });
 
