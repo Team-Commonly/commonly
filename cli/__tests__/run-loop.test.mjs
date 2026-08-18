@@ -1755,6 +1755,64 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  test('cascade: the resolved triple is logged at boot, marked as defaults', async () => {
+    // Without this line the log of a retuned seat is byte-identical to the log
+    // of a default one — and an env var, unlike the source edit it replaces,
+    // leaves no git evidence of which seat diverged. The other cascade log on
+    // this path is the warn callback, which fires only on a BAD value, so a
+    // cleanly-booted seat had no record of what it resolved at all.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+    await drainMicrotasks();
+    stop();
+
+    const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+    expect(line).toBe('cascade: cap=3 grace=2 reset=600000ms (defaults)');
+  });
+
+  test('cascade: a retuned seat says so, and the marker is what distinguishes it', async () => {
+    const prior = process.env.COMMONLY_CASCADE_CAP;
+    process.env.COMMONLY_CASCADE_CAP = '8';
+    try {
+      makeClient({ events: [] });
+      const log = jest.fn();
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+      await drainMicrotasks();
+      stop();
+
+      const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+      expect(line).toContain('cap=8');
+      // Asserted separately from the value: a marker that never appears would
+      // pass a value-only assertion while making every seat look retuned.
+      expect(line).not.toContain('(defaults)');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior;
+    }
+  });
+
+  test('cascade: a bad flag value is quoted back as typed, and the seat keeps the default', async () => {
+    // The flag path used to coerce with Number() before the resolver saw it,
+    // so `--cascade-cap abc` warned `--cascade-cap='NaN'` — naming a value the
+    // operator never typed, on the one line whose job is to name their typo.
+    // Raw strings arrive here now, which is why this passes one in.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() },
+      { log, cascadeCap: 'abc' },
+    );
+    await drainMicrotasks();
+    stop();
+
+    const lines = log.mock.calls.map(([l]) => l);
+    const warning = lines.find((l) => l.startsWith('cascade config:'));
+    expect(warning).toContain("'abc'");
+    expect(warning).not.toContain('NaN');
+    expect(lines.find((l) => l.startsWith('cascade:'))).toContain('cap=3');
+  });
+
   test('human-triggered turns are never cascade-capped', async () => {
     const { post } = makeClient({
       events: [

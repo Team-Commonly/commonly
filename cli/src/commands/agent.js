@@ -745,6 +745,18 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  // Unconditional, because the only other cascade line on this path is the
+  // warn callback above — which fires only when a value is BAD. Without this,
+  // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
+  // shipped default logs, and an env var (unlike the source edit it replaces)
+  // leaves no git evidence of which seat diverged. The `(defaults)` marker
+  // makes "show me every retuned seat" a grep for its absence.
+  const cascadeIsDefault = Object.keys(CASCADE_DEFAULTS)
+    .every((key) => cascadeSettings[key] === CASCADE_DEFAULTS[key]);
+  log(
+    `cascade: cap=${cascadeSettings.cap} grace=${cascadeSettings.addressedGrace} `
+    + `reset=${cascadeSettings.resetMs}ms${cascadeIsDefault ? ' (defaults)' : ''}`,
+  );
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
@@ -1414,6 +1426,23 @@ export const performDetach = async ({
  */
 const stamp = () => new Date().toISOString();
 
+/**
+ * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
+ *
+ * Exported because the mapping is where the flag path can go wrong invisibly:
+ * an earlier version coerced with Number() here, so `--cascade-cap abc`
+ * reached the resolver as NaN and the warning read `--cascade-cap='NaN'` —
+ * naming a value the user never typed, on the one line whose whole job is to
+ * tell them which input was bad. The values pass through RAW; the resolver is
+ * the only thing that parses, for the same reason it is the only thing that
+ * validates.
+ */
+export const cascadeOverridesFromOpts = (opts = {}) => ({
+  cascadeCap: opts.cascadeCap,
+  cascadeAddressedGrace: opts.cascadeGrace,
+  cascadeResetMs: opts.cascadeReset,
+});
+
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
 
@@ -1810,12 +1839,7 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
-        // Absent flag stays undefined so the env var still gets its turn;
-        // a present-but-unparseable one becomes NaN, which resolveCascadeSettings
-        // rejects and warns about like any other bad value.
-        cascadeCap: opts.cascadeCap === undefined ? undefined : Number(opts.cascadeCap),
-        cascadeAddressedGrace: opts.cascadeGrace === undefined ? undefined : Number(opts.cascadeGrace),
-        cascadeResetMs: opts.cascadeReset === undefined ? undefined : Number(opts.cascadeReset),
+        ...cascadeOverridesFromOpts(opts),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.

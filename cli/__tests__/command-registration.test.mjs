@@ -13,7 +13,7 @@
  */
 
 import { Command } from 'commander';
-import { registerAgent } from '../src/commands/agent.js';
+import { cascadeOverridesFromOpts, registerAgent } from '../src/commands/agent.js';
 import { CASCADE_ENV_VARS } from '../src/lib/enforcement.js';
 
 const registerAll = () => {
@@ -48,6 +48,26 @@ describe('command registration', () => {
     for (const envVar of Object.values(CASCADE_ENV_VARS)) {
       expect(help).toContain(envVar);
     }
+  });
+
+  test('a cascade flag reaches the run params under the right key, uncoerced', () => {
+    // Three renamings sit between what the operator types and what the
+    // resolver validates: --cascade-grace -> opts.cascadeGrace ->
+    // cascadeAddressedGrace. Nothing else parses these flags, so a slip in
+    // that chain reads as "the flag does nothing" with every other test green.
+    const run = findCommand(registerAll(), ['agent', 'run']);
+    const probe = new Command();
+    probe.exitOverride();
+    for (const option of run.options) probe.addOption(option);
+    probe.parse(['--cascade-cap', 'abc', '--cascade-grace', '4'], { from: 'user' });
+
+    const overrides = cascadeOverridesFromOpts(probe.opts());
+    // Strings, not numbers: the resolver is the only thing that parses, so it
+    // can quote a bad value back the way the operator typed it.
+    expect(overrides.cascadeCap).toBe('abc');
+    expect(overrides.cascadeAddressedGrace).toBe('4');
+    // Unpassed stays undefined, or it would shadow the env var.
+    expect(overrides.cascadeResetMs).toBeUndefined();
   });
 
   test('the cascade flags carry no commander default, so env still gets its turn', () => {
