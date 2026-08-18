@@ -710,6 +710,7 @@ export const performRun = ({
   retryJitterRatio,
   claimLeaseSeconds = 90,
   cascadeCap = 3,
+  cascadeAddressedGrace = 2,
   cascadeResetMs = 10 * 60 * 1000,
   chatCharLimit = 400,
   maxChatChunks = 3,
@@ -729,7 +730,11 @@ export const performRun = ({
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
-  const cascadeGovernor = createCascadeGovernor({ cap: cascadeCap, resetMs: cascadeResetMs });
+  const cascadeGovernor = createCascadeGovernor({
+    cap: cascadeCap,
+    addressedGrace: cascadeAddressedGrace,
+    resetMs: cascadeResetMs,
+  });
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
@@ -798,11 +803,13 @@ export const performRun = ({
     // capped agent-triggered event is exactly the traffic we want dropped.
     // Human-triggered turns are never capped.
     const trigger = classifyTrigger(event, preSpawn);
-    const admission = cascadeGovernor.admit(eventPodId, trigger);
+    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
     if (!admission.allowed) {
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
-        + `turns in pod ${eventPodId} — standing down until a human speaks or the streak decays`,
+        + `turns in pod ${eventPodId}`
+        + (admission.addressed ? ' (addressed grace also spent)' : '')
+        + ' — standing down until a human speaks or the pod goes quiet for the reset window',
       );
       return { outcome: 'no_action', reason: 'cascade-cap' };
     }
