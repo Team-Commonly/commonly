@@ -21,6 +21,7 @@ const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
 const tasksApiRoutes = require('../../routes/tasksApi');
+const { hash } = require('../../utils/secret');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -29,11 +30,13 @@ const {
 } = require('../utils/testUtils');
 
 const LEASE_MS = 30 * 60 * 1000;
+const AGENT_TOKEN = 'cm_agent_task_claim_audit';
 
 describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D4)', () => {
   let app;
   let owner;
   let rival;
+  let agent;
   let pod;
   let ownerToken;
   let rivalToken;
@@ -60,11 +63,25 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       password: 'Password123!',
       verified: true,
     });
+    agent = await User.create({
+      username: 'claim-audit-agent',
+      email: `claim-audit-agent-${Date.now()}@agents.commonly.local`,
+      password: 'Password123!',
+      verified: true,
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'claim-audit-agent', instanceId: 'default' },
+      agentRuntimeTokens: [{
+        tokenHash: hash(AGENT_TOKEN),
+        label: 'task-claim-audit',
+        createdAt: new Date(),
+      }],
+    });
     pod = await Pod.create({
       name: 'Claim lease pod',
       type: 'team',
       createdBy: owner._id,
-      members: [owner._id, rival._id],
+      members: [owner._id, rival._id, agent._id],
     });
     ownerToken = generateTestToken(owner._id);
     rivalToken = generateTestToken(rival._id);
@@ -88,6 +105,21 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     .post(`/api/v1/tasks/${pod._id}/T-1/claim`)
     .set('Authorization', `Bearer ${token}`)
     .send({});
+
+  test('a runtime agent claim names the agent in the audit log while retaining its stable lease key', async () => {
+    await seedTask();
+    const res = await claim(AGENT_TOKEN);
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.claimedBy).toBe(agent._id.toString());
+    expect(res.body.task.updates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        text: 'Claimed by claim-audit-agent',
+        author: 'claim-audit-agent',
+        authorId: agent._id.toString(),
+      }),
+    ]));
+  });
 
   test('a fresh claim stamps a lease ~30 minutes out', async () => {
     await seedTask();
