@@ -2,12 +2,18 @@
 // adding a reaction the user already left is a no-op (idempotent via
 // the unique constraint); removing one they don't have is also a no-op.
 // Both endpoints emit a `messageReaction` Socket.io event into
-// `pod_${podId}` so other clients animate the chip without polling.
+// `pod_${podId}` so other clients animate the chip without polling. A newly
+// added reaction also sends the reacted-to agent a best-effort acknowledgement;
+// removals and idempotent retries stay side-effect free.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MessageReaction = require('../models/pg/MessageReaction').default;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { decorateReactionSummaries } = require('../services/reactionAttributionService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentEventService = require('../services/agentEventService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const User = require('../models/User');
 
 interface AuthedReq {
   params: { messageId?: string; emoji?: string };
@@ -103,15 +109,88 @@ async function emitReactionChange(messageId: string | number, podId: string, rea
   }
 }
 
-async function loadPodIdForMessage(messageId: string | number): Promise<string | null> {
+interface MessageContext {
+  podId: string;
+  authorUserId: string;
+}
+
+async function loadMessageContext(messageId: string | number): Promise<MessageContext | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg');
   const result = await pool.query(
-    'SELECT pod_id FROM messages WHERE id = $1 LIMIT 1',
+    'SELECT pod_id, user_id FROM messages WHERE id = $1 LIMIT 1',
     [Number(messageId)],
   );
   const row = result.rows[0];
-  return row ? String(row.pod_id) : null;
+  if (!row?.pod_id || !row?.user_id) return null;
+  return { podId: String(row.pod_id), authorUserId: String(row.user_id) };
+}
+
+// A reaction is an acknowledgement of an already-posted agent message, not a
+// new message for the room. Reuse chat.mention instead of inventing a new
+// event type: deployed wrapper versions only turn their prompt-event allowlist
+// into a model turn. Deliberately omit payload.messageId so ADR-018's
+// claim-before-act gate does not claim the original message a second time.
+// The original ID remains available as reactedMessageId for consumers that
+// need to correlate this receipt.
+const reactionAcknowledgementContent = (emoji: string): string => (
+  `[Reaction acknowledgement] Someone reacted ${emoji} to your message. `
+  + 'This is an acknowledgement, not a new request — do not post a reply.'
+);
+
+async function enqueueReactionAcknowledgement({
+  podId,
+  authorUserId,
+  reactorUserId,
+  messageId,
+  emoji,
+}: {
+  podId: string;
+  authorUserId: string;
+  reactorUserId: string;
+  messageId: string | number;
+  emoji: string;
+}): Promise<void> {
+  // An agent reacting to its own message already has the information and must
+  // not wake itself. This also keeps autonomous reaction workflows from
+  // becoming self-trigger loops.
+  if (authorUserId === reactorUserId) return;
+
+  try {
+    const author = await User.findById(authorUserId)
+      .select('isBot username botMetadata.agentName botMetadata.instanceId')
+      .lean() as {
+        isBot?: boolean;
+        username?: string;
+        botMetadata?: { agentName?: string; instanceId?: string };
+      } | null;
+    if (!author?.isBot) return;
+
+    // Some older bot rows lack agentName; username is the established
+    // identity fallback for agent-event routing elsewhere in this service
+    // layer. Do not enqueue a malformed event if neither is available.
+    const agentName = String(author.botMetadata?.agentName || author.username || '').trim().toLowerCase();
+    if (!agentName) return;
+
+    await AgentEventService.enqueue({
+      agentName,
+      instanceId: String(author.botMetadata?.instanceId || 'default'),
+      podId,
+      type: 'chat.mention',
+      payload: {
+        content: reactionAcknowledgementContent(emoji),
+        reactedMessageId: String(messageId),
+        reactionAcknowledgement: true,
+        emoji,
+        source: 'message-reaction',
+      },
+    });
+  } catch (err) {
+    // The reaction is durable before this best-effort receipt. Agent delivery
+    // failure must never turn a user acknowledgement into a failed reaction.
+    // eslint-disable-next-line no-console
+    console.warn('[reactionController] agent acknowledgement enqueue failed:', (err as Error).message);
+  }
 }
 
 export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void> {
@@ -131,19 +210,29 @@ export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void>
       res.status(400).json({ msg: 'emoji must be 1–8 emoji characters' });
       return;
     }
-    const podId = await loadPodIdForMessage(messageId);
-    if (!podId) {
+    const message = await loadMessageContext(messageId);
+    if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
     }
+    const { podId } = message;
     if (!(await callerHasPodAccess(podId, userId, req))) {
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
     }
-    await MessageReaction.add(messageId, userId, emoji);
+    const added = await MessageReaction.add(messageId, userId, emoji);
     const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
     const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
+    if (added) {
+      void enqueueReactionAcknowledgement({
+        podId,
+        authorUserId: message.authorUserId,
+        reactorUserId: userId,
+        messageId,
+        emoji,
+      });
+    }
     res.json({ ok: true, reactions });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -165,11 +254,12 @@ export async function removeReaction(req: AuthedReq, res: AuthedRes): Promise<vo
       res.status(400).json({ msg: 'messageId and emoji are required' });
       return;
     }
-    const podId = await loadPodIdForMessage(messageId);
-    if (!podId) {
+    const message = await loadMessageContext(messageId);
+    if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
     }
+    const { podId } = message;
     if (!(await callerHasPodAccess(podId, userId, req))) {
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
