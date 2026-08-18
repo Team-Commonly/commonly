@@ -286,6 +286,47 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     expect(expire.filter.attempts).toEqual({ $gte: 3 });
   });
 
+  // #993: the requeue at :650 and the pending delete at :698 ran in the same
+  // Promise.all against different fields — the requeue sets `status` but not
+  // `createdAt`, so an event it had just rescued walked into a `createdAt`-keyed
+  // delete carrying its original age. 38 events were destroyed in one measured
+  // hour, and the log paired them per run (11:00: requeued 17, deletedPending 17).
+  //
+  // These pin the horizon rather than the mechanism: as long as pending ages out
+  // on the SAME schedule as everything else, no rescue can be undone by a sweep
+  // in its own pass, and a seat can be down for a restart or a quota reset
+  // without its queue being destroyed underneath it.
+  const deletes = () => AgentEvent.deleteMany.mock.calls.map(([filter]) => filter);
+
+  test('pending events age out on the same horizon as delivered and acked', async () => {
+    await AgentEventService.garbageCollect({});
+
+    const pending = deletes().find((f) => f.status === 'pending');
+    const settled = deletes().find((f) => Array.isArray(f.status?.$in));
+
+    expect(pending).toBeDefined();
+    expect(settled).toBeDefined();
+    // Same instant, not merely "both long": a shorter pending horizon is exactly
+    // what let the sweep outrun the retry lifecycle.
+    expect(pending.createdAt.$lt.getTime()).toBe(settled.createdAt.$lt.getTime());
+  });
+
+  test('no delete predicate can destroy a pending event inside the retry window', async () => {
+    // The retry ceiling is 15 min x 1.2 jitter = 18 min (cli spawn-retry), and a
+    // seat restart is unbounded. Any pending horizon shorter than the retention
+    // one re-arms both. 24h is a deliberately loose floor — the real value is
+    // 168h — so this fails on a regression rather than on a retuning.
+    await AgentEventService.garbageCollect({});
+
+    const now = Date.now();
+    for (const filter of deletes()) {
+      const targetsPending = filter.status === 'pending'
+        || (Array.isArray(filter.status?.$in) && filter.status.$in.includes('pending'));
+      if (!targetsPending) continue;
+      expect(now - filter.createdAt.$lt.getTime()).toBeGreaterThan(24 * 60 * 60 * 1000);
+    }
+  });
+
   test('reports what it retired, so a poison-event backlog is visible in ops output', async () => {
     AgentEvent.updateMany
       .mockResolvedValueOnce({ modifiedCount: 2 })   // requeued
