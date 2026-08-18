@@ -10,6 +10,9 @@
  *  - bot-authored wake storms are dampened (>MENTION_LOOP_MAX in window);
  *    human-authored messages are never dampened
  *  - DM-shaped pods are excluded (enqueueDmEvent already routes there)
+ *  - a wake composes through buildContentForTarget, so it carries the
+ *    pod-context frame every other event type gets — and does NOT carry
+ *    the two cues gated to chat.mention
  */
 
 jest.mock('../../../services/agentEventService', () => ({
@@ -283,5 +286,96 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
     expect(res.woken).toEqual(['seat-a']);
     expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a']);
+  });
+
+  // The wake path used to build its own content prefix inline, which is how it
+  // went its whole life without the pod-context frame. These pin the routing,
+  // not the strings: a frame added to buildContentForTarget must reach wakes,
+  // and the two chat.mention-gated cues must keep NOT reaching them.
+  describe('frame composition', () => {
+    const wakeContent = async (installations, message = { content: 'body text', id: 'msg-f' }) => {
+      mockInstallations(installations);
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message, userId: 'user-1', username: 'alice',
+      });
+      return wakeCalls()[0].payload.content;
+    };
+
+    test('a wake carries the pod-context frame, with this pod id and the post-as-yourself rule', async () => {
+      const content = await wakeContent([install('seat-a', { optIn: true })]);
+
+      expect(content).toContain('Pod context: this conversation is in pod `pod-1`');
+      // The podId has to be interpolated into the tool signature, not merely
+      // mentioned — that call is the reason the frame is inline rather than
+      // metadata.
+      expect(content).toContain('commonly_attach_file({ podId: "pod-1"');
+      // The safety half: without it a woken agent can post through an
+      // operator profile and misattribute the turn to a human.
+      expect(content).toContain('Post as yourself only');
+    });
+
+    test('the wake frame stays last before the body', async () => {
+      const content = await wakeContent([install('seat-a', { optIn: true })]);
+
+      // Presence asserted before order: indexOf returns -1 for an absent
+      // frame, and -1 is less than every real index, so an ordering
+      // assertion alone goes green on exactly the bug being fixed.
+      const podAt = content.indexOf('Pod context:');
+      const authorAt = content.indexOf('Trigger:');
+      const wakeAt = content.indexOf('Wake-on-message:');
+      expect(podAt).toBeGreaterThanOrEqual(0);
+      expect(authorAt).toBeGreaterThanOrEqual(0);
+      expect(wakeAt).toBeGreaterThanOrEqual(0);
+      expect(podAt).toBeLessThan(authorAt);
+      expect(authorAt).toBeLessThan(wakeAt);
+      expect(content).toMatch(/\[Wake-on-message:[^\]]*\]\n\nbody text$/);
+    });
+
+    test('the collab cue reaches a mention but not a wake raised by the same message', async () => {
+      // Both seats are non-utility installs in a non-DM pod, so the pod
+      // qualifies under isCollaborativePod — and the mention half proves it
+      // did. Without that control, `not.toContain` would also pass on a pod
+      // that simply failed the heuristic, which is not what is being tested.
+      mockPod('chat', ['user-1', 'seat-a', 'seat-b']);
+      mockInstallations([
+        install('seat-a', { optIn: true }),
+        install('seat-b', { optIn: true }),
+      ]);
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'hey @seat-a can you look', id: 'msg-c' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      const mention = mentionCalls().find((c) => c.agentName === 'seat-a');
+      const wake = wakeCalls().find((c) => c.agentName === 'seat-b');
+      expect(mention).toBeDefined();
+      expect(wake).toBeDefined();
+
+      expect(mention.payload.content).toContain('Collaborative pod:');
+      expect(mention.payload.content).toContain('Reply mechanics:');
+      expect(wake.payload.content).not.toContain('Collaborative pod:');
+      expect(wake.payload.content).not.toContain('Reply mechanics:');
+      // Same pod, same message, and the wake still gets the unconditional
+      // frame — so the two cues above are withheld by their event-type gate,
+      // not by the wake missing frames wholesale.
+      expect(wake.payload.content).toContain('Pod context: this conversation is in pod `pod-1`');
+    });
+
+    test('the consultation cue follows its own specialist gate, not the event type', async () => {
+      const generalist = await wakeContent([install('seat-a', { optIn: true })]);
+      expect(generalist).toContain('Collaboration: for code-heavy work');
+
+      jest.clearAllMocks();
+      mockHumanSender();
+      mockPod('chat', ['user-1', 'codex']);
+      AgentEvent.countDocuments.mockResolvedValue(0);
+
+      const specialist = await wakeContent([install('codex', { optIn: true })]);
+      expect(specialist).not.toContain('Collaboration: for code-heavy work');
+      expect(specialist).toContain('Wake-on-message:');
+    });
   });
 });
