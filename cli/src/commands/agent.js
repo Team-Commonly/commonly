@@ -1307,6 +1307,24 @@ export const performDetach = async ({
   return { backend: backendResult, localCleaned: true };
 };
 
+/**
+ * Every line a seat emits lands in one file, because the fleet is launched as
+ * `nohup commonly agent run <name> > <log> 2>&1`. Until now none of those lines
+ * carried a time.
+ *
+ * That is not a cosmetic gap. On 2026-08-18 a fleet-wide quota stall destroyed
+ * 38 queued events (#993), and the seat log was the ONLY surviving trace —
+ * the kernel rows were deleted, so nothing else recorded that those turns had
+ * been attempted. The log records `(4 consecutive)` and `next probe in 2.0m`
+ * and gives no way to place either on a clock: the investigation had to date
+ * events by decoding ObjectId prefixes instead, because the file that named
+ * them could not say when.
+ *
+ * ISO-8601 so stamps sort lexically, diff cleanly, and line up with the
+ * kernel's own timestamps without conversion.
+ */
+const stamp = () => new Date().toISOString();
+
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
 
@@ -1656,10 +1674,10 @@ Docs:
           record = await bootstrapAgentRecordFromEnv({
             name,
             adapterOverride: opts.adapter || null,
-            log: (line) => console.log(`[${name}] ${line}`),
+            log: (line) => console.log(`${stamp()} [${name}] ${line}`),
           });
         } catch (err) {
-          console.error(err.message);
+          console.error(`${stamp()} [${name}] ${err.message}`);
           process.exit(1);
         }
         if (record) {
@@ -1693,8 +1711,15 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
-        log: (line) => console.log(`[${name}] ${line}`),
-        onError: (err) => console.error(`[${name}] ${err.message}`),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        // Both sinks are stamped, and both must be: a spawn failure is emitted
+        // through `log` AND `onError` (they serve different contracts — the
+        // narrative line keeps the event-type prefix, the error channel is what
+        // an embedder hooks). Stamping only the first would leave every FAILURE
+        // line undated, which is the exact class the stamps exist for. It also
+        // makes the pair legible: two identical messages at the same
+        // millisecond read as one event, where before `grep -c` counted two.
+        onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
       });
 
       process.on('SIGINT', () => {
