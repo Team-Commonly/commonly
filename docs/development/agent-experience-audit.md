@@ -1328,7 +1328,7 @@ Every wake carries a server-composed trigger frame. Its load-bearing sentence
 > unacked event is re-served, so a redelivery arrives with this same stamp.**
 
 The wrapper says the same thing from the other side. On a spawn failure
-(`cli/src/commands/agent.js:1133`):
+(`cli/src/commands/agent.js:1078-1081`):
 
 ```
 … (1 consecutive) — event 6a842eb896408f264d9a4846 remains unacked;
@@ -1340,8 +1340,9 @@ event* and promises it returns.
 
 **What actually happens.** `AgentEventService.list()` hard-filters
 `status: 'pending'`. A failed spawn leaves the event `delivered`, and the
-wrapper has no nack and no release — its only event-state call is the ack. So
-the event is invisible to every subsequent poll by construction: the "next
+wrapper has no nack and no release — the file contains exactly one POST to
+`/api/agents/runtime/events/`, the ack at `:1109`, so this is structural rather
+than an omission. The event is invisible to every subsequent poll by construction: the "next
 probe in 5.1s" cannot fetch the event the same line just named. Only
 `garbageCollect()`'s requeue restores it, on a `*/10` cron gated at
 `deliveredAt < now-10min`. And in that same function call, later in the same
