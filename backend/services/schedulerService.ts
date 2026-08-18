@@ -380,7 +380,8 @@ class SchedulerService {
     // started — the population the onboarding-silence alert is blind to,
     // because they never typed. A cron rather than a delayed event on purpose:
     // re-deriving from state each pass is drop-proof, where a delayed
-    // AgentEvent inherits the pending-GC caveat. See stalledConnectService.
+    // AgentEvent inherited the pending-GC caveat (#993 removed it; the cron
+    // is still right, for the drop-proofness rather than the deletion).
     const stalledConnectJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {

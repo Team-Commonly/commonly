@@ -21,10 +21,14 @@ import { composeStalledConnectNudge, composeStalledConnectResolution } from './s
  * each other's population by construction: someone who never types is
  * invisible to that one and is the whole subject of this one.
  *
- * WHY A CRON AND NOT A DELAYED EVENT (ux-lead, explicitly): a delayed
- * AgentEvent inherits the 30-40 minute pending-GC caveat and needs a
- * survivable timer. A cron that re-derives from state each pass is drop-proof
- * by construction — a missed tick costs latency, not the nudge.
+ * WHY A CRON AND NOT A DELAYED EVENT (ux-lead, explicitly): the original
+ * reason was that a delayed AgentEvent inherited the 30-40 minute pending-GC
+ * caveat and so needed a survivable timer. #993 removed that deletion, and the
+ * conclusion is unchanged for the stronger half of the original argument: a
+ * cron that re-derives from state each pass is drop-proof against ANY delivery
+ * failure, not just against a sweep — a missed tick costs latency, not the
+ * nudge. Do not re-open this on the grounds that events now survive 168h; that
+ * was never the load-bearing half.
  *
  * ONE DERIVATION. State comes from `deriveAgentState`, the same function the
  * pod roster, the #943 intro and the #891 surfaces use. There is no parallel

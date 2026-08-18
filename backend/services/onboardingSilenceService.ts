@@ -62,7 +62,11 @@ import { HUMAN_FILTER, BOT_FILTER } from './userClassification';
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Past the first requeue (10m), inside the pending-GC window (30m). */
+/**
+ * Past the first requeue (10m). The upper bound used to be the 30-minute
+ * pending-GC window; #993 removed it, so this number is now a floor plus a
+ * judgement about how long a newcomer should wait, not a midpoint.
+ */
 export const SILENCE_THRESHOLD_MINUTES = Number(
   process.env.ONBOARDING_SILENCE_THRESHOLD_MINUTES || 15,
 );
