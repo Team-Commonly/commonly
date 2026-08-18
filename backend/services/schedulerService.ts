@@ -431,7 +431,20 @@ class SchedulerService {
     console.log('- Agent event GC runs every 10 minutes');
     console.log('- Themed pod autonomy runs every 2 hours');
     console.log('- Agent auto-join (agent-owned pods) runs every 2 hours');
-    console.log('- Agent heartbeats run every 10 minutes with per-agent intervals');
+    // Names the opt-in gate on purpose. Every other line in this banner
+    // describes a job that simply runs; this one describes a job that runs
+    // only for installs that asked for it (#800 made it opt-in after 166 of
+    // 245 active installs were found ticking hourly on a default nobody set).
+    // The old line read "run every 10 minutes with per-agent intervals",
+    // which is true about the dispatcher and silent about the gate — and it
+    // sent a reader straight to resolveHeartbeatIntervalMinutes to compute a
+    // fleet-wide wake rate off a field that is never reached for a seat that
+    // never opted in.
+    console.log(
+      '- Agent heartbeats dispatch every 10 minutes; only installs with'
+      + ' config.heartbeat.enabled === true fire, each on its own interval'
+      + ' (config.heartbeat.everyMinutes, default 60)',
+    );
     console.log(
       `- OpenClaw sessions reset every ${AgentEventService.getSessionResetIntervalHours()} hour(s)`,
     );
