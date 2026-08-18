@@ -210,7 +210,18 @@ export const createCascadeGovernor = ({
       // cap + addressedGrace instead of never.
       const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
       const limit = addressed ? cap + addressedGrace : cap;
-      return { allowed: s.streak < limit, streak: s.streak, addressed };
+      // `addressed` describes the EVENT; `graceApplied` describes what this
+      // governor actually did with it. They diverge whenever addressedGrace is
+      // 0 — the pre-#973 setting, and the first thing an operator dials back —
+      // where an addressed event is refused at the plain cap having been given
+      // nothing extra. Reporting only `addressed` made the refusal log claim a
+      // grace was "also spent" on a seat whose own boot line says grace=0.
+      return {
+        allowed: s.streak < limit,
+        streak: s.streak,
+        addressed,
+        graceApplied: addressed && addressedGrace > 0,
+      };
     },
     record(podId, trigger) {
       if (trigger === 'human') {

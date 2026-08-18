@@ -864,7 +864,7 @@ export const performRun = ({
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
         + `turns in pod ${eventPodId}`
-        + (admission.addressed ? ' (addressed grace also spent)' : '')
+        + (admission.graceApplied ? ' (addressed grace also spent)' : '')
         + ' — standing down until a human speaks or the pod goes quiet for the reset window',
       );
       return { outcome: 'no_action', reason: 'cascade-cap' };

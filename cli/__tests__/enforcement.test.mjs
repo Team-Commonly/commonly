@@ -124,6 +124,21 @@ describe('cascade governor — addressed grace', () => {
     expect(gov.admit('pod', 'agent', 'message.posted').addressed).toBe(false);
   });
 
+  it('does not report a grace it never granted, at addressedGrace 0', () => {
+    // The refusal log is the one line an operator reads to understand why a
+    // seat went quiet. Keyed on `addressed` alone it announced "(addressed
+    // grace also spent)" on a grace=0 seat — asserting a grace that does not
+    // exist, three screens under a boot line that says grace=0. The event is
+    // still addressed; nothing was granted for it.
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    const admission = gov.admit('pod', 'agent', 'chat.mention');
+    expect(admission.addressed).toBe(true);
+    expect(admission.graceApplied).toBe(false);
+    // And the limit really is the plain cap — the message was the only defect.
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+  });
+
   it('is a grace, not an exemption — a mention echo still terminates', () => {
     // The regression this guards: an unbounded pass for addressed events
     // restores the A-mentions-B-mentions-A loop the governor exists to kill.

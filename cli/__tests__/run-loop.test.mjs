@@ -1755,6 +1755,40 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  test('cascade: a grace=0 seat is not told a grace was spent', async () => {
+    // Pins the DELIVERY of the fix, not just the governor field: the log line
+    // and the governor are in different files and only the log is read by a
+    // human trying to explain a silent seat.
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a' }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: true, self: false },
+      ],
+    });
+    const log = jest.fn();
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { log, cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // The refusal happened — without this the assertion below passes vacuously
+    // on a run where nothing was ever capped.
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-b/ack',
+      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+    );
+    const refusal = log.mock.calls.map(([l]) => l).find((l) => l.includes('cascade cap:'));
+    expect(refusal).toBeDefined();
+    expect(refusal).not.toContain('addressed grace');
+  });
+
   test('cascade: the resolved triple is logged at boot, marked as defaults', async () => {
     // Without this line the log of a retuned seat is byte-identical to the log
     // of a default one — and an env var, unlike the source edit it replaces,
