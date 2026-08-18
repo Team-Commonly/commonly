@@ -5,8 +5,8 @@ const serverSource = fs.readFileSync(path.resolve(__dirname, '../../server.ts'),
 
 describe('server agent typing transport', () => {
   it('does not relay browser-supplied agent typing events', () => {
-    expect(serverSource).not.toMatch(/socket\.on\(\s*['"]agent_typing_start['"]/);
-    expect(serverSource).not.toMatch(/socket\.on\(\s*['"]agent_typing_stop['"]/);
+    expect(serverSource).not.toContain('agent_typing_start');
+    expect(serverSource).not.toContain('agent_typing_stop');
   });
 
   it('keeps the server-side typing service bound to Socket.IO', () => {
