@@ -138,6 +138,27 @@ const reactionAcknowledgementContent = (emoji: string): string => (
   + 'This is an acknowledgement, not a new request — do not post a reply.'
 );
 
+const deriveReactionRecipientInstanceId = (
+  agentName: string,
+  username: unknown,
+  metadataInstanceId: unknown,
+): string => {
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const normalizedMetadataInstanceId = String(metadataInstanceId || '').trim().toLowerCase();
+  const prefix = `${agentName}-`;
+  const usernameInstanceId = normalizedUsername === agentName
+    ? 'default'
+    : (normalizedUsername.startsWith(prefix) ? normalizedUsername.slice(prefix.length).trim() : '');
+
+  // Runtime consumers use a username suffix when metadata is absent or still
+  // says "default". Match that address exactly: an acknowledgement under a
+  // different instance key is an event no connected agent can poll.
+  if (usernameInstanceId && (!normalizedMetadataInstanceId || normalizedMetadataInstanceId === 'default')) {
+    return usernameInstanceId;
+  }
+  return normalizedMetadataInstanceId || usernameInstanceId || 'default';
+};
+
 async function enqueueReactionAcknowledgement({
   podId,
   authorUserId,
@@ -180,7 +201,11 @@ async function enqueueReactionAcknowledgement({
 
     await AgentEventService.enqueue({
       agentName,
-      instanceId: String(author.botMetadata?.instanceId || 'default'),
+      instanceId: deriveReactionRecipientInstanceId(
+        agentName,
+        author.username,
+        author.botMetadata?.instanceId,
+      ),
       podId,
       type: 'chat.mention',
       payload: {

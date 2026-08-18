@@ -285,6 +285,34 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload).not.toHaveProperty('messageId');
   });
 
+  test('derives the same instance suffix that a token-authenticated recipient polls', async () => {
+    pool.query
+      .mockResolvedValueOnce(messageLookup('pod-suffix', 'suffix-bot'))
+      .mockResolvedValueOnce(memberLookup(1));
+    MessageReaction.add.mockResolvedValueOnce(true);
+    User.findById.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          isBot: true,
+          username: 'openclaw-nova',
+          botMetadata: { agentName: 'openclaw' },
+        }),
+      }),
+    });
+
+    await reactionController.addReaction({
+      params: { messageId: 'suffix-44' },
+      body: { emoji: '👍' },
+      user: { _id: 'human-reactor' },
+    }, buildRes());
+    await new Promise((r) => { setImmediate(r); });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      agentName: 'openclaw',
+      instanceId: 'nova',
+    }));
+  });
+
   test('logs and skips an acknowledgement when a legacy bot has no routable agentName', async () => {
     pool.query
       .mockResolvedValueOnce(messageLookup('pod-legacy', 'legacy-bot'))
