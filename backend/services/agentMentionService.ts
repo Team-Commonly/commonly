@@ -112,12 +112,26 @@ interface SenderRow {
 // ping-pong forever, burning quota, without ever tripping that guard.
 // This count-based sliding-window backstop suppresses a bot->bot mention
 // once the target has already received more than MENTION_LOOP_MAX
-// chat.mention events in the same pod within MENTION_LOOP_WINDOW_MS — i.e.
+// mention events in the same pod within MENTION_LOOP_WINDOW_MS — i.e.
 // >3 mentions to the same bot in 5 min in a pod = treat as a loop. Genuine
 // handoffs (a human mention, or an infrequent agent handoff) stay under
 // the threshold and are never dampened.
 const MENTION_LOOP_WINDOW_MS = 5 * 60 * 1000; // #508 dampener — 5 min sliding window
 const MENTION_LOOP_MAX = 3; // #508 dampener — >3 mentions to same bot/pod/window = loop
+
+// The event types a mention can be enqueued as. ONE enumeration, used both to
+// type `eventType` and to select the dampener's rows — because those two
+// drifting apart is exactly the bug this constant was introduced to fix
+// (#976): the counter hardcoded 'chat.mention' while the gate it fed covered
+// thread.mention too, so a bot<->bot thread-mention loop was measured against
+// a number it could never move and was never dampened.
+//
+// ONE shared budget across both types, not one per type. The resource being
+// protected is the target's model turns, and a thread mention costs exactly
+// what a chat mention costs. Splitting the budget would also hand an
+// alternating loop double the allowance for free — mention in chat, mention
+// in a thread, repeat, each counter sitting at half the threshold forever.
+const MENTION_EVENT_TYPES = ['chat.mention', 'thread.mention'] as const;
 
 /**
  * Mention Aliases
@@ -979,7 +993,7 @@ const enqueueMentions = async ({
 }: EnqueueMentionsOptions): Promise<EnqueueResult> => {
   const rawContent = message?.content || message?.text || '';
   const source = message?.source || 'chat';
-  const eventType: 'chat.mention' | 'thread.mention' = source === 'thread' ? 'thread.mention' : 'chat.mention';
+  const eventType: (typeof MENTION_EVENT_TYPES)[number] = source === 'thread' ? 'thread.mention' : 'chat.mention';
   // Author/age frame inputs — identical for every target of this
   // message, so resolved once here rather than at each of the four
   // enqueue sites below. Same values that already go into the envelope
@@ -1129,6 +1143,8 @@ const enqueueMentions = async ({
   // #508 mutual bot<->bot loop dampener. Returns true when this mention
   // should be SUPPRESSED because the target bot has already been mentioned
   // more than MENTION_LOOP_MAX times in this pod within the recent window.
+  // Counts BOTH mention types (MENTION_EVENT_TYPES) because it gates both —
+  // see the constant for why the budget is shared rather than per-type.
   // CRITICAL: only dampens bot->bot. `senderAgentName` is non-null ONLY
   // when the sender is a bot (set above from sender.isBot + botMetadata), so
   // a human sender short-circuits to `false` and is NEVER dampened. The
@@ -1141,7 +1157,7 @@ const enqueueMentions = async ({
         agentName: target.agentName.toLowerCase(),
         instanceId: target.instanceId || 'default',
         podId,
-        type: 'chat.mention',
+        type: { $in: MENTION_EVENT_TYPES },
         createdAt: { $gte: new Date(Date.now() - MENTION_LOOP_WINDOW_MS) },
       });
       if (count > MENTION_LOOP_MAX) {
