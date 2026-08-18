@@ -10,6 +10,7 @@ const Pod = require('../models/Pod');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret');
+import { resolveAgentRuntimeIdentity } from './agentRuntimeIdentity';
 
 interface AgentSocket {
   agentName: string;
@@ -74,38 +75,6 @@ interface InstallationDoc {
   displayName?: string;
   runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
 }
-
-const normalizeTokenIdentityValue = (value: unknown): string => (
-  String(value || '').trim().toLowerCase()
-);
-
-const deriveInstanceIdFromUsername = (agentName: string, username: string): string | null => {
-  const normalizedAgent = normalizeTokenIdentityValue(agentName);
-  const normalizedUsername = normalizeTokenIdentityValue(username);
-  if (!normalizedAgent || !normalizedUsername) return null;
-  if (normalizedUsername === normalizedAgent) return 'default';
-  const prefix = `${normalizedAgent}-`;
-  if (normalizedUsername.startsWith(prefix)) {
-    const suffix = normalizedUsername.slice(prefix.length).trim();
-    return suffix || null;
-  }
-  return null;
-};
-
-const resolveTokenAgentIdentity = (agentUser: AgentUserDoc): { agentName: string; instanceId: string } => {
-  const meta = (agentUser?.botMetadata || {}) as Record<string, unknown>;
-  const username = normalizeTokenIdentityValue(agentUser?.username);
-  const agentName = normalizeTokenIdentityValue(meta.agentName || meta.agentType || username);
-
-  const metadataInstanceId = normalizeTokenIdentityValue(meta.instanceId);
-  const usernameInstanceId = deriveInstanceIdFromUsername(agentName, username);
-  let instanceId = metadataInstanceId || usernameInstanceId || 'default';
-  if (usernameInstanceId && (!metadataInstanceId || metadataInstanceId === 'default')) {
-    instanceId = usernameInstanceId;
-  }
-
-  return { agentName, instanceId };
-};
 
 class AgentWebSocketService {
   private io: IoServer | null;
@@ -326,7 +295,7 @@ class AgentWebSocketService {
             console.warn('Failed to update agent token usage on User:', (err as Error).message);
           }
 
-          const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
+          const { agentName, instanceId } = resolveAgentRuntimeIdentity(agentUser);
 
           if (agentName) {
             if (isFirstTokenUse) {
