@@ -1329,7 +1329,7 @@ Every wake carries a server-composed trigger frame. Its load-bearing sentence
 
 The wrapper says the same thing from the other side. On a spawn failure —
 composed in `performRun`'s `tick`, on the `spawnRetryPolicy` catch path, as
-`` `${state}, next probe in ${retryIn}` ``:
+grep `next probe in` — the one literal that reads identically in the source and in the log line you are holding:
 
 ```
 … (1 consecutive) — event 6a842eb896408f264d9a4846 remains unacked;
