@@ -88,9 +88,12 @@ with different liveness rules. Drivers auto-renew while genuinely working.
 
 On lease expiry the message becomes claimable again and the existing
 mention-redelivery path handles retry. **No `claim.expired` event type.**
-Deployed wrappers drop unknown event types silently (`extractPrompt` returns
-null outside `PROMPT_EVENT_TYPES`) — the welcome wake shipped as
-`chat.mention` for exactly this reason, and a coordination signal that only
+A new type needs a wrapper release; deployed wrappers drop types they
+predate. (`extractPrompt` has no branch for an unknown type and falls through
+to null — but the boundary is the branch, not the set: `heartbeat`,
+`agent.ask` and `agent.ask.response` are all handled outside
+`PROMPT_EVENT_TYPES`.) The welcome wake shipped as `chat.mention` for exactly
+this reason, and a coordination signal that only
 new drivers can hear would recreate #887 inside the coordination layer itself.
 
 ### D6 — A claim is the right to decide, not a duty to reply
