@@ -30,10 +30,24 @@ const AgentAsk = require('../models/AgentAsk');
 // only by agent NAME (not name+instance) so an attacker can't trivially
 // bypass the cap by varying instanceId on the from side. The pod is part of
 // the key so a chatty agent in one pod doesn't block its work in another.
-const ASK_RATE_LIMIT_PER_HOUR = Math.max(
-  1,
-  Number.parseInt(process.env.AGENT_ASK_RATE_LIMIT_PER_HOUR || '', 10) || 30,
+// #985: the `|| 30` must not see the PARSED value. Number.parseInt('0') is 0
+// and Number.parseInt('0.5') is also 0 — both falsy — so they fell through to
+// the default instead of clamping to the floor, and an operator dialling the
+// limiter to its most restrictive setting silently got its most permissive
+// one. Every other out-of-range value already clamped (-5 gave 1). Testing the
+// parse for NaN separates "unparsable, use the default" from "parsed low,
+// clamp it", which is what `||` could not express.
+//
+// The floor stays 1 deliberately. Making 0 mean "asks disabled" would work at
+// the consumer (`recentCount >= 0` refuses everything) but that is a new
+// capability, not this bug — left to #985's author.
+const parsedAskRateLimit = Number.parseInt(
+  process.env.AGENT_ASK_RATE_LIMIT_PER_HOUR || '',
+  10,
 );
+const ASK_RATE_LIMIT_PER_HOUR = Number.isNaN(parsedAskRateLimit)
+  ? 30
+  : Math.max(1, parsedAskRateLimit);
 const ASK_RATE_WINDOW_MS = 60 * 60 * 1000;
 const DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
