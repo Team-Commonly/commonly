@@ -19,11 +19,20 @@ export const SPAWN_CIRCUIT_THRESHOLD = 3;
 export const SPAWN_RETRY_MAX_MS = 15 * 60 * 1000;
 export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 
-// `out of credits` is codex's exact wording for an exhausted workspace balance
-// ("Your workspace is out of credits. Ask your workspace owner to refill…").
-// Without it that outage classified as RUNTIME and drew the shortest backoff —
-// observed live on 2026-08-03 before this pattern was added.
-const QUOTA_RE = /(?:quota|usage limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+// This list is a per-provider allowlist, and it only ever grows after an
+// outage has already been misclassified. Twice now:
+//   2026-08-03  codex  "Your workspace is out of credits."   → `out of credits`
+//   2026-08-18  claude "You've hit your session limit"       → `session limit`
+// The second one is the instructive failure: `usage limit` was already here —
+// it is Claude's OTHER exhaustion wording — so the fleet stalled for an hour on
+// a string one word away from a pattern we had. Both times the miss meant
+// RUNTIME, the weakest class with the shortest backoff, against a provider that
+// was not going to answer for hours.
+//
+// Deliberately NOT loosened to a bare `limit`: QUOTA is tested before
+// RATE_LIMIT, so that would swallow every "rate limit" error into the 15-minute
+// cooldown. Add exact wordings, not looser ones.
+const QUOTA_RE = /(?:quota|usage limit|session limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
