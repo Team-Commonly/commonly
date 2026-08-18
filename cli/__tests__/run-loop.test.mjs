@@ -1574,7 +1574,13 @@ describe('performRun — ADR-018 enforcement', () => {
       ],
     });
     const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
-    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn }, { cascadeCap: 1 });
+    // grace 0 pins the PURE cap contract. makeEvent defaults to chat.mention,
+    // which now carries an addressed grace — without this the test would be
+    // silently exercising the grace path instead of the cap it names.
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
     await drainMicrotasks();
     stop();
 
@@ -1586,6 +1592,41 @@ describe('performRun — ADR-018 enforcement', () => {
     );
     // The declined event never reached the claim step.
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
+  });
+
+  test('cascade cap: a directly-addressed seat gets a bounded grace, then is capped too', async () => {
+    // The failure this fixes, measured 2026-08-18: a seat took 28 consecutive
+    // cap refusals, five of them chat.mention. Peers named it and got silence.
+    //
+    // The grace is bounded on purpose. An unbounded pass for addressed events
+    // restores the A-mentions-B-mentions-A echo the governor exists to kill, so
+    // the third event below must still be declined.
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a' }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+        makeClaimEvent({ _id: 'evt-c', payload: { content: 'and again', messageId: 'msg-3' } }),
+      ],
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: true, self: false },
+        { _id: 'msg-3', isBot: true, self: false },
+      ],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { cascadeCap: 1, cascadeAddressedGrace: 1 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // cap 1 + grace 1 = two addressed turns admitted, the third declined.
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-c/ack',
+      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+    );
   });
 
   test('human-triggered turns are never cascade-capped', async () => {
