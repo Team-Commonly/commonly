@@ -85,6 +85,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * earlier text claimed, because the earlier text had the floor wrong. The value
  * is left at 15 here deliberately — moving a live alert is #1008's call, with
  * the false-positive rate measured rather than derived.
+ *
+ * NOT CURRENTLY MISFIRING, and the reason is the same distribution
+ * (@sprint-review). A reply produced by a redelivery would have to land at
+ * 10-20+ min — inside the span that measured EMPTY over 21 days — so the retry
+ * path has never produced a genuine reply here, and an alert at 15 has never
+ * pre-empted one. #1008 is a documentation inconsistency plus a latent defect,
+ * not a live incident.
+ *
+ * The latent half is worth naming, because #993's fix arms it: those 21 days
+ * were measured in a regime where the retry path was structurally broken — the
+ * `attempts < cap` guard vacuous, the retire pass unreachable, and pending rows
+ * deleted at 30 min before three deliveries could accumulate. Give events 168h
+ * and they get retried for real. More retries is more chance a retry succeeds,
+ * and the first retry-produced reply lands squarely in the window this
+ * threshold sits at the mean of. Re-measure the distribution after that
+ * deploys; do not carry the empty-gap finding across it.
  */
 export const SILENCE_THRESHOLD_MINUTES = Number(
   process.env.ONBOARDING_SILENCE_THRESHOLD_MINUTES || 15,
