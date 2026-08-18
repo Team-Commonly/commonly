@@ -803,6 +803,33 @@ export const performRun = ({
     // capped agent-triggered event is exactly the traffic we want dropped.
     // Human-triggered turns are never capped.
     const trigger = classifyTrigger(event, preSpawn);
+    // A human turn is a property of the POD, not of this seat's reaction to
+    // it. Record it as soon as it is classified — before the cascade check and
+    // before the claim race — so a seat that stands down still observes the
+    // reset.
+    //
+    // Without this, losing a claim on a human message is SELF-REINFORCING.
+    // The claim stand-down returns before `runTurn`, and `record()` lives at
+    // the end of `runTurn`, so the loser never records the human turn that
+    // would have cleared its streak. It meets the next broadcast still capped,
+    // declines, and again skips `record()`. The only other escape is
+    // `resetMs` of total pod silence, which a busy room never provides.
+    //
+    // Measured in one pod, 2026-08-18, same window: ux-lead 14 lost claims /
+    // 73 cap refusals / 2 posts, against sprint-review 0 / 2 / 95. Losing one
+    // race is what kept it losing — the mechanism meant to SHARE work
+    // concentrated it instead.
+    //
+    // Deliberately `=== 'human'`, not `!== 'agent'`. `classifyTrigger` returns
+    // 'unknown' when it cannot identify the trigger message, and 'unknown' is
+    // the fail-open verdict for ADMISSION only — it must never clear a streak,
+    // or an unidentifiable event becomes a cap-reset primitive.
+    //
+    // Agent-triggered turns still record only on completion (see `runTurn`),
+    // so the no-double-count property for redelivered events is unchanged.
+    // Recording a human trigger sets the streak to 0, so this call and the
+    // completion-time one are idempotent with each other.
+    if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
     if (!admission.allowed) {
       log(
