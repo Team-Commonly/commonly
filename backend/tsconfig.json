@@ -3,6 +3,29 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    // Every file is its own module, even without an import/export.
+    //
+    // This matches how these files actually RUN. Node and ts-node execute each
+    // file as a CommonJS module, where a top-level `const` is file-scoped. But
+    // tsc's default `moduleDetection: "auto"` models any file lacking an
+    // import/export as a GLOBAL script, so our operational scripts — which use
+    // `const x = require(...)` rather than `import` — were modelled as sharing
+    // one scope they never share at runtime.
+    //
+    // The result: `backfill-byo-host-stamp.ts` claimed the names `mongoose`,
+    // `APPLY` and `main` repo-wide, and the next script written in the same
+    // house style failed with TS2451 "Cannot redeclare block-scoped variable".
+    // Two unrelated PRs (#953, #962) each added one such script and each went
+    // red on the other's names. `scripts/` is in tsconfig.build.json too, so
+    // this would have broken `npm run build` and the deploy, not just CI.
+    //
+    // Blast radius measured before landing: 7 files in the repo are currently
+    // modelled as global scripts, all standalone scripts plus jest.setup.js —
+    // no server runtime file. The only emit change is a `"use strict";` line
+    // (shebangs stay on line 1); none of the affected .js scripts use
+    // sloppy-mode constructs. Full typecheck and a full build were run with
+    // this flag: zero new errors.
+    "moduleDetection": "force",
     "allowJs": true,
     "checkJs": false,
     "outDir": "./dist",
