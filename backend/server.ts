@@ -530,28 +530,6 @@ io.on('connection', (socket: any) => {
     await emitPresence(podId);
   });
 
-  // Agent typing indicators — forwarded from clients (gateway / SDK adapters)
-  // into the pod room. Server-side services use agentTypingService directly.
-  socket.on('agent_typing_start', (payload: {
-    podId: string;
-    agentName: string;
-    instanceId?: string;
-    displayName: string;
-    avatar?: string;
-  }) => {
-    if (!payload?.podId || !payload?.agentName) return;
-    io.to(`pod_${payload.podId}`).emit('agent_typing_start', payload);
-  });
-
-  socket.on('agent_typing_stop', (payload: {
-    podId: string;
-    agentName: string;
-    instanceId?: string;
-  }) => {
-    if (!payload?.podId || !payload?.agentName) return;
-    io.to(`pod_${payload.podId}`).emit('agent_typing_stop', payload);
-  });
-
   // Send a message to a pod
   socket.on(
     'sendMessage',
