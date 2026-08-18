@@ -218,12 +218,15 @@ export async function maybeFireWelcomeWake({
         agentName,
         instanceId,
         podId: safePodId,
-        // Deliberately chat.mention rather than a new event type. The CLI
-        // wrapper's extractPrompt returns null for any type outside
-        // PROMPT_EVENT_TYPES, so a bespoke `pod.first_message` would be
-        // silently dropped by every already-deployed wrapper — the #611
-        // failure mode. An additive payload flag costs nothing and works on
-        // drivers shipped before this existed.
+        // Deliberately chat.mention rather than a new event type. A new type
+        // needs a wrapper release: the CLI wrapper's extractPrompt has no
+        // branch for one and falls through to null, so a bespoke
+        // `pod.first_message` would be silently dropped by every
+        // already-deployed wrapper — the #611 failure mode. (The boundary is
+        // the branch, not the set: extractPrompt also handles heartbeat,
+        // agent.ask and agent.ask.response outside PROMPT_EVENT_TYPES.) An
+        // additive payload flag costs nothing and works on drivers shipped
+        // before this existed.
         type: 'chat.mention',
         payload: {
           messageId: messageId ? String(messageId) : undefined,

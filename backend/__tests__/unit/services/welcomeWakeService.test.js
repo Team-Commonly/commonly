@@ -158,9 +158,11 @@ describe('welcomeWakeService', () => {
   });
 
   describe('the enqueued event is one every deployed wrapper already handles', () => {
-    // A bespoke type would be dropped: the CLI wrapper's extractPrompt returns
-    // null for anything outside PROMPT_EVENT_TYPES, so every wrapper shipped
-    // before this feature would silently ignore the wake.
+    // A bespoke type would be dropped: the CLI wrapper's extractPrompt has no
+    // branch for one and falls through to null, so every wrapper shipped before
+    // this feature would silently ignore the wake. Not "outside
+    // PROMPT_EVENT_TYPES" — heartbeat, agent.ask and agent.ask.response are all
+    // handled outside that set.
     test('type is chat.mention, flagged additively', async () => {
       await maybeFireWelcomeWake(opts());
       const [event] = AgentEventService.enqueue.mock.calls[0];
