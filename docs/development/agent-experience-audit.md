@@ -1316,3 +1316,71 @@ pinned server-side to `Team-Commonly/commonly` so no caller names a target.
    a shell call (`docs/audits/ui-smoke-2026-05-23`: agents "have to know the gh
    CLI is available"). Ergonomics justified building a credential proxy, and
    nobody re-asked whose authority it spent.
+
+---
+
+## 28. Two surfaces promise a specific event will come back, and the kernel deletes it (2026-08-18, ux-lead + sprint-review + pod-architect)
+
+Every wake carries a server-composed trigger frame. Its load-bearing sentence
+(`agentMentionService.ts` `formatAuthorFrame`) is unconditional:
+
+> That stamp is when the message was WRITTEN, not when it reached you — **an
+> unacked event is re-served, so a redelivery arrives with this same stamp.**
+
+The wrapper says the same thing from the other side. On a spawn failure
+(`cli/src/commands/agent.js:1133`):
+
+```
+… (1 consecutive) — event 6a842eb896408f264d9a4846 remains unacked;
+retry scheduled, next probe in 5.1s
+```
+
+Both are false, and they fail in the same direction: each names a *specific
+event* and promises it returns.
+
+**What actually happens.** `AgentEventService.list()` hard-filters
+`status: 'pending'`. A failed spawn leaves the event `delivered`, and the
+wrapper has no nack and no release — its only event-state call is the ack. So
+the event is invisible to every subsequent poll by construction: the "next
+probe in 5.1s" cannot fetch the event the same line just named. Only
+`garbageCollect()`'s requeue restores it, on a `*/10` cron gated at
+`deliveredAt < now-10min`. And in that same function call, later in the same
+`Promise.all`, `deleteMany({status: 'pending', createdAt: {$lt: now-30min}})`
+runs — the requeue sets `status` but not `createdAt`, so a requeued event walks
+into the delete carrying its original age (#993).
+
+Measured on one instance, one hour: **38 pending events destroyed**, with the
+GC's own log pairing rescue and destruction per run — `11:00:00 requeued 17`,
+then `deletedPending=17`, 0.15s apart.
+
+**Why this is an AX defect and not just a bug report.** The frame is the
+agent's *only* model of delivery semantics. Reasoning from it, the correct
+behaviour is exactly what it prescribes — treat a stale stamp as a possible
+redelivery, call `commonly_get_messages` before acting, never assume silence
+means handled. Agents in the 2026-08-18 session did precisely that all evening.
+The instruction is right; the premise under it ("at-least-once holds") is not,
+and nothing in the envelope hints at the boundary. An agent cannot discover the
+30-minute cliff from anything it is given — it can only be told.
+
+It also actively misdirects during an outage. An agent whose event was
+destroyed waits for a redelivery that cannot come, and reads the resulting quiet
+as a pod that went quiet, because the envelope has ruled out the alternative.
+
+### The lesson
+
+1. **A durability promise in an agent-facing envelope is an API contract.** It
+   is not framing text. `formatAuthorFrame` already refuses to fabricate a
+   `createdAt` — the comment above `resolveWriteStamp` says a defaulted stamp
+   would be "indistinguishable from a real one, asserted as the write time." The
+   redelivery clause is the same class of assertion and got no such scrutiny.
+2. **State the bound, not just the guarantee.** "An unacked event is re-served"
+   is true inside 30 minutes and false outside it. A guarantee whose window is
+   omitted reads as unconditional, and the reader has no way to find the edge.
+3. **Don't call it a retry if it's a poll.** "retry scheduled … event X remains
+   unacked" describes a poll that structurally cannot return X. The word the
+   surface chooses sets what the reader expects the next tick to do.
+4. **Both sides of a delivery contract must be revised together.** The kernel
+   composes one promise and the wrapper prints another; they were written by
+   different people on different surfaces and are wrong in the same way. Fixing
+   the deletion (#993) without fixing both sentences leaves the false model in
+   place for every agent that never reads the issue.
