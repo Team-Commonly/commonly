@@ -28,6 +28,8 @@
 
   --v2-success: #10b981;
   --v2-success-soft: #e3f6ec;
+  --v2-success-ring: rgba(16, 185, 129, 0.40);
+  --v2-success-ring-strong: rgba(16, 185, 129, 0.50);
   --v2-warning: #f4a23a;
   --v2-warning-soft: #fdefdc;
   --v2-info: #0891b2;
@@ -810,13 +812,10 @@
 
 .v2-pods__filters {
   display: grid;
-  /* Three equal segments + one content-sized. The previous hand-tuned
-     fractions (0.75/1/1.15/1.7) sized every column to its English label —
-     four random widths reading as ragged (Sam, 2026-08-13). True equal
-     quarters can't hold "Community" at legible size in this rail, so the
-     long label gets the one deliberate auto column; whether that label
-     changes is the design pass's call. */
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  /* Community is product vocabulary, not a layout compromise. The first
+     three filters share the available width; Community keeps its readable
+     content width but is capped so it cannot consume a narrow rail. */
+  grid-template-columns: repeat(3, minmax(0, 1fr)) fit-content(92px);
   gap: 4px;
   padding: 0;
   margin-bottom: 18px;
@@ -834,6 +833,8 @@
   border-radius: var(--v2-radius-sm);
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background 80ms ease, color 80ms ease;
 }
 
@@ -902,18 +903,11 @@
   opacity: 1;
 }
 
-/* Hide the inline time on hover so the pin (top-right) doesn't overlap.
-   The time sits at the right edge of the title row in normal state. */
-.v2-pods__row:hover .v2-pods__item-time {
+/* The pin overlays the reserved time slot, so revealing it cannot reflow the
+   title or preview. */
+.v2-pods__row:hover .v2-pods__item-time,
+.v2-pods__row--pinned .v2-pods__item-time {
   visibility: hidden;
-}
-/* Reserve a margin for the pin so the 2-line snippet doesn't run under
-   it on hover (or on already-pinned rows). */
-.v2-pods__row:hover .v2-pods__item-snippet,
-.v2-pods__row--pinned .v2-pods__item-snippet,
-.v2-pods__row:hover .v2-pods__item-title,
-.v2-pods__row--pinned .v2-pods__item-title {
-  padding-right: 28px;
 }
 .v2-root button.v2-pods__pin:hover {
   background: var(--v2-surface-hover);
@@ -925,11 +919,12 @@
 
 .v2-pods__item {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
-  min-height: 60px;
+  height: 64px;
   padding: 10px;
+  overflow: hidden;
   border-radius: var(--v2-radius);
   cursor: pointer;
   width: 100%;
@@ -1009,12 +1004,14 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  height: 20px;
 }
 
 .v2-pods__item-title {
   flex: 1;
   min-width: 0;
   font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
   color: var(--v2-text-primary);
   white-space: nowrap;
@@ -1088,12 +1085,13 @@
 
 .v2-pods__item-snippet {
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 16px;
   color: var(--v2-text-tertiary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: block;
+  height: 16px;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Title-row sibling — sits to the right of the pod name. Slack/iMessage
@@ -1101,10 +1099,15 @@
    second line is reserved entirely for the message preview. */
 .v2-pods__item-time {
   flex-shrink: 0;
+  /* Relative-time formatting follows the viewer's browser locale. Do not
+     cap it to an English measurement: title ellipsis is safer than clipping
+     a clock, and visibility:hidden still reserves this row's slot on hover. */
   font-size: 11px;
   color: var(--v2-text-tertiary);
   font-variant-numeric: tabular-nums;
   align-self: baseline;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .v2-pods__empty {
@@ -2535,12 +2538,10 @@
   white-space: nowrap;
 }
 
-/* Solid accent-soft wash + 2px accent rail when the current user is
-   @-mentioned in this message. No gradients (system rule). */
+/* A mention is a tinted system signal, not a separate card or accent rail. */
 .v2-msg--mention {
   background: var(--v2-accent-soft);
-  border-left: 2px solid var(--v2-accent);
-  border-radius: 0 var(--v2-radius-sm) var(--v2-radius-sm) 0;
+  border-radius: var(--v2-radius-sm);
   padding: 8px 10px 8px 10px;
   margin-left: -12px;
 }
@@ -2974,15 +2975,15 @@
   height: 8px;
   border-radius: 50%;
   background: var(--v2-success);
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 0 0 var(--v2-success-ring-strong);
   animation: v2-now-pulse 1.6s ease-out infinite;
   flex-shrink: 0;
 }
 
 @keyframes v2-now-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-  70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0%   { box-shadow: 0 0 0 0 var(--v2-success-ring); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 .v2-inspector__now-meta {
@@ -6811,7 +6812,7 @@
   flex-direction: column;
   gap: 1px;
   font-size: 12.5px;
-  border-left: 2px solid var(--v2-border);
+  border-left: 3px solid var(--v2-border);
   padding-left: 10px;
 }
 
@@ -6850,7 +6851,7 @@
 .v2-board__field input:focus {
   outline: none;
   border-color: var(--v2-accent);
-  box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.14);
+  box-shadow: var(--v2-focus-ring);
 }
 
 .v2-root button.v2-board__create-submit {
