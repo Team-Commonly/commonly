@@ -285,6 +285,37 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload).not.toHaveProperty('messageId');
   });
 
+  test('logs and skips an acknowledgement when a legacy bot has no routable agentName', async () => {
+    pool.query
+      .mockResolvedValueOnce(messageLookup('pod-legacy', 'legacy-bot'))
+      .mockResolvedValueOnce(memberLookup(1));
+    MessageReaction.add.mockResolvedValueOnce(true);
+    User.findById.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          isBot: true,
+          username: 'openclaw-reviewer',
+          botMetadata: { instanceId: 'reviewer' },
+        }),
+      }),
+    });
+    const warning = jest.spyOn(console, 'warn').mockImplementation();
+
+    await reactionController.addReaction({
+      params: { messageId: 'legacy-44' },
+      body: { emoji: '👍' },
+      user: { _id: 'human-reactor' },
+    }, buildRes());
+    await new Promise((r) => { setImmediate(r); });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(warning).toHaveBeenCalledWith(
+      '[reactionController] agent acknowledgement skipped: missing botMetadata.agentName',
+      'legacy-bot',
+    );
+    warning.mockRestore();
+  });
+
   test('an idempotent duplicate reaction does not wake the agent a second time', async () => {
     pool.query
       .mockResolvedValueOnce(messageLookup('pod-idempotent', 'author-bot'))

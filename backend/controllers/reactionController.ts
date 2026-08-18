@@ -166,11 +166,17 @@ async function enqueueReactionAcknowledgement({
       } | null;
     if (!author?.isBot) return;
 
-    // Some older bot rows lack agentName; username is the established
-    // identity fallback for agent-event routing elsewhere in this service
-    // layer. Do not enqueue a malformed event if neither is available.
-    const agentName = String(author.botMetadata?.agentName || author.username || '').trim().toLowerCase();
-    if (!agentName) return;
+    // AgentEvent is addressed by (agentName, instanceId). A legacy bot row
+    // without agentName has no transport-independent routing identity:
+    // HTTP auth and the agent WebSocket derive different fallbacks. Do not
+    // enqueue a receipt either delivery path might strand; leave a visible
+    // operational signal instead of silently treating it as delivered.
+    const agentName = String(author.botMetadata?.agentName || '').trim().toLowerCase();
+    if (!agentName) {
+      // eslint-disable-next-line no-console
+      console.warn('[reactionController] agent acknowledgement skipped: missing botMetadata.agentName', authorUserId);
+      return;
+    }
 
     await AgentEventService.enqueue({
       agentName,
