@@ -1101,7 +1101,10 @@ describe('AgentMentionService', () => {
           agentName: 'openclaw',
           instanceId: 'cody',
           podId: 'pod-loop-1',
-          type: 'chat.mention',
+          // Was `type: 'chat.mention'` — this assertion pinned #976 rather
+          // than catching it, because it described the query the code made
+          // instead of the population the gate covers.
+          type: { $in: ['chat.mention', 'thread.mention'] },
         }),
       );
       expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
@@ -1598,6 +1601,93 @@ describe('AgentMentionService', () => {
       expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
       const [event] = AgentEventService.enqueue.mock.calls[0];
       expect(event.agentName).toBe('hq-support');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // #976 — the #508 dampener gates BOTH mention types but used to count
+  // only chat.mention, so a bot<->bot thread-mention loop was measured
+  // against a counter it could never move.
+  // ------------------------------------------------------------------
+  describe('#508 mention dampener — event-type coverage (#976)', () => {
+    const setup = () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { agentName: 'smoke-echo', instanceId: 'default', displayName: 'Smoke Echo' },
+        ]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      // A DIFFERENT bot: the dampener only runs for bot senders, and the
+      // self-mention guard must not pre-empt it.
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({
+          _id: 'agent-user-2',
+          isBot: true,
+          botMetadata: { agentName: 'other-agent', instanceId: 'default' },
+        }),
+      });
+    };
+
+    const mention = (extra = {}) => AgentMentionService.enqueueMentions({
+      podId: 'pod-dampen',
+      message: { content: '@smoke-echo again', id: 'msg-d1', ...extra },
+      userId: 'agent-user-2',
+      username: 'other-agent',
+    });
+
+    test('the count selects both mention types, not just chat.mention', async () => {
+      setup();
+      await mention();
+      const query = AgentEvent.countDocuments.mock.calls[0][0];
+      // The assertion is on the SELECTOR rather than on a suppression,
+      // because the defect was invisible in behaviour: with the old query a
+      // thread-mention loop simply counted zero forever, and "not dampened"
+      // is indistinguishable from "under the threshold".
+      expect(query.type).toEqual({ $in: ['chat.mention', 'thread.mention'] });
+    });
+
+    // A blanket countDocuments mock cannot express this defect: it returns the
+    // same number whatever the query asks for, so the old selector looks
+    // healthy. These drive a tiny selector-aware store instead — which is the
+    // production failure exactly, a counter reading rows it never selects.
+    const withStore = (rows) => {
+      AgentEvent.countDocuments.mockImplementation(async (query) => {
+        const wanted = query?.type?.$in ?? [query?.type];
+        return rows.filter((r) => wanted.includes(r.type)).length;
+      });
+    };
+
+    test('a thread-mention loop is dampened, where the chat-only counter read zero', async () => {
+      setup();
+      withStore(Array.from({ length: 4 }, () => ({ type: 'thread.mention' })));
+
+      const res = await mention({
+        source: 'thread',
+        thread: { postId: 'thread-1', postContent: 'parent' },
+      });
+
+      expect(res.enqueued).toEqual([]);
+      expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    });
+
+    test('the budget is shared, so alternating surfaces cannot each sit at half of it', async () => {
+      // 2 + 2 is over the threshold of 3 together and under it apart. A
+      // per-type budget would let this loop run forever with both counters
+      // permanently below the line.
+      setup();
+      withStore([
+        { type: 'chat.mention' }, { type: 'chat.mention' },
+        { type: 'thread.mention' }, { type: 'thread.mention' },
+      ]);
+
+      const chat = await mention();
+      const thread = await mention({
+        source: 'thread', thread: { postId: 't-2', postContent: 'p' },
+      });
+
+      expect(chat.enqueued).toEqual([]);
+      expect(thread.enqueued).toEqual([]);
     });
   });
 });
