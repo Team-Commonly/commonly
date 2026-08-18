@@ -100,6 +100,40 @@ describe('spawn retry policy', () => {
  * outage, where every one of them classified as RUNTIME — the weakest class,
  * with the shortest backoff — instead of QUOTA.
  */
+
+describe('classifies the Claude CLI session-limit string (2026-08-18 outage)', () => {
+  // Verbatim from the fleet stall on 2026-08-18. `QUOTA_RE` already carried
+  // "usage limit" — Claude's OTHER exhaustion wording — and missed this one by
+  // a single word, so every seat took the RUNTIME ladder (5.6s, 11.2s, 1.1m)
+  // against a provider that would not answer until 4am.
+  const SESSION_LIMIT = "claude exited with code 1: You've hit your session limit "
+    + '· resets 4am (America/Los_Angeles)';
+
+  test("the CLI's session-limit wording is QUOTA, not RUNTIME", () => {
+    expect(classifySpawnFailure(new Error(SESSION_LIMIT)))
+      .toBe(SPAWN_FAILURE_CLASS.QUOTA);
+  });
+
+  test('so it opens the circuit at the full cooldown on the first failure', () => {
+    const { circuitOpen, delayMs } = spawnRetryPolicy({
+      error: new Error(SESSION_LIMIT),
+      consecutiveFailures: 1,
+      intervalMs: 5000,
+    });
+    expect(circuitOpen).toBe(true);
+    expect(delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  });
+
+  // Guard on the widening, not just the fix. QUOTA is tested before
+  // RATE_LIMIT, so a pattern loose enough to match "limit" on its own would
+  // swallow every rate-limit error into a 15-minute cooldown.
+  test('a rate-limit error is still RATE_LIMIT, not captured by the new pattern', () => {
+    expect(classifySpawnFailure(new Error('429 rate limit exceeded, retry shortly')))
+      .toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+    expect(classifySpawnFailure(new Error('Too many requests — slow down')))
+      .toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+  });
+});
 describe('classifies real provider-exhaustion strings (2026-08-03 outage)', () => {
   test("codex's exact out-of-credits wording is QUOTA, not RUNTIME", () => {
     const error = new Error(
