@@ -55,6 +55,13 @@ export const classifyTrigger = (event, recentMessages) => {
   return trigger.isBot ? 'agent' : 'human';
 };
 
+// Direct-address event types: the seat was NAMED (explicit @, implicit human
+// reply, or DM routing). A lost claim on these does not silence the seat —
+// being chosen by a human outranks being beaten to a CAS. Broadcast wakes
+// (message.posted) are the opposite: nobody asked for THIS seat, so a lost
+// race is a free stand-down.
+export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
+
 // ── cascade governor ────────────────────────────────────────────────────────
 
 /**
@@ -68,12 +75,19 @@ export const classifyTrigger = (event, recentMessages) => {
  * pod recovers on its own — a legitimate a2a handoff an hour later must not
  * inherit a stale cap).
  *
+ * NOTE on `resetMs`: it is a SILENCE window, not a decay. It requires
+ * `resetMs` with ZERO agent-triggered turns in the pod. Three chatty seats
+ * never leave a ten-minute hole, so in a busy room the only live release is a
+ * human turn. Say so plainly rather than letting "or the streak decays" imply
+ * a timer that will save you.
+ *
  * Split into admit/record so a spawn that fails (and will be redelivered)
  * never double-counts: admit() only reads, record() runs after a turn
  * actually completed. Human-triggered turns are always admitted.
  */
 export const createCascadeGovernor = ({
   cap = 3,
+  addressedGrace = 2,
   resetMs = 10 * 60 * 1000,
   now = Date.now,
 } = {}) => {
@@ -88,10 +102,23 @@ export const createCascadeGovernor = ({
   };
 
   return {
-    admit(podId, trigger) {
-      if (trigger !== 'agent') return { allowed: true, streak: 0 };
+    admit(podId, trigger, eventType) {
+      if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
-      return { allowed: s.streak < cap, streak: s.streak };
+      // Being NAMED outranks a mechanical brake — the same judgement the claim
+      // path already makes forty lines down in agent.js. Without this, a peer
+      // can @mention a capped seat and get silence, with no signal to either
+      // side that anything was suppressed. Observed 2026-08-18: one seat took
+      // 51 wakes and 28 consecutive cap refusals, five of them chat.mention,
+      // and answered none of them.
+      //
+      // A GRACE, not an exemption: an unbounded pass would restore the exact
+      // A-mentions-B-mentions-A echo this governor exists to kill. Addressed
+      // turns still count toward the streak, so a mention loop terminates at
+      // cap + addressedGrace instead of never.
+      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
+      const limit = addressed ? cap + addressedGrace : cap;
+      return { allowed: s.streak < limit, streak: s.streak, addressed };
     },
     record(podId, trigger) {
       if (trigger === 'human') {
@@ -107,12 +134,6 @@ export const createCascadeGovernor = ({
 
 // ── claim fairness ──────────────────────────────────────────────────────────
 
-// Direct-address event types: the seat was NAMED (explicit @, implicit human
-// reply, or DM routing). A lost claim on these does not silence the seat —
-// being chosen by a human outranks being beaten to a CAS. Broadcast wakes
-// (message.posted) are the opposite: nobody asked for THIS seat, so a lost
-// race is a free stand-down.
-export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
 // Frame prepended when an ADDRESSED seat lost the claim race: it still gets
 // its turn, but knows a peer is (probably) already answering — the bar for
