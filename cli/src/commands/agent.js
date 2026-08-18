@@ -820,10 +820,14 @@ export const performRun = ({
     // race is what kept it losing — the mechanism meant to SHARE work
     // concentrated it instead.
     //
-    // Deliberately `=== 'human'`, not `!== 'agent'`. `classifyTrigger` returns
-    // 'unknown' when it cannot identify the trigger message, and 'unknown' is
-    // the fail-open verdict for ADMISSION only — it must never clear a streak,
-    // or an unidentifiable event becomes a cap-reset primitive.
+    // `=== 'human'` rather than `!== 'agent'`. These are behaviourally the
+    // same today: `record()` dispatches on exact equality and leaves every
+    // other value untouched, including the 'unknown' that `classifyTrigger`
+    // returns for an unresolvable trigger — `enforcement.js:123-131`, and the
+    // "'unknown' is neutral: no count, no reset" note at :130. The narrow form
+    // is defensive, not load-bearing: it keeps an unidentifiable event from
+    // becoming a cap-reset primitive if `record()` ever grows a fallthrough
+    // branch. It closes no hole that was open.
     //
     // Agent-triggered turns still record only on completion (see `runTurn`),
     // so the no-double-count property for redelivered events is unchanged.
