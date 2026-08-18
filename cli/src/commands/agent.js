@@ -1700,7 +1700,7 @@ Docs:
         }
         if (record) {
           saveAgentToken(record.agentName, record);
-          console.log(`[${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+          console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
         } else {
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
@@ -1717,7 +1717,14 @@ Docs:
         process.exit(1);
       }
 
-      console.log(`[${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
+      // THE line to stamp, not just one of them. It is the first line of every
+      // seat log and the truncation boundary — the fleet is launched as
+      // `nohup … > log 2>&1`, so this banner is written at boot and everything
+      // before it is gone. Stamped, it dates the restart from the log itself.
+      // Unstamped, it took `ps -o lstart` to establish when nine seats came
+      // back on 2026-08-18, and that only worked because the processes were
+      // still alive — after the next restart that route is gone too.
+      console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -1754,7 +1761,7 @@ Docs:
       });
 
       process.on('SIGINT', () => {
-        console.log(`\n[${name}] stopping...`);
+        console.log(`\n${stamp()} [${name}] stopping...`);
         stop();
         process.exit(0);
       });
