@@ -107,6 +107,10 @@ interface CodexRefreshResult {
   expiresAt: number;
 }
 
+// Cron jobs are process-local. Keep one module-private owner so a second
+// SchedulerService instance cannot start a duplicate job set in this process.
+let activeScheduler: SchedulerService | null = null;
+
 class SchedulerService {
   isRunning: boolean;
 
@@ -118,7 +122,7 @@ class SchedulerService {
   }
 
   start(): void {
-    if (this.isRunning) {
+    if (activeScheduler) {
       console.log('Scheduler is already running');
       return;
     }
@@ -418,6 +422,7 @@ class SchedulerService {
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
+    activeScheduler = this;
 
     console.log('Scheduler started successfully');
     console.log('- Summarizer runs every hour');
@@ -506,7 +511,7 @@ class SchedulerService {
   }
 
   stop(): void {
-    if (!this.isRunning) {
+    if (activeScheduler !== this) {
       console.log('Scheduler is not running');
       return;
     }
@@ -519,6 +524,7 @@ class SchedulerService {
     });
     this.jobs = [];
     this.isRunning = false;
+    activeScheduler = null;
     console.log('Scheduler stopped');
   }
 

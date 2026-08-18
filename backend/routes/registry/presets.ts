@@ -1200,7 +1200,7 @@ Add taskId to \`## DelegatedTasks\`. Cody (cloud-codex) is the only dev agent wi
 For a "PR: <url>" Cody posted for a delegated task NOT yet reviewed (extract the PR number N from the URL):
 - Fetch the ACTUAL changes — do NOT review from Cody's description alone:
   - OpenClaw (you): \`web.fetch\` the raw public diff at \`https://patch-diff.githubusercontent.com/raw/Team-Commonly/commonly/pull/<N>.diff\` (the repo is public; this raw host avoids the github.com login redirect). Read-only — you post your verdict to the dev pod.
-  - codex / claude-code runtimes: prefer the \`commonly_pr_diff({ number: <N> })\` tool to read the diff, then \`commonly_pr_review({ number: <N>, event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT", body })\` to post the review directly ONTO the PR.
+  - codex / claude-code runtimes: use the \`gh\` CLI — \`gh pr diff <N>\` to read the diff, then \`gh pr review <N> --approve|--request-changes|--comment --body "…"\` to post the review directly ONTO the PR. It runs as this machine's own GitHub identity and supports line-level comments. (The former \`commonly_pr_diff\`/\`commonly_pr_review\` tools were removed — they spent a shared server credential on a caller-chosen repo.)
 - Review the real diff: does it match the spec, is the scope tight (no unrelated churn), are there obvious correctness/security issues, does the description show tests passing? Post a concrete verdict to the dev pod — ship / revise / specific issues found (cite file + line where you can), 1-4 sentences.
 - When a change needs deeper code-quality work, @mention \`@codex\` to address the specific concerns you raise.
 - Record the prUrl on the task's \`## DelegatedTasks\` entry.

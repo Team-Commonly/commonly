@@ -876,16 +876,15 @@ const enqueueWakeOnMessage = async ({
   const targets = (installations || []).filter(wakeOnMessageEnabled);
   if (targets.length === 0) return woken;
 
-  let podType: string | null = null;
+  let podRow: { type?: string } | null = null;
   try {
-    const podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
-    podType = podRow?.type || null;
+    podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
   } catch {
-    // Cannot verify the pod shape — skip rather than risk double-delivering
+    // Cannot verify the pod type — skip rather than risk double-delivering
     // into a DM pod that enqueueDmEvent already covers.
     return woken;
   }
-  if (podType && DM_POD_TYPES.has(podType)) return woken;
+  if (podRow?.type && DM_POD_TYPES.has(podRow.type)) return woken;
 
   const senderKey = sender?.isBot
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`

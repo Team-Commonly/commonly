@@ -77,12 +77,6 @@ const githubRouteHandlers = (source) => {
 // valid request that reaches its service boundary.
 const PROXYING_ROUTE_CASES = [
   {
-    name: 'POST /token',
-    service: 'getInstallationToken',
-    send: (client) => client.post('/api/github/token'),
-    assertResponse: (res) => expect(res.body.message).toBe(res.body.error),
-  },
-  {
     name: 'GET /issues',
     service: 'listOpenIssues',
     send: (client) => client.get('/api/github/issues'),
@@ -102,14 +96,22 @@ const PROXYING_ROUTE_CASES = [
     service: 'closeIssue',
     send: (client) => client.post('/api/github/issues/1/close'),
   },
-  {
-    name: 'GET /pulls/:number/diff',
-    service: 'getPullDiff',
-    send: (client) => client.get('/api/github/pulls/1/diff'),
-  },
+];
+
+// These three routes were removed because they lent our server-held GitHub
+// credential to any caller holding an agent token. `/token` returned it
+// outright; the two `/pulls` routes spent it on a caller-chosen `owner`/`repo`.
+//
+// The test is written against the mounted app rather than the source text on
+// purpose: a source-level assertion ("the file no longer contains
+// `/pulls/:number/review`") passes just as happily if the route moves to
+// another router and stays reachable. What matters is that nothing answers
+// these paths.
+const REMOVED_CREDENTIAL_ROUTES = [
+  { name: 'POST /token', send: (client) => client.post('/api/github/token') },
+  { name: 'GET /pulls/:number/diff', send: (client) => client.get('/api/github/pulls/1/diff') },
   {
     name: 'POST /pulls/:number/review',
-    service: 'createPullReview',
     send: (client) => client.post('/api/github/pulls/1/review').send({ event: 'APPROVE' }),
   },
 ];
@@ -145,5 +147,44 @@ describe('GitHub proxy routes preserve upstream credential guidance (AX #9)', ()
       retryable: false,
     }));
     if (assertResponse) assertResponse(res);
+  });
+});
+
+describe('routes that lent out the server GitHub credential stay removed', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // The strongest configuration for the defect: a PAT IS present, which is
+    // exactly when `/token` used to answer with it in plaintext.
+    GitHubAppService.isPatConfigured.mockReturnValue(true);
+    GitHubAppService.isConfigured.mockReturnValue(true);
+  });
+
+  test.each(REMOVED_CREDENTIAL_ROUTES)('$name is not routable', async ({ send }) => {
+    const res = await send(request(app));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('never reaches a GitHub service call for any of them', async () => {
+    await Promise.all(REMOVED_CREDENTIAL_ROUTES.map(({ send }) => send(request(app))));
+
+    // A 404 alone would also be satisfied by a route that answers 404 for its
+    // own reasons while still touching the credential first. Assert the
+    // credential is never read and no upstream call is made.
+    expect(GitHubAppService.getInstallationToken).not.toHaveBeenCalled();
+    expect(GitHubAppService.getPullDiff).not.toHaveBeenCalled();
+    expect(GitHubAppService.createPullReview).not.toHaveBeenCalled();
+  });
+
+  it('pins issue routes to our own repository, ignoring a caller-supplied target', async () => {
+    GitHubAppService.createIssue.mockResolvedValue({ number: 1, title: 't', html_url: 'u' });
+
+    await request(app)
+      .post('/api/github/issues')
+      .send({ title: 't', owner: 'attacker', repo: 'private-repo' });
+
+    expect(GitHubAppService.createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: 'Team-Commonly', repo: 'commonly' }),
+    );
   });
 });
