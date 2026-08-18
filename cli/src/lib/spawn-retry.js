@@ -29,6 +29,23 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // RUNTIME, the weakest class with the shortest backoff, against a provider that
 // was not going to answer for hours.
 //
+// What a miss costs, measured against these constants (intervalMs 5000,
+// jitter 0; `*` = circuit open):
+//
+//   quota          n=1,2,3 ->  900s*  900s*  900s*
+//   configuration  n=1,2,3 ->  900s*  900s*  900s*
+//   rate_limit     n=1,2,3 ->   60s*  120s*  240s*
+//   runtime        n=1,2,3 ->    5s     10s    60s*
+//
+// So an unmatched wording is not one class off — it is 180x faster on the
+// first retry than the class it belonged in, and the only class that does not
+// open the circuit at n=1. That is the price of a missing string, and it is
+// why the entry below is a list of exact wordings rather than a loose pattern.
+//
+// Note RUNTIME is also `classifySpawnFailure`'s fallthrough, so "unrecognised"
+// and "transient local fault" resolve to the same, most aggressive schedule.
+// That is a structural issue rather than a vocabulary one — see #996.
+//
 // Deliberately NOT loosened to a bare `limit`: QUOTA is tested before
 // RATE_LIMIT, so that would swallow every "rate limit" error into the 15-minute
 // cooldown. Add exact wordings, not looser ones.
