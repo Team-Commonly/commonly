@@ -11,6 +11,9 @@
  * covered `false` would have passed against the old behaviour too.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: jest.fn() }));
 jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn().mockResolvedValue({ _id: 'evt' }),
@@ -76,5 +79,28 @@ describe('dispatchAgentHeartbeats — opt-in', () => {
       trigger: 'test', respectIntervals: false,
     });
     expect(r.enqueued).toBeGreaterThan(0);
+  });
+
+  test("the startup banner's heartbeat line names the gate, not just the cadence", () => {
+    // The behaviour above is only half of what an operator relies on; the other
+    // half is the one sentence describing it at boot. That sentence read
+    // "Agent heartbeats run every 10 minutes with per-agent intervals" — true
+    // about the dispatcher, silent about the opt-in — and on 2026-08-18 it sent
+    // a reader to resolveHeartbeatIntervalMinutes to compute a fleet wake rate
+    // from a field that is never reached for a seat which never opted in. The
+    // number was retracted; the sentence that produced it would not have been.
+    //
+    // Asserted on the source text because the banner is emitted inside start(),
+    // which schedules real cron jobs. Matched on the gate's NAME rather than on
+    // wording, so a rephrase stays green and a re-simplification does not.
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../services/schedulerService.ts'), 'utf8',
+    );
+    const banner = src.slice(src.indexOf('- Agent heartbeats'));
+    const line = banner.slice(0, banner.indexOf(');'));
+    expect(line).toContain('heartbeat.enabled');
+    // Control: the slice really did capture the banner and not an empty string,
+    // which would satisfy nothing above and look identical to a pass.
+    expect(line).toContain('10 minutes');
   });
 });
