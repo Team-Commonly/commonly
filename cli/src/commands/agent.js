@@ -1094,9 +1094,14 @@ export const performRun = ({
             // line of identical text into the same merged stream — enough that
             // `grep -c 'session limit'` returned 8 for 4 failures, and a reader
             // counting hits per event id saw 2 and inferred two deliveries.
-            // That number was load-bearing on 2026-08-18 for ruling out the
-            // requeue cap as the cause of #993, and it had to be un-inferred by
-            // hand before the real cause could be named.
+            // On 2026-08-18 that count pointed at the wrong cause for #993:
+            // two deliveries per event puts `attempts` at 2 and the requeue cap
+            // one step away. It did not decide anything — the cap was ruled out
+            // from the DB, where a capped event would have left a `failed` row
+            // and none existed — but it corroborated the wrong theory, and the
+            // doubling had to be spotted by hand before the count could be
+            // discounted. A log that inflates is worse than one that is silent,
+            // because it argues.
             //
             // Routed to the error channel when a caller provides one, and to
             // the log when it doesn't, so neither contract loses the failure:
