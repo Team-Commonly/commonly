@@ -695,6 +695,7 @@ describe('performRun', () => {
     const spawn = jest.fn().mockRejectedValue(new Error('claude process died'));
     const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
     const errors = [];
+    const logs = [];
 
     const { stop } = performRun({
       instanceUrl: 'http://localhost:5000',
@@ -702,6 +703,7 @@ describe('performRun', () => {
       adapter,
       agentName: 'my-stub',
       setTimeoutImpl: noopTimeout,
+      log: (line) => logs.push(line),
       onError: (err) => errors.push(err),
     });
     await drainMicrotasks();
@@ -710,6 +712,41 @@ describe('performRun', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toMatch(/claude process died/);
+
+    // #993 fallout: this failure used to be emitted through BOTH sinks with
+    // identical text, into one file under `nohup … > log 2>&1`. Counting hits
+    // per event id then returned 2, which reads as two deliveries and made the
+    // requeue cap look like the cause. One emission per failure, always.
+    expect(logs.filter((l) => /claude process died/.test(l))).toHaveLength(0);
+  });
+
+  test('a caller with no onError still sees the spawn failure, in the log', async () => {
+    // The other half of the contract. Collapsing the double emission must not
+    // silence the failure for an embedder that passes no error channel — that
+    // would trade a counting artifact for a swallowed wake, which is the #896
+    // ambiguity the surrounding code exists to prevent.
+    const events = [makeEvent({ _id: 'evt-no-onerror' })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn().mockRejectedValue(new Error('claude process died'));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const logs = [];
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+      log: (line) => logs.push(line),
+      // deliberately no onError
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(logs.filter((l) => /claude process died/.test(l))).toHaveLength(1);
 
     // CRITICAL: no message post, no ack — kernel MUST re-deliver.
     expect(mockPost).not.toHaveBeenCalled();

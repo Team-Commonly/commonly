@@ -1089,8 +1089,21 @@ export const performRun = ({
               circuitOpen: retry.circuitOpen,
               eventId: event._id,
             });
-            log(`[${event.type}] ${wrapped.message}`);
-            onError?.(wrapped);
+            // ONE emission, not two. `wrapped.message` already opens with the
+            // event type, so the log copy added a second prefix and a second
+            // line of identical text into the same merged stream — enough that
+            // `grep -c 'session limit'` returned 8 for 4 failures, and a reader
+            // counting hits per event id saw 2 and inferred two deliveries.
+            // That number was load-bearing on 2026-08-18 for ruling out the
+            // requeue cap as the cause of #993, and it had to be un-inferred by
+            // hand before the real cause could be named.
+            //
+            // Routed to the error channel when a caller provides one, and to
+            // the log when it doesn't, so neither contract loses the failure:
+            // an embedder that passes no `onError` still sees it, and `agent
+            // run` — which always passes one — stops printing it twice.
+            if (onError) onError(wrapped);
+            else log(`[${event.type}] ${wrapped.message}`);
             break;
           }
           // Only a completed model turn proves the local runtime and delivery
