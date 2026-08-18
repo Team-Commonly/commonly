@@ -867,7 +867,31 @@ export const performRun = ({
         + (admission.graceApplied ? ' (addressed grace also spent)' : '')
         + ' — standing down until a human speaks or the pod goes quiet for the reset window',
       );
-      return { outcome: 'no_action', reason: 'cascade-cap' };
+      // `details` rides through to the AgentEvent row untouched:
+      // normalizeDeliveryMeta whitelists outcome/reason/messageId and passes
+      // `details` straight into `delivery.details`, typed Schema.Types.Mixed.
+      // So the settings that produced this refusal become queryable with NO
+      // backend change and no deploy.
+      //
+      // This is the half the boot log cannot cover. The log says what a seat
+      // resolved; it does not survive a restart, and nothing joins it to the
+      // refusals it caused. Once cap is per-seat and arbitrary, a refusal
+      // whose cap is unknown cannot be compared against one from another seat.
+      // `reason` deliberately stays the fixed literal 'cascade-cap' — :1111
+      // matches it with === and the run-loop tests assert it — so the value
+      // goes in a sibling field instead of being spelled into the reason.
+      return {
+        outcome: 'no_action',
+        reason: 'cascade-cap',
+        details: {
+          streak: admission.streak,
+          cap: cascadeSettings.cap,
+          addressedGrace: cascadeSettings.addressedGrace,
+          resetMs: cascadeSettings.resetMs,
+          addressed: admission.addressed,
+          graceApplied: admission.graceApplied,
+        },
+      };
     }
 
     // ── ADR-018 enforcement: claim-before-act ───────────────────────────────

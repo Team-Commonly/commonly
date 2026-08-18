@@ -1625,7 +1625,20 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
     );
     // The declined event never reached the claim step.
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
@@ -1661,7 +1674,20 @@ describe('performRun — ADR-018 enforcement', () => {
       expect(spawn).toHaveBeenCalledTimes(1);
       expect(post).toHaveBeenCalledWith(
         '/api/agents/runtime/events/evt-b/ack',
-        { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+        {
+          result: {
+            outcome: 'no_action',
+            reason: 'cascade-cap',
+            details: {
+              streak: 1,
+              cap: 1,
+              addressedGrace: 0,
+              resetMs: 600000,
+              addressed: true,
+              graceApplied: false,
+            },
+          },
+        },
       );
     } finally {
       if (prior.cap === undefined) delete process.env.COMMONLY_CASCADE_CAP;
@@ -1702,7 +1728,20 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-c/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 2,
+            cap: 1,
+            addressedGrace: 1,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: true,
+          },
+        },
+      },
     );
   });
 
@@ -1782,7 +1821,20 @@ describe('performRun — ADR-018 enforcement', () => {
     // on a run where nothing was ever capped.
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
     );
     const refusal = log.mock.calls.map(([l]) => l).find((l) => l.includes('cascade cap:'));
     expect(refusal).toBeDefined();
