@@ -1730,19 +1730,26 @@ Docs:
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
-        // Both sinks are stamped, and both must be. A spawn failure is emitted
-        // through `log` AND `onError` — they serve different contracts, the
-        // narrative line keeping the event-type prefix and the error channel
-        // being what an embedder hooks — so each failure already prints twice
-        // into this one merged stream.
+        // Both sinks are stamped, and both must be — but not for the reason
+        // this comment gave until now, which its own PR falsified.
         //
-        // Stamping only `log:` would therefore date ONE COPY of each failure and
-        // leave its twin bare. That is worse to read than no stamps at all: a
-        // stamped line beside an identical unstamped one looks like two events
-        // at two times, so the artifact that already inflates the count would
-        // start inflating the timeline too. Stamped on both, the pair collapses
-        // — same message, same millisecond, one event — where `grep -c
-        // 'session limit'` previously returned 8 for 4 failures.
+        // A spawn failure is routed to `onError` when a caller provides one and
+        // to `log` only as the fallback, so in `agent run` — which always passes
+        // one — EVERY failure line comes out of the error channel and none out
+        // of the log. Stamping only `log:` would leave the entire failure class
+        // undated, which is the class these stamps exist for.
+        //
+        // The two sinks also carry genuinely different text elsewhere: the
+        // no-prompt skip logs a terse line and sends a detailed diagnostic, so
+        // one stamped and one bare would date half of that pair.
+        //
+        // (History, because the reasoning moved twice. This originally argued
+        // from a DOUBLE emission — the retry path called both sinks with
+        // identical text, so `grep -c 'session limit'` returned 8 for 4 failures
+        // and a per-event count read as two deliveries. That was true when the
+        // stamps landed and false eleven minutes later, when the same PR
+        // collapsed the duplication. The conclusion survived the premise; the
+        // sentence did not, and nothing in the diff pointed at it.)
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
       });
 
