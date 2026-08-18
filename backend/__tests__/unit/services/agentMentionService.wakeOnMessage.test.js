@@ -76,12 +76,12 @@ const mockInstallations = (installations) => {
   });
 };
 
-const mockPodType = (type) => {
+const mockPod = (type, members = ['user-1', 'seat-a']) => {
   Pod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ type }),
+      lean: jest.fn().mockResolvedValue({ type, members }),
     }),
-    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type }),
+    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type, members }),
   });
 };
 
@@ -115,7 +115,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockHumanSender();
-    mockPodType('project');
+    mockPod('chat');
     AgentEvent.countDocuments.mockResolvedValue(0);
   });
 
@@ -145,6 +145,25 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakes[0].payload.content).toContain('NO_REPLY');
     expect(wakes[0].payload.content).toContain('commonly_claim_message');
     expect(wakes[0].payload.content).toContain('just thinking out loud here');
+  });
+
+  test('a shared room wakes every explicitly opted-in installation', async () => {
+    mockPod('chat', ['user-1', 'seat-a', 'seat-b', 'seat-c']);
+    mockInstallations([
+      install('seat-a', { optIn: true }),
+      install('seat-b', { optIn: true }),
+      install('seat-c'),
+    ]);
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'team update', id: 'msg-shared' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(res.woken).toEqual(['seat-a', 'seat-b']);
+    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a', 'seat-b']);
   });
 
   test('default is OFF: installs without the flag are never woken', async () => {
@@ -235,7 +254,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
   });
 
   test('DM-shaped pods are excluded — enqueueDmEvent already routes every message there', async () => {
-    mockPodType('agent-room');
+    mockPod('agent-room');
     mockInstallations([install('seat-a', { optIn: true })]);
 
     const res = await AgentMentionService.enqueueMentions({
@@ -247,5 +266,22 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
     expect(res.woken).toEqual([]);
     expect(wakeCalls()).toHaveLength(0);
+  });
+
+  test('a historic opt-in continues waking after its chat becomes shared', async () => {
+    // The installation setting is explicit and revertible. A later member
+    // changes who may claim, not whether this opted-in agent wakes.
+    mockPod('chat', ['user-1', 'seat-a', 'user-2']);
+    mockInstallations([install('seat-a', { optIn: true })]);
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'team update', id: 'msg-7' },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(res.woken).toEqual(['seat-a']);
+    expect(wakeCalls().map((call) => call.agentName)).toEqual(['seat-a']);
   });
 });

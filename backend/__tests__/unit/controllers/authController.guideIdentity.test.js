@@ -25,7 +25,11 @@ const mockPostMessage = jest.fn().mockResolvedValue({});
 const mockPodUpdateOne = jest.fn().mockResolvedValue({});
 
 jest.mock('../../../models/Pod', () => ({
-  create: jest.fn().mockImplementation(async () => ({ _id: 'pod-123' })),
+  create: jest.fn().mockImplementation(async (attrs) => ({
+    _id: 'pod-123',
+    type: attrs.type,
+    members: attrs.members,
+  })),
   updateOne: (...args) => mockPodUpdateOne(...args),
 }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn().mockResolvedValue({ _id: 'user-1' }) }));
@@ -39,7 +43,10 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOneAndUpdate: (...args) => mockInstallUpsert(...args) },
 }));
 jest.mock('../../../scripts/seed-native-agents', () => ({
-  buildInstallationConfig: jest.fn(() => ({ runtime: { runtimeType: 'native' } })),
+  buildInstallationConfig: jest.fn(() => ({
+    runtime: { runtimeType: 'native' },
+    wakeOnMessage: { enabled: true },
+  })),
 }));
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: (...args) => mockPostMessage(...args),
@@ -75,6 +82,9 @@ describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
       agentName: 'scout',
       instanceId: expected,
     }));
+    // The setting is per installation, not a pod-shape policy. A later shared
+    // room continues to honor this owner's explicit opt-in.
+    expect(update.$set.config.wakeOnMessage.enabled).toBe(true);
   });
 
   test('two users get two distinct guide identities — the memory-envelope fork', async () => {

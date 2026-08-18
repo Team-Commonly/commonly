@@ -40,6 +40,8 @@
   /* ---------- Semantic ---------- */
   --c-success:         #10b981;
   --c-success-soft:    #e3f6ec;
+  --c-success-ring:    rgba(16, 185, 129, 0.40); /* live-activity pulse */
+  --c-success-ring-strong: rgba(16, 185, 129, 0.50);
   --c-warning:         #f4a23a;
   --c-warning-soft:    #fdefdc;
   --c-info:            #0891b2;   /* cyan — distinct from accent blue */

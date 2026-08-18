@@ -474,7 +474,18 @@ export default {
     const sessionId = ctx.sessionId || randomUUID();
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
     const sessionFlag = isResume ? '--resume' : '--session-id';
-    const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId];
+    // Model pin from the ADR-008 environment spec. Absent it, claude picks its
+    // own default — which is how a fleet of ten agents ended up running three
+    // different Opus versions that nobody chose and nothing recorded, with one
+    // seat named after a model it does not run.
+    //
+    // Computed ONCE and spread into BOTH arg builders. The session-recovery
+    // path at the bottom of this function constructs its own array, and a model
+    // present in one but not the other means a retry silently runs a different
+    // model than the turn it is replacing — the same drifting-copy shape that
+    // has bitten this codebase repeatedly.
+    const modelArgs = ctx.environment?.model ? ['--model', String(ctx.environment.model)] : [];
+    const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
     if (ctx.environment && ctx.cwd) {
       const skills = await mountSkills(ctx.environment, ctx.cwd);
@@ -529,7 +540,7 @@ export default {
       // session id poisons every subsequent event re-delivery.
       if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
         const freshId = randomUUID();
-        const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId];
+        const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retry = await prepareArgv(retryBase, {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,

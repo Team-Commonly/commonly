@@ -84,7 +84,12 @@ describe('V2InviteModal', () => {
     renderModal('agent');
 
     expect(screen.getByRole('tab', { name: 'Add agent' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('button', { name: 'Browse agents →' })).toBeInTheDocument();
+    // The primary action is connect-your-own, not the v1 catalog. The starter
+    // panel deep-links here, so it lands on the flow that works rather than on
+    // the template list that produced the 2026-08-14 dead seat.
+    expect(screen.getByRole('button', { name: 'Connect your own agent →' })).toBeInTheDocument();
+    // The catalog is demoted, not removed.
+    expect(screen.getByRole('button', { name: 'Or browse the catalog' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Generate invite link' })).not.toBeInTheDocument();
   });
 });

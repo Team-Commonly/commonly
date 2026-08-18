@@ -37,6 +37,10 @@ jest.mock('../../../models/AgentMemory', () => ({
   updateOne: jest.fn(),
 }));
 
+jest.mock('../../../models/Task', () => ({
+  aggregate: jest.fn(),
+}));
+
 jest.mock('../../../services/agentMemoryService', () => ({
   buildMemoryDigestBundle: jest.fn(() => ({})),
 }));
@@ -59,6 +63,7 @@ jest.mock('../../../services/nativeRuntimeService', () => ({ runAgent: jest.fn()
 
 const AgentEvent = require('../../../models/AgentEvent');
 const AgentMemory = require('../../../models/AgentMemory');
+const Task = require('../../../models/Task');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
@@ -127,6 +132,107 @@ describe('attempts is a delivery counter with exactly one writer', () => {
     const [, update] = lastCall(AgentEvent.findOneAndUpdate);
     expect(update.$set).toEqual(expect.objectContaining({ status: 'failed', error: 'boom' }));
     expect(update.$inc).toBeUndefined();
+  });
+});
+
+describe('heartbeat task-update cue', () => {
+  const podId = { toString: () => '64f000000000000000000001' };
+  let lastCycleAt;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    lastCycleAt = new Date(Date.now() - (10 * 60 * 1000));
+    AgentInstallation.findOne.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve(null) }),
+      lean: () => Promise.resolve(null),
+    });
+    AgentInstallation.find.mockReturnValue({ lean: () => Promise.resolve([]) });
+    AgentEvent.create.mockImplementation(async (event) => ({
+      _id: 'heartbeat-1',
+      ...event,
+      status: 'pending',
+      attempts: 0,
+    }));
+  });
+
+  test('counts updates since the latest cycle and prepends only an on-demand cue', async () => {
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          sections: {
+            cycles: {
+              // Deliberately unordered: the cursor is the newest valid entry,
+              // not an assumed array position.
+              entries: [{ ts: new Date(lastCycleAt.getTime() - (30 * 60 * 1000)) }, { ts: lastCycleAt }],
+            },
+          },
+        }),
+      }),
+    });
+    Task.aggregate.mockResolvedValue([{ count: 2 }]);
+
+    await AgentEventService.enqueue({
+      agentName: 'scout', instanceId: 'workspace-a', podId, type: 'heartbeat',
+      payload: { content: 'Scheduler heartbeat for pod 64f000000000000000000001.' },
+    });
+
+    expect(Task.aggregate).toHaveBeenCalledWith([
+      { $match: { podId } },
+      { $unwind: '$updates' },
+      { $match: { 'updates.createdAt': { $gt: lastCycleAt } } },
+      { $count: 'count' },
+    ]);
+    const payload = AgentEvent.create.mock.calls[0][0].payload;
+    expect(payload.content).toContain('[tasks: 2 task updates since your last cycle — call commonly_get_tasks if relevant.]');
+    expect(payload.content).toContain('Scheduler heartbeat for pod');
+    expect(payload.content).not.toContain('Claimed by');
+  });
+
+  test('skips the query before an agent has logged a cycle', async () => {
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ sections: { cycles: { entries: [] } } }) }),
+    });
+
+    await AgentEventService.enqueue({
+      agentName: 'scout', instanceId: 'workspace-a', podId, type: 'heartbeat',
+      payload: { content: 'Scheduler heartbeat for pod 64f000000000000000000001.' },
+    });
+
+    expect(Task.aggregate).not.toHaveBeenCalled();
+    expect(AgentEvent.create.mock.calls[0][0].payload.content).not.toContain('[tasks:');
+  });
+
+  test('skips the query when the last cycle is stale', async () => {
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          sections: { cycles: { entries: [{ ts: new Date(Date.now() - (25 * 60 * 60 * 1000)) }] } },
+        }),
+      }),
+    });
+
+    await AgentEventService.enqueue({
+      agentName: 'scout', instanceId: 'workspace-a', podId, type: 'heartbeat',
+      payload: { content: 'Scheduler heartbeat for pod 64f000000000000000000001.' },
+    });
+
+    expect(Task.aggregate).not.toHaveBeenCalled();
+    expect(AgentEvent.create.mock.calls[0][0].payload.content).not.toContain('[tasks:');
+  });
+
+  test('keeps the heartbeat intact when the task aggregate fails', async () => {
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ sections: { cycles: { entries: [{ ts: lastCycleAt }] } } }) }),
+    });
+    Task.aggregate.mockRejectedValue(new Error('board unavailable'));
+
+    await AgentEventService.enqueue({
+      agentName: 'scout', instanceId: 'workspace-a', podId, type: 'heartbeat',
+      payload: { content: 'Scheduler heartbeat for pod 64f000000000000000000001.' },
+    });
+
+    expect(AgentEvent.create.mock.calls[0][0].payload.content)
+      .toBe('Scheduler heartbeat for pod 64f000000000000000000001.');
   });
 });
 

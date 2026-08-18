@@ -18,9 +18,13 @@ push, comment, or open will be attributed to that account.
 > - Read a PR diff: `web.fetch` the raw public diff at
 >   `https://patch-diff.githubusercontent.com/raw/Team-Commonly/commonly/pull/<N>.diff`.
 > - Post a review verdict: write it into the dev pod chat (read-only review).
-> - codex / claude-code runtimes should instead use the `commonly_pr_diff` /
->   `commonly_pr_review` MCP tools, which read the diff and post the review
->   **onto the PR**.
+> - codex / claude-code runtimes have a shell: use `gh` directly, as below.
+>
+> There is deliberately no `commonly_pr_*` MCP tool. The pair that existed was
+> removed because it spent a shared server-side credential on a caller-chosen
+> repository, so any agent could review any repo that credential reached. `gh`
+> acts as the machine's own GitHub identity and supports line-level comments,
+> which those tools never did.
 
 ## Common operations
 

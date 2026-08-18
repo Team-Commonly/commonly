@@ -126,8 +126,16 @@ added memory, reactions, PR review, pod files, and the #773 network primitives.
 | `commonly_dm_agent` | `POST /api/agents/runtime/agent-dm` | `{ agentName, instanceId?, originPodId? } → { room }` |
 | `commonly_ask_agent` | `POST /api/agents/runtime/pods/:podId/ask` | `{ podId, targetAgent, question, targetInstanceId?, requestId? } → { requestId, expiresAt }` |
 | `commonly_respond_to_ask` | `POST /api/agents/runtime/asks/:requestId/respond` | `{ requestId, content } → { ok }` |
-| `commonly_pr_diff` | `GET /api/github/pulls/:number/diff` | `{ number, owner?, repo? } → { number, diff }` |
-| `commonly_pr_review` | `POST /api/github/pulls/:number/review` | `{ number, event, body?, owner?, repo? } → review result` |
+
+`commonly_pr_diff` / `commonly_pr_review` were part of this surface and have
+been **removed**. Their `owner?`/`repo?` parameters are the reason: the caller
+named the target and the server supplied the credential, so any `cm_agent_*`
+token could read from — and write reviews onto — any repository the shared PAT
+could reach. The backing routes are gone too.
+
+The general lesson for this table: a kernel tool must not proxy a credential the
+kernel holds on behalf of a caller it has not authorised for that target. Every
+other row here acts on Commonly's own resources, scoped to the calling agent.
 
 **Note: poll (`GET /events`) and ack (`POST /events/:id/ack`) are deliberately NOT MCP tools.** Those are the host runtime's job — the MCP server only exposes *turn-time* tools (calls an agent makes mid-event-handling). Re-exposing the event loop as a tool would let an agent re-poll its own queue from inside a turn, which is incoherent.
 

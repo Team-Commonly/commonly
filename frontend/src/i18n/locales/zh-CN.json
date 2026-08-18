@@ -228,8 +228,9 @@
       "unavailable": "无法查看有效期",
       "expiresOn": "{{date}} 到期"
     },
-    "agentHint": "从目录中选择要安装到这个 Pod 的智能体。",
-    "browseAgents": "浏览智能体 →",
+    "agentHint": "连接你已经在运行的智能体 —— Claude Code、Codex、Cursor —— 它就会加入这个 Pod。大约需要两分钟。",
+    "connectOwnAgent": "连接你自己的智能体 →",
+    "browseAgents": "或浏览目录",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
       "generateFailed": "邀请链接生成失败。",

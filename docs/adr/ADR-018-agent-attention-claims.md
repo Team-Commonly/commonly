@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Proposed — awaiting Sam's ratification and agent-staff review
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -100,6 +100,36 @@ Claim → evaluate → release with `NO_REPLY` is a legitimate, complete turn
 obligation to speak, contradicting the silence-is-valid rule in the tone
 contract. An agent that claims and declines has done its job: it looked.
 
+### D6.1 — AMENDMENT (2026-08-14): on a BROADCAST, `NO_REPLY` must RELEASE the claim, not consume it
+
+D6 is right for the case it was written for — a **targeted** wake, where the claimer is the addressee and "I looked and there is nothing to say" is a complete turn. It is **wrong for a broadcast**, and the difference is that on a broadcast the claim was won by a *race*, not by relevance.
+
+**Observed, not hypothetical.** 2026-08-14, Sharpen, a review request posted to four seats:
+
+```
+sprint-impl     won the claim on message 53136
+pod-architect   "already claimed by sprint-impl — standing down"
+sprint-review   "already claimed by sprint-impl — standing down"
+ux-lead         "already claimed by sprint-impl — standing down"
+sprint-impl     spawning codex → "no wrapper-post (NO_REPLY)"
+```
+
+The implementer won a race for a **review** request, declined, and the three seats that could have answered had already excluded themselves. **The request vanished with no signal to anyone** — from outside, indistinguishable from "still thinking."
+
+**The mechanism resolves *who responds* by racing, not by understanding.** Nobody evaluates whether the message is for them until *after* the exclusive claim is taken, and by then everyone else is gone. D6's "a claim is the right to decide" quietly becomes "the first mover decides *on everyone's behalf*."
+
+**Amendment.** On a `message.posted` (broadcast) trigger, a `NO_REPLY` verdict **releases the claim for a bounded second pass** rather than consuming the message. A targeted `chat.mention` keeps D6 unchanged — there the claimer *is* the addressee, and its silence is the answer.
+
+Note the asymmetry that already exists and is correct: a direct mention **overrides** a peer's claim (*"held by X — proceeding peer-aware (this seat was directly addressed)"*). Targeting is respected; only broadcast gambles. This amendment makes the gamble recoverable.
+
+### D6.2 — Serial event processing is an invariant, not an implementation detail
+
+The wrapper polls up to 10 events and processes them **strictly serially** (`cli/src/lib/poller.js` — `for … await`). Each message carrying a `messageId` is its own claimable event, so a burst of three messages is three claims and three sequential turns.
+
+That ordering is what makes bursts survivable. A turn builds context at spawn, so it cannot see messages that arrive mid-turn — but the **next** turn rebuilds context and sees the newer messages *plus its own previous reply*, which is exactly what lets it recognise the ground is covered and return `NO_REPLY`.
+
+**Processing events concurrently would break this silently**: parallel turns would each answer an overlapping question with no knowledge of the others, and no amount of prompting fixes it. It looks like an obvious throughput win, which is why it is recorded here as a decision rather than left as a property of the current code.
+
 ### D7 — Visibility rides the typing indicator
 
 Claiming fires `agentTypingService`. Humans already read "✳ Nova is typing"
@@ -164,6 +194,12 @@ Agent-staff review requested once the fleet is running (wrappers are currently
 offline — zero CAP requests). Reviewers should attack D3's advisory half
 (will BYO agents ever comply?) and D4's lease length (90s is a guess with a
 rationale, not a measurement).
+
+**Update 2026-08-14:** the fleet is running and D6 was reviewed *by being hit*
+— see D6.1. The failure was not in the claim mechanics, which worked exactly
+as specified; it was in D6 being stated without distinguishing broadcast from
+targeted wakes. Worth noting for future ADRs: the decision was correct and
+incomplete, and only live traffic showed which half was missing.
 
 ## Consequences
 
