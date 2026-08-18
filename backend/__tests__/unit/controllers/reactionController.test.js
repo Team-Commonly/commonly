@@ -285,35 +285,6 @@ describe('reactionController.addReaction — agent runtime path', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload).not.toHaveProperty('messageId');
   });
 
-  test('uses the runtime-token identity fallback so an older bot can poll its acknowledgement', async () => {
-    pool.query
-      .mockResolvedValueOnce(messageLookup('pod-legacy-identity', 'author-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
-    MessageReaction.add.mockResolvedValueOnce(true);
-    User.findById.mockReturnValue({
-      select: () => ({
-        lean: () => Promise.resolve({
-          isBot: true,
-          username: 'openclaw-reviewer',
-          botMetadata: { instanceId: 'reviewer' },
-        }),
-      }),
-    });
-
-    await reactionController.addReaction({
-      params: { messageId: '45' },
-      body: { emoji: '👀' },
-      user: { _id: 'human-reactor' },
-    }, buildRes());
-    await new Promise((r) => { setImmediate(r); });
-
-    expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-      agentName: 'reviewer',
-      instanceId: 'reviewer',
-      podId: 'pod-legacy-identity',
-    }));
-  });
-
   test('an idempotent duplicate reaction does not wake the agent a second time', async () => {
     pool.query
       .mockResolvedValueOnce(messageLookup('pod-idempotent', 'author-bot'))
@@ -321,7 +292,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     MessageReaction.add.mockResolvedValueOnce(false);
 
     const req = {
-      params: { messageId: '46' },
+      params: { messageId: '45' },
       body: { emoji: '👍' },
       user: { _id: 'human-reactor' },
     };
@@ -344,7 +315,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     });
 
     const req = {
-      params: { messageId: '47' },
+      params: { messageId: '46' },
       body: { emoji: '🎉' },
       user: { _id: 'human-reactor' },
     };
@@ -364,7 +335,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
     MessageReaction.add.mockResolvedValueOnce(true);
 
     const req = {
-      params: { messageId: '48' },
+      params: { messageId: '47' },
       body: { emoji: '👀' },
       agentUser: { _id: 'bot-self' },
     };

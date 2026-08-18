@@ -14,8 +14,6 @@ const { decorateReactionSummaries } = require('../services/reactionAttributionSe
 const AgentEventService = require('../services/agentEventService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { resolveAgentRuntimeIdentity } = require('../services/agentRuntimeIdentity');
 
 interface AuthedReq {
   params: { messageId?: string; emoji?: string };
@@ -168,15 +166,15 @@ async function enqueueReactionAcknowledgement({
       } | null;
     if (!author?.isBot) return;
 
-    // Match runtime-token authentication's full fallback chain. In
-    // particular, an older row with only instanceId must address events by
-    // that instance rather than username, or its poller will never find them.
-    const { agentName, instanceId } = resolveAgentRuntimeIdentity(author);
+    // Some older bot rows lack agentName; username is the established
+    // identity fallback for agent-event routing elsewhere in this service
+    // layer. Do not enqueue a malformed event if neither is available.
+    const agentName = String(author.botMetadata?.agentName || author.username || '').trim().toLowerCase();
     if (!agentName) return;
 
     await AgentEventService.enqueue({
       agentName,
-      instanceId,
+      instanceId: String(author.botMetadata?.instanceId || 'default'),
       podId,
       type: 'chat.mention',
       payload: {

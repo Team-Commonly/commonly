@@ -1,15 +1,45 @@
 import { Request, Response, NextFunction } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
-import User from '../models/User';
+import User, { IUser } from '../models/User';
 // Throttled fail-open lastActive writer (shared with human auth — see #668).
 // Without this, every runtime-token agent's User.lastActive stays frozen at
 // its creation date, so profiles/rosters show working agents as never active.
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
-import { resolveAgentRuntimeIdentity } from '../services/agentRuntimeIdentity';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
+
+const normalizeTokenIdentityValue = (value: unknown): string =>
+  String(value || '').trim().toLowerCase();
+
+const deriveInstanceIdFromUsername = (agentName: string, username: string): string | null => {
+  const normalizedAgent = normalizeTokenIdentityValue(agentName);
+  const normalizedUsername = normalizeTokenIdentityValue(username);
+  if (!normalizedAgent || !normalizedUsername) return null;
+  if (normalizedUsername === normalizedAgent) return 'default';
+  const prefix = `${normalizedAgent}-`;
+  if (normalizedUsername.startsWith(prefix)) {
+    const suffix = normalizedUsername.slice(prefix.length).trim();
+    return suffix || null;
+  }
+  return null;
+};
+
+const resolveTokenAgentIdentity = (agentUser: IUser): { agentName: string; instanceId: string } => {
+  const meta = agentUser?.botMetadata || {};
+  const username = normalizeTokenIdentityValue(agentUser?.username);
+  const agentName = normalizeTokenIdentityValue(meta.agentName || meta.instanceId || username);
+
+  const metadataInstanceId = normalizeTokenIdentityValue(meta.instanceId);
+  const usernameInstanceId = deriveInstanceIdFromUsername(agentName, username);
+  let instanceId = metadataInstanceId || usernameInstanceId || 'default';
+  if (usernameInstanceId && (!metadataInstanceId || metadataInstanceId === 'default')) {
+    instanceId = usernameInstanceId;
+  }
+
+  return { agentName, instanceId };
+};
 
 const extractToken = (req: Request): string | undefined => {
   const authHeader = req.header('Authorization');
@@ -52,7 +82,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         console.warn('Failed to update agent token usage on User:', (err as Error).message);
       }
 
-      const { agentName, instanceId } = resolveAgentRuntimeIdentity(agentUser);
+      const { agentName, instanceId } = resolveTokenAgentIdentity(agentUser);
 
       const installations = await AgentInstallation.find({
         agentName,
