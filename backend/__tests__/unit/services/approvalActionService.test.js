@@ -165,7 +165,10 @@ describe('approved create_pod execution — D2: user authority owns', () => {
     mockInstallFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue({
       displayName: 'Guide',
       scopes: ['context:read'],
-      config: { wakeOnMessage: { enabled: true } },
+      config: {
+        runtime: { runtimeType: 'native' },
+        wakeOnMessage: { enabled: true },
+      },
       version: '1.0.0',
     }) });
     mockInstallUpsert.mockResolvedValue({});
@@ -189,9 +192,11 @@ describe('approved create_pod execution — D2: user authority owns', () => {
       expect.anything(),
       expect.anything(),
     );
-    // A newly-created chat begins personal (owner + agent) and keeps the
-    // explicit opt-in; later fan-out re-resolves this when membership changes.
-    expect(mockInstallUpsert.mock.calls[0][1].$set.config.wakeOnMessage.enabled).toBe(true);
+    // D8's wake opt-in belongs to one installation. Cloning the agent into a
+    // newly approved pod must default to off rather than inherit the source
+    // pod's every-message setting.
+    expect(mockInstallUpsert.mock.calls[0][1].$set.config.wakeOnMessage).toBeUndefined();
+    expect(mockInstallUpsert.mock.calls[0][1].$set.config.runtime).toEqual({ runtimeType: 'native' });
     expect(mockPodUpdateOne).toHaveBeenCalledWith(
       { _id: 'newpod-1', members: { $ne: 'guide-bot-1' } },
       { $push: { members: 'guide-bot-1' } },

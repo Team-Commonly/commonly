@@ -14,7 +14,6 @@
 import ApprovalAction, { IApprovalAction, ApprovalActionType } from '../models/ApprovalAction';
 import Pod from '../models/Pod';
 import User from '../models/User';
-import { resolveWakePolicy } from './wakePolicyService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -634,6 +633,16 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
       podId: row.podId,
       status: 'active',
     }).lean();
+    // D8's opt-in is per installation. A delegated create_pod produces a
+    // different installation, so inherit the capability config but not the
+    // source pod's every-message wake setting; the new owner may opt in.
+    const originConfig = originInstall?.config;
+    const clonedConfig = originConfig instanceof Map
+      ? Object.fromEntries(originConfig.entries())
+      : {
+        ...((originConfig && typeof originConfig === 'object') ? originConfig : {}),
+      };
+    delete clonedConfig.wakeOnMessage;
     await AgentInstallation.findOneAndUpdate(
       { agentName: row.agentName, podId: pod._id, instanceId: row.instanceId || 'default' },
       {
@@ -642,7 +651,7 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
           version: originInstall?.version || '1.0.0',
           displayName: originInstall?.displayName,
           scopes: originInstall?.scopes || ['context:read', 'messages:write'],
-          config: resolveWakePolicy(originInstall?.config || {}, pod),
+          config: clonedConfig,
         },
         $setOnInsert: {
           agentName: row.agentName,

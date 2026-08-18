@@ -16,7 +16,6 @@ const chatSummarizerService = require('./chatSummarizerService');
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
   maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
 };
-import { hasWakeOnMessageOptIn, wakeOnMessageEnabledForPod } from './wakePolicyService';
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
   resolveAgentDisplayLabel: (
@@ -814,6 +813,11 @@ const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
   + 'act, the message must be claimed first (commonly_claim_message) — if the '
   + 'claim is already held by a peer, stand down.]';
 
+const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
+  (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
+    ?.config?.wakeOnMessage?.enabled === true
+);
+
 // #508's shape, pointed at the wake path: a BOT-authored message that would
 // wake a target already woken >MENTION_LOOP_MAX times in the window is a wake
 // storm, not collaboration. Human-authored messages are never dampened —
@@ -869,24 +873,18 @@ const enqueueWakeOnMessage = async ({
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
 }): Promise<string[]> => {
   const woken: string[] = [];
-  const optedIn = (installations || []).filter((installation) => hasWakeOnMessageOptIn(installation.config));
-  if (optedIn.length === 0) return woken;
+  const targets = (installations || []).filter(wakeOnMessageEnabled);
+  if (targets.length === 0) return woken;
 
-  let podRow: { type?: string; members?: unknown[] } | null = null;
+  let podRow: { type?: string } | null = null;
   try {
-    podRow = await Pod.findById(podId).select('type members').lean() as { type?: string; members?: unknown[] } | null;
+    podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
   } catch {
-    // Cannot verify the pod shape — skip rather than risk double-delivering
+    // Cannot verify the pod type — skip rather than risk double-delivering
     // into a DM pod that enqueueDmEvent already covers.
     return woken;
   }
   if (podRow?.type && DM_POD_TYPES.has(podRow.type)) return woken;
-
-  // Re-resolve at delivery time. A personal room can become shared after the
-  // installation was created; never let a stale config turn every new line
-  // into a wake after that transition.
-  const targets = optedIn.filter((installation) => wakeOnMessageEnabledForPod(installation.config, podRow));
-  if (targets.length === 0) return woken;
 
   const senderKey = sender?.isBot
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`

@@ -82,8 +82,8 @@ describe('createDefaultWorkspacePod guide identity fork (2026-08-13)', () => {
       agentName: 'scout',
       instanceId: expected,
     }));
-    // My Workspace is personal at install time, so Guide keeps its explicit
-    // wake request. A shared room uses the same resolver and is mention-only.
+    // The setting is per installation, not a pod-shape policy. A later shared
+    // room continues to honor this owner's explicit opt-in.
     expect(update.$set.config.wakeOnMessage.enabled).toBe(true);
   });
 

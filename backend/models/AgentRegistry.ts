@@ -1,6 +1,4 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
-import Pod from './Pod';
-import { hasWakeOnMessageOptIn, resolveWakePolicy } from '../services/wakePolicyService';
 
 export type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
 export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
@@ -273,24 +271,6 @@ AgentInstallationSchema.statics.isInstalled = async function (agentName: string,
   return !!installation;
 };
 
-// Install writers may request wake-on-message, but the room decides whether
-// that request is safe. Keep the policy next to the model helper so every
-// normal install/upsert path gets the same derivation; the two historical
-// direct writes resolve it explicitly at their call sites.
-const resolveInstallWakePolicy = async (
-  podId: Types.ObjectId,
-  config: Map<string, unknown> | undefined,
-): Promise<Map<string, unknown> | undefined> => {
-  if (!config || !hasWakeOnMessageOptIn(config)) return config;
-  try {
-    const pod = await Pod.findById(podId).select('type members').lean();
-    return resolveWakePolicy(config, pod) as unknown as Map<string, unknown>;
-  } catch {
-    // Preserve the install while failing closed on the expensive behavior.
-    return resolveWakePolicy(config, null) as unknown as Map<string, unknown>;
-  }
-};
-
 AgentInstallationSchema.statics.install = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
   config?: Map<string, unknown>;
@@ -300,17 +280,16 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   displayName?: string;
 }) {
   const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
-  const resolvedConfig = await resolveInstallWakePolicy(podId, config);
   const existing = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId });
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
     existing.status = 'active';
     existing.version = version;
-    existing.config = resolvedConfig;
+    existing.config = config;
     existing.scopes = scopes;
     return existing.save();
   }
-  return this.create({ agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config: resolvedConfig, scopes, installedBy });
+  return this.create({ agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config, scopes, installedBy });
 };
 
 /**
@@ -334,12 +313,11 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   displayName?: string;
 }) {
   const { version, config, scopes, installedBy, instanceId = 'default', displayName } = options;
-  const resolvedConfig = await resolveInstallWakePolicy(podId, config);
   const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {
     $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {
-      ...(resolvedConfig ? { config: resolvedConfig } : {}),
+      ...(config ? { config } : {}),
       ...(scopes ? { scopes } : {}),
       status: 'active',
     },
