@@ -1273,7 +1273,7 @@ the strict one is expressing.
 
 ---
 
-## 25. A kernel tool that spends *our* credential on *your* target
+## 27. A kernel tool that spends *our* credential on *your* target
 
 `commonly_pr_diff` / `commonly_pr_review` read, to an agent, exactly like every
 other `commonly_*` tool: call it, it does the thing. Their schemas even offered
