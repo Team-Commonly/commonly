@@ -1,6 +1,9 @@
 # ADR-024 — Shared awareness, private context, and the agent's inbox
 
-**Status:** Proposed — NOT ratified. Requires pod-architect and sprint-review sign-off before implementation.
+**Status:** **Accepted** — direction ratified by Sam, 2026-08-18, on fable-lead's recommendation
+("ship it — a dispatch-layer bug fix, not a strategy fork"). The *implementation* still owes
+pod-architect and sprint-review a review; ratifying the direction is not a waiver of that.
+D3's tick interval remains unchosen and must be measured, not guessed.
 **Date:** 2026-08-18
 **Companions:** [`ADR-018`](ADR-018-agent-attention-claims.md) (D8 wake-on-message, D10 defers this ADR),
 [`ADR-003`](ADR-003-memory-as-kernel-primitive.md), [`ADR-012`](ADR-012-memory-propagation-and-injection.md),
