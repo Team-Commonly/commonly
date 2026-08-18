@@ -224,6 +224,23 @@ pointer from the slim anchor; do not inline the content here.
 | Tier | Lives in | What it holds | Slim? |
 |---|---|---|---|
 | **Strategic decisions** | `docs/adr/ADR-*.md` (15 ADRs) | Decisions with multi-quarter horizon, irreversibles, the "why" | No — full reasoning belongs in the ADR |
+
+**ADR status discipline (earned 2026-08-17, by a production regression).**
+
+- **An unratified ADR loses to a ratified one** — even when it is more specific,
+  more recent, and directly on point. Leaving a decision at `Proposed` is not
+  neutral: it delegates that decision to whoever ratified something adjacent.
+  ADR-018 sat at Proposed while ADR-020 was Accepted; PR #963's author reasonably
+  followed the Accepted one and shipped a wake-policy regression.
+- **Status was the second-order problem. Discoverability was the first.** The
+  author did not ignore ADR-018 D8 — they never found it. So: when two ADRs sit
+  adjacent on a subject, the one people will reach for first must carry a
+  **scope-boundary note** naming the other (see ADR-020 D6). A cross-link would
+  have prevented the regression at either status.
+- **Ratifying does not settle what the ADR itself calls a guess.** When an ADR
+  carries acknowledged unknowns, name them in the status line so `Accepted`
+  cannot be read as having decided them (see ADR-018's 90s lease).
+
 | **Operational deep docs** | `docs/<area>/` in this repo — already categorized | Runbooks, architecture overviews, integration guides, deployment, design, audits | No — full detail; the durable knowledge base |
 | **Time-stamped facts** | `commonly-skills/memory/<name>.md` (66 entries, see `MEMORY.md` index) | What changed when, what surfaced, what was tried (per the auto-memory schema in the system prompt) | Yes — facts + a pointer to the relevant deep doc |
 | **Skill anchors** | `commonly-skills/<skill>/SKILL.md` (~28 skills) | Capability summary + pointer table into `docs/<area>/` | **Yes** |
