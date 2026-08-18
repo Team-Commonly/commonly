@@ -710,6 +710,7 @@ export const performRun = ({
   retryJitterRatio,
   claimLeaseSeconds = 90,
   cascadeCap = 3,
+  cascadeAddressedGrace = 2,
   cascadeResetMs = 10 * 60 * 1000,
   chatCharLimit = 400,
   maxChatChunks = 3,
@@ -729,7 +730,11 @@ export const performRun = ({
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
-  const cascadeGovernor = createCascadeGovernor({ cap: cascadeCap, resetMs: cascadeResetMs });
+  const cascadeGovernor = createCascadeGovernor({
+    cap: cascadeCap,
+    addressedGrace: cascadeAddressedGrace,
+    resetMs: cascadeResetMs,
+  });
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
