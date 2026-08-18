@@ -164,14 +164,33 @@ export const resolveCascadeSettings = ({
  * agent's replies) until the operator killed the wrapper at round 3. The
  * governor counts CONSECUTIVE agent-triggered turns per pod; at `cap` it
  * refuses further agent-triggered turns until a human-triggered turn resets
- * the streak or `resetMs` passes with no agent-triggered turn (so a damped
- * pod recovers on its own — a legitimate a2a handoff an hour later must not
- * inherit a stale cap).
+ * the streak, or `resetMs` passes with no ADMITTED agent-triggered turn from
+ * this seat in this pod (so a damped seat recovers on its own — a legitimate
+ * a2a handoff an hour later must not inherit a stale cap).
  *
- * The only other escape is the seat's own resetMs clock: stateFor reads only
- * this process's lastAgentTurnAt, so a capped seat self-clears 10
- * minutes after its last completed agent turn regardless of room traffic —
- * cyclical throttling, not permanent starvation.
+ * NOTE on `resetMs`: it is a silence window, but the silence is far narrower
+ * than "the pod is quiet", and it is measured on two axes people get wrong in
+ * opposite directions:
+ *
+ *   WHOSE turns  — `pods` is a Map in this closure, inside ONE wrapper
+ *                  process. It never observes another seat's turns at all.
+ *                  Three chatty peers cannot keep this streak alive.
+ *   WHICH turns  — only turns that reached `record()`. A refusal returns from
+ *                  agent.js before it (`:859` vs `:1087`), so a capped seat
+ *                  stops updating `lastAgentTurnAt` entirely and its clock
+ *                  runs free from the last turn it was ALLOWED.
+ *
+ * Net shape is a token bucket, not a static ceiling: a burst of `cap`, then
+ * `cap` admits per `resetMs`, per pod. Sustained agent traffic with zero human
+ * turns yields 6/9/12/15/18/18/18/18 admits per hour as arrivals go from one
+ * per 600s to one per second — inert when quiet, pinned at cap-per-window
+ * however hard the burst gets. Per POD: a seat in N pods holds N buckets, so
+ * its seat-level ceiling is N times that.
+ *
+ * An earlier version of this note said the window requires zero agent turns
+ * "in the pod", and concluded that in a busy room the only live release is a
+ * human turn. Both halves are wrong, and wrongly reassuring: a capped seat
+ * self-releases every window no matter how loud the room is.
  *
  * Split into admit/record so a spawn that fails (and will be redelivered)
  * never double-counts: admit() only reads, record() runs after a turn

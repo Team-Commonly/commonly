@@ -865,7 +865,14 @@ export const performRun = ({
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
         + `turns in pod ${eventPodId}`
         + (admission.graceApplied ? ' (addressed grace also spent)' : '')
-        + ' — standing down until a human speaks or the pod goes quiet for the reset window',
+        // NOT "until the pod goes quiet": other seats' traffic never touches
+        // this seat's clock, and a refusal returns here without reaching
+        // `record()` below — so the window is measured from this seat's last
+        // ADMITTED turn in this pod and runs regardless of how loud the room
+        // is. Saying "the pod goes quiet" told an operator to wait for a lull
+        // that is neither necessary nor sufficient (#989).
+        + ` — standing down until a human speaks or ${cascadeSettings.resetMs}ms `
+        + 'passes with no admitted turn from this seat in this pod',
       );
       // `details` rides through to the AgentEvent row untouched:
       // normalizeDeliveryMeta whitelists outcome/reason/messageId and passes

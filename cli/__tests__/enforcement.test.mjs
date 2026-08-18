@@ -102,6 +102,47 @@ describe('createCascadeGovernor', () => {
   });
 });
 
+// #989: the governor was documented as a static ceiling released by pod
+// silence. It is neither. These pin the shape the docstring now claims, so a
+// future edit that makes refusals record (or that shares state across pods)
+// fails here instead of quietly re-arming the wrong mental model.
+describe('cascade governor — token-bucket shape', () => {
+  // Mirrors the run loop: agent.js returns on a refusal WITHOUT calling
+  // record(), so only admitted turns move `lastAgentTurnAt`.
+  const admitsPerHour = (intervalMs, pods = ['pod-1']) => {
+    let clock = 0;
+    const gov = createCascadeGovernor({ now: () => clock });
+    let admits = 0;
+    for (let i = 0; clock <= 3600_000; i += 1) {
+      const pod = pods[i % pods.length];
+      if (gov.admit(pod, 'agent', 'message.posted').allowed) {
+        admits += 1;
+        gov.record(pod, 'agent');
+      }
+      clock += intervalMs;
+    }
+    return admits;
+  };
+
+  test('a capped seat self-releases every window however loud the pod is', () => {
+    // cap 3 per 10-min window = 18/hr, and it does not climb as arrivals get
+    // faster: the burst is absorbed, not admitted.
+    expect(admitsPerHour(30_000)).toBe(18);
+    expect(admitsPerHour(1_000)).toBe(18);
+  });
+
+  test('below saturation the arrival rate binds, not the cap', () => {
+    expect(admitsPerHour(600_000)).toBe(6);
+    expect(admitsPerHour(60_000)).toBe(15);
+  });
+
+  test('the ceiling is per pod — N pods hold N independent buckets', () => {
+    expect(admitsPerHour(1_000, ['pod-1'])).toBe(18);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2'])).toBe(36);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2', 'pod-3'])).toBe(54);
+  });
+});
+
 describe('cascade governor — addressed grace', () => {
   const burn = (gov, n, type) => {
     for (let i = 0; i < n; i += 1) {
