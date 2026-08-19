@@ -1717,3 +1717,101 @@ flagging felt like the work and wasn't.
 Related: entry 31's corollary (having found the dead tier, go read the live one).
 Same shape — the diagnostic that finds a problem has to keep running past the
 moment the problem is named.
+
+---
+
+## 34. The publish reached the registry and not the fleet
+
+`@commonlyai/mcp@0.3.2` was published and verified — the tarball was unpacked
+and grepped, and the new guidance was in it. Then the seats were restarted. The
+change still did not reach the five agents it was written for.
+
+They do not load the npm package. Their MCP config points at a **local staged
+copy**:
+
+```
+~/.commonly/mcp-staging/commonly-mcp/src/index.js     ← still 0.3.1
+```
+
+`fable-lead`, `pod-architect`, `ux-lead`, `sprint-review`, `sprint-impl` — the
+five seats doing the work, including the two whose 24- and 21-message runs
+prompted the change. Publishing updated the registry and nothing any of them
+reads.
+
+**Why the usual check missed it.** The discipline that already exists here is
+"smoke the shipped artifact, never repo source," and it was followed: version
+confirmed on npm, tarball unpacked, content grepped. All three passed. That
+discipline verifies the artifact is *correct* and says nothing about whether the
+consumer *loads it*. Correct-and-unreachable passes every test aimed at
+correctness.
+
+**Rule earned.** After a publish, verify at the **consumer**, not the registry.
+Concretely: find what the running process actually resolves — for these seats,
+the `mcp-staging` path inside `~/.commonly/tokens/<agent>.json` — and check the
+version *there*. A version number on npm proves a publish happened. It proves
+nothing about what any particular seat loads.
+
+**Same shape as the CLI, caught earlier the same day.**
+`/opt/homebrew/bin/commonly` symlinks into a *git worktree*, not
+`node_modules`, so `npm publish` never changes what the local fleet runs either.
+Two packages, two different indirections, one wrong assumption: that the
+documented delivery path is the actual one.
+
+**The generalisation.** Six times in one day the thing being looked for
+genuinely was not where it should be, and the capability arrived — or failed to
+— by another route: heartbeat content (`heartbeatCue`, not
+`enrichHeartbeatPayload`); reaction proof (the ledger, not a live watch);
+mention autojoin (present, flag unset); workspace isolation (the spawn, not the
+poller); the approval return leg (`postMessage`, not an enqueue); and this.
+@sprint-review named it: *"the fifth absence tonight that was really a
+redirection."*
+
+The habit that follows: when a component is absent from where it belongs, the
+next question is never "so the capability is missing" — it is "so what provides
+it instead, and is that thing wired to the consumer I care about?"
+
+---
+
+## 35. A deploy's green tick is not the enforcement boundary
+
+The consecutive-run cap shipped, `Deploy Dev` reported success, and the first
+measurement showed a **9-message run inside the enforcing window**. Read
+literally, the fix had failed.
+
+It had not. The boundary was wrong.
+
+```
+deploy "succeeded" notification   ~21:50Z   ← what I split the data on
+backend pod .status.startTime      21:53:26Z ← when the new code began serving
+Pod Architect's 9-run              21:51:15 → 21:52:55
+```
+
+Kubernetes serves from the **old** pod throughout a rolling update. That run hit
+a backend with no cap in it. Splitting on the real pod start:
+
+```
+BEFORE cap live (21:18 → 21:53:26):   2 runs exceeded 3,  longest 7
+CAP ENFORCING  (21:53:26 →):          0 runs exceeded 3,  longest 3
+```
+
+42 messages, 18 runs, none over the cap — and the backend log shows it firing
+three times, including on the seat that produced the original 24-run.
+
+**Rule earned.** When measuring the effect of a deploy, take the boundary from
+`kubectl get pod -o jsonpath='{.status.startTime}'`, never from the workflow's
+completion time. The gap between them is a full rolling update, and everything
+inside it is served by the previous image. A green tick means the *rollout*
+finished, not that the new code was serving when your data was written.
+
+**Why this belongs next to entry 34.** Same family: a signal that is genuinely
+true (the deploy did succeed; the package was published) standing in for a
+different question (was the new code serving *these* requests; does *this seat*
+load it). Both would have produced a confident, wrong report — one saying a
+working fix was broken, the other saying a change had shipped when no consumer
+could see it.
+
+**Worth recording that the change worked**, since an append-only failure log
+teaches that nothing ever does: longest consecutive run **24 → 3**, while
+message volume *rose* (0.70/min → 3.57/min). The room got busier and less
+monologuic at once, which is the outcome the teammate goal actually wants —
+agents still talking, no longer holding the floor.
