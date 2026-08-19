@@ -130,6 +130,63 @@ const ROWS = [
     leaseState: 'held',
     strangerWins: false,
   },
+  // Near-edge rows: seconds either side of the lease, where the extremes above are
+  // hours. They catch a sign flip, a wrong constant, or a unit error.
+  //
+  // They do NOT catch strict-vs-inclusive. Mutating the field's `<` to `<=` leaves
+  // all 28 green, because the two differ only at exact equality and nothing here is
+  // exactly equal. That case is unreachable through this surface at all: the route
+  // generates its own `now` inside the request, so a test cannot place a timestamp
+  // on it. Stated rather than implied — a row labelled 'boundary' reads as covering
+  // the boundary, and this one covers its neighbourhood.
+  {
+    taskId: 'TASK-009',
+    label: 'lease expires in 5s — inside the edge',
+    doc: {
+      status: 'claimed',
+      claimedBy: 'holder',
+      claimedAt: () => new Date(Date.now() - 25 * MIN),
+      claimExpiresAt: () => new Date(Date.now() + 5000),
+    },
+    leaseState: 'held',
+    strangerWins: false,
+  },
+  {
+    taskId: 'TASK-010',
+    label: 'lease expired 2s ago — just outside',
+    doc: {
+      status: 'claimed',
+      claimedBy: 'holder',
+      claimedAt: () => new Date(Date.now() - 30 * MIN - 2000),
+      claimExpiresAt: () => new Date(Date.now() - 2000),
+    },
+    leaseState: 'lapsed',
+    strangerWins: true,
+  },
+  {
+    taskId: 'TASK-011',
+    label: 'legacy claim 5s short of one lease — inside the edge',
+    doc: {
+      status: 'claimed',
+      claimedBy: 'holder',
+      claimedAt: () => new Date(Date.now() - LEASE_MS + 5000),
+      claimExpiresAt: null,
+    },
+    leaseState: 'held',
+    strangerWins: false,
+  },
+  {
+    taskId: 'TASK-012',
+    label: 'legacy claim 2s past one lease — just outside',
+    doc: {
+      status: 'claimed',
+      claimedBy: 'holder',
+      claimedAt: () => new Date(Date.now() - LEASE_MS - 2000),
+      claimExpiresAt: null,
+    },
+    leaseState: 'lapsed',
+    strangerWins: true,
+  },
 ];
 
 // Terminal rows: no lease is held, so `unleased` is literally true — and the CAS
