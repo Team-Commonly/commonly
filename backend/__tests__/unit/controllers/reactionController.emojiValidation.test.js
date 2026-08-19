@@ -8,7 +8,7 @@
 jest.mock('../../../models/pg/MessageReaction', () => ({
   __esModule: true,
   default: {
-    add: jest.fn().mockResolvedValue(undefined),
+    add: jest.fn().mockResolvedValue(false),
     remove: jest.fn().mockResolvedValue(undefined),
     listForMessage: jest.fn().mockResolvedValue([{ emoji: '👍', count: 1, mine: true, userIds: ['caller-1'] }]),
   },
@@ -35,8 +35,8 @@ const buildRes = () => {
 };
 
 const reactAs = async (emoji) => {
-  // loadPodIdForMessage → a pod; agent path → active install → access granted.
-  pool.query.mockResolvedValueOnce({ rows: [{ pod_id: 'pod-1' }], rowCount: 1 });
+  // loadMessageContext → a pod + author; agent path → active install → access granted.
+  pool.query.mockResolvedValueOnce({ rows: [{ pod_id: 'pod-1', user_id: 'author-1' }], rowCount: 1 });
   AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve({ _id: 'inst-1' }) });
   const req = { params: { messageId: '9' }, body: { emoji }, agentUser: { _id: 'bot-1' } };
   const res = buildRes();

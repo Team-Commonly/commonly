@@ -2,12 +2,18 @@
 // adding a reaction the user already left is a no-op (idempotent via
 // the unique constraint); removing one they don't have is also a no-op.
 // Both endpoints emit a `messageReaction` Socket.io event into
-// `pod_${podId}` so other clients animate the chip without polling.
+// `pod_${podId}` so other clients animate the chip without polling. A newly
+// added reaction also sends the reacted-to agent a best-effort acknowledgement;
+// removals and idempotent retries stay side-effect free.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const MessageReaction = require('../models/pg/MessageReaction').default;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { decorateReactionSummaries } = require('../services/reactionAttributionService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentEventService = require('../services/agentEventService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const User = require('../models/User');
 
 interface AuthedReq {
   params: { messageId?: string; emoji?: string };
@@ -103,15 +109,154 @@ async function emitReactionChange(messageId: string | number, podId: string, rea
   }
 }
 
-async function loadPodIdForMessage(messageId: string | number): Promise<string | null> {
+interface MessageContext {
+  podId: string;
+  authorUserId: string;
+}
+
+async function loadMessageContext(messageId: string | number): Promise<MessageContext | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { pool } = require('../config/db-pg');
   const result = await pool.query(
-    'SELECT pod_id FROM messages WHERE id = $1 LIMIT 1',
+    'SELECT pod_id, user_id FROM messages WHERE id = $1 LIMIT 1',
     [Number(messageId)],
   );
   const row = result.rows[0];
-  return row ? String(row.pod_id) : null;
+  if (!row?.pod_id || !row?.user_id) return null;
+  return { podId: String(row.pod_id), authorUserId: String(row.user_id) };
+}
+
+// A reaction is an acknowledgement of an already-posted agent message, not a
+// new message for the room. Reuse chat.mention instead of inventing a new
+// event type: deployed wrapper versions only turn their prompt-event allowlist
+// into a model turn. Deliberately omit payload.messageId so ADR-018's
+// claim-before-act gate does not claim the original message a second time.
+// The original ID remains available as reactedMessageId for consumers that
+// need to correlate this receipt.
+const reactionAcknowledgementContent = (emoji: string): string => (
+  `[Reaction acknowledgement] Someone reacted ${emoji} to your message. `
+  + 'This is an acknowledgement, not a new request — do not post a reply.'
+);
+
+const deriveReactionRecipientInstanceId = (
+  agentName: string,
+  username: unknown,
+  metadataInstanceId: unknown,
+): string => {
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const normalizedMetadataInstanceId = String(metadataInstanceId || '').trim().toLowerCase();
+  const prefix = `${agentName}-`;
+  const usernameInstanceId = normalizedUsername === agentName
+    ? 'default'
+    : (normalizedUsername.startsWith(prefix) ? normalizedUsername.slice(prefix.length).trim() : '');
+
+  // Runtime consumers use a username suffix when metadata is absent or still
+  // says "default". Match that address exactly: an acknowledgement under a
+  // different instance key is an event no connected agent can poll.
+  if (usernameInstanceId && (!normalizedMetadataInstanceId || normalizedMetadataInstanceId === 'default')) {
+    return usernameInstanceId;
+  }
+  return normalizedMetadataInstanceId || usernameInstanceId || 'default';
+};
+
+async function enqueueReactionAcknowledgement({
+  podId,
+  authorUserId,
+  reactorUserId,
+  messageId,
+  emoji,
+  reactorIsAgent,
+}: {
+  podId: string;
+  authorUserId: string;
+  reactorUserId: string;
+  messageId: string | number;
+  emoji: string;
+  reactorIsAgent: boolean;
+}): Promise<void> {
+  // An agent reacting to its own message already has the information and must
+  // not wake itself. This also keeps autonomous reaction workflows from
+  // becoming self-trigger loops.
+  if (authorUserId === reactorUserId) return;
+
+  try {
+    const author = await User.findById(authorUserId)
+      .select('isBot username botMetadata.agentName botMetadata.instanceId')
+      .lean() as {
+        isBot?: boolean;
+        username?: string;
+        botMetadata?: { agentName?: string; instanceId?: string };
+      } | null;
+    if (!author?.isBot) return;
+
+    // AgentEvent is addressed by (agentName, instanceId). A legacy bot row
+    // without agentName has no transport-independent routing identity:
+    // HTTP auth and the agent WebSocket derive different fallbacks. Do not
+    // enqueue a receipt either delivery path might strand; leave a visible
+    // operational signal instead of silently treating it as delivered.
+    const agentName = String(author.botMetadata?.agentName || '').trim().toLowerCase();
+    if (!agentName) {
+      // eslint-disable-next-line no-console
+      console.warn('[reactionController] agent acknowledgement skipped: missing botMetadata.agentName', authorUserId);
+      return;
+    }
+
+    await AgentEventService.enqueue({
+      agentName,
+      instanceId: deriveReactionRecipientInstanceId(
+        agentName,
+        author.username,
+        author.botMetadata?.instanceId,
+      ),
+      podId,
+      // `message.posted`, NOT `chat.mention`. Since #973, chat.mention carries
+      // `cap + addressedGrace` — so typing a receipt that way let a single 👍
+      // buy a capped seat two extra turns, and a seat nobody could reach by
+      // name could be un-capped by anyone reacting to an old message of its
+      // own. Ruled by fable-lead, who overrode its own earlier read.
+      type: 'message.posted',
+      payload: {
+        content: reactionAcknowledgementContent(emoji),
+        reactedMessageId: String(messageId),
+        reactionAcknowledgement: true,
+        emoji,
+        source: 'message-reaction',
+        // Retyping alone closes the GRACE hole and leaves an ADMISSION hole:
+        // this event carries no `payload.messageId`, so `classifyTrigger`
+        // returns 'unknown' — which is fail-open for admission, and a capped
+        // seat would still burn a full turn on every reaction, uncounted.
+        //
+        // `classifyTrigger` dispatches on `dmKind` FIRST (enforcement.js:48-49),
+        // before the messageId lookup, so stamping the reactor's authorship
+        // here decides it:
+        //   human 👍  -> 'human' -> wakes the seat AND resets the streak, which
+        //                is what the streak measures: human attention in the room
+        //   agent 👍  -> 'agent' -> counts toward the cap, so reaction loops
+        //                terminate instead of ratcheting
+        //
+        // The condition lives in the gate rather than beside it: `admit()`
+        // reads nothing new, and #1010's own regression test already uses
+        // dmKind on a plain message.posted as its trigger oracle.
+        //
+        // KNOWN DEBT, deliberately taken to ship on the deployed 0.1.11 fleet
+        // without a wrapper change: `dmKind` is DM-named, and the moltbot
+        // system prompt (agentProvisionerServiceK8s.ts:416) documents it to
+        // agents as "a human just sent you a message". A reaction receipt is
+        // not a DM. Routing is unaffected — the DM conversational frame is
+        // built in `enqueueDmEvent`, a different path that this never enters —
+        // so the risk is an agent MISREADING the field, not mis-delivery. The
+        // clean fix is a neutral `triggerAuthor` field taught to
+        // classifyTrigger; it needs a CLI release and a fleet restart, so it
+        // is filed as follow-up rather than blocking reactions.
+        dmKind: reactorIsAgent ? 'agent-agent' : 'user-agent',
+      },
+    });
+  } catch (err) {
+    // The reaction is durable before this best-effort receipt. Agent delivery
+    // failure must never turn a user acknowledgement into a failed reaction.
+    // eslint-disable-next-line no-console
+    console.warn('[reactionController] agent acknowledgement enqueue failed:', (err as Error).message);
+  }
 }
 
 export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void> {
@@ -131,19 +276,32 @@ export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void>
       res.status(400).json({ msg: 'emoji must be 1–8 emoji characters' });
       return;
     }
-    const podId = await loadPodIdForMessage(messageId);
-    if (!podId) {
+    const message = await loadMessageContext(messageId);
+    if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
     }
+    const { podId } = message;
     if (!(await callerHasPodAccess(podId, userId, req))) {
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
     }
-    await MessageReaction.add(messageId, userId, emoji);
+    const added = await MessageReaction.add(messageId, userId, emoji);
     const rawSummaries = await MessageReaction.listForMessage(messageId, userId);
     const reactions = await decorateReactionSummaries(rawSummaries);
     void emitReactionChange(messageId, podId, reactions);
+    if (added) {
+      void enqueueReactionAcknowledgement({
+        podId,
+        authorUserId: message.authorUserId,
+        reactorUserId: userId,
+        messageId,
+        emoji,
+        // `dualAuth` populates `req.agentUser` only for cm_agent_* runtime
+        // tokens, so its presence IS the authorship answer at this point.
+        reactorIsAgent: Boolean(req.agentUser?._id),
+      });
+    }
     res.json({ ok: true, reactions });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -165,11 +323,12 @@ export async function removeReaction(req: AuthedReq, res: AuthedRes): Promise<vo
       res.status(400).json({ msg: 'messageId and emoji are required' });
       return;
     }
-    const podId = await loadPodIdForMessage(messageId);
-    if (!podId) {
+    const message = await loadMessageContext(messageId);
+    if (!message) {
       res.status(404).json({ msg: 'Message not found' });
       return;
     }
+    const { podId } = message;
     if (!(await callerHasPodAccess(podId, userId, req))) {
       res.status(403).json({ msg: 'Not a member of this pod' });
       return;
