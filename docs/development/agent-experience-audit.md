@@ -1754,8 +1754,16 @@ is gone — coalescing folds on `payload.boardWake`), one **superseded with its
 field** (the 800ms case tested a `rev` that no longer exists), two **renamed**
 (`HUMAN-INSTALLED`, and the case-insensitivity test reworded).
 
-The property that makes this better than the string checks is not accuracy —
-it is that **it cannot silently pass**. A string check returns zero and looks
+The set difference is still a string comparison, and it flags the two renames as
+unmatched exactly like the symbol check did. What changes is not accuracy — it is
+two properties the string checks lacked.
+
+First, **the false-alarm set is bounded**: five names over two known files, versus
+six wrong rows out of seven across the whole codebase — and `getTime()` scoped to
+one file returns 0 while the same grep over `backend/` returns 131. An unbounded
+false-alarm rate is why nobody runs the check twice.
+
+Second, **it cannot silently pass**. A string check returns zero and looks
 like an answer. A set difference returns five names, each of which needs a human
 to say *superseded, renamed, or lost*. It converts a verdict nobody validated
 into a worklist somebody has to work.
