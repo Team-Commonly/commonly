@@ -1670,4 +1670,9 @@ export {
   enqueueMentions,
   enqueueDmEvent,
   MENTION_ALIASES,
+  // Exported so the ADR-024 D1 board fan-out (taskEventService.notifyPodAgents)
+  // gates on the SAME opt-in rather than reimplementing the predicate. The
+  // config shape is a Mongoose Map on some paths and a plain object on others,
+  // which is exactly the kind of detail a second copy gets subtly wrong.
+  wakeOnMessageEnabled,
 };
