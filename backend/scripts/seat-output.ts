@@ -68,10 +68,35 @@ const main = async () => {
     + 'error'.padStart(7) + 'DEAD'.padStart(6) + 'pend'.padStart(6) + '  last posted',
   );
 
+  // Outcome-silence is NOT seat-silence. The native tier acks 'acknowledged'
+  // and never writes `delivery.outcome: 'posted'`, so keying on that alone
+  // reports a perfectly healthy user-facing agent as mute — which this script
+  // did on its first run, against `scout` (68 replies in 7 days) and against
+  // the `commonly-bot` 288-event row in its own output.
+  //
+  // So before calling a seat silent, ask the message ledger. Caught in review
+  // by fable-lead; the native-tier outcome write is a separate kernel issue,
+  // not a blocker for this detector.
+  const ledger = mongoose.connection.collection('messages');
   const silent: string[] = [];
+  const postingUnrecorded: string[] = [];
   for (const r of rows) {
     const seat = `${r._id.agent}${r._id.instance && r._id.instance !== 'default' ? `:${r._id.instance}` : ''}`;
-    if (r.posted === 0 && r.total > 0) silent.push(seat);
+    if (r.posted === 0 && r.total > 0) {
+      // Identity fans out per user (`scout` has 115 rows: scout + scout-u<hash>).
+      // One row is not the agent — resolve the whole set or undercount silently.
+      const identities = await mongoose.connection.collection('users')
+        .find({ 'botMetadata.agentName': r._id.agent }, { projection: { _id: 1 } })
+        .toArray();
+      const wrote = identities.length
+        ? await ledger.countDocuments({
+          userId: { $in: identities.map((u: { _id: unknown }) => u._id) },
+          createdAt: { $gte: since },
+        })
+        : 0;
+      if (wrote > 0) postingUnrecorded.push(`${seat} (${wrote} in ledger)`);
+      else silent.push(seat);
+    }
     console.log(
       seat.padEnd(22)
       + String(r.total).padStart(7) + String(r.posted).padStart(8) + String(r.noAction).padStart(8)
@@ -86,18 +111,35 @@ const main = async () => {
   if (silent.length) {
     console.log(`\n⚠ woken but produced nothing: ${silent.join(', ')}`);
     console.log('  Reasons given, most frequent first:');
+    // Group by (agent, instance) and compare the SAME composed label used
+    // above. Grouping on bare agentName while `silent[]` holds
+    // "agent:instance" means the match never fires for a suffixed seat — so
+    // the explanation went missing exactly when it was needed. Found in
+    // review by fable-lead.
     const reasons = await events.aggregate([
       { $match: { ...match, 'delivery.outcome': { $in: ['no_action', 'error'] } } },
-      { $group: { _id: { agent: '$agentName', reason: '$delivery.reason' }, n: { $sum: 1 } } },
+      {
+        $group: {
+          _id: { agent: '$agentName', instance: '$instanceId', reason: '$delivery.reason' },
+          n: { $sum: 1 },
+        },
+      },
       { $sort: { n: -1 } },
       { $limit: 12 },
     ]).toArray();
     for (const r of reasons) {
-      if (!silent.includes(r._id.agent)) continue;
-      console.log(`    ${String(r._id.agent).padEnd(20)} ${String(r._id.reason || '(none given)').padEnd(28)} ${r.n}`);
+      const label = `${r._id.agent}${r._id.instance && r._id.instance !== 'default' ? `:${r._id.instance}` : ''}`;
+      if (!silent.includes(label)) continue;
+      console.log(`    ${label.padEnd(20)} ${String(r._id.reason || '(none given)').padEnd(28)} ${r.n}`);
     }
   } else {
     console.log('\n✓ every woken seat posted at least once in the window');
+  }
+
+  if (postingUnrecorded.length) {
+    console.log(`\nℹ posting, outcomes unrecorded by this tier: ${postingUnrecorded.join(', ')}`);
+    console.log('  These wrote to the message ledger but never recorded delivery.outcome:"posted".');
+    console.log('  Not a silent seat — a native-tier ack gap. Separate kernel issue.');
   }
 
   const totalDead = rows.reduce((a: number, r: Record<string, number>) => a + (r.deadLettered || 0), 0);
