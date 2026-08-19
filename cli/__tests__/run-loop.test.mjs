@@ -1666,6 +1666,55 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  test('losing a claim on a HUMAN message still resets the cascade streak', async () => {
+    // Regression for the starvation bug: `record()` lives at the end of
+    // runTurn, and the claim stand-down returns before runTurn — so the seat
+    // that lost the race never recorded the human turn that clears its
+    // streak, and stayed capped through every following broadcast.
+    //
+    // dmKind drives classifyTrigger directly, so the trigger of each event is
+    // unambiguous without depending on the message snapshot.
+    const agentEvt = (id) => makeEvent({
+      _id: id,
+      type: 'message.posted',
+      payload: { content: 'peer chatter', dmKind: 'agent-agent' },
+    });
+
+    const { post } = makeClient({
+      events: [
+        // 1. agent-triggered, no messageId so no claim is attempted → streak 1
+        agentEvt('evt-a'),
+        // 2. HUMAN-triggered and claimable, but the claim is lost → stand down.
+        //    This is the turn whose reset used to be dropped on the floor.
+        makeEvent({
+          _id: 'evt-b',
+          type: 'message.posted',
+          payload: { content: 'a human speaks', messageId: 'msg-1', dmKind: 'user-agent' },
+        }),
+        // 3. agent-triggered again — admitted only if evt-b cleared the streak
+        agentEvt('evt-c'),
+      ],
+      claimResult: { claimed: false, holder: 'peer-seat' },
+    });
+
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // Two agent turns run: the first builds the streak, the third is admitted
+    // because the lost-claim human turn in between reset it. Before the fix
+    // the third was refused and this was 1.
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(post).not.toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-c/ack',
+      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+    );
+  });
+
   test('human-triggered turns are never cascade-capped', async () => {
     const { post } = makeClient({
       events: [

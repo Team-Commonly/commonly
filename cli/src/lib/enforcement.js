@@ -75,11 +75,10 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
  * pod recovers on its own — a legitimate a2a handoff an hour later must not
  * inherit a stale cap).
  *
- * NOTE on `resetMs`: it is a SILENCE window, not a decay. It requires
- * `resetMs` with ZERO agent-triggered turns in the pod. Three chatty seats
- * never leave a ten-minute hole, so in a busy room the only live release is a
- * human turn. Say so plainly rather than letting "or the streak decays" imply
- * a timer that will save you.
+ * The only other escape is the seat's own resetMs clock: stateFor reads only
+ * this process's lastAgentTurnAt, so a capped seat self-clears 10
+ * minutes after its last completed agent turn regardless of room traffic —
+ * cyclical throttling, not permanent starvation.
  *
  * Split into admit/record so a spawn that fails (and will be redelivered)
  * never double-counts: admit() only reads, record() runs after a turn

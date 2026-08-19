@@ -803,6 +803,40 @@ export const performRun = ({
     // capped agent-triggered event is exactly the traffic we want dropped.
     // Human-triggered turns are never capped.
     const trigger = classifyTrigger(event, preSpawn);
+    // A human turn is a property of the POD, not of this seat's reaction to
+    // it. Record it as soon as it is classified — before the cascade check and
+    // before the claim race — so a seat that stands down still observes the
+    // reset.
+    //
+    // Without this, losing a claim on a human message is SELF-REINFORCING.
+    // The claim stand-down returns before `runTurn`, and `record()` lives at
+    // the end of `runTurn`, so the loser never records the human turn that
+    // would have cleared its streak. It meets the next broadcast still capped,
+    // declines, and again skips `record()`. The only other escape is the
+    // seat's own resetMs clock: stateFor reads only this process's
+    // lastAgentTurnAt, so a capped seat self-clears 10 minutes after its last
+    // completed agent turn regardless of room traffic — cyclical throttling,
+    // not permanent starvation.
+    //
+    // Measured in one pod, 2026-08-18, same window: ux-lead 14 lost claims /
+    // 73 cap refusals / 2 posts, against sprint-review 0 / 2 / 95. Losing one
+    // race is what kept it losing — the mechanism meant to SHARE work
+    // concentrated it instead.
+    //
+    // `=== 'human'` rather than `!== 'agent'`. These are behaviourally the
+    // same today: `record()` dispatches on exact equality and leaves every
+    // other value untouched, including the 'unknown' that `classifyTrigger`
+    // returns for an unresolvable trigger — `enforcement.js:123-131`, and the
+    // "'unknown' is neutral: no count, no reset" note at :130. The narrow form
+    // is defensive, not load-bearing: it keeps an unidentifiable event from
+    // becoming a cap-reset primitive if `record()` ever grows a fallthrough
+    // branch. It closes no hole that was open.
+    //
+    // Agent-triggered turns still record only on completion (see `runTurn`),
+    // so the no-double-count property for redelivered events is unchanged.
+    // Recording a human trigger sets the streak to 0, so this call and the
+    // completion-time one are idempotent with each other.
+    if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
     if (!admission.allowed) {
       log(
