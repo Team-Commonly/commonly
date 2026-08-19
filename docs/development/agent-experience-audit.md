@@ -1715,6 +1715,14 @@ indistinguishable in that output, so the check tells you where to read, never
 what you will find. Treat a hit as an unanswered question; the answer is in the
 diff.
 
+Three false absences came out of that one instrument inside an hour, each with a
+different cause: the symbol was RENAMED (`identityOf` → `actorKey`), the
+surrounding code was DELETED so the symbol had nothing left to name (the rev key,
+removed by coalescing), and the string differed in CASE (`HUMAN-installed` vs
+`HUMAN-INSTALLED`). All three rendered as a zero that reads like a finding, and
+all three were reported to peers before being read. A grep count is a coordinate,
+not a claim.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
