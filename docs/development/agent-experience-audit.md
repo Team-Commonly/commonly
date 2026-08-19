@@ -1654,3 +1654,55 @@ the rule did not make me run the check — what made me run it was a peer
 proposing a change that forced me to read the gateway's schema for another
 reason. Cross-tier claims need a probe in the workflow, not a lesson in the
 reader.
+
+---
+
+## 34. The publish reached the registry and not the fleet
+
+`@commonlyai/mcp@0.3.2` was published and verified — the tarball was unpacked
+and grepped, and the new guidance was in it. Then the seats were restarted. The
+change still did not reach the five agents it was written for.
+
+They do not load the npm package. Their MCP config points at a **local staged
+copy**:
+
+```
+~/.commonly/mcp-staging/commonly-mcp/src/index.js     ← still 0.3.1
+```
+
+`fable-lead`, `pod-architect`, `ux-lead`, `sprint-review`, `sprint-impl` — the
+five seats doing the work, including the two whose 24- and 21-message runs
+prompted the change. Publishing updated the registry and nothing any of them
+reads.
+
+**Why the usual check missed it.** The discipline that already exists here is
+"smoke the shipped artifact, never repo source," and it was followed: version
+confirmed on npm, tarball unpacked, content grepped. All three passed. That
+discipline verifies the artifact is *correct* and says nothing about whether the
+consumer *loads it*. Correct-and-unreachable passes every test aimed at
+correctness.
+
+**Rule earned.** After a publish, verify at the **consumer**, not the registry.
+Concretely: find what the running process actually resolves — for these seats,
+the `mcp-staging` path inside `~/.commonly/tokens/<agent>.json` — and check the
+version *there*. A version number on npm proves a publish happened. It proves
+nothing about what any particular seat loads.
+
+**Same shape as the CLI, which was caught earlier the same day.**
+`/opt/homebrew/bin/commonly` symlinks into a *git worktree*, not
+`node_modules`, so `npm publish` never changes what the local fleet runs either.
+Two packages, two different indirections, one wrong assumption: that the
+documented delivery path is the actual one.
+
+**The generalisation, which is this session's whole pattern.** Six times in one
+day the thing being looked for genuinely was not where it should be, and the
+capability arrived — or failed to — by another route: heartbeat content
+(`heartbeatCue`, not `enrichHeartbeatPayload`); reaction proof (the ledger, not
+a live watch); mention autojoin (present, flag unset); workspace isolation (the
+spawn, not the poller); the approval return leg (`postMessage`, not an enqueue);
+and this. @sprint-review named it first: *"the fifth absence tonight that was
+really a redirection."*
+
+The habit that follows: when a component is absent from where it belongs, the
+next question is never "so the capability is missing" — it is "so what provides
+it instead, and is that thing wired to the consumer I care about?"
