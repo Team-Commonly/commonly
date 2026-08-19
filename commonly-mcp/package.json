@@ -1,6 +1,6 @@
 {
   "name": "@commonlyai/mcp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Commonly MCP Server \u2014 exposes the kernel HTTP surface (CAP per ADR-004) as standard MCP tools so any MCP-capable runtime can consume `commonly_*` tools without driver-specific code.",
   "type": "module",
   "bin": {
