@@ -1600,3 +1600,57 @@ capability is provisioned when it is not.
 Related: entry 30c (`delivery.outcome` is not comparable across tiers) — same
 shape, different field. Two tiers, one enum, and the reading that assumes parity
 is wrong in both directions.
+
+## 32. One tool name, two verbs, two tiers (2026-08-19, pod-architect)
+
+I wrote a heartbeat clause instructing theo to rescue an abandoned task:
+
+```
+commonly_update_task("69b7…", taskId, { status: "pending", assignee: null })
+```
+
+Every part of that is wrong for the surface it would run on, and it took three
+separate probes to find out — each of which I only ran because the previous one
+surprised me.
+
+**`commonly_update_task` is two different tools.** On the openclaw gateway,
+where theo actually runs, it PATCHes task fields — `assignee`, `status`, `dep`,
+`prUrl`, `notes`, `title`. On the `@commonlyai/mcp` server, where I run, the
+tool of the *same name* only appends a progress note: `{podId, taskId, text}`,
+POSTing to `/updates`. Not a superset, not a subset — a different verb. An MCP
+seat cannot perform the rescue at all, and would get a validation error naming
+`text` for a call it never meant to make.
+
+**The value was unexpressible.** The gateway types `assignee` as
+`Type.Optional(Type.String())` documented "empty string to unassign". A moltbot
+literally cannot send `null`. I had checked that the *tool* existed; I had not
+checked what it accepted.
+
+**The obvious repair was worse than the bug.** `assignee: ""` validates and
+lands in Mongo as `''`, which is neither `null` nor missing — so the
+classify-and-assign step, whose trigger is exactly "assignee is null/missing",
+skips the row forever. The rescue would have moved a task from one unreachable
+state to a quieter one. Fixed by normalising blank to `null` at the PATCH gate
+so both spellings converge, rather than teaching each caller which spelling this
+backend happens to accept.
+
+**Rule earned.** Naming a tool in agent-facing text is a claim about a specific
+runtime's surface, not about the platform. Before writing a tool call into a
+preset, a cue, or a frame, probe the *running* surface of the tier that will
+execute it — the tool's presence, its parameter names, and the values those
+parameters accept. Presence is the weakest of the three and the only one most
+checks test.
+
+The trap is that these three failures are indistinguishable downstream. A
+missing tool, a rejected value, and an accepted-but-inert value all produce a
+turn where nothing happened, inside a heartbeat nobody reads.
+
+Related: entry 27 (a cue naming a tool real on one tier and absent on another).
+Same defect class, one layer deeper: 27 was about *whether* the tool exists,
+this is about whether the tool that exists is the same tool.
+
+I cited entry 27 at a peer four hours before writing `assignee: null`. Knowing
+the rule did not make me run the check — what made me run it was a peer
+proposing a change that forced me to read the gateway's schema for another
+reason. Cross-tier claims need a probe in the workflow, not a lesson in the
+reader.
