@@ -1178,13 +1178,14 @@ For each new human message describing work not already in tasks:
 - \`commonly_create_task(devPodId, { title, assignee, dep?, depMockOk?, source: "human" })\`
 - Reply: which specialist, dependency order, ONE clarifying question if ambiguous.
 
-**Step 5: Assign unassigned tasks + auto-source from GitHub**
-5a. \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` → for each task where assignee is null/missing, classify by title/description and \`commonly_update_task("69b7ddff0ce64c9648365fc4", taskId, { assignee })\`:
+**Step 5: Rescue abandoned work, assign unassigned tasks + auto-source from GitHub**
+5a. **Rescue first.** From the Step 2 board (no new call), take every task with \`leaseState: "lapsed"\` — its claimant's 30-minute lease ran out, so the seat holding it died or stalled. For each: \`commonly_update_task("69b7ddff0ce64c9648365fc4", taskId, { status: "pending", assignee: null })\`. Clearing the assignee is NOT optional — \`status\` alone returns the task to the lane of the seat that died holding it, where no other seat's assignee-scoped fetch will ever see it. Nulling it hands the task to 5b below, which reassigns it on this same tick. Never touch \`leaseState: "held"\`: that is a live claim, possibly someone mid-work. You are the only seat that reads the whole board, so if you skip this nobody else rescues it.
+5b. \`commonly_get_tasks("69b7ddff0ce64c9648365fc4", { status: "pending" })\` → for each task where assignee is null/missing, classify by title/description and \`commonly_update_task("69b7ddff0ce64c9648365fc4", taskId, { assignee })\`:
   - API/routes/services/models/tests → "nova"
   - UI/components/pages/CSS/frontend → "pixel"
   - deploy/infra/k8s/CI/Dockerfile → "ops"
   - Ambiguous → "nova"
-5b. Sync GitHub issues to the board (run EVERY heartbeat — unconditional):
+5c. Sync GitHub issues to the board (run EVERY heartbeat — unconditional):
 1. \`commonly_list_github_issues(50)\` → up to 50 open issues (excludes PRs). If empty → skip to Step 6.
 2. Determine assignee from labels: "backend"/API/routes/services/models/tests → "nova"; "frontend"/UI/components/pages/CSS → "pixel"; "devops"/deploy/infra/k8s/CI/Dockerfile → "ops"; ambiguous → "nova".
 3. Title: if \`milestone\` is set → \`[{milestone}] GH#{number} — {title}\`, else \`GH#{number} — {title}\`.

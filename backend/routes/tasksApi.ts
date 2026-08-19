@@ -171,6 +171,13 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
     // meaning what it reads as. Anything that is not a string is dropped.
     const assignee = typeof req.query?.assignee === 'string' ? req.query.assignee : undefined;
     const status = typeof req.query?.status === 'string' ? req.query.status : undefined;
+    // Deliberately absent from the MCP tool schema, and NOT an oversight to close.
+    // Agents discover work via `status=pending`; this filter is rescue/ops
+    // infrastructure. Exposing it teaches every seat to poll the whole board on a
+    // timer — the surface asymmetry IS the guard, because a tool description isn't
+    // one, and every other tier gap found on 2026-08-19 was an accident someone
+    // could mistake for policy. This is the reverse: a policy someone could
+    // mistake for an accident, and close by helpfully adding the param.
     const claimable = req.query?.claimable === 'true';
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -183,7 +190,12 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
     // "what can this pod's agents pick up right now", lapsed leases included.
     if (claimable) query.$or = claimableConditions(new Date());
     const tasks = await Task.find(query).sort({ taskNum: 1 }).lean();
-    return res.json({ tasks });
+    // One `now` for the whole page: derived per row, two rows either side of a
+    // tick boundary could otherwise report lease states that never coexisted.
+    const now = new Date();
+    return res.json({
+      tasks: tasks.map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+    });
   } catch (err) {
     console.error('GET /tasks error:', err);
     return res.status(500).json({ error: 'Failed to list tasks' });
@@ -395,6 +407,47 @@ export const claimableConditions = (
   { status: 'claimed', claimExpiresAt: { $lt: now } },
   { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
 ];
+
+export type TaskLeaseState = 'unleased' | 'held' | 'lapsed';
+
+// `claimableConditions` above is a QUERY PREDICATE — it selects rows, and for the
+// CAS it also takes the caller. It cannot LABEL a row, and a rescuer needs the
+// label: theo must tell "assign this" (unleased) from "rescue this" (lapsed) in
+// one pass over a board it already has. So this is a second expression of the
+// same expiry rule, kept deliberately and pinned to the first by the differential
+// in tasksApi.leaseState.test.js — mutate either side and that test reds.
+//
+// Both read one `TASK_CLAIM_LEASE_MS`. That shared constant is what makes the two
+// shapes agree; the test is what proves they still do.
+//
+// It is deliberately NOT called `claimable`, and the difference is load-bearing.
+// Claimability is a RELATION between a row and an asker: the CAS's second branch
+// (`{ status: 'claimed', claimedBy }`) admits the current holder renewing its own
+// lease, and no per-row field can express that — the same row is claimable by its
+// holder and not by anyone else, simultaneously. So read `held` as "someone holds
+// a live lease", never as "do not attempt": a seat resuming ITS OWN task must
+// still call claim and will still win. Three of the CAS's four branches are
+// representable here; the fourth is structurally out of reach.
+//
+// Combine with `status` before deciding anything. A `done` row is `unleased`
+// because nobody holds a lease on it, not because it is available to work.
+function deriveLeaseState(
+  task: { status?: string; claimedAt?: Date | string | null; claimExpiresAt?: Date | string | null },
+  now: Date,
+): TaskLeaseState {
+  if (task?.status !== 'claimed') return 'unleased';
+  // Mirrors CAS branch 3 (`claimExpiresAt: { $lt: now }`), strict-less included.
+  if (task.claimExpiresAt) {
+    return new Date(task.claimExpiresAt).getTime() < now.getTime() ? 'lapsed' : 'held';
+  }
+  // Mirrors CAS branch 4: claims that predate leases entirely carry a null
+  // `claimExpiresAt`, so their expiry is derived from `claimedAt` — they lapse one
+  // lease after they were taken, not instantly, so nobody steals work claimed two
+  // minutes ago during a rollout. A claimed row carrying NEITHER timestamp cannot
+  // be proven lapsed and the CAS refuses it too, so it reads `held`.
+  if (!task.claimedAt) return 'held';
+  return new Date(task.claimedAt).getTime() < now.getTime() - TASK_CLAIM_LEASE_MS ? 'lapsed' : 'held';
+}
 
 router.post('/:podId/:taskId/claim', rateLimit({
   windowMs: 60_000,
