@@ -107,7 +107,15 @@ export async function notifyPodAgents(
   podId: unknown,
   task: Record<string, unknown>,
   kind: TaskEventKind,
-  actor?: { userId?: unknown; isAgent?: boolean },
+  actor?: {
+    userId?: unknown;
+    isAgent?: boolean;
+    // Identity of the acting agent, when there is one. Carries the self-skip;
+    // `userId` cannot, because `installedBy` is the human's id on a
+    // human-installed agent.
+    agentName?: string;
+    instanceId?: string;
+  },
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -157,19 +165,32 @@ export async function notifyPodAgents(
       'work, or a human needs a decision from you.',
     ].join('\n');
 
-    // Self-skip, but ONLY for an agent actor. `installedBy` holds the agent's
-    // own user id when an agent self-installs, and the HUMAN's id when a human
-    // installs it — the same field meaning two different things. Skipping on it
-    // unconditionally silenced every agent for the exact person most likely to
-    // be editing the board: whoever installed it. So the skip is scoped to the
-    // case where the field genuinely identifies the actor.
+    // Self-skip keyed on IDENTITY, never on `installedBy`.
+    //
+    // `installedBy` means two different things — the agent's own user id when
+    // an agent self-installs, the HUMAN's id when a human installs it — and
+    // both readings have now shipped a bug, from opposite directions.
+    // Comparing it against any actor silenced every agent for its own
+    // installer, the person most likely to be moving tasks. Scoping that to
+    // agent actors fixed the human case and left the mirror image, which
+    // @pod-architect caught on review: a HUMAN-installed agent editing the
+    // board does not match its installer's id, so it fails to skip and wakes
+    // itself.
+    //
+    // (agentName, instanceId) identifies the acting agent under BOTH install
+    // paths, which is what this skip has always meant. Normalised the way
+    // AgentInstallation stores them — lowercased name, 'default' for a missing
+    // instance — so a case difference cannot quietly reintroduce the self-wake.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentEvent = require('../models/AgentEvent');
     const dmKind = actor?.isAgent === false ? 'user-agent' : 'agent-agent';
 
-    const actorId = actor?.isAgent && actor?.userId ? String(actor.userId) : null;
+    const actorKey = actor?.isAgent && actor?.agentName
+      ? `${String(actor.agentName).toLowerCase()}::${String(actor.instanceId || 'default')}`
+      : null;
     await Promise.all(installs.map(async (install: Record<string, unknown>) => {
-      if (actorId && String(install.installedBy || '') === actorId) return;
+      const installKey = `${String(install.agentName || '').toLowerCase()}::${String(install.instanceId || 'default')}`;
+      if (actorKey && installKey === actorKey) return;
       const agentName = install.agentName;
       const instanceId = install.instanceId || 'default';
       try {
