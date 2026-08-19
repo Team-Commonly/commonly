@@ -1707,6 +1707,14 @@ first, and a guard that returns a clean pass on the exact case it was written
 for is worse than no guard at all — it converts an open question into a
 settled one.
 
+**And the symbol-level check is triage, not a verdict.** Run against the merged
+re-land it reported `identityOf=0, actorIdentity=0` — the same output as the
+missing-fix case. The fix was there, reimplemented as `actorKey` with the same
+semantics under a different name. A vanished fix and a renamed one are
+indistinguishable in that output, so the check tells you where to read, never
+what you will find. Treat a hit as an unanswered question; the answer is in the
+diff.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
