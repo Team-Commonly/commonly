@@ -18,8 +18,14 @@ jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
 
+jest.mock('../../../models/AgentEvent', () => ({
+  findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
+}));
+
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentEventService = require('../../../services/agentEventService');
+const AgentEvent = require('../../../models/AgentEvent');
 const { notifyPodAgents } = require('../../../services/taskEventService');
 
 const POD_ID = new mongoose.Types.ObjectId().toString();
@@ -54,6 +60,10 @@ const mockInstalls = (rows) => {
 beforeEach(() => {
   jest.clearAllMocks();
   AgentEventService.enqueue.mockResolvedValue({});
+  // Default: nothing undrained, so each test exercises the fresh-enqueue path
+  // unless it explicitly seeds a pending wake.
+  AgentEvent.findOneAndUpdate.mockResolvedValue(null);
+  AgentEvent.updateOne.mockResolvedValue({});
 });
 
 describe('notifyPodAgents', () => {
@@ -73,83 +83,86 @@ describe('notifyPodAgents', () => {
     expect(arg.payload.content).toContain('Wire the board to the fleet');
   });
 
-  it('carries a synthetic claim key, so one agent takes the task and the rest stand down', async () => {
+  it('folds a second change into an undrained wake instead of enqueueing again', async () => {
+    // The defect this replaces: the first version carried a per-task claim key
+    // so the CAS would elect one actor. @sprint-review's number killed it —
+    // the claim key dedupes ACTION, never DELIVERY. Every seat was still
+    // enqueued and still woke; 39 board writes across 4 opted-in seats is 156
+    // wakes, every seat caps at 3 within seconds, and D1 silences the fleet it
+    // exists to inform. The bound has to be on delivery.
+    mockInstalls([install('scout', HUMAN_ID)]);
+    AgentEvent.findOneAndUpdate.mockResolvedValue({
+      _id: 'evt-1',
+      payload: { boardChanges: 1 },
+    });
+
+    await notifyPodAgents(POD_ID, task(), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(AgentEvent.updateOne).toHaveBeenCalledTimes(1);
+    // The summary must reflect the POST-increment count, or a seat reads "2
+    // changes" when three are waiting.
+    const [, update] = AgentEvent.updateOne.mock.calls[0];
+    expect(update.$set['payload.content']).toContain('2 changes');
+  });
+
+  it('matches the fold on boardWake, never on event type', async () => {
+    // Board wakes ride `message.posted`, which ordinary chat also uses. Folding
+    // on type would collapse a board change INTO someone's unread message and
+    // destroy it.
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    const [filter] = AgentEvent.findOneAndUpdate.mock.calls[0];
+    expect(filter['payload.boardWake']).toBe(true);
+    expect(filter.status).toBe('pending');
+    expect(filter.type).toBeUndefined();
+  });
+
+  it('carries no messageId, so every seat looks and the task CAS arbitrates', async () => {
     mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
 
     await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
 
-    const keys = AgentEventService.enqueue.mock.calls.map((c) => c[0].payload.messageId);
-    expect(keys).toHaveLength(2);
-    // Both agents must race for the SAME key or the CAS elects two winners.
-    expect(new Set(keys).size).toBe(1);
-    expect(keys[0]).toBe(`task:TASK-042:created:${Date.parse('2026-08-19T10:00:00.000Z')}`);
+    // A messageId would re-engage the wrapper's claim gate and put us back to
+    // one-looker-per-change — dedupe at the wrong layer. Contention belongs on
+    // the task claim, one level down, where it actually is.
+    for (const [arg] of AgentEventService.enqueue.mock.calls) {
+      expect(arg.payload.messageId).toBeUndefined();
+      expect(arg.payload.boardWake).toBe(true);
+    }
   });
 
-  // The fixture above passes `updatedAt` as an ISO STRING, and `String(str)` is
-  // the string — full millisecond precision, so the second-resolution defect was
-  // invisible to it. Production passes a Date, where `String(date)` renders to the
-  // second. Same field, different type, opposite result.
-  it('separates two writes 800ms apart, which second-resolution stringifying merged', async () => {
-    mockInstalls([install('scout', HUMAN_ID)]);
+  it('re-prices a folded batch as human when a human edit lands on agent churn', async () => {
+    // Otherwise one agent write early in a sweep permanently marks a wake the
+    // human later contributed to, and the seat spends cascade budget on it.
+    mockInstalls([install('scout', AGENT_ID)]);
+    AgentEvent.findOneAndUpdate.mockResolvedValue({ _id: 'evt-1', payload: { boardChanges: 2 } });
 
-    await notifyPodAgents(POD_ID, task({ updatedAt: new Date('2026-08-19T10:00:00.100Z') }), 'updated', { userId: HUMAN_ID, isAgent: false });
-    await notifyPodAgents(POD_ID, task({ updatedAt: new Date('2026-08-19T10:00:00.900Z') }), 'updated', { userId: HUMAN_ID, isAgent: false });
+    await notifyPodAgents(POD_ID, task(), 'updated', { userId: HUMAN_ID, isAgent: false });
 
-    const [first, second] = AgentEventService.enqueue.mock.calls.map((c) => c[0].payload.messageId);
-    expect(first).not.toBe(second);
+    const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
+    expect(update.$set['payload.dmKind']).toBe('user-agent');
   });
 
-  it('gives a later change to the same task a fresh key, or it collides with the settled claim', async () => {
+  it('does NOT re-price a folded batch when the new change is another agent edit', async () => {
     mockInstalls([install('scout', HUMAN_ID)]);
+    AgentEvent.findOneAndUpdate.mockResolvedValue({ _id: 'evt-1', payload: { boardChanges: 1 } });
 
-    await notifyPodAgents(POD_ID, task(), 'created', { userId: HUMAN_ID, isAgent: false });
-    await notifyPodAgents(
-      POD_ID,
-      task({ updatedAt: '2026-08-19T11:00:00.000Z', status: 'in_progress' }),
-      'updated',
-      { userId: HUMAN_ID, isAgent: false },
-    );
+    await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
 
-    const [first, second] = AgentEventService.enqueue.mock.calls.map((c) => c[0].payload.messageId);
-    expect(first).not.toBe(second);
+    const [, update] = AgentEvent.findOneAndUpdate.mock.calls[0];
+    expect(update.$set).toBeUndefined();
   });
 
   it('never wakes the actor about their own edit', async () => {
     mockInstalls([install('scout', AGENT_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', {
-      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
-    });
+    await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
-  });
-
-  // The skip used to key on `installedBy`, which names the INSTALLER. A
-  // human-installed agent — the normal path, and the only path in the Dev Team
-  // pod, where all five installs share one installer — never matched its own
-  // install and woke itself on every board write. Those wakes are agent-
-  // triggered, so they burn the cascade streak and a batch assignment starves
-  // the assigner.
-  it('skips a HUMAN-installed agent editing the board, where installedBy could not', async () => {
-    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
-
-    await notifyPodAgents(POD_ID, task(), 'updated', {
-      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
-    });
-
-    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
-    expect(woken).toEqual(['sprint-impl']);
-  });
-
-  it('matches identity case-insensitively, since agentName is stored lowercased', async () => {
-    mockInstalls([install('scout', HUMAN_ID)]);
-
-    await notifyPodAgents(POD_ID, task(), 'updated', {
-      userId: AGENT_ID, isAgent: true, agentName: 'Scout', instanceId: undefined,
-    });
-
-    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {
