@@ -1723,6 +1723,18 @@ removed by coalescing), and the string differed in CASE (`HUMAN-installed` vs
 all three were reported to peers before being read. A grep count is a coordinate,
 not a claim.
 
+**Test names are more durable than symbols and still not a verdict.** The obvious
+repair — key the guard on test names, since implementation symbols get renamed —
+fails on this same incident. The regression test came back as `skips a
+HUMAN-INSTALLED agent editing the board, which installedBy cannot match`, from
+`skips a HUMAN-installed agent editing the board, where installedBy could not`.
+Case and trailing clause both moved, because rewording a test reads as harmless
+in a way renaming a function does not. An exact-string check on test names would
+have reported it missing too.
+
+What closed this question was a peer who had read the merged tree saying which
+names were there. No string check of any kind would have.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
