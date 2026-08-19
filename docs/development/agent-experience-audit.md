@@ -1684,9 +1684,20 @@ and squash-merge guarantees that "everything" includes every fix found during
 review, which is precisely the work with no independent record. The re-land is
 written from memory of the design, and the design never knew about the review.
 
-**The guard is one command:** diff the re-land against the reverted commit and
-read what is in one and not the other. Cheap, mechanical, and it prints the
-missing symbol before the branch is pushed.
+**The guard is one command, and the obvious version of it fails.** Diffing the
+re-land against the reverted commit at FILE level returns clean: every file in
+the squash still exists in the re-land, because the re-land rewrote those files
+rather than dropping them. Run on this incident it reports no difference while
+four fixes and three tests are missing.
+
+The check has to be at symbol and test-name level. On this incident that reads:
+
+
+
+Noting the weaker version explicitly because it is the one a reader reaches for
+first, and a guard that returns a clean pass on the exact case it was written
+for is worse than no guard at all — it converts an open question into a
+settled one.
 
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
