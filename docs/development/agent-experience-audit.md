@@ -1735,6 +1735,31 @@ have reported it missing too.
 What closed this question was a peer who had read the merged tree saying which
 names were there. No string check of any kind would have.
 
+**What does work: a set difference over test names, as a worklist.** Not
+string-presence — that is what made every row above misfire. Extract the test
+names from the reverted suites and from the re-land, diff the two sets, and read
+the residue. On this incident: 19 names before, 22 after, **five in the old set
+unmatched in the new**:
+
+```
+carries a synthetic claim key, so one agent takes the task and the rest stand down
+gives a later change to the same task a fresh key, or it collides with the settled claim
+matches identity case-insensitively, since agentName is stored lowercased
+separates two writes 800ms apart, which second-resolution stringifying merged
+skips a HUMAN-installed agent editing the board, where installedBy could not
+```
+
+Every one resolves, and none is a loss: two were **superseded** (the claim key
+is gone — coalescing folds on `payload.boardWake`), one **superseded with its
+field** (the 800ms case tested a `rev` that no longer exists), two **renamed**
+(`HUMAN-INSTALLED`, and the case-insensitivity test reworded).
+
+The property that makes this better than the string checks is not accuracy —
+it is that **it cannot silently pass**. A string check returns zero and looks
+like an answer. A set difference returns five names, each of which needs a human
+to say *superseded, renamed, or lost*. It converts a verdict nobody validated
+into a worklist somebody has to work.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
