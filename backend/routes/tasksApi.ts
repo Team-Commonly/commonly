@@ -118,12 +118,25 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const { assignee, status } = req.query || {};
+    // Coerced at the boundary rather than destructured. Express's extended
+    // query parser turns `?assignee[$ne]=x` into an OBJECT and `?status=a&status=b`
+    // into an ARRAY, and both used to flow straight into the Mongo query below:
+    // the first as an operator injection, the second as a silent switch from
+    // String.includes to Array.includes, where `status.includes(',')` stops
+    // meaning what it reads as. Anything that is not a string is dropped.
+    const assignee = typeof req.query?.assignee === 'string' ? req.query.assignee : undefined;
+    const status = typeof req.query?.status === 'string' ? req.query.status : undefined;
+    const claimable = req.query?.claimable === 'true';
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const query: Record<string, unknown> = { podId: mongoose.Types.ObjectId.createFromHexString(podId || '') };
     if (assignee) query.assignee = assignee;
     if (status) query.status = status.includes(',') ? { $in: status.split(',') } : status;
+    // Composes with `status` by AND rather than overriding it, so
+    // ?status=claimed&claimable=true asks the useful narrow question — show me
+    // the lapsed claims specifically — while ?claimable=true alone answers
+    // "what can this pod's agents pick up right now", lapsed leases included.
+    if (claimable) query.$or = claimableConditions(new Date());
     const tasks = await Task.find(query).sort({ taskNum: 1 }).lean();
     return res.json({ tasks });
   } catch (err) {
@@ -310,6 +323,32 @@ router.post('/:podId', rateLimit({
 // identical semantics to message claims (messageClaimService).
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
+// The single definition of "claimable", shared by the CLAIM path and the LIST
+// path. They used to disagree: the CAS below grants a lapsed lease, while
+// GET /tasks could only filter on stored `status`, so a lapsed task was
+// grantable and unfindable at the same time. That is why
+// tasks.claim-lease.test.js:154 ("a lapsed lease is claimable by a peer")
+// passes while no peer can reach the task — it drives the CAS directly and
+// never asks whether the work can be discovered.
+//
+// ADR-018 put kernel enforcement of claims out of scope, so there is no reaper
+// and recovery is lazy: discovery IS the recovery mechanism. That makes this
+// predicate load-bearing rather than a convenience filter.
+//
+// Parameterised, never copied. `claimedBy` adds the self-renewal branch the
+// CAS needs; the list omits it deliberately, because "what can I pick up" does
+// not mean work the caller already holds. One function, so the expiry rule
+// cannot drift between call sites and quietly re-open this gap.
+export const claimableConditions = (
+  now: Date,
+  claimedBy?: string,
+): Record<string, unknown>[] => [
+  { status: 'pending' },
+  ...(claimedBy ? [{ status: 'claimed', claimedBy }] : []),
+  { status: 'claimed', claimExpiresAt: { $lt: now } },
+  { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+];
+
 router.post('/:podId/:taskId/claim', rateLimit({
   windowMs: 60_000,
   // Higher than task-create's 20: a claimant renews by re-claiming, and a
@@ -339,12 +378,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const task = await Task.findOneAndUpdate({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
-      $or: [
-        { status: 'pending' },
-        { status: 'claimed', claimedBy },
-        { status: 'claimed', claimExpiresAt: { $lt: now } },
-        { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
-      ],
+      $or: claimableConditions(now, claimedBy),
     }, update, { new: true });
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
