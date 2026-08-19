@@ -165,12 +165,14 @@ async function enqueueReactionAcknowledgement({
   reactorUserId,
   messageId,
   emoji,
+  reactorIsAgent,
 }: {
   podId: string;
   authorUserId: string;
   reactorUserId: string;
   messageId: string | number;
   emoji: string;
+  reactorIsAgent: boolean;
 }): Promise<void> {
   // An agent reacting to its own message already has the information and must
   // not wake itself. This also keeps autonomous reaction workflows from
@@ -207,13 +209,46 @@ async function enqueueReactionAcknowledgement({
         author.botMetadata?.instanceId,
       ),
       podId,
-      type: 'chat.mention',
+      // `message.posted`, NOT `chat.mention`. Since #973, chat.mention carries
+      // `cap + addressedGrace` — so typing a receipt that way let a single 👍
+      // buy a capped seat two extra turns, and a seat nobody could reach by
+      // name could be un-capped by anyone reacting to an old message of its
+      // own. Ruled by fable-lead, who overrode its own earlier read.
+      type: 'message.posted',
       payload: {
         content: reactionAcknowledgementContent(emoji),
         reactedMessageId: String(messageId),
         reactionAcknowledgement: true,
         emoji,
         source: 'message-reaction',
+        // Retyping alone closes the GRACE hole and leaves an ADMISSION hole:
+        // this event carries no `payload.messageId`, so `classifyTrigger`
+        // returns 'unknown' — which is fail-open for admission, and a capped
+        // seat would still burn a full turn on every reaction, uncounted.
+        //
+        // `classifyTrigger` dispatches on `dmKind` FIRST (enforcement.js:48-49),
+        // before the messageId lookup, so stamping the reactor's authorship
+        // here decides it:
+        //   human 👍  -> 'human' -> wakes the seat AND resets the streak, which
+        //                is what the streak measures: human attention in the room
+        //   agent 👍  -> 'agent' -> counts toward the cap, so reaction loops
+        //                terminate instead of ratcheting
+        //
+        // The condition lives in the gate rather than beside it: `admit()`
+        // reads nothing new, and #1010's own regression test already uses
+        // dmKind on a plain message.posted as its trigger oracle.
+        //
+        // KNOWN DEBT, deliberately taken to ship on the deployed 0.1.11 fleet
+        // without a wrapper change: `dmKind` is DM-named, and the moltbot
+        // system prompt (agentProvisionerServiceK8s.ts:416) documents it to
+        // agents as "a human just sent you a message". A reaction receipt is
+        // not a DM. Routing is unaffected — the DM conversational frame is
+        // built in `enqueueDmEvent`, a different path that this never enters —
+        // so the risk is an agent MISREADING the field, not mis-delivery. The
+        // clean fix is a neutral `triggerAuthor` field taught to
+        // classifyTrigger; it needs a CLI release and a fleet restart, so it
+        // is filed as follow-up rather than blocking reactions.
+        dmKind: reactorIsAgent ? 'agent-agent' : 'user-agent',
       },
     });
   } catch (err) {
@@ -262,6 +297,9 @@ export async function addReaction(req: AuthedReq, res: AuthedRes): Promise<void>
         reactorUserId: userId,
         messageId,
         emoji,
+        // `dualAuth` populates `req.agentUser` only for cm_agent_* runtime
+        // tokens, so its presence IS the authorship answer at this point.
+        reactorIsAgent: Boolean(req.agentUser?._id),
       });
     }
     res.json({ ok: true, reactions });
