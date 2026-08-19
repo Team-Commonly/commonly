@@ -301,9 +301,14 @@ describe('reactionController.addReaction — agent runtime path', () => {
     // on every reaction, uncounted, and agent↔agent reaction chains would
     // ratchet instead of terminating. Caught by fable-lead against its own
     // earlier ruling, which closed the grace hole and left this one open.
-    pool.query
-      .mockResolvedValueOnce(messageLookup('pod-loop', 'author-bot'))
-      .mockResolvedValueOnce(memberLookup(1));
+    // The agent auth path checks AgentInstallation, not pg pod_members — so
+    // only ONE pool.query (loadMessageContext) is consumed here. Getting this
+    // wrong does not just fail this test: it leaves the shared pool.query mock
+    // queue misaligned and every following test reports "Number of calls: 0".
+    pool.query.mockResolvedValueOnce(messageLookup('pod-loop', 'author-bot'));
+    AgentInstallation.findOne.mockReturnValue({
+      lean: () => Promise.resolve({ _id: 'inst-loop' }),
+    });
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({
