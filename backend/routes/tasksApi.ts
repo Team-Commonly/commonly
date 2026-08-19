@@ -18,7 +18,54 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const GitHubAppService = require('../services/githubAppService');
 // eslint-disable-next-line global-require
-const { emitTaskUpdated } = require('../services/taskEventService');
+const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
+
+/**
+ * Who made this board change, for the agent fan-out.
+ *
+ * `isAgent` prices the wake against the cascade cap, so it is derived from the
+ * auth shape rather than guessed: `agentRuntimeAuth` sets `req.agentUser` and
+ * never `req.user`. Returned explicitly as `false` for humans because
+ * `notifyPodAgents` treats *undefined* as "assume agent" — the safe default
+ * there, and not one to trip over by accident here.
+ */
+const actorOf = (req: any) => {
+  const isAgent = Boolean(req.agentUser?._id || req.user?.isBot);
+  // Identity, not just a user id. The self-skip downstream keys on
+  // (agentName, instanceId) because `installedBy` means the agent on a
+  // self-install and the HUMAN on a human-install — supplying only userId let a
+  // human-installed agent fail to match its own install and wake itself.
+  // Both auth shapes carry the same metadata: agentRuntimeAuth sets
+  // `req.agentUser`, the dual-auth path leaves the bot on `req.user`.
+  const meta = req.agentUser?.botMetadata || req.user?.botMetadata || {};
+  return {
+    userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
+    isAgent,
+    agentName: isAgent ? (meta.agentName || undefined) : undefined,
+    instanceId: isAgent ? (meta.instanceId || 'default') : undefined,
+  };
+};
+
+/**
+ * Board change -> pod agents. Deliberately NOT folded into `emitTaskUpdated`:
+ * that is a synchronous best-effort socket emit, this is an async DB fan-out.
+ *
+ * try/catch AND .catch, deliberately. A promise `.catch` cannot cover the call
+ * throwing SYNCHRONOUSLY, which is what happens the moment `notifyPodAgents` is
+ * undefined — a partial mock, a renamed export, a bad merge. That threw through
+ * into the route and turned every board write into a 500: strictly worse than
+ * the silent fan-out this exists to fix.
+ */
+const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => {
+  try {
+    const pending = notifyPodAgents(podId, task, kind, actorOf(req));
+    if (pending?.catch) {
+      pending.catch((e: Error) => console.warn('[tasks] agent notify failed:', e.message));
+    }
+  } catch (e) {
+    console.warn('[tasks] agent notify threw:', (e as Error).message);
+  }
+};
 
 interface AuthReq {
   userId?: string;
@@ -231,6 +278,7 @@ router.post('/:podId', rateLimit({
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
+          notifyAgents(req, podId, reopenedObj, 'updated');
           return res.json({ task: reopenedObj, alreadyExists: false, reopened: true });
         }
         return res.json({ task: existing.toObject(), alreadyExists: true });
@@ -317,6 +365,7 @@ router.post('/:podId', rateLimit({
       }
     }
     emitTaskUpdated(podId, task, 'created');
+    notifyAgents(req, podId, task, 'created');
     return res.status(201).json({ task });
   } catch (err) {
     console.error('POST /tasks error:', err);
@@ -444,6 +493,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       });
     }
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/claim error:', err);
@@ -512,6 +562,7 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
       console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
     }
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/complete error:', err);
@@ -531,6 +582,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, { $push: { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: new Date() } } }, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
@@ -604,6 +656,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, update, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('PATCH /tasks error:', err);
