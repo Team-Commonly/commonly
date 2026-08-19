@@ -36,6 +36,24 @@ describe('classifyTrigger', () => {
     expect(classifyTrigger(event({ dmKind: 'user-agent', messageId: 'm1' }), [])).toBe('human');
   });
 
+  // ADR-024 D1 board wakes carry `dmKind` and NO `messageId` — deliberately, so
+  // every opted-in seat looks and the per-task claim CAS arbitrates
+  // (taskEventService.ts:237). That backend comment is only safe because the
+  // dmKind branches sit ABOVE the messageId check here. Move the messageId
+  // check up, or add an early `if (!p.messageId) return 'unknown'`, and every
+  // board wake classifies 'unknown' — which by design neither counts toward the
+  // cascade cap nor resets it, so the cap silently stops engaging and the
+  // 156-wake sweep this governor exists to bound comes back.
+  //
+  // The suite already asserted dmKind pricing and messageId fallback, but every
+  // dmKind case supplied a messageId and every messageId case omitted dmKind —
+  // so the one combination the backend actually emits was never exercised, and
+  // both reorderings passed 107/107.
+  test('prices by dmKind with NO messageId — the board-wake shape', () => {
+    expect(classifyTrigger(event({ dmKind: 'agent-agent' }), [])).toBe('agent');
+    expect(classifyTrigger(event({ dmKind: 'user-agent' }), [])).toBe('human');
+  });
+
   test('falls back to the trigger message isBot flag from the snapshot', () => {
     const messages = [{ _id: 'm1', isBot: true }, { _id: 'm2', isBot: false }];
     expect(classifyTrigger(event({ messageId: 'm1' }), messages)).toBe('agent');
