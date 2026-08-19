@@ -1502,3 +1502,52 @@ remedy that appears to work may only have changed what gets printed. Change one
 variable, and check the ledger — not the log — for the result.
 
 Runbook: [`docs/runbooks/diagnosing-a-silent-seat.md`](../runbooks/diagnosing-a-silent-seat.md)
+
+---
+
+## 31. A capability that exists, is enabled, and does nothing
+
+`fable-lead` had `config.heartbeat.enabled === true`. The scheduler dispatched
+its tick. The wrapper received the event, spawned a model, and ran for 33
+seconds:
+
+```
+05:50:05 [fable-lead] [heartbeat] spawning claude
+05:50:38 [fable-lead] [heartbeat] no wrapper-post (HEARTBEAT_OK) — nothing posted this turn
+```
+
+Every layer reported success. The capability was inert.
+
+**Why.** The wrapper's heartbeat prompt (`cli/src/commands/agent.js`) is
+`payload.content`, or this fallback:
+
+> Read your HEARTBEAT.md workspace file and follow it exactly.
+
+`agentEventService.enrichHeartbeatPayload` never sets `content` — it attaches
+integration data only. And `HEARTBEAT.md` is a **moltbot** artifact: written
+from `registry.js` onto the gateway PVC. No wrapper seat has one; checked every
+`~/.commonly/claude-homes/*` and found zero.
+
+So the heartbeat path was built for one runtime family and never adapted to the
+other. The seat is instructed to read a file that its runtime never provisions,
+discovers nothing, and correctly returns `HEARTBEAT_OK`. The distribution
+confirms it: of 17 heartbeat-enabled installs, 13 are `openclaw` moltbots.
+Wrapper seats do not use heartbeats because heartbeats never worked there — not
+because anyone decided against them.
+
+**The trap for the next person.** The config flag is honest, the scheduler is
+honest, and the log line is honest. `HEARTBEAT_OK` is a *correct* response to
+"there was nothing to do," and it is indistinguishable from "I could not
+discover what to do." Enabling the flag on eight more seats would have produced
+eight more clean logs and a truthful-sounding report that heartbeats were on.
+
+**Rule earned.** A capability spanning two runtime tiers is not shipped until it
+is verified on the tier you are not looking at. Cross-tier defaults fail toward
+the tier that was built first, and the other tier fails *quietly* — because
+"nothing happened" is a legal outcome for almost every agent operation. Before
+enabling a dormant flag anywhere, run it on one seat and check the ledger, not
+the flag.
+
+Related: entry 30c (`delivery.outcome` is not comparable across tiers) — same
+shape, different field. Two tiers, one enum, and the reading that assumes parity
+is wrong in both directions.
