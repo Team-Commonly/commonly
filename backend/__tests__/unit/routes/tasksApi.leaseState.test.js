@@ -244,6 +244,21 @@ describe('task leaseState', () => {
     expect(res.body.task.claimedBy).toBe('holder');
   });
 
+  // The openclaw tool types `assignee` as a plain string and documents "empty
+  // string to unassign", so a moltbot cannot send null. Stored verbatim, '' is
+  // neither null nor missing, and the assign step skips the row forever.
+  it.each([[null, 'an MCP/HTTP caller'], ['', 'a moltbot']])('unassign via %p (%s) lands as null', async (value) => {
+    await Task.updateOne({ taskId: 'TASK-003' }, { $set: { assignee: 'deadseat' } });
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-003`)
+      .set('x-test-user', 'stranger')
+      .send({ status: 'pending', assignee: value });
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.assignee).toBeNull();
+  });
+
   it('a rescued row returns to the pool rather than to the dead seat\'s lane', async () => {
     // What theo's heartbeat performs on a lapsed row. Clearing the assignee is
     // the load-bearing half: status alone sends the task back to the lane of the

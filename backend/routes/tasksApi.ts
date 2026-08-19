@@ -618,6 +618,17 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const fieldUpdates: Record<string, unknown> = {};
     const body = (req.body || {}) as Record<string, unknown>;
     allowed.forEach((k) => { if (body[k] !== undefined) fieldUpdates[k] = body[k]; });
+    // Unassign has two spellings and only one of them was reaching the DB. The
+    // openclaw tool types `assignee` as a plain string and documents "empty string
+    // to unassign", so a moltbot literally cannot send null; an MCP or HTTP caller
+    // sends null. Stored as '', the row is neither null NOR missing, so theo's
+    // classify-and-assign step — whose trigger is exactly "assignee is null/missing"
+    // — skips it forever, and a rescued task lands in a lane no seat fetches. One
+    // normalisation here beats teaching every caller which spelling this backend
+    // happens to accept.
+    if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
+      fieldUpdates.assignee = null;
+    }
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
     if (fieldUpdates.status !== undefined) {
       const raw = String(fieldUpdates.status).trim().toLowerCase();
