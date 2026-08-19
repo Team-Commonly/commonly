@@ -77,7 +77,22 @@ const main = async () => {
   // So before calling a seat silent, ask the message ledger. Caught in review
   // by fable-lead; the native-tier outcome write is a separate kernel issue,
   // not a blocker for this detector.
-  const ledger = mongoose.connection.collection('messages');
+  // Chat messages live in POSTGRES, not Mongo (CLAUDE.md: "PostgreSQL —
+  // default for chat messages"). Querying mongo's `messages` here returned 0
+  // for every seat, so the cross-check silently never fired and the detector
+  // kept reporting "produced nothing" for agents that were posting fine —
+  // reintroducing, inside the fix for it, the exact error this script exists
+  // to catch. Same mistake was made earlier the same day against scout.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { Pool } = require('pg');
+  const pg = new Pool({
+    host: process.env.PG_HOST,
+    port: Number(process.env.PG_PORT) || 5432,
+    user: process.env.PG_USER,
+    password: process.env.PG_PASSWORD,
+    database: process.env.PG_DATABASE,
+    ssl: { rejectUnauthorized: false },
+  });
   const silent: string[] = [];
   const postingUnrecorded: string[] = [];
   for (const r of rows) {
@@ -89,10 +104,10 @@ const main = async () => {
         .find({ 'botMetadata.agentName': r._id.agent }, { projection: { _id: 1 } })
         .toArray();
       const wrote = identities.length
-        ? await ledger.countDocuments({
-          userId: { $in: identities.map((u: { _id: unknown }) => u._id) },
-          createdAt: { $gte: since },
-        })
+        ? Number((await pg.query(
+          'select count(*)::int n from messages where user_id = any($1) and created_at >= $2',
+          [identities.map((u: { _id: unknown }) => String(u._id)), since],
+        )).rows[0].n)
         : 0;
       if (wrote > 0) postingUnrecorded.push(`${seat} (${wrote} in ledger)`);
       else silent.push(seat);
@@ -147,6 +162,7 @@ const main = async () => {
     console.log(`\n⚠ ${totalDead} event(s) in terminal 'failed' — hit the requeue cap, never retried, invisible to list(). See #998.`);
   }
 
+  await pg.end();
   await mongoose.disconnect();
 };
 
