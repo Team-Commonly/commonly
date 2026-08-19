@@ -84,7 +84,7 @@ export async function notifyPodAgents(
   podId: unknown,
   task: Record<string, unknown>,
   kind: TaskEventKind,
-  actor?: { userId?: unknown; isAgent?: boolean },
+  actor?: { userId?: unknown; isAgent?: boolean; agentName?: string | null; instanceId?: string | null },
 ): Promise<void> {
   // A deletion leaves nothing to pick up, and a tombstone wake spends a model
   // turn to discover there is no work.
@@ -122,7 +122,21 @@ export async function notifyPodAgents(
     const assignee = task.assignee ? String(task.assignee) : null;
     // Distinguishes successive changes to the SAME task, so a later update is a
     // fresh race rather than colliding with an earlier update's settled claim.
-    const rev = String(task.updatedAt || task.claimExpiresAt || '');
+    // Milliseconds, NOT `String(date)`. `Date.prototype.toString()` renders to the
+    // second, so two writes 800ms apart produced an identical rev, an identical
+    // claimKey, and the second change's wake was swallowed by a claim the first
+    // had already settled. That is not hypothetical once a rescue sweep exists:
+    // it claims a lapsed row, rewrites it to pending, then reassigns it — three
+    // writes on one task inside a second, of which only the FIRST survived. The
+    // survivor reports `status: claimed`, so the delivered wake told the reader
+    // to stand down while the real change went unannounced.
+    //
+    // A chosen bound, not exactness: two writes inside the SAME millisecond still
+    // collide. The only monotonic alternative is a version counter, and Mongoose
+    // does not bump `__v` on findOneAndUpdate — so ms is where this stops.
+    const revSource = task.updatedAt || task.claimExpiresAt || null;
+    const revTime = revSource ? new Date(revSource as string | number | Date).getTime() : NaN;
+    const rev = Number.isNaN(revTime) ? '' : String(revTime);
     const claimKey = `task:${taskId}:${kind}:${rev}`;
 
     const content = [
@@ -140,15 +154,31 @@ export async function notifyPodAgents(
       'work, or a human needs a decision from you.',
     ].join('\n');
 
-    // Self-skip, but ONLY for an agent actor. `installedBy` holds the agent's
-    // own user id when an agent self-installs, and the HUMAN's id when a human
-    // installs it — the same field meaning two different things. Skipping on it
-    // unconditionally silenced every agent for the exact person most likely to
-    // be editing the board: whoever installed it. So the skip is scoped to the
-    // case where the field genuinely identifies the actor.
-    const actorId = actor?.isAgent && actor?.userId ? String(actor.userId) : null;
+    // Self-skip, keyed on IDENTITY rather than on `installedBy`.
+    //
+    // `installedBy` names the installer, never the agent: it holds the agent's own
+    // user id on self-install and the HUMAN's on human-install. Scoping the skip to
+    // agent actors fixed the human case and left its mirror open — a human-installed
+    // agent (the normal path) never matched its own install, so it enqueued a wake to
+    // itself on every board write. Those wakes are agent-triggered and count toward
+    // the cascade streak, so a batch assignment starved the assigner: #1010's
+    // starvation arriving through a new door.
+    //
+    // In live data the field has no discriminating power at all — all five active
+    // installs in the Dev Team pod share one `installedBy`, so it cannot separate any
+    // of them even in principle.
+    //
+    // `(agentName, instanceId)` is the identity the rest of this file already uses two
+    // lines below, and the same pair `agentMentionService` uses for its self-mention
+    // guard. Correct regardless of who installed the agent.
+    const identityOf = (agentName: unknown, instanceId: unknown): string => (
+      `${String(agentName || '').toLowerCase()}:${String(instanceId || 'default').toLowerCase()}`
+    );
+    const actorIdentity = actor?.isAgent && actor?.agentName
+      ? identityOf(actor.agentName, actor.instanceId)
+      : null;
     await Promise.all(installs.map(async (install: Record<string, unknown>) => {
-      if (actorId && String(install.installedBy || '') === actorId) return;
+      if (actorIdentity && identityOf(install.agentName, install.instanceId) === actorIdentity) return;
       try {
         await AgentEventService.enqueue({
           agentName: install.agentName,

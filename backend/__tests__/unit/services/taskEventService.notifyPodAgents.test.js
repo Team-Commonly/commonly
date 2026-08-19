@@ -82,7 +82,21 @@ describe('notifyPodAgents', () => {
     expect(keys).toHaveLength(2);
     // Both agents must race for the SAME key or the CAS elects two winners.
     expect(new Set(keys).size).toBe(1);
-    expect(keys[0]).toBe('task:TASK-042:created:2026-08-19T10:00:00.000Z');
+    expect(keys[0]).toBe(`task:TASK-042:created:${Date.parse('2026-08-19T10:00:00.000Z')}`);
+  });
+
+  // The fixture above passes `updatedAt` as an ISO STRING, and `String(str)` is
+  // the string — full millisecond precision, so the second-resolution defect was
+  // invisible to it. Production passes a Date, where `String(date)` renders to the
+  // second. Same field, different type, opposite result.
+  it('separates two writes 800ms apart, which second-resolution stringifying merged', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task({ updatedAt: new Date('2026-08-19T10:00:00.100Z') }), 'updated', { userId: HUMAN_ID, isAgent: false });
+    await notifyPodAgents(POD_ID, task({ updatedAt: new Date('2026-08-19T10:00:00.900Z') }), 'updated', { userId: HUMAN_ID, isAgent: false });
+
+    const [first, second] = AgentEventService.enqueue.mock.calls.map((c) => c[0].payload.messageId);
+    expect(first).not.toBe(second);
   });
 
   it('gives a later change to the same task a fresh key, or it collides with the settled claim', async () => {
@@ -103,10 +117,39 @@ describe('notifyPodAgents', () => {
   it('never wakes the actor about their own edit', async () => {
     mockInstalls([install('scout', AGENT_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
+    });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
+  });
+
+  // The skip used to key on `installedBy`, which names the INSTALLER. A
+  // human-installed agent — the normal path, and the only path in the Dev Team
+  // pod, where all five installs share one installer — never matched its own
+  // install and woke itself on every board write. Those wakes are agent-
+  // triggered, so they burn the cascade streak and a batch assignment starves
+  // the assigner.
+  it('skips a HUMAN-installed agent editing the board, where installedBy could not', async () => {
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
+    });
+
+    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
+    expect(woken).toEqual(['sprint-impl']);
+  });
+
+  it('matches identity case-insensitively, since agentName is stored lowercased', async () => {
+    mockInstalls([install('scout', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'Scout', instanceId: undefined,
+    });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {

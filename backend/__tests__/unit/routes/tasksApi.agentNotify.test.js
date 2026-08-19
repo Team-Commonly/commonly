@@ -89,7 +89,9 @@ describe('board writes reach the pod agents', () => {
     expect(kind).toBe('updated');
     // A human edit resets the cascade streak; mislabelling it as an agent edit
     // would let a busy board starve the very seats it is trying to feed.
-    expect(actor).toEqual({ userId: 'u1', isAgent: false });
+    // Identity is null on a human edit: the self-skip keys on (agentName,
+    // instanceId), and a human has neither — so it can never match an install.
+    expect(actor).toEqual({ userId: 'u1', isAgent: false, agentName: null, instanceId: null });
   });
 
   it('marks an AGENT PATCH as an agent edit, so board churn terminates', async () => {

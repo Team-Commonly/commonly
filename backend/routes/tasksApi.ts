@@ -32,6 +32,11 @@ const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventServi
 const actorOf = (req: any) => ({
   userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
   isAgent: Boolean(req.agentUser?._id || req.user?.isBot),
+  // The self-skip keys on identity, not on the installer. `agentRuntimeAuth` sets
+  // `req.agentUser` (never `req.user`), and both auth paths load the bot User row,
+  // so `botMetadata` is where the pair lives on an agent call.
+  agentName: req.agentUser?.botMetadata?.agentName || req.user?.botMetadata?.agentName || null,
+  instanceId: req.agentUser?.botMetadata?.instanceId || req.user?.botMetadata?.instanceId || null,
 });
 
 /**
