@@ -197,6 +197,10 @@ describe('task leaseState', () => {
   it.each(ROWS)('$label → a stranger\'s claim agrees with leaseState', async (row) => {
     const byId = await listed();
     const state = byId.get(row.taskId).leaseState;
+    // Guard the guard: without this, an ABSENT field satisfies `state !== 'held'`
+    // and every stranger-wins row passes against a tree that has no leaseState
+    // at all — the assertion would be measuring undefined, not the rule.
+    expect(['unleased', 'held', 'lapsed']).toContain(state);
 
     const res = await request(app)
       .post(`/api/v1/tasks/${POD_ID}/${row.taskId}/claim`)
