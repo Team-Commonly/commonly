@@ -987,7 +987,34 @@ export const performRun = ({
       }
     } else if (silentReply) {
       const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
-      log(`[${event.type}] no wrapper-post (${reason})`);
+      // A turn that posted via tool and THEN ended with the sentinel is not the
+      // same event as a turn that produced nothing — but this branch reported
+      // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
+      // the `agentPostedItself` branch below and swallowed that fact.
+      //
+      // The skill told agents to do exactly this (post via commonly_post_message,
+      // then end with NO_REPLY so the wrapper does not double-post), so CORRECT
+      // behaviour and total silence were indistinguishable on stdout.
+      //
+      // Cost, 2026-08-18: a seat was diagnosed as mute for "19 hours" on the
+      // strength of `grep -c "posted via tool" == 0` against its log. It had in
+      // fact posted seven times in that window. Five remedies were applied to a
+      // seat that was never broken — cleared session, fresh process, MCP
+      // repointed, model repinned — before the seat itself pointed at the
+      // ledger. The instrument was broken, not the agent.
+      //
+      // Report the two cases distinctly. `posted` is the load-bearing word: a
+      // reader scanning for whether a seat is contributing must not have to
+      // infer it from the absence of a different line.
+      if (agentPostedItself) {
+        log(
+          `[${event.type}] posted via tool, then ${reason} — no echo needed `
+          + `(matched message ${suppressedBy.id} by ${suppressedBy.author} `
+          + `via ${suppressedBy.basis})`,
+        );
+      } else {
+        log(`[${event.type}] no wrapper-post (${reason}) — nothing posted this turn`);
+      }
     } else if (agentPostedItself) {
       // Name the message that caused the suppression. A silently dropped reply
       // is invisible to everyone; #757 went unnoticed precisely because this
