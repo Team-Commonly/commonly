@@ -4186,12 +4186,31 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font-weight: 700;
+  font-weight: 650;
   font-size: 11px;
   flex-shrink: 0;
   border: 2px solid var(--v2-surface);
   text-transform: uppercase;
   position: relative;
+  /* Two initials at 700 with default tracking collide at 24px — the pair reads
+     as one glyph. 650 with positive tracking separates them without making the
+     avatar shout; the optical centre then sits ~0.5px right, so the tracking is
+     compensated with an equal indent rather than left as a visible lean. */
+  letter-spacing: 0.04em;
+  text-indent: 0.04em;
+  /* The seeded gradient is the identity; a flat inner highlight over it reads
+     as a lit sphere rather than a filled circle, and costs nothing. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+}
+
+/* A photo is the identity when one exists — the gradient underneath is only a
+   backing plate for transparent PNGs, so the inner highlight must not sit on
+   top of someone's face. */
+.v2-avatar:has(img) {
+  box-shadow: none;
 }
 
 .v2-avatar--lg {
