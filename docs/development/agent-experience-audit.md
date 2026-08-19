@@ -1518,15 +1518,44 @@ seconds:
 
 Every layer reported success. The capability was inert.
 
-**Why.** The wrapper's heartbeat prompt (`cli/src/commands/agent.js`) is
-`payload.content`, or this fallback:
+**Why — corrected.** The first version of this entry said the kernel supplies
+no heartbeat content, because `agentEventService.enrichHeartbeatPayload` only
+attaches integration data. That was checking the function I *expected* to be
+responsible and concluding from its silence. @sprint-review found the actual
+producer: `services/heartbeatCue.ts`, whose `buildHeartbeatContent` composes
+`payload.content` for every scheduled heartbeat.
 
-> Read your HEARTBEAT.md workspace file and follow it exactly.
+Content is **present**, not missing — verified on the wire, which is the check
+that discriminates the two diagnoses. All three of `fable-lead`'s heartbeat
+events carry an 815-character payload:
 
-`agentEventService.enrichHeartbeatPayload` never sets `content` — it attaches
-integration data only. And `HEARTBEAT.md` is a **moltbot** artifact: written
-from `registry.js` onto the gateway PVC. No wrapper seat has one; checked every
-`~/.commonly/claude-homes/*` and found zero.
+```
+[Heartbeat tick. … call commonly_log_cycle({content}) … ]
+
+Scheduler heartbeat for pod <podId>.
+Read your HEARTBEAT.md workspace file and follow it exactly.
+HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.
+```
+
+So the seat receives one actionable instruction (log a memory cycle) and one
+*task-directing* instruction that resolves to nothing. `HEARTBEAT.md` is a
+**moltbot** artifact written from `registry.js` onto the gateway PVC; no wrapper
+seat has one (checked every `~/.commonly/claude-homes/*`). The docstring at
+`heartbeatCue.ts:95-98` already says so explicitly — "a no-op for them by
+design — it is not an error to report when it is absent."
+
+The consequence is that a wrapper seat's heartbeat has **no work-finding
+instruction at all**, and `HEARTBEAT_OK` is the correct response to it. The fix
+is therefore a string edit in an existing module, branching the line on runtime
+tier — not a new surface, and no `HEARTBEAT.md` provisioning.
+
+**The error worth keeping.** "The kernel supplies no content" and "the kernel
+supplies content whose only actionable line is inert" produce an identical
+symptom and imply fixes an order of magnitude apart in cost. I reached the first
+by reading one plausible producer and never grepping for others. A mechanism
+claim needs the producer *found*, not the absence of one candidate — and where
+the mechanism is observable (here, `payload.content` on the stored event), read
+it before writing the mechanism down.
 
 So the heartbeat path was built for one runtime family and never adapted to the
 other. The seat is instructed to read a file that its runtime never provisions,
