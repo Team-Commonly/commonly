@@ -812,8 +812,11 @@ export const performRun = ({
     // The claim stand-down returns before `runTurn`, and `record()` lives at
     // the end of `runTurn`, so the loser never records the human turn that
     // would have cleared its streak. It meets the next broadcast still capped,
-    // declines, and again skips `record()`. The only other escape is
-    // `resetMs` of total pod silence, which a busy room never provides.
+    // declines, and again skips `record()`. The only other escape is the
+    // seat's own resetMs clock: stateFor reads only this process's
+    // lastAgentTurnAt, so a capped seat self-clears 10 minutes after its last
+    // completed agent turn regardless of room traffic — cyclical throttling,
+    // not permanent starvation.
     //
     // Measured in one pod, 2026-08-18, same window: ux-lead 14 lost claims /
     // 73 cap refusals / 2 posts, against sprint-review 0 / 2 / 95. Losing one
