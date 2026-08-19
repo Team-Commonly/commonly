@@ -73,31 +73,12 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
     // Admin moderation: one indexed read so a ban (or account deletion) takes
     // effect on the NEXT request, not at JWT expiry days later.
-    // `username` rides along on a query that already runs. Without it,
-    // `req.user` on this path is `{ id }` only — and every consumer that
-    // reads `req.user?.username` silently gets undefined.
-    const live = await User.findById(id).select('banned username').lean() as
-      { banned?: boolean; username?: string } | null;
+    const live = await User.findById(id).select('banned').lean() as { banned?: boolean } | null;
     if (!live) return res.status(401).json({ msg: 'Account no longer exists' });
     if (live.banned) return res.status(403).json({ msg: 'This account has been suspended.' });
 
     req.userId = id;
-    // The API-token path above sets username; this one did not, and the two
-    // shapes are not interchangeable. messageController reads
-    // `req.user?.username` and hands it to agentMentionService, which builds
-    // the frame every woken agent reads:
-    //
-    //   [Trigger: this turn was raised by **unknown** (message 54955), ...]
-    //
-    // `formatAuthorFrame` falls back to 'unknown' on a missing username
-    // (agentMentionService.ts:598). Since the web UI authenticates by JWT,
-    // that fallback fired for EVERY human message — observed live in a
-    // running seat's argv, on a message posted by a signed-in human.
-    //
-    // The cost is not cosmetic. That frame is how a woken agent learns a
-    // HUMAN raised the turn rather than a peer, which is the distinction
-    // driving whether it answers now or treats the wake as peer chatter.
-    req.user = { id, username: live.username };
+    req.user = { id };
     touchLastActive(id);
     next();
   } catch (err: unknown) {
