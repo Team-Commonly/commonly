@@ -66,7 +66,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * FLOOR — and the current value is below it. See #1008.
  *
  * The floor is not `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` (10). That constant
- * is a threshold, and the requeue runs on a `*/10` cron, so redelivery lands
+ * is a threshold, and the requeue runs on a ten-minute cron, so redelivery lands
  * uniformly across `[T, T+P)` = 10-20 minutes, mean ~15 — stated outright at
  * `agentEventService.ts:632-635`, which ends "Change both numbers together."
  * The real floor is therefore **20 plus margin**, and 15 sits at the MEAN of
