@@ -1722,6 +1722,23 @@ tool description or a heartbeat instruction: it works only on someone already
 being careful, which is the failure mode this file exists to document. The
 flagging felt like the work and wasn't.
 
+**Postscript: on this incident, nothing was actually lost.** The table above was
+read at the moment the re-land branch was open, and every line of it resolved
+differently by merge:
+
+- `identityOf` / `actorIdentity` — **renamed**, not dropped. The fix shipped as
+  `actorKey` with the same semantics.
+- `getTime()` / `Number.isNaN(revTime)` — **superseded**. Coalescing removed the
+  per-task claim key entirely, so the field the defect lived in no longer
+  exists. Re-filing that defect now would target code that is gone.
+- The three tests — gone with the field and the name they tested.
+
+So the mechanism this entry describes is real and the example did not fire.
+Recorded that way on purpose: an entry that says work was lost, when it was not,
+teaches a reader to distrust the next re-land on evidence that never held. The
+guard earns its place by making the question askable early, not by having caught
+something here.
+
 Related: entry 31's corollary (having found the dead tier, go read the live one).
 Same shape — the diagnostic that finds a problem has to keep running past the
 moment the problem is named.
