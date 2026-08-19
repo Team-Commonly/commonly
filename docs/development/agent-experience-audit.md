@@ -1692,7 +1692,15 @@ four fixes and three tests are missing.
 
 The check has to be at symbol and test-name level. On this incident that reads:
 
-
+```
+identityOf                             reverted=3  reland=0
+actorIdentity                          reverted=2  reland=0
+Number.isNaN(revTime)                  reverted=1  reland=0
+getTime()                              reverted=1  reland=0
+"skips a HUMAN-installed agent"        reverted=1  reland=0
+"separates two writes 800ms apart"     reverted=1  reland=0
+"matches identity case-insensitively"  reverted=1  reland=0
+```
 
 Noting the weaker version explicitly because it is the one a reader reaches for
 first, and a guard that returns a clean pass on the exact case it was written
