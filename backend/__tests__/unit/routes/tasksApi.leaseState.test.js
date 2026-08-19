@@ -285,6 +285,32 @@ describe('task leaseState', () => {
     expect(res.status).toBe(409);
   });
 
+  // The two-fetch shape theo depends on, pinned. Rescue asks for
+  // `{ status: 'claimed' }` and assign asks for `{ status: 'pending' }`, and that
+  // split is only correct while a lapsed row is INVISIBLE to the pending fetch —
+  // which is the original defect, deliberately preserved. If someone later
+  // fixes `?status=pending` to include lapsed rows, the rescue step starts
+  // double-handling every row it just wrote and this test says so.
+  it('a lapsed row is absent from ?status=pending and present under ?status=claimed', async () => {
+    const pending = await request(app)
+      .get(`/api/v1/tasks/${POD_ID}`)
+      .query({ status: 'pending' })
+      .set('x-test-user', 'stranger');
+    expect(pending.status).toBe(200);
+    const pendingIds = pending.body.tasks.map((t) => t.taskId);
+    expect(pendingIds).toContain('TASK-001');
+    expect(pendingIds).not.toContain('TASK-003');
+
+    const claimed = await request(app)
+      .get(`/api/v1/tasks/${POD_ID}`)
+      .query({ status: 'claimed' })
+      .set('x-test-user', 'stranger');
+    expect(claimed.status).toBe(200);
+    const lapsed = claimed.body.tasks.find((t) => t.taskId === 'TASK-003');
+    expect(lapsed).toBeDefined();
+    expect(lapsed.leaseState).toBe('lapsed');
+  });
+
   // The branch a per-row field structurally cannot carry. If someone ever reads
   // `held` as "do not attempt", this is what breaks: a seat stops resuming the
   // task it claimed last cycle.
