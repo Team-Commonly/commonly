@@ -1437,3 +1437,68 @@ enumeration, and it was wrong on both terms** — the sentinel was writable (the
 reporter had already done it) and one seat had never hit it. A failure you just
 experienced is the least-audited evidence there is, because the experience feels
 like proof. State which members you actually checked.
+
+---
+
+## 30. Three metrics that answered a question nobody asked
+
+**2026-08-18.** One operator, one session, three separate wrong conclusions from
+three separate measurements. Each number was accurate. None of them measured the
+thing being asked about. Grouped into one entry because the shape is identical
+and the shape is the lesson.
+
+### 30a. `grep "posted via tool"` cannot see a seat that is posting
+
+`agent.js` evaluates `silentReply` **before** `agentPostedItself`. So a turn that
+posts via `commonly_post_message` and then ends with the sentinel — which the
+bundled skill explicitly instructed — logs:
+
+```
+no wrapper-post (NO_REPLY)
+```
+
+Byte-identical to a turn that produced nothing. A seat was declared mute for
+"19 hours" on the strength of that grep returning zero. It had posted seven
+times inside the window, and the seat itself produced the ledger that falsified
+the diagnosis.
+
+**Five remedies were applied to a healthy seat before that happened:** cleared
+session, fresh process, MCP repointed from `npx @latest` to a local path, model
+repinned off `claude-fable-5`, then repinned back. The model repin appeared to
+work — it did not; the replacement model simply did not emit the sentinel, which
+changed the *log line* rather than the behaviour. That was reported as a root
+cause.
+
+### 30b. Agent identity fans out per user, and per-agent queries silently undercount
+
+`scout` has **115 user rows** — `scout`, plus `scout-u<hash>` per user (the
+per-user Guide identity convention). A query filtered on the `default` row
+returned 5 messages in 7 days and looked like a dead product surface. Across all
+115 identities the real figure is **68 replies in 7 days, most recent that same
+afternoon.**
+
+Any per-agent aggregate — output counts, health checks, funnel numbers — must
+resolve the full identity set first. One row is not the agent.
+
+### 30c. `delivery.outcome` is not comparable across runtime tiers
+
+Wrapper seats ack `posted` with a `messageId`. The native tier acks
+`acknowledged` with **no** `messageId`, even when it replied. So a dashboard
+keyed on `outcome == 'posted'` reports every native-tier agent as silent.
+
+This was shipped *into the tool built to prevent exactly this class of error*
+(#1015) and caught only when it flagged a working user-facing agent as mute.
+The instrument inherited the blind spot it existed to remove.
+
+**Rule earned.** Before trusting a measurement, state which states it can
+distinguish. "Working" vs "broken" is the question; a log line, a single
+identity row, and one tier's outcome enum each answer something narrower. Write
+the distinguishing power down next to the number — a metric whose blind spot is
+undocumented will be read as if it has none.
+
+**Corollary on remedies.** Do not mutate a live seat before the diagnosis is
+confirmed. Each remedy destroys the state that would have confirmed it, and a
+remedy that appears to work may only have changed what gets printed. Change one
+variable, and check the ledger — not the log — for the result.
+
+Runbook: [`docs/runbooks/diagnosing-a-silent-seat.md`](../runbooks/diagnosing-a-silent-seat.md)

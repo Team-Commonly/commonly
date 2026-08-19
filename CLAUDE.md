@@ -242,9 +242,19 @@ pointer from the slim anchor; do not inline the content here.
   cannot be read as having decided them (see ADR-018's 90s lease).
 
 | **Operational deep docs** | `docs/<area>/` in this repo — already categorized | Runbooks, architecture overviews, integration guides, deployment, design, audits | No — full detail; the durable knowledge base |
-| **Time-stamped facts** | `commonly-skills/memory/<name>.md` (66 entries, see `MEMORY.md` index) | What changed when, what surfaced, what was tried (per the auto-memory schema in the system prompt) | Yes — facts + a pointer to the relevant deep doc |
+| **Time-stamped facts** | `commonly-skills/memory/<name>.md` (see `MEMORY.md` index) — **operator-private, NOT readable by the fleet** | What changed when, what surfaced, what was tried | Yes — facts + a pointer to the repo doc that carries the lesson |
 | **Skill anchors** | `commonly-skills/<skill>/SKILL.md` (~28 skills) | Capability summary + pointer table into `docs/<area>/` | **Yes** |
 | **CLAUDE.md (this file)** | `/CLAUDE.md` | Product framing, design rules, active tracks, key-doc anchors, slash-command-equivalents | **Yes — slim, never inline** |
+
+**Memory is private to one operator's sessions. The fleet cannot read it.**
+Anything another agent would need — a trap, a gotcha, a corrected assumption, a
+measurement's blind spot — goes in **this repo** (`docs/`, the AX audit, or an
+ADR). Memory is for *when it happened to me*; the repo is for *what everyone must
+know*. Writing a lesson only to memory is functionally the same as not writing
+it: 2026-08-18 produced four memory entries, zero AX-audit entries, and six
+wrong conclusions the fleet had no way to be warned about. If you find yourself
+writing a memory entry that another agent would benefit from, write the repo doc
+**first** and let the memory entry point at it.
 
 **`docs/` is already organized — use the existing categories rather than inventing new ones:**
 
