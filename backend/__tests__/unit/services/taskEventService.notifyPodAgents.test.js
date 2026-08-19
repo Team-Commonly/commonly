@@ -159,10 +159,55 @@ describe('notifyPodAgents', () => {
   it('never wakes the actor about their own edit', async () => {
     mockInstalls([install('scout', AGENT_ID), install('sprint-impl', HUMAN_ID)]);
 
-    await notifyPodAgents(POD_ID, task(), 'updated', { userId: AGENT_ID, isAgent: true });
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
+    });
 
     const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
     expect(woken).toEqual(['sprint-impl']);
+  });
+
+  it('skips a HUMAN-INSTALLED agent editing the board, which installedBy cannot match', async () => {
+    // @pod-architect caught this on review. The skip used to compare the actor's
+    // userId to `install.installedBy` — which holds the agent's own id only when
+    // it self-installed. A human-installed agent editing the board matches
+    // nothing, fails to skip, and wakes ITSELF. `installedBy` has now produced a
+    // bug from both directions, which is why the key is identity instead.
+    mockInstalls([install('scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'default',
+    });
+
+    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
+    expect(woken).toEqual(['sprint-impl']);
+  });
+
+  it('matches the self-skip case-insensitively, so a capitalised name still skips', async () => {
+    mockInstalls([install('Scout', HUMAN_ID), install('sprint-impl', HUMAN_ID)]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'SCOUT', instanceId: 'default',
+    });
+
+    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].agentName);
+    expect(woken).toEqual(['sprint-impl']);
+  });
+
+  it('does not skip a DIFFERENT instance of the same agent name', async () => {
+    // scout fans out per user (scout-u<hash>); one instance editing the board
+    // must still reach its siblings, or a 115-identity agent silences itself.
+    mockInstalls([
+      { ...install('scout', HUMAN_ID), instanceId: 'u0da521ab41' },
+      { ...install('scout', HUMAN_ID), instanceId: 'ucc4035c51b' },
+    ]);
+
+    await notifyPodAgents(POD_ID, task(), 'updated', {
+      userId: AGENT_ID, isAgent: true, agentName: 'scout', instanceId: 'u0da521ab41',
+    });
+
+    const woken = AgentEventService.enqueue.mock.calls.map((c) => c[0].instanceId);
+    expect(woken).toEqual(['ucc4035c51b']);
   });
 
   it('still wakes an agent when the HUMAN who installed it edits the board', async () => {
