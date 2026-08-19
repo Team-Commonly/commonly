@@ -260,7 +260,25 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       message = normalizeMongo(populated || mongoMsg);
     }
 
-    const username = req.user?.username;
+    // The author's username, for agentMentionService's author frame — the
+    // line a woken agent reads to learn WHO raised its turn. Without it the
+    // frame says 'raised by **unknown**' for every real user, because the JWT
+    // auth path sets `req.user = { id }` while the API-token path sets id +
+    // username. The web UI is JWT, so the fallback fired fleet-wide.
+    //
+    // Sourced from the message rather than from `req.user` deliberately. Both
+    // write paths above already re-fetch with the author joined — PGMessage
+    // .findById for the JOIN, MongoMessage .populate('userId', 'username
+    // profilePicture') — precisely so the response carries the author. Reading
+    // it here costs nothing extra.
+    //
+    // Putting it on `req.user` instead connects a DB read to every route that
+    // uses the auth middleware, and CodeQL follows that edge: it produced 225
+    // new high-severity js/missing-rate-limiting alerts, one per authed route.
+    // Those routes were already unrate-limited and the read already happened —
+    // but drowning the real alerts is its own harm.
+    const username = req.user?.username
+      || (message as { user?: { username?: string } } | undefined)?.user?.username;
     // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
     // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
     // human message to the agent — no @mention needed. Other pod types only
