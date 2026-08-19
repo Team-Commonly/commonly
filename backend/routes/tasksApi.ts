@@ -29,10 +29,22 @@ const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventServi
  * `notifyPodAgents` treats *undefined* as "assume agent" — the safe default
  * there, and not one to trip over by accident here.
  */
-const actorOf = (req: any) => ({
-  userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
-  isAgent: Boolean(req.agentUser?._id || req.user?.isBot),
-});
+const actorOf = (req: any) => {
+  const isAgent = Boolean(req.agentUser?._id || req.user?.isBot);
+  // Identity, not just a user id. The self-skip downstream keys on
+  // (agentName, instanceId) because `installedBy` means the agent on a
+  // self-install and the HUMAN on a human-install — supplying only userId let a
+  // human-installed agent fail to match its own install and wake itself.
+  // Both auth shapes carry the same metadata: agentRuntimeAuth sets
+  // `req.agentUser`, the dual-auth path leaves the bot on `req.user`.
+  const meta = req.agentUser?.botMetadata || req.user?.botMetadata || {};
+  return {
+    userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
+    isAgent,
+    agentName: isAgent ? (meta.agentName || undefined) : undefined,
+    instanceId: isAgent ? (meta.instanceId || 'default') : undefined,
+  };
+};
 
 /**
  * Board change -> pod agents. Deliberately NOT folded into `emitTaskUpdated`:
