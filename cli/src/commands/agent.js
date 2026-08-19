@@ -41,6 +41,8 @@ import {
 } from '../lib/spawn-retry.js';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
@@ -48,6 +50,7 @@ import {
   createClaimKeeper,
   deliverChatReply,
   peerHoldsFrame,
+  resolveCascadeSettings,
 } from '../lib/enforcement.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
@@ -709,9 +712,12 @@ export const performRun = ({
   clearIntervalImpl = clearInterval,
   retryJitterRatio,
   claimLeaseSeconds = 90,
-  cascadeCap = 3,
-  cascadeAddressedGrace = 2,
-  cascadeResetMs = 10 * 60 * 1000,
+  // Undefined means "not overridden" — resolveCascadeSettings falls back to
+  // the env var, then to the shipped default. Passing a value here still
+  // wins, which is how the tests pin a cap of 1.
+  cascadeCap,
+  cascadeAddressedGrace,
+  cascadeResetMs,
   chatCharLimit = 400,
   maxChatChunks = 3,
   claimYieldDelayMs = 3000,
@@ -730,11 +736,27 @@ export const performRun = ({
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
-  const cascadeGovernor = createCascadeGovernor({
-    cap: cascadeCap,
-    addressedGrace: cascadeAddressedGrace,
-    resetMs: cascadeResetMs,
+  const cascadeSettings = resolveCascadeSettings({
+    overrides: {
+      cap: cascadeCap,
+      addressedGrace: cascadeAddressedGrace,
+      resetMs: cascadeResetMs,
+    },
+    warn: (message) => log(`cascade config: ${message}`),
   });
+  const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  // Unconditional, because the only other cascade line on this path is the
+  // warn callback above — which fires only when a value is BAD. Without this,
+  // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
+  // shipped default logs, and an env var (unlike the source edit it replaces)
+  // leaves no git evidence of which seat diverged. The `(defaults)` marker
+  // makes "show me every retuned seat" a grep for its absence.
+  const cascadeIsDefault = Object.keys(CASCADE_DEFAULTS)
+    .every((key) => cascadeSettings[key] === CASCADE_DEFAULTS[key]);
+  log(
+    `cascade: cap=${cascadeSettings.cap} grace=${cascadeSettings.addressedGrace} `
+    + `reset=${cascadeSettings.resetMs}ms${cascadeIsDefault ? ' (defaults)' : ''}`,
+  );
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
@@ -842,10 +864,41 @@ export const performRun = ({
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
         + `turns in pod ${eventPodId}`
-        + (admission.addressed ? ' (addressed grace also spent)' : '')
-        + ' — standing down until a human speaks or the pod goes quiet for the reset window',
+        + (admission.graceApplied ? ' (addressed grace also spent)' : '')
+        // NOT "until the pod goes quiet": other seats' traffic never touches
+        // this seat's clock, and a refusal returns here without reaching
+        // `record()` below — so the window is measured from this seat's last
+        // ADMITTED turn in this pod and runs regardless of how loud the room
+        // is. Saying "the pod goes quiet" told an operator to wait for a lull
+        // that is neither necessary nor sufficient (#989).
+        + ` — standing down until a human speaks or ${cascadeSettings.resetMs}ms `
+        + 'passes with no admitted turn from this seat in this pod',
       );
-      return { outcome: 'no_action', reason: 'cascade-cap' };
+      // `details` rides through to the AgentEvent row untouched:
+      // normalizeDeliveryMeta whitelists outcome/reason/messageId and passes
+      // `details` straight into `delivery.details`, typed Schema.Types.Mixed.
+      // So the settings that produced this refusal become queryable with NO
+      // backend change and no deploy.
+      //
+      // This is the half the boot log cannot cover. The log says what a seat
+      // resolved; it does not survive a restart, and nothing joins it to the
+      // refusals it caused. Once cap is per-seat and arbitrary, a refusal
+      // whose cap is unknown cannot be compared against one from another seat.
+      // `reason` deliberately stays the fixed literal 'cascade-cap' — :1111
+      // matches it with === and the run-loop tests assert it — so the value
+      // goes in a sibling field instead of being spelled into the reason.
+      return {
+        outcome: 'no_action',
+        reason: 'cascade-cap',
+        details: {
+          streak: admission.streak,
+          cap: cascadeSettings.cap,
+          addressedGrace: cascadeSettings.addressedGrace,
+          resetMs: cascadeSettings.resetMs,
+          addressed: admission.addressed,
+          graceApplied: admission.graceApplied,
+        },
+      };
     }
 
     // ── ADR-018 enforcement: claim-before-act ───────────────────────────────
@@ -1404,6 +1457,23 @@ export const performDetach = async ({
  */
 const stamp = () => new Date().toISOString();
 
+/**
+ * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
+ *
+ * Exported because the mapping is where the flag path can go wrong invisibly:
+ * an earlier version coerced with Number() here, so `--cascade-cap abc`
+ * reached the resolver as NaN and the warning read `--cascade-cap='NaN'` —
+ * naming a value the user never typed, on the one line whose whole job is to
+ * tell them which input was bad. The values pass through RAW; the resolver is
+ * the only thing that parses, for the same reason it is the only thing that
+ * validates.
+ */
+export const cascadeOverridesFromOpts = (opts = {}) => ({
+  cascadeCap: opts.cascadeCap,
+  cascadeAddressedGrace: opts.cascadeGrace,
+  cascadeResetMs: opts.cascadeReset,
+});
+
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
 
@@ -1744,6 +1814,9 @@ Docs:
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
     .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
+    .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
+    .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
+    .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
       if (!record) {
@@ -1797,6 +1870,7 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
+        ...cascadeOverridesFromOpts(opts),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.

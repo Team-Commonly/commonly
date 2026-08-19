@@ -64,6 +64,99 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
 
 // ── cascade governor ────────────────────────────────────────────────────────
 
+export const CASCADE_DEFAULTS = Object.freeze({
+  cap: 3,
+  addressedGrace: 2,
+  resetMs: 10 * 60 * 1000,
+});
+
+// Env names, exported so the CLI help text and the tests quote the same
+// strings rather than two copies that can drift apart.
+export const CASCADE_ENV_VARS = Object.freeze({
+  cap: 'COMMONLY_CASCADE_CAP',
+  addressedGrace: 'COMMONLY_CASCADE_ADDRESSED_GRACE',
+  resetMs: 'COMMONLY_CASCADE_RESET_MS',
+});
+
+// Flag spelling per key, for warning messages. A derived string
+// (key.replace(...)) would silently produce a flag that does not exist the
+// first time a key is renamed; this fails at the same moment the flag does.
+const CASCADE_FLAGS = {
+  cap: '--cascade-cap',
+  addressedGrace: '--cascade-grace',
+  resetMs: '--cascade-reset',
+};
+
+const CASCADE_BOUNDS = {
+  // 0 is meaningful, not a mistake: it refuses every agent-triggered turn in
+  // the pod, which is the "this room is on fire, mute the cascades" setting.
+  cap: { min: 0, max: 1000, integer: true },
+  // 0 restores the pre-#973 behaviour exactly. That is the point of the knob —
+  // the grace can be taken back on one seat, in one restart, without a revert
+  // and without a source edit.
+  addressedGrace: { min: 0, max: 1000, integer: true },
+  resetMs: { min: 1000, max: 24 * 60 * 60 * 1000, integer: true },
+};
+
+/**
+ * Resolve the three governor constants from (in precedence order) an explicit
+ * override, an environment variable, then the shipped default.
+ *
+ * These were literals in `run()`'s signature, reachable only by editing source
+ * — on a fleet whose CLI is a symlink into a live worktree, so "retune the
+ * cap" meant an edit plus a restart of every seat, with nothing recording
+ * which value ran. The sibling dampener one service over
+ * (AGENT_ASK_RATE_LIMIT_PER_HOUR) has always been env-tunable; this is
+ * copying that, not inventing it.
+ *
+ * An unparseable or out-of-range value warns and falls back rather than
+ * throwing. A seat that crash-loops on a typo'd env var is a worse outcome
+ * than one running the default — but a silent fallback would hide the typo,
+ * so it is loud.
+ *
+ * Overrides are validated on the SAME path as env values, deliberately. An
+ * earlier draft trusted them and passed them straight through, which made
+ * `--cascade-cap abc` resolve to NaN — and `streak < NaN` is false for every
+ * streak, so a typo at the command line would have silently refused every
+ * agent-triggered turn the seat ever saw. The louder source is not the safer
+ * one; there is one validator because there is one way to be wrong.
+ */
+export const resolveCascadeSettings = ({
+  env = process.env,
+  overrides = {},
+  warn = (msg) => console.warn(msg),
+} = {}) => {
+  const resolved = {};
+  for (const key of Object.keys(CASCADE_DEFAULTS)) {
+    const bounds = CASCADE_BOUNDS[key];
+    const fallback = CASCADE_DEFAULTS[key];
+    const override = overrides[key];
+    const hasOverride = override !== undefined && override !== null;
+    const raw = hasOverride ? override : env?.[CASCADE_ENV_VARS[key]];
+    // Names the source in the warning, so "which one did I get wrong" is
+    // answered by the message rather than by bisecting the launch command.
+    const label = hasOverride ? CASCADE_FLAGS[key] : CASCADE_ENV_VARS[key];
+
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+      resolved[key] = fallback;
+      continue;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || (bounds.integer && !Number.isInteger(parsed))) {
+      warn(`${label}='${raw}' is not an integer — using ${fallback}`);
+      resolved[key] = fallback;
+      continue;
+    }
+    if (parsed < bounds.min || parsed > bounds.max) {
+      warn(`${label}=${parsed} is outside [${bounds.min}, ${bounds.max}] — using ${fallback}`);
+      resolved[key] = fallback;
+      continue;
+    }
+    resolved[key] = parsed;
+  }
+  return resolved;
+};
+
 /**
  * Per-pod damping of agent→agent retrigger chains.
  *
@@ -71,23 +164,42 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
  * agent's replies) until the operator killed the wrapper at round 3. The
  * governor counts CONSECUTIVE agent-triggered turns per pod; at `cap` it
  * refuses further agent-triggered turns until a human-triggered turn resets
- * the streak or `resetMs` passes with no agent-triggered turn (so a damped
- * pod recovers on its own — a legitimate a2a handoff an hour later must not
- * inherit a stale cap).
+ * the streak, or `resetMs` passes with no ADMITTED agent-triggered turn from
+ * this seat in this pod (so a damped seat recovers on its own — a legitimate
+ * a2a handoff an hour later must not inherit a stale cap).
  *
- * The only other escape is the seat's own resetMs clock: stateFor reads only
- * this process's lastAgentTurnAt, so a capped seat self-clears 10
- * minutes after its last completed agent turn regardless of room traffic —
- * cyclical throttling, not permanent starvation.
+ * NOTE on `resetMs`: it is a silence window, but the silence is far narrower
+ * than "the pod is quiet", and it is measured on two axes people get wrong in
+ * opposite directions:
+ *
+ *   WHOSE turns  — `pods` is a Map in this closure, inside ONE wrapper
+ *                  process. It never observes another seat's turns at all.
+ *                  Three chatty peers cannot keep this streak alive.
+ *   WHICH turns  — only turns that reached `record()`. A refusal returns from
+ *                  agent.js before it (`:859` vs `:1087`), so a capped seat
+ *                  stops updating `lastAgentTurnAt` entirely and its clock
+ *                  runs free from the last turn it was ALLOWED.
+ *
+ * Net shape is a token bucket, not a static ceiling: a burst of `cap`, then
+ * `cap` admits per `resetMs`, per pod. Sustained agent traffic with zero human
+ * turns yields 6/9/12/15/18/18/18/18 admits per hour as arrivals go from one
+ * per 600s to one per second — inert when quiet, pinned at cap-per-window
+ * however hard the burst gets. Per POD: a seat in N pods holds N buckets, so
+ * its seat-level ceiling is N times that.
+ *
+ * An earlier version of this note said the window requires zero agent turns
+ * "in the pod", and concluded that in a busy room the only live release is a
+ * human turn. Both halves are wrong, and wrongly reassuring: a capped seat
+ * self-releases every window no matter how loud the room is.
  *
  * Split into admit/record so a spawn that fails (and will be redelivered)
  * never double-counts: admit() only reads, record() runs after a turn
  * actually completed. Human-triggered turns are always admitted.
  */
 export const createCascadeGovernor = ({
-  cap = 3,
-  addressedGrace = 2,
-  resetMs = 10 * 60 * 1000,
+  cap = CASCADE_DEFAULTS.cap,
+  addressedGrace = CASCADE_DEFAULTS.addressedGrace,
+  resetMs = CASCADE_DEFAULTS.resetMs,
   now = Date.now,
 } = {}) => {
   const pods = new Map(); // podId -> { streak, lastAgentTurnAt }
@@ -117,7 +229,18 @@ export const createCascadeGovernor = ({
       // cap + addressedGrace instead of never.
       const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
       const limit = addressed ? cap + addressedGrace : cap;
-      return { allowed: s.streak < limit, streak: s.streak, addressed };
+      // `addressed` describes the EVENT; `graceApplied` describes what this
+      // governor actually did with it. They diverge whenever addressedGrace is
+      // 0 — the pre-#973 setting, and the first thing an operator dials back —
+      // where an addressed event is refused at the plain cap having been given
+      // nothing extra. Reporting only `addressed` made the refusal log claim a
+      // grace was "also spent" on a seat whose own boot line says grace=0.
+      return {
+        allowed: s.streak < limit,
+        streak: s.streak,
+        addressed,
+        graceApplied: addressed && addressedGrace > 0,
+      };
     },
     record(podId, trigger) {
       if (trigger === 'human') {

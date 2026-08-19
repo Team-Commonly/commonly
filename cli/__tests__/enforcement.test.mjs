@@ -15,12 +15,15 @@
 import { jest } from '@jest/globals';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
   createClaimHandicap,
   createClaimKeeper,
   peerHoldsFrame,
+  resolveCascadeSettings,
   splitForChat,
   deliverChatReply,
 } from '../src/lib/enforcement.js';
@@ -99,6 +102,47 @@ describe('createCascadeGovernor', () => {
   });
 });
 
+// #989: the governor was documented as a static ceiling released by pod
+// silence. It is neither. These pin the shape the docstring now claims, so a
+// future edit that makes refusals record (or that shares state across pods)
+// fails here instead of quietly re-arming the wrong mental model.
+describe('cascade governor — token-bucket shape', () => {
+  // Mirrors the run loop: agent.js returns on a refusal WITHOUT calling
+  // record(), so only admitted turns move `lastAgentTurnAt`.
+  const admitsPerHour = (intervalMs, pods = ['pod-1']) => {
+    let clock = 0;
+    const gov = createCascadeGovernor({ now: () => clock });
+    let admits = 0;
+    for (let i = 0; clock <= 3600_000; i += 1) {
+      const pod = pods[i % pods.length];
+      if (gov.admit(pod, 'agent', 'message.posted').allowed) {
+        admits += 1;
+        gov.record(pod, 'agent');
+      }
+      clock += intervalMs;
+    }
+    return admits;
+  };
+
+  test('a capped seat self-releases every window however loud the pod is', () => {
+    // cap 3 per 10-min window = 18/hr, and it does not climb as arrivals get
+    // faster: the burst is absorbed, not admitted.
+    expect(admitsPerHour(30_000)).toBe(18);
+    expect(admitsPerHour(1_000)).toBe(18);
+  });
+
+  test('below saturation the arrival rate binds, not the cap', () => {
+    expect(admitsPerHour(600_000)).toBe(6);
+    expect(admitsPerHour(60_000)).toBe(15);
+  });
+
+  test('the ceiling is per pod — N pods hold N independent buckets', () => {
+    expect(admitsPerHour(1_000, ['pod-1'])).toBe(18);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2'])).toBe(36);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2', 'pod-3'])).toBe(54);
+  });
+});
+
 describe('cascade governor — addressed grace', () => {
   const burn = (gov, n, type) => {
     for (let i = 0; i < n; i += 1) {
@@ -119,6 +163,21 @@ describe('cascade governor — addressed grace', () => {
     const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
     expect(gov.admit('pod', 'agent', 'chat.mention').addressed).toBe(true);
     expect(gov.admit('pod', 'agent', 'message.posted').addressed).toBe(false);
+  });
+
+  it('does not report a grace it never granted, at addressedGrace 0', () => {
+    // The refusal log is the one line an operator reads to understand why a
+    // seat went quiet. Keyed on `addressed` alone it announced "(addressed
+    // grace also spent)" on a grace=0 seat — asserting a grace that does not
+    // exist, three screens under a boot line that says grace=0. The event is
+    // still addressed; nothing was granted for it.
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    const admission = gov.admit('pod', 'agent', 'chat.mention');
+    expect(admission.addressed).toBe(true);
+    expect(admission.graceApplied).toBe(false);
+    // And the limit really is the plain cap — the message was the only defect.
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
   });
 
   it('is a grace, not an exemption — a mention echo still terminates', () => {
@@ -465,5 +524,95 @@ describe('CLAIMABLE_EVENT_TYPES', () => {
     expect(CLAIMABLE_EVENT_TYPES.has('first_contact')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('heartbeat')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('agent.ask')).toBe(false);
+  });
+});
+
+
+describe('resolveCascadeSettings', () => {
+  // Pass an explicit empty env everywhere: reading the real process.env would
+  // make these pass or fail depending on the shell that ran them, which is the
+  // one thing a config test must not do.
+  const noEnv = {};
+  const silent = () => {};
+
+  test('with nothing set, resolves the shipped defaults', () => {
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({
+      cap: 3,
+      addressedGrace: 2,
+      resetMs: 10 * 60 * 1000,
+    });
+    // Pinned against CASCADE_DEFAULTS too, so a default changed in one place
+    // and not the other is a failure rather than a silent drift.
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({ ...CASCADE_DEFAULTS });
+  });
+
+  test('env vars are read, and an override outranks them', () => {
+    const env = {
+      [CASCADE_ENV_VARS.cap]: '5',
+      [CASCADE_ENV_VARS.addressedGrace]: '0',
+      [CASCADE_ENV_VARS.resetMs]: '60000',
+    };
+    expect(resolveCascadeSettings({ env, warn: silent })).toEqual({
+      cap: 5, addressedGrace: 0, resetMs: 60000,
+    });
+    expect(resolveCascadeSettings({ env, overrides: { cap: 9 }, warn: silent }).cap).toBe(9);
+  });
+
+  test('zero is honoured, not treated as absent', () => {
+    // The whole point of the grace knob: 0 restores pre-#973 behaviour without
+    // a revert. A `|| default` style resolver would silently ignore it.
+    const settings = resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.addressedGrace]: '0' }, warn: silent,
+    });
+    expect(settings.addressedGrace).toBe(0);
+    const governor = createCascadeGovernor({ ...settings, now: () => 1000 });
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    expect(governor.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+  });
+
+  test('a garbage override falls back and warns, exactly like a garbage env var', () => {
+    // The regression this exists for: overrides used to skip validation, so
+    // `--cascade-cap abc` reached the governor as NaN. `streak < NaN` is false
+    // for every streak, so the seat silently refused every agent turn forever.
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: noEnv,
+      overrides: { cap: Number('abc') },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings.cap).toBe(CASCADE_DEFAULTS.cap);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('--cascade-cap');
+
+    // And the value that reaches the governor still admits a fresh pod, which
+    // is the behaviour NaN destroyed.
+    expect(createCascadeGovernor(settings).admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+  });
+
+  test('out-of-range and non-integer values fall back, naming their source', () => {
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: {
+        [CASCADE_ENV_VARS.cap]: '-1',
+        [CASCADE_ENV_VARS.addressedGrace]: '1.5',
+        [CASCADE_ENV_VARS.resetMs]: '10',
+      },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings).toEqual({ ...CASCADE_DEFAULTS });
+    expect(warnings).toHaveLength(3);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.cap);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.addressedGrace);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.resetMs);
+  });
+
+  test('an empty-string env var is absence, not a zero', () => {
+    // Unset and exported-empty look identical in a shell launch script; the
+    // second must not silently become cap=0 and mute the seat.
+    expect(resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.cap]: '  ' }, warn: silent,
+    }).cap).toBe(CASCADE_DEFAULTS.cap);
   });
 });

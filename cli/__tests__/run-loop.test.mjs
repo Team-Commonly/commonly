@@ -1625,10 +1625,76 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
     );
     // The declined event never reached the claim step.
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
+  });
+
+  test('cascade cap: the env vars reach the governor, not just the run() params', async () => {
+    // Pins the DELIVERY, not the constant. Extracting the literals into a
+    // resolver is worth nothing if the run loop keeps its own copy — and a
+    // resolver-only unit test cannot tell the difference. Same scenario as the
+    // test above, with the two values arriving from the environment instead.
+    const prior = {
+      cap: process.env.COMMONLY_CASCADE_CAP,
+      grace: process.env.COMMONLY_CASCADE_ADDRESSED_GRACE,
+    };
+    process.env.COMMONLY_CASCADE_CAP = '1';
+    process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = '0';
+    try {
+      const { post } = makeClient({
+        events: [
+          makeClaimEvent({ _id: 'evt-a' }),
+          makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+        ],
+        messages: [
+          { _id: 'msg-1', isBot: true, self: false },
+          { _id: 'msg-2', isBot: true, self: false },
+        ],
+      });
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith(
+        '/api/agents/runtime/events/evt-b/ack',
+        {
+          result: {
+            outcome: 'no_action',
+            reason: 'cascade-cap',
+            details: {
+              streak: 1,
+              cap: 1,
+              addressedGrace: 0,
+              resetMs: 600000,
+              addressed: true,
+              graceApplied: false,
+            },
+          },
+        },
+      );
+    } finally {
+      if (prior.cap === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior.cap;
+      if (prior.grace === undefined) delete process.env.COMMONLY_CASCADE_ADDRESSED_GRACE;
+      else process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = prior.grace;
+    }
   });
 
   test('cascade cap: a directly-addressed seat gets a bounded grace, then is capped too', async () => {
@@ -1662,7 +1728,20 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-c/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 2,
+            cap: 1,
+            addressedGrace: 1,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: true,
+          },
+        },
+      },
     );
   });
 
@@ -1713,6 +1792,111 @@ describe('performRun — ADR-018 enforcement', () => {
       '/api/agents/runtime/events/evt-c/ack',
       { result: { outcome: 'no_action', reason: 'cascade-cap' } },
     );
+  });
+
+  test('cascade: a grace=0 seat is not told a grace was spent', async () => {
+    // Pins the DELIVERY of the fix, not just the governor field: the log line
+    // and the governor are in different files and only the log is read by a
+    // human trying to explain a silent seat.
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a' }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: true, self: false },
+      ],
+    });
+    const log = jest.fn();
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { log, cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // The refusal happened — without this the assertion below passes vacuously
+    // on a run where nothing was ever capped.
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-b/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
+    );
+    const refusal = log.mock.calls.map(([l]) => l).find((l) => l.includes('cascade cap:'));
+    expect(refusal).toBeDefined();
+    expect(refusal).not.toContain('addressed grace');
+  });
+
+  test('cascade: the resolved triple is logged at boot, marked as defaults', async () => {
+    // Without this line the log of a retuned seat is byte-identical to the log
+    // of a default one — and an env var, unlike the source edit it replaces,
+    // leaves no git evidence of which seat diverged. The other cascade log on
+    // this path is the warn callback, which fires only on a BAD value, so a
+    // cleanly-booted seat had no record of what it resolved at all.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+    await drainMicrotasks();
+    stop();
+
+    const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+    expect(line).toBe('cascade: cap=3 grace=2 reset=600000ms (defaults)');
+  });
+
+  test('cascade: a retuned seat says so, and the marker is what distinguishes it', async () => {
+    const prior = process.env.COMMONLY_CASCADE_CAP;
+    process.env.COMMONLY_CASCADE_CAP = '8';
+    try {
+      makeClient({ events: [] });
+      const log = jest.fn();
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+      await drainMicrotasks();
+      stop();
+
+      const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+      expect(line).toContain('cap=8');
+      // Asserted separately from the value: a marker that never appears would
+      // pass a value-only assertion while making every seat look retuned.
+      expect(line).not.toContain('(defaults)');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior;
+    }
+  });
+
+  test('cascade: a bad flag value is quoted back as typed, and the seat keeps the default', async () => {
+    // The flag path used to coerce with Number() before the resolver saw it,
+    // so `--cascade-cap abc` warned `--cascade-cap='NaN'` — naming a value the
+    // operator never typed, on the one line whose job is to name their typo.
+    // Raw strings arrive here now, which is why this passes one in.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() },
+      { log, cascadeCap: 'abc' },
+    );
+    await drainMicrotasks();
+    stop();
+
+    const lines = log.mock.calls.map(([l]) => l);
+    const warning = lines.find((l) => l.startsWith('cascade config:'));
+    expect(warning).toContain("'abc'");
+    expect(warning).not.toContain('NaN');
+    expect(lines.find((l) => l.startsWith('cascade:'))).toContain('cap=3');
   });
 
   test('human-triggered turns are never cascade-capped', async () => {
