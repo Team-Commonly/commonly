@@ -56,7 +56,18 @@ describe('GET /api/v1/tasks/:podId — query coercion at the boundary', () => {
     app.use('/api/v1/tasks', tasksApiRoutes);
   });
 
-  const queryPassedToMongo = () => mockFind.mock.calls[0][0];
+  // Domain guard, by the rule these tests are an instance of: every assertion
+  // below is negative-form (`not.toHaveProperty`), and a negative passes on a
+  // subject that does not exist. Asserting the query is well-formed FIRST means
+  // "the key is absent" can only mean the coercion dropped it — never that the
+  // handler bailed, that `find` ran with undefined, or that the shape changed
+  // underneath. Positive-form assertions need no such guard: `toBe('nova')`
+  // fails honestly on undefined.
+  const queryPassedToMongo = () => {
+    const q = mockFind.mock.calls[0][0];
+    expect(q).toHaveProperty('podId');
+    return q;
+  };
 
   test('an operator object in assignee never reaches the query', async () => {
     const res = await request(app).get(`/api/v1/tasks/${POD}?assignee[$ne]=nova`);
