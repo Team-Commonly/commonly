@@ -861,9 +861,16 @@ export const performRun = ({
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
     if (!admission.allowed) {
+      // Name the MESSAGE, not just the pod. Without this the refusal is silent at
+      // three ends, not two: the mentioning agent gets no signal its mention died,
+      // an operator reading the log cannot tell which mentions were dropped, and
+      // the suppressed seat cannot say what it ignored — it never saw the id. Two
+      // real mentions were lost this way on 2026-08-19 and the seat they were
+      // addressed to could not enumerate them afterwards.
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
         + `turns in pod ${eventPodId}`
+        + (event?.payload?.messageId ? ` (dropped message ${event.payload.messageId})` : '')
         + (admission.graceApplied ? ' (addressed grace also spent)' : '')
         // NOT "until the pod goes quiet": other seats' traffic never touches
         // this seat's clock, and a refusal returns here without reaching
@@ -891,6 +898,10 @@ export const performRun = ({
         outcome: 'no_action',
         reason: 'cascade-cap',
         details: {
+          // The id of what was dropped. `reason` and `streak` say a refusal
+          // happened; only this says WHICH message never got answered, which is
+          // what anyone auditing a missed mention actually needs to join on.
+          messageId: event?.payload?.messageId || null,
           streak: admission.streak,
           cap: cascadeSettings.cap,
           addressedGrace: cascadeSettings.addressedGrace,

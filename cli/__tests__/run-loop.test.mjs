@@ -1630,6 +1630,7 @@ describe('performRun — ADR-018 enforcement', () => {
           outcome: 'no_action',
           reason: 'cascade-cap',
           details: {
+            messageId: 'msg-2',
             streak: 1,
             cap: 1,
             addressedGrace: 0,
@@ -1679,6 +1680,7 @@ describe('performRun — ADR-018 enforcement', () => {
             outcome: 'no_action',
             reason: 'cascade-cap',
             details: {
+              messageId: 'msg-2',
               streak: 1,
               cap: 1,
               addressedGrace: 0,
@@ -1733,6 +1735,7 @@ describe('performRun — ADR-018 enforcement', () => {
           outcome: 'no_action',
           reason: 'cascade-cap',
           details: {
+            messageId: 'msg-3',
             streak: 2,
             cap: 1,
             addressedGrace: 1,
@@ -1826,6 +1829,7 @@ describe('performRun — ADR-018 enforcement', () => {
           outcome: 'no_action',
           reason: 'cascade-cap',
           details: {
+            messageId: 'msg-2',
             streak: 1,
             cap: 1,
             addressedGrace: 0,
