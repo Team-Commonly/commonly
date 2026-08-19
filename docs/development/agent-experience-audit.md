@@ -1655,6 +1655,69 @@ proposing a change that forced me to read the gateway's schema for another
 reason. Cross-tier claims need a probe in the workflow, not a lesson in the
 reader.
 
+## 33. A revert is scoped by commit, not by defect (2026-08-19, sprint-review + pod-architect)
+
+`dfa894c6` shipped ADR-024 D1 — board changes reach the pod's agents. Two hours
+later a peer computed the fan-out volume and it was wrong by two orders of
+magnitude: broadcast × sweep meant every seat capping in seconds. The author
+called the revert, it landed 34 minutes after the finding, and the room recorded
+that as revert-fast working.
+
+**What actually happened is that the revert removed work nobody was measuring.**
+`dfa894c6` was a squash of the whole branch, and that branch carried two fixes
+found by review *after* the original design: a `rev` collision (`String(date)`
+renders to the second, so two writes 800ms apart shared one claim key and the
+second wake was swallowed) and a self-skip keyed on `installedBy` — the
+installer, never the agent — which made every human-installed agent wake itself
+on its own board write. Both were reviewed independently by two readers. Four
+tests came with them, including one named for this exact regression: *"skips a
+HUMAN-installed agent editing the board, where `installedBy` could not."*
+
+The re-land was then written **from the design**, not from the reverted tree. It
+reintroduced the `installedBy`-keyed skip verbatim, comment and all. So the test
+written to prevent the defect was deleted by the same operation that recreated
+the conditions for it.
+
+**Rule earned.** A revert is scoped by the commit it undoes, not by the defect it
+targets. Everything that rode in on the same squash leaves with it, silently —
+and squash-merge guarantees that "everything" includes every fix found during
+review, which is precisely the work with no independent record. The re-land is
+written from memory of the design, and the design never knew about the review.
+
+**The guard is one command, and the obvious version of it fails.** Diffing the
+re-land against the reverted commit at FILE level returns clean: every file in
+the squash still exists in the re-land, because the re-land rewrote those files
+rather than dropping them. Run on this incident it reports no difference while
+four fixes and three tests are missing.
+
+The check has to be at symbol and test-name level. On this incident that reads:
+
+```
+identityOf                             reverted=3  reland=0
+actorIdentity                          reverted=2  reland=0
+Number.isNaN(revTime)                  reverted=1  reland=0
+getTime()                              reverted=1  reland=0
+"skips a HUMAN-installed agent"        reverted=1  reland=0
+"separates two writes 800ms apart"     reverted=1  reland=0
+"matches identity case-insensitively"  reverted=1  reland=0
+```
+
+Noting the weaker version explicitly because it is the one a reader reaches for
+first, and a guard that returns a clean pass on the exact case it was written
+for is worse than no guard at all — it converts an open question into a
+settled one.
+
+**The near-miss worth recording.** The risk was flagged in the pod at the time —
+"use `git revert` rather than a reset, so the re-land can cherry-pick them" —
+and then nothing carried it. A note to a person is the same class of guard as a
+tool description or a heartbeat instruction: it works only on someone already
+being careful, which is the failure mode this file exists to document. The
+flagging felt like the work and wasn't.
+
+Related: entry 31's corollary (having found the dead tier, go read the live one).
+Same shape — the diagnostic that finds a problem has to keep running past the
+moment the problem is named.
+
 ---
 
 ## 34. The publish reached the registry and not the fleet
