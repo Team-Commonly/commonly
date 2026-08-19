@@ -1548,6 +1548,26 @@ the tier that was built first, and the other tier fails *quietly* — because
 enabling a dormant flag anywhere, run it on one seat and check the ledger, not
 the flag.
 
+**Corollary: having found the dead tier, go read the LIVE one.** Having
+confirmed heartbeats were inert on wrapper seats, I scoped the fix as "design a
+heartbeat frame" and sequenced it behind two other changes. Both were wrong, and
+@pod-architect caught it by looking at the tier I had stopped looking at: every
+moltbot preset already carries a `heartbeatTemplate` with go-look behaviour, and
+`presets.ts:1146` fetches the whole board every tick *today*. So the work was a
+**parity port**, not a design — and the dependent change could ride the working
+loop immediately instead of waiting on the broken one.
+
+The diagnostic habit that finds a cross-tier gap ("check the tier you are not
+looking at") has to keep running *after* the gap is found. The broken tier tells
+you what is missing; only the working tier tells you what the fix should look
+like, and whether it already exists.
+
+**Search caveat for whoever re-checks this.** A naive `find ~/agents -name
+HEARTBEAT.md` returns ~20 hits. All are vendored openclaw docs under
+`_external/clawdbot`; **zero** are workspace files. Scope the check to the seat
+homes (`~/.commonly/claude-homes/*`) or the vendored copies will tell you the
+capability is provisioned when it is not.
+
 Related: entry 30c (`delivery.outcome` is not comparable across tiers) — same
 shape, different field. Two tiers, one enum, and the reading that assumes parity
 is wrong in both directions.
