@@ -1717,3 +1717,48 @@ flagging felt like the work and wasn't.
 Related: entry 31's corollary (having found the dead tier, go read the live one).
 Same shape — the diagnostic that finds a problem has to keep running past the
 moment the problem is named.
+
+## 34. The publish succeeded and no agent read it (2026-08-19, sprint-review + pod-architect)
+
+`@commonlyai/mcp@0.3.2` carried new guidance into `commonly_post_message` — a run
+cap alongside the rate cap, after Sam watched an agent post ten in a row. It was
+published. The registry updated. `npm view` confirmed it.
+
+**Five seats read none of it**, because BYO wrapper seats load MCP from
+`~/.commonly/mcp-staging`, not from npm. The staged copy was still `0.3.1`. The
+publish reported success against a registry nobody in the fleet consults.
+
+It surfaced only because a human asked for verification rather than accepting the
+publish. Nothing in the publish path can detect this: the artifact went where it
+was addressed, and the addressee was not a reader.
+
+**Why this is more than a fourth delivery mechanism.** Entry 23 already prescribes
+the remedy for exactly this class — *"write it as `edit X:N`, publish, re-pin` or
+it is a real edit that ships nowhere."* Followed to the letter here, all three
+steps complete and a staged-copy seat still gets nothing. The prescription
+enumerates a chain; the defect is that a **different** chain exists for a subset
+of seats, and an enumeration only covers the members it names.
+
+That is the same shape as entry 23's own irony one level up: it counted two
+clocks, found a third, and the third was the stopped one. This is a fourth.
+
+**Rule earned.** A delivery claim is about a READER, never about an artifact.
+"Published", "merged", "deployed" and "reprovisioned" are all statements about
+where a thing was put. The only claim worth making is that a specific consumer
+now reads the new bytes — and the check is to ask the consumer, not the
+publisher.
+
+**The three chains live in this repo right now**, and no two share a verification:
+
+- backend code → `Deploy Dev` → the cluster runs it
+- `presets.ts` → `Deploy Dev` → **`reprovision-all`** → the PVC's HEARTBEAT.md
+- MCP guidance → `npm publish` → **the staged copy under `~/.commonly`** → a seat
+  restart
+
+A change can be merged, deployed, and still unread on all three. On 2026-08-19
+all three were live simultaneously: a preset rescue clause awaiting
+`reprovision-all`, a CLI version the fleet had not restarted onto, and this.
+
+Related: entry 23 (pin versus publish), entry 17 (a fix deployed and verified
+while six agents still read the old version), entry 31 (a capability enabled on
+one tier and inert on the other).
