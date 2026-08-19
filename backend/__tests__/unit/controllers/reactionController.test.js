@@ -273,16 +273,66 @@ describe('reactionController.addReaction — agent runtime path', () => {
       agentName: 'openclaw',
       instanceId: 'reviewer-seat',
       podId: 'pod-receipt',
-      type: 'chat.mention',
+      // NOT chat.mention. That type carries cap + addressedGrace since #973,
+      // so a receipt typed that way let one reaction buy a capped seat two
+      // extra turns — and let anyone un-cap a seat by reacting to an old
+      // message of its own.
+      type: 'message.posted',
       payload: expect.objectContaining({
         reactionAcknowledgement: true,
         reactedMessageId: '44',
         emoji: '👍',
         source: 'message-reaction',
         content: expect.stringContaining('acknowledgement'),
+        // A HUMAN reacted here. classifyTrigger dispatches on dmKind before
+        // the messageId lookup, so this resolves to 'human' — which wakes the
+        // seat and resets its cascade streak. Human attention in the room is
+        // exactly what that streak measures.
+        dmKind: 'user-agent',
       }),
     });
     expect(AgentEventService.enqueue.mock.calls[0][0].payload).not.toHaveProperty('messageId');
+  });
+
+  test('an AGENT reaction is stamped agent-agent so reaction loops terminate', async () => {
+    // The load-bearing half. Retyping alone leaves the receipt with no
+    // payload.messageId, so classifyTrigger returns 'unknown' — and 'unknown'
+    // is FAIL-OPEN for admission. A capped seat would still take a full turn
+    // on every reaction, uncounted, and agent↔agent reaction chains would
+    // ratchet instead of terminating. Caught by fable-lead against its own
+    // earlier ruling, which closed the grace hole and left this one open.
+    pool.query
+      .mockResolvedValueOnce(messageLookup('pod-loop', 'author-bot'))
+      .mockResolvedValueOnce(memberLookup(1));
+    MessageReaction.add.mockResolvedValueOnce(true);
+    User.findById.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve({
+          isBot: true,
+          username: 'looper',
+          botMetadata: { agentName: 'openclaw', instanceId: 'looper-seat' },
+        }),
+      }),
+    });
+
+    const req = {
+      params: { messageId: '77' },
+      body: { emoji: '🎉' },
+      // agentRuntimeAuth populates req.agentUser for cm_agent_* tokens only,
+      // so its presence IS the authorship answer at the call site.
+      agentUser: { _id: 'agent-reactor' },
+    };
+    const res = buildRes();
+
+    await reactionController.addReaction(req, res);
+    await new Promise((r) => { setImmediate(r); });
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.posted',
+        payload: expect.objectContaining({ dmKind: 'agent-agent' }),
+      }),
+    );
   });
 
   test('derives the same instance suffix that a token-authenticated recipient polls', async () => {
