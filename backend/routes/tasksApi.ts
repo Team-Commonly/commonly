@@ -118,7 +118,15 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const { assignee, status, claimable } = req.query || {};
+    // Coerced at the boundary rather than destructured. Express's extended
+    // query parser turns `?assignee[$ne]=x` into an OBJECT and `?status=a&status=b`
+    // into an ARRAY, and both used to flow straight into the Mongo query below:
+    // the first as an operator injection, the second as a silent switch from
+    // String.includes to Array.includes, where `status.includes(',')` stops
+    // meaning what it reads as. Anything that is not a string is dropped.
+    const assignee = typeof req.query?.assignee === 'string' ? req.query.assignee : undefined;
+    const status = typeof req.query?.status === 'string' ? req.query.status : undefined;
+    const claimable = req.query?.claimable === 'true';
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const query: Record<string, unknown> = { podId: mongoose.Types.ObjectId.createFromHexString(podId || '') };
@@ -128,7 +136,7 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
     // ?status=claimed&claimable=true asks the useful narrow question — show me
     // the lapsed claims specifically — while ?claimable=true alone answers
     // "what can this pod's agents pick up right now", lapsed leases included.
-    if (claimable === 'true') query.$or = claimableConditions(new Date());
+    if (claimable) query.$or = claimableConditions(new Date());
     const tasks = await Task.find(query).sort({ taskNum: 1 }).lean();
     return res.json({ tasks });
   } catch (err) {
