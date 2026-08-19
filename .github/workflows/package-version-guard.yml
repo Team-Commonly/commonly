@@ -1,0 +1,66 @@
+name: Package Version Guard
+
+# A published package's version is the ONLY check available from outside this
+# repo. When source ships without a version bump, that check silently passes
+# while the artifact and the repo disagree — and nobody can tell.
+#
+# It has happened twice:
+#   #979  @commonlyai/mcp   npm 0.3.0 and main 0.3.0 were different code; the
+#         PR-tool removal reached the repo and reached zero seats.
+#   #1017 @commonlyai/cli   npm 0.1.9 and main 0.1.9 were different code, with
+#         SEVEN source commits since the bump — including #995, the quota
+#         misclassification that had seats probing a dead provider every 5s.
+#
+# Both were found by hand, months and hours late respectively. This makes the
+# third one go red instead.
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  version-guard:
+    name: Source changed ⇒ version bumped
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Every published package whose source moved must bump its version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.ref }}" >/dev/null 2>&1 || true
+
+          fail=0
+          # pkg_dir : the published package root (holds package.json)
+          for pkg in cli commonly-mcp; do
+            # Did any SOURCE file move? Docs and tests do not require a release.
+            changed=$(git diff --name-only "$BASE"...HEAD -- "$pkg/src" | wc -l | tr -d ' ')
+            if [ "$changed" = "0" ]; then
+              echo "· $pkg: no src changes"
+              continue
+            fi
+
+            base_v=$(git show "$BASE:$pkg/package.json" 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -1)
+            head_v=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$pkg/package.json" | head -1)
+
+            if [ "$base_v" = "$head_v" ]; then
+              echo "::error file=$pkg/package.json::$pkg/src changed ($changed file(s)) but version is still $head_v. A published version that maps to two different artifacts defeats the only check available from outside this repo — bump it, or move the change out of $pkg/src."
+              fail=1
+            else
+              echo "✓ $pkg: src changed and version moved $base_v → $head_v"
+            fi
+          done
+
+          exit $fail
