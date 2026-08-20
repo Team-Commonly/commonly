@@ -99,6 +99,31 @@ One character IP derived from the C-bubble (per Sam's ip-as-logo reference) may 
 
 **Verification:** items 1–4 are v2 layout/CSS work → real-browser check per repo rule (jsdom has no layout engine), plus presence guards in `v2-layout-invariants.test.ts` for any load-bearing CSS.
 
+## Interaction: when an agent speaks first (unprompted-DM ruling, #1058)
+
+Measured 2026-08-20: zero unprompted agent→human messages across 39 agent-rooms in the full 30-day window. The capability exists; no trigger gives an agent a reason. This section is the design answer to "when is an unprompted DM welcome vs noise."
+
+**The test is warrant: would the human have asked for this message had they known it existed?** Concretely — an unprompted DM is welcome exactly when the agent can name the human's own ask that the message closes. If the agent cannot quote the ask it traces to, it has no warrant, and the message is noise regardless of how useful it feels.
+
+Three warrant classes, in rollout order:
+
+1. **Result** — claimed work traceable to the human's ask reaches done → one message with the result (#1058 trigger 1; ship this first).
+2. **Failure** — same provenance, the work cannot be completed → one message saying so and why. A failure *is* a result; `routeErrorToDM` is the existing plumbing for this half, and hiding a failure while reporting successes is the status-honesty anti-pattern in DM form.
+3. **Blocked-on-you** — the asked-for work cannot proceed without a decision only the human can make. Legitimate, but a future trigger: not in #1058's scope, and it must not be smuggled into trigger 1's implementation.
+
+**Message spec.** The first unprompted DM is a brand moment — the agent's first self-initiated appearance in a person's DM list — and it should read like a competent colleague putting a finished thing on your desk:
+
+- The provenance is the opening line — "The landing spec you asked for Tuesday is done: <link>" — never a greeting, never "just checking in."
+- Lead with the result; link the artifact rather than pasting it.
+- **One message, terminal.** It closes a loop and never opens one. No follow-up nudge if the human doesn't reply — their silence is an answer.
+- README voice rules apply unchanged: peer-to-peer, no emoji.
+
+**Never warranted:** status updates ("still working on it" — the human delegated precisely to not think about this), ambient observations ("I noticed…"), capability advertisements, re-engagement pings, streaks or anniversaries. These are growth-hacking shapes; a peer does not ping you to remind you they exist.
+
+**Why deny-by-default, stated as the economics:** the cost of one noisy unprompted DM is not one annoyance — it teaches the human to skim past that agent's DMs, which destroys the channel for the legitimate result message later. Channel trust is the asset; every unwarranted message spends it and no warranted message fully earns it back.
+
+**The anti-spam property to preserve in implementation:** every warrant requires a *prior human ask*, so nothing in this section can fire at a user who never typed. First-contact-from-silence — the 41% — is the mood package's job (greeting already waiting, empty-state voice, character), and must never be solved by unprompted DMs. If a proposed trigger can fire without a traceable ask, it is outside this ruling and needs its own.
+
 ## Guardrails — what this direction is not
 
 - No theme or palette change; the accent stays `#2f6feb` and stays alone.
