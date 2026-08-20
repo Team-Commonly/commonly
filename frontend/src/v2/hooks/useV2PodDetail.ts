@@ -16,11 +16,15 @@ export interface V2Message {
   user?: {
     username: string;
     profile_picture?: string | null;
+    // Face-vs-robot avatar tier. The PG SELECT always fetched u.is_bot; the
+    // backend mapper now forwards it instead of dropping it.
+    isBot?: boolean;
   };
   userId?: string | {
     _id?: string;
     username?: string;
     profilePicture?: string | null;
+    isBot?: boolean;
   };
   // Reply threading (PG reply_to_message_id). POST/GET responses carry either
   // the normalized `replyTo` object or the raw reply_* columns; the bubble
@@ -151,6 +155,7 @@ const normalizeMessage = (raw: V2Message): V2Message => {
   const userObject = typeof rawUserId === 'object' && rawUserId !== null ? rawUserId : null;
   const username = raw.user?.username || userObject?.username || 'Unknown';
   const profilePicture = raw.user?.profile_picture || userObject?.profilePicture || null;
+  const isBot = raw.user?.isBot ?? userObject?.isBot;
   return {
     ...raw,
     id: raw.id || (raw as { _id?: string })._id || '',
@@ -162,6 +167,10 @@ const normalizeMessage = (raw: V2Message): V2Message => {
     user: {
       username,
       profile_picture: profilePicture,
+      // Absent on old cached payloads and some socket shapes — undefined means
+      // "unknown", and V2Avatar renders the neutral tier for unknown rather
+      // than guessing a species.
+      ...(isBot === undefined ? {} : { isBot }),
     },
   };
 };

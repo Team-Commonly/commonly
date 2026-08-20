@@ -388,6 +388,8 @@ const V2YourTeamPage: React.FC = () => {
                 name={display}
                 src={a.iconUrl && a.iconUrl.trim() ? a.iconUrl.trim() : undefined}
                 size="lg"
+                kind="agent"
+                seed={`${a.name}:${a.instanceId || 'default'}`}
                 online={a.status === 'active'}
               />
               <div className="v2-team-card__body">

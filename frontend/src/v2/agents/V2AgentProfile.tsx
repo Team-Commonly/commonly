@@ -204,7 +204,13 @@ const V2AgentProfile: React.FC = () => {
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
-          <V2Avatar name={agent.displayName} src={agent.profilePicture} size="lg" />
+          <V2Avatar
+            name={agent.displayName}
+            src={agent.profilePicture}
+            size="lg"
+            kind="agent"
+            seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+          />
           <div className="v2-aprofile__hero-text">
             <div className="v2-aprofile__name-row">
               <h1 className="v2-aprofile__name">{agent.displayName}</h1>
