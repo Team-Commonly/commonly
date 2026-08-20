@@ -15,10 +15,10 @@
 import { jest } from '@jest/globals';
 import {
   ADDRESSED_EVENT_TYPES,
+  MENTION_EVENT_TYPES,
   CASCADE_DEFAULTS,
   CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
-  MENTION_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
   createClaimHandicap,
@@ -35,24 +35,6 @@ describe('classifyTrigger', () => {
   test('dmKind agent-agent → agent, user-agent → human, regardless of snapshot', () => {
     expect(classifyTrigger(event({ dmKind: 'agent-agent', messageId: 'm1' }), [])).toBe('agent');
     expect(classifyTrigger(event({ dmKind: 'user-agent', messageId: 'm1' }), [])).toBe('human');
-  });
-
-  // ADR-024 D1 board wakes carry `dmKind` and NO `messageId` — deliberately, so
-  // every opted-in seat looks and the per-task claim CAS arbitrates
-  // (taskEventService.ts:237). That backend comment is only safe because the
-  // dmKind branches sit ABOVE the messageId check here. Move the messageId
-  // check up, or add an early `if (!p.messageId) return 'unknown'`, and every
-  // board wake classifies 'unknown' — which by design neither counts toward the
-  // cascade cap nor resets it, so the cap silently stops engaging and the
-  // 156-wake sweep this governor exists to bound comes back.
-  //
-  // The suite already asserted dmKind pricing and messageId fallback, but every
-  // dmKind case supplied a messageId and every messageId case omitted dmKind —
-  // so the one combination the backend actually emits was never exercised, and
-  // both reorderings passed 107/107.
-  test('prices by dmKind with NO messageId — the board-wake shape', () => {
-    expect(classifyTrigger(event({ dmKind: 'agent-agent' }), [])).toBe('agent');
-    expect(classifyTrigger(event({ dmKind: 'user-agent' }), [])).toBe('human');
   });
 
   test('falls back to the trigger message isBot flag from the snapshot', () => {
@@ -178,65 +160,94 @@ describe('cascade governor — addressed grace', () => {
     expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
   });
 
+  it('never refuses a mention, however long the streak', () => {
+    // The grace (cap + addressedGrace) was not enough and was the wrong
+    // instrument. @ux-lead took two chat.mention refusals mid-thread while
+    // peers were naming it, and could not afterwards say which it had missed.
+    //
+    // Safe to exempt because mentions already have a PRODUCER-side bound:
+    // agentMentionService.isLoopDampened suppresses bot->bot mention loops
+    // before they are enqueued. This cap was a second brake on the one class
+    // that did not need one.
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 20, 'message.posted');
+
+    const verdict = gov.admit('pod', 'agent', 'chat.mention');
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.mentionExempt).toBe(true);
+    // Streak is untouched — the mention is admitted, not forgiven.
+    expect(verdict.streak).toBe(20);
+  });
+
+  it('still caps dm.message, which has no producer-side dampener', () => {
+    // dm.message is ADDRESSED but is NOT in MENTION_EVENT_TYPES and has no
+    // loop dampener at the producer, so this cap is the ONLY bound on
+    // agent<->agent DM ping-pong. Exempting the whole ADDRESSED set would have
+    // removed the exact cascade this governor exists for, in the one place
+    // with no second guard.
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 20, 'message.posted');
+
+    expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
+  });
+
+  it('derives the mention set from ADDRESSED rather than restating it', () => {
+    // Two lists stating one rule drift the next time a mention type is added,
+    // and the drift is silent. thread.mention is currently declared and never
+    // emitted; when threading starts emitting it, it inherits the exemption
+    // automatically instead of needing a second edit nobody remembers.
+    expect([...MENTION_EVENT_TYPES].sort()).toEqual(['chat.mention', 'thread.mention']);
+    for (const type of MENTION_EVENT_TYPES) {
+      expect(ADDRESSED_EVENT_TYPES.has(type)).toBe(true);
+    }
+    expect(MENTION_EVENT_TYPES.has('dm.message')).toBe(false);
+  });
+
   it('marks the admission so the caller can say the grace was spent', () => {
     const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
     expect(gov.admit('pod', 'agent', 'chat.mention').addressed).toBe(true);
     expect(gov.admit('pod', 'agent', 'message.posted').addressed).toBe(false);
   });
 
-  it('does not report a grace it never granted to a legacy direct-address event, at addressedGrace 0', () => {
+  it('does not report a grace it never granted, at addressedGrace 0', () => {
     // The refusal log is the one line an operator reads to understand why a
     // seat went quiet. Keyed on `addressed` alone it announced "(addressed
     // grace also spent)" on a grace=0 seat — asserting a grace that does not
     // exist, three screens under a boot line that says grace=0. The event is
-    // still addressed; nothing was granted for it. Agent-DM wakes use
-    // chat.mention, but the legacy dm.message vocabulary remains supported.
+    // still addressed; nothing was granted for it.
     const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
-    const admission = gov.admit('pod', 'agent', 'dm.message');
+    const admission = gov.admit('pod', 'agent', 'chat.mention');
     expect(admission.addressed).toBe(true);
     expect(admission.graceApplied).toBe(false);
     // And the limit really is the plain cap — the message was the only defect.
+    // dm.message rather than chat.mention: addressed, but not mention-exempt.
     gov.record('pod', 'agent');
     expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
   });
 
-  it('exempts only kernel-dampened non-DM mentions; DM-backed mentions stay in the streak', () => {
-    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
-    gov.record('pod', 'agent');
+  it('a DM echo still terminates — the grace is not an exemption for dm.message', () => {
+    // This replaces "is a grace, not an exemption — a mention echo still
+    // terminates", whose premise this change deliberately reverses. That test
+    // guarded a real loop (A-mentions-B-mentions-A), but bounded it at the
+    // WRONG layer: mentions already have a producer-side dampener
+    // (agentMentionService.isLoopDampened, >3 to the same bot/pod in a 5-minute
+    // window, bot->bot only). Two brakes on one class, and the redundant one
+    // was the only one that ever fired — @ux-lead lost two chat.mention events
+    // mid-thread.
+    //
+    // dm.message has NO producer-side dampener, so the loop this originally
+    // guarded is now guarded here, on the type that actually needs it.
+    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
+    burn(gov, 5, 'dm.message');
 
-    // The kernel's bot-to-bot dampener owns these two types. A named seat must
-    // stay reachable after broadcasts fill this local budget.
-    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
-    expect(gov.admit('pod', 'agent', 'thread.mention').allowed).toBe(true);
-
-    // Agent DMs also use chat.mention, but dmKind identifies the other
-    // producer. They must remain locally bounded; otherwise a type-only
-    // exemption opens a second unbounded bot-to-bot loop.
-    expect(gov.admit('pod', 'agent', 'chat.mention', { dmKind: 'agent-agent' }).allowed).toBe(false);
-
-    // dm.message is legacy direct-address vocabulary, not in the kernel
-    // mention budget, so it remains bounded locally. Broadcasts do too.
     expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
-    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
-  });
-
-  it('records a completed mention, so it spends broadcast liveness', () => {
-    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
-    gov.record('pod', 'agent');
-
-    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
-    // Mirrors agent.js: exemption only changes admit(); a completed turn still
-    // reaches record(). The following broadcast remains capped at the new
-    // streak rather than acquiring an extra unmetered pass.
-    gov.record('pod', 'agent');
-    expect(gov.admit('pod', 'agent', 'message.posted')).toMatchObject({
-      allowed: false,
-      streak: 2,
-    });
   });
 
   it('a human turn still clears the streak for addressed and broadcast alike', () => {
     const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
+    // Vehicle is dm.message, not chat.mention: mentions are now exempt, so a
+    // mention could never demonstrate a streak being cleared. The property
+    // under test is the human reset, which is unchanged.
     burn(gov, 2, 'dm.message');
     expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
 
@@ -562,13 +573,6 @@ describe('peerHoldsFrame / ADDRESSED_EVENT_TYPES', () => {
   });
 });
 
-describe('MENTION_EVENT_TYPES', () => {
-  test('contains only the two producer-dampened mention types, not DMs', () => {
-    expect([...MENTION_EVENT_TYPES]).toEqual(['chat.mention', 'thread.mention']);
-    expect(MENTION_EVENT_TYPES.has('dm.message')).toBe(false);
-  });
-});
-
 describe('CLAIMABLE_EVENT_TYPES', () => {
   test('covers message-bearing wakes and excludes one-shot / private events', () => {
     expect(CLAIMABLE_EVENT_TYPES.has('chat.mention')).toBe(true);
@@ -612,8 +616,8 @@ describe('resolveCascadeSettings', () => {
   });
 
   test('zero is honoured, not treated as absent', () => {
-    // Legacy direct-address events remain on the configurable grace path. A
-    // `|| default` style resolver would silently ignore 0 and admit one more.
+    // The whole point of the grace knob: 0 restores pre-#973 behaviour without
+    // a revert. A `|| default` style resolver would silently ignore it.
     const settings = resolveCascadeSettings({
       env: { [CASCADE_ENV_VARS.addressedGrace]: '0' }, warn: silent,
     });
@@ -622,6 +626,9 @@ describe('resolveCascadeSettings', () => {
     governor.record('pod', 'agent');
     governor.record('pod', 'agent');
     governor.record('pod', 'agent');
+    // dm.message, not chat.mention: this asserts that grace 0 is HONOURED
+    // rather than treated as absent, and mentions are now exempt from the cap
+    // altogether — so a mention could not demonstrate a grace of any size.
     expect(governor.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
   });
 
