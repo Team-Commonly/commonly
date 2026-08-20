@@ -78,6 +78,28 @@ if (pool) {
   (pool as { on: (event: string, cb: (client: { query: (sql: string) => Promise<void> }) => void) => void }).on('connect', (client) => {
     client.query('SET default_transaction_read_only = off').catch(() => {});
   });
+
+  // An IDLE pooled client that errors with no 'error' listener is an unhandled
+  // EventEmitter error, which in Node terminates the process. That is not a
+  // theoretical footgun — it took the API down twice on 2026-08-20 with:
+  //
+  //   error: terminating connection due to administrator command  (severity FATAL)
+  //
+  // which is what managed Postgres says during a failover, a patch window, or
+  // ordinary connection recycling. In other words a ROUTINE event on the
+  // provider side was converting into a full outage on ours, and the pod
+  // restart loop (`restarts: 2` inside two minutes) meant every maintenance
+  // window would do it again.
+  //
+  // The pool already handles the recovery correctly on its own: the broken
+  // client is discarded and the next checkout dials a fresh one. All that was
+  // missing was a listener so the error stays an error instead of becoming a
+  // process exit. Logged rather than swallowed — a silent reconnect would hide
+  // a genuinely failing database, and "it fails quietly" is the pattern this
+  // codebase keeps paying for.
+  (pool as { on: (event: string, cb: (err: Error) => void) => void }).on('error', (err) => {
+    console.error('[pg-pool] idle client error (connection discarded, pool will reconnect):', err?.message || err);
+  });
 }
 
 const connectPG = async (): Promise<unknown> => {
