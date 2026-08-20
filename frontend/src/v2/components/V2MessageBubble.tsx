@@ -404,6 +404,8 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             name={author}
             src={message.user?.profile_picture || undefined}
             size="md"
+            kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
+            seed={message.user_id || undefined}
           />
         </button>
       ) : (
@@ -411,6 +413,8 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           name={author}
           src={message.user?.profile_picture || undefined}
           size="md"
+          kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
+          seed={message.user_id || undefined}
         />
       )}
       <div className="v2-msg__body">
