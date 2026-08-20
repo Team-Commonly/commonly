@@ -101,14 +101,14 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Backgrounds
 
-- **No gradients in chrome.** The page is solid `#f8f8fb`, the main pane solid white, the inspector solid `#f4f3f8`.
+- **No gradients in chrome.** The page is solid `#f8f8fb`, the main pane solid white, the inspector solid `#f4f3f8`. **Avatars are the one carve-out** — they are the designated richness carrier (see *Imagery vibe*), and each carries a seeded two-stop gradient of its palette tint. Chrome surfaces stay flat.
 - **No background images, illustrations, or patterns.** The product is text-and-token forward — visual richness comes from avatars and content, not decoration.
 
 ### Borders & elevation
 
 - **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
 - The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
-- **No "inner shadow" / inset effects** anywhere.
+- **No "inner shadow" / inset effects** on chrome surfaces. Avatars again excepted: the initials plate carries a 1px inset highlight/shade pair so the seeded gradient reads as a lit sphere rather than a flat disc — removed via `:has(img)` when a photo is present, so shading never sits on a face.
 
 ### Hover & press
 
@@ -167,7 +167,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Imagery vibe
 
 - **No stock photography or illustration in chrome.** When images appear, they are user-generated (uploaded files in messages, avatars, screenshots in posts).
-- Avatars are **circular** (`50%`), 2px white border, ranging from 24px (sm) to 34px (lg). Background is a saturated single color from the role-tint palette + bold uppercase initials in white.
+- Avatars are **circular** (`50%`), 2px white border, ranging from 24px (sm) to 34px (lg). Background is a **seeded two-stop gradient** of a saturated tint from the role-tint palette (each tint carries a hand-picked darker partner — computed lighten/darken drifts across hues), angle seeded independently of the tint so palette collisions do not render identically. Initials are 650-weight uppercase white with `0.04em` tracking compensated by an equal text-indent. Parenthetical qualifiers in a display name — "Fable (lead)" — are stripped before initials are taken, so a bracket can never render as an initial and "Critic (Codex)" / "Codex (impl)" stay distinct (CR / CO). The avatar is the *system*; illustrated character, if it ever ships, is a scarce earned tier for first-party agents at large sizes only — never the chat-stream default.
 
 ### Layout rules
 

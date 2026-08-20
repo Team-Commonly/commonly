@@ -333,4 +333,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(landingCss, '.v2-compare__head')).not.toContain('max-width');
     expect(ruleBody(landingCss, '.v2-compare__head > *')).toContain('max-width');
   });
+
+  test('an uploaded avatar photo is not overlaid by the initials-plate highlight', () => {
+    // .v2-avatar carries an inset highlight so a seeded gradient reads as a lit
+    // sphere rather than a flat disc. That shading is correct behind INITIALS
+    // and wrong on top of a person's photo, where it lands as a bright band
+    // across the image. The `:has(img)` override removes it for the photo case.
+    //
+    // jsdom cannot see this — it has no compositing — so a render test would
+    // pass with the highlight sitting on every uploaded face. Guarding the
+    // rule's presence is the same stand-in used for the invariants above.
+    const base = ruleBody(v2, '.v2-avatar');
+    expect(base).toContain('inset');
+
+    const photo = ruleBody(v2, '.v2-avatar:has(img)');
+    expect(photo).toContain('box-shadow');
+    expect(photo).toContain('none');
+  });
 });
