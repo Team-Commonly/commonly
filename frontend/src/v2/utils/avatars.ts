@@ -28,10 +28,31 @@ export const colorFor = (seed: string | undefined | null): string => {
 };
 
 export const initialsFor = (name: string | undefined | null): string => {
-  const trimmed = String(name || '').trim();
-  if (!trimmed) return '?';
-  const parts = trimmed.split(/[\s_-]+/).filter(Boolean);
-  if (parts.length === 0) return trimmed.slice(0, 2).toUpperCase();
+  const raw = String(name || '').trim();
+  if (!raw) return '?';
+
+  // Drop parenthetical qualifiers before picking initials. Display names here
+  // routinely carry a role or runtime in brackets — "Fable (lead)", "Critic
+  // (Codex)", "Codex (impl)" — and first-word + last-word was taking the
+  // BRACKET as the second initial. Four of the twelve cards on Your Team read
+  // "F(", "C(", "S(" and "C(": ugly, and wrong in a way that matters, because
+  // "Critic (Codex)" and "Codex (impl)" rendered IDENTICALLY. Two different
+  // agents labelled the same is the attribution failure this repo has paid for
+  // before with displayName collisions.
+  //
+  // A parenthetical is a qualifier rather than part of the name, so dropping it
+  // also yields the more distinctive initials: Critic -> CR, Codex -> CO.
+  const trimmed = raw.replace(/\([^)]*\)/g, ' ').trim() || raw;
+
+  // Strip residual punctuation from each token so a stray bracket, comma or
+  // colon can never become an initial again. Unicode-aware, so a CJK display
+  // name keeps its characters instead of being emptied to "?".
+  const parts = trimmed
+    .split(/[\s_\-/|]+/)
+    .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter(Boolean);
+
+  if (parts.length === 0) return trimmed.slice(0, 2).toUpperCase() || '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
