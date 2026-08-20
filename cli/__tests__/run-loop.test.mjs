@@ -1456,6 +1456,24 @@ describe('performRun — ADR-018 enforcement', () => {
     ...overrides,
   });
 
+  // Same shape, but a CAPPED event type. chat.mention is exempt from the
+  // cascade cap (it has a producer-side dampener — agentMentionService's
+  // isLoopDampened, >3 to the same bot/pod per 5-minute window), so a mention
+  // vehicle would make every cap assertion below pass while testing nothing.
+  // message.posted is the ambient class the cap actually governs.
+  const makeCappedEvent = (overrides = {}) => makeClaimEvent({
+    type: 'message.posted',
+    ...overrides,
+  });
+
+  // ADDRESSED and still capped. dm.message is the only member of
+  // ADDRESSED_EVENT_TYPES that the cap still governs — mentions are exempt —
+  // so it is the only vehicle left that can exercise the grace path.
+  const makeAddressedCappedEvent = (overrides = {}) => makeClaimEvent({
+    type: 'dm.message',
+    ...overrides,
+  });
+
   // Route-aware client mock: events/messages/memory GETs, claim-aware POSTs.
   const makeClient = ({
     events,
@@ -1598,20 +1616,23 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(post.mock.calls.some(([r]) => r.endsWith('/claim'))).toBe(false);
   });
 
-  test('cascade cap: agent-DM chat.mentions beyond the cap are declined without a spawn or a claim', async () => {
+  test('cascade cap: agent-triggered turns beyond the cap are declined without a spawn or a claim', async () => {
     const { post } = makeClient({
       events: [
-        makeClaimEvent({ _id: 'evt-a', payload: { content: 'hello', messageId: 'msg-1', dmKind: 'agent-agent' } }),
-        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2', dmKind: 'agent-agent' } }),
+        makeCappedEvent({ _id: 'evt-a' }),
+        makeCappedEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
       ],
-      // Both are agent-DM events, which use chat.mention but carry dmKind.
+      // Both trigger messages are BOT-authored — this is a mention cascade.
       messages: [
         { _id: 'msg-1', isBot: true, self: false },
         { _id: 'msg-2', isBot: true, self: false },
       ],
     });
     const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
-    // DM-backed chat.mentions stay locally bounded when grace is disabled.
+    // grace 0 pins the PURE cap contract. The events below are message.posted,
+    // NOT the makeEvent chat.mention default: mentions are exempt from this cap
+    // entirely (they have a producer-side dampener), so a mention vehicle would
+    // make this test assert nothing while still passing.
     const { stop } = run(
       { name: 'stub', detect: stubAdapter.detect, spawn },
       { cascadeCap: 1, cascadeAddressedGrace: 0 },
@@ -1633,7 +1654,7 @@ describe('performRun — ADR-018 enforcement', () => {
             cap: 1,
             addressedGrace: 0,
             resetMs: 600000,
-            addressed: true,
+            addressed: false,
             graceApplied: false,
           },
         },
@@ -1657,8 +1678,8 @@ describe('performRun — ADR-018 enforcement', () => {
     try {
       const { post } = makeClient({
         events: [
-          makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
-          makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
+          makeCappedEvent({ _id: 'evt-a' }),
+          makeCappedEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
         ],
         messages: [
           { _id: 'msg-1', isBot: true, self: false },
@@ -1683,7 +1704,7 @@ describe('performRun — ADR-018 enforcement', () => {
               cap: 1,
               addressedGrace: 0,
               resetMs: 600000,
-              addressed: true,
+              addressed: false,
               graceApplied: false,
             },
           },
@@ -1697,14 +1718,18 @@ describe('performRun — ADR-018 enforcement', () => {
     }
   });
 
-  test('cascade cap: a legacy direct-address event gets a bounded grace, then is capped too', async () => {
-    // Mention types are producer-dampened and exempted separately. Legacy
-    // direct-address vocabulary remains on the local bounded-grace path.
+  test('cascade cap: a directly-addressed seat gets a bounded grace, then is capped too', async () => {
+    // The failure this fixes, measured 2026-08-18: a seat took 28 consecutive
+    // cap refusals, five of them chat.mention. Peers named it and got silence.
+    //
+    // The grace is bounded on purpose. An unbounded pass for addressed events
+    // restores the A-mentions-B-mentions-A echo the governor exists to kill, so
+    // the third event below must still be declined.
     const { post } = makeClient({
       events: [
-        makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
-        makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
-        makeClaimEvent({ _id: 'evt-c', type: 'dm.message', payload: { content: 'and again', messageId: 'msg-3' } }),
+        makeAddressedCappedEvent({ _id: 'evt-a' }),
+        makeAddressedCappedEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+        makeAddressedCappedEvent({ _id: 'evt-c', payload: { content: 'and again', messageId: 'msg-3' } }),
       ],
       messages: [
         { _id: 'msg-1', isBot: true, self: false },
@@ -1739,49 +1764,6 @@ describe('performRun — ADR-018 enforcement', () => {
           },
         },
       },
-    );
-  });
-
-  test('cascade: a kernel-dampened mention bypasses the cap but still spends broadcast liveness', async () => {
-    const { post } = makeClient({
-      events: [
-        // First broadcast fills the local cap without entering a claim race.
-        makeEvent({
-          _id: 'evt-broadcast-before',
-          type: 'message.posted',
-          payload: { content: 'ambient work', dmKind: 'agent-agent' },
-        }),
-        // The named bot-to-bot mention remains live even though the cap is
-        // full. Its completed turn must still record before the next wake.
-        makeClaimEvent({
-          _id: 'evt-mentioned',
-          payload: { content: '@my-stub please weigh in', messageId: 'msg-mentioned' },
-        }),
-        makeEvent({
-          _id: 'evt-broadcast-after',
-          type: 'message.posted',
-          payload: { content: 'ambient work again', dmKind: 'agent-agent' },
-        }),
-      ],
-      messages: [{ _id: 'msg-mentioned', isBot: true, self: false }],
-    });
-    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
-    const { stop } = run(
-      { name: 'stub', detect: stubAdapter.detect, spawn },
-      { cascadeCap: 1, cascadeAddressedGrace: 0 },
-    );
-    await drainMicrotasks();
-    stop();
-
-    // The mention is the second spawn. Before the exemption it was refused at
-    // the cap; without the completion-time record the final broadcast would
-    // instead be admitted.
-    expect(spawn).toHaveBeenCalledTimes(2);
-    expect(post).toHaveBeenCalledWith(
-      '/api/agents/runtime/events/evt-broadcast-after/ack',
-      expect.objectContaining({
-        result: expect.objectContaining({ outcome: 'no_action', reason: 'cascade-cap' }),
-      }),
     );
   });
 
@@ -1840,8 +1822,8 @@ describe('performRun — ADR-018 enforcement', () => {
     // human trying to explain a silent seat.
     const { post } = makeClient({
       events: [
-        makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
-        makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
+        makeAddressedCappedEvent({ _id: 'evt-a' }),
+        makeAddressedCappedEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
       ],
       messages: [
         { _id: 'msg-1', isBot: true, self: false },
