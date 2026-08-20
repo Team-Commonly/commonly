@@ -71,6 +71,17 @@
   --v2-pods-w: 272px;
   --v2-inspector-w: 336px;
 
+  /* Keep production's scoped V2 layer in step with design-system/tokens.css.
+     The typing cadence belongs to the minimal mark; pulse/spin retain their
+     separate state-affordance semantics. */
+  --motion-stagger: 0.18s;
+  --motion-breath: 1.2s;
+  --motion-pulse: 1.6s;
+  --motion-spin: 0.8s;
+  --motion-ease-breath: ease-in-out;
+  --motion-ease-state: ease-out;
+  --motion-ease-linear: linear;
+
   font-family: var(--v2-font);
   color: var(--v2-text-primary);
   background: var(--v2-page-bg);
@@ -1766,11 +1777,11 @@
   height: 4px;
   border-radius: 50%;
   background: var(--v2-text-tertiary);
-  animation: v2-typing-dot 1.2s infinite ease-in-out;
+  animation: v2-typing-dot var(--motion-breath) infinite var(--motion-ease-breath);
 }
 
-.v2-chat__typing-dots > span:nth-child(2) { animation-delay: 0.18s; }
-.v2-chat__typing-dots > span:nth-child(3) { animation-delay: 0.36s; }
+.v2-chat__typing-dots > span:nth-child(2) { animation-delay: var(--motion-stagger); }
+.v2-chat__typing-dots > span:nth-child(3) { animation-delay: calc(var(--motion-stagger) + var(--motion-stagger)); }
 
 @keyframes v2-typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
@@ -2976,7 +2987,7 @@
   border-radius: 50%;
   background: var(--v2-success);
   box-shadow: 0 0 0 0 var(--v2-success-ring-strong);
-  animation: v2-now-pulse 1.6s ease-out infinite;
+  animation: v2-now-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
   flex-shrink: 0;
 }
 
@@ -5122,6 +5133,38 @@
   color: var(--v2-text-tertiary);
 }
 
+/* App boot has no content state to impersonate, so the minimal mark can own
+   the moment. The dots use the exact typing keyframes; inline spinners retain
+   their state-specific v2-spin affordance below. */
+.v2-boot {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--v2-page-bg);
+}
+
+.v2-boot__mark {
+  width: 64px;
+  height: 64px;
+  color: var(--v2-accent);
+  overflow: visible;
+}
+
+.v2-boot__mark-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: v2-typing-dot var(--motion-breath) infinite var(--motion-ease-breath);
+}
+
+.v2-boot__mark-dot:nth-of-type(2) {
+  animation-delay: var(--motion-stagger);
+}
+
+.v2-boot__mark-dot:nth-of-type(3) {
+  animation-delay: calc(var(--motion-stagger) + var(--motion-stagger));
+}
+
 .v2-empty__title {
   font-size: 16px;
   font-weight: 700;
@@ -5140,7 +5183,7 @@
   border: 2px solid var(--v2-border);
   border-top-color: var(--v2-accent);
   border-radius: 50%;
-  animation: v2-spin 0.8s linear infinite;
+  animation: v2-spin var(--motion-spin) var(--motion-ease-linear) infinite;
   display: inline-block;
 }
 
