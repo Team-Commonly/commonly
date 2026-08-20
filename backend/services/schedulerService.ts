@@ -404,6 +404,26 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // #1044 kernel work sweep. De-phased from the on-the-minute jobs (:04 etc)
+    // so its DB pass never stacks on the heartbeat dispatcher's. Every 10
+    // minutes: the sweep period intentionally EQUALS the 30-min lease's
+    // renewal cadence divisor, giving lapse-to-rescue a ≤40-min worst case —
+    // fable's "bounded rather than open-ended" bar — while the CAS inside the
+    // rescue makes a period-vs-lease race harmless.
+    const kernelWorkSweepJob: CronJob = cron.schedule(
+      '4,14,24,34,44,54 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const KernelWorkSweepService = require('./kernelWorkSweepService');
+          await KernelWorkSweepService.sweep();
+        } catch (error) {
+          console.error('[kernel-sweep] pass failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -420,6 +440,7 @@ class SchedulerService {
       skillsRefreshJob,
       onboardingSilenceJob,
       stalledConnectJob,
+      kernelWorkSweepJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
