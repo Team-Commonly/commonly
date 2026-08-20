@@ -1,3 +1,8 @@
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { createAvatar } from '@dicebear/core';
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { bottts, bigSmile } from '@dicebear/collection';
+
 // Avatar tints. Blue-forward and cohesive with the design system's single
 // accent (#2f6feb) — deliberately purple-free (the old palette led with two
 // bright violets, #6d5dfc/#7367c7, and defaulted un-seeded avatars to purple,
@@ -106,4 +111,49 @@ export const initialsFor = (name: string | undefined | null): string => {
   if (parts.length === 0) return trimmed.slice(0, 2).toUpperCase() || '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+// ── Character tier ──────────────────────────────────────────────────────────
+//
+// Sam's ruling (2026-08-20): humans render bigSmile faces, agents render
+// bottts robots. The semantics read with zero badges — face = person, robot =
+// agent — which most agent-team products need a label for.
+//
+// Deterministic, local, SVG: same seed, same face, forever. No image API and
+// no art pipeline, so install #10,000 costs what install #1 did. That is what
+// separates this tier from generated art, which was rejected for exactly
+// those costs.
+//
+// License note that must not rot: bigSmile is CC BY 4.0 — the visible credit
+// in the login footer is a LICENSE REQUIREMENT, not decoration. bottts is
+// free for personal and commercial use. If either style is ever swapped,
+// re-check the license and the credit line together.
+export type AvatarKind = 'human' | 'agent';
+
+/**
+ * Data-URI for the character avatar, or null when generation fails — callers
+ * fall back to the gradient+initials tier, which cannot fail. The seeded tint
+ * becomes the character's background so this tier stays inside the palette
+ * rather than introducing new color.
+ *
+ * Seed on STABLE IDENTITY, not display name — `agentName:instanceId` for
+ * agents, userId for humans — so a rename never changes someone's face.
+ * Callers that only have a name may pass it, accepting that a rename re-rolls
+ * the character.
+ */
+export const characterAvatarFor = (
+  seed: string | undefined | null,
+  kind: AvatarKind,
+): string | null => {
+  const key = String(seed || '').trim();
+  if (!key) return null;
+  try {
+    const style = kind === 'agent' ? bottts : bigSmile;
+    return createAvatar(style, {
+      seed: key,
+      backgroundColor: [colorFor(key).slice(1)],
+    }).toDataUri();
+  } catch {
+    return null;
+  }
 };
