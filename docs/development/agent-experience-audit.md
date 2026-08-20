@@ -1707,12 +1707,90 @@ first, and a guard that returns a clean pass on the exact case it was written
 for is worse than no guard at all — it converts an open question into a
 settled one.
 
+**And the symbol-level check is triage, not a verdict.** Run against the merged
+re-land it reported `identityOf=0, actorIdentity=0` — the same output as the
+missing-fix case. The fix was there, reimplemented as `actorKey` with the same
+semantics under a different name. A vanished fix and a renamed one are
+indistinguishable in that output, so the check tells you where to read, never
+what you will find. Treat a hit as an unanswered question; the answer is in the
+diff.
+
+Three false absences came out of that one instrument inside an hour, each with a
+different cause: the symbol was RENAMED (`identityOf` → `actorKey`), the
+surrounding code was DELETED so the symbol had nothing left to name (the rev key,
+removed by coalescing), and the string differed in CASE (`HUMAN-installed` vs
+`HUMAN-INSTALLED`). All three rendered as a zero that reads like a finding, and
+all three were reported to peers before being read. A grep count is a coordinate,
+not a claim.
+
+**Test names are more durable than symbols and still not a verdict.** The obvious
+repair — key the guard on test names, since implementation symbols get renamed —
+fails on this same incident. The regression test came back as `skips a
+HUMAN-INSTALLED agent editing the board, which installedBy cannot match`, from
+`skips a HUMAN-installed agent editing the board, where installedBy could not`.
+Case and trailing clause both moved, because rewording a test reads as harmless
+in a way renaming a function does not. An exact-string check on test names would
+have reported it missing too.
+
+What closed this question was a peer who had read the merged tree saying which
+names were there. No string check of any kind would have.
+
+**What does work: a set difference over test names, as a worklist.** Not
+string-presence — that is what made every row above misfire. Extract the test
+names from the reverted suites and from the re-land, diff the two sets, and read
+the residue. On this incident: 19 names before, 22 after, **five in the old set
+unmatched in the new**:
+
+```
+carries a synthetic claim key, so one agent takes the task and the rest stand down
+gives a later change to the same task a fresh key, or it collides with the settled claim
+matches identity case-insensitively, since agentName is stored lowercased
+separates two writes 800ms apart, which second-resolution stringifying merged
+skips a HUMAN-installed agent editing the board, where installedBy could not
+```
+
+Every one resolves, and none is a loss: two were **superseded** (the claim key
+is gone — coalescing folds on `payload.boardWake`), one **superseded with its
+field** (the 800ms case tested a `rev` that no longer exists), two **renamed**
+(`HUMAN-INSTALLED`, and the case-insensitivity test reworded).
+
+The set difference is still a string comparison, and it flags the two renames as
+unmatched exactly like the symbol check did. What changes is not accuracy — it is
+two properties the string checks lacked.
+
+First, **the false-alarm set is bounded**: five names over two known files, versus
+six wrong rows out of seven across the whole codebase — and `getTime()` scoped to
+one file returns 0 while the same grep over `backend/` returns 131. An unbounded
+false-alarm rate is why nobody runs the check twice.
+
+Second, **it cannot silently pass**. A string check returns zero and looks
+like an answer. A set difference returns five names, each of which needs a human
+to say *superseded, renamed, or lost*. It converts a verdict nobody validated
+into a worklist somebody has to work.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
 tool description or a heartbeat instruction: it works only on someone already
 being careful, which is the failure mode this file exists to document. The
 flagging felt like the work and wasn't.
+
+**Postscript: on this incident, nothing was actually lost.** The table above was
+read at the moment the re-land branch was open, and every line of it resolved
+differently by merge:
+
+- `identityOf` / `actorIdentity` — **renamed**, not dropped. The fix shipped as
+  `actorKey` with the same semantics.
+- `getTime()` / `Number.isNaN(revTime)` — **superseded**. Coalescing removed the
+  per-task claim key entirely, so the field the defect lived in no longer
+  exists. Re-filing that defect now would target code that is gone.
+- The three tests — gone with the field and the name they tested.
+
+So the mechanism this entry describes is real and the example did not fire.
+Recorded that way on purpose: an entry that says work was lost, when it was not,
+teaches a reader to distrust the next re-land on evidence that never held. The
+guard earns its place by making the question askable early, not by having caught
+something here.
 
 Related: entry 31's corollary (having found the dead tier, go read the live one).
 Same shape — the diagnostic that finds a problem has to keep running past the
