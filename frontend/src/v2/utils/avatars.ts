@@ -147,12 +147,15 @@ export const characterAvatarFor = (
 ): string | null => {
   const key = String(seed || '').trim();
   if (!key) return null;
+  // Branched calls rather than a ternary on the style argument: each style
+  // module carries its own Options generic, and the union of the two is not
+  // assignable to createAvatar's Style<Options> parameter.
+  const options = { seed: key, backgroundColor: [colorFor(key).slice(1)] };
   try {
-    const style = kind === 'agent' ? bottts : bigSmile;
-    return createAvatar(style, {
-      seed: key,
-      backgroundColor: [colorFor(key).slice(1)],
-    }).toDataUri();
+    return (kind === 'agent'
+      ? createAvatar(bottts, options)
+      : createAvatar(bigSmile, options)
+    ).toDataUri();
   } catch {
     return null;
   }
