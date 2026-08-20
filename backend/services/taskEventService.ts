@@ -255,10 +255,106 @@ export async function notifyPodAgents(
   }
 }
 
+/**
+ * Kernel-sweep wake (#1044): the pod has actionable work — pending, unassigned
+ * — and the kernel found it, so no model turn was spent discovering it.
+ *
+ * Differences from `notifyPodAgents`, each deliberate:
+ *
+ * - `triggerAuthor: 'kernel'` and NO dmKind. The third pricing branch (fable,
+ *   55845): kernel-found work is not agent churn — priced 'agent' it counts
+ *   toward the cascade cap and silences seats exactly when the board is
+ *   busiest; priced 'human' it clears the brake on unrelated cascades. CLIs
+ *   that predate the branch see no dmKind and no messageId and classify
+ *   'unknown', which is neutral — graceful degradation, not breakage.
+ * - The content NAMES the work. "If the payload can't name work, don't wake
+ *   the seat" is the ruling this exists to satisfy; a wake that says "go
+ *   look" re-creates the HEARTBEAT_OK turn-burner one layer down.
+ * - Same `boardWake` fold as change wakes, so a sweep wake and a change wake
+ *   collapse into ONE pending wake per seat rather than queueing separately.
+ *   Known bounded leak, recorded not fixed (same stance as fable's 55846): an
+ *   agent change folding into a pending kernel wake rides under kernel
+ *   pricing — at most one per drain.
+ */
+export async function notifyFoundWork(
+  podId: unknown,
+  items: Array<{ taskId?: string; title?: string }>,
+  totalCount: number,
+  now: Date = new Date(),
+): Promise<{ woken: number }> {
+  if (!podId || !items?.length) return { woken: 0 };
+  try {
+    /* eslint-disable global-require, @typescript-eslint/no-require-imports */
+    const { AgentInstallation } = require('../models/AgentRegistry');
+    const AgentEventService = require('./agentEventService');
+    const { wakeOnMessageEnabled } = require('./agentMentionService');
+    const AgentEvent = require('../models/AgentEvent');
+    /* eslint-enable global-require, @typescript-eslint/no-require-imports */
+
+    const normalizedPodId = String(podId);
+    const active = await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
+    const installs = (active || []).filter(wakeOnMessageEnabled);
+    if (!installs.length) return { woken: 0 };
+
+    const listed = items
+      .map((t) => `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`)
+      .join('\n');
+    const more = totalCount > items.length ? `\n…and ${totalCount - items.length} more on the board.` : '';
+    const content = [
+      `[The kernel found unclaimed work in this pod — ${totalCount} pending, unassigned:]`,
+      '',
+      listed + more,
+      '',
+      'Nobody named you; the board did. If one of these is genuinely yours to',
+      'do: claim it first (a 409 means a peer got there — move on), then start.',
+      'If none fit your role, return NO_REPLY. Do not narrate the list back.',
+    ].join('\n');
+
+    let woken = 0;
+    await Promise.all(installs.map(async (install: Record<string, unknown>) => {
+      const agentName = install.agentName;
+      const instanceId = install.instanceId || 'default';
+      try {
+        const folded = await AgentEvent.findOneAndUpdate(
+          {
+            agentName, instanceId, podId: normalizedPodId, status: 'pending', 'payload.boardWake': true,
+          },
+          { $set: { 'payload.content': content, 'payload.foundWorkAt': now } },
+          { new: true },
+        );
+        if (folded) { woken += 1; return; }
+        await AgentEventService.enqueue({
+          agentName,
+          instanceId,
+          podId: normalizedPodId,
+          type: 'message.posted',
+          payload: {
+            content,
+            podId: normalizedPodId,
+            boardWake: true,
+            boardChanges: 0,
+            foundWorkAt: now,
+            // The third pricing branch. No dmKind, deliberately.
+            triggerAuthor: 'kernel',
+          },
+        });
+        woken += 1;
+      } catch (err) {
+        console.warn(`[task-event] found-work enqueue failed for ${agentName}:`, (err as Error).message);
+      }
+    }));
+    return { woken };
+  } catch (err) {
+    console.warn('[task-event] found-work notify failed:', (err as Error).message);
+    return { woken: 0 };
+  }
+}
+
 export default {
   bindSocketIO,
   emitTaskUpdated,
   notifyPodAgents,
+  notifyFoundWork,
 };
 
 // CJS compat: let require() return the default export directly
