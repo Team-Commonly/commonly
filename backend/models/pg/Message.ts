@@ -34,7 +34,7 @@ interface FormattedMessage extends MessageRow {
   text: string;
   messageType: string;
   createdAt: unknown;
-  userId: { _id: string; username: string; profilePicture?: string } | string;
+  userId: { _id: string; username: string; profilePicture?: string; isBot?: boolean } | string;
   replyTo: { id: string; content: string; username: string; userId: string } | null;
 }
 
