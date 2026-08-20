@@ -62,7 +62,16 @@ function formatMessage(msg: MessageRow): FormattedMessage {
     createdAt: msg.created_at,
     user_id: userId,
     userId: msg.username
-      ? { _id: userId, username: msg.username || 'Unknown User', profilePicture: msg.profile_picture }
+      ? {
+        _id: userId,
+        username: msg.username || 'Unknown User',
+        profilePicture: msg.profile_picture,
+        // The SELECT has fetched u.is_bot since the beginning; this mapper was
+        // dropping it, so the frontend could never tell an agent's message
+        // from a human's without a second lookup. Needed by the avatar tier
+        // split (humans get faces, agents get robots).
+        isBot: msg.is_bot === true,
+      }
       : userId,
     replyTo: msg.reply_msg_id
       ? {
@@ -158,7 +167,7 @@ class Message {
         SELECT
           m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
           m.reply_to_message_id, m.created_at, m.updated_at,
-          u._id as user_db_id, u.username, u.profile_picture,
+          u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
           rm.user_id as reply_user_id, ru.username as reply_username
         FROM messages m
