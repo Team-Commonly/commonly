@@ -670,6 +670,36 @@ class AgentMessageService {
    * adjustable without a deploy. 3 matches the `commonly_post_message`
    * guidance, so the tool description and the kernel state one number.
    */
+  /**
+   * Is this pod a strict 1:1, where a run of one speaker's messages is just an
+   * answer rather than a monologue?
+   *
+   * Prefers `agentIdentityService.DM_POD_TYPES_GUARD` — the single source of
+   * truth for the DM set (ADR-001 §3.10) — and falls back to the same two
+   * literals if that import is unavailable. The fallback exists because a
+   * PARTIAL MOCK of that module made the named export `undefined` and crashed
+   * 17 tests on the first attempt: the same shape as the `notifyPodAgents`
+   * partial-mock crash earlier the same day. A message must not fail to post
+   * because a sibling module was stubbed.
+   *
+   * `agent-admin` is intentionally absent from both, matching the guard: it is
+   * N:1 (several admins, one agent), so it IS a shared room and the crowding
+   * rationale applies.
+   */
+  static isOneToOnePod(podType: unknown): boolean {
+    const type = String(podType || '');
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { DM_POD_TYPES_GUARD } = require('./agentIdentityService');
+      if (DM_POD_TYPES_GUARD && typeof DM_POD_TYPES_GUARD.has === 'function') {
+        return DM_POD_TYPES_GUARD.has(type);
+      }
+    } catch {
+      // fall through to the literals below
+    }
+    return type === 'agent-room' || type === 'agent-dm';
+  }
+
   static resolveConsecutiveRunCap(): number {
     const parsed = Number.parseInt(process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP || '', 10);
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
@@ -1310,7 +1340,22 @@ class AgentMessageService {
       // whole failure family this session: a bare refusal converts a monologue
       // into silence, which reads as a considered decision. Overflow becomes an
       // attachment, so nothing the agent meant to say is lost.
-      const runCap = AgentMessageService.resolveConsecutiveRunCap();
+      // NOT in a 1:1. The cap's entire rationale is "do not crowd others out of
+      // a shared room", and in a DM there is no room to crowd: the only other
+      // participant is the person who asked. Sam caught this within hours of it
+      // shipping — @ux-lead answered a three-part design question in an
+      // agent-room, hit the cap, and attached its reply as a .md. A colleague's
+      // considered answer arriving as a file you must open is strictly worse
+      // than the monologue the cap exists to prevent, and it converts a
+      // conversation into a document — the same "report surface" failure the
+      // tool description warns about, reached from the opposite direction.
+      //
+      // `agent-admin` is deliberately NOT exempt: it is N:1 (several admins,
+      // one agent), so it is a shared room and the crowding rationale holds.
+      // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
+      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+
+      const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
         if (run >= runCap) {

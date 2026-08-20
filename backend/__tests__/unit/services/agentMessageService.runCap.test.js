@@ -93,3 +93,27 @@ describe('resolveConsecutiveRunCap', () => {
     expect(AgentMessageService.resolveConsecutiveRunCap()).toBe(3);
   });
 });
+
+describe('isOneToOnePod — the cap must not fire in a 1:1', () => {
+  it('exempts agent-room and agent-dm', () => {
+    // Sam caught this within hours of the cap shipping: ux-lead answered a
+    // three-part design question in an agent-room, hit the cap, and attached
+    // its reply as a .md. A colleague's answer arriving as a file you must open
+    // is worse than the monologue the cap prevents. In a 1:1 there is no room
+    // to crowd — the only other participant is the person who asked.
+    expect(AgentMessageService.isOneToOnePod('agent-room')).toBe(true);
+    expect(AgentMessageService.isOneToOnePod('agent-dm')).toBe(true);
+  });
+
+  it('does NOT exempt agent-admin, which is N:1 and therefore a shared room', () => {
+    // Matches DM_POD_TYPES_GUARD's deliberate exclusion (ADR-001 3.10):
+    // several admins, one agent — so crowding is real there.
+    expect(AgentMessageService.isOneToOnePod('agent-admin')).toBe(false);
+  });
+
+  it('does not exempt ordinary pods, or a missing type', () => {
+    expect(AgentMessageService.isOneToOnePod('chat')).toBe(false);
+    expect(AgentMessageService.isOneToOnePod(undefined)).toBe(false);
+    expect(AgentMessageService.isOneToOnePod(null)).toBe(false);
+  });
+});
