@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- C ring: identical geometry to commonly-mark.svg so the family shares one silhouette -->
+  <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+  <!-- Explicit chat bubble with tail, dots knocked out even-odd as true negative space.
+       Dot geometry (r 2.4 at x 25/32/39, y 32) is identical to the minimal mark:
+       the typing-ellipsis animation target never moves between variants.
+       Legible at >=56px only; below that use commonly-mark.svg. -->
+  <path fill-rule="evenodd" fill="currentColor"
+        d="M 28.07 42.81 A 11.5 11.5 0 1 0 20.89 34.98 L 20.69 43.31 Z
+           M 22.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z
+           M 29.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z
+           M 36.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z"/>
+</svg>
