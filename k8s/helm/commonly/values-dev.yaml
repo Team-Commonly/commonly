@@ -148,7 +148,19 @@ externalSecrets:
 
 agents:
   clawdbot:
-    enabled: true
+    # PARKED 2026-08-20 (Sam) — the moltbot tier is retiring in favour of
+    # pi/OpenCode wrapper adapters (ADR-021/ADR-023, #1050). Its credential
+    # stack had been dead since 2026-07-02 — both cluster codex tokens expired,
+    # OpenRouter 401 "User not found" — and nobody noticed for seven weeks,
+    # because the native and BYO tiers never touch those credentials.
+    #
+    # This flag is the durable half of the park. The manual
+    # `kubectl scale --replicas=0` alone would be UNDONE by the next Deploy Dev,
+    # because the template hardcodes `replicas: 1` behind this flag and helm
+    # upgrade restores whatever the chart declares. Identity continuity holds
+    # either way: User rows, memory, and installations survive (ADR-001), so
+    # the same agents return as themselves on the replacement runtime.
+    enabled: false
     image:
       repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
       tag: "20260414192025"
