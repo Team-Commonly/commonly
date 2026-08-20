@@ -859,7 +859,7 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
+    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
       // three ends, not two: the mentioning agent gets no signal its mention died,

@@ -62,6 +62,19 @@ export const classifyTrigger = (event, recentMessages) => {
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
+// These are the two event types the kernel's bot-to-bot mention dampener
+// bounds as one shared budget. Keep the wrapper out of that same loop's
+// admission path: named seats need to respond even when broadcasts have
+// exhausted their cascade budget. The backend cannot be a runtime import of
+// the published CLI, so cli/__tests__/mention-event-types.contract.test.mjs
+// imports both modules and pins the two lists together.
+//
+// Agent-DM wakes also arrive as chat.mention, but carry payload.dmKind. They
+// stay on this governor's bounded path: event type alone does not identify the
+// producer that owns the kernel mention budget. dm.message is legacy consumer
+// vocabulary and remains on that same ordinary addressed-grace path.
+export const MENTION_EVENT_TYPES = new Set(['chat.mention', 'thread.mention']);
+
 // ── cascade governor ────────────────────────────────────────────────────────
 
 export const CASCADE_DEFAULTS = Object.freeze({
@@ -213,9 +226,24 @@ export const createCascadeGovernor = ({
   };
 
   return {
-    admit(podId, trigger, eventType) {
+    admit(podId, trigger, eventType, payload = {}) {
       if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
+      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
+      if (MENTION_EVENT_TYPES.has(eventType) && !payload?.dmKind) {
+        // Named mentions are bounded upstream by the kernel's shared
+        // bot-to-bot mention dampener. A DM emits chat.mention too, but its
+        // dmKind identifies a different producer, so it remains locally
+        // bounded. Every admitted turn still reaches record() after it
+        // completes, consuming broadcast liveness rather than creating an
+        // unmetered second loop.
+        return {
+          allowed: true,
+          streak: s.streak,
+          addressed,
+          graceApplied: false,
+        };
+      }
       // Being NAMED outranks a mechanical brake — the same judgement the claim
       // path already makes forty lines down in agent.js. Without this, a peer
       // can @mention a capped seat and get silence, with no signal to either
@@ -223,11 +251,9 @@ export const createCascadeGovernor = ({
       // 51 wakes and 28 consecutive cap refusals, five of them chat.mention,
       // and answered none of them.
       //
-      // A GRACE, not an exemption: an unbounded pass would restore the exact
-      // A-mentions-B-mentions-A echo this governor exists to kill. Addressed
-      // turns still count toward the streak, so a mention loop terminates at
-      // cap + addressedGrace instead of never.
-      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
+      // Legacy direct-address events retain a GRACE, not an exemption. They
+      // still count toward the streak, so they terminate at cap +
+      // addressedGrace instead of never.
       const limit = addressed ? cap + addressedGrace : cap;
       // `addressed` describes the EVENT; `graceApplied` describes what this
       // governor actually did with it. They diverge whenever addressedGrace is
