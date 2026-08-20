@@ -62,18 +62,37 @@ export const classifyTrigger = (event, recentMessages) => {
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
-// These are the two event types the kernel's bot-to-bot mention dampener
-// bounds as one shared budget. Keep the wrapper out of that same loop's
-// admission path: named seats need to respond even when broadcasts have
-// exhausted their cascade budget. The backend cannot be a runtime import of
-// the published CLI, so cli/__tests__/mention-event-types.contract.test.mjs
-// imports both modules and pins the two lists together.
-//
-// Agent-DM wakes also arrive as chat.mention, but carry payload.dmKind. They
-// stay on this governor's bounded path: event type alone does not identify the
-// producer that owns the kernel mention budget. dm.message is legacy consumer
-// vocabulary and remains on that same ordinary addressed-grace path.
-export const MENTION_EVENT_TYPES = new Set(['chat.mention', 'thread.mention']);
+/**
+ * The subset of ADDRESSED that already has a PRODUCER-side bound, and is
+ * therefore exempt from this consumer-side cap.
+ *
+ * Derived, never retyped. @pod-architect's condition when ruling on the shape:
+ * two lists stating one rule drift the next time a mention type is added, and
+ * the drift is silent. Anything ending `.mention` is a mention; that is the
+ * rule, so it is written once as the rule.
+ *
+ * Why mentions specifically. `agentMentionService.isLoopDampened` counts events
+ * of `$in: MENTION_EVENT_TYPES` per (target, instance, pod) inside a window and
+ * suppresses bot→bot mention loops before they are ever enqueued. So a mention
+ * cascade is already bounded at the source, and this cap is a second brake on
+ * the one class that does not need it — while being the brake that actually
+ * fires. @ux-lead took two `chat.mention` refusals mid-thread while peers were
+ * naming it, and could not afterwards say which mentions it had missed.
+ *
+ * Why NOT the whole ADDRESSED set: `dm.message` has no producer-side dampener,
+ * so exempting it would remove the ONLY bound on agent↔agent DM ping-pong —
+ * precisely the cascade this governor exists for, in the one place with no
+ * second guard. @pod-architect caught that in their own first proposal.
+ *
+ * Note for whoever revisits: `thread.mention` is currently DECLARED AND NEVER
+ * EMITTED, so today this exempts exactly one live type, `chat.mention`. That is
+ * deliberate — when threading (#1045) starts emitting `thread.mention`, it
+ * inherits the exemption automatically, which is the correct default for a
+ * type that will carry the same producer-side dampener.
+ */
+export const MENTION_EVENT_TYPES = new Set(
+  [...ADDRESSED_EVENT_TYPES].filter((type) => type.endsWith('.mention')),
+);
 
 // ── cascade governor ────────────────────────────────────────────────────────
 
@@ -226,24 +245,9 @@ export const createCascadeGovernor = ({
   };
 
   return {
-    admit(podId, trigger, eventType, payload = {}) {
+    admit(podId, trigger, eventType) {
       if (trigger !== 'agent') return { allowed: true, streak: 0, addressed: false };
       const s = stateFor(podId);
-      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
-      if (MENTION_EVENT_TYPES.has(eventType) && !payload?.dmKind) {
-        // Named mentions are bounded upstream by the kernel's shared
-        // bot-to-bot mention dampener. A DM emits chat.mention too, but its
-        // dmKind identifies a different producer, so it remains locally
-        // bounded. Every admitted turn still reaches record() after it
-        // completes, consuming broadcast liveness rather than creating an
-        // unmetered second loop.
-        return {
-          allowed: true,
-          streak: s.streak,
-          addressed,
-          graceApplied: false,
-        };
-      }
       // Being NAMED outranks a mechanical brake — the same judgement the claim
       // path already makes forty lines down in agent.js. Without this, a peer
       // can @mention a capped seat and get silence, with no signal to either
@@ -251,9 +255,37 @@ export const createCascadeGovernor = ({
       // 51 wakes and 28 consecutive cap refusals, five of them chat.mention,
       // and answered none of them.
       //
-      // Legacy direct-address events retain a GRACE, not an exemption. They
-      // still count toward the streak, so they terminate at cap +
-      // addressedGrace instead of never.
+      // The grace was not enough, and the reason is that it was the wrong
+      // instrument. A MENTION is exempt outright, because it already has a
+      // producer-side bound: `agentMentionService.isLoopDampened` suppresses
+      // bot→bot mention loops before they are enqueued. Capping mentions here
+      // is a second brake on the one class that does not need one — and it is
+      // the brake that fires. @ux-lead lost two `chat.mention` events mid-
+      // thread while peers were naming it.
+      //
+      // This does NOT restore the A-mentions-B echo the earlier comment warned
+      // about: that echo is exactly what `isLoopDampened` kills, at the source,
+      // and it kills it for bot→bot only, so a HUMAN naming a seat is never
+      // dampened at either layer. Which is the intended behaviour — being named
+      // by a person should always reach the seat.
+      //
+      // `dm.message` stays capped. It is ADDRESSED but has no producer-side
+      // dampener, so this cap is the only bound on agent↔agent DM ping-pong.
+      // Exempting the whole ADDRESSED set would have removed it.
+      //
+      // A mention still COUNTS toward the streak via record() — it just cannot
+      // be refused. So a mention storm still tightens the budget for ambient
+      // wakes; it simply never silences the person doing the naming.
+      if (MENTION_EVENT_TYPES.has(eventType)) {
+        return {
+          allowed: true,
+          streak: s.streak,
+          addressed: true,
+          graceApplied: false,
+          mentionExempt: true,
+        };
+      }
+      const addressed = ADDRESSED_EVENT_TYPES.has(eventType);
       const limit = addressed ? cap + addressedGrace : cap;
       // `addressed` describes the EVENT; `graceApplied` describes what this
       // governor actually did with it. They diverge whenever addressedGrace is
