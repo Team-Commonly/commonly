@@ -54,8 +54,24 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
       offset: parseInt(offset, 10),
     });
 
+    // The moltbot tier is PARKED (#1050): its gateway runs at zero replicas
+    // and its credentials died 2026-07-02. Offering its agents in the hire
+    // catalog sells a seat nothing will ever answer from — a user installs
+    // NewsHound, mentions it, and gets the exact silent-dead-seat experience
+    // the park exists to stop pretending about. Registry rows carry no runtime
+    // discriminator (all 45 are unset), so the canonical AGENT_TYPES map is
+    // the filter. When the pi/OpenCode adapters revive these identities under
+    // a new runtime, the map entry changes and they reappear here on their
+    // own — deprecation follows the runtime, not a hand-kept list.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentIdentityService = require('../../services/agentIdentityService');
+    const listable = agents.filter((a: any) => {
+      const cfg = AgentIdentityService.getAgentTypeConfig(a.agentName);
+      return !cfg || cfg.runtime !== 'moltbot';
+    });
+
     res.json({
-      agents: agents.map((a: any) => ({
+      agents: listable.map((a: any) => ({
         name: a.agentName,
         displayName: a.displayName,
         description: a.description,
@@ -65,7 +81,7 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
         stats: a.stats,
         iconUrl: a.iconUrl,
       })),
-      total: agents.length,
+      total: listable.length,
     });
   } catch (error) {
     console.error('Error listing agents:', error);
