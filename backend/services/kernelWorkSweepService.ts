@@ -41,6 +41,12 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const KERNEL_ACTOR = 'kernel-sweep';
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 
+// MUST match the cron cadence in schedulerService ('4,14,24,... * * * *' =
+// every 10 minutes). The newly-actionable window is one sweep period: wider
+// re-wakes standing stock, narrower drops rows that landed between passes.
+// If the cron cadence changes, this changes with it — they are one decision.
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+
 // How many found items a wake names inline. More than this and the wake stops
 // being "here is your work" and becomes a report; the seat can list the board
 // itself once it knows there is a reason to.
@@ -67,8 +73,12 @@ class KernelWorkSweepService {
    * The lapsed-lease predicate, matching the claim CAS's two expiry branches
    * (tasksApi.claimableConditions). Duplicated as data rather than imported
    * because importing the route module here would drag express middleware into
-   * the scheduler; the contract test in tasksApi's suite pins the two shapes
-   * together the same way the CLI/backend mention lists are pinned.
+   * the scheduler. The contract pin lives in
+   * __tests__/unit/services/kernelWorkSweepService.test.js ("lapsed contract"):
+   * a SUBSET assertion — these two branches deep-equal the last two entries of
+   * claimableConditions(now) — because the shapes are deliberately not equal
+   * (the claim CAS also admits pending and self-renewal). Mutation-probed red
+   * before it shipped; see the PR body.
    */
   static lapsedConditions(now: Date): Record<string, unknown>[] {
     return [
@@ -130,11 +140,23 @@ class KernelWorkSweepService {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const { notifyFoundWork } = require('./taskEventService');
 
-    // Pods with any actionable row: pending+unassigned. (Just-rescued rows are
-    // pending+unassigned by construction, so they are covered here without a
-    // separate channel.)
+    // NEWLY actionable only — fable's gate one on this PR. Without the window,
+    // newly-actionable is indistinguishable from standing stock, and a pod with
+    // one unloved unassigned task gets a kernel wake EVERY pass, forever: the
+    // turn-burner this service exists to kill, reborn one layer down. A task
+    // every seat declined once is deliberately unclaimed; re-nagging is not
+    // discovery. Rescued rows enter the window because the rescue's
+    // findOneAndUpdate bumps updatedAt (Task has timestamps: true), so they
+    // still need no separate channel.
+    const since = new Date(now.getTime() - SWEEP_INTERVAL_MS);
     const actionable = await Task.aggregate([
-      { $match: { status: 'pending', $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }] } },
+      {
+        $match: {
+          status: 'pending',
+          updatedAt: { $gte: since },
+          $or: [{ assignee: null }, { assignee: '' }, { assignee: { $exists: false } }],
+        },
+      },
       { $group: { _id: '$podId', tasks: { $push: { taskId: '$taskId', title: '$title' } }, count: { $sum: 1 } } },
     ]) as Array<{ _id: unknown; tasks: Array<{ taskId?: string; title?: string }>; count: number }>;
 
