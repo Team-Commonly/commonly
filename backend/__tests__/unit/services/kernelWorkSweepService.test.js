@@ -21,6 +21,18 @@ jest.mock('../../../services/taskEventService', () => ({
   notifyFoundWork: (...args) => mockNotifyFoundWork(...args),
 }));
 
+// The contract pin below requires routes/tasksApi for its claimableConditions
+// export, and the route module drags express middleware at load —
+// middleware/auth pulls jsonwebtoken, whose buffer-equal-constant-time dep
+// crashes on Node 26 before any test registers (the incompat #1029's revert
+// note recorded). Mocked exactly the way the tasksApi route suites already do;
+// none of these mocks touch the pure function under test.
+jest.mock('../../../middleware/auth', () => (req, res, next) => next());
+jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../services/githubAppService', () => ({ isPatConfigured: jest.fn(() => false) }));
+
 const Task = require('../../../models/Task');
 const KernelWorkSweepService = require('../../../services/kernelWorkSweepService');
 
@@ -120,6 +132,21 @@ describe('sweep', () => {
     expect(result.woken).toBe(1);
   });
 
+  it('matches only NEWLY actionable rows — standing stock is never re-nagged', async () => {
+    // fable's gate one. Without the updatedAt window, a pod with one unloved
+    // unassigned task gets a kernel wake EVERY pass forever — the turn-burner
+    // reborn. A task every seat declined once is deliberately unclaimed.
+    Task.aggregate.mockResolvedValue([]);
+
+    await KernelWorkSweepService.sweep(NOW);
+
+    const [pipeline] = Task.aggregate.mock.calls[0];
+    const match = pipeline[0].$match;
+    expect(match.updatedAt).toBeDefined();
+    expect(match.updatedAt.$gte).toEqual(new Date(NOW.getTime() - 10 * 60 * 1000));
+    expect(match.status).toBe('pending');
+  });
+
   it('names at most five items inline — a longer wake is a report, not a wake', async () => {
     const many = Array.from({ length: 9 }, (_, i) => ({ taskId: `TASK-${i}`, title: `t${i}` }));
     Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: many, count: 9 }]);
@@ -140,5 +167,29 @@ describe('sweep', () => {
     expect(result).toEqual({ scannedPods: 0, rescued: 0, woken: 0, skippedNoWork: 0 });
     expect(Task.find).not.toHaveBeenCalled();
     expect(mockNotifyFoundWork).not.toHaveBeenCalled();
+  });
+});
+
+describe('lapsed contract — the sweep and the claim CAS agree on what lapsed means', () => {
+  // A SUBSET assertion, not toEqual: claimableConditions has four branches
+  // (pending, self-renewal, and the two expiry ones); lapsedConditions is only
+  // the expiry pair. Equality on the whole would simply always fail (fable,
+  // 56080). The pin is that the sweep's definition deep-equals the LAST TWO
+  // entries of the claim CAS's — same fields, same operators, same lease
+  // arithmetic — so "claimable by a peer" and "rescued by the kernel" can
+  // never quietly mean different things.
+  //
+  // Mutation-probed before shipping (fable, 56081): with the sweep's lease
+  // constant changed to 31 minutes, this test went red on the claimedAt date.
+  // It is not a test that can only pass.
+  it('lapsedConditions deep-equals the two expiry branches of claimableConditions', () => {
+    // eslint-disable-next-line global-require
+    const { claimableConditions } = require('../../../routes/tasksApi');
+    const now = new Date('2026-08-20T20:00:00Z');
+
+    const sweep = KernelWorkSweepService.lapsedConditions(now);
+    const cas = claimableConditions(now);
+
+    expect(sweep).toEqual(cas.slice(-2));
   });
 });
