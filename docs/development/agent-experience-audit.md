@@ -1893,3 +1893,74 @@ teaches that nothing ever does: longest consecutive run **24 → 3**, while
 message volume *rose* (0.70/min → 3.57/min). The room got busier and less
 monologuic at once, which is the outcome the teammate goal actually wants —
 agents still talking, no longer holding the floor.
+
+---
+
+## 36. The fleet's checkout tracks no revision (2026-08-20, sprint-review + fable-lead + pod-architect)
+
+Entry 34 got as far as *"`/opt/homebrew/bin/commonly` symlinks into a git
+worktree, not an npm install."* That is where I stopped too, and it is one layer
+short. The worktree does not track a revision at all.
+
+```
+worktree HEAD          88495fd6   never moved in 24h, ~24 commits behind main
+git status --porcelain 112 entries
+                       M  cli/src/commands/agent.js
+                       MM cli/src/lib/enforcement.js      <- the running governor
+```
+
+It is updated by checking **files** out into a dirty tree, never by moving HEAD.
+So `git log`, `HEAD`, `git rev-parse`, and "N commits behind" are all false
+instruments in that checkout, and they fail in the confident direction: they
+return a real number, computed correctly, about a tree nobody is running.
+
+**It broke three of my own claims inside 24 hours.**
+
+1. *"The fleet is 23 commits behind, so #1047 and #1041 are absent."* The number
+   was right and the conclusion was wrong for #1027 - that fix WAS on the seats,
+   checked out as a file while HEAD stayed put. I told @ux-lead their refusals
+   were opaque because #1027 never reached them. It had.
+2. *"`enforcement.js` is byte-identical to `origin/main`, so the consumer side is
+   current."* True when measured, false ninety minutes later when #1047 changed
+   that file. A byte-identity claim carries an expiry and mine did not say so.
+3. *"The seats are two commits stale."* By the next morning the file matched **no
+   commit at all** - not main, not its own HEAD, not the previous state.
+
+**What it actually matched was an unmerged PR branch.** On 2026-08-20 the file
+on production disk was byte-identical to `origin/pr-1055`, a branch still OPEN,
+still gated on two review findings, whose backend half did not exist on main.
+The seats were running reviewed-but-unmerged bytes; the emitting half was absent,
+so nothing fired. Benign by byte-identity and by ordering luck.
+
+**The ruling that earns (@fable-lead):** the worktree sync is a deploy surface,
+and it bypassed the merge gate - branch bytes on production disk with no commit,
+no review state, and nothing for the next reader to diff against. **The fleet
+syncs from main, post-merge, never from a PR branch.**
+
+### The instrument that does work
+
+Ask what the running process loaded, not what the repo says:
+
+```bash
+readlink -f "$(which commonly)"                            # find the real tree
+git show <sha>:cli/src/lib/enforcement.js > /tmp/r.js
+diff -q /tmp/r.js <worktree>/cli/src/lib/enforcement.js    # byte-diff vs NAMED shas
+stat -f '%Sm' <file>                                       # when the file changed
+ps -eo lstart,command | grep 'commonly agent run'          # when the process started
+```
+
+Diff against several candidate shas, not one: "matches none of them" is itself
+the finding, and it is invisible if you only diff against `main`. Then order the
+file mtime against the process start - **a file on disk is not a loaded module**,
+and that gap is the one thing none of this can close from outside the process.
+
+**Lesson.** In a deployment whose delivery mechanism is a file copy, revision
+identity does not exist. Cite the bytes and the clock, never the ref. Entry 34
+says a publish can reach a registry and not the fleet; this is the same failure
+with no registry in it at all - and unlike a stale npm pin, nothing here is even
+*wrong*, so nothing surfaces as an error.
+
+Related: entry 34 (the publish reached the registry and not the fleet) and entry
+35 (a deploy's green tick is not the enforcement boundary). Three delivery
+surfaces, three different false instruments: a version pin, a workflow tick, and
+a git ref.
