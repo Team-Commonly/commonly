@@ -34,7 +34,15 @@ No palette move, no chrome mood, no dark-mode detour. Character is added strictl
 
 ### 2. Motion identity derived from the mark
 
-The discovery this direction is built on: **the mark's three dots are the typing ellipsis, and the typing-dot stagger (`v2-typing-dot`, 1.2s ease-in-out, 0.18s stagger) is the only animation the design system permits in app chrome.** The brand mark contains the product's one allowed animation. That is an ownable identity we get nearly free:
+The discovery this direction is built on: **the mark's three dots are the typing ellipsis, and the typing-dot stagger (`v2-typing-dot`, 1.2s ease-in-out, 0.18s stagger) is the only *identity* animation in app chrome.** The brand mark contains the product's one branded rhythm. That is an ownable identity we get nearly free.
+
+*(Correction, 2026-08-20, after sprint-review's census: v2.css ships three animations — `v2-typing-dot` :1775, `v2-now-pulse` :2983, `v2-spin` :5147. The sentence above was written as if it were a census and is wrong as one. The normative rule is scoped below: the two state affordances stay.)*
+
+**The identity/state boundary — the rule, stated so nobody re-derives it:**
+
+- `v2-spin` (loading) and `v2-now-pulse` (liveness) are **state affordances, not identity**. They stay exactly as they are. Replacing an inline spinner or the liveness dot with the mark's three dots is a behaviour change, and a harmful one: three staggered dots inside a chat shell culturally mean *someone is typing*. A "loading" spinner that reads as typing teaches a false model — the motion version of copy whose certainty exceeds the system's.
+- The mark's stagger is permitted only where the surface is **brand-scale or the semantics genuinely are "composing"**: first load / app boot (no chat visible yet, nothing to misread), empty states (mark at rest), and agent-thinking (which *is* typing — identity and state coincide there, which is the whole trick).
+- Inline micro-states — button spinners, list fetches, send-in-flight, the inspector's now-pulse — never take the mark.
 
 - **Loading is the mark breathing.** The dead moment before first paint becomes the mark with its dots running the existing stagger. Skeletons stay for content regions; the mark-pulse replaces the *nothing* moment.
 - **Thinking is the same rhythm.** The agent-typing indicator and the mark's dots become one gesture — same dot size ratio, same cadence.
@@ -88,7 +96,8 @@ One character IP derived from the C-bubble (per Sam's ip-as-logo reference) may 
 ## Guardrails — what this direction is not
 
 - No theme or palette change; the accent stays `#2f6feb` and stays alone.
-- No new animation classes in app chrome. The typing stagger is the only rhythm; if a moment can't be expressed with it, the moment stays still.
+- No new animation classes in app chrome. The typing stagger is the only *identity* rhythm; `v2-spin` and `v2-now-pulse` remain as state affordances (see the identity/state boundary in §2). If a mood moment can't be expressed with the stagger, the moment stays still.
+- Motion timing enters the design system rather than living only in `v2.css`: `tokens.css` gains duration/easing tokens (`--motion-stagger: 0.18s`, `--motion-breath: 1.2s`, easings), and the three existing keyframes consume them. tokens.css currently declares no animations at all — the rule this doc states would otherwise live nowhere the design system can defend it.
 - No per-agent illustration, no emoji in product copy, no stock art — unchanged README rules.
 - Marketing-surface motion rules (the 2026-07-03 carve-out) are unchanged by this direction.
 - The first-contact funnel number (41% never-type) is the success metric. Re-measure after items 1–4 ship; if the number doesn't move, the next investment is first-message coaching, not more mood.
