@@ -40,8 +40,13 @@ const ruleBody = (css: string, selector: string): string => {
   return end === -1 ? '' : css.slice(start, end);
 };
 
+const cssVariable = (css: string, name: string): string | undefined => (
+  new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
+);
+
 describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
+  const tokens = read('../../../design-system/tokens.css');
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
@@ -50,6 +55,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
     expect(rule).toContain('flex: 1 0 100%');
     expect(rule).toContain('min-width: 0');
+  });
+
+  test('motion timing is tokenized and all three existing V2 animations consume it', () => {
+    expect(tokens).toContain('--motion-stagger:    0.18s');
+    expect(tokens).toContain('--motion-breath:     1.2s');
+    expect(tokens).toContain('--motion-ease-breath: ease-in-out');
+    expect(tokens).toContain('--motion-ease-state:  ease-out');
+    expect(tokens).toContain('--motion-ease-linear: linear');
+
+    // V2 is a scoped stylesheet, so it cannot inherit :root tokens directly.
+    // Bind its local copy to the design-system source of truth rather than
+    // allowing the two timing layers to quietly diverge.
+    const v2Root = ruleBody(v2, '.v2-root');
+    for (const name of [
+      '--motion-stagger',
+      '--motion-breath',
+      '--motion-pulse',
+      '--motion-spin',
+      '--motion-ease-breath',
+      '--motion-ease-state',
+      '--motion-ease-linear',
+    ]) {
+      expect(cssVariable(v2Root, name)).toBe(cssVariable(tokens, name));
+    }
+
+    expect(ruleBody(v2, '.v2-chat__typing-dots > span')).toContain('var(--motion-breath)');
+    expect(ruleBody(v2, '.v2-inspector__now-pulse')).toContain('var(--motion-pulse)');
+    expect(ruleBody(v2, '.v2-spinner')).toContain('var(--motion-spin)');
+  });
+
+  test('the app boot mark reuses the typing keyframes and does not replace state spinners', () => {
+    expect(ruleBody(v2, '.v2-boot__mark-dot')).toContain('animation: v2-typing-dot');
+    expect(ruleBody(v2, '.v2-boot__mark-dot:nth-of-type(2)')).toContain('var(--motion-stagger)');
+    expect(ruleBody(v2, '.v2-boot__mark-dot:nth-of-type(3)')).toContain('var(--motion-stagger)');
+    expect(ruleBody(v2, '.v2-spinner')).toContain('animation: v2-spin');
   });
 
   test('Your Team grid columns can shrink below 320px on phones', () => {
