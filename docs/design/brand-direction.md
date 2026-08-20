@@ -1,6 +1,6 @@
 # Brand direction — character within the system
 
-**Status:** agreed direction (Sam's constraints, 2026-08-20; ux-lead + sprint lead concurred 1:1). Presented to the sprint pod 2026-08-20.
+**Status:** agreed direction (Sam's constraints, 2026-08-20; ux-lead + sprint lead concurred 1:1). Presented to the sprint pod 2026-08-20. §2 amended same day after sprint-review's animation census; §3 superseded same day by Sam's species-avatar ruling (#1054).
 **Owners:** ux-lead (design authority) · sprint-impl (implementation).
 **Companions:** `frontend/design-system/README.md` (the system this stays inside) · `frontend/design-system/preview/brand-logo.html` (browser-reviewable mark family).
 
@@ -50,11 +50,17 @@ The discovery this direction is built on: **the mark's three dots are the typing
 
 No new animation vocabulary is created. The one permitted rhythm is reused everywhere character is needed.
 
-### 3. Avatars: initials are the system; illustration is a scarce, earned tier
+### 3. Avatars: species characters are the default; initials are the fallback tier
 
-- The per-identity system is **seeded gradient + initials** (#1040, with the parenthetical-initials fix from #1043). Attribution is the avatar's first job, and at 24px in a dense stream, tint + initials beats any illustration at answering "who spoke."
-- **Illustrated character does not scale as a default.** Every marketplace/BYO install would need art; auto-assignment collides (two agents wearing the same fox is worse than two sharing a teal); generated art recreates the exact non-derivability problem this direction exists to fix. Twenty-eight characters is a zoo unless one hand draws them all.
-- **The earned tier:** first-party named agents may later receive hand-made illustrated identity, surfaced at large sizes only (Agent Hub cards, hire flow, marketplace detail) — never as the chat-stream avatar. This ruling is now encoded in the design-system README (Imagery vibe section, via #1040).
+*(Superseded 2026-08-20 by Sam's ruling, same day this doc first shipped — the earlier text here made characters a "scarce earned tier." The founder call overrides it, and coherently: the original zoo objection was to per-install art production, and seeded deterministic SVG has none of those costs.)*
+
+- **Humans render DiceBear *Big Smile* faces; agents render *Bottts* robots** — the chat-stream default, not an earned tier. Face = person, robot = agent: the species IS the badge, where most agent-team products need a label.
+- **What makes it shippable:** deterministic, local, seeded SVG. Same seed → same face, forever; install #10,000 costs what install #1 did. No art pipeline, no image API, no generation drift.
+- **Seeds are stable identity, never display names** — `agentName:instanceId` for agents, userId for humans — so a rename never re-rolls a face. One canonical seed per identity across every surface; a character that differs between chat and the Agent Hub is an attribution bug, not a variant.
+- **Tier order: photo → character → gradient+initials.** Unknown kind renders the neutral initials tier — nothing ever guesses a species, because mislabeling the tier mislabels the *person*. The initials tier (#1040/#1043) remains load-bearing as the fallback and the spec for any surface that cannot know what it is drawing.
+- **The original attribution principle stands at stream sizes:** verified in-browser 2026-08-20, the species read survives 22px; *individual* recognition degrades below ~28px and that is fine — it was never the avatar's job at small sizes (it is the name label's), same as under initials.
+- **License:** Big Smile is CC BY 4.0 (creator: Ashley Seo) — the visible DiceBear credit is a license requirement, not decoration. Bottts (Pablo Stanley) is free for commercial use. Any style swap re-checks license and credit together.
+- Implementation: #1054; execution review (canonical seed helper, soft same-hue backing, 96px profile hero) recorded on the PR.
 
 ### 4. The logo family is vector, canonical, and two-fidelity
 
@@ -98,6 +104,6 @@ One character IP derived from the C-bubble (per Sam's ip-as-logo reference) may 
 - No theme or palette change; the accent stays `#2f6feb` and stays alone.
 - No new animation classes in app chrome. The typing stagger is the only *identity* rhythm; `v2-spin` and `v2-now-pulse` remain as state affordances (see the identity/state boundary in §2). If a mood moment can't be expressed with the stagger, the moment stays still.
 - Motion timing enters the design system rather than living only in `v2.css`: `tokens.css` gains duration/easing tokens (`--motion-stagger: 0.18s`, `--motion-breath: 1.2s`, easings), and the three existing keyframes consume them. tokens.css currently declares no animations at all — the rule this doc states would otherwise live nowhere the design system can defend it.
-- No per-agent illustration, no emoji in product copy, no stock art — unchanged README rules.
+- No hand-drawn per-agent art production — seeded deterministic characters are the system (§3); a commissioned character set is not, and never becomes an install-time requirement. No emoji in product copy, no stock art — unchanged README rules.
 - Marketing-surface motion rules (the 2026-07-03 carve-out) are unchanged by this direction.
 - The first-contact funnel number (41% never-type) is the success metric. Re-measure after items 1–4 ship; if the number doesn't move, the next investment is first-message coaching, not more mood.
