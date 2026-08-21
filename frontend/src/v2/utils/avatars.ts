@@ -173,19 +173,29 @@ const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
 // ears, which is the wrong register for a colleague's face.
 const ACCESSORIES = ['glasses', 'sunglasses', 'mustache'] as const;
 
-// Picker cells are seeded `<base>-v1` … `<base>-v8` (see presetCharacterOptions
-// in utils/avatarUtils). Deriving the pinned traits from that suffix keeps the
-// stored value a plain seed — the id round-trips through the existing scheme
-// with zero storage or backend changes. (`as const` + spreads throughout:
-// dicebear types these fields as literal-union arrays, so a widened string[]
-// does not compile.)
+// Picker cells are seeded `<base>-v1` … `<base>-v16` (see
+// presetCharacterOptions in utils/avatarUtils). Deriving the pinned traits
+// from that suffix keeps the stored value a plain seed — the id round-trips
+// through the existing scheme with zero storage or backend changes.
+// (`as const` + spreads throughout: dicebear types these fields as
+// literal-union arrays, so a widened string[] does not compile.)
+//
+// 16 cells = the full tone × presentation matrix. v1–v8 keep the meaning they
+// shipped with (tone i, alternating groups) so picks already stored render
+// identically; v9–v16 revisit each tone with the OPPOSITE presentation, so
+// every tone appears with both.
+export const PICKER_CELL_COUNT = 16;
+
 const variantTraits = (key: string) => {
-  const m = /-v([1-8])$/.exec(key);
+  const m = /-v([1-9]|1[0-6])$/.exec(key);
   if (!m) return {};
   const idx = Number(m[1]) - 1;
+  const tone = idx % PICKER_SKIN_TONES.length;
+  const flip = idx >= PICKER_SKIN_TONES.length;
+  const longer = (tone % 2 === 0) !== flip;
   return {
-    skinColor: [PICKER_SKIN_TONES[idx]],
-    hair: idx % 2 === 0 ? [...HAIR_LONGER] : [...HAIR_SHORTER],
+    skinColor: [PICKER_SKIN_TONES[tone]],
+    hair: longer ? [...HAIR_LONGER] : [...HAIR_SHORTER],
   };
 };
 
