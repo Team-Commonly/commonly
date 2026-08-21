@@ -14,7 +14,25 @@ const {
   userHasPodAccess,
 } = require('./helpers');
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { rateLimit } = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+
 const catalogRouter = express.Router();
+
+// ~120 req/min/IP, same shape as agentProfile's limiter: generous for a
+// human browsing the catalog, low enough to blunt scrapers now that every
+// listing request may also cost a role lookup. Skipped in tests.
+catalogRouter.use(rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
+}));
 
 const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
   const installations = await AgentInstallation.find({
@@ -46,9 +64,21 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
       q, category, verified, registry, limit = 20, offset = 0,
     } = req.query;
 
+    // ADR-022 leak, Phase 0 fix: 31 of 45 active registry rows are smoke
+    // seats, fleet internals, and personal wrappers — never a hire option.
+    // The verified flag is already the curation boundary in the data, so
+    // non-admins get verified-only REGARDLESS of query params; only admins
+    // (registry ops tooling) may list the rest. Role comes from the DB, not
+    // req.user — JWT sessions carry { id } only (the #1065 lesson).
+    let verifiedFilter = parseVerifiedFilter(verified);
+    if (verifiedFilter !== true) {
+      const caller = await User.findById(req.userId).select('role').lean();
+      if ((caller as { role?: string } | null)?.role !== 'admin') verifiedFilter = true;
+    }
+
     const agents = await AgentRegistry.search(q, {
       category,
-      verified: parseVerifiedFilter(verified),
+      verified: verifiedFilter,
       registry: registry || null,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
