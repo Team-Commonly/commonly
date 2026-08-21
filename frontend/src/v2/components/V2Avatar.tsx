@@ -1,5 +1,5 @@
 import React from 'react';
-import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
+import { getAvatarSrc } from '../../utils/avatarUtils';
 import {
   characterAvatarFor, gradientFor, initialsFor, AvatarKind,
 } from '../utils/avatars';
@@ -46,7 +46,16 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   const initials = initialsFor(seed);
   const display = title || seed || undefined;
   const rawSrc = typeof src === 'string' && src.trim().length > 0 ? src.trim() : null;
-  const cleanSrc = normalizeUploadUrl(rawSrc) || null;
+  // getAvatarSrc, NOT normalizeUploadUrl. Every User row's profilePicture
+  // defaults to the literal string 'default' (models/User.ts), which
+  // normalizeUploadUrl passes through untouched — so every default-avatar user
+  // rendered <img src="default">, fired a guaranteed 404 relative to the page,
+  // and only reached the character/initials tier after the error round-trip.
+  // getAvatarSrc (the v1 util) already knows the sentinel ids ('default' and
+  // the legacy color names) mean NO IMAGE, and returns null for anything that
+  // is not a plausible image reference — no request, no flash, straight to the
+  // right tier.
+  const cleanSrc = getAvatarSrc(rawSrc) || null;
   const [imgFailed, setImgFailed] = React.useState(false);
 
   // Character tier (photo still wins, below). Memoized because the SVG build
