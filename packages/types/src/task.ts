@@ -17,8 +17,6 @@ export interface ITask {
   status: TaskStatus;
   priority?: 'low' | 'medium' | 'high';
   sourceRef?: string;
-  githubIssueNumber?: number;
-  githubIssueUrl?: string;
   prUrl?: string;
   dep?: string;
   parentTask?: string;
@@ -36,9 +34,6 @@ export interface ITaskCreateInput {
   assignee?: string;
   priority?: ITask['priority'];
   sourceRef?: string;
-  githubIssueNumber?: number;
-  githubIssueUrl?: string;
   dep?: string;
   parentTask?: string;
-  createGithubIssue?: boolean;
 }

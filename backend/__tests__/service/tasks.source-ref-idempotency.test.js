@@ -60,8 +60,8 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
     taskNum: 1,
     taskId: 'TASK-001',
     title: 'Existing task',
-    source: 'github',
-    sourceRef: 'GH#697',
+    source: 'import',
+    sourceRef: 'external:ticket:697',
     updates: [{
       text: 'Seeded for test',
       author: 'system',
@@ -76,20 +76,20 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
 
     const response = await postTask({
       title: 'Retry of existing task',
-      sourceRef: 'GH#697',
+      sourceRef: 'external:ticket:697',
     }).expect(200);
 
     expect(response.body.alreadyExists).toBe(true);
     expect(response.body.task._id).toBe(String(existing._id));
-    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'GH#697' })).toBe(1);
+    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(1);
   });
 
   it('keeps the pre-check reopen behavior for a completed task', async () => {
     const existing = await seedTask({ status: 'done', completedAt: new Date() });
 
     const response = await postTask({
-      title: 'Still-open source issue',
-      sourceRef: 'GH#697',
+      title: 'Still-active source record',
+      sourceRef: 'external:ticket:697',
       assignee: 'codex',
     }).expect(200);
 
@@ -102,7 +102,7 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
         assignee: 'codex',
       },
     });
-    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'GH#697' })).toBe(1);
+    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(1);
   });
 
   it('reconciles a sourceRef E11000 race as an idempotent 200', async () => {
@@ -112,16 +112,16 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
 
     const response = await postTask({
       title: 'Concurrent retry',
-      sourceRef: 'GH#697',
+      sourceRef: 'external:ticket:697',
     }).expect(200);
 
     expect(response.body.alreadyExists).toBe(true);
     expect(response.body.task._id).toBe(String(existing._id));
-    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'GH#697' })).toBe(1);
+    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(1);
   });
 
   it('does not misclassify a taskId E11000 as sourceRef idempotency', async () => {
-    await seedTask({ sourceRef: 'GH#different-source' });
+    await seedTask({ sourceRef: 'external:ticket:different-source' });
     const findOneSpy = jest.spyOn(Task, 'findOne');
     // The sourceRef pre-check legitimately finds no match. Then force the
     // nextTaskId read to miss the existing TASK-001 so Mongo raises E11000
@@ -138,13 +138,13 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
 
     const response = await postTask({
       title: 'Colliding task number',
-      sourceRef: 'GH#697',
+      sourceRef: 'external:ticket:697',
     }).expect(500);
 
     expect(response.body.alreadyExists).toBeUndefined();
     expect(response.body.error).toBe('Failed to create task');
     expect(await Task.countDocuments({ podId: pod._id, taskId: 'TASK-001' })).toBe(1);
-    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'GH#697' })).toBe(0);
+    expect(await Task.countDocuments({ podId: pod._id, sourceRef: 'external:ticket:697' })).toBe(0);
   });
 
   it('rejects an operator-shaped sourceRef before it reaches Mongo', async () => {

@@ -91,7 +91,7 @@ describe('LandingPage', () => {
 
       expect(screen.getByText('Native & External Agents')).toBeInTheDocument();
       expect(screen.getByText('Any Runtime, Any Origin')).toBeInTheDocument();
-      expect(screen.getByText('Task Board + GitHub Sync')).toBeInTheDocument();
+      expect(screen.getByText('Collaborative Task Board')).toBeInTheDocument();
       expect(screen.getByText('External Memory + Heartbeat')).toBeInTheDocument();
       expect(screen.getByText('Audit & Control')).toBeInTheDocument();
       expect(screen.getByText('Open Source')).toBeInTheDocument();

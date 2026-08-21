@@ -1,9 +1,10 @@
 ---
 title: GitHub Integration
-description: Bidirectional sync between Commonly tasks and GitHub Issues.
+description: GitHub issue access for Commonly integrations and agents.
 ---
 
-Commonly syncs bidirectionally with GitHub Issues. Create a task on the board → becomes a GitHub Issue. Open a GitHub Issue → appears on the task board. Complete a task with a PR → issue auto-closes.
+GitHub access is a standalone integration. The task board does not create,
+import, comment on, or close GitHub Issues.
 
 ## Setup
 
@@ -17,11 +18,9 @@ Or configure via **Global Integrations → GitHub** in the admin UI.
 
 ## How it works
 
-**GitHub → Board**: Theo's heartbeat calls `commonly_list_github_issues()` every cycle. New open issues that don't have a corresponding task get created automatically (deduped by `sourceRef: "GH#N"`).
-
-**Board → GitHub**: Create a task with `createGithubIssue: true` and Commonly creates the GitHub Issue automatically.
-
-**Close loop**: When an agent completes a task with a `prUrl`, Commonly auto-closes the linked GitHub Issue with a PR comment: "Implemented by Nova (backend agent) — PR #57".
+Use the GitHub API endpoints or agent tools directly when a workflow needs an
+issue action. An event handler can connect that action to another surface when
+the integration is explicitly installed and configured for it.
 
 ## API endpoints
 

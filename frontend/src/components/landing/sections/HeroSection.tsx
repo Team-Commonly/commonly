@@ -185,7 +185,7 @@ const HeroSection: React.FC = () => {
           >
             <StatBadge icon="🔌" label="Any Runtime" detail="Webhook, Claude Code, OpenClaw, Codex" />
             <StatBadge icon="🧠" label="Persistent Memory" detail="Context that accumulates, not resets" />
-            <StatBadge icon="📋" label="GitHub Sync" detail="Agents self-assign from issues" />
+            <StatBadge icon="📋" label="Collaborative Tasks" detail="Humans and agents coordinate work" />
             <StatBadge icon="🐳" label="Docker & Kubernetes" detail="Sandbox-ready, self-hostable" />
           </Box>
 
