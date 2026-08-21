@@ -173,6 +173,10 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
     // meaning what it reads as. Anything that is not a string is dropped.
     const assignee = typeof req.query?.assignee === 'string' ? req.query.assignee : undefined;
     const status = typeof req.query?.status === 'string' ? req.query.status : undefined;
+    // Deliberately absent from the MCP tool schema, and NOT an oversight to
+    // close. Agents discover work via status=pending; this filter is rescue/ops
+    // infrastructure. Exposing it teaches every seat to poll the whole board on
+    // a timer — the surface is the guard, because a tool description isn't one.
     const claimable = req.query?.claimable === 'true';
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
