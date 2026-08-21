@@ -1,9 +1,17 @@
 # Persona v2 — the phased rollout plan
 
-- **Status:** Proposed plan (drafted 2026-08-20, requested by Sam). Sequences already-ratified decisions; decides nothing new.
+- **Status:** **Adopted** (merged 2026-08-21, Sam: "can we get it moving"). Sequences already-ratified decisions; decides nothing new. Amended 2026-08-21 with the north star and Phase 5.
 - **Executes:** ADR-022 (Accepted — persona colleagues), ADR-021 (pi turn engine, M-ladder), #1045 threading ruling (fable-lead)
 - **Gated pieces:** ADR-023 D1 spike (hosted substrate), #1062 (dual-store mirror — orthogonal, does not block)
 - **The milestone in one sentence:** *hire a colleague in 60 seconds that actually answers — and moves between our cloud and your machine without losing who it is.*
+
+## North star (Sam, 2026-08-21)
+
+> *"Quickly get to a shape where a startup can use it on hand and we can use it as well, for doing all types of work across agent teams and org and roles — to fully automate the operation of Commonly."*
+
+Two customers, one shape. A **startup** hires a persona team on day one and gets working colleagues across roles (reviewer, support, ops, marketer) without touching a runtime. **Commonly itself** is customer zero: the fleet already ships PRs, reviews kernel changes, and rules on ADRs through the product — the ladder is to widen that from engineering into the whole operation (support, funnel analysis, content, deploy-watching) until running the company IS using the product. Every phase below is judged against both customers at once; a feature only one of them would use is off-plan.
+
+The dogfood evidence this builds on: the Sharpen/Dev-Team fleet operates through pods, tasks, claims, and reviews today. What it lacks — and what the phases supply — is the *hireable, role-shaped, org-aware* version of that machinery that an outsider can pick up without knowing our internals.
 
 ## Why this is the next big milestone
 
@@ -75,6 +83,21 @@ This is the "seamlessly support cloud and local" half, and it must be an **opera
 - **Activity tab, redesigned from v1's:** one chronological surface answering "what happened while I was away" — replies to you, thread activity you follow, agent runs completed, approvals waiting. This is ADR-024's shared-awareness work wearing its human face; design brief goes to ux-lead rather than being specified here.
 
 **Exit:** first-party set is 1 persona + N catalog personas; rail has one fewer button; Activity tab replaces the Community entry point.
+
+## Phase 5 — the org layer *(teams, roles, org units; design-first, after Phase 3)*
+
+The north star needs what the 2026-08-16 assessment named plainly: **no tenant model exists.** Personas give you *a* colleague; a startup runs on a *team of them with a shape* — roles that imply wake policy, tools, and deliverables (ADR-022 D3 already keys identity on exactly those three), reporting lines for escalation ("refuses outside their lane and names who to ask instead" — D3's edge rule, org-aware), and org-scoped install so hiring a team is one action, not N.
+
+Deliberately design-first and last in line, because the machinery underneath (typed hires, seats, per-user ceiling, substrate mobility) must exist before an org can be priced or projected. Contents when it opens:
+
+- **Team templates** — "startup starter": reviewer + support + ops personas placed into a role-shaped pod set in one install (ADR-001's one-install-fans-out, applied to a team).
+- **Role → policy derivation** — the role picks wake policy, tool allowlist, and deliverable shape; the org chart is config, not prose.
+- **Commonly-on-Commonly ladder** — each org capability ships by moving one more piece of OUR operation into it (support triage first; it already half-lives in pods). The exit criterion for Phase 5 is not a feature list: it is *which parts of operating Commonly no longer need a human in the loop*.
+- **Tenant boundary** — the org unit is where a future second instance / self-hosted story attaches; keep the model compatible with ADR-004 federation assumptions, decide nothing about it yet.
+
+## Design workstream (continuous, ux-lead)
+
+Sam, 2026-08-21: the persona surfaces "need some good design as well." Standing rule for this plan: every Phase 1–5 surface (persona cards, where-step, awaiting-seat, Activity tab, team templates) goes through ux-lead with the `commonly-design` skill pulled, not styled ad hoc. Already shipped under this rule: species-tinted bigSmile avatars + the 24-cell archetype picker — identity groundwork for the persona cards. First D2 step also shipped 2026-08-21: the Your-Team Hire button points at the shared catalog for everyone (the entitlement fork at `V2YourTeamPage:124` is gone; unentitled users previously had BOTH header buttons landing on the same BYO page).
 
 ## Parallel track W-T — inline threading (#1045)
 
