@@ -28,6 +28,7 @@ import V2MarketplacePage from './marketplace/V2MarketplacePage';
 import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
 import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
+import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
@@ -261,9 +262,16 @@ const V2App: React.FC = () => {
                     false,
                   )}
                 />
+                {/* Phase 1 (ADR-022 D2): the browse route sells personas.
+                    The old hub survives at agents/manage for installed-agent
+                    ops until the where-step absorbs the rest of it. */}
                 <Route
                   path="agents/browse"
-                  element={feature('Hire an agent', 'Browse and install agents from the catalog.', <AgentsHub />)}
+                  element={feature('Hire a colleague', 'Pick who joins your team — where they run comes second.', <V2PersonaCatalog />, false, false)}
+                />
+                <Route
+                  path="agents/manage"
+                  element={feature('Manage agents', 'Installed agents and registry operations.', <AgentsHub />)}
                 />
                 <Route
                   path="agents/byo"
