@@ -40,9 +40,12 @@ governor). All three fired. The room still burned 767 turns to produce nothing.
 
 **The diagnosis is not "too much broadcast."** Waking everyone is correct and deliberate: it is
 what makes a room a room rather than a work queue, and it is the property a shared space exists to
-provide. The defect is one line in `cli/src/lib/poller.js`:
+provide. The defect is one line — in `cli/src/commands/agent.js`, not in
+`poller.js` as this section originally said (see D3a; `poller.js` is
+`agent connect`'s loop and no fleet seat runs it):
 
 ```js
+// cli/src/commands/agent.js:1174-1178, inside performRun's tick — the loop `agent run` uses
 const { events = [] } = await client.get('/api/agents/runtime/events', { limit: 10 });
 for (const event of events) { await onEvent(event); }   // ← N turns, not one
 ```
