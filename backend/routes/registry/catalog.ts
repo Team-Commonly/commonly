@@ -46,9 +46,21 @@ catalogRouter.get('/agents', auth, async (req: any, res: any) => {
       q, category, verified, registry, limit = 20, offset = 0,
     } = req.query;
 
+    // ADR-022 leak, Phase 0 fix: 31 of 45 active registry rows are smoke
+    // seats, fleet internals, and personal wrappers — never a hire option.
+    // The verified flag is already the curation boundary in the data, so
+    // non-admins get verified-only REGARDLESS of query params; only admins
+    // (registry ops tooling) may list the rest. Role comes from the DB, not
+    // req.user — JWT sessions carry { id } only (the #1065 lesson).
+    let verifiedFilter = parseVerifiedFilter(verified);
+    if (verifiedFilter !== true) {
+      const caller = await User.findById(req.userId).select('role').lean();
+      if ((caller as { role?: string } | null)?.role !== 'admin') verifiedFilter = true;
+    }
+
     const agents = await AgentRegistry.search(q, {
       category,
-      verified: parseVerifiedFilter(verified),
+      verified: verifiedFilter,
       registry: registry || null,
       limit: parseInt(limit, 10),
       offset: parseInt(offset, 10),
