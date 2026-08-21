@@ -416,6 +416,21 @@ spec:
           value: {{ .Values.backend.env.agentSessionMaxSizeKb | quote }}
         {{- end }}
 
+        # Kernel work-sweep kill switch (#1080). Absent by default, so the
+        # sweep runs unless someone deliberately sets this. Helm-tracked
+        # rather than kubectl-set for the same reason as the guardrails
+        # above: a hand-set env is drift the next upgrade silently reverts.
+        #
+        # The service reads it as the STRING "true" (kernelWorkSweepService
+        # :152, lowercased), and it disables rescue AND the found-work wake
+        # together — verified by @sprint-review, who checked that the guard
+        # returns a zeroed result before rescueLapsed rather than only
+        # suppressing the wake.
+        {{- if .Values.backend.env.agentWorkSweepDisabled }}
+        - name: AGENT_WORK_SWEEP_DISABLED
+          value: {{ .Values.backend.env.agentWorkSweepDisabled | quote }}
+        {{- end }}
+
         # Native-runtime guardrail set (comma-separated; see
         # docs/runbooks/litellm-guardrails.md). Helm-tracked so the value
         # survives deploys — a kubectl-set env is drift the next upgrade
