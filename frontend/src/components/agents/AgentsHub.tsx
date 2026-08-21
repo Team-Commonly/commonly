@@ -672,6 +672,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   }, [isGlobalAdmin, activeTab, adminTabIndex, adminSearch]);
 
   const openInstallDialog = (agent, options: any = {}) => {
+    // A local wrapper is CONNECTED, not installed: the BYO flow carries the
+    // token handoff, the "answers only while your session runs" honesty
+    // (#943/#945/#947), and the awaiting-seat truth. The old dialog offered
+    // it moltbot gateway fields instead — the broken install UI Sam flagged.
+    const agentKey = (agent?.agentName || agent?.name || '').toLowerCase();
+    if (agentKey === 'claude-code') {
+      navigate('/v2/agents/byo');
+      return;
+    }
     const defaultPodId = selectedPodId
       || accessiblePods[0]?._id
       || userPods[0]?._id
@@ -939,6 +948,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  // Unwired 2026-08-21 with the New Agent button (template flow deprecated);
+  // kept because the create dialog it opens still exists, dormant, until
+  // Phase 1 retires this component whole.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const openCreateDialog = () => {
     setCreateAgentType('');
     setCreateAgentName('');
@@ -2641,9 +2654,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         )}
 
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Button variant="outlined" size="small" onClick={openCreateDialog}>
-            New Agent
-          </Button>
+          {/* "New Agent" (template creator) removed 2026-08-21: the template
+              flow is deprecated and its rows no longer render in Discover —
+              a creator whose output is invisible is a trap, not a feature. */}
           <Button href="/apps" variant="outlined" size="small">
             Apps Marketplace
           </Button>
@@ -4415,7 +4428,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             sx={{ mb: 2 }}
             helperText={`Derived from name: "${deriveInstanceId(installInstanceName, installAgent?.agentName || installAgent?.name)}"`}
           />
-          {(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (
+          {/* Keyed on the AGENT, not the removed presets flow — the old
+              condition read installPresetContext, which nothing sets since the
+              Presets tab retired, so webhook installs lost their URL fields. */}
+          {((installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'webhook') && (
             <>
               <Divider sx={{ my: 2 }} />
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -4447,151 +4463,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               />
             </>
           )}
-          {!(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (<>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Runtime gateway
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Use the shared gateway or select a custom gateway for this agent installation.
-          </Typography>
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <RadioGroup
-              value={installGatewayMode}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setInstallGatewayMode(nextValue);
-                if (nextValue === 'shared') {
-                  setInstallGatewayId('');
-                }
-              }}
-            >
-              <FormControlLabel value="shared" control={<Radio />} label="Shared gateway (default)" />
-              <FormControlLabel
-                value="custom"
-                control={<Radio />}
-                label="Custom gateway"
-                disabled={!isGlobalAdmin}
-              />
-            </RadioGroup>
-          </FormControl>
-          {!isGlobalAdmin && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Gateway selection is available to global admins.
-            </Typography>
-          )}
-          {installGatewayMode === 'custom' && (
-            <>
-              <FormControl
-                fullWidth
-                sx={{ mb: 2 }}
-                disabled={!isGlobalAdmin || runtimeGatewayLoading || runtimeGatewayOptions.length === 0}
-              >
-                <InputLabel id="install-gateway-label">Gateway</InputLabel>
-                <Select
-                  labelId="install-gateway-label"
-                  label="Gateway"
-                  value={installGatewayId}
-                  onChange={(event) => setInstallGatewayId(event.target.value)}
-                >
-                  {runtimeGatewayOptions.map((gateway) => (
-                    <MenuItem key={gateway._id} value={gateway._id}>
-                      {gateway.name || gateway.slug}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                <Button
-                  variant="outlined"
-                  onClick={openInstallGatewayCreateDialog}
-                  disabled={!isGlobalAdmin}
-                >
-                  Create gateway
-                </Button>
-              </Stack>
-              {runtimeGatewayLoading && (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Loading gateways...
-                </Typography>
-              )}
-              {runtimeGatewayError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {runtimeGatewayError}
-                </Alert>
-              )}
-              {!runtimeGatewayLoading && runtimeGatewayOptions.length === 0 && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  No custom gateways available yet.
-                </Alert>
-              )}
-            </>
-          )}
-          {installGatewayToken && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <TextField
-                fullWidth
-                label="Gateway token (copy now)"
-                value={installGatewayToken}
-                size="small"
-                InputProps={{ readOnly: true }}
-              />
-              <Tooltip title="Copy">
-                <IconButton onClick={handleCopyInstallGatewayToken}>
-                  <CopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          )}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            LLM credentials
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Use the gateway’s default keys or provide custom keys for this agent.
-            Custom keys are stored per installation and applied on gateway restart.
-          </Typography>
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <RadioGroup
-              value={installLlmMode}
-              onChange={(event) => setInstallLlmMode(event.target.value)}
-            >
-              <FormControlLabel value="default" control={<Radio />} label="Use gateway defaults" />
-              <FormControlLabel value="custom" control={<Radio />} label="Provide custom keys" />
-            </RadioGroup>
-          </FormControl>
-          {installLlmMode === 'custom' && (
-            <>
-              <TextField
-                fullWidth
-                label="Google / Gemini API key"
-                value={installLlmKeys.google}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, google: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                label="Anthropic / Claude API key"
-                value={installLlmKeys.anthropic}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, anthropic: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                label="OpenAI / GPT API key"
-                value={installLlmKeys.openai}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, openai: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-            </>
-          )}
-          </>)}
+          {/* The gateway-mode and per-agent LLM-key sections that lived here
+              were moltbot-era config (#1050 parked that tier); no catalog row
+              reaches them anymore, and rendering them for native/BYO installs
+              was exactly the broken config UI Sam flagged. Phase 1 of the
+              persona plan replaces this dialog whole. */}
           {(installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'openclaw' && (
             <>
               <Divider sx={{ my: 2 }} />
