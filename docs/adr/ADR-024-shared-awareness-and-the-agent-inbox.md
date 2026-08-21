@@ -120,6 +120,86 @@ The effect is still what the shape promises — you interrupt for the person who
 and you batch the channel — and it preserves the responsiveness that matters (a user waiting on
 Scout) while removing the cost that does not (four agents narrating at each other).
 
+### D3a — The claim/batch blocker, resolved (2026-08-21, pod-architect, TASK-026)
+
+D3 was blocked on a stated tension: claims are acquired **before** the turn precisely so N agents
+do not duplicate work, and a batched turn cannot know which item it will act on until it has read
+the batch. Three candidates were on the table — claim every id up front, claim none and deconflict
+after, or invert to claim-on-act.
+
+**None of them is needed. The tension is narrower than it looks, because the claim already means
+two different things depending on the event class**, and only one of those classes is in conflict
+with batching.
+
+Read at `cli/src/commands/agent.js:925-965` (byte-identical in the repo and in the installed CLI at
+`88495fd6` — diffed, not assumed):
+
+| class | membership | what a LOST claim does today |
+|---|---|---|
+| **binding** | `message.posted` **with** a `payload.messageId` | `return { outcome: 'no_action', reason: 'claim-held' }` — the seat stands down (`:958`) |
+| **advisory** | `chat.mention`, `dm.message` (claimable ∩ addressed) | proceeds anyway, peer-aware, with `peerHoldsFrame(holder, messageId)` prepended (`:947-953`) |
+| **unclaimed** | `heartbeat`, `summary.request`, `first_contact`, `thread.mention`, and every kernel board wake (no `messageId` by design) | nothing — no claim is attempted |
+
+So claim-before-act is a live invariant for exactly **one** event type. For the advisory class the
+seat already acts regardless of who holds the claim; there is no "claim precedes the decision it
+protects" to preserve, because the claim never gated that decision.
+
+**The resolution: the claim result PARTITIONS the batch.**
+
+Claim the binding sub-batch up front, before the turn — unchanged from today, and still strictly
+before any work. The result splits the batch in two:
+
+- **won** → items this seat may act on;
+- **lost** → items that stay in the batch as *read-only context*, carried with the existing
+  `peerHoldsFrame` so the turn knows a peer owns them.
+
+A batched turn does not need to know which item it will act on in advance. It needs to know which
+items it is *allowed* to act on, and that is exactly what the CAS already tells it. The batch is
+read whole — which is the entire point, since message 3 often answers message 1 — while the acting
+set stays disjoint across seats. ADR-018's invariant is preserved exactly rather than weakened,
+and no new mechanism is introduced: both halves already exist in the code.
+
+Candidate (b) is rejected on ADR-018 grounds. Candidate (c) is unnecessary: inverting to
+claim-on-act would open the decide-to-claim race that the CAS exists to close, in order to solve a
+problem the partition does not have. Candidate (a) is what this is, scoped to the binding class
+instead of the whole batch.
+
+**Measured, because the objection to (a) was contention.** Live-seat events over 24h
+(`pod-architect`, `sprint-review`, `sprint-impl`, `ux-lead`, `fable-lead`; n=287):
+
+- bucketed at the **5s poll interval**: 255 windows of 1 event, 16 of 2, **max 2**;
+- bucketed at **60s**: 85 windows of 1, 30 of 2, 27 of 3, 11 of 4, 1 of 5, 2 of 6 — **max 6**.
+
+And by class over 7 days across all seats: `summary.request` 17,397 · `heartbeat` 2,641 ·
+`message.posted` with a messageId **2,152** · `chat.mention` 345 · `message.posted` without one 75
+(68 of them board wakes) · `first_contact` 4. The binding class is **9.5% of all events**.
+
+So the realistic sub-batch to claim is **2–6 ids, not 10**, and most events never reach the claim
+path at all. Contention is not the objection it was assumed to be.
+
+**One correction to the task spec that changes where the fix lands.** The defect was cited at
+`cli/src/lib/poller.js:34-40`. That file is `agent connect`'s loop (`agent.js:1623`), which no
+fleet seat runs. `agent run` calls `performRun`, whose tick is `agent.js:1170`, fetching at `:1174`
+with `limit: 10` and shredding at `:1178` — the same defect, in a different file. The shape of the
+finding survives; the location does not. A fix applied to `poller.js` would ship green and change
+nothing for any seat.
+
+**And one measurement that did NOT survive its control.** Pending backlogs of 62, 35, 35, 33, 33
+and 17 events looked like direct evidence that queues run tens deep. Grouped by seat they are
+**heartbeat-only, on parked or dead seats** (`openclaw:ops/theo/nova/pixel`, `claude-code:redbot`,
+`newshound:aiyo`). Every live seat holds **zero** pending. The deep queues are parked-tier residue,
+not batch size, and they belong to #1050 rather than here.
+
+That control also reframes where the batching win comes from. At a 5s interval the tick polls
+faster than events arrive, so a naturally-occurring batch of 10 does not exist. The batch is what
+accumulates **while the previous turn is running** — turns take minutes, and the loop is sequential.
+That is a live input to D3's open tick-interval question: shortening the interval cannot increase
+coalescing, because arrivals, not the poll, are the limiting rate.
+
+**Not verified:** no batched turn has been run, so the claim that a partitioned batch reduces
+circular replies remains ADR-024's open question 2, unmeasured. The partition is a design that
+preserves an invariant; it is not evidence about reply quality.
+
 ### D4 — Safety in a busy room comes from claims, never from gating who may wake
 
 ADR-018 D8, restated because it was violated within a week of being written: wake-on-message is a
