@@ -1557,25 +1557,12 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setAgentOverviewError('');
     setAgentOverviewLoading(false);
   };
-  const allAgents = [
-    ...agents,
-    ...templates.map((template) => ({
-      name: template.agentName,
-      agentName: template.agentName,
-      displayName: template.displayName,
-      description: template.description,
-      iconUrl: template.iconUrl,
-      verified: false,
-      categories: [
-        ...(agents.find((agent) => agent.name === template.agentName)?.categories || []),
-        'custom',
-      ],
-      isTemplate: true,
-      templateId: template.id,
-      visibility: template.visibility,
-      createdBy: template.createdBy,
-    })),
-  ];
+  // Template rows no longer surface in Discover (Sam, 2026-08-21: the flow is
+  // deprecated, and the rows were 11 pieces of internal junk — parked moltbot
+  // "team agents", FakeSam, test personas — advertised beside the curated
+  // catalog). The create/edit machinery below stays dormant until Phase 1 of
+  // the persona plan retires this component whole.
+  const allAgents = [...agents];
   const filteredAgents = category === 'all'
     ? allAgents
     : allAgents.filter((agent) => (agent.categories || []).includes(category));
@@ -2796,7 +2783,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {searchQuery
-                    ? 'Matching agents from the registry and your templates.'
+                    ? 'Matching agents from the catalog.'
                     : 'Agents you can install into the selected pod.'}
                 </Typography>
               </Box>
