@@ -148,6 +148,47 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
   return AVATAR_PALETTE[family[hashString(key) % family.length]].base;
 };
 
+// ── Deliberate diversity in the picker grid (Sam, 2026-08-21) ───────────────
+//
+// A grid of 8 random rolls can hand a user 8 similar faces and nothing that
+// looks like them. So the picker's 8 cells are CURATED, not rolled: cell i
+// pins skin tone i of bigSmile's full range (lightest → deepest, one each, so
+// every grid spans the whole range), and alternates between the two hair
+// presentation groups. The seed still personalizes everything else — which
+// style within the group, hair color, eyes, mouth — so two users' grids stay
+// different while both stay representative.
+//
+// bigSmile's full skinColor enum, in its own light→deep order. If dicebear
+// ever changes the enum this list must follow it — the test pins each cell's
+// tone into the rendered SVG, so a drift fails loudly.
+export const PICKER_SKIN_TONES = [
+  'ffe4c0', 'f5d7b1', 'efcc9f', 'e2ba87', 'c99c62', 'a47539', '8c5a2b', '643d19',
+] as const;
+const HAIR_LONGER = ['wavyBob', 'curlyBob', 'braids', 'bunHair', 'froBun', 'bangs', 'straightHair'] as const;
+const HAIR_SHORTER = ['shortHair', 'mohawk', 'bowlCutHair', 'shavedHead', 'halfShavedHead', 'curlyShortHair'] as const;
+// Natural browns/black plus two warm dyes. Deliberately excludes bigSmile's
+// violet/teal hair, which fights the tinted backgrounds.
+const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
+// Everyday accessories only — the default set includes clown noses and cat
+// ears, which is the wrong register for a colleague's face.
+const ACCESSORIES = ['glasses', 'sunglasses', 'mustache'] as const;
+
+// Picker cells are seeded `<base>-v1` … `<base>-v8` (see presetCharacterOptions
+// in utils/avatarUtils). Deriving the pinned traits from that suffix keeps the
+// stored value a plain seed — the id round-trips through the existing scheme
+// with zero storage or backend changes. (`as const` + spreads throughout:
+// dicebear types these fields as literal-union arrays, so a widened string[]
+// does not compile.)
+const variantTraits = (key: string) => {
+  const m = /-v([1-8])$/.exec(key);
+  if (!m) return {};
+  const idx = Number(m[1]) - 1;
+  return {
+    skinColor: [PICKER_SKIN_TONES[idx]],
+    hair: idx % 2 === 0 ? [...HAIR_LONGER] : [...HAIR_SHORTER],
+  };
+};
+
 /**
  * Data-URI for the character avatar, or null when generation fails — callers
  * fall back to the gradient+initials tier, which cannot fail. The seeded tint
@@ -168,7 +209,14 @@ export const characterAvatarFor = (
   // Same-seed human and agent still must never render identically (the
   // species-legibility rule) — the disjoint background families guarantee it
   // even on a face collision.
-  const options = { seed: key, backgroundColor: [backgroundFor(key, kind).slice(1)] };
+  const options = {
+    seed: key,
+    backgroundColor: [backgroundFor(key, kind).slice(1)],
+    hairColor: [...HAIR_COLORS],
+    accessories: [...ACCESSORIES],
+    accessoriesProbability: 25,
+    ...variantTraits(key),
+  };
   try {
     return createAvatar(bigSmile, options).toDataUri();
   } catch {
