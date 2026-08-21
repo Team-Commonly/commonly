@@ -158,44 +158,86 @@ const backgroundFor = (key: string, kind: AvatarKind): string => {
 // style within the group, hair color, eyes, mouth — so two users' grids stay
 // different while both stay representative.
 //
-// bigSmile's full skinColor enum, in its own light→deep order. If dicebear
-// ever changes the enum this list must follow it — the test pins each cell's
-// tone into the rendered SVG, so a drift fails loudly.
-export const PICKER_SKIN_TONES = [
-  'ffe4c0', 'f5d7b1', 'efcc9f', 'e2ba87', 'c99c62', 'a47539', '8c5a2b', '643d19',
-] as const;
-const HAIR_LONGER = ['wavyBob', 'curlyBob', 'braids', 'bunHair', 'froBun', 'bangs', 'straightHair'] as const;
-const HAIR_SHORTER = ['shortHair', 'mohawk', 'bowlCutHair', 'shavedHead', 'halfShavedHead', 'curlyShortHair'] as const;
 // Natural browns/black plus two warm dyes. Deliberately excludes bigSmile's
 // violet/teal hair, which fights the tinted backgrounds.
 const HAIR_COLORS = ['220f00', '3a1a00', '71472d', 'd56c0c', 'e9b729'] as const;
 // Everyday accessories only — the default set includes clown noses and cat
-// ears, which is the wrong register for a colleague's face.
+// ears, which is the wrong register for a colleague's face. Mustache appears
+// only in male-leaning archetype cells below, never in the shared default.
 const ACCESSORIES = ['glasses', 'sunglasses', 'mustache'] as const;
 
-// Picker cells are seeded `<base>-v1` … `<base>-v16` (see
-// presetCharacterOptions in utils/avatarUtils). Deriving the pinned traits
-// from that suffix keeps the stored value a plain seed — the id round-trips
-// through the existing scheme with zero storage or backend changes.
-// (`as const` + spreads throughout: dicebear types these fields as
-// literal-union arrays, so a widened string[] does not compile.)
+// ── The archetype grid (Sam, 2026-08-21: "Asian male female, Caucasian ones,
+// black ones brown ones") ───────────────────────────────────────────────────
 //
-// 16 cells = the full tone × presentation matrix. v1–v8 keep the meaning they
-// shipped with (tone i, alternating groups) so picks already stored render
-// identically; v9–v16 revisit each tone with the OPPOSITE presentation, so
-// every tone appears with both.
-export const PICKER_CELL_COUNT = 16;
+// Ethnic representation in bigSmile is expressed through the three levers the
+// style exposes: skin tone + hair style + hair color. The 24 cells are
+// CURATED combinations, laid out as 4 rows of 6 — East Asian, Caucasian,
+// brown (South Asian / Latino / MENA), Black — each row 3 female-leaning +
+// 3 male-leaning looks. The seed still personalizes within a cell (which
+// style from its list, which color, eyes, mouth), so two users' grids differ
+// while both cover the same ground. Mustache is offered only in male-leaning
+// cells.
+//
+// Cells derive from the `-v<n>` suffix (see presetCharacterOptions in
+// utils/avatarUtils), so stored values stay plain seeds — zero storage or
+// backend changes. (`as const`-friendly literal arrays throughout: dicebear
+// types these fields as literal-union arrays, so widened string[] does not
+// compile.)
+const F_ACC = ['glasses', 'sunglasses'] as const;
+const M_ACC = ['glasses', 'sunglasses', 'mustache'] as const;
+
+interface PickerArchetype {
+  skin: string[];
+  hair: string[];
+  color: string[];
+  acc: string[];
+}
+
+export const PICKER_ARCHETYPES: PickerArchetype[] = ([
+  // Row 1 — East Asian: light tones, black straight-leaning hair
+  { skin: ['ffe4c0'], hair: ['straightHair', 'bangs'], color: ['220f00'], acc: F_ACC },
+  { skin: ['f5d7b1'], hair: ['bunHair', 'wavyBob'], color: ['220f00', '3a1a00'], acc: F_ACC },
+  { skin: ['efcc9f'], hair: ['bangs', 'bunHair'], color: ['220f00'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['shortHair', 'bowlCutHair'], color: ['220f00'], acc: M_ACC },
+  { skin: ['f5d7b1'], hair: ['shortHair', 'straightHair'], color: ['220f00'], acc: M_ACC },
+  { skin: ['efcc9f'], hair: ['curlyShortHair', 'shortHair'], color: ['220f00', '3a1a00'], acc: M_ACC },
+  // Row 2 — Caucasian: light tones, blonde / brown / ginger
+  { skin: ['ffe4c0'], hair: ['wavyBob', 'curlyBob'], color: ['e9b729', 'd56c0c'], acc: F_ACC },
+  { skin: ['f5d7b1'], hair: ['straightHair', 'bangs'], color: ['71472d', 'e2ba87'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['bunHair', 'wavyBob'], color: ['3a1a00', '71472d'], acc: F_ACC },
+  { skin: ['ffe4c0'], hair: ['shortHair', 'curlyShortHair'], color: ['e9b729', '71472d'], acc: M_ACC },
+  { skin: ['f5d7b1'], hair: ['shortHair', 'mohawk'], color: ['3a1a00', 'd56c0c'], acc: M_ACC },
+  { skin: ['efcc9f'], hair: ['curlyShortHair', 'shavedHead'], color: ['71472d'], acc: M_ACC },
+  // Row 3 — brown (South Asian / Latino / MENA): mid tones, dark hair
+  { skin: ['e2ba87'], hair: ['straightHair', 'wavyBob'], color: ['220f00', '3a1a00'], acc: F_ACC },
+  { skin: ['c99c62'], hair: ['braids', 'bunHair'], color: ['220f00'], acc: F_ACC },
+  { skin: ['e2ba87'], hair: ['curlyBob', 'bangs'], color: ['3a1a00'], acc: F_ACC },
+  { skin: ['e2ba87'], hair: ['shortHair', 'curlyShortHair'], color: ['220f00', '3a1a00'], acc: M_ACC },
+  { skin: ['c99c62'], hair: ['shortHair', 'shavedHead'], color: ['220f00'], acc: M_ACC },
+  { skin: ['c99c62'], hair: ['curlyShortHair', 'mohawk'], color: ['220f00'], acc: M_ACC },
+  // Row 4 — Black: deep tones, textured styles
+  { skin: ['a47539'], hair: ['braids', 'froBun'], color: ['220f00'], acc: F_ACC },
+  { skin: ['8c5a2b'], hair: ['curlyBob', 'bunHair'], color: ['220f00'], acc: F_ACC },
+  { skin: ['643d19'], hair: ['braids', 'curlyBob'], color: ['220f00'], acc: F_ACC },
+  { skin: ['8c5a2b'], hair: ['curlyShortHair', 'froBun'], color: ['220f00'], acc: M_ACC },
+  { skin: ['643d19'], hair: ['shavedHead', 'shortHair'], color: ['220f00'], acc: M_ACC },
+  { skin: ['a47539'], hair: ['halfShavedHead', 'curlyShortHair'], color: ['220f00'], acc: M_ACC },
+] as Array<{ skin: readonly string[]; hair: readonly string[]; color: readonly string[]; acc: readonly string[] }>)
+  .map((a) => ({ skin: [...a.skin], hair: [...a.hair], color: [...a.color], acc: [...a.acc] }));
+
+export const PICKER_CELL_COUNT = PICKER_ARCHETYPES.length;
 
 const variantTraits = (key: string) => {
-  const m = /-v([1-9]|1[0-6])$/.exec(key);
-  if (!m) return {};
-  const idx = Number(m[1]) - 1;
-  const tone = idx % PICKER_SKIN_TONES.length;
-  const flip = idx >= PICKER_SKIN_TONES.length;
-  const longer = (tone % 2 === 0) !== flip;
+  const m = /-v([1-9]|1[0-9]|2[0-4])$/.exec(key);
+  if (!m) return null;
+  const cell = PICKER_ARCHETYPES[Number(m[1]) - 1];
+  if (!cell) return null;
   return {
-    skinColor: [PICKER_SKIN_TONES[tone]],
-    hair: longer ? [...HAIR_LONGER] : [...HAIR_SHORTER],
+    skinColor: cell.skin,
+    hair: cell.hair,
+    hairColor: cell.color,
+    accessories: cell.acc,
+    accessoriesProbability: 20,
   };
 };
 
@@ -228,7 +270,11 @@ export const characterAvatarFor = (
     ...variantTraits(key),
   };
   try {
-    return createAvatar(bigSmile, options).toDataUri();
+    // Cast: the archetype table's fields are runtime string[]s, but dicebear
+    // types every option as a literal-union array. The table's values are
+    // pinned by the avatarCharacter tests against the RENDERED SVG, which is
+    // a stronger guarantee than the compile-time enum the cast gives up.
+    return createAvatar(bigSmile, options as Parameters<typeof createAvatar>[1]).toDataUri();
   } catch {
     return null;
   }
