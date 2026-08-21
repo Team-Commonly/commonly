@@ -1,4 +1,4 @@
-import { characterAvatarFor } from '../utils/avatars';
+import { characterAvatarFor, PICKER_SKIN_TONES } from '../utils/avatars';
 
 /**
  * The character tier: bigSmile faces for BOTH species (Sam's 2026-08-21
@@ -46,5 +46,28 @@ describe('characterAvatarFor', () => {
     // The whole point over generated art: local, deterministic, CSP-safe.
     const uri = characterAvatarFor('scout:default', 'agent');
     expect(uri).toMatch(/^data:image\/svg\+xml/);
+  });
+
+  test('the 8 picker cells span the full skin-tone range, every grid, every user', () => {
+    // Sam's rule (2026-08-21): the grid is deliberately diverse, not rolled —
+    // 8 random rolls can hand a user 8 similar faces and nothing that looks
+    // like them. Cell i pins tone i, so every user's grid covers lightest to
+    // deepest. The tone must appear in the rendered SVG itself; if dicebear
+    // ever renames its skinColor enum this fails loudly instead of silently
+    // rolling random tones again.
+    for (const base of ['sam', 'someone-else']) {
+      PICKER_SKIN_TONES.forEach((tone, i) => {
+        const uri = characterAvatarFor(`${base}-v${i + 1}`, 'human');
+        expect(uri).not.toBeNull();
+        expect(decodeURIComponent(String(uri))).toContain(tone);
+      });
+    }
+  });
+
+  test('non-picker seeds (identity defaults) still render without pinned traits', () => {
+    // The -v suffix is the picker contract; a bare identity seed must not
+    // accidentally match it.
+    expect(characterAvatarFor('fable-lead:default', 'agent')).not.toBeNull();
+    expect(characterAvatarFor('user-v9000', 'human')).not.toBeNull();
   });
 });
