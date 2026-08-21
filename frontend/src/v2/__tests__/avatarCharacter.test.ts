@@ -48,19 +48,24 @@ describe('characterAvatarFor', () => {
     expect(uri).toMatch(/^data:image\/svg\+xml/);
   });
 
-  test('the 8 picker cells span the full skin-tone range, every grid, every user', () => {
+  test('the 16 picker cells cover the full tone × presentation matrix, every user', () => {
     // Sam's rule (2026-08-21): the grid is deliberately diverse, not rolled —
-    // 8 random rolls can hand a user 8 similar faces and nothing that looks
-    // like them. Cell i pins tone i, so every user's grid covers lightest to
-    // deepest. The tone must appear in the rendered SVG itself; if dicebear
+    // random rolls can hand a user 16 similar faces and nothing that looks
+    // like them. Cell i pins tone i%8, and the back half revisits each tone
+    // with the opposite hair presentation, so every tone appears twice and
+    // with both. The tone must appear in the rendered SVG itself; if dicebear
     // ever renames its skinColor enum this fails loudly instead of silently
     // rolling random tones again.
     for (const base of ['sam', 'someone-else']) {
-      PICKER_SKIN_TONES.forEach((tone, i) => {
+      for (let i = 0; i < 16; i += 1) {
         const uri = characterAvatarFor(`${base}-v${i + 1}`, 'human');
         expect(uri).not.toBeNull();
-        expect(decodeURIComponent(String(uri))).toContain(tone);
-      });
+        expect(decodeURIComponent(String(uri))).toContain(PICKER_SKIN_TONES[i % 8]);
+      }
+      // v1 and v9 share a tone but must not be the same face — the back half
+      // exists to change the presentation, not to duplicate the front.
+      expect(characterAvatarFor(`${base}-v1`, 'human'))
+        .not.toBe(characterAvatarFor(`${base}-v9`, 'human'));
     }
   });
 
