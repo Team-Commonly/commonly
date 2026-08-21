@@ -16,8 +16,6 @@ const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
-const GitHubAppService = require('../services/githubAppService');
-// eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 
 /**
@@ -220,9 +218,6 @@ router.post('/:podId', rateLimit({
       parentTask: parentTaskInput,
       source: sourceInput,
       sourceRef: sourceRefInput,
-      githubIssueNumber: githubIssueNumberInput,
-      githubIssueUrl: githubIssueUrlInput,
-      createGithubIssue: createGithubIssueInput,
     } = req.body || {};
     const stringInputs: Record<string, unknown> = {
       title: titleInput,
@@ -231,24 +226,14 @@ router.post('/:podId', rateLimit({
       parentTask: parentTaskInput,
       source: sourceInput,
       sourceRef: sourceRefInput,
-      githubIssueUrl: githubIssueUrlInput,
     };
     const invalidStringField = Object.entries(stringInputs)
       .find(([, value]) => value !== undefined && typeof value !== 'string');
     if (invalidStringField) {
       return res.status(400).json({ error: `${invalidStringField[0]} must be a string` });
     }
-    if (githubIssueNumberInput !== undefined
-      && (typeof githubIssueNumberInput !== 'number'
-        || !Number.isSafeInteger(githubIssueNumberInput)
-        || githubIssueNumberInput < 1)) {
-      return res.status(400).json({ error: 'githubIssueNumber must be a positive integer' });
-    }
     if (depMockOkInput !== undefined && typeof depMockOkInput !== 'boolean') {
       return res.status(400).json({ error: 'depMockOk must be a boolean' });
-    }
-    if (createGithubIssueInput !== undefined && typeof createGithubIssueInput !== 'boolean') {
-      return res.status(400).json({ error: 'createGithubIssue must be a boolean' });
     }
     // Materialize primitives after runtime validation so Mongo never receives
     // user-supplied query objects (for example, operator-shaped values).
@@ -258,10 +243,7 @@ router.post('/:podId', rateLimit({
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
     const sourceRef = sourceRefInput === undefined ? undefined : String(sourceRefInput);
-    const githubIssueUrl = githubIssueUrlInput === undefined ? undefined : String(githubIssueUrlInput);
-    const githubIssueNumber = githubIssueNumberInput === undefined ? undefined : Number(githubIssueNumberInput);
     const depMockOk = depMockOkInput === true;
-    const createGithubIssue = createGithubIssueInput === true;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -273,8 +255,8 @@ router.post('/:podId', rateLimit({
           existing.assignee = assignee || undefined;
           existing.claimedAt = null;
           existing.claimExpiresAt = null;
-          existing.notes = 'Reopened — previously completed but issue is still open.';
-          existing.updates.push({ text: 'Reopened: task was done but linked issue is still open — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
+          existing.notes = 'Reopened — the same source is active again.';
+          existing.updates.push({ text: 'Reopened: task was done but its source is active again — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
@@ -284,43 +266,21 @@ router.post('/:podId', rateLimit({
         return res.json({ task: existing.toObject(), alreadyExists: true });
       }
     }
-    let ghNumber = githubIssueNumber || null;
-    let ghUrl = githubIssueUrl || null;
-    // Provenance, not decoration. `githubIssueNumber` arrives from the caller
-    // and is validated only as a positive integer — it can name ANY issue in
-    // the repo. Only an issue this server opened may later be written to.
-    let ghOwned = false;
-    if (createGithubIssue && title && GitHubAppService.isPatConfigured()) {
-      try {
-        const bodyParts: string[] = [];
-        if (assignee) bodyParts.push(`Assigned to: ${assignee}`);
-        if (parentTask) bodyParts.push(`Parent task: ${parentTask}`);
-        if (dep) bodyParts.push(`Blocked by: ${dep}`);
-        const issue = await GitHubAppService.createIssue({ title, body: bodyParts.join('\n') || undefined }) as { number: number; html_url: string };
-        ghNumber = issue.number;
-        ghUrl = issue.html_url;
-        ghOwned = true;
-      } catch (ghErr) {
-        console.warn('createGithubIssue failed (non-fatal):', (ghErr as Error).message);
-      }
-    }
     const author = await resolveAuthor(req);
     const { taskId, taskNum } = await nextTaskId(podId || '');
     const initUpdate: { text: string; author: string; authorId: string | null; createdAt: Date } = { text: `Created by ${author}`, author, authorId: userId?.toString() || null, createdAt: new Date() };
     if (assignee) initUpdate.text = `Created by ${author} · assigned to ${assignee}`;
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
-    if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
     if (parentTask) initUpdate.text += ` · sub-task of ${parentTask}`;
     // `source` is provenance for task creation, so an agent-authenticated
-    // caller may not self-identify as human (or any other source) through
-    // the request body. Human callers retain the existing source override
-    // for GitHub/import workflows.
+    // caller may not self-identify as human (or any other source) through the
+    // request body. Human callers retain the explicit source override.
     const taskSource = req.agentUser?._id
       ? 'agent'
-      : source || (ghNumber ? 'github' : 'human');
+      : source || 'human';
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, githubIssueOwned: ghOwned, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
@@ -349,20 +309,6 @@ router.post('/:podId', rateLimit({
       }) as { toObject: () => unknown } | null;
       if (!existing) throw createErr;
       return res.json({ task: existing.toObject(), alreadyExists: true });
-    }
-    if (parentTask && GitHubAppService.isPatConfigured()) {
-      try {
-        const parent = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId: parentTask }).lean() as { githubIssueNumber?: number; githubIssueOwned?: boolean } | null;
-        // Same provenance gate as the close path: a parent task's issue number
-        // is caller-supplied too, so commenting on it unowned would let any
-        // caller post attacker-chosen text (`title`) to an arbitrary issue.
-        if (parent?.githubIssueNumber && parent.githubIssueOwned) {
-          const depNote = dep ? ` (blocked by ${dep})` : '';
-          GitHubAppService.addIssueComment({ issueNumber: parent.githubIssueNumber, comment: `**Sub-task created:** ${taskId} — ${title}${depNote}\nAssigned to: ${assignee || 'unassigned'}` }).catch((e: Error) => console.warn('GH sub-task comment failed:', e.message));
-        }
-      } catch (e) {
-        console.warn('Parent GH lookup failed (non-fatal):', (e as Error).message);
-      }
     }
     emitTaskUpdated(podId, task, 'created');
     notifyAgents(req, podId, task, 'created');
@@ -511,33 +457,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const update = { $set: { status: 'done', completedAt: new Date(), ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: new Date() } } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { githubIssueNumber?: number; githubIssueOwned?: boolean; taskId?: string; updates?: unknown[] } | null;
+    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { taskId?: string; updates?: unknown[] } | null;
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
-    }
-    // `githubIssueOwned` gates the write, NOT `githubIssueNumber`. The number is
-    // caller-supplied on create and validated only as a positive integer, so
-    // trusting it here let any agent token close an arbitrary issue in our
-    // repository under our PAT — with `prUrl`, also caller-supplied, appearing
-    // in the closing comment. Legacy tasks predate the flag and therefore no
-    // longer auto-close: failing closed is the correct direction for a write we
-    // cannot prove we own.
-    if (task.githubIssueNumber && task.githubIssueOwned && GitHubAppService.isPatConfigured()) {
-      (async () => {
-        try {
-          const subTasks = await Task.find({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), parentTask: task.taskId }).select('taskId title status prUrl').lean() as Array<{ taskId?: string; title?: string; status?: string; prUrl?: string }>;
-          let closeComment = prUrl ? `Completed via ${prUrl}` : `Completed by ${author}`;
-          if (subTasks.length > 0) {
-            const subLines = subTasks.map((s) => { const icon = s.status === 'done' ? '✅' : s.status === 'blocked' ? '❌' : '⏳'; return `${icon} ${s.taskId}: ${s.title}${s.prUrl ? ` — [PR](${s.prUrl})` : ''}`; });
-            closeComment += `\n\n**Sub-tasks:**\n${subLines.join('\n')}`;
-          }
-          await GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment });
-        } catch (err) {
-          console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, (err as Error).message);
-        }
-      })();
     }
     // ADR-012 §4: task-completed trigger. Fire-and-forget; only writes when
     // the assignee is a recognized agent member of the pod.
