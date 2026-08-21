@@ -1,4 +1,4 @@
-import { characterAvatarFor, PICKER_SKIN_TONES } from '../utils/avatars';
+import { characterAvatarFor, PICKER_ARCHETYPES, PICKER_CELL_COUNT } from '../utils/avatars';
 
 /**
  * The character tier: bigSmile faces for BOTH species (Sam's 2026-08-21
@@ -48,25 +48,33 @@ describe('characterAvatarFor', () => {
     expect(uri).toMatch(/^data:image\/svg\+xml/);
   });
 
-  test('the 16 picker cells cover the full tone × presentation matrix, every user', () => {
-    // Sam's rule (2026-08-21): the grid is deliberately diverse, not rolled —
-    // random rolls can hand a user 16 similar faces and nothing that looks
-    // like them. Cell i pins tone i%8, and the back half revisits each tone
-    // with the opposite hair presentation, so every tone appears twice and
-    // with both. The tone must appear in the rendered SVG itself; if dicebear
-    // ever renames its skinColor enum this fails loudly instead of silently
-    // rolling random tones again.
+  test('every archetype cell renders its own skin tone, every user', () => {
+    // Sam's rule (2026-08-21): explicit representation, not a rolled
+    // gradient. Each of the 24 cells is a curated combination; the cell's
+    // tone must appear in the RENDERED SVG itself, so a dicebear enum rename
+    // fails loudly instead of silently rolling random faces again.
+    expect(PICKER_ARCHETYPES).toHaveLength(24);
     for (const base of ['sam', 'someone-else']) {
-      for (let i = 0; i < 16; i += 1) {
+      PICKER_ARCHETYPES.forEach((cell, i) => {
         const uri = characterAvatarFor(`${base}-v${i + 1}`, 'human');
         expect(uri).not.toBeNull();
-        expect(decodeURIComponent(String(uri))).toContain(PICKER_SKIN_TONES[i % 8]);
-      }
-      // v1 and v9 share a tone but must not be the same face — the back half
-      // exists to change the presentation, not to duplicate the front.
-      expect(characterAvatarFor(`${base}-v1`, 'human'))
-        .not.toBe(characterAvatarFor(`${base}-v9`, 'human'));
+        const svg = decodeURIComponent(String(uri));
+        expect(cell.skin.some((tone) => svg.includes(tone))).toBe(true);
+      });
     }
+  });
+
+  test('the archetype table stays representation-complete', () => {
+    // The four ethnic rows and both gender presentations must survive edits:
+    // all 8 bigSmile skin tones appear somewhere, and both accessory shapes
+    // (mustache-bearing male-leaning, mustache-free female-leaning) exist.
+    expect(PICKER_CELL_COUNT).toBe(PICKER_ARCHETYPES.length);
+    const tones = new Set(PICKER_ARCHETYPES.flatMap((c) => c.skin));
+    for (const tone of ['ffe4c0', 'f5d7b1', 'efcc9f', 'e2ba87', 'c99c62', 'a47539', '8c5a2b', '643d19']) {
+      expect(tones.has(tone)).toBe(true);
+    }
+    expect(PICKER_ARCHETYPES.some((c) => c.acc.includes('mustache'))).toBe(true);
+    expect(PICKER_ARCHETYPES.some((c) => !c.acc.includes('mustache'))).toBe(true);
   });
 
   test('non-picker seeds (identity defaults) still render without pinned traits', () => {
