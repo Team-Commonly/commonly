@@ -13,10 +13,11 @@ interface V2AvatarProps {
   online?: boolean;
   title?: string;
   /**
-   * Renders the character tier: 'agent' → bottts robot, 'human' → bigSmile
-   * face. Omitted → gradient+initials, unchanged — callers that cannot tell
-   * who they are drawing must not guess, because mislabelling the tier
-   * mislabels the PERSON (a robot face on a human, or vice versa).
+   * Renders the character tier: bigSmile faces for both kinds, with the
+   * species carried by disjoint background families ('human' warm, 'agent'
+   * cool — Sam's 2026-08-21 revision). Omitted → gradient+initials, unchanged
+   * — callers that cannot tell who they are drawing must not guess, because
+   * mislabelling the tier mislabels the PERSON's species tint.
    * An uploaded photo always wins over both tiers.
    */
   kind?: AvatarKind;
