@@ -59,12 +59,12 @@ export const isFacePresetId = (value: string | undefined | null): boolean => (
 );
 
 /**
- * Sixteen stable face options for a user — the full skin-tone × hair-
- * presentation matrix (traits derive from the -v<n> suffix in v2/utils/
- * avatars). Seeded off their identity so the grid is personal and NEVER
- * reshuffles — a picker whose options change between visits reads as broken,
- * and "the face I picked last month" must still be in the grid when they
- * come back.
+ * The archetype face grid — PICKER_CELL_COUNT curated cells spanning four
+ * ethnic rows with female- and male-leaning looks each (traits derive from
+ * the -v<n> suffix in v2/utils/avatars). Seeded off the user's identity so
+ * the grid is personal and NEVER reshuffles — a picker whose options change
+ * between visits reads as broken, and "the face I picked last month" must
+ * still be in the grid when they come back.
  */
 export const presetFaceOptions = (seedBase: string): Array<{ id: string; src: string | null }> => (
   presetCharacterOptions(seedBase, 'human')
