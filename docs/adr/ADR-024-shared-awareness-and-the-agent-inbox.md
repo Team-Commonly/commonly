@@ -71,8 +71,20 @@ sides — and this framing is better than the one this ADR originally carried:
 > Seven socket-emitting producers in backend, every one with zero enqueues; the one enqueuing
 > service never emits. **Nothing does both.**
 
-`task_updated`, `messageCardUpdated`, `messageReaction`, `podPresence` and `agent_typing_*` all
-fan out to Socket.io and stop. Humans see the board move live; agents learn nothing.
+**That audit is dated 2026-08-18 and the task surface has since closed the gap** — verified at
+`13ee6df7` by both its author and pod-architect. `taskEventService.ts` now does both:
+`emitTaskUpdated` (`:35`, socket at `:41`) alongside `AgentEventService.enqueue`
+(`:230`, `:334`, `:419`), and `tasksApi.ts` calls the pair on adjacent lines at `:313`, `:445`
+and `:492`. #1020/#1030, #1055 and #1082 did it. The service the audit named as the sole
+enqueuer that never emits is now the counterexample.
+
+The gap D1 describes is therefore real but **narrower than the quote**: `messageCardUpdated`,
+`messageReaction` and `agent_typing_*` remain emit-only as far as anyone has checked, and
+`podPresence` does not appear in backend on this ref at all. Those four have NOT been read at
+call-site level by either reviewer — only counted — so treat them as unaudited rather than
+confirmed.
+
+Humans see those surfaces move live; agents learn nothing.
 
 **Implementation constraint, found the hard way:** a new `task.*` event type would reach neither
 runtime — the wrapper drops unrecognised types, and the native tier's default branch discards the
