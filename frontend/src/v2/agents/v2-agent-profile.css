@@ -218,3 +218,51 @@
   border-color: #c0392b;
 }
 .v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }
+
+/* Owner-editable avatar picker (visible only to installer/admin) */
+.v2-aprofile__avatar-edit {
+  align-self: flex-end;
+  margin-left: -14px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  cursor: pointer;
+}
+.v2-aprofile__avatar-edit:hover { color: var(--v2-text); border-color: var(--v2-text-secondary); }
+.v2-aprofile__avatar-dialog {
+  position: absolute;
+  z-index: 30;
+  margin-top: 8px;
+  padding: 14px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(4, 56px); gap: 10px; }
+.v2-aprofile__avatar-choice {
+  padding: 2px;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+}
+.v2-aprofile__avatar-choice:hover, .v2-aprofile__avatar-choice:focus-visible { border-color: var(--v2-accent); }
+.v2-aprofile__avatar-choice:disabled { opacity: 0.5; cursor: wait; }
+.v2-aprofile__avatar-cancel {
+  display: block;
+  margin: 10px auto 0;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  background: none;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  cursor: pointer;
+}
+/* The picker dialog anchors to the hero card. */
+.v2-aprofile__hero { position: relative; }

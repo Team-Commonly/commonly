@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
+import { presetCharacterOptions } from '../../utils/avatarUtils';
 import '../v2.css';
 import './v2-agent-profile.css';
 
@@ -169,6 +170,40 @@ const V2AgentProfile: React.FC = () => {
 
   useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
 
+  // Owner-editable avatar (Sam, 2026-08-20): visible only when the caller is
+  // the agent's installer or an admin — the backend is the real gate; this
+  // check only decides whether to show the affordance.
+  const [canEditAvatar, setCanEditAvatar] = useState(false);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !agentName) return;
+    getClient()
+      .get(`/api/agent-profile/${agentName}/${instanceId || 'default'}/avatar/can-edit`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((r) => setCanEditAvatar(Boolean(r.data?.canEdit)))
+      .catch(() => setCanEditAvatar(false));
+  }, [agentName, instanceId]);
+
+  const saveAvatar = async (avatarId: string) => {
+    const token = localStorage.getItem('token');
+    if (!token || !agentName) return;
+    setSavingAvatar(true);
+    try {
+      await getClient().put(
+        `/api/agent-profile/${agentName}/${instanceId || 'default'}/avatar`,
+        { avatar: avatarId },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      window.location.reload();
+    } catch {
+      setSavingAvatar(false);
+    }
+  };
+
+
   if (state === 'loading') {
     return (
       <div className="v2-root v2-aprofile">
@@ -211,6 +246,40 @@ const V2AgentProfile: React.FC = () => {
             kind="agent"
             seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
           />
+          {canEditAvatar && (
+            <button
+              type="button"
+              className="v2-aprofile__avatar-edit"
+              onClick={() => setAvatarDialogOpen(true)}
+            >
+              Edit avatar
+            </button>
+          )}
+          {avatarDialogOpen && (
+            <div className="v2-aprofile__avatar-dialog" role="dialog" aria-label="Choose an avatar">
+              {/* Eight deterministic robots seeded off this agent's identity —
+                  same grid every visit, and the pick is stored as a seed so
+                  every surface regenerates it locally. Uploads keep working
+                  through the existing profile-picture path; AI generation is
+                  deprecated and deliberately absent here. */}
+              <div className="v2-aprofile__avatar-grid">
+                {presetCharacterOptions(`${agent.agentName}:${agent.instanceId || 'default'}`, 'agent').map((robot) => (
+                  <button
+                    key={robot.id}
+                    type="button"
+                    className="v2-aprofile__avatar-choice"
+                    disabled={savingAvatar}
+                    onClick={() => saveAvatar(robot.id)}
+                  >
+                    <img src={robot.src || ''} alt="robot avatar option" width={56} height={56} style={{ borderRadius: '50%' }} />
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="v2-aprofile__avatar-cancel" onClick={() => setAvatarDialogOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          )}
           <div className="v2-aprofile__hero-text">
             <div className="v2-aprofile__name-row">
               <h1 className="v2-aprofile__name">{agent.displayName}</h1>

@@ -59,7 +59,6 @@ import {
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
-import AvatarGenerator from './AvatarGenerator';
 import AgentEventsDebugPage from '../admin/AgentEventsDebugPage';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -250,7 +249,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [runtimeStatusLoading, setRuntimeStatusLoading] = useState(false);
   const [createAgentAvatarFile, setCreateAgentAvatarFile] = useState(null);
   const [createAgentAvatarPreview, setCreateAgentAvatarPreview] = useState('');
-  const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
   const [editTemplateOpen, setEditTemplateOpen] = useState(false);
   const [editTemplate, setEditTemplate] = useState(null);
   const [editTemplateAvatarFile, setEditTemplateAvatarFile] = useState(null);
@@ -996,7 +994,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
     setCreateAgentAvatarFile(file);
     setCreateAgentAvatarPreview(avatarDataUri);
-    setAvatarGeneratorOpen(false);
   };
 
   /**
@@ -4753,14 +4750,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               src={createAgentAvatarPreview || undefined}
             />
             <Stack direction="row" spacing={1}>
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => setAvatarGeneratorOpen(true)}
-                disabled={!createAgentName}
-              >
-                🎨 Generate AI Avatar
-              </Button>
               <Button variant="outlined" size="small" component="label">
                 Upload
                 <input
@@ -4857,13 +4846,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       </Dialog>
 
       {/* AI Avatar Generator Modal */}
-      <AvatarGenerator
-        open={avatarGeneratorOpen}
-        onClose={() => setAvatarGeneratorOpen(false)}
-        onSelect={handleAvatarGenerated}
-        agentName={createAgentName}
-        targetType="agent"
-      />
     </Container>
   );
 };
