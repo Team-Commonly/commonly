@@ -20,6 +20,8 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
+const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
+// eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
@@ -91,6 +93,10 @@ interface DispatchHeartbeatsResult {
   skippedByInterval: number;
 }
 
+interface ScheduledDispatchHeartbeatsResult extends DispatchHeartbeatsResult {
+  skippedByLease: boolean;
+}
+
 interface DispatchPodSummaryOptions {
   trigger?: string;
   windowMinutes?: number;
@@ -106,6 +112,13 @@ interface CodexRefreshResult {
   suffix?: string;
   expiresAt: number;
 }
+
+const HEARTBEAT_DISPATCH_LEASE_ID = 'agent-heartbeat-dispatch';
+// A rollout briefly runs the old and new schedulers together (~40 seconds).
+// Keep the lease long enough to cover that overlap, but shorter than the
+// one-minute cron cadence so an otherwise healthy tick is never skipped.
+const HEARTBEAT_DISPATCH_LEASE_MS = 55 * 1000;
+const SCHEDULER_INSTANCE_ID = `${process.pid}:${crypto.randomUUID()}`;
 
 // Cron jobs are process-local. Keep one module-private owner so a second
 // SchedulerService instance cannot start a duplicate job set in this process.
@@ -251,11 +264,12 @@ class SchedulerService {
       async () => {
         console.log('Dispatching agent heartbeat events...');
         try {
-          const result = await SchedulerService.dispatchAgentHeartbeats({
+          const result = await SchedulerService.dispatchScheduledAgentHeartbeats({
             trigger: 'scheduled-interval',
             respectIntervals: true,
           });
-          console.log(`Agent heartbeats enqueued: ${result.enqueued}`);
+          const leaseSuffix = result.skippedByLease ? ' (another scheduler holds the lease)' : '';
+          console.log(`Agent heartbeats enqueued: ${result.enqueued}${leaseSuffix}`);
         } catch (error) {
           console.error('Error dispatching agent heartbeats:', error);
         }
@@ -505,7 +519,7 @@ class SchedulerService {
     }, 9000);
 
     setTimeout(() => {
-      SchedulerService.dispatchAgentHeartbeats({
+      SchedulerService.dispatchScheduledAgentHeartbeats({
         trigger: 'startup',
         respectIntervals: true,
       }).catch((error: unknown) => {
@@ -895,6 +909,59 @@ class SchedulerService {
       lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
       generatedAt: now.toISOString(),
     };
+  }
+
+  /**
+   * Atomically take the cluster-wide heartbeat slot. A duplicate-key error is
+   * the normal losing result when two scheduler pods try to create the lease
+   * during a rollout; every other database error must still surface. We do
+   * not release early: that would let the other rollout replica run the same
+   * automatic tick after this dispatcher finishes.
+   */
+  static async tryAcquireHeartbeatDispatchLease(now = new Date()): Promise<boolean> {
+    const expiresAt = new Date(now.getTime() + HEARTBEAT_DISPATCH_LEASE_MS);
+    try {
+      await SchedulerHeartbeatLease.findOneAndUpdate(
+        {
+          _id: HEARTBEAT_DISPATCH_LEASE_ID,
+          expiresAt: { $lte: now },
+        },
+        {
+          $set: {
+            ownerId: SCHEDULER_INSTANCE_ID,
+            expiresAt,
+          },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      );
+      return true;
+    } catch (error: unknown) {
+      if ((error as { code?: number })?.code === 11000) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Scheduler-only wrapper. Direct/manual dispatch intentionally stays
+   * available through dispatchAgentHeartbeats; only automatic triggers need
+   * the distributed lease that survives two backend replicas during rollout.
+   */
+  static async dispatchScheduledAgentHeartbeats(
+    options: DispatchHeartbeatsOptions = {},
+  ): Promise<ScheduledDispatchHeartbeatsResult> {
+    const now = options.now || new Date();
+    const acquired = await SchedulerService.tryAcquireHeartbeatDispatchLease(now);
+    if (!acquired) {
+      return {
+        scanned: 0,
+        enqueued: 0,
+        skippedByInterval: 0,
+        skippedByLease: true,
+      };
+    }
+
+    const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
+    return { ...result, skippedByLease: false };
   }
 
   static async dispatchAgentHeartbeats(
