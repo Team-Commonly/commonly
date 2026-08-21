@@ -257,21 +257,22 @@ const V2AgentProfile: React.FC = () => {
           )}
           {avatarDialogOpen && (
             <div className="v2-aprofile__avatar-dialog" role="dialog" aria-label="Choose an avatar">
-              {/* Eight deterministic robots seeded off this agent's identity —
-                  same grid every visit, and the pick is stored as a seed so
-                  every surface regenerates it locally. Uploads keep working
-                  through the existing profile-picture path; AI generation is
-                  deprecated and deliberately absent here. */}
+              {/* Eight deterministic characters seeded off this agent's
+                  identity — same grid every visit, and the pick is stored as a
+                  seed so every surface regenerates it locally. Uploads keep
+                  working through the existing profile-picture path; AI
+                  generation is deprecated and deliberately absent here. */}
+              <div className="v2-aprofile__avatar-title">Choose an avatar</div>
               <div className="v2-aprofile__avatar-grid">
-                {presetCharacterOptions(`${agent.agentName}:${agent.instanceId || 'default'}`, 'agent').map((robot) => (
+                {presetCharacterOptions(`${agent.agentName}:${agent.instanceId || 'default'}`, 'agent').map((option) => (
                   <button
-                    key={robot.id}
+                    key={option.id}
                     type="button"
                     className="v2-aprofile__avatar-choice"
                     disabled={savingAvatar}
-                    onClick={() => saveAvatar(robot.id)}
+                    onClick={() => saveAvatar(option.id)}
                   >
-                    <img src={robot.src || ''} alt="robot avatar option" width={56} height={56} style={{ borderRadius: '50%' }} />
+                    <img src={option.src || ''} alt="avatar option" width={56} height={56} style={{ borderRadius: '50%' }} />
                   </button>
                 ))}
               </div>
