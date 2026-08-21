@@ -14,7 +14,25 @@ const {
   userHasPodAccess,
 } = require('./helpers');
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { rateLimit } = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+
 const catalogRouter = express.Router();
+
+// ~120 req/min/IP, same shape as agentProfile's limiter: generous for a
+// human browsing the catalog, low enough to blunt scrapers now that every
+// listing request may also cost a role lookup. Skipped in tests.
+catalogRouter.use(rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: any) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
+}));
 
 const findExistingAgentInstance = async (agentName: any, instanceId: any) => {
   const installations = await AgentInstallation.find({
