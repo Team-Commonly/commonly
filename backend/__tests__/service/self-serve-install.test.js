@@ -217,6 +217,11 @@ describe('ADR-006 self-serve webhook install', () => {
       agentName: 'public-marketplace-bot',
       displayName: 'Public Bot',
       description: 'Catalog-visible',
+      // The hire catalog is verified-only for non-admins since the ADR-022
+      // Phase 0 gate — a listable fixture must say so explicitly, exactly as
+      // a real listing does. The ephemeral row below stays unverified AND
+      // ephemeral; its exclusion is what this test actually pins.
+      verified: true,
       registry: 'commonly-community',
       manifest: {
         name: 'public-marketplace-bot',
