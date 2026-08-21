@@ -246,7 +246,12 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
 const canEditAgentAvatar = async (req: any, agentName: string, instanceId: string): Promise<boolean> => {
   const callerId = req.userId || req.user?._id || req.user?.id;
   if (!callerId) return false;
+  // JWT auth populates req.user = { id } WITHOUT role (middleware/auth.ts:81)
+  // — only the cm_ API-token branch carries role. Trusting req.user.role here
+  // silently disabled the admin path for every browser session, so load it.
   if (req.user?.role === 'admin') return true;
+  const caller = await User.findById(callerId).select('role').lean();
+  if (caller?.role === 'admin') return true;
   const owned = await AgentInstallation.findOne({
     agentName,
     instanceId,
