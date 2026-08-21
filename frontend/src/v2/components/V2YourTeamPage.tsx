@@ -121,7 +121,12 @@ const V2YourTeamPage: React.FC = () => {
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemed, setRedeemed] = useState(false);
   const isEntitled = entitledFromUser || redeemed;
-  const primaryHirePath = isEntitled ? '/v2/agents/browse' : '/v2/agents/byo';
+  // ADR-022 D2, first step (Sam, 2026-08-21: "two buttons go to the same
+  // place"): the entitlement fork used to send unentitled users' Hire button
+  // to BYO — the same destination as the Connect button beside it. Everyone
+  // sees the same catalog now; entitlement gates at install time (the
+  // where-step, once Phase 1 lands), not at the storefront door.
+  const primaryHirePath = '/v2/agents/browse';
 
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
