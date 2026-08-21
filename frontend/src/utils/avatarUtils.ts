@@ -1,6 +1,6 @@
 import { normalizeUploadUrl } from './apiBaseUrl';
 // eslint-disable-next-line import/no-cycle
-import { characterAvatarFor, AvatarKind } from '../v2/utils/avatars';
+import { characterAvatarFor, AvatarKind, PICKER_CELL_COUNT } from '../v2/utils/avatars';
 
 interface AvatarOption {
   id: string;
@@ -59,10 +59,12 @@ export const isFacePresetId = (value: string | undefined | null): boolean => (
 );
 
 /**
- * Eight stable face options for a user. Seeded off their identity so the grid
- * is personal and NEVER reshuffles — a picker whose options change between
- * visits reads as broken, and "the face I picked last month" must still be in
- * the grid when they come back.
+ * Sixteen stable face options for a user — the full skin-tone × hair-
+ * presentation matrix (traits derive from the -v<n> suffix in v2/utils/
+ * avatars). Seeded off their identity so the grid is personal and NEVER
+ * reshuffles — a picker whose options change between visits reads as broken,
+ * and "the face I picked last month" must still be in the grid when they
+ * come back.
  */
 export const presetFaceOptions = (seedBase: string): Array<{ id: string; src: string | null }> => (
   presetCharacterOptions(seedBase, 'human')
@@ -73,7 +75,7 @@ export const presetCharacterOptions = (
   kind: AvatarKind,
 ): Array<{ id: string; src: string | null }> => {
   const prefix = kind === 'agent' ? ROBOT_PRESET_PREFIX : FACE_PRESET_PREFIX;
-  return Array.from({ length: 8 }, (_, i) => {
+  return Array.from({ length: PICKER_CELL_COUNT }, (_, i) => {
     const seed = `${seedBase}-v${i + 1}`;
     return { id: `${prefix}${seed}`, src: characterAvatarFor(seed, kind) };
   });
