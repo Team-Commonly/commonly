@@ -127,7 +127,7 @@ const V2Login: React.FC = () => {
         <div className="v2-login__hint" style={{ fontSize: 11, opacity: 0.7 }}>
           {'Avatars: '}
           <a className="v2-login__link" href="https://www.dicebear.com" target="_blank" rel="noreferrer">DiceBear</a>
-          {' — “Big Smile” (CC BY 4.0), “Bottts”'}
+          {' — “Big Smile” (CC BY 4.0)'}
         </div>
       </form>
     </div>

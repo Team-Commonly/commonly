@@ -1,7 +1,7 @@
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { createAvatar } from '@dicebear/core';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { bottts, bigSmile } from '@dicebear/collection';
+import { bigSmile } from '@dicebear/collection';
 
 // Avatar tints. Blue-forward and cohesive with the design system's single
 // accent (#2f6feb) — deliberately purple-free (the old palette led with two
@@ -115,9 +115,17 @@ export const initialsFor = (name: string | undefined | null): string => {
 
 // ── Character tier ──────────────────────────────────────────────────────────
 //
-// Sam's ruling (2026-08-20): humans render bigSmile faces, agents render
-// bottts robots. The semantics read with zero badges — face = person, robot =
-// agent — which most agent-team products need a label for.
+// Sam's ruling (2026-08-21, revising 2026-08-20): bigSmile faces for BOTH
+// species — the bottts robots read as ugly in practice. Species still has to
+// be legible at a glance in mixed chat, so the kind now selects the
+// BACKGROUND family instead of the art style: humans sit on warm tints,
+// agents on cool ones. The two sets are disjoint on purpose.
+//
+// The stored prefixes ('bigsmile:' / 'bottts:') are SPECIES TAGS on the wire,
+// not artwork names — 'bottts:<seed>' means "agent-styled character", and
+// after this revision that renders a bigSmile face on an agent tint. Keeping
+// the tag stable is what let this revision ship with zero backend changes and
+// zero data migration.
 //
 // Deterministic, local, SVG: same seed, same face, forever. No image API and
 // no art pipeline, so install #10,000 costs what install #1 did. That is what
@@ -125,10 +133,20 @@ export const initialsFor = (name: string | undefined | null): string => {
 // those costs.
 //
 // License note that must not rot: bigSmile is CC BY 4.0 — the visible credit
-// in the login footer is a LICENSE REQUIREMENT, not decoration. bottts is
-// free for personal and commercial use. If either style is ever swapped,
-// re-check the license and the credit line together.
+// in the login footer is a LICENSE REQUIREMENT, not decoration. If the style
+// is ever swapped, re-check the license and the credit line together.
 export type AvatarKind = 'human' | 'agent';
+
+// Disjoint background families — the species signal now that both kinds share
+// one art style. Indexes into AVATAR_PALETTE: humans get brand blue / green /
+// amber / rose (warm-forward), agents get cyan / teal / steel / slate (cool).
+const HUMAN_BG = [0, 3, 4, 5];
+const AGENT_BG = [1, 2, 6, 7];
+
+const backgroundFor = (key: string, kind: AvatarKind): string => {
+  const family = kind === 'agent' ? AGENT_BG : HUMAN_BG;
+  return AVATAR_PALETTE[family[hashString(key) % family.length]].base;
+};
 
 /**
  * Data-URI for the character avatar, or null when generation fails — callers
@@ -147,15 +165,12 @@ export const characterAvatarFor = (
 ): string | null => {
   const key = String(seed || '').trim();
   if (!key) return null;
-  // Branched calls rather than a ternary on the style argument: each style
-  // module carries its own Options generic, and the union of the two is not
-  // assignable to createAvatar's Style<Options> parameter.
-  const options = { seed: key, backgroundColor: [colorFor(key).slice(1)] };
+  // Same-seed human and agent still must never render identically (the
+  // species-legibility rule) — the disjoint background families guarantee it
+  // even on a face collision.
+  const options = { seed: key, backgroundColor: [backgroundFor(key, kind).slice(1)] };
   try {
-    return (kind === 'agent'
-      ? createAvatar(bottts, options)
-      : createAvatar(bigSmile, options)
-    ).toDataUri();
+    return createAvatar(bigSmile, options).toDataUri();
   } catch {
     return null;
   }

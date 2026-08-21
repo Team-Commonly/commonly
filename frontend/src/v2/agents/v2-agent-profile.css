@@ -266,3 +266,9 @@
 }
 /* The picker dialog anchors to the hero card. */
 .v2-aprofile__hero { position: relative; }
+.v2-aprofile__avatar-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text);
+}
