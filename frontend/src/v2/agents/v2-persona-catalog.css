@@ -29,6 +29,14 @@
   gap: 16px;
 }
 
+/* At phone width the 300px column minimum exceeds what the nav rail leaves;
+   a single fluid column keeps every card fully inside the viewport. */
+@media (max-width: 640px) {
+  .v2-pcat { padding: 8px 14px 32px; }
+  .v2-pcat__grid { grid-template-columns: 1fr; }
+  .v2-pcat__card { min-width: 0; }
+}
+
 .v2-pcat__card {
   display: flex;
   flex-direction: column;
