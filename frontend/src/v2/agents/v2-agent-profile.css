@@ -242,7 +242,8 @@
   border-radius: var(--v2-radius-lg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
-.v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(4, 56px); gap: 10px; }
+/* 6 columns so each row of the archetype table reads as one ethnic group. */
+.v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(6, 56px); gap: 10px; }
 .v2-aprofile__avatar-choice {
   padding: 2px;
   background: none;
