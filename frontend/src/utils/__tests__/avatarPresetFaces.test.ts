@@ -15,7 +15,7 @@ describe('preset face avatars', () => {
     const b = presetFaceOptions('sam');
     expect(a.map((f) => f.id)).toEqual(b.map((f) => f.id));
     expect(a.map((f) => f.src)).toEqual(b.map((f) => f.src));
-    expect(a).toHaveLength(16);
+    expect(a).toHaveLength(24);
   });
 
   test('different users see different grids', () => {
