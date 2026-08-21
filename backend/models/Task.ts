@@ -24,6 +24,16 @@ export interface ITask extends Document {
   // ADR-018 D4: a claim is a lease, never permanent. Null on legacy claims —
   // readers derive their effective expiry from claimedAt + the route's lease.
   claimExpiresAt?: Date | null;
+  // Fable's #1080 ruling, part 2: a lapsed lease held by a PROVABLY LIVE seat
+  // is deferred rather than rescued, at most three times. The counter lives on
+  // the row so the sweep stays stateless; it resets on every claim, so a seat
+  // that renews normally never accumulates one.
+  rescueDeferrals?: number;
+  // Part 3: provenance always. Who held the lease when the kernel took it
+  // back. Survives the rescue precisely because `claimedBy` and `assignee` do
+  // not — clearing them is what makes the row findable again, and it is also
+  // what erased the only record of whose work it was.
+  lapsedFrom?: string | null;
   completedAt?: Date | null;
   prUrl?: string | null;
   notes?: string | null;
@@ -59,6 +69,8 @@ const TaskSchema = new Schema<ITask>(
     claimedBy: { type: String, default: null },
     claimedAt: { type: Date, default: null },
     claimExpiresAt: { type: Date, default: null },
+    rescueDeferrals: { type: Number, default: 0 },
+    lapsedFrom: { type: String, default: null },
     completedAt: { type: Date, default: null },
     prUrl: { type: String, default: null },
     notes: { type: String, default: null },

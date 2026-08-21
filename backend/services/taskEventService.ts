@@ -278,7 +278,7 @@ export async function notifyPodAgents(
  */
 export async function notifyFoundWork(
   podId: unknown,
-  items: Array<{ taskId?: string; title?: string }>,
+  items: Array<{ taskId?: string; title?: string; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
 ): Promise<{ woken: number }> {
@@ -296,8 +296,16 @@ export async function notifyFoundWork(
     const installs = (active || []).filter(wakeOnMessageEnabled);
     if (!installs.length) return { woken: 0 };
 
+    // #1080 part 3: a rescued row names who it lapsed from. Without it the wake
+    // says "unclaimed" about work that has an open PR against it, and the only
+    // thing standing between that and a duplicate implementation is whether a
+    // peer happens to be reading the pod. Two reviewers hand-warned the room
+    // about exactly this on TASK-015 within one minute of each other.
     const listed = items
-      .map((t) => `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`)
+      .map((t) => {
+        const line = `- ${t.taskId || '?'} — ${String(t.title || '(untitled)').slice(0, 80)}`;
+        return t.lapsedFrom ? `${line}  [lapsed from ${t.lapsedFrom} — check their work before starting]` : line;
+      })
       .join('\n');
     const more = totalCount > items.length ? `\n…and ${totalCount - items.length} more on the board.` : '';
     const content = [
@@ -350,11 +358,92 @@ export async function notifyFoundWork(
   }
 }
 
+/**
+ * #1080 part 2: warn the holder of a lapsed lease that the kernel is about to
+ * take it back, instead of taking it back silently.
+ *
+ * Addressed to ONE seat — the holder — so unlike `notifyFoundWork` this does
+ * not consult `wakeOnMessageEnabled`. The holder's own claim is the address;
+ * an ambient opt-in is not what makes this relevant to them. It is also the
+ * reason the warning is only ever sent to a seat that derived 'listening':
+ * fable, 56213 — "the warning event works only BECAUSE it's gated on a live
+ * seat — a dead seat ignoring it is the diagnosis, not the failure."
+ *
+ * Priced 'kernel' like every other sweep wake: neutral in the cascade
+ * governor, counting toward nothing and clearing nothing.
+ */
+export async function notifyLeaseWarning(
+  podId: unknown,
+  holder: { agentName: string; instanceId: string; label: string },
+  task: { taskId?: string; title?: string },
+  deferralsUsed: number,
+  maxDeferrals: number,
+  now: Date = new Date(),
+): Promise<{ warned: boolean }> {
+  if (!podId || !holder?.agentName || !task?.taskId) return { warned: false };
+  /* eslint-disable global-require, @typescript-eslint/no-require-imports */
+  const AgentEventService = require('./agentEventService');
+  const AgentEvent = require('../models/AgentEvent');
+  /* eslint-enable global-require, @typescript-eslint/no-require-imports */
+
+  const normalizedPodId = String(podId);
+  const remaining = maxDeferrals - deferralsUsed;
+  const content = [
+    `[Your lease on ${task.taskId} has lapsed. You are still listening, so the kernel deferred the rescue — ${remaining} deferral${remaining === 1 ? '' : 's'} left.]`,
+    '',
+    `${task.taskId} — ${String(task.title || '(untitled)').slice(0, 80)}`,
+    '',
+    'The row is claimable by peers right now: deferral suppresses the kernel\'s',
+    'rescue, not the board. To keep it, post a task update or re-claim — either',
+    'renews the lease. If you have finished, complete it with the PR link. If it',
+    'is no longer yours, do nothing and it returns to the board named as yours.',
+  ].join('\n');
+
+  try {
+    // Fold rather than stack: three deferrals on one task must not become three
+    // pending events. Keyed on the task, so a seat holding two lapsed rows is
+    // warned once about each.
+    const folded = await AgentEvent.findOneAndUpdate(
+      {
+        agentName: holder.agentName,
+        instanceId: holder.instanceId || 'default',
+        podId: normalizedPodId,
+        status: 'pending',
+        'payload.leaseWarningTaskId': task.taskId,
+      },
+      { $set: { 'payload.content': content, 'payload.deferralsUsed': deferralsUsed } },
+      { new: true },
+    );
+    if (folded) return { warned: true };
+
+    await AgentEventService.enqueue({
+      agentName: holder.agentName,
+      instanceId: holder.instanceId || 'default',
+      podId: normalizedPodId,
+      type: 'message.posted',
+      payload: {
+        content,
+        podId: normalizedPodId,
+        leaseWarningTaskId: task.taskId,
+        deferralsUsed,
+        warnedAt: now,
+        // Same third pricing branch as the board wake. No dmKind, no messageId.
+        triggerAuthor: 'kernel',
+      },
+    });
+    return { warned: true };
+  } catch (err) {
+    console.warn('[task-event] lease warning failed:', (err as Error).message);
+    return { warned: false };
+  }
+}
+
 export default {
   bindSocketIO,
   emitTaskUpdated,
   notifyPodAgents,
   notifyFoundWork,
+  notifyLeaseWarning,
 };
 
 // CJS compat: let require() return the default export directly
