@@ -468,7 +468,11 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const now = new Date();
-    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
+    // `rescueDeferrals` and `lapsedFrom` reset on every claim (#1080 part 2/3).
+    // The deferral budget is per-lease, not per-task: a seat that renews
+    // normally must never inherit a predecessor's spent budget, or the third
+    // holder of a hot task gets rescued on its first lapse.
+    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
     // One CAS, four ways to win: the task is unclaimed; the caller already
     // holds it (renewal); the holder's lease lapsed; or the claim predates
     // leases entirely (claimExpiresAt null) and is older than one lease —
@@ -579,7 +583,32 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const author = await resolveAuthor(req);
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, { $push: { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: new Date() } } }, { new: true });
+    const now = new Date();
+    const note = { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: now } };
+    const podFilter = mongoose.Types.ObjectId.createFromHexString(podId || '');
+
+    // #1080 part 1 (fable's ruling; @sprint-impl's shape): renewal derives
+    // from WORK. A progress note is the signal a working holder naturally
+    // produces, and the lease ignored it — @sprint-review measured exactly
+    // that on TASK-015, where a 09:27:30 rebase note did not stop a 09:51:11
+    // lapse. So a note from the holder renews; a note from anyone else does
+    // not, or any passing peer could keep a dead seat's claim alive forever.
+    //
+    // Holder-match is evaluated SERVER-SIDE, in the filter, never from a
+    // snapshot — same rule the rescue CAS follows. Two attempts rather than
+    // one conditional write: the renewing form first, the note-only form as
+    // fallback. The note lands either way; only the lease extension is gated.
+    const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
+    let task = claimKey
+      ? await Task.findOneAndUpdate(
+        { podId: podFilter, taskId, status: 'claimed', claimedBy: claimKey },
+        { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: note },
+        { new: true },
+      )
+      : null;
+    if (!task) {
+      task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
+    }
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');

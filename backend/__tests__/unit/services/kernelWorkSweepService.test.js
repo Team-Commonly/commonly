@@ -13,12 +13,19 @@ jest.mock('../../../models/Task', () => ({
 }));
 
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { find: jest.fn() },
+  AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
 }));
 
 const mockNotifyFoundWork = jest.fn();
+const mockNotifyLeaseWarning = jest.fn();
 jest.mock('../../../services/taskEventService', () => ({
   notifyFoundWork: (...args) => mockNotifyFoundWork(...args),
+  notifyLeaseWarning: (...args) => mockNotifyLeaseWarning(...args),
+}));
+
+const mockDeriveAgentState = jest.fn();
+jest.mock('../../../services/agentStateService', () => ({
+  deriveAgentState: (...args) => mockDeriveAgentState(...args),
 }));
 
 // The contract pin below requires routes/tasksApi for its claimableConditions
@@ -34,7 +41,32 @@ jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/githubAppService', () => ({ isPatConfigured: jest.fn(() => false) }));
 
 const Task = require('../../../models/Task');
+const User = require('../../../models/User');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 const KernelWorkSweepService = require('../../../services/kernelWorkSweepService');
+
+const HOLDER_ID = new mongoose.Types.ObjectId().toString();
+
+// A holder that resolves to a real install. `state` is whatever
+// deriveAgentState is mocked to return — the point of the seam.
+const mockHolderResolves = (state) => {
+  User.findById.mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        username: 'sprint-impl',
+        isBot: true,
+        botMetadata: { agentName: 'claude-code', instanceId: 'sprint-impl' },
+        agentRuntimeTokens: [],
+      }),
+    }),
+  });
+  AgentInstallation.findOne.mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ agentName: 'claude-code', instanceId: 'sprint-impl' }),
+    }),
+  });
+  mockDeriveAgentState.mockReturnValue({ agentName: 'claude-code', instanceId: 'sprint-impl', state });
+};
 
 const POD_A = new mongoose.Types.ObjectId().toString();
 const NOW = new Date('2026-08-20T20:00:00Z');
@@ -56,6 +88,15 @@ beforeEach(() => {
   });
   Task.aggregate.mockResolvedValue([]);
   mockNotifyFoundWork.mockResolvedValue({ woken: 1 });
+  mockNotifyLeaseWarning.mockResolvedValue({ warned: true });
+  // Default: the holder cannot be resolved at all, which is the pre-#1080
+  // behaviour — rescue as today. Tests that care opt in via mockHolderResolves.
+  User.findById.mockReturnValue({
+    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+  });
+  AgentInstallation.findOne.mockReturnValue({
+    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+  });
 });
 
 describe('rescueLapsed', () => {
@@ -66,7 +107,7 @@ describe('rescueLapsed', () => {
     });
     Task.findOneAndUpdate.mockResolvedValue({ ...t, status: 'pending' });
 
-    const rescued = await KernelWorkSweepService.rescueLapsed(NOW);
+    const { rescued } = await KernelWorkSweepService.rescueLapsed(NOW);
 
     expect(rescued).toHaveLength(1);
     const [filter, update] = Task.findOneAndUpdate.mock.calls[0];
@@ -89,7 +130,7 @@ describe('rescueLapsed', () => {
     // CAS misses: the holder renewed, no lapsed branch matches.
     Task.findOneAndUpdate.mockResolvedValue(null);
 
-    const rescued = await KernelWorkSweepService.rescueLapsed(NOW);
+    const { rescued } = await KernelWorkSweepService.rescueLapsed(NOW);
     expect(rescued).toHaveLength(0);
   });
 
@@ -105,6 +146,171 @@ describe('rescueLapsed', () => {
     const [, update] = Task.findOneAndUpdate.mock.calls[0];
     expect(update.$push.updates.author).toBe('kernel-sweep');
     expect(update.$push.updates.text).toContain('kernel sweep');
+  });
+});
+
+describe('#1080 part 2 — liveness gates the rescue, and only liveness', () => {
+  const withCandidate = (overrides = {}) => {
+    const t = lapsedTask({ claimedBy: HOLDER_ID, assignee: 'sprint-impl', ...overrides });
+    Task.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([t]) }),
+    });
+    Task.findOneAndUpdate.mockResolvedValue({ ...t });
+    return t;
+  };
+
+  it('a provably-live holder is deferred, not rescued', async () => {
+    withCandidate();
+    mockHolderResolves('listening');
+
+    const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(NOW);
+
+    expect(rescued).toHaveLength(0);
+    expect(deferred).toHaveLength(1);
+    const [, update] = Task.findOneAndUpdate.mock.calls[0];
+    // The deferring write must NOT touch status/assignee — the whole point is
+    // that the row stays exactly as the holder left it.
+    expect(update.$set.status).toBeUndefined();
+    expect(update.$set.assignee).toBeUndefined();
+    expect(update.$set.rescueDeferrals).toBe(1);
+  });
+
+  it('deferral does NOT extend the lease — the row stays claimable by peers', async () => {
+    withCandidate();
+    mockHolderResolves('listening');
+
+    await KernelWorkSweepService.rescueLapsed(NOW);
+
+    const [, update] = Task.findOneAndUpdate.mock.calls[0];
+    // "liveness isn't tenure" (fable, 56210). If deferral pushed
+    // claimExpiresAt forward, the kernel would be renewing on the holder's
+    // behalf — a seat that never renews would hold the row indefinitely, and
+    // a peer who legitimately needs it could no longer win the claim CAS.
+    expect(update.$set.claimExpiresAt).toBeUndefined();
+    expect(update.$set.claimedAt).toBeUndefined();
+  });
+
+  it('warns the holder it deferred for, naming the task and the budget', async () => {
+    const t = withCandidate();
+    mockHolderResolves('listening');
+
+    await KernelWorkSweepService.rescueLapsed(NOW);
+
+    expect(mockNotifyLeaseWarning).toHaveBeenCalledTimes(1);
+    const [podId, holder, task, used, max] = mockNotifyLeaseWarning.mock.calls[0];
+    expect(String(podId)).toBe(String(t.podId));
+    expect(holder.label).toBe('sprint-impl');
+    expect(task.taskId).toBe('TASK-007');
+    expect(used).toBe(1);
+    expect(max).toBe(3);
+  });
+
+  it('rescues once the deferral budget is spent, and says why', async () => {
+    withCandidate({ rescueDeferrals: 3 });
+    mockHolderResolves('listening');
+
+    const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(NOW);
+
+    expect(deferred).toHaveLength(0);
+    expect(rescued).toHaveLength(1);
+    const [, update] = Task.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.status).toBe('pending');
+    expect(update.$push.updates.text).toContain('3 deferrals');
+    expect(mockNotifyLeaseWarning).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['gone-dark', 'the wrapper stopped polling'],
+    ['never-connected', 'the wrapper never polled'],
+    ['unknown', 'the gateway tier cannot say'],
+    ['reachable', 'asserted by construction, never measured'],
+  ])('%s rescues as today (%s)', async (state) => {
+    withCandidate();
+    mockHolderResolves(state);
+
+    const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(NOW);
+
+    // Only 'listening' is evidence. 'reachable' and 'unknown' are NOT the
+    // opposite of dead — they are the derivation declining to measure — and
+    // deferring on them would grant tenure to a class nobody checked.
+    expect(deferred).toHaveLength(0);
+    expect(rescued).toHaveLength(1);
+    expect(mockNotifyLeaseWarning).not.toHaveBeenCalled();
+  });
+
+  it('an unresolvable holder rescues as today', async () => {
+    withCandidate({ claimedBy: null, assignee: null });
+
+    const { rescued } = await KernelWorkSweepService.rescueLapsed(NOW);
+
+    expect(rescued).toHaveLength(1);
+    expect(mockDeriveAgentState).not.toHaveBeenCalled();
+  });
+
+  it('a warning that fails to deliver still leaves the deferral standing', async () => {
+    withCandidate();
+    mockHolderResolves('listening');
+    mockNotifyLeaseWarning.mockRejectedValue(new Error('queue down'));
+
+    const { rescued, deferred } = await KernelWorkSweepService.rescueLapsed(NOW);
+
+    // An undeliverable warning is a missing signal, not a verdict on the
+    // holder. Rescuing here would make a queue outage look like abandonment.
+    expect(deferred).toHaveLength(1);
+    expect(rescued).toHaveLength(0);
+  });
+});
+
+describe('#1080 part 3 — provenance survives the clearing', () => {
+  it('the rescue records who held it, in the field AND the audit trail', async () => {
+    const t = lapsedTask({ claimedBy: HOLDER_ID, assignee: 'sprint-impl' });
+    Task.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([t]) }),
+    });
+    Task.findOneAndUpdate.mockResolvedValue({ ...t, status: 'pending' });
+
+    await KernelWorkSweepService.rescueLapsed(NOW);
+
+    const [, update] = Task.findOneAndUpdate.mock.calls[0];
+    // assignee/claimedBy are cleared in the SAME write — that clearing is what
+    // erased the only record of ownership and let a finished PR be advertised
+    // as unclaimed work. lapsedFrom is the record that outlives it.
+    expect(update.$set.assignee).toBeNull();
+    expect(update.$set.claimedBy).toBeNull();
+    expect(update.$set.lapsedFrom).toBe('sprint-impl');
+    expect(update.$push.updates.text).toContain('was: sprint-impl');
+  });
+
+  it('falls back to claimedBy when the row carries no assignee', async () => {
+    const t = lapsedTask({ claimedBy: 'nova', assignee: null });
+    Task.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([t]) }),
+    });
+    Task.findOneAndUpdate.mockResolvedValue({ ...t, status: 'pending' });
+
+    await KernelWorkSweepService.rescueLapsed(NOW);
+
+    const [, update] = Task.findOneAndUpdate.mock.calls[0];
+    expect(update.$set.lapsedFrom).toBe('nova');
+  });
+
+  it('the found-work wake carries lapsedFrom out of the aggregate', async () => {
+    Task.aggregate.mockResolvedValue([
+      {
+        _id: POD_A,
+        tasks: [{ taskId: 'TASK-015', title: 'decouple', lapsedFrom: 'sprint-impl' }],
+        count: 1,
+      },
+    ]);
+
+    await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    const [, items] = mockNotifyFoundWork.mock.calls[0];
+    expect(items[0].lapsedFrom).toBe('sprint-impl');
+    // The projection is where this can silently die: $group must $push the
+    // field, or the wake renders "unclaimed" about work that has an owner.
+    const pipeline = Task.aggregate.mock.calls[0][0];
+    expect(JSON.stringify(pipeline)).toContain('lapsedFrom');
   });
 });
 
@@ -164,7 +370,9 @@ describe('sweep', () => {
 
     const result = await KernelWorkSweepService.sweep(NOW);
 
-    expect(result).toEqual({ scannedPods: 0, rescued: 0, woken: 0, skippedNoWork: 0 });
+    expect(result).toEqual({
+      scannedPods: 0, rescued: 0, deferred: 0, woken: 0, skippedNoWork: 0,
+    });
     expect(Task.find).not.toHaveBeenCalled();
     expect(mockNotifyFoundWork).not.toHaveBeenCalled();
   });
