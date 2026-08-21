@@ -843,12 +843,14 @@ const UserProfile = () => {
                             </Button>
                         </Box>
                     </Box>
-                    {/* Generated face presets (Sam, 2026-08-20). Replaces the flat
-                        color circles AND the deprecated Generate-with-AI flow: eight
-                        deterministic bigSmile faces seeded off the user's identity, so
-                        this grid is personal and never reshuffles between visits. The
-                        pick is stored as 'bigsmile:<seed>' and regenerated locally by
-                        every renderer — no image hosting, no API spend, no 404s. */}
+                    {/* Generated face presets (Sam, 2026-08-20; archetype grid
+                        2026-08-21). Replaces the flat color circles AND the deprecated
+                        Generate-with-AI flow: curated bigSmile archetype cells (four
+                        ethnic rows, female- and male-leaning looks) seeded off the
+                        user's identity, so the grid is personal and never reshuffles
+                        between visits. The pick is stored as 'bigsmile:<seed>' and
+                        regenerated locally by every renderer — no image hosting, no
+                        API spend, no 404s. */}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', my: 2 }}>
                         {presetFaceOptions(user.username || 'user').map((face) => (
                             <Avatar
