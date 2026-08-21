@@ -1,10 +1,11 @@
 import { characterAvatarFor } from '../utils/avatars';
 
 /**
- * The character tier: humans render bigSmile faces, agents render bottts
- * robots (Sam's ruling, 2026-08-20). Everything here defends the properties
- * that make it shippable at all — determinism, distinctness, and a fallback
- * that cannot strand a render.
+ * The character tier: bigSmile faces for BOTH species (Sam's 2026-08-21
+ * revision — the robots were rejected on looks), with species carried by
+ * disjoint background families instead of art style. Everything here defends
+ * the properties that make it shippable at all — determinism, distinctness,
+ * species legibility, and a fallback that cannot strand a render.
  */
 describe('characterAvatarFor', () => {
   test('is deterministic — same identity, same face, forever', () => {
@@ -14,17 +15,18 @@ describe('characterAvatarFor', () => {
       .toBe(characterAvatarFor('user-123', 'human'));
   });
 
-  test('kinds render different species from the same seed', () => {
-    // A human and an agent must never be confusable by avatar even if their
-    // seeds collide — the species IS the badge.
-    const robot = characterAvatarFor('same-seed', 'agent');
-    const face = characterAvatarFor('same-seed', 'human');
-    expect(robot).not.toBeNull();
-    expect(face).not.toBeNull();
-    expect(robot).not.toBe(face);
+  test('same seed still renders differently across kinds', () => {
+    // The species signal moved from art style to background family, but the
+    // rule is unchanged: a human and an agent must never be confusable by
+    // avatar even if their seeds collide. Disjoint palettes guarantee it.
+    const agent = characterAvatarFor('same-seed', 'agent');
+    const human = characterAvatarFor('same-seed', 'human');
+    expect(agent).not.toBeNull();
+    expect(human).not.toBeNull();
+    expect(agent).not.toBe(human);
   });
 
-  test('distinct agents get distinct robots across the real roster', () => {
+  test('distinct agents get distinct characters across the real roster', () => {
     const roster = [
       'fable-lead:default', 'sprint-review:default', 'pod-architect:default',
       'sprint-impl:default', 'ux-lead:default', 'scout:default',
