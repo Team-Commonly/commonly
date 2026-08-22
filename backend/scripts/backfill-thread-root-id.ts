@@ -32,6 +32,22 @@
  * IDEMPOTENT. Only touches rows with a reply edge and a NULL root, so a second
  * run is a no-op. DRY RUN BY DEFAULT — pass --apply to write.
  *
+ * ORDERING PRECONDITION — RUN THIS *AFTER* DERIVATION-ON-WRITE IS DEPLOYED.
+ * Not a nicety. The zero-edges branch below writes the ledger row with a NULL
+ * cutoff, meaning "ran, and there was no pre-threading history". That reading
+ * is only true once derivation is live, because from then on every new reply
+ * carries a root and the un-rooted population is closed.
+ *
+ * Run it BEFORE the deploy and zero edges means "not yet" rather than "none" —
+ * the null cutoff would be wrong, and `ON CONFLICT DO NOTHING` would make it
+ * permanent: a later correct run cannot replace it. The surface would then
+ * collapse pre-existing threads on an instance that does have history.
+ *
+ * On this instance derivation deployed 2026-08-22 16:01:52Z and the backfill
+ * had not yet run, so the ordering held. Stated here because it was a
+ * constraint nobody had written down (@sprint-review, pod 56911) and it is
+ * invisible from either the script or the deploy in isolation.
+ *
  * ---------------------------------------------------------------------------
  * WHAT THIS DOES ONCE WAKE-SCOPING LANDS. Read this before running --apply.
  *
