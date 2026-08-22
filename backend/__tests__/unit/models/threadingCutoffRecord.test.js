@@ -78,6 +78,22 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(SCRIPT).toMatch(/threadingCutoff: boundary\.cutoff/);
   });
 
+  it('the UPDATE and the ledger INSERT are one transaction', () => {
+    // sprint-review (TASK-046 note): losing the INSERT after the UPDATE leaves
+    // every chain rooted and no cutoff recorded. BEGIN precedes the UPDATE,
+    // COMMIT follows the INSERT, and the catch rolls back.
+    const begin = SCRIPT.indexOf("await client.query('BEGIN')");
+    const update = SCRIPT.indexOf('UPDATE messages m');
+    const insert = SCRIPT.lastIndexOf('INSERT INTO migration_records (name, details)');
+    const commit = SCRIPT.indexOf("await client.query('COMMIT')");
+    expect(begin).toBeGreaterThan(-1);
+    expect(begin).toBeLessThan(update);
+    expect(update).toBeLessThan(insert);
+    expect(insert).toBeLessThan(commit);
+    expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
+    expect(SCRIPT).toMatch(/client\.release\(\)/);
+  });
+
   it('a second run does NOT move the boundary', () => {
     // DO NOTHING, not DO UPDATE. By the second run the population the first
     // one measured no longer exists, so re-deriving would overwrite a true

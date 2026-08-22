@@ -309,47 +309,62 @@ async function main(): Promise<void> {
       return;
     }
 
-    const result = await pool.query(
-      `WITH RECURSIVE chain AS (
-         SELECT id, reply_to_message_id, id AS root
-           FROM messages WHERE reply_to_message_id IS NULL
-         UNION ALL
-         SELECT m.id, m.reply_to_message_id, c.root
-           FROM messages m JOIN chain c ON m.reply_to_message_id = c.id
-       )
-       UPDATE messages m
-          SET thread_root_id = chain.root
-         FROM chain
-        WHERE m.id = chain.id
-          AND m.reply_to_message_id IS NOT NULL
-          AND m.thread_root_id IS NULL
-          AND chain.root <> m.id`,
-    );
-    console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
+    // ONE TRANSACTION for the UPDATE and the ledger INSERT (sprint-review,
+    // TASK-046 note). Losing the INSERT after the UPDATE would leave every
+    // chain rooted and no cutoff recorded — and 'the backfill always writes
+    // the ledger row' is the only remaining guarantee between a partial run
+    // and a permanently unknown cutoff. Aspiration becomes property here.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `WITH RECURSIVE chain AS (
+           SELECT id, reply_to_message_id, id AS root
+             FROM messages WHERE reply_to_message_id IS NULL
+           UNION ALL
+           SELECT m.id, m.reply_to_message_id, c.root
+             FROM messages m JOIN chain c ON m.reply_to_message_id = c.id
+         )
+         UPDATE messages m
+            SET thread_root_id = chain.root
+           FROM chain
+          WHERE m.id = chain.id
+            AND m.reply_to_message_id IS NOT NULL
+            AND m.thread_root_id IS NULL
+            AND chain.root <> m.id`,
+      );
+      console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
 
-    // The ruling in #1115 says pre-cutoff roots render expanded, with the
-    // cutoff "read from the migration record". This script is the only process
-    // that ever knows it, and until now it discarded it (@sprint-review 56860).
-    //
-    // ON CONFLICT DO NOTHING, not DO UPDATE: a second run must not move a
-    // boundary the surface has already been rendering against. The script stays
-    // idempotent; the FIRST run's answer is the true one, because by the second
-    // run the population it measured no longer exists.
-    await pool.query(
-      `INSERT INTO migration_records (name, details)
-       VALUES ($1, $2::jsonb)
-       ON CONFLICT (name) DO NOTHING`,
-      [
-        MIGRATION_NAME,
-        JSON.stringify({
-          threadingCutoff: boundary.cutoff,
-          cutoffSource: boundary.from_rooted ? 'first-rooted-reply' : 'newest-unrooted-fallback',
-          rowsUpdated: result.rowCount,
-          rowsEligible: before.needs_root,
-        }),
-      ],
-    );
-    console.log(`recorded ${MIGRATION_NAME}: cutoff = ${boundary.cutoff ?? '(none)'}`);
+      // The ruling in #1115 says pre-cutoff roots render expanded, with the
+      // cutoff "read from the migration record". This script is the only process
+      // that ever knows it, and until now it discarded it (@sprint-review 56860).
+      //
+      // ON CONFLICT DO NOTHING, not DO UPDATE: a second run must not move a
+      // boundary the surface has already been rendering against. The script stays
+      // idempotent; the FIRST run's answer is the true one, because by the second
+      // run the population it measured no longer exists.
+      await client.query(
+        `INSERT INTO migration_records (name, details)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (name) DO NOTHING`,
+        [
+          MIGRATION_NAME,
+          JSON.stringify({
+            threadingCutoff: boundary.cutoff,
+            cutoffSource: boundary.from_rooted ? 'first-rooted-reply' : 'newest-unrooted-fallback',
+            rowsUpdated: result.rowCount,
+            rowsEligible: before.needs_root,
+          }),
+        ],
+      );
+      console.log(`recorded ${MIGRATION_NAME}: cutoff = ${boundary.cutoff ?? '(none)'}`);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
     const { rows: [after] } = await pool.query(
       `SELECT count(*)::int AS still_null
