@@ -175,9 +175,17 @@ describe('the pre-cutoff expanded default reaches the client', () => {
     expect(CONTROLLER_SRC).toMatch(/expandedForRootsCreatedBefore: threadingCutoff/);
   });
 
-  it('it is read from the migration ledger, by the backfill\'s own name', () => {
+  it('it is read from the migration ledger, by the shared constant', () => {
     // Not a hardcoded date, and not a second definition of the name.
-    expect(CONTROLLER_SRC).toMatch(/require\('\.\.\/scripts\/backfill-thread-root-id'\)/);
+    //
+    // This assertion originally required the name to come from the backfill
+    // SCRIPT. That was the bug: the script calls main() at module scope, so
+    // importing it to read one string executed the migration on the server
+    // boot path. The name now lives in constants/migrations.ts, which has no
+    // imports and no side effects — and this test must assert the script is
+    // NOT imported, or it would pin the defect it used to describe.
+    expect(CONTROLLER_SRC).toMatch(/require\('\.\.\/constants\/migrations'\)/);
+    expect(CONTROLLER_SRC).not.toMatch(/require\('\.\.\/scripts\//);
     expect(CONTROLLER_SRC).toMatch(/FROM migration_records WHERE name = \$1/);
     expect(CONTROLLER_SRC).not.toMatch(/threadingCutoff = '20\d\d-/);
   });
