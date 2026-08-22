@@ -62,6 +62,10 @@ export interface IAgentRun extends Document {
   podId: Types.ObjectId;
   agentName: string;
   instanceId: string;
+  // ADR-022 D5: the hiring user (installation.installedBy as a hex string),
+  // denormalized so the per-user daily ceiling is one indexed count instead
+  // of a hot-path join. Forward-only — rows before 2026-08-22 lack it.
+  userId?: string;
   trigger: AgentRunTrigger;
   triggerEventId?: Types.ObjectId;
   status: AgentRunStatus;
@@ -106,6 +110,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
     agentName: { type: String, required: true, lowercase: true, trim: true },
     instanceId: { type: String, default: 'default' },
+    userId: { type: String },
     trigger: {
       type: String,
       enum: ['mention', 'heartbeat', 'task.assigned', 'chat.message', 'pod.join', 'first_contact', 'manual'],
@@ -131,6 +136,8 @@ const AgentRunSchema = new Schema<IAgentRun>(
 );
 
 AgentRunSchema.index({ podId: 1, agentName: 1, instanceId: 1, startedAt: -1 });
+// The per-user ceiling's count (D5) — sparse: only stamped rows carry userId.
+AgentRunSchema.index({ userId: 1, startedAt: -1 }, { sparse: true });
 AgentRunSchema.index({ status: 1, startedAt: -1 });
 
 const AgentRun: Model<IAgentRun> =
