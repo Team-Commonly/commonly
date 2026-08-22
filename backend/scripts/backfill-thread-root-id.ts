@@ -323,7 +323,50 @@ async function main(): Promise<void> {
          FROM messages
         WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`,
     );
-    console.log(`remaining with a reply edge and no root: ${after.still_null} (orphaned chains stay NULL by design)`);
+    // A LEFTOVER IS AN INVARIANT VIOLATION, NOT A DESIGN NOTE — where the FK
+    // binds. This line used to read "(orphaned chains stay NULL by design)"
+    // unconditionally, which is a diagnosis written for one cause printed on
+    // every trigger: it would have explained away a recursive CTE that failed
+    // to reach rows it should have, in a parenthesis, at exit 0.
+    //
+    // @sprint-review (56936) carried my FK finding further than I had. I showed
+    // the write half — the FK refuses a reply to a missing parent. They showed
+    // the delete half closes the other direction: ON DELETE SET NULL means
+    // deleting a parent NULLs the child's reply edge, so the child stops
+    // matching this predicate entirely rather than becoming an orphan. Both
+    // routes to a dangling edge are shut, so the leftover set should be empty.
+    //
+    // Their caveat is the reason this is conditional rather than a hard error:
+    // schema.sql is CREATE TABLE IF NOT EXISTS, so the FK binds only databases
+    // created after it entered the file, and no ALTER retrofits it. On an older
+    // instance orphans really are possible and "by design" is the honest words.
+    // So ask the database which world it is in rather than assuming either.
+    if (after.still_null > 0) {
+      const { rows: fk } = await pool.query(
+        `SELECT 1 FROM pg_constraint
+          WHERE conrelid = 'messages'::regclass AND contype = 'f'
+            AND pg_get_constraintdef(oid) LIKE '%reply_to_message_id%REFERENCES messages%'
+          LIMIT 1`,
+      );
+      if (fk.length > 0) {
+        console.error(
+          `INVARIANT VIOLATION: ${after.still_null} row(s) still have a reply edge and no root, `
+          + 'but this database enforces the reply_to_message_id foreign key — a dangling edge '
+          + 'cannot be written (FK refuses it) and cannot be created by deletion (ON DELETE SET '
+          + 'NULL clears the edge instead). So these rows are reachable from a root and the walk '
+          + 'did not reach them. Investigate before trusting the cutoff: the recorded boundary '
+          + 'assumes this set is empty.',
+        );
+        process.exitCode = 4;
+      } else {
+        console.log(
+          `remaining with a reply edge and no root: ${after.still_null} — this database predates `
+          + 'the reply_to_message_id FK, so genuinely orphaned chains are possible and stay NULL.',
+        );
+      }
+    } else {
+      console.log('remaining with a reply edge and no root: 0');
+    }
   } catch (error) {
     console.error('backfill failed:', (error as Error).message);
     process.exitCode = 1;

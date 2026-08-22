@@ -193,3 +193,39 @@ describe('the ordering precondition is CHECKED, not only warned about', () => {
     expect(SRC).toMatch(/process\.exitCode = 3;/);
   });
 });
+
+describe('a leftover is a violation where the FK binds, not a design note', () => {
+  // @sprint-review 56936 carried my FK finding further. I had the write half
+  // (the FK refuses a reply to a missing parent); they added the delete half
+  // (ON DELETE SET NULL clears the child's edge rather than orphaning it). So
+  // both routes to a dangling edge are shut and the leftover set should be
+  // empty — which makes the old unconditional "(orphaned chains stay NULL by
+  // design)" a diagnosis printed on every trigger, explaining away a failed
+  // walk at exit 0.
+  const SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('no longer calls a leftover by-design unconditionally', () => {
+    expect(SRC).not.toMatch(/still_null\} \(orphaned chains stay NULL by design\)/);
+  });
+
+  it('reports a leftover as an INVARIANT VIOLATION and exits non-zero', () => {
+    expect(SRC).toMatch(/INVARIANT VIOLATION/);
+    expect(SRC).toMatch(/process\.exitCode = 4;/);
+  });
+
+  it('but asks the database whether the FK actually binds first', () => {
+    // Their caveat: CREATE TABLE IF NOT EXISTS never retrofits a constraint,
+    // so a pre-FK instance genuinely can hold orphans and "by design" is then
+    // the honest wording. Conditional, not a hard error.
+    expect(SRC).toMatch(/FROM pg_constraint[\s\S]{0,200}reply_to_message_id%REFERENCES messages/);
+    expect(SRC).toMatch(/predates `?\n?\s*\+?\s*'?the reply_to_message_id FK/);
+  });
+
+  it('and says why the cutoff depends on it', () => {
+    // The consequence, not just the fact: a non-empty leftover set means the
+    // recorded boundary was computed over rows the walk did not reach.
+    expect(SRC).toMatch(/the recorded boundary[\s\S]{0,40}assumes this set is empty/);
+  });
+});
