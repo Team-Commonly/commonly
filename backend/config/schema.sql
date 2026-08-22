@@ -1,3 +1,23 @@
+-- Boot DDL. Applied verbatim on every backend start, and by testUtils at tier 1.
+--
+-- ADDING A COLUMN TO AN EXISTING TABLE NEEDS TWO DECLARATIONS, NOT ONE.
+-- `CREATE TABLE IF NOT EXISTS` is a NO-OP wherever the table already exists,
+-- so a column written only inside a CREATE TABLE below reaches fresh
+-- databases and NO existing instance. Put it in the CREATE TABLE (for new
+-- installs) AND in an `ALTER TABLE <t> ADD COLUMN IF NOT EXISTS ...` (for
+-- every install that already ran). `payload` and `is_bot` are the pattern.
+--
+-- The failure is total, not partial: any index on the missing column throws at
+-- boot, and any INSERT naming it fails, so the feature does not degrade — the
+-- table stops accepting writes. Costed live on 2026-08-22, when
+-- `thread_root_id` shipped with only the CREATE TABLE declaration and would
+-- have stopped chat on every existing instance.
+--
+-- NEITHER TEST TIER CAN SEE THIS. Tier 0 reads this file as text and finds the
+-- column declared; tier 1 provisions a FRESH postgres per CI run and only ever
+-- exercises the CREATE path. A retrofit needs a test that starts from the OLD
+-- table shape — see `__tests__/unit/models/threadingSchemaRetrofit.test.js`.
+
 -- Create pods table
 CREATE TABLE IF NOT EXISTS pods (
   id VARCHAR(24) PRIMARY KEY,
