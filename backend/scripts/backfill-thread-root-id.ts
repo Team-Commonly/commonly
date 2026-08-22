@@ -70,7 +70,13 @@ import { Pool } from 'pg';
 
 const APPLY = process.argv.includes('--apply');
 
-export const MIGRATION_NAME = 'threading-thread-root-id-backfill';
+// Re-exported for callers that already import this script. The NAME itself
+// lives in constants/migrations.ts, which has no side effects — see the note
+// there about requiring this file having executed the migration.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { THREADING_BACKFILL_MIGRATION } = require('../constants/migrations');
+
+export const MIGRATION_NAME = THREADING_BACKFILL_MIGRATION;
 
 /**
  * The threading cutoff: the newest message that carries a reply edge and no
@@ -211,4 +217,10 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Only when RUN, never when required. Importing this file used to execute the
+// whole migration — threadStateController pulled one constant out of it and
+// took the server down at boot (CI caught it; no local run did, because none
+// of them loaded server.ts).
+if (require.main === module) {
+  main();
+}
