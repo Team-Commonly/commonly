@@ -8,14 +8,28 @@
  *
  * They were right and my first answer was too broad. I had probed pg-mem,
  * found `WITH RECURSIVE` unsupported, and generalised that to "pg-mem cannot
- * run this". Only the backfill's recursive CTE is out of reach — the write-path
- * derivation runs fine once the scalar subquery is cast (pg-mem otherwise
- * types it as `integer[]`). The production query now carries those casts,
- * which are inert in Postgres, so what runs below is the REAL string.
+ * run this". The write-path derivation runs fine once the scalar subquery is
+ * cast (pg-mem otherwise types it as `integer[]`). The production query now
+ * carries those casts, which are inert in Postgres, so what runs below is the
+ * REAL string.
+ *
+ * OF WHAT THIS CODEBASE NEEDS, the recursive CTE is the piece pg-mem cannot
+ * run. Scoped deliberately rather than "only X is unsupported" — that is a
+ * claim about pg-mem, and I know of at least one more limitation without
+ * having surveyed them: `WITH ... INSERT` also fails ("nested statement with
+ * query type 'insert'"), found while probing workarounds. Nothing shipped uses
+ * it, which is exactly why a completeness claim would have been untested.
  *
  * This is the fast tier and it runs in plain `npm test`. The tier-1 suite
- * (__tests__/service/threading.derivation.test.js) still exists for what needs
- * a real server: the recursive CTE, the foreign keys, ON DELETE SET NULL.
+ * (__tests__/service/threading.derivation.test.js) exists for the recursive
+ * CTE and for running against a real server end to end.
+ *
+ * It is NOT needed for foreign keys or ON DELETE CASCADE, which an earlier
+ * version of this comment claimed. pg-mem enforces both — see
+ * threadFollowByParticipation's "the constraints are the SHIPPED ones,
+ * enforced" block, which rejects a phantom root and observes a CASCADE. That
+ * line would have sent a reader to the slow tier for something the fast one
+ * already covers.
  */
 
 const { newDb } = require('pg-mem');

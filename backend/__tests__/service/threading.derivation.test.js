@@ -10,10 +10,21 @@
  *      one true root, using a single parent lookup.
  *   2. The backfill's recursive CTE produces the same roots as the write path.
  *
- * Tier 1 only. pg-mem cannot run this — probed 2026-08-22: it rejects
- * `WITH RECURSIVE` outright ("your query failed to parse") and mistypes the
- * parameterised INSERT. So there is no in-process shortcut; it is a real
- * server or it is nothing. CI provides postgres:16 with INTEGRATION_TEST=true.
+ * Tier 1 for claim 2 — pg-mem rejects `WITH RECURSIVE` outright ("your query
+ * failed to parse"), so the backfill's CTE genuinely needs a real server. CI
+ * provides postgres:16 with INTEGRATION_TEST=true.
+ *
+ * CORRECTED: this comment used to say "pg-mem cannot run this… a real server
+ * or it is nothing", which was too broad and outlived the finding that
+ * disproved it. The mistyped parameterised INSERT was a missing cast, not a
+ * limitation — the write-path derivation now runs at the unit tier in
+ * threadRootDerivation.pgmem.test.js, in plain `npm test`, against the real
+ * production query string.
+ *
+ * So claim 1 is covered at BOTH tiers on purpose: fast feedback in-process,
+ * and once more here end to end. Claim 2 is only here. Anyone tempted to
+ * delete the fast suite as redundant should note it is the one that runs on
+ * every push.
  */
 
 const { Pool } = require('pg');
