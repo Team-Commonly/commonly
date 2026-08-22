@@ -9,6 +9,7 @@ jest.mock('../../../models/pg/Message');
 jest.mock('../../../services/agentMentionService', () => ({
   enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], implicit: [], skipped: [] }),
   enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+  isAutoRoutedDmPod: (type) => ['agent-admin', 'agent-room', 'agent-dm'].includes(type),
 }));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { countDocuments: jest.fn() },

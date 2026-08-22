@@ -837,10 +837,11 @@ const resolveImplicitReplyTarget = async (
 
 // Pod types that auto-route every message to non-sender members as a
 // chat.mention event. Adding a new private 1:1 type without listing it
-// here silently drops every message; mirrored in
-// `messageController.createMessage` and called out in
-// docs/agents/AGENT_RUNTIME.md "Routing Invariants".
+// here silently drops every message; controllers call the predicate below
+// rather than maintaining a second copy of this delivery rule.
 const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
+const isAutoRoutedDmPod = (type: unknown): boolean => DM_POD_TYPES.has(String(type));
 
 // ── ADR-018 D8: wake-on-message ─────────────────────────────────────────────
 //
@@ -968,7 +969,7 @@ const enqueueWakeOnMessage = async ({
     // into a DM pod that enqueueDmEvent already covers.
     return woken;
   }
-  if (podRow?.type && DM_POD_TYPES.has(podRow.type)) return woken;
+  if (podRow?.type && isAutoRoutedDmPod(podRow.type)) return woken;
 
   // Truthful inputs, not a hardcoded false: the collab cue is held off
   // wakes by its own event-type gate inside buildContentForTarget, so
@@ -1461,7 +1462,7 @@ const enqueueDmEvent = async ({
   podId, message, userId, username,
 }: EnqueueDmOptions): Promise<EnqueueDmResult> => {
   const pod = await Pod.findById(podId).lean() as Record<string, unknown> | null;
-  if (!pod || !DM_POD_TYPES.has(pod.type as string)) {
+  if (!pod || !isAutoRoutedDmPod(pod.type)) {
     return { enqueued: false, reason: 'not_dm_pod' };
   }
 
@@ -1706,6 +1707,7 @@ export {
   enqueueMentions,
   enqueueDmEvent,
   MENTION_ALIASES,
+  isAutoRoutedDmPod,
   // Exported so the ADR-024 D1 board fan-out (taskEventService.notifyPodAgents)
   // gates on the SAME opt-in rather than reimplementing the predicate. The
   // config shape is a Mongoose Map on some paths and a plain object on others,

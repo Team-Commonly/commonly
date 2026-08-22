@@ -26,8 +26,15 @@ jest.mock('../../models/pg/Message', () => ({
   findById: jest.fn(),
 }));
 
+jest.mock('../../services/agentMentionService', () => ({
+  enqueueMentions: jest.fn(),
+  enqueueDmEvent: jest.fn(),
+  isAutoRoutedDmPod: (type) => ['agent-admin', 'agent-room', 'agent-dm'].includes(type),
+}));
+
 const PGPod = require('../../models/pg/Pod');
 const PGMessage = require('../../models/pg/Message');
+const AgentMentionService = require('../../services/agentMentionService');
 
 let app;
 
@@ -86,6 +93,54 @@ describe('PostgreSQL Message Routes', () => {
 
     expect(PGMessage.create).toHaveBeenCalledWith('pod1', 'user1', 'Hi there');
     expect(res.body.content).toBe('Hi there');
+  });
+
+  it('dispatches a regular PG post through the mention pipeline with its joined author', async () => {
+    const message = {
+      id: 'message-1',
+      content: '@recorder capture this',
+      userId: { _id: 'user1', username: 'sam' },
+    };
+    PGPod.findById.mockResolvedValue({ id: 'pod1', type: 'chat' });
+    PGPod.isMember.mockResolvedValue(true);
+    PGMessage.create.mockResolvedValue({ id: message.id });
+    PGMessage.findById.mockResolvedValue(message);
+    const token = generateTestToken('user1');
+
+    await request(app)
+      .post('/api/pg/messages/pod1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ content: message.content })
+      .expect(200);
+
+    expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith({
+      podId: 'pod1', message, userId: 'user1', username: 'sam',
+    });
+    expect(AgentMentionService.enqueueDmEvent).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a PG post in an agent DM through the DM pipeline', async () => {
+    const message = {
+      id: 'message-2',
+      content: 'hello directly',
+      userId: { _id: 'user1', username: 'sam' },
+    };
+    PGPod.findById.mockResolvedValue({ id: 'pod1', type: 'agent-room' });
+    PGPod.isMember.mockResolvedValue(true);
+    PGMessage.create.mockResolvedValue({ id: message.id });
+    PGMessage.findById.mockResolvedValue(message);
+    const token = generateTestToken('user1');
+
+    await request(app)
+      .post('/api/pg/messages/pod1')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ content: message.content })
+      .expect(200);
+
+    expect(AgentMentionService.enqueueDmEvent).toHaveBeenCalledWith({
+      podId: 'pod1', message, userId: 'user1', username: 'sam',
+    });
+    expect(AgentMentionService.enqueueMentions).not.toHaveBeenCalled();
   });
 
   it('rejects message creation for non-members', async () => {
