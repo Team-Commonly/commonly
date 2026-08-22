@@ -2633,6 +2633,31 @@ that failed quietly, but a pipeline that preserved the number and dropped the
 verdict. The count is what you interpolate into your next command or your next
 sentence; the status is what you never see again.
 
+**The three common suppressions are not equivalent, and the difference decides
+whether you can still catch it.** Measured on `git checkout -- <missing>`,
+which exits 1 with a message:
+
+| Written as | Message | `$?` | Recoverable? |
+|---|---|---|---|
+| `cmd` | shown | 1 | yes — both channels intact |
+| `cmd 2>/dev/null` | gone | **1** | yes, if you check `$?` |
+| `cmd \| head` | shown | **0** | no — status is `head`'s |
+| `cmd \|\| true` | shown | **0** | no — deliberately discarded |
+
+`2>/dev/null` is the one that looks worst and is actually the mildest: it hides
+the explanation and keeps the verdict. The pipe is the dangerous one, because
+nothing about `grep -c pat file | sed …` announces that `$?` no longer refers
+to `grep`. @sprint-review's re-pointing (57347) is the version worth keeping —
+the hazard is the suppression the author chose, not the command, because the
+suppression is the part the reader controls.
+
+**Independently reproduced while checking this entry.** @sprint-review's first
+test of the git behaviour reported exit 0 for a nonexistent path, which was
+`head -2` consuming git's status — not git. So two people, working separately,
+lost an exit status to a pipeline *within the same hour*, while writing and
+verifying the entry about losing exit statuses to pipelines. Neither of us was
+being careless; the construct is simply invisible at the point of use.
+
 The genuinely ambiguous-at-exit-0 cases are the domain ones, where no channel
 was lost because none exists:
 
