@@ -934,6 +934,50 @@ const isWakeLoopDampened = async (
   return false;
 };
 
+/** `agentName:instanceId`, lowercased — the identity an install and a bot User row share. */
+const installKey = (inst: Record<string, unknown>): string => `${
+  String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default')}`;
+
+/**
+ * Map each install to its BOT's User row id — the key thread_user_state uses.
+ *
+ * One query for the whole target list rather than one per target: the wake
+ * fan-out already runs per message, and a per-install lookup would put N
+ * round-trips on the hot path.
+ *
+ * A failure resolves to an EMPTY map, not a throw. Every `identify` then
+ * returns null, narrowToThread keeps every target, and scoping degrades to
+ * today's unscoped delivery. Losing the narrowing is a noisier pod; losing
+ * the wake is a message nobody sees.
+ */
+const resolveBotUserIds = async (
+  targets: Array<Record<string, unknown>>,
+): Promise<Map<string, string>> => {
+  const out = new Map<string, string>();
+  const wanted = [...new Set(targets.map(installKey))].filter((k) => !k.startsWith(':'));
+  if (wanted.length === 0) return out;
+  try {
+    const rows = await User.find({
+      isBot: true,
+      $or: wanted.map((k) => {
+        const [agentName, instanceId] = k.split(':');
+        return { 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId };
+      }),
+    }).select('_id botMetadata.agentName botMetadata.instanceId').lean() as Array<{
+      _id: unknown; botMetadata?: { agentName?: string; instanceId?: string };
+    }>;
+    for (const row of rows) {
+      const key = `${String(row.botMetadata?.agentName || '').toLowerCase()}:${
+        String(row.botMetadata?.instanceId || 'default')}`;
+      out.set(key, String(row._id));
+    }
+  } catch (err) {
+    console.warn('[thread-scope] bot user resolution failed (delivering unscoped):', (err as Error).message);
+    return new Map();
+  }
+  return out;
+};
+
 /**
  * Fan a message out to the pod's wake-on-message opt-ins. Skips the sender's
  * own identity (an agent never wakes on its own post), anything the mention
@@ -959,8 +1003,56 @@ const enqueueWakeOnMessage = async ({
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
 }): Promise<string[]> => {
   const woken: string[] = [];
-  const targets = (installations || []).filter(wakeOnMessageEnabled);
+  let targets = (installations || []).filter(wakeOnMessageEnabled);
   if (targets.length === 0) return woken;
+
+  // Ambient-only thread scoping (W-T 3/4, #1045). A reply inside a thread is
+  // AMBIENT: it reaches the thread's effective followers, not the room.
+  //
+  // Applied HERE, to the already-computed opt-in list, and nowhere else. Two
+  // consequences that are the point rather than side effects:
+  //  - it can only NARROW. A thread follower who never opted into
+  //    wake-on-message still gets nothing, because threading is additive and
+  //    must not start delivering to seats that opted into nothing.
+  //  - it cannot touch addressing. This branch runs only when `!isRouted`, so
+  //    an @mention or a reply edge has already left via the mention path. A
+  //    mute scopes ambient activity; it never suppresses being addressed.
+  //
+  // Keyed on the BOT's User row id, which is what thread_user_state.user_id
+  // holds: the follow/mute routes are dualAuth, so an agent writing its own
+  // thread state writes under `req.agentUser._id`.
+  //
+  // NOT `installedBy`. @sprint-review's blocker (57291) was right and the
+  // comment that used to sit here was wrong. `installedBy` is written with
+  // two different identities depending on who installed the agent — the bot
+  // itself at agentAutoJoinService:80, podWriteAccessService:48 and three
+  // sites in agentsRuntime, but the HUMAN installer at podController:119,
+  // personaHireService:93, podCurationService:147, authController:201 and
+  // agentProfile:259 (AgentRun.ts:65 calls it "the hiring user" outright).
+  // The schema declares a bare ObjectId with no ref, so nothing at the type
+  // level distinguishes them.
+  //
+  // Keying on it would have read a human-installed agent's thread state off
+  // its INSTALLER's row: the human's mute would silence the agent, and the
+  // agent's own mute would be ignored. Both directions wrong, on a field
+  // whose name reads correct.
+  //
+  // An install whose bot User row cannot be resolved is KEPT by
+  // narrowToThread rather than dropped — an unclassifiable target must
+  // degrade to today's behaviour, never to silence.
+  const threadRootId = (message as { thread_root_id?: unknown; threadRootId?: unknown })?.thread_root_id
+    ?? (message as { threadRootId?: unknown })?.threadRootId ?? null;
+  if (threadRootId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { narrowToThread } = require('./threadWakeScopeService');
+    const botUserIds = await resolveBotUserIds(targets);
+    targets = await narrowToThread(
+      Number(threadRootId),
+      targets,
+      (inst: Record<string, unknown>) => botUserIds.get(installKey(inst)) ?? null,
+    );
+    if (targets.length === 0) return woken;
+  }
 
   let podRow: { type?: string } | null = null;
   try {
@@ -1125,6 +1217,14 @@ const enqueueMentions = async ({
   if (!isRouted) {
     // D8: an unrouted message reaches nobody on the mention path, but it is
     // exactly what a wake-on-message opt-in asked to hear about.
+    //
+    // ONE OF TWO CALL SITES. The other is at the end of this function, for
+    // ROUTED messages, waking the opt-ins the mention path did not reach.
+    // This early return is not the only path into enqueueWakeOnMessage, and
+    // reading it as one is a mistake this seat made twice on 2026-08-22 —
+    // asserting that a routed message never reaches ambient fan-out, which is
+    // false. An early return bounds the code BELOW it, never a helper that a
+    // later call site re-enters.
     let woken: string[] = [];
     try {
       woken = await enqueueWakeOnMessage({
@@ -1438,6 +1538,13 @@ const enqueueMentions = async ({
   // it did not reach. A mention-enqueued agent is excluded — the mention is
   // the stronger cue, and double delivery would burn a second model turn on
   // the same trigger message.
+  //
+  // SECOND OF TWO CALL SITES; the first is behind `if (!isRouted)` above. So
+  // a ROUTED message does have an ambient fan-out, and anything scoping that
+  // fan-out (thread scoping, W-T 3/4) applies here too. That is correct
+  // rather than incidental: an addressed message must always deliver its
+  // chat.mention, while the ambient companion has no stronger claim here than
+  // it does on an unrouted message.
   let woken: string[] = [];
   try {
     woken = await enqueueWakeOnMessage({
