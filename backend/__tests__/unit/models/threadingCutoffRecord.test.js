@@ -78,6 +78,18 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(SCRIPT).toMatch(/threadingCutoff: boundary\.cutoff/);
   });
 
+  it('a run that finds the ledger row reports it and never re-measures', () => {
+    // sprint-review 57397: after the backfill, MIN over rooted replies is the
+    // oldest reply ever written — plausible and wrong. The ledger read comes
+    // before the population count and returns before CUTOFF_SQL runs.
+    const ledgerRead = SCRIPT.indexOf("FROM migration_records WHERE name = $1");
+    const populationRead = SCRIPT.indexOf('count(*)::int AS needs_root');
+    expect(ledgerRead).toBeGreaterThan(-1);
+    expect(ledgerRead).toBeLessThan(populationRead);
+    expect(SCRIPT).toMatch(/already recorded at \$\{ledger\.applied_at\}/);
+    expect(SCRIPT).toMatch(/the boundary is not re-measured/);
+  });
+
   it('the UPDATE and the ledger INSERT are one transaction', () => {
     // sprint-review (TASK-046 note): losing the INSERT after the UPDATE leaves
     // every chain rooted and no cutoff recorded. BEGIN precedes the UPDATE,

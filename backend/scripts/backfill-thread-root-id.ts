@@ -126,8 +126,11 @@ export const MIGRATION_NAME = THREADING_BACKFILL_MIGRATION;
  * rooted reply there is no evidence derivation is deployed and the fallback
  * would freeze a growing population's boundary under ON CONFLICT DO NOTHING.
  *
- * Read BEFORE the UPDATE so the fallback, which depends on the un-rooted
- * predicate, is still measurable. A MISSING ledger row means "cutoff unknown"
+ * Read BEFORE the UPDATE — and only when no ledger row exists. After the
+ * UPDATE every pre-threading reply also carries a root, so this MIN would
+ * return the oldest reply ever written: a plausible wrong answer, which is
+ * worse than the old query's useless one. The ledger row is the only true
+ * boundary once it exists; a later run reports it and never re-measures. A MISSING ledger row means "cutoff unknown"
  * and the surface expands everything; a row with a NULL cutoff (the zero-edges
  * branch) means "ran, and there was no pre-threading history".
  */
@@ -189,6 +192,22 @@ async function main(): Promise<void> {
   });
 
   try {
+    // LEDGER FIRST (sprint-review 57397). After a backfill every pre-threading
+    // reply has BOTH fields set, so re-measuring the boundary returns the
+    // oldest reply ever written — a plausible wrong answer, not a useless one.
+    // The recorded value is the only true one; a second run reports it and
+    // stops, and never prints a recomputed number an operator could act on.
+    const { rows: [ledger] } = await pool.query(
+      `SELECT details->>'threadingCutoff' AS cutoff, applied_at
+         FROM migration_records WHERE name = $1`,
+      [MIGRATION_NAME],
+    );
+    if (ledger) {
+      console.log(`${MIGRATION_NAME} already recorded at ${ledger.applied_at}: `
+        + `cutoff = ${ledger.cutoff ?? '(none)'}. Nothing to do — the boundary is not re-measured.`);
+      return;
+    }
+
     const { rows: [before] } = await pool.query(
       `SELECT count(*)::int AS needs_root
          FROM messages
