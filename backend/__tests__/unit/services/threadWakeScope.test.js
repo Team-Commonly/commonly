@@ -189,7 +189,7 @@ describe('narrowToThread only ever narrows', () => {
 });
 
 describe('readers filter on following = true, never on EXISTS(row)', () => {
-  // @ux-lead (56820, doc 5e7060fd on #1107): once rows exist for non-followers,
+  // @ux-lead (56820): once rows exist for non-followers,
   // every reader of follow state must filter on the COLUMN. Row presence stopped
   // meaning anything the moment collapse started writing rows.
 
@@ -247,7 +247,7 @@ describe('readers filter on following = true, never on EXISTS(row)', () => {
 });
 
 describe('one participant, one row, one field flipped', () => {
-  // @ux-lead (56822, 392b86e5 on #1107): "a participant at (NULL,
+  // @ux-lead (56822): "a participant at (NULL,
   // collapsed=false) is woken; the SAME participant at FALSE is not."
   //
   // Both halves already existed, but as separate cases with different users on
