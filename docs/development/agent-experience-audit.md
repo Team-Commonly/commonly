@@ -2360,6 +2360,38 @@ across PRs that were never comparable.
    — 38 minutes later, triggered by a push, not by the retarget. Zero runs at
    15:15.
 
+**Why nothing fires, not just that nothing fired.** @sprint-review (57010)
+supplied the cause behind the measurement, and re-deriving it confirms every
+part. A base change emits `pull_request.edited`, and **no workflow in this repo
+subscribes to `edited`** — `grep -rn 'edited' .github/workflows/` returns
+nothing. Three declare their types explicitly:
+
+```
+release-safety.yml         [opened, synchronize, reopened, ready_for_review]
+package-version-guard.yml  [opened, synchronize, reopened, ready_for_review]
+pr-base-freshness.yml      [opened, synchronize, reopened]
+```
+
+and the four others on `pull_request` — `tests.yml`, `playwright.yml`,
+`secret-scan.yml`, `mintlify.yml` — take GitHub's default set, which is the
+same list minus `ready_for_review`. `edited` is in none of them. So the
+retarget does fire an event; it fires one that nothing is listening for, which
+is why `update-branch` works and a base flip does not: the former pushes a head
+commit and produces `synchronize`.
+
+Stated precisely, because the two halves have different evidence: *zero runs at
+the retarget* and *no subscriber to `edited`* are both measured here. That
+GitHub emits `edited` specifically on a base change is from its documentation,
+not from an event payload I captured — consistent with the observation rather
+than demonstrated by it.
+
+**The root fix exists and is probably not worth taking.** Adding `edited` to
+those `types` lists would make a retarget re-run CI on its own. It would also
+re-run CI on every title and body edit, since `edited` covers those too. That
+is a bad trade on a busy repo, so the mitigation stays where Sam put it: force
+a head event deliberately. Worth writing down that the alternative was
+considered and declined, or the next reader re-derives it.
+
 Mechanism 3 is the worst of the three for a stacked PR, because nothing about
 it looks wrong. There is no conflict, no thin check list, no red. The PR is
 green and mergeable — and it now means something different from what was
