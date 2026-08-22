@@ -38,14 +38,34 @@ one-file read, and I did not do it.
 The column exists and is used — 227 of 6,304 rows carry it. But the behaviour
 attached to it is **addressing**, not grouping:
 
-- `agentMentionService.ts:1025` — `isRouted = rawMentions.length > 0 || !!replyToMessageId`.
+> **Cited by symbol, not by line.** An earlier revision of this section gave
+> line numbers only; within a day they were ~36 lines stale and a reader
+> following them landed in unrelated code (@sprint-review, 56779). Line numbers
+> below are as of `main` at **2026-08-22** and are a convenience, not the
+> citation — grep the quoted expression, which is stable.
+
+- `isRouted` in `agentMentionService.enqueueMentions` (`~:1061`) —
+  `isRouted = rawMentions.length > 0 || !!replyToMessageId`.
   A reply counts as naming a recipient.
-- `agentMentionService.ts:1356` — `if (replyToMessageId && sender?.isBot === false)`,
-  resolving through `resolveImplicitReplyTarget` (`:796`) to enqueue a
-  `chat.mention` with `implicitReply: true`. A human replying to an agent
-  addresses that agent without typing the handle.
-- Bot replies are excluded deliberately, and the comment at `:1351` says why:
-  mutual implicit notification would let two agents ping-pong forever.
+
+  **This single expression is the whole boundary.** `if (!isRouted)` returns
+  early a few dozen lines later (`~:1123`), so nothing downstream of it can be
+  reached by a message that is not routed. A change that folds a thread root
+  into this line is the only way threading becomes addressing; the
+  implicit-reply site below cannot do it alone.
+- The implicit-reply gate, `if (replyToMessageId && sender?.isBot === false)`
+  (`~:1392`), resolving through `resolveImplicitReplyTarget` (`~:796`) to
+  enqueue a `chat.mention` with `implicitReply: true`. A human replying to an
+  agent addresses that agent without typing the handle.
+- Bot replies are excluded deliberately, and the comment immediately above that
+  gate says why: mutual implicit notification would let two agents ping-pong
+  forever.
+
+**These are now a test, not prose** —
+`backend/__tests__/unit/services/agentMentionService.threadingIsNotAddressing.test.js`
+asserts that setting a thread root alone enqueues no `chat.mention`, verified
+to fail against the refactor that merges the two columns. Prose describing an
+invariant is what a later refactor deletes; a failing test is not.
 
 So if thread membership were expressed by `reply_to_message_id`, **adding a
 message to a thread would be the same act as pinging the parent's author.**
