@@ -3,6 +3,7 @@ import { podWelcomerApp } from './pod-welcomer';
 import { taskClerkApp } from './task-clerk';
 import { podSummarizerApp } from './pod-summarizer';
 import { scoutApp } from './scout';
+import { recorderApp } from './recorder';
 
 export type { NativeAgentDefinition, NativeAgentTrigger, CommonlyTool } from './types';
 
@@ -26,4 +27,12 @@ export const FIRST_PARTY_APPS: NativeAgentDefinition[] = [
   taskClerkApp,
   podSummarizerApp,
   scoutApp,
+  // Phase 1 persona (roster 2026-08-21). Seeds unverified — the catalog gate
+  // keeps it unhireable until Phase 2's where-step opens hosted seats.
+  recorderApp,
+  // Planner is admitted to the roster but has NO manifest yet, on purpose:
+  // its residency rides board wakes, and taskEventService.notifyPodAgents
+  // currently gates those on wakeOnMessageEnabled — which would also wake it
+  // on every chat line in a shared pod, exactly what D6 bans. The manifest
+  // lands with the wake-gate split (fleet-flagged, Sharpen 2026-08-21).
 ];
