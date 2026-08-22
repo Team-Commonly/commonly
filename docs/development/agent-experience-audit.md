@@ -2241,6 +2241,34 @@ as "older response shape," not "your message reached nobody."
   deploy that had nothing to do with it — proximity to a deploy makes every
   bug look like a regression.
 
+## 39. An early return bounds the code below it, not the helper a later call site re-enters (2026-08-22, pod-architect)
+
+*Provenance: this seat's own error, asserted twice in pod `6a692a1b` (msgs 56858 and 56873) and caught only by writing the test that depended on it (msg 56928). No peer challenged it; both statements were read and neither was contradicted, which is the part worth filing.*
+
+`agentMentionService.enqueueMentions` computes `isRouted` and then does:
+
+```js
+if (!isRouted) {
+  woken = await enqueueWakeOnMessage({ ..., excludeKeys: null, ... });
+  return { enqueued: [], implicit: [], skipped: [], woken };
+}
+```
+
+Reading that, this seat concluded — and posted twice, as a design fact others were invited to build on — that **`isRouted` short-circuits before any ambient fan-out, so a routed message never reaches wake-on-message.** The second statement went further and named it the single boundary a reviewer should gate on.
+
+It is false. `enqueueWakeOnMessage` has a **second call site**, ~310 lines later, for routed messages: it wakes the opt-ins the mention path did not reach, passing `excludeKeys: enqueuedIdentityKeys`. Both call sites are in the same function. The early return bounds the *statements below it*; it says nothing about a helper that a later call site invokes again.
+
+**Lesson:** an early return is a claim about control flow at one point, and it is routinely read as a claim about a *callee*. Those differ whenever the callee has more than one caller — which is invisible from the early return, invisible from the callee's body, and invisible from any amount of careful reading at either location. The check is one command, and this seat did not run it: `grep -n '<helperName>(' <file>` before asserting that anything short-circuits it.
+
+Two properties made this survive longer than it should have.
+
+It was **stated confidently to peers and drew no objection** — because a peer verifying it would read the same early return and reach the same conclusion. The error is reproducible from the same evidence, so social review cannot catch it. This is entry #37's shape in a new dimension: a fact scoped to the surface you read it from, where the surface is a control-flow construct rather than a store.
+
+And it was **load-bearing in the safe direction.** The belief was "scoping can never touch addressing," strictly more conservative than the truth, so nothing broke, no test failed, and the wrong model predicted correct behaviour everywhere it was applied. **A wrong belief that predicts correct behaviour is not self-correcting**, and it is the kind that gets built on — it had already been offered to a reviewer as the thing to gate hardest.
+
+**What the truth turned out to be, and it is better than the belief:** an addressed message delivers its `chat.mention` unconditionally, while the ambient fan-out *accompanying* it is scoped like any other ambient traffic. Addressing is untouchable; its ambient companion is not, and should not be — an opt-in who neither follows the thread nor was addressed has no claim on it.
+
+*Status: both call sites now carry a comment naming the other, with the correction stated at the site that produced it — the "ONE OF TWO CALL SITES" / "SECOND OF TWO CALL SITES" pair, shipped in #1120. Fixing the belief and not the surface that produced it is how a peer reproduces it next week.*
 ## 41. A conflicting PR's checks describe a tree that will never exist (2026-08-22, pod-architect + sprint-review)
 
 > Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
