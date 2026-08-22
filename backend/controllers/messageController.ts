@@ -9,9 +9,7 @@ const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
 const PGPod = require('../models/pg/Pod');
 // eslint-disable-next-line global-require
-const AgentMentionService = require('../services/agentMentionService');
-// eslint-disable-next-line global-require
-const { AgentInstallation } = require('../models/AgentRegistry');
+const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
 const DMService = require('../services/dmService');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
@@ -297,71 +295,17 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       message = normalizeMongo(populated || mongoMsg);
     }
 
-    // The author's username, for agentMentionService's author frame — the
-    // line a woken agent reads to learn WHO raised its turn. Without it the
-    // frame says 'raised by **unknown**' for every real user, because the JWT
-    // auth path sets `req.user = { id }` while the API-token path sets id +
-    // username. The web UI is JWT, so the fallback fired fleet-wide.
-    //
-    // Sourced from the message rather than from `req.user` deliberately. Both
-    // write paths above already re-fetch with the author joined — PGMessage
-    // .findById for the JOIN, MongoMessage .populate('userId', 'username
-    // profilePicture') — precisely so the response carries the author. Reading
-    // it here costs nothing extra.
-    //
-    // Putting it on `req.user` instead connects a DB read to every route that
-    // uses the auth middleware, and CodeQL follows that edge: it produced 225
-    // new high-severity js/missing-rate-limiting alerts, one per authed route.
-    // Those routes were already unrate-limited and the read already happened —
-    // but drowning the real alerts is its own harm.
-    const pgAuthor = message.userId;
-    const username = req.user?.username
-      || (pgAuthor && typeof pgAuthor === 'object' ? pgAuthor.username : undefined)
-      || message.username
-      || message.user?.username;
-    // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
-    // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
-    // human message to the agent — no @mention needed. Other pod types only
-    // fire on explicit @mentions. `isAutoRoutedDmPod` owns that allow-list so
-    // the legacy PG endpoint cannot silently drift from this primary path.
-    const isDmPod = AgentMentionService.isAutoRoutedDmPod(pod.type);
-    let responseMessage: NormalizedMessage | (NormalizedMessage & {
-      agentDelivery: {
-        enqueued: number; implicit: string[]; agentsInPod: number; woken: number;
-      };
-    }) = message;
-    if (isDmPod) {
-      await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
-    } else {
-      const mentionResult = await AgentMentionService.enqueueMentions({
-        podId,
-        message,
-        userId,
-        username,
-        replyToMessageId: replyToMessageId || null,
-      });
-      let agentsInPod = 0;
-      try {
-        agentsInPod = await AgentInstallation.countDocuments({ podId, status: 'active' });
-      } catch (countErr) {
-        // Delivery metadata is advisory UI feedback. A count failure must
-        // never turn an already-persisted message into a failed send.
-        console.warn('[messageController] active-agent delivery count failed:', (countErr as Error).message);
-      }
-      responseMessage = {
-        ...message,
-        agentDelivery: {
-          enqueued: mentionResult.enqueued.length,
-          implicit: mentionResult.implicit || [],
-          agentsInPod,
-          // Wake-on-message targets (ADR-018 D8). Without this count the
-          // composer's "No agent was notified" hint fires in the one pod
-          // every new user starts in — while the Guide is already waking on
-          // the very same message (#914).
-          woken: mentionResult.woken?.length ?? 0,
-        },
-      };
-    }
+    const responseMessage = await deliverMessageToAgents({
+      podId,
+      podType: pod.type,
+      message,
+      userId,
+      requestUser: req.user,
+      // This route owns reply edges. Passing null for a root post preserves
+      // the existing enqueueMentions contract; the legacy PG route omits the
+      // field altogether because it cannot receive one.
+      replyToMessageId: replyToMessageId || null,
+    });
 
     // Live-broadcast the new message to every connected client in this pod's
     // Socket.io room. Without this emit, V2 chat surfaces only see the new

@@ -92,8 +92,9 @@ class DMService {
   }
 
   /**
-   * Find or create a 1:1 agent-admin DM pod between an agent user and its
-   * installer (the owner who installed the agent into a pod).
+   * Find or create a private agent-admin pod between an agent user and its
+   * installer (the owner who installed the agent into a pod). Agent-admin is
+   * N:1, unlike the strict 1:1 agent-room and agent-dm shapes.
    */
   static async getOrCreateAgentDM(agentUserId: unknown, ownerUserId: unknown, { agentName, instanceId }: DMOptions = {}): Promise<InstanceType<typeof Pod>> {
     const agentId = String(agentUserId);

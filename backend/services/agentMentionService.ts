@@ -23,6 +23,10 @@ const { resolveAgentDisplayLabel } = require('./agentIdentityService') as {
     fallback?: string,
   ) => string;
 };
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { isPersonalPodType } = require('./podTypePolicyService') as {
+  isPersonalPodType: (type: unknown) => boolean;
+};
 
 const ChatSummarizerService = chatSummarizerService.constructor as {
   getLatestPodSummary: (podId: string) => Promise<unknown>;
@@ -835,13 +839,10 @@ const resolveImplicitReplyTarget = async (
   };
 };
 
-// Pod types that auto-route every message to non-sender members as a
-// chat.mention event. Adding a new private 1:1 type without listing it
-// here silently drops every message; controllers call the predicate below
-// rather than maintaining a second copy of this delivery rule.
-const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
-
-const isAutoRoutedDmPod = (type: unknown): boolean => DM_POD_TYPES.has(String(type));
+// Personal pods auto-route every message to non-sender members as a
+// chat.mention event. This is intentionally broader than the strict-1:1
+// DM guard: agent-admin is N:1 but still has personal delivery semantics.
+const isAutoRoutedDmPod = (type: unknown): boolean => isPersonalPodType(type);
 
 // ── ADR-018 D8: wake-on-message ─────────────────────────────────────────────
 //
@@ -1473,8 +1474,8 @@ const enqueueDmEvent = async ({
     .select('_id isBot username botMetadata')
     .lean() as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
   // Bot senders are allowed in agent-dm (the whole point) but still blocked
-  // in agent-admin/agent-room — those are operator-driven 1:1 with one
-  // agent; a bot posting there shouldn't auto-route to itself.
+  // in agent-admin/agent-room — those are operator-driven personal surfaces;
+  // a bot posting there shouldn't auto-route to itself.
   if (sender?.isBot && pod.type !== 'agent-dm') {
     return { enqueued: false, reason: 'sender_is_bot' };
   }
