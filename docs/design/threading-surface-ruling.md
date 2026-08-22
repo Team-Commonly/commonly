@@ -35,6 +35,10 @@ Skeleton implication: the follow-state migration in the walking skeleton adds th
 
 **The mirror risk (sprint-review 56807): one write for two meanings.** `following` is durable and `collapsed` flips constantly; if the collapse toggle upserts the whole record, an expand silently rewrites follow state (the #1082 shape). Ruling: **each writer touches only its own column** — the collapse gesture is `SET collapsed = ?` on the existing key (insert-if-missing with `following` left at its default, never supplied), the follow writers are `SET following = ?` likewise. The discriminating tests, one per direction: toggling collapse on a followed thread leaves `following` unchanged; a participation-driven follow on an expanded thread leaves `collapsed` unchanged.
 
+**Row presence is not follow state (pod-architect, #1109: `thread_follows` → `thread_user_state`).** Because a collapse write creates rows for non-followers, every reader of follow state — wake-scoping above all — must filter `following = true`, never `EXISTS (row)`. Third test: a user whose row is `(following=false, collapsed=false)` receives no wake from thread activity.
+
+**`following` is tri-state (pod-architect 56817, accepted).** "Defaults from participation" cannot be a column default: `NOT NULL DEFAULT false` would silently unfollow a participant the moment a collapse-only row is created for them. So: `following` is nullable — **NULL = defer to participation** (derived at read time from posts and @-mentions in the thread; participation never writes this column), **TRUE = explicit follow**, **FALSE = explicit mute that outranks participation**. Unfollow writes FALSE rather than deleting the row, for the same reason. Readers compute `effective = COALESCE(following, participated)`; the wake-scoping filter is on the effective value, not the column. Fourth test: a participant whose row is `(following=NULL, collapsed=false)` is woken; the same participant with `following=FALSE` is not.
+
 ## Provenance of each line
 
 - Constraints 1–3, persisted collapse, and the three reasons: 55852 (above).
