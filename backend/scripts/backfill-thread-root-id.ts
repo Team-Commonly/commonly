@@ -21,6 +21,49 @@
  *
  * IDEMPOTENT. Only touches rows with a reply edge and a NULL root, so a second
  * run is a no-op. DRY RUN BY DEFAULT — pass --apply to write.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT THIS DOES ONCE WAKE-SCOPING LANDS. Read this before running --apply.
+ *
+ * On its own this script is inert: it writes a column nothing reads, and no
+ * behaviour changes. The composition is what matters, and it is visible in
+ * neither this diff nor the wake-scoping one (raised by @sprint-review, 56773).
+ *
+ * Wake-scoping makes thread membership decide who is woken by a reply:
+ * ambient-only, so an un-addressed reply inside a thread reaches
+ * (participants ∪ explicit followers) − muted, instead of the room. Composed
+ * with this backfill, THE ROWS WRITTEN HERE RETROACTIVELY DECIDE THE WAKE SET
+ * OF EVERY CONVERSATION THAT PREDATES THE FEATURE. Nobody in those threads
+ * opted into being scoped by them.
+ *
+ * Measured on the live instance 2026-08-22, one day after the population
+ * figures above (the counts drift; the script is idempotent, so re-measure
+ * rather than trusting either number):
+ *
+ *   245 reply edges · 172 threads · 0 orphaned edges · 6 pods
+ *   participants per thread: min 1, median 2, max 3
+ *   20 threads have exactly ONE participant — a self-reply chain
+ *
+ * Two consequences worth a reviewer's attention:
+ *
+ * 1. REACH DROPS RETROACTIVELY. In the busiest affected pod (135 of the 172
+ *    threads, 9 distinct authors), a reply into a backfilled thread reaches a
+ *    median of 2 of 9 — where before threading it reached all 9.
+ *
+ * 2. THE SELF-REPLY CHAINS ARE THE SHARP EDGE. 20 threads across 2 pods
+ *    (19 threads / 59 messages in one, 1 thread / 2 messages in the other)
+ *    have a single participant. Their wake set after scoping is one person:
+ *    the author replying to themselves. An un-addressed reply into one of
+ *    those reaches nobody.
+ *
+ * NOT overstated: ambient-only scoping does NOT suppress explicit @mentions,
+ * so an addressed reply still wakes its target in every case above. The
+ * exposure is un-addressed replies into backfilled threads.
+ *
+ * The orphan branch below (parent missing => leave NULL) currently has a live
+ * population of ZERO, so it is an untested safety branch rather than a
+ * measured behaviour. Do not cite it as verified.
+ * ---------------------------------------------------------------------------
  */
 /* eslint-disable no-console */
 import { Pool } from 'pg';
