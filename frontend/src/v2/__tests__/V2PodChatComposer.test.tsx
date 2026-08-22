@@ -138,4 +138,75 @@ describe('V2PodChat composer send button', () => {
     expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
     expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-chat__reply-chip')).not.toBeNull();
   });
+
+  // W-T 4/4, constraint 4 (docs/design/threading-surface-ruling.md; ux-lead
+  // 57449): the composer has ONE target with two kinds. "Reply in thread"
+  // sends threadRootId and NO reply edge; "Reply to <person>" sends the reply
+  // edge and NO thread root; aiming at one clears the other. The resolver
+  // 400s a message carrying both, so these pin the client never builds one.
+  const threadMessages = () => ([
+    {
+      id: 'm1',
+      pod_id: 'p1',
+      user_id: 'u2',
+      content: 'Root of the thread',
+      message_type: 'text',
+      created_at: '2026-08-22T13:00:00Z',
+      user: { username: 'teammate' },
+    },
+    {
+      id: 'm2',
+      pod_id: 'p1',
+      user_id: 'u3',
+      thread_root_id: 'm1',
+      content: 'First reply in the thread',
+      message_type: 'text',
+      created_at: '2026-08-22T13:05:00Z',
+      user: { username: 'other' },
+    },
+  ]);
+
+  test('"Reply in thread" sends threadRootId and no reply edge', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'Joining the thread.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('Joining the thread.', 'text', undefined, 'm1');
+    });
+  });
+
+  test('aiming at a thread clears a prior reply target, and vice versa', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+
+    // Reply-to-person first, then "Reply in thread": the thread wins, the
+    // reply edge is gone.
+    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'thread wins' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenLastCalledWith('thread wins', 'text', undefined, 'm1');
+    });
+
+    // The other order: thread first, then reply-to-person. The reply edge
+    // wins, the thread root is gone.
+    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'reply wins' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenLastCalledWith('reply wins', 'text', 'm2', undefined);
+    });
+  });
 });
