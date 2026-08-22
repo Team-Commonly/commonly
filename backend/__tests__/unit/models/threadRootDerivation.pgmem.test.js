@@ -4,9 +4,15 @@
  * BEFORE YOU RUN THE MUTATION THIS SUITE EXISTS FOR, read this.
  *
  * `COALESCE(parent.thread_root_id, parent.id)` appears TWICE in Message.ts:
- * once at :110 in the comment that explains the rule, once at :124 in the SQL
- * that implements it. A text-based mutation without /g, or any first-match
- * edit, rewrites the COMMENT and leaves the behaviour untouched.
+ * once inside the comment that explains the rule, once inside the SELECT that
+ * implements it — the comment occurrence comes FIRST. A text-based mutation
+ * without /g, or any first-match edit, rewrites the comment and leaves the
+ * behaviour untouched.
+ *
+ * (Described by position-in-the-file rather than by line number. @sprint-review
+ * (57333): citing `:110`/`:124` inside a warning about fragile text anchors is
+ * the joke writing itself — those drift on the next reflow. The structure is
+ * pinned executably instead, in twoOccurrencesInMessageTs below.)
  *
  * The result is not a silent no-op — it is worse. The suite passes 5/5, which
  * reads as "these tests cannot detect the thing they were built to detect",
@@ -14,11 +20,32 @@
  * fine. @sprint-review identified the mechanism (56937); both runs measured
  * against main afterwards:
  *
- *   first-match mutation (hits :110, the comment) -> 5 passed  [MEANINGLESS]
- *   line-targeted mutation (hits :124, the SQL)   -> 3 failed  [THE REAL KILL]
+ *   first-match mutation (hits the comment) -> 5 passed  [MEANINGLESS]
+ *   code-targeted mutation (hits the SQL)   -> 3 failed  [THE REAL KILL]
+ *
+ * Those two numbers are the DERIVATION tests alone, which is how they were
+ * measured before this file grew a structural guard. Run the code mutation
+ * today and the suite reports FOUR failures: the three below, plus
+ * "appears exactly twice", because replacing the expression drops the count
+ * to one. Expected, and stated here so the extra red is not mistaken for
+ * drift by whoever next runs it.
  *
  * So the derivation IS covered — sprint-review's A/B/C case, depth 7, and
- * two-chains-in-one-pod all die when the code actually changes. Anchor the
+ * two-chains-in-one-pod all die when the code actually changes.
+ *
+ * THREE IS THE EXPECTED NUMBER, NOT PARTIAL COVERAGE. @sprint-review (56953):
+ * the two survivors are the depth-1 and depth-2 cases, and under
+ * `COALESCE(parent.id, parent.id)` they give the identical answer BY
+ * CONSTRUCTION — a root has no parent to consult, and a direct reply's parent
+ * is itself a root whose thread_root_id is NULL, so both spellings return the
+ * parent's id. They cannot go red, and a test that cannot go red under a
+ * mutation is not a weak test; it is a test of a different depth.
+ *
+ * The inversion is the useful half: **five red would be the bad result.** It
+ * would mean the depth-1 and depth-2 fixtures had stopped being depth-1 and
+ * depth-2 — that the suite had quietly deepened and lost its shallow cases.
+ * So do not "improve" this to a full kill. The depth-2 fixture asserts its
+ * own parent is a root (below) precisely so that stays true. Anchor the
  * mutation to the SQL line, then assert the file changed where you meant it
  * to, before reading the test result. A probe that cannot show it hit its
  * target is measuring nothing, and it will tell you so in the voice of a
@@ -93,6 +120,33 @@ beforeAll(async () => {
   await mockPool.query("INSERT INTO pods (id) VALUES ('pod-1')");
 });
 
+describe('the two-target hazard this suite warns about is still real', () => {
+  // The header tells the next person that a first-match mutation hits the
+  // comment. That instruction is only useful while it is TRUE, and prose
+  // cannot notice when it stops being. @sprint-review (57333) made the point
+  // against line numbers; it applies to the claim itself.
+  const EXPR = 'COALESCE(parent.thread_root_id, parent.id)';
+  const src = require('fs')
+    .readFileSync(require('path').join(__dirname, '../../../models/pg/Message.ts'), 'utf8');
+  const lines = src.split('\n').filter((l) => l.includes(EXPR));
+  const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+
+  test('the expression appears exactly twice — one comment, one code', () => {
+    // A third occurrence, or a deduped comment, changes which target a
+    // first-match edit lands on. Either way the header would be giving
+    // directions to somewhere that no longer exists.
+    expect(lines).toHaveLength(2);
+    expect(lines.filter(isComment)).toHaveLength(1);
+    expect(lines.filter((l) => !isComment(l))).toHaveLength(1);
+  });
+
+  test('and the COMMENT one comes first, which is why the hazard exists', () => {
+    // If the order ever flips, a first-match mutation starts hitting the real
+    // SQL and the warning above becomes actively misleading rather than stale.
+    expect(isComment(lines[0])).toBe(true);
+  });
+});
+
 describe('the derivation runs, and depth is the thing it proves', () => {
   test('a root gets NULL, not itself', async () => {
     const root = await insert('root');
@@ -102,6 +156,13 @@ describe('the derivation runs, and depth is the thing it proves', () => {
   test('a direct reply inherits the root id', async () => {
     const root = await insert('root');
     const reply = await insert('reply', root.id);
+    // Depth 2 ON PURPOSE, and pinned: the parent must be a ROOT. That is what
+    // makes this case identical under COALESCE(parent.thread_root_id,
+    // parent.id) and under COALESCE(parent.id, parent.id), and therefore what
+    // makes it one of the two tests expected to SURVIVE the mutation probe.
+    // Deepen this fixture and the documented 3-of-5 kill count silently
+    // becomes wrong.
+    expect(root.thread_root_id).toBeNull();
     expect(reply.thread_root_id).toBe(root.id);
   });
 
