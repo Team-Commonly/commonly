@@ -9,7 +9,7 @@
  * what the reconciliation DOES with two possibly-disagreeing inputs.
  */
 const { newDb } = require('pg-mem');
-const { createTableFor } = require('../../utils/schemaTable');
+const { createTableFor, applyTable } = require('../../utils/schemaTable');
 
 const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
@@ -30,7 +30,10 @@ const msg = async (id, podId, rootId = null, replyTo = null) => {
 
 beforeAll(async () => {
   await mockPool.query(createTableFor('pods'));
-  await mockPool.query(createTableFor('messages'));
+  // applyTable, not createTableFor: `payload` and `thread_root_id` are added
+  // by ALTER, so the CREATE alone is not the table this code talks to.
+  await applyTable(mockPool, 'users');   // findById LEFT JOINs it
+  await applyTable(mockPool, 'messages');
   for (const p of [POD, OTHER]) {
     await mockPool.query("INSERT INTO pods (id,name,type,created_by) VALUES ($1,'p','chat','u')", [p]);
   }
@@ -109,5 +112,54 @@ describe('the error type carries a code, so the route need not parse text', () =
     const err = await resolveThreadRoot({ podId: POD, threadRootId: 999999 }).catch((e) => e);
     expect(err).toBeInstanceOf(ThreadRootError);
     expect(typeof err.code).toBe('string');
+  });
+});
+
+describe('the root survives the round trip the wake path actually takes', () => {
+  /**
+   * The gap this exists for: `findById` projects an explicit column list, and
+   * `thread_root_id` was not in it. The controller does
+   * `message = (populated || created)` and hands THAT to enqueueMentions, so
+   * the ambient scoping hook in 3/4 read `undefined` for every message and
+   * silently never scoped.
+   *
+   * Every 3/4 test passed throughout, because they construct the message
+   * object directly with `thread_root_id` set and so never travel this path.
+   * A test that builds the shape the code under test never receives cannot
+   * find a projection bug — only a round trip can.
+   */
+  const PGMessage = require('../../../models/pg/Message');
+
+  test('create -> findById preserves thread_root_id', async () => {
+    const root = await PGMessage.create(POD, 'u', 'root', 'text', null);
+    const reply = await PGMessage.create(POD, 'u', 'reply', 'text', String(root.id));
+    expect(reply.thread_root_id).toBe(root.id);
+
+    // The object the controller prefers, and the one the wake path sees.
+    const populated = await PGMessage.findById(reply.id);
+    expect(populated).toBeTruthy();
+    expect(populated.thread_root_id).toBe(root.id);
+  });
+
+  test('and preserves an EXPLICIT root with no reply edge', async () => {
+    // The shape @ux-lead's amendment makes primary: joins a thread, addresses
+    // nobody. If the projection drops the column, this is the message whose
+    // scoping silently disappears.
+    const root = await PGMessage.create(POD, 'u', 'root2', 'text', null);
+    const inThread = await PGMessage.create(POD, 'u', 'in-thread', 'text', null, null, root.id);
+    expect(inThread.reply_to_message_id).toBeNull();
+    expect(inThread.thread_root_id).toBe(root.id);
+
+    const populated = await PGMessage.findById(inThread.id);
+    expect(populated.thread_root_id).toBe(root.id);
+  });
+
+  test('a message with no thread still reads null, not undefined', async () => {
+    // undefined and null are the same to the hook's truthiness check, but a
+    // missing KEY hides a dropped column while an explicit null does not.
+    const plain = await PGMessage.create(POD, 'u', 'plain', 'text', null);
+    const populated = await PGMessage.findById(plain.id);
+    expect(populated).toHaveProperty('thread_root_id');
+    expect(populated.thread_root_id).toBeNull();
   });
 });

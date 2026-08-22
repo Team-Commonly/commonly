@@ -176,7 +176,11 @@ class Message {
       let query = `
         SELECT
           m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
-          m.reply_to_message_id, m.created_at, m.updated_at,
+          m.reply_to_message_id,
+          -- MUST be selected. Late columns are easy to miss in an explicit
+          -- projection, and this one is read by the wake path.
+          m.thread_root_id,
+          m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
           rm.user_id as reply_user_id, ru.username as reply_username
@@ -209,7 +213,16 @@ class Message {
       const query = `
         SELECT
           m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
-          m.reply_to_message_id, m.created_at, m.updated_at,
+          m.reply_to_message_id,
+          -- MUST be selected. The controller prefers THIS row over create()'s
+          -- RETURNING * (message = populated || created) and hands it to
+          -- enqueueMentions, so a column absent from this projection is a
+          -- column the wake path cannot see. Ambient thread scoping read
+          -- undefined for every message until this line existed — while its
+          -- own tests passed, because they build the message object directly
+          -- and never travel this path.
+          m.thread_root_id,
+          m.created_at, m.updated_at,
           u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
           rm.user_id as reply_user_id, ru.username as reply_username
