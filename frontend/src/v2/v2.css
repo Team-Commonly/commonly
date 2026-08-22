@@ -1528,14 +1528,14 @@
   gap: 0;
 }
 
-/* Craft audit 2026-08-22, rule 2: chat text holds a readable measure (~72ch
-   at 15px with the 38px avatar column) instead of running the full ~1090px
-   content width. Whitespace absorbs wide viewports; the column centers. */
-.v2-chat__messages > * {
-  max-width: 820px;
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
+/* Craft audit 2026-08-22, rule 2 — corrected same day. The first cut
+   centered the message column, which left it misaligned with the full-width
+   header and composer ("a floating island" — Sam, accurately: a disaster).
+   The right mechanic caps the TEXT measure only: rows stay left-anchored so
+   messages, composer, and header share one edge; long lines still break at
+   a readable width. */
+.v2-msg__body {
+  max-width: 76ch;
 }
 
 /* Sender-only teaching cue shown once per pod/session when a message reaches
