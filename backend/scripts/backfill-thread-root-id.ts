@@ -14,10 +14,20 @@
  * disagree about what a thread is will eventually disagree; one write now
  * costs less than reconciling them later.
  *
- * POPULATION, measured on the live instance 2026-08-21: 6,304 messages, of
- * which 227 carry a reply edge, forming 153 distinct threads — mean 2.48
- * messages, largest 7, chain depths 205/14/5/1/1 at levels 2-6. So this is a
- * ~227-row UPDATE, not a table rewrite.
+ * POPULATION IS RE-MEASURED AT RUN TIME, NEVER QUOTED (@ux-lead, #1115 ruling).
+ * The dry run below prints the live count and the cutoff it would record
+ * before anything is written — that output is the authoritative number, and
+ * it is the one to put in a PR body or a deploy note.
+ *
+ * Every figure in this header is a DATED OBSERVATION kept for shape and order
+ * of magnitude, not a current fact. They already disagreed with each other
+ * within a day of being taken: 227 edges / 153 threads on 2026-08-21, 245 /
+ * 172 on 2026-08-22. Quoting either as "the" number is how a stale count ends
+ * up in a merge note describing a migration that touched something else.
+ *
+ * Shape, 2026-08-21: ~6,300 messages, a couple of hundred reply edges, mean
+ * chain ~2.5 and longest 7. So: a few-hundred-row UPDATE, not a table
+ * rewrite. That conclusion survives the drift; the digits do not.
  *
  * IDEMPOTENT. Only touches rows with a reply edge and a NULL root, so a second
  * run is a no-op. DRY RUN BY DEFAULT — pass --apply to write.
@@ -36,9 +46,9 @@
  * OF EVERY CONVERSATION THAT PREDATES THE FEATURE. Nobody in those threads
  * opted into being scoped by them.
  *
- * Measured on the live instance 2026-08-22, one day after the population
- * figures above (the counts drift; the script is idempotent, so re-measure
- * rather than trusting either number):
+ * Dated observation, live instance 2026-08-22 — kept because the SHAPE is
+ * what the two consequences below turn on, not the digits. Re-measure before
+ * citing any of it:
  *
  *   245 reply edges · 172 threads · 0 orphaned edges · 6 pods
  *   participants per thread: min 1, median 2, max 3

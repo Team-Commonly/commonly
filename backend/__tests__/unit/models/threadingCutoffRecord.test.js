@@ -83,3 +83,41 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(SCRIPT).toMatch(/never as "unknown, assume everything is pre-cutoff"/);
   });
 });
+
+describe('the population is re-measured, never quoted', () => {
+  // @ux-lead's #1115 ruling: the number goes in a PR body as "re-measured at
+  // merge time", not as 227 or 245. Those two figures are one day apart and
+  // both were taken from the same instance, which is the argument.
+  const SCRIPT_SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('the dry run prints the live count and the cutoff BEFORE writing', () => {
+    // The mechanism that makes quoting unnecessary: whoever runs it gets the
+    // real number for free, at the moment it matters.
+    const dry = SCRIPT_SRC.slice(
+      SCRIPT_SRC.indexOf('if (!APPLY)'),
+      SCRIPT_SRC.indexOf('DRY RUN — nothing written'),
+    );
+    expect(dry).toMatch(/would set a root on/);
+    expect(dry).toMatch(/would record cutoff/);
+  });
+
+  it('the header marks its figures as dated observations, not current facts', () => {
+    expect(SCRIPT_SRC).toMatch(/RE-MEASURED AT RUN TIME, NEVER QUOTED/);
+    expect(SCRIPT_SRC).toMatch(/DATED OBSERVATION/);
+  });
+
+  it('and shows the two figures disagreeing, which is the argument', () => {
+    // A rule stated without its counter-example gets read as pedantry and
+    // dropped. Both numbers are named, a day apart, from the same instance.
+    expect(SCRIPT_SRC).toMatch(/227[\s\S]{0,80}2026-08-21/);
+    expect(SCRIPT_SRC).toMatch(/245[\s\S]{0,40}2026-08-22/);
+  });
+
+  it('no figure is presented as the current population', () => {
+    // The specific phrasing the ruling rejects: a bare count asserted as fact.
+    expect(SCRIPT_SRC).not.toMatch(/POPULATION, measured/);
+    expect(SCRIPT_SRC).not.toMatch(/~227-row UPDATE/);
+  });
+});
