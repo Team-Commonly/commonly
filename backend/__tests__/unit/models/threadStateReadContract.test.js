@@ -24,6 +24,7 @@ jest.mock('../../../services/podWriteAccessService', () => ({
   callerHasPodWriteAccess: async () => true,
 }));
 
+const { createTableFor } = require('../../utils/schemaTable');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 const { listThreadState } = require('../../../controllers/threadStateController');
 
@@ -38,15 +39,28 @@ const read = async (userId = 'u1', podId = POD) => {
 };
 
 beforeAll(async () => {
-  await mockPool.query(`CREATE TABLE thread_user_state (
-    id SERIAL PRIMARY KEY, thread_root_id INTEGER NOT NULL, user_id VARCHAR(255) NOT NULL,
-    pod_id VARCHAR(255) NOT NULL, following BOOLEAN, collapsed BOOLEAN NOT NULL DEFAULT TRUE,
-    followed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (thread_root_id, user_id))`);
-  await mockPool.query(`CREATE TABLE migration_records (
-    name VARCHAR(255) PRIMARY KEY, applied_at TIMESTAMP WITH TIME ZONE, details JSONB)`);
+  // Shipped DDL, not a hand-written copy — see __tests__/utils/schemaTable.js.
+  // The real dependency chain. thread_user_state -> messages -> pods, and the
+  // hand-written fixture had none of it — another thing building from the
+  // shipped DDL surfaces rather than hides.
+  await mockPool.query(createTableFor('pods'));
+  await mockPool.query(createTableFor('messages'));
+  await mockPool.query(createTableFor('thread_user_state'));
+  await mockPool.query(createTableFor('migration_records'));
 });
+// Roots must be real message rows — thread_user_state has a live FK to
+// messages in the shipped schema, which the old hand-written fixture omitted.
+const seedRoot = async (id) => mockPool.query(
+  'INSERT INTO messages (id, pod_id, user_id, content) VALUES ($1,$2,$3,$4)',
+  [id, POD, 'author', 'root'],
+);
+
+beforeAll(async () => {
+  await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p','chat','u')", [POD]);
+  await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p2','chat','u')", [OTHER_POD]);
+  for (const id of [10, 11, 20, 21, 22, 30, 31, 32]) await seedRoot(id);
+});
+
 beforeEach(async () => { await mockPool.query('DELETE FROM thread_user_state'); });
 
 describe('a thread with no row', () => {
