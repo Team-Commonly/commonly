@@ -26,11 +26,14 @@ jest.mock('../../models/pg/Message', () => ({
   findById: jest.fn(),
 }));
 
-jest.mock('../../services/agentMentionService', () => ({
-  enqueueMentions: jest.fn(),
-  enqueueDmEvent: jest.fn(),
-  isAutoRoutedDmPod: (type) => ['agent-admin', 'agent-room', 'agent-dm'].includes(type),
-}));
+jest.mock('../../services/agentMentionService', () => {
+  const { isAutoRoutedDmPod } = jest.requireActual('../../services/agentMentionService');
+  return {
+    enqueueMentions: jest.fn(),
+    enqueueDmEvent: jest.fn(),
+    isAutoRoutedDmPod,
+  };
+});
 
 const PGPod = require('../../models/pg/Pod');
 const PGMessage = require('../../models/pg/Message');
