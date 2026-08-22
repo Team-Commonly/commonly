@@ -29,7 +29,7 @@ jest.mock('../../models/pg/Message', () => ({
 jest.mock('../../services/agentMentionService', () => {
   const { isAutoRoutedDmPod } = jest.requireActual('../../services/agentMentionService');
   return {
-    enqueueMentions: jest.fn(),
+    enqueueMentions: jest.fn(async () => ({ enqueued: [], implicit: [], woken: [] })),
     enqueueDmEvent: jest.fn(),
     isAutoRoutedDmPod,
   };
@@ -96,6 +96,12 @@ describe('PostgreSQL Message Routes', () => {
 
     expect(PGMessage.create).toHaveBeenCalledWith('pod1', 'user1', 'Hi there');
     expect(res.body.content).toBe('Hi there');
+    expect(res.body.agentDelivery).toEqual({
+      enqueued: 0,
+      implicit: [],
+      agentsInPod: expect.any(Number),
+      woken: 0,
+    });
   });
 
   it('dispatches a regular PG post through the mention pipeline with its joined author', async () => {
@@ -140,7 +146,15 @@ describe('PostgreSQL Message Routes', () => {
       .send({ content: persistedMessage.content })
       .expect(200);
 
-    expect(res.body).toEqual(persistedMessage);
+    expect(res.body).toEqual({
+      ...persistedMessage,
+      agentDelivery: {
+        enqueued: 0,
+        implicit: [],
+        agentsInPod: expect.any(Number),
+        woken: 0,
+      },
+    });
     expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith({
       podId: 'pod1', message: persistedMessage, userId: 'user1', username: 'sam',
     });
