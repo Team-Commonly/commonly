@@ -245,3 +245,67 @@ describe('readers filter on following = true, never on EXISTS(row)', () => {
     expect(src).not.toMatch(/EXISTS\s*\(\s*SELECT[^)]*thread_user_state/i);
   });
 });
+
+describe('one participant, one row, one field flipped', () => {
+  // @ux-lead (56822, 392b86e5 on #1107): "a participant at (NULL,
+  // collapsed=false) is woken; the SAME participant at FALSE is not."
+  //
+  // Both halves already existed, but as separate cases with different users on
+  // different roots — so a difference in outcome could in principle have come
+  // from something other than `following`. This flips exactly one field on one
+  // row and asserts the wake set changes by exactly that user. Nothing else
+  // varies, which is the whole point of the pairing.
+
+  test('flipping following NULL -> FALSE removes exactly that participant', async () => {
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await post(r, 'pat', r + 6000);
+    await stateRow(r, 'pat', null, false);
+
+    const woken = [...await effectiveFollowerIds(r)].sort();
+    expect(woken).toEqual(['author', 'pat']);
+
+    await mockPool.query(
+      'UPDATE thread_user_state SET following = FALSE WHERE thread_root_id = $1 AND user_id = $2',
+      [r, 'pat'],
+    );
+
+    const after = [...await effectiveFollowerIds(r)].sort();
+    expect(after).toEqual(['author']);
+    // Stated as a set difference so a change in the other direction, or a
+    // change affecting somebody else, fails rather than passing on length.
+    expect(woken.filter((u) => !after.includes(u))).toEqual(['pat']);
+  });
+
+  test('and flipping it back to NULL restores them', async () => {
+    // The reverse, because a one-way test passes against code that simply
+    // stops waking people.
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await post(r, 'pat', r + 7000);
+    await stateRow(r, 'pat', false, false);
+    expect([...await effectiveFollowerIds(r)]).toEqual(['author']);
+
+    await mockPool.query(
+      'UPDATE thread_user_state SET following = NULL WHERE thread_root_id = $1 AND user_id = $2',
+      [r, 'pat'],
+    );
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['author', 'pat']);
+  });
+
+  test('collapsed is not consulted in either direction', async () => {
+    // The field that must NOT matter. Same participant, following NULL
+    // throughout, collapsed flipped: the wake set is identical.
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await post(r, 'pat', r + 8000);
+    await stateRow(r, 'pat', null, true);
+    const collapsed = [...await effectiveFollowerIds(r)].sort();
+
+    await mockPool.query(
+      'UPDATE thread_user_state SET collapsed = FALSE WHERE thread_root_id = $1 AND user_id = $2',
+      [r, 'pat'],
+    );
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(collapsed);
+  });
+});
