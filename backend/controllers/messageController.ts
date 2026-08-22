@@ -167,11 +167,15 @@ exports.getMessages = async (req: AuthRequest, res: Response): Promise<void> => 
 exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { podId } = req.params;
-    const { content, text, attachments, replyToMessageId } = req.body as {
+    const { content, text, attachments, replyToMessageId, threadRootId } = req.body as {
       content?: string;
       text?: string;
       attachments?: unknown[];
       replyToMessageId?: string;
+      // @ux-lead 56879: an ordinary in-thread post carries NO reply edge and
+      // names its root directly, so joining a thread never addresses the
+      // root's author.
+      threadRootId?: string | number;
     };
 
     if (!podId) {
@@ -236,6 +240,35 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       console.warn('[messageController] PG pod backfill skipped:', e.message);
     }
 
+    // Reconcile the two shapes BEFORE the insert, so a caller whose reply edge
+    // and named root disagree is told, rather than having one silently win.
+    //
+    // ONLY when the caller names a root. With no explicit threadRootId the
+    // resolver would just re-derive COALESCE(parent.thread_root_id, parent.id)
+    // — which the INSERT already does — so calling it would add a query per
+    // message and change nothing. There is nothing to reconcile until there
+    // are two claims to reconcile.
+    let resolvedThreadRootId: number | null = null;
+    try {
+      if (threadRootId != null && threadRootId !== '') {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { resolveThreadRoot } = require('../services/threadRootResolver');
+        resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
+      }
+    } catch (err) {
+      const e = err as { name?: string; code?: string; message?: string };
+      if (e.name === 'ThreadRootError') {
+        // 400, not 500: every one of these is fixable by sending different
+        // input, and the code says which.
+        res.status(400).json({ error: e.message, code: e.code });
+        return;
+      }
+      // A resolver failure that is NOT a caller error must not silently drop
+      // the message into no thread — that is the data loss this column exists
+      // to prevent. Surface it.
+      throw err;
+    }
+
     try {
       const created = await PGMessage.create(
         podId,
@@ -243,6 +276,8 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
         messageContent || '',
         'text',
         replyToMessageId || null,
+        null,
+        resolvedThreadRootId,
       );
       // create() returns the raw INSERT row with no users JOIN, so the
       // response would lack username/profile_picture and the v2 chat would
