@@ -132,3 +132,70 @@ describe('the wake set reads follow the same rule', () => {
     expect(await ThreadUserState.mutedUserIds(r)).toEqual([]);
   });
 });
+
+describe('one record, but never one write for two meanings', () => {
+  // @sprint-review (56807): the mirror of the risk ux-lead closed. Ruling out
+  // "two writes for one gesture" invites "one write for two meanings" —
+  // `following` is durable, `collapsed` flips constantly, and a collapse
+  // toggle that upserts the whole record would silently rewrite follow state.
+  //
+  // The suite already had the collapse-then-follow direction. It did NOT have
+  // the direction they actually named, which is the dangerous one, because
+  // collapse is the high-frequency writer.
+
+  test('collapsing does not disturb an explicit follow', async () => {
+    const r = nextRoot();
+    await ThreadUserState.follow(r, 'u1', POD);
+    await ThreadUserState.setCollapsed(r, 'u1', POD, false);
+    const after = await stateOf(r, 'u1');
+    expect(after.following).toBe(true);
+    expect(after.collapsed).toBe(false);
+  });
+
+  test('collapsing does not disturb an explicit MUTE', async () => {
+    // The worse half: a clobbered mute reads as consent to be woken.
+    const r = nextRoot();
+    await ThreadUserState.unfollow(r, 'u1', POD);
+    await ThreadUserState.setCollapsed(r, 'u1', POD, false);
+    expect((await stateOf(r, 'u1')).following).toBe(false);
+  });
+
+  test('follow state survives many collapse toggles — the frequency asymmetry', async () => {
+    // collapsed flips per interaction; following is set once and expected to
+    // last. If the two shared a write, the durable value erodes under the
+    // volatile one, and it would take N toggles to notice rather than one.
+    const r = nextRoot();
+    await ThreadUserState.unfollow(r, 'u1', POD);
+    for (let i = 0; i < 8; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await ThreadUserState.setCollapsed(r, 'u1', POD, i % 2 === 0);
+    }
+    const after = await stateOf(r, 'u1');
+    expect(after.following).toBe(false);
+    expect(after.collapsed).toBe(false);
+  });
+
+  test('and collapse state survives repeated follow/unfollow', async () => {
+    const r = nextRoot();
+    await ThreadUserState.setCollapsed(r, 'u1', POD, false);
+    for (let i = 0; i < 4; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await ThreadUserState.follow(r, 'u1', POD);
+      // eslint-disable-next-line no-await-in-loop
+      await ThreadUserState.unfollow(r, 'u1', POD);
+    }
+    expect((await stateOf(r, 'u1')).collapsed).toBe(false);
+  });
+
+  test('CONTROL: each writer DOES change its own column', async () => {
+    // Otherwise the four tests above would pass from a model that writes
+    // nothing at all.
+    const r = nextRoot();
+    await ThreadUserState.follow(r, 'u1', POD);
+    expect((await stateOf(r, 'u1')).following).toBe(true);
+    await ThreadUserState.setCollapsed(r, 'u1', POD, false);
+    expect((await stateOf(r, 'u1')).collapsed).toBe(false);
+    await ThreadUserState.unfollow(r, 'u1', POD);
+    expect((await stateOf(r, 'u1')).following).toBe(false);
+  });
+});
