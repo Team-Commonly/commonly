@@ -32,6 +32,21 @@ jest.mock('../../../services/chatSummarizerService', () => ({
 jest.mock('../../../models/AgentEvent', () => ({ countDocuments: jest.fn() }));
 jest.mock('../../../services/welcomeWakeService', () => ({ maybeFireWelcomeWake: jest.fn() }));
 
+// The PG lookup resolveImplicitReplyTarget falls back to when the caller did
+// not pass a populated `replyTo`. MOCKED DELIBERATELY, and the suite is worth
+// nothing without it: message 101 is a real, bot-authored row, so if anything
+// ever hands a thread root to that resolver it WILL find a target and enqueue.
+//
+// Learned the hard way. The first version of this file left it unmocked, and
+// the negative cases passed because the lookup died in the harness rather than
+// because the code declined to make it. A mutation that routed thread roots
+// through resolveImplicitReplyTarget went completely undetected — the exact
+// refactor these tests exist to stop. The controls hid it too, because they
+// pass `replyTo` inline and never touch this path at all.
+jest.mock('../../../models/pg/Message', () => ({
+  findById: jest.fn(async (id) => (String(id) === '101' ? { id: 101, user_id: 'bot-1' } : null)),
+}));
+
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -39,6 +54,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
+const PGMessage = require('../../../models/pg/Message');
 
 const SEAT = { agentName: 'seat-a', instanceId: 'default', displayName: 'Seat A' };
 const SEAT_OPTED_IN = { ...SEAT, config: { wakeOnMessage: { enabled: true } } };
@@ -98,6 +114,11 @@ describe('a thread root alone addresses nobody', () => {
     });
 
     expect(mentions()).toHaveLength(0);
+    // And it declined to make the lookup at all — not merely failed to find a
+    // target. Asserting only "no mention" would pass from a harness where the
+    // resolver is dead, which is exactly how the first draft of this file
+    // missed the mutation it was written to catch.
+    expect(PGMessage.findById).not.toHaveBeenCalled();
   });
 
   test('CONTROL: the same message WITH a reply edge to the bot DOES enqueue one', async () => {
@@ -130,6 +151,7 @@ describe('a thread root alone addresses nobody', () => {
     });
 
     expect(mentions()).toHaveLength(0);
+    expect(PGMessage.findById).not.toHaveBeenCalled();
   });
 });
 
