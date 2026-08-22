@@ -1152,6 +1152,14 @@ const enqueueMentions = async ({
   if (!isRouted) {
     // D8: an unrouted message reaches nobody on the mention path, but it is
     // exactly what a wake-on-message opt-in asked to hear about.
+    //
+    // ONE OF TWO CALL SITES. The other is at the end of this function, for
+    // ROUTED messages, waking the opt-ins the mention path did not reach.
+    // This early return is not the only path into enqueueWakeOnMessage, and
+    // reading it as one is a mistake this seat made twice on 2026-08-22 —
+    // asserting that a routed message never reaches ambient fan-out, which is
+    // false. An early return bounds the code BELOW it, never a helper that a
+    // later call site re-enters.
     let woken: string[] = [];
     try {
       woken = await enqueueWakeOnMessage({
@@ -1465,6 +1473,13 @@ const enqueueMentions = async ({
   // it did not reach. A mention-enqueued agent is excluded — the mention is
   // the stronger cue, and double delivery would burn a second model turn on
   // the same trigger message.
+  //
+  // SECOND OF TWO CALL SITES; the first is behind `if (!isRouted)` above. So
+  // a ROUTED message does have an ambient fan-out, and anything scoping that
+  // fan-out (thread scoping, W-T 3/4) applies here too. That is correct
+  // rather than incidental: an addressed message must always deliver its
+  // chat.mention, while the ambient companion has no stronger claim here than
+  // it does on an unrouted message.
   let woken: string[] = [];
   try {
     woken = await enqueueWakeOnMessage({
