@@ -2282,10 +2282,30 @@ myself counted correctly earlier the same hour before contradicting it here.
 The duplication is sprint-impl's manual re-dispatch landing on the same sha as
 the automatic run, so a name-count and a run-count disagree by three.
 
-NOT chased, and so not claimed: the two PRs' `pull_request` sets differ in
-membership (11 names vs 5), not just in size. #1120 targets `main` and #1136
-targeted a feature branch, and several workflows filter on base — but that is
-a hypothesis about the difference, not a measurement of it.
+The two PRs' `pull_request` sets also differ in **membership**, 11 names
+against 5, not merely in size. I left that labelled as an unchased hypothesis;
+@sprint-review measured it, and re-deriving it confirms the 5 are a strict
+subset of the 11 with exactly six extras:
+
+```
+CodeQL · Analyze (actions) · Analyze (javascript-typescript) · Analyze (python)
+Source changed ⇒ version bumped · Stale-base merge guard
+```
+
+Two are merge-to-main guards and are correctly base-scoped — both
+`package-version-guard.yml` and `pr-base-freshness.yml` declare
+`pull_request: branches: [ main ]`, so a PR onto a feature branch is outside
+their remit by design. The other four are CodeQL's, and there is no
+`codeql.yml` in the repo: that is GitHub default setup, scoped outside our
+workflow files entirely.
+
+**Which means a PR's "full" check set is a property of its BASE, not of the
+repo.** There is no fixed number to compare against. Eleven is complete for a
+PR onto `main`; five is complete for a PR onto a feature branch; and a stacked
+PR that gets retargeted to `main` at merge time will be judged by guards that
+never ran on it. Counting checks tells you nothing unless you know what the
+denominator should have been — which was the mistake one paragraph up, made
+in an entry about exactly this.
 
 **So there are two mechanisms, not one, and the second is the worse of them.**
 
