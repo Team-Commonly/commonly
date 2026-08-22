@@ -124,6 +124,55 @@ describe('messageController', () => {
       });
     });
 
+    it('uses the joined PG author for a JWT-posted chat wake', async () => {
+      const pgMessage = {
+        id: 31,
+        content: '@aria please review this',
+        userId: { _id: 'u1', username: 'sam' },
+      };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue({ id: 31 });
+      PGMessage.findById.mockResolvedValueOnce(pgMessage);
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: pgMessage.content },
+        // JWT auth supplies the id, not the username.
+        user: { id: 'u1' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        message: pgMessage,
+        username: 'sam',
+      }));
+    });
+
+    it('uses the raw PG username for a JWT-posted chat wake without a joined author', async () => {
+      const pgMessage = {
+        id: 33,
+        content: '@aria please review this',
+        username: 'sam',
+      };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue({ id: 33 });
+      PGMessage.findById.mockResolvedValueOnce(pgMessage);
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: pgMessage.content },
+        user: { id: 'u1' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        message: pgMessage,
+        username: 'sam',
+      }));
+    });
+
     it('counts wake-on-message targets so the composer hint stays truthful (#914)', async () => {
       const mockMessage = { id: 4, content: 'hello with no mention' };
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
@@ -173,6 +222,30 @@ describe('messageController', () => {
       const response = res.json.mock.calls[0][0];
       expect(response).not.toHaveProperty('agentDelivery');
       expect(AgentInstallation.countDocuments).not.toHaveBeenCalled();
+    });
+
+    it('uses the joined PG author for a JWT-posted DM wake', async () => {
+      const pgMessage = {
+        id: 32,
+        content: 'hello from the web UI',
+        userId: { _id: 'u1', username: 'sam' },
+      };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'agent-room' });
+      PGMessage.create.mockResolvedValue({ id: 32 });
+      PGMessage.findById.mockResolvedValueOnce(pgMessage);
+      const req = {
+        params: { podId: 'p2' },
+        body: { content: pgMessage.content },
+        user: { id: 'u1' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueDmEvent).toHaveBeenCalledWith(expect.objectContaining({
+        message: pgMessage,
+        username: 'sam',
+      }));
     });
 
     it.each(['agent-room', 'agent-dm'])('omits agentDelivery for %s pods', async (type) => {

@@ -25,6 +25,11 @@ interface NormalizedMessage {
   id: string;
   pod_id: string;
   user_id: string;
+  // PG normalizes its joined author onto userId; the Mongo fallback keeps the
+  // historical user shape below. Agent wake author resolution must accept both
+  // stores so a JWT-posted human message never becomes "raised by unknown".
+  userId?: { username?: string } | string;
+  username?: string;
   content: string;
   message_type: string;
   // ADR-020 D3: structured card payload — must survive the Mongo fallback's
@@ -277,8 +282,11 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // new high-severity js/missing-rate-limiting alerts, one per authed route.
     // Those routes were already unrate-limited and the read already happened —
     // but drowning the real alerts is its own harm.
+    const pgAuthor = message.userId;
     const username = req.user?.username
-      || (message as { user?: { username?: string } } | undefined)?.user?.username;
+      || (pgAuthor && typeof pgAuthor === 'object' ? pgAuthor.username : undefined)
+      || message.username
+      || message.user?.username;
     // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
     // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
     // human message to the agent — no @mention needed. Other pod types only
