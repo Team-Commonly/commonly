@@ -33,6 +33,8 @@ Persisted collapse (constraint 2) and follow state share the key `(userId, podId
 
 Skeleton implication: the follow-state migration in the walking skeleton adds the `collapsed` column at birth rather than in a later PR, since the key already exists.
 
+**The mirror risk (sprint-review 56807): one write for two meanings.** `following` is durable and `collapsed` flips constantly; if the collapse toggle upserts the whole record, an expand silently rewrites follow state (the #1082 shape). Ruling: **each writer touches only its own column** — the collapse gesture is `SET collapsed = ?` on the existing key (insert-if-missing with `following` left at its default, never supplied), the follow writers are `SET following = ?` likewise. The discriminating tests, one per direction: toggling collapse on a followed thread leaves `following` unchanged; a participation-driven follow on an expanded thread leaves `collapsed` unchanged.
+
 ## Provenance of each line
 
 - Constraints 1–3, persisted collapse, and the three reasons: 55852 (above).
