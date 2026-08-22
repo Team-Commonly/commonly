@@ -377,6 +377,55 @@ const readDeclaredBranch = (gitmodulesText) => {
 const checkPinReachable = ({ exec = execFileSync } = {}) => {
   const branch = readDeclaredBranch();
   const pin = readGitlinkSha({ full: true });
+/**
+ * Is this pin a forward move from what the merge base carries, or a rollback?
+ *
+ * Containment — "the pin is on the declared branch" — cannot catch a ROLLBACK,
+ * because a rollback is by definition to a commit the branch already had.
+ * Measured on #1089: `compare/70bd82b8...5d88a3f1` returned `status=ahead,
+ * behind_by=0`, so the existing check passed while the gateway reverted two
+ * commits. A human caught it by reading the diff.
+ *
+ * How the bad pin gets there is why this must not key on intent: `git add -A`
+ * in a checkout whose submodule sits at an older commit stages that stale
+ * pointer as if it were an edit. The author types no submodule command. Three
+ * separate branches in this repo acquired one that way inside two hours.
+ *
+ * Returns 'rollback' ONLY for a strict ancestor of the merge base's pin.
+ * Unchanged, forward, diverged and undeterminable all return ok/undetermined —
+ * containment already judges those, and this must not become a second opinion
+ * on a check that already works.
+ */
+function checkPinDirection(pin) {
+  const submodule = path.join(REPO_ROOT, '_external', 'clawdbot');
+  const sup = (args) => exec('git', args, { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const sub = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+  let basePin;
+  try {
+    const base = String(sup(['merge-base', 'HEAD', 'origin/main'])).trim();
+    const line = String(sup(['ls-tree', base, '_external/clawdbot'])).trim();
+    basePin = line.split(/\s+/)[2];
+  } catch {
+    return { state: 'undetermined', detail: 'could not resolve the merge base with origin/main' };
+  }
+  if (!basePin || basePin === pin) return { state: 'ok' };
+
+  try {
+    sub(['merge-base', '--is-ancestor', pin, basePin]);
+  } catch {
+    return { state: 'ok' };
+  }
+  return {
+    state: 'rollback',
+    detail: `the gitlink moved BACKWARD: ${pin.slice(0, 12)} is an ancestor of the base's ${basePin.slice(0, 12)}. `
+      + 'If you did not mean to touch the submodule, this is `git add -A` staging a stale checkout. '
+      + 'Repair with `git update-index --cacheinfo 160000,<main-sha>,_external/clawdbot` — note that '
+      + '`git checkout origin/main -- _external/clawdbot` stages the right sha and ANY later `git add` '
+      + 'of that path overwrites it again from the working tree.',
+  };
+}
+
   const submodule = path.join(REPO_ROOT, '_external', 'clawdbot');
 
   if (!branch) {
@@ -384,6 +433,11 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
   }
   if (pin === '(unknown)') {
     return { state: 'undetermined', branch, pin, detail: 'could not read the gitlink sha from HEAD' };
+  }
+
+  const direction = checkPinDirection(pin);
+  if (direction.state === 'rollback') {
+    return { state: 'rollback', branch, pin, detail: direction.detail };
   }
 
   const git = (args) => exec('git', args, { cwd: submodule, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -639,6 +693,12 @@ const main = () => {
       + '  A squash-merge mints a NEW sha — re-pin to that one, do not assume the\n'
       + '  feature-branch commit survived.',
     );
+  } else if (reach.state === 'rollback') {
+    console.error(
+      `[moltbot-tool-contract] FAIL — the submodule pin moved BACKWARD.\n\n    ${reach.detail}\n\n`
+      + '  Containment cannot catch this: a former pin is still "on the declared\n'
+      + '  branch", so the reachability check passes while the gateway rolls back.',
+    );
   } else if (reach.state === 'undetermined') {
     console.error(
       `[moltbot-tool-contract] CANNOT VERIFY reachability — ${reach.detail}.\n`
@@ -679,7 +739,7 @@ const main = () => {
 
   // Severity order: a proven violation (1) outranks an unrun check (2) only
   // because a violation is actionable now. Both are non-zero; neither is a pass.
-  if (missing.length || reach.state === 'orphaned') process.exit(1);
+  if (missing.length || reach.state === 'orphaned' || reach.state === 'rollback') process.exit(1);
   if (reach.state === 'undetermined') process.exit(2);
 };
 
