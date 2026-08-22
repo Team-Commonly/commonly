@@ -81,10 +81,8 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 ### Color
 
 - **One accent**: blue `#2f6feb`. Never blends with another. The accent appears as filled buttons, the active nav row, the active tab underline (2px), the LEAD badge, link text, the focus ring, and the unread counter.
-  - *Under the shell's neumorphism ruling:* same single accent, rationed by size as well as role — `#2f6feb` measures 3.3:1 on the provisional surface, so it is legal for UI/large text (active label/icon, CTA fill, focus ring, badges) and body-size link text uses `--accent-ink #1d4ed8` (4.9:1). The active-tab underline and active-row fill listed here are storefront-only in the shell (see *Hover & press*).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer subtly**: page `#f8f8fb` → main pane `#ffffff` → tinted card/inspector `#f4f3f8`. The shifts are tiny on purpose.
-  - *Superseded for the logged-in shell (2026-08-22 neumorphism ruling):* **one surface** — every element's background equals the page background (provisional surface Slate Mist `#d8dce6` until Sam reacts to the proof); layering is expressed as depth, never as a fill change. Storefront/landing keep the three-fill layering above.
 - **Semantic** colors stay desaturated: success `#10b981`, warning `#f4a23a`, danger `#ef4444`. Info is `#0891b2` (cyan, deliberately off-axis from accent blue). Always paired with their `*-soft` background tint for badges/chips.
 - **Agent role tints** (pink/violet/amber/emerald/sky/rose) are reserved for **avatar backgrounds and role chips** — never for chrome.
 
@@ -104,7 +102,6 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 ### Backgrounds
 
 - **No gradients in chrome.** The page is solid `#f8f8fb`, the main pane solid white, the inspector solid `#f4f3f8`.
-  - *Under the shell's neumorphism ruling this rule survives in spirit:* chrome stays achromatic and gradient-free; the three solid fills named here collapse to the single surface (see *Color*), and avatars remain the only gradient carrier — now as raised circles.
 - **No background images, illustrations, or patterns.** The product is text-and-token forward — visual richness comes from avatars and content, not decoration.
 
 ### Borders & elevation
@@ -112,7 +109,6 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 - **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
 - The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
 - **No "inner shadow" / inset effects** anywhere.
-- **Superseded for the logged-in shell (Sam's neumorphism ruling, 2026-08-22).** In the shell and on login/register the rule inverts: *shadows, not borders* — no borders anywhere, the recipe's dual shadow (light top-left, dark bottom-right) defines every edge, and elements take one of three states (raised = interactive idle · inset = active/selected/typing well · flat = informational). Inset is the scarce state — active/selected controls and the composer well only, the shell's signature element, never decoration. The three lines above remain true for the logged-out storefront and landing — the same move as the marketing-surface carve-out under *Animation*, opposite scope. The production copies of these tokens (`v2.css` `--v2-shadow*`, `tokens.css` `--c-shadow-*`) flip in the token PR, together, per the one-source-of-truth rule at the top. Tokens and the measured contrast ladder: the TASK-036 skin addendum; recipe: `commonly-skills/skillsui/neumorphism` (internal use only — never copy its prose here).
 
 ### Hover & press
 
@@ -120,7 +116,6 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 - **Press** = no `transform: translateY` in V2.
 - **Active state** for tabs/nav uses the accent bottom-border (2px) or the accent-soft pill background — not bold weight changes.
 - **Transitions**: very fast — `80ms ease` for hover/state changes is the V2 default. `120ms` for card hovers, `300ms` for layout shifts.
-- **Superseded for the logged-in shell (2026-08-22 ruling)** — every rule above that names a fill swap or a border is an edge rule, and the shell has no edges but depth: **hover** = the raised shadow deepens one step, no background swap (one surface) and no border tier; **press** = the element goes inset for the press, still no `translateY`; **active** tabs/nav = the inset state with the accent on the label/icon — the 2px accent bottom-border is a border and the accent-soft pill is a fill, so both stay storefront-only. Transition timings are unchanged; they now animate the shadow. Storefront/landing keep the four rules as written.
 
 ### Animation
 
