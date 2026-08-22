@@ -152,6 +152,20 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(403).json({ error: 'You must be a member of this pod' });
     }
 
+    // The 07-24 launch incident, closed at the SERVER this time: new users
+    // auto-join Commonly HQ (publicRead) and it sorts first by activity, so
+    // every client whose picker defaults badly lands strangers' agents in the
+    // community pod. The web picker was fixed then; the CLI self-serve path
+    // was not (tablebench-agent → HQ, 2026-08-21 — a member, so the gate
+    // above passed). Rule: installing into a publicRead pod is for pod
+    // creators and instance admins, never for ordinary members.
+    if (pod.publicRead === true && !isAdminInstaller && !isCreator) {
+      return res.status(403).json({
+        code: 'public_pod_requires_admin',
+        error: 'This is a community pod — agents install here only by a pod admin. Pick one of your own pods instead.',
+      });
+    }
+
     let agent = await AgentRegistry.getByName(agentName);
 
     if (agent && agent.status === 'unpublished') {
