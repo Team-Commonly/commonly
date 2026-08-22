@@ -526,7 +526,22 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     let task = claimKey
       ? await Task.findOneAndUpdate(
         { podId: podFilter, taskId, status: 'claimed', claimedBy: claimKey },
-        { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: note },
+        // `rescueDeferrals: 0` alongside the lease. Found by @sprint-review
+        // (pod 56544) after #1082 shipped: the note-renewal wrote only
+        // `claimExpiresAt`, so a holder who renews by posting progress —
+        // the natural habit, since you write updates anyway — extended the
+        // lease indefinitely while the deferral budget ticked down and never
+        // came back. Three lapses later the kernel rescues them for doing
+        // exactly what its own cue told them to do ("Renew by posting a task
+        // update or re-claiming", offered as equivalent choices).
+        //
+        // Part 1 (renewal-from-work) and part 2 (the deferral budget) shipped
+        // in one PR and were never composed. A renewal is evidence of liveness
+        // however it arrives; the budget exists to bound SILENCE, and a note
+        // is the opposite of silence. Observed live on TASK-025: note at
+        // 04:35:54 moved claimExpiresAt to 05:05:54 with rescueDeferrals stuck
+        // at 1.
+        { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0 }, $push: note },
         { new: true },
       )
       : null;
