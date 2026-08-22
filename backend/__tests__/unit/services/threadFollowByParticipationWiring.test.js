@@ -1,17 +1,15 @@
 /**
  * Keep the comment and the code-base agreeing about followByParticipation.
  *
- * @sprint-review's third blocker on 3/4 (57306): threadWakeScopeService's
- * header asserted "the mention writes the row at the moment it happens, via
- * ThreadUserState.followByParticipation" — and nothing called it. The method
- * shipped, its tests passed, and the only thing claiming it was wired was
- * prose.
+ * @sprint-review's third blocker on 3/4 (57306) caught a doc-vs-reality gap:
+ * threadWakeScopeService said a mention wrote the row, while nothing called
+ * this method. The implementation is intentionally at agentMentionService's
+ * successful-delivery choke point, not at one of its four resolution branches.
  *
- * The comment is corrected. This exists so it cannot drift back, in EITHER
- * direction: it fails if a production caller appears while the comment still
- * says there is none, and it fails if the comment stops saying so while there
- * is still no caller. A doc-vs-reality gap that only a reader can detect is
- * the failure mode being guarded, so the guard has to be executable.
+ * This exists so the comment cannot drift from that call graph in either
+ * direction. Behaviour is asserted at the delivery consumer in
+ * agentMentionService.threadScoping.test.js; this test protects the human
+ * contract and its one designated production writer.
  */
 
 const fs = require('fs');
@@ -84,7 +82,9 @@ describe('followByParticipation: the comment and the call graph agree', () => {
     if (claimsUnwired) {
       expect(callers).toEqual([]);
     } else {
-      expect(callers.length).toBeGreaterThan(0);
+      // A non-empty list would let a second, unreviewed writer appear. The
+      // mention-delivery choke point is deliberately the only caller.
+      expect(callers).toEqual(['services/agentMentionService.ts']);
     }
   });
 });

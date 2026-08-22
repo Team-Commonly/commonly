@@ -9,6 +9,10 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const ThreadUserState = require('../models/pg/ThreadUserState') as {
+  followByParticipation: (threadRootId: number, userId: string, podId: string) => Promise<boolean | null>;
+};
+// eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
@@ -57,6 +61,8 @@ interface EnqueueMentionsOptions {
     message_type?: string;
     createdAt?: unknown;
     created_at?: unknown;
+    thread_root_id?: unknown;
+    threadRootId?: unknown;
     thread?: unknown;
     replyTo?: { userId?: unknown } | null;
   };
@@ -935,8 +941,15 @@ const isWakeLoopDampened = async (
 };
 
 /** `agentName:instanceId`, lowercased — the identity an install and a bot User row share. */
-const installKey = (inst: Record<string, unknown>): string => `${
+const installKey = (inst: { agentName?: unknown; instanceId?: unknown }): string => `${
   String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default')}`;
+
+/** A thread root arrives from PG as either its numeric column or JSON spelling. */
+const resolveThreadRootId = (message: EnqueueMentionsOptions['message']): number | null => {
+  const raw = message.thread_root_id ?? message.threadRootId;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
 
 /**
  * Map each install to its BOT's User row id — the key thread_user_state uses.
@@ -951,7 +964,7 @@ const installKey = (inst: Record<string, unknown>): string => `${
  * the wake is a message nobody sees.
  */
 const resolveBotUserIds = async (
-  targets: Array<Record<string, unknown>>,
+  targets: Array<{ agentName?: unknown; instanceId?: unknown }>,
 ): Promise<Map<string, string>> => {
   const out = new Map<string, string>();
   const wanted = [...new Set(targets.map(installKey))].filter((k) => !k.startsWith(':'));
@@ -979,6 +992,38 @@ const resolveBotUserIds = async (
 };
 
 /**
+ * Persist the follow implied by a DELIVERED explicit mention in a thread.
+ *
+ * This is deliberately awaited after the agent event has been enqueued: the
+ * participation state becomes durable before this mention operation completes,
+ * but a PG failure cannot turn an already-persisted post or delivered address
+ * into a 500. `followByParticipation` itself preserves an explicit mute by
+ * writing only where `following IS NULL`.
+ */
+const followDeliveredThreadMentions = async (
+  threadRootId: number,
+  podId: string,
+  targets: Iterable<MentionTarget>,
+  botUserIds: Map<string, string>,
+): Promise<void> => {
+  const userIds = new Set(
+    Array.from(targets)
+      .map((target) => botUserIds.get(installKey(target)))
+      .filter((userId): userId is string => Boolean(userId)),
+  );
+
+  await Promise.all([...userIds].map(async (userId) => {
+    try {
+      await ThreadUserState.followByParticipation(threadRootId, userId, podId);
+    } catch (error) {
+      // The message and its address are already durable. Keep the failure
+      // visible without making a successful send look failed to the author.
+      console.warn('[thread-follow] mention delivery succeeded but follow write failed:', (error as Error).message);
+    }
+  }));
+};
+
+/**
  * Fan a message out to the pod's wake-on-message opt-ins. Skips the sender's
  * own identity (an agent never wakes on its own post), anything the mention
  * path already enqueued this message (a mention is the stronger cue — double
@@ -989,7 +1034,7 @@ const resolveBotUserIds = async (
  * caller already loaded — no queries, no pod lookup.
  */
 const enqueueWakeOnMessage = async ({
-  podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame,
+  podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
 }: {
   podId: string;
   message: EnqueueMentionsOptions['message'];
@@ -1001,6 +1046,7 @@ const enqueueWakeOnMessage = async ({
   sender: SenderRow | null;
   excludeKeys: Set<string> | null;
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
+  resolvedBotUserIds?: Map<string, string>;
 }): Promise<string[]> => {
   const woken: string[] = [];
   let targets = (installations || []).filter(wakeOnMessageEnabled);
@@ -1040,14 +1086,13 @@ const enqueueWakeOnMessage = async ({
   // An install whose bot User row cannot be resolved is KEPT by
   // narrowToThread rather than dropped — an unclassifiable target must
   // degrade to today's behaviour, never to silence.
-  const threadRootId = (message as { thread_root_id?: unknown; threadRootId?: unknown })?.thread_root_id
-    ?? (message as { threadRootId?: unknown })?.threadRootId ?? null;
+  const threadRootId = resolveThreadRootId(message);
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { narrowToThread } = require('./threadWakeScopeService');
-    const botUserIds = await resolveBotUserIds(targets);
+    const botUserIds = resolvedBotUserIds ?? await resolveBotUserIds(targets);
     targets = await narrowToThread(
-      Number(threadRootId),
+      threadRootId,
       targets,
       (inst: Record<string, unknown>) => botUserIds.get(installKey(inst)) ?? null,
     );
@@ -1244,12 +1289,21 @@ const enqueueMentions = async ({
   const implicit: string[] = [];
   const skipped: string[] = [];
   const enqueuedIdentityKeys = new Set<string>();
+  // This is deliberately distinct from `enqueuedIdentityKeys`: the latter
+  // also records a reply-edge delivery, which is addressing but not an
+  // explicit @mention and therefore must not create a follow.
+  const deliveredMentionTargets = new Map<string, MentionTarget>();
   const identityKey = (target: MentionTarget): string => (
     `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`
   );
-  const recordEnqueued = (target: MentionTarget, resultLabel = target.agentName): void => {
+  const recordEnqueued = (
+    target: MentionTarget,
+    resultLabel = target.agentName,
+    isExplicitMention = true,
+  ): void => {
     enqueuedIdentityKeys.add(identityKey(target));
     enqueued.push(resultLabel);
+    if (isExplicitMention) deliveredMentionTargets.set(identityKey(target), target);
   };
 
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
@@ -1487,6 +1541,24 @@ const enqueueMentions = async ({
     }),
   );
 
+  // One BOT User lookup serves both the delivered mention below and the
+  // routed message's ambient wake fan-out. An auto-joined target is not in
+  // the initial installation list yet, so include the actual delivery set.
+  const threadRootId = resolveThreadRootId(message);
+  let resolvedBotUserIds: Map<string, string> | undefined;
+  if (threadRootId && deliveredMentionTargets.size > 0) {
+    resolvedBotUserIds = await resolveBotUserIds([
+      ...installations,
+      ...deliveredMentionTargets.values(),
+    ]);
+    await followDeliveredThreadMentions(
+      threadRootId,
+      podId,
+      deliveredMentionTargets.values(),
+      resolvedBotUserIds,
+    );
+  }
+
   // Human replies to an agent are an addressing signal even when the human
   // does not repeat an @mention. Bot replies are deliberately excluded: if
   // A's reply to B implicitly notified B (and vice versa), two agents could
@@ -1523,7 +1595,7 @@ const enqueueMentions = async ({
             implicitReply: true,
           },
         });
-        recordEnqueued(target);
+        recordEnqueued(target, target.agentName, false);
         implicit.push(target.agentName);
       }
     } catch (error) {
@@ -1548,7 +1620,7 @@ const enqueueMentions = async ({
   let woken: string[] = [];
   try {
     woken = await enqueueWakeOnMessage({
-      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame,
+      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds,
     });
   } catch (error) {
     console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
