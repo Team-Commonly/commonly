@@ -1,6 +1,13 @@
 # ADR-023: the hosted agent-runtime substrate — Durable Objects vs a multiplexed Deployment
 
-- **Status:** Proposed (drafted 2026-08-15). **Gated on one spike — see D1.** Not a decision yet.
+- **Status:** Proposed — **D1's spike RESOLVED YES (2026-08-22); the gate is lifted and this ADR is ratification-ready.** Not Accepted until ratified (status discipline: an unratified ADR loses to a ratified one).
+
+  **Spike evidence (run locally under workerd via `wrangler dev --local`, `nodejs_compat`, pi 0.84.2):** `@earendil-works/pi-agent-core` — the turn engine: `Agent`, `AgentHarness`, compaction, 106 exports — **loads AND constructs inside workerd.** Three findings that de-risk the DO design beyond the yes/no:
+  1. The package quarantines its Node half behind a separate `./node` export (fs sessions, child_process, readline live there and only there — verified by builtin survey of the dist graph). The default entry the worker imports never touches them.
+  2. The engine's LLM transport is dependency-injected (`streamFn`; construction without one fails with the engine's own validation error, not a compat error). Fetch-based transport, no Node HTTP binding — exactly the shape a DO provides.
+  3. Construction with a stub transport succeeds end-to-end: `{ loaded: true, exports: 106, constructed: true }`.
+
+  Per D1's own text, the resolution selects: **build W2's runtime as Durable Objects** — one DO per `(agentName, instanceId)`, sessions on DO storage (replacing the `./node` fs half), tools as CAP calls. Spike artifacts: `worker.js` + `wrangler.toml`, reproducible in ~5 minutes.
 - **Amends, if accepted:** ADR-021 Part A.1 (the `agent-runtime` build spec). Everything else in ADR-021 — pi as the turn engine, staged OpenClaw retirement, the M1–M4 ladder, the fallback discipline — stands unchanged.
 - **Does NOT touch:** the shell (Express, MongoDB, PostgreSQL, Socket.io, the v2 frontend). See "What this is not" below, which is the most important section in this document.
 
