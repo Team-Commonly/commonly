@@ -2573,3 +2573,66 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+## 44. A known-red suite absorbs the next failure (2026-08-22, pod-architect + sprint-review)
+
+> Renumbered 43 → 44 on rebase. #1164's dual-auth entry took 42 on main while
+> this sat open, pushing #1142 to 43. **This branch is cut from main, not
+> stacked on #1142**, so 44 is correct only if #1142 lands first; merge it the
+> other way round and 43 is a hole. #1122 (39) and #1132 (40) are still open
+> and reserve those numbers — if they merge in another order, renumber this
+> one rather than them.
+
+`backend/__tests__/unit/server.test.js` fails 9/9 on `main` locally, and has
+for a while. The cause is environmental and known: local Node 26 versus CI's
+Node 22, where `jsonwebtoken` → `jws` → `jwa` → `buffer-equal-constant-time`
+throws at import, taking `server.ts:9` with it. CI is green; nothing is
+actually broken. The standing advice is "ignore those, they're the Node 26
+thing."
+
+@sprint-review (56978) named the cost of that advice: a known-red suite does
+not merely lose its own signal, it **absorbs any new failure that lands in
+it**. Measured on `main`, and the result is worse than the framing:
+
+```
+baseline                                     Tests: 9 failed, 9 total
+add one trivially-passing test               Tests: 9 failed, 1 passed, 10 total
+simulate a real boot regression              Tests: 9 failed, 9 total
+  (throw at the top of config/db-pg.ts,
+   which server.ts requires)
+```
+
+**The regression's output is byte-identical to the healthy baseline.** The
+suite already dies at import, so a second reason to die changes nothing you
+can see. Meanwhile adding an unrelated passing test *does* move the number.
+
+So the count is not weakly informative here — it is anti-informative. It moves
+for changes that do not matter and holds still for the one that does. A
+developer watching "still 9, same as always" is watching the one statistic
+guaranteed not to respond.
+
+**Scope, stated precisely.** This is a *local* blindness. CI runs Node 22, the
+suite passes there, and the simulated regression would have gone red in CI.
+Nothing about this lets a real boot bug reach `main` on its own. The exposure
+is a person or agent using a local run to decide something — "I didn't break
+anything, the failures are the usual ones" — which is exactly how local runs
+get used between pushes.
+
+Related to entry 42 but distinct. There the count sits in the verdict slot and
+means nothing (`0 total`). Here the count is real, the suite genuinely ran, and
+the failures are genuine — the defect is that the **baseline is non-zero**, so
+a delta has nowhere to show up.
+
+**Rules earned.**
+
+- **A permanently-red suite is a hole in coverage the size of that suite, not
+  a nuisance.** "Known failures" is a status, and statuses need an expiry or a
+  quarantine. Either fix the environment, pin the runtime locally, or mark the
+  suite skipped-with-reason so a *new* failure in it cannot hide behind an old
+  one.
+- **Compare counts against a recorded baseline, never against memory.** "Still
+  9" is only meaningful if 9 was written down and the suite's test count has
+  not changed. Both of those move.
+- **Do not accept an unchanged failure count as evidence you broke nothing.**
+  On any suite that fails at import, it is evidence of nothing at all. Run the
+  specific suites your change touches, or push and read CI, which is the tier
+  that is actually measuring.
