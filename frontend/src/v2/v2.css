@@ -1095,6 +1095,13 @@
   border-radius: 50%;
   background: var(--v2-accent);
   flex-shrink: 0;
+  /* The title-row went align-items: flex-start for the 2-line name wrap
+     (#1110), which parked this dot flush at the row's top-right corner —
+     inside the row's border-radius + overflow:hidden clip, so the rounding
+     visibly shaved the dot (Sam, 2026-08-22). Center it on the first 20px
+     text line and inset it clear of the 10px corner curve. */
+  margin-top: 6px;
+  margin-right: 4px;
 }
 
 .v2-pods__item-snippet--typing {
