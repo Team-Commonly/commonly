@@ -1,10 +1,17 @@
-/* Persona catalog — Phase 1 of the persona plan. Token-only per the design
-   system: one accent, borders not shadows, sentence case, calm motion. */
+/* Persona catalog — the NEUMORPHIC PILOT SURFACE (Sam's direction, accepted
+   2026-08-22 from the neumorphic-commonly proof). First surface migrated to
+   the --neo-* token layer; the recipe's physics govern: every element's
+   background equals the page ground, depth comes only from the dual shadow,
+   cobalt appears on action alone. Un-migrated surfaces keep the flat system —
+   never mix languages inside one surface. */
 
 .v2-pcat {
   max-width: 1040px;
   margin: 0 auto;
   padding: 8px 24px 40px;
+  background: var(--neo-surface);
+  color: var(--neo-ink);
+  border-radius: 20px;
 }
 
 .v2-pcat__head { margin-bottom: 24px; }
@@ -13,12 +20,12 @@
   font-size: 24px;
   font-weight: 850;
   letter-spacing: -0.03em;
-  color: var(--v2-text);
+  color: var(--neo-ink);
 }
 .v2-pcat__sub {
   margin: 0;
   max-width: 56ch;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -26,7 +33,7 @@
 .v2-pcat__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+  gap: 24px;
 }
 
 /* At phone width the 300px column minimum exceeds what the nav rail leaves;
@@ -41,13 +48,14 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 18px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  transition: border-color 120ms ease;
+  padding: 20px;
+  background: var(--neo-surface);
+  border: none;
+  border-radius: 18px;
+  box-shadow: var(--neo-raised);
+  transition: box-shadow 140ms ease, transform 140ms ease;
 }
-.v2-pcat__card:hover { border-color: var(--v2-text-secondary); }
+.v2-pcat__card:hover { transform: translateY(-2px); box-shadow: var(--neo-raised-lg); }
 
 .v2-pcat__card-head {
   display: flex;
@@ -59,14 +67,14 @@
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: var(--v2-text);
+  color: var(--neo-ink);
 }
 .v2-pcat__role {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
 
 .v2-pcat__liveness {
@@ -74,24 +82,24 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
   white-space: nowrap;
 }
 .v2-pcat__dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--v2-border);
+  background: var(--neo-surface-deep);
 }
-.v2-pcat__liveness--live .v2-pcat__dot { background: #15803d; }
+.v2-pcat__liveness--live .v2-pcat__dot { background: #15803d; box-shadow: 0 0 4px rgba(21, 128, 61, 0.5); }
 .v2-pcat__liveness--session .v2-pcat__dot { background: #b45309; }
-.v2-pcat__liveness--soon .v2-pcat__dot { background: var(--v2-border); }
+.v2-pcat__liveness--soon .v2-pcat__dot { background: var(--neo-surface-deep); box-shadow: var(--neo-inset-soft); }
 
 .v2-pcat__oneliner {
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
-  color: var(--v2-text);
+  color: var(--neo-ink);
 }
 
 .v2-pcat__kicker {
@@ -100,66 +108,70 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
   margin-bottom: 2px;
 }
 .v2-pcat__first p {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
 
+/* The sample exchange is the card's centerpiece — pressed INTO the surface,
+   the accepted mock's signature move. */
 .v2-pcat__sample {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
-  background: var(--v2-bg);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-md, 8px);
+  padding: 12px 14px;
+  background: var(--neo-surface);
+  border: none;
+  border-radius: 14px;
+  box-shadow: var(--neo-inset);
   font-size: 12.5px;
   line-height: 1.45;
 }
-.v2-pcat__sample-ask { color: var(--v2-text-secondary); }
+.v2-pcat__sample-ask { color: var(--neo-ink-2); }
 .v2-pcat__sample-ask::before { content: '“'; }
 .v2-pcat__sample-ask::after { content: '”'; }
 .v2-pcat__sample-reply {
-  color: var(--v2-text);
+  color: var(--neo-ink);
   padding-left: 10px;
   border-left: 2px solid var(--v2-accent);
 }
 
-.v2-pcat__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-pcat__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .v2-pcat__chip {
   font-size: 11px;
-  padding: 3px 9px;
-  border: 1px solid var(--v2-border);
+  padding: 4px 11px;
+  border: none;
   border-radius: 999px;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface);
+  color: var(--neo-ink-2);
+  background: var(--neo-surface);
+  box-shadow: var(--neo-raised-soft);
 }
 
 .v2-pcat__limits {
   margin: 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
   font-style: italic;
 }
 
 .v2-pcat__how summary {
   font-size: 12px;
   font-weight: 600;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
   cursor: pointer;
 }
-.v2-pcat__how[open] summary { color: var(--v2-text); }
+.v2-pcat__how[open] summary { color: var(--neo-ink); }
 .v2-pcat__how p {
   margin: 8px 0 0;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
 
 .v2-pcat__card-foot {
@@ -173,25 +185,32 @@
 .v2-pcat__tier-note {
   font-size: 11px;
   font-weight: 600;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
-.v2-pcat__cta {
+/* Cobalt on action only — raised idle, pressed on :active (the recipe's
+   raised→pressed interaction, the thing that makes buttons feel real).
+   Selector is `.v2-root button.` per the documented reset trap (v2.css:755,
+   #870): the global button reset is 0-2-1 and anything weaker renders as
+   plain prose — this file's first cut proved it locally, again. */
+.v2-root button.v2-pcat__cta {
   margin-left: auto;
-  padding: 7px 16px;
+  padding: 9px 18px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   background: var(--v2-accent);
   border: none;
-  border-radius: var(--v2-radius-md, 8px);
+  border-radius: 12px;
   cursor: pointer;
-  transition: background 80ms ease;
+  box-shadow: -4px -4px 10px var(--neo-shadow-light), 4px 4px 12px rgba(47, 111, 235, 0.35);
+  transition: box-shadow 100ms ease, transform 100ms ease, background 80ms ease;
 }
-.v2-pcat__cta:hover { background: var(--v2-accent-strong); }
+.v2-root button.v2-pcat__cta:hover { background: var(--v2-accent-strong); }
+.v2-root button.v2-pcat__cta:active { transform: translateY(1px); box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.25); }
 .v2-pcat__soon-note {
   margin-left: auto;
   font-size: 12px;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
 
 .v2-pcat__foot {
@@ -201,7 +220,10 @@
   gap: 12px;
   margin-top: 24px;
   font-size: 12.5px;
-  color: var(--v2-text-secondary);
+  color: var(--neo-ink-2);
 }
-.v2-pcat__manage { color: var(--v2-text-secondary); }
-.v2-pcat__manage:hover { color: var(--v2-text); }
+.v2-pcat__manage { color: var(--neo-ink-2); }
+.v2-pcat__manage:hover { color: var(--neo-ink); }
+
+/* Owner avatar-edit affordances (agent profile shares this sheet) keep their
+   flat styling on that un-migrated surface. */
