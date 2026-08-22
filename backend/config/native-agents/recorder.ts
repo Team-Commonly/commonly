@@ -57,6 +57,11 @@ export const recorderApp = {
     + 'answer — it rewrites the room\'s history.',
   ),
   model: 'deepseek-v4-flash',
+  introMessage:
+    'Hi — I\'m Recorder, this room\'s memory. Mention me when something gets '
+    + 'settled and I\'ll write it down; ask me "didn\'t we decide…" and I\'ll '
+    + 'answer with the citation. Starting now, nothing decided here gets '
+    + 'rebuilt from scratch.',
   triggers: ['mention'],
   tools: [
     'commonly_read_context',

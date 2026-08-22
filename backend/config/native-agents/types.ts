@@ -40,6 +40,11 @@ export interface NativeAgentDefinition {
   maxTurns?: number;
   maxTokens?: number;
   maxWallClockMs?: number;
+  // Phase 2 "it speaks first": the scripted opener a hire posts on
+  // placement — deterministic and free, so the room is never empty and never
+  // depends on a model call at first-impression time (Scout's pattern,
+  // generalized). Absent = a neutral default intro.
+  introMessage?: string;
   // Per-user apps (the Guide) publish a registry row but are NOT installed
   // into the demo pod by the seeder — installation happens per workspace at
   // signup (authController.createDefaultWorkspacePod).
