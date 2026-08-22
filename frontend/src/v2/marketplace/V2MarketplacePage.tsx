@@ -5,11 +5,10 @@ import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import './V2MarketplacePage.css';
 
-// Fresh v2-native marketplace browse page. Routed at /v2/marketplace. The
-// legacy AppsMarketplacePage stays on the v1 /apps mount; this one owns the
-// v2 shell. Reuses the shipped /api/marketplace/* + /api/registry/* endpoints
-// and the install→detail wiring (card body → detail page; Install → inline
-// install into the selected pod, matching the legacy marketplace behavior).
+// V2-native marketplace browse page, routed at /v2/marketplace. Reuses the
+// shipped /api/marketplace/* + /api/registry/* endpoints and the
+// install→detail wiring (card body → detail page; Install → inline install
+// into the selected pod).
 
 interface App {
   id: string;

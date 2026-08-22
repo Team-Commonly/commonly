@@ -5036,68 +5036,6 @@
   background-color: var(--v2-accent);
 }
 
-/* Apps marketplace: soften the old gradient hero and align filters/cards. */
-.v2-feature__legacy .v2-apps-marketplace {
-  padding-top: 0;
-}
-
-.v2-feature__legacy .v2-apps-hero {
-  margin-bottom: 28px !important;
-  padding: 28px 30px !important;
-  border: 1px solid var(--v2-border-strong);
-  border-radius: var(--v2-radius-lg) !important;
-  background: var(--v2-surface) !important;
-  color: var(--v2-text-primary) !important;
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiTypography-root {
-  color: var(--v2-text-primary) !important;
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiTypography-body1 {
-  color: var(--v2-text-secondary) !important;
-  opacity: 1 !important;
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiButton-contained {
-  background: #ffffff !important;
-  color: var(--v2-accent-text) !important;
-  border: 1px solid var(--v2-border-strong);
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-marketplace > .MuiBox-root:nth-of-type(2),
-.v2-feature__legacy .v2-apps-marketplace > .MuiBox-root:nth-of-type(3) {
-  padding: 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  background: #ffffff;
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiGrid-container {
-  align-items: stretch;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiCard-root {
-  min-height: 100%;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiCard-root .MuiAvatar-root {
-  background-color: var(--v2-accent-soft) !important;
-  color: var(--v2-accent-text) !important;
-  border-color: var(--v2-border-strong) !important;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiRating-iconFilled {
-  color: var(--v2-warning);
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiChip-root {
-  border-color: var(--v2-border) !important;
-}
-
 .v2-feature__legacy [style*="#1d9bf0"],
 .v2-feature__legacy [style*="#1976d2"],
 .v2-feature__legacy [style*="#6366f1"],
