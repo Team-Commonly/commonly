@@ -39,6 +39,14 @@ Skeleton implication: the follow-state migration in the walking skeleton adds th
 
 **`following` is tri-state (pod-architect 56817, accepted).** "Defaults from participation" cannot be a column default: `NOT NULL DEFAULT false` would silently unfollow a participant the moment a collapse-only row is created for them. So: `following` is nullable — **NULL = defer to participation** (derived at read time from posts and @-mentions in the thread; participation never writes this column), **TRUE = explicit follow**, **FALSE = explicit mute that outranks participation**. Unfollow writes FALSE rather than deleting the row, for the same reason. Readers compute `effective = COALESCE(following, participated)`; the wake-scoping filter is on the effective value, not the column. Fourth test: a participant whose row is `(following=NULL, collapsed=false)` is woken; the same participant with `following=FALSE` is not.
 
+## Pre-threading reply chains (backfill ruling, 2026-08-22, pod 56845)
+
+Reply edges pre-date threading (a drifting population — ~227–245 `reply_to` edges at the time of #1106; re-measure, never cite a stale count). Deriving `thread_root_id` for them is **true** — those messages were replies — so the backfill stays full; narrowing it would make the data lie to avoid a rendering problem. The rendering problem is handled at the surface instead:
+
+- **Pre-cutoff roots default to expanded.** A thread whose root pre-dates the threading cutoff renders with `collapsed` effectively `false` until the user collapses it, so nothing that was visible in history disappears under a headline card the day threading ships. Post-cutoff roots keep the `collapsed = true` default. The cutoff is the migration timestamp, read from the migration record, not a constant.
+- **No cutoff gate on wake-scoping (3/4).** Activity on an old chain is new activity: a reply today to a pre-cutoff root is a real thread and the ambient rules apply unchanged.
+- "Orphaned chains stay NULL" is an untested branch with a live population of zero; it stays as written but is not cited as verified until a fixture exercises it.
+
 ## Provenance of each line
 
 - Constraints 1–3, persisted collapse, and the three reasons: 55852 (above).
