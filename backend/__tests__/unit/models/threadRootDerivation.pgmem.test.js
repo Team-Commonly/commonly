@@ -23,8 +23,29 @@
  *   first-match mutation (hits the comment) -> 5 passed  [MEANINGLESS]
  *   code-targeted mutation (hits the SQL)   -> 3 failed  [THE REAL KILL]
  *
+ * Those two numbers are the DERIVATION tests alone, which is how they were
+ * measured before this file grew a structural guard. Run the code mutation
+ * today and the suite reports FOUR failures: the three below, plus
+ * "appears exactly twice", because replacing the expression drops the count
+ * to one. Expected, and stated here so the extra red is not mistaken for
+ * drift by whoever next runs it.
+ *
  * So the derivation IS covered — sprint-review's A/B/C case, depth 7, and
- * two-chains-in-one-pod all die when the code actually changes. Anchor the
+ * two-chains-in-one-pod all die when the code actually changes.
+ *
+ * THREE IS THE EXPECTED NUMBER, NOT PARTIAL COVERAGE. @sprint-review (56953):
+ * the two survivors are the depth-1 and depth-2 cases, and under
+ * `COALESCE(parent.id, parent.id)` they give the identical answer BY
+ * CONSTRUCTION — a root has no parent to consult, and a direct reply's parent
+ * is itself a root whose thread_root_id is NULL, so both spellings return the
+ * parent's id. They cannot go red, and a test that cannot go red under a
+ * mutation is not a weak test; it is a test of a different depth.
+ *
+ * The inversion is the useful half: **five red would be the bad result.** It
+ * would mean the depth-1 and depth-2 fixtures had stopped being depth-1 and
+ * depth-2 — that the suite had quietly deepened and lost its shallow cases.
+ * So do not "improve" this to a full kill. The depth-2 fixture asserts its
+ * own parent is a root (below) precisely so that stays true. Anchor the
  * mutation to the SQL line, then assert the file changed where you meant it
  * to, before reading the test result. A probe that cannot show it hit its
  * target is measuring nothing, and it will tell you so in the voice of a
@@ -135,6 +156,13 @@ describe('the derivation runs, and depth is the thing it proves', () => {
   test('a direct reply inherits the root id', async () => {
     const root = await insert('root');
     const reply = await insert('reply', root.id);
+    // Depth 2 ON PURPOSE, and pinned: the parent must be a ROOT. That is what
+    // makes this case identical under COALESCE(parent.thread_root_id,
+    // parent.id) and under COALESCE(parent.id, parent.id), and therefore what
+    // makes it one of the two tests expected to SURVIVE the mutation probe.
+    // Deepen this fixture and the documented 3-of-5 kill count silently
+    // becomes wrong.
+    expect(root.thread_root_id).toBeNull();
     expect(reply.thread_root_id).toBe(root.id);
   });
 
