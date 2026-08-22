@@ -29,6 +29,7 @@ import {
   recordHandledEvent,
 } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
+import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
@@ -732,6 +733,7 @@ export const performRun = ({
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
+  let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
@@ -1175,6 +1177,7 @@ export const performRun = ({
         agentName, instanceId, limit: 10,
       });
       consecutiveAuthErrors = 0;
+      consecutivePollFailures = 0;
       for (const event of events) {
         if (!running) break;
         let result;
@@ -1264,6 +1267,33 @@ export const performRun = ({
           ));
           running = false;
           return;
+        }
+      } else {
+        // TASK-025: everything that is not an auth rejection used to fall
+        // through to `onError` with `nextPollDelayMs` still at `intervalMs`,
+        // because that variable is only reassigned in the spawn-retry branch
+        // above and a failed fetch never reaches it. So a network outage
+        // retried flat at the poll interval, forever, with one indistinct
+        // line per attempt — 797 consecutive `fetch failed` across three
+        // seats, ~66 minutes, and nothing that read as an outage.
+        //
+        // Deliberately NOT a stop. `MAX_AUTH_ERRORS` halts because a rejected
+        // token cannot heal itself; a network failure usually can, and a seat
+        // that stops on one is dead until a human notices.
+        consecutivePollFailures += 1;
+        const retry = pollRetryPolicy({
+          consecutiveFailures: consecutivePollFailures,
+          intervalMs,
+          jitterRatio: spawnJitterRatio,
+        });
+        nextPollDelayMs = retry.delayMs;
+        if (retry.escalate) {
+          log(
+            `poll failed ${consecutivePollFailures}x in a row `
+            + `(${err?.message || 'unknown error'}) — backing off to `
+            + `${formatRetryDelay(retry.delayMs)}`
+            + `${retry.atCeiling ? ', at the ceiling' : ''}`,
+          );
         }
       }
       onError?.(err);
