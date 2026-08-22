@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neumorphic component kit — Commonly design system</title>
+<style>
+  /* The complete primitive inventory under the accepted neumorphism direction
+     (Sam, 2026-08-22). One treatment per primitive, states included. This
+     page is the review artifact; sign-off codifies these into v2.css
+     component classes, and surface migrations then consume them mechanically.
+
+     Grammar (three rules cover everything):
+       RAISED  = things you can act on or pick up (buttons, cards, knobs)
+       INSET   = places content lives or goes into (inputs, wells, tracks)
+       FLAT    = quiet metadata riding the surface (labels, dividers, text)
+     Cobalt appears only on action/active. Focus is ALWAYS the accent ring —
+     depth alone never signals focus (accessibility, craft baseline). */
+  :root {
+    --surface: #d8dce6;
+    --surface-deep: #cbd0dd;
+    --ink: #2a2e38;
+    --ink-2: #6a7183;
+    --accent: #2f6feb;
+    --accent-strong: #1f55c9;
+    --sl: rgba(255, 255, 255, 0.85);
+    --sd: rgba(146, 156, 176, 0.55);
+    --raised: -6px -6px 14px var(--sl), 6px 6px 14px var(--sd);
+    --raised-soft: -3px -3px 8px var(--sl), 3px 3px 8px var(--sd);
+    --raised-lg: -8px -8px 18px var(--sl), 8px 8px 18px var(--sd);
+    --inset: inset -4px -4px 10px var(--sl), inset 4px 4px 10px var(--sd);
+    --inset-soft: inset -2px -2px 5px var(--sl), inset 2px 2px 5px var(--sd);
+    --focus: 0 0 0 3px rgba(47, 111, 235, 0.35);
+  }
+  * { margin: 0; box-sizing: border-box; font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { background: var(--surface); color: var(--ink); padding: 48px 40px 80px; -webkit-font-smoothing: antialiased; }
+  .kit { max-width: 1080px; margin: 0 auto; }
+  h1 { font-family: "SF Pro Display", -apple-system, sans-serif; font-size: 28px; font-weight: 850; letter-spacing: -0.02em; }
+  .intro { color: var(--ink-2); font-size: 14px; margin-top: 6px; max-width: 62ch; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 34px; margin-top: 40px; }
+  .cell h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 14px; }
+  .cell .note { font-size: 11.5px; color: var(--ink-2); margin-top: 10px; line-height: 1.45; }
+  .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+  /* Buttons */
+  .btn { border: none; cursor: pointer; border-radius: 12px; padding: 10px 20px; font-size: 13.5px; font-weight: 700; transition: box-shadow 100ms ease, transform 100ms ease, background 80ms ease; background: var(--surface); color: var(--ink); box-shadow: var(--raised-soft); }
+  .btn:active { box-shadow: var(--inset-soft); transform: translateY(1px); }
+  .btn:focus-visible { outline: none; box-shadow: var(--raised-soft), var(--focus); }
+  .btn--primary { background: var(--accent); color: #fff; box-shadow: -4px -4px 10px var(--sl), 4px 4px 12px rgba(47, 111, 235, 0.35); }
+  .btn--primary:hover { background: var(--accent-strong); }
+  .btn--primary:active { box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.25); }
+  .btn--ghost { color: var(--ink-2); font-weight: 600; }
+  .btn:disabled { color: var(--ink-2); opacity: 0.55; box-shadow: none; cursor: not-allowed; }
+  .btn--icon { width: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 16px; }
+
+  /* Inputs */
+  .input { width: 100%; border: none; outline: none; border-radius: 12px; padding: 12px 16px; font-size: 14px; color: var(--ink); background: var(--surface); box-shadow: var(--inset-soft); }
+  .input::placeholder { color: var(--ink-2); }
+  .input:focus-visible { box-shadow: var(--inset-soft), var(--focus); }
+  textarea.input { resize: vertical; min-height: 72px; }
+  .search { display: flex; align-items: center; gap: 10px; border-radius: 999px; padding: 10px 18px; background: var(--surface); box-shadow: var(--inset-soft); color: var(--ink-2); font-size: 13.5px; }
+  .search input { border: none; background: none; outline: none; flex: 1; font-size: 13.5px; color: var(--ink); }
+
+  /* Cards & panels */
+  .card { background: var(--surface); border-radius: 18px; box-shadow: var(--raised); padding: 20px; }
+  .panel-inset { background: var(--surface); border-radius: 14px; box-shadow: var(--inset); padding: 16px; font-size: 13px; color: var(--ink-2); }
+
+  /* Chips */
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; padding: 5px 12px; border-radius: 999px; background: var(--surface); color: var(--ink-2); box-shadow: -2px -2px 5px var(--sl), 2px 2px 5px var(--sd); }
+  .chip--active { color: var(--accent); font-weight: 700; box-shadow: var(--inset-soft); }
+
+  /* Tabs / segmented control: inset track, raised active thumb */
+  .tabs { display: inline-flex; gap: 4px; padding: 5px; border-radius: 999px; background: var(--surface); box-shadow: var(--inset-soft); }
+  .tab { border: none; cursor: pointer; background: none; border-radius: 999px; padding: 8px 18px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .tab--active { background: var(--surface); color: var(--ink); box-shadow: var(--raised-soft); }
+  .tab:focus-visible { outline: none; box-shadow: var(--focus); }
+
+  /* Toggle: inset track, raised knob, accent when on */
+  .toggle { position: relative; width: 52px; height: 30px; border-radius: 999px; background: var(--surface); box-shadow: var(--inset-soft); border: none; cursor: pointer; transition: background 120ms ease; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); box-shadow: var(--raised-soft); transition: left 140ms ease, background 120ms ease; }
+  .toggle[aria-pressed="true"] { background: var(--accent); }
+  .toggle[aria-pressed="true"]::after { left: 25px; background: #fff; }
+  .toggle:focus-visible { outline: none; box-shadow: var(--inset-soft), var(--focus); }
+
+  /* Checkbox & radio */
+  .check { width: 24px; height: 24px; border-radius: 8px; background: var(--surface); box-shadow: var(--inset-soft); border: none; cursor: pointer; display: grid; place-items: center; color: transparent; font-size: 14px; font-weight: 800; }
+  .check[aria-checked="true"] { color: var(--accent); }
+  .radio { border-radius: 50%; }
+  .radio[aria-checked="true"]::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .radio[aria-checked="true"] { color: transparent; display: grid; place-items: center; }
+
+  /* Avatar well */
+  .well { border-radius: 50%; background: var(--surface); box-shadow: var(--inset-soft); padding: 5px; display: inline-grid; place-items: center; }
+  .face { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; }
+
+  /* Dropdown / menu / dialog: floating = strongest relief */
+  .menu { display: inline-flex; flex-direction: column; background: var(--surface); border-radius: 14px; box-shadow: var(--raised-lg); padding: 8px; min-width: 190px; }
+  .menu button { border: none; background: none; text-align: left; border-radius: 9px; padding: 9px 12px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+  .menu button:hover { box-shadow: var(--inset-soft); }
+  .menu .danger { color: #b3261e; }
+
+  /* Progress + slider: inset track, accent fill, raised knob */
+  .track { position: relative; height: 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--inset-soft); }
+  .fill { position: absolute; inset: 3px auto 3px 3px; width: 62%; border-radius: 999px; background: var(--accent); }
+  .knob { position: absolute; top: 50%; left: 62%; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; background: var(--surface); box-shadow: var(--raised-soft); }
+
+  /* List rows: flat on surface, inset divider, raised on hover */
+  .list { display: flex; flex-direction: column; }
+  .list .rowi { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; font-size: 13.5px; transition: box-shadow 120ms ease; }
+  .list .rowi:hover { box-shadow: var(--raised-soft); }
+  .list .rowi + .rowi { margin-top: 2px; }
+  .list .meta { margin-left: auto; color: var(--ink-2); font-size: 12px; }
+
+  /* Message bubbles (chat on a neo surface) */
+  .msgwell { border-radius: 16px; box-shadow: var(--inset); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .m { display: flex; gap: 10px; font-size: 13.5px; line-height: 1.5; }
+  .m .a { width: 32px; height: 32px; border-radius: 50%; flex: none; box-shadow: var(--raised-soft); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 12px; }
+  .m .who { font-size: 11.5px; font-weight: 700; margin-bottom: 1px; }
+
+  /* Toast + badge + tooltip */
+  .toast { display: inline-flex; align-items: center; gap: 10px; border-radius: 12px; background: var(--surface); box-shadow: var(--raised-lg); padding: 12px 18px; font-size: 13px; font-weight: 600; }
+  .toast::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #15803d; }
+  .badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+  .tip { display: inline-block; background: var(--ink); color: #fff; font-size: 12px; padding: 6px 10px; border-radius: 8px; box-shadow: 4px 4px 12px var(--sd); }
+</style>
+</head>
+<body>
+<div class="kit">
+  <h1>Neumorphic component kit</h1>
+  <p class="intro">Every primitive, one treatment, states included. The grammar: <b>raised</b> = actable, <b>inset</b> = container, <b>flat</b> = metadata. Cobalt only on action/active; focus is always the accent ring — depth alone never signals focus.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <h2>Buttons</h2>
+      <div class="row">
+        <button class="btn btn--primary">Hire</button>
+        <button class="btn">Profile</button>
+        <button class="btn btn--ghost">Cancel</button>
+        <button class="btn" disabled>Disabled</button>
+        <button class="btn btn--icon">＋</button>
+      </div>
+      <div class="note">Raised idle → pressed on :active. Primary carries cobalt with a blue-tinted drop; disabled loses depth entirely — no depth, no promise.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Inputs</h2>
+      <input class="input" placeholder="Agent name…" style="margin-bottom:10px">
+      <div class="search">⌕ <input placeholder="Search pods…"></div>
+      <div class="note">Content goes INTO the surface: inset wells. Focus adds the accent ring to the well.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Tabs / segmented</h2>
+      <div class="tabs">
+        <button class="tab tab--active">All</button>
+        <button class="tab">Team</button>
+        <button class="tab">DMs</button>
+        <button class="tab">Community</button>
+      </div>
+      <div class="note">Inset track, raised active thumb — the physical radio-bank metaphor. Replaces the flat pill filters.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Toggle · checkbox · radio</h2>
+      <div class="row">
+        <button class="toggle" aria-pressed="true"></button>
+        <button class="toggle" aria-pressed="false"></button>
+        <button class="check" aria-checked="true">✓</button>
+        <button class="check" aria-checked="false">✓</button>
+        <button class="check radio" aria-checked="true"></button>
+      </div>
+      <div class="note">Inset receptacles, raised knobs; cobalt only when ON.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Chips & filters</h2>
+      <div class="row">
+        <span class="chip">Cited recall</span>
+        <span class="chip">Decision log</span>
+        <span class="chip chip--active">Active filter</span>
+        <span class="badge">3</span>
+      </div>
+      <div class="note">Quiet raised (half-strength shadow). Active = pressed in + cobalt text. Count badges stay solid cobalt.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Avatar well</h2>
+      <div class="row">
+        <span class="well"><span class="face" style="background:#0f766e">R</span></span>
+        <span class="well"><span class="face" style="background:#0e7490">FL</span></span>
+        <span class="well" style="padding:4px"><span class="face" style="width:32px;height:32px;font-size:12px;background:#b45309">S</span></span>
+      </div>
+      <div class="note">The coin pressed into the surface — identity's frame everywhere: cards, chat headers, member strips.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Menu / dropdown</h2>
+      <div class="menu">
+        <button>Open profile</button>
+        <button>Move to another room</button>
+        <button class="danger">Uninstall</button>
+      </div>
+      <div class="note">Floating UI gets the strongest relief (raised-lg). Hover presses the row in — the inverse of flat systems.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Progress / slider</h2>
+      <div class="track" style="margin-bottom:18px"><span class="fill"></span></div>
+      <div class="track"><span class="fill" style="width:38%"></span><span class="knob" style="left:38%"></span></div>
+      <div class="note">Inset track, cobalt fill, raised knob. Same anatomy serves progress bars, sliders, and usage meters.</div>
+    </div>
+
+    <div class="cell">
+      <h2>List rows</h2>
+      <div class="list card" style="padding:10px">
+        <div class="rowi"><span class="well" style="padding:3px"><span class="face" style="width:26px;height:26px;font-size:11px;background:#0f766e">R</span></span> Recorder <span class="meta">2m ago</span></div>
+        <div class="rowi"><span class="well" style="padding:3px"><span class="face" style="width:26px;height:26px;font-size:11px;background:#475569">P</span></span> Planner <span class="meta">1h ago</span></div>
+      </div>
+      <div class="note">Rows ride flat on their card; hover raises the row you're about to pick up. Sidebar pods use the same anatomy.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Chat</h2>
+      <div class="msgwell">
+        <div class="m"><span class="a" style="background:#b45309">S</span><span><span class="who">Sam</span>Didn't we decide the retry cap already?</span></div>
+        <div class="m"><span class="a" style="background:#0f766e">R</span><span><span class="who">Recorder</span>Yes — cap five, per endpoint. The 12th's correction still applies.</span></div>
+      </div>
+      <div class="note">The conversation is an inset well; voices ride flat inside it, avatars raised. Composer = the input well + primary send.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Toast · tooltip</h2>
+      <div class="row" style="align-items:flex-start; flex-direction:column; gap:12px">
+        <span class="toast">Recorder hired into Sharpen</span>
+        <span class="tip">Answers while your session runs</span>
+      </div>
+      <div class="note">Toasts float (raised-lg + status dot). Tooltips are the one solid-ink surface — legibility beats material purity at 12px.</div>
+    </div>
+
+    <div class="cell">
+      <h2>Cards & inset panels</h2>
+      <div class="card" style="margin-bottom:14px; font-size:13.5px">Raised card — the actable unit.</div>
+      <div class="panel-inset">Inset panel — samples, code, quotes, empty states live pressed into the surface.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
