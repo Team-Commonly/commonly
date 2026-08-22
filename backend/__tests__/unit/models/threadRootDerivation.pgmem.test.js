@@ -1,6 +1,29 @@
 /**
  * thread_root_id derivation, EXECUTED at the unit tier (W-T, TASK-029, 1/4).
  *
+ * BEFORE YOU RUN THE MUTATION THIS SUITE EXISTS FOR, read this.
+ *
+ * `COALESCE(parent.thread_root_id, parent.id)` appears TWICE in Message.ts:
+ * once at :110 in the comment that explains the rule, once at :124 in the SQL
+ * that implements it. A text-based mutation without /g, or any first-match
+ * edit, rewrites the COMMENT and leaves the behaviour untouched.
+ *
+ * The result is not a silent no-op — it is worse. The suite passes 5/5, which
+ * reads as "these tests cannot detect the thing they were built to detect",
+ * and the honest-looking response is to strengthen tests that were already
+ * fine. @sprint-review identified the mechanism (56937); both runs measured
+ * against main afterwards:
+ *
+ *   first-match mutation (hits :110, the comment) -> 5 passed  [MEANINGLESS]
+ *   line-targeted mutation (hits :124, the SQL)   -> 3 failed  [THE REAL KILL]
+ *
+ * So the derivation IS covered — sprint-review's A/B/C case, depth 7, and
+ * two-chains-in-one-pod all die when the code actually changes. Anchor the
+ * mutation to the SQL line, then assert the file changed where you meant it
+ * to, before reading the test result. A probe that cannot show it hit its
+ * target is measuring nothing, and it will tell you so in the voice of a
+ * passing suite.
+ *
  * @sprint-review (56787): the depth claim was asserted by grepping for the
  * COALESCE substring that implements it — assertion and thing asserted are the
  * same text, so it cannot discriminate. They proposed pg-mem: insert A, B→A,
