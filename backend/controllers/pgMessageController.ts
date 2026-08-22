@@ -7,9 +7,7 @@ const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
 const MongoPod = require('../models/Pod');
 // eslint-disable-next-line global-require
-const AgentMentionService = require('../services/agentMentionService');
-// eslint-disable-next-line global-require
-const { AgentInstallation } = require('../models/AgentRegistry');
+const { deliverMessageToAgents } = require('../services/messageAgentDeliveryService');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
@@ -30,21 +28,7 @@ type CreatedMessage = {
   username?: string;
   user?: { username?: string };
   userId?: { username?: string } | string;
-  agentDelivery?: {
-    enqueued: number;
-    implicit: string[];
-    agentsInPod: number;
-    woken: number;
-  };
 };
-
-function authorUsername(message: CreatedMessage | null | undefined, requestUser?: AuthRequest['user']): string | undefined {
-  const joinedAuthor = message?.userId;
-  return requestUser?.username
-    || (joinedAuthor && typeof joinedAuthor === 'object' ? joinedAuthor.username : undefined)
-    || message?.username
-    || message?.user?.username;
-}
 
 // Check if user is a member via PG, falling back to MongoDB as source of truth
 async function isMemberWithFallback(podId: string, userId: string): Promise<boolean> {
@@ -161,33 +145,16 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     const message = ((await PGMessage.findById(newMessage.id)) || newMessage) as CreatedMessage;
 
     // This endpoint is older than the PG-primary /api/messages path, but it
-    // still writes the same user-authored messages. Dispatch them through the
-    // same mention/DM pipeline after persistence so a post here cannot be a
-    // silent escape hatch around agent delivery.
-    const username = authorUsername(message, req.user);
-    let responseMessage = message;
-    if (AgentMentionService.isAutoRoutedDmPod(pod.type)) {
-      await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
-    } else {
-      const mentionResult = await AgentMentionService.enqueueMentions({ podId, message, userId, username });
-      let agentsInPod = 0;
-      try {
-        agentsInPod = await AgentInstallation.countDocuments({ podId, status: 'active' });
-      } catch (countErr) {
-        // Delivery metadata is advisory feedback. Do not turn an already
-        // persisted message into a failed post when the count is unavailable.
-        console.warn('[pgMessageController] active-agent delivery count failed:', (countErr as Error).message);
-      }
-      responseMessage = {
-        ...message,
-        agentDelivery: {
-          enqueued: mentionResult.enqueued.length,
-          implicit: mentionResult.implicit || [],
-          agentsInPod,
-          woken: mentionResult.woken?.length ?? 0,
-        },
-      };
-    }
+    // still writes the same user-authored messages. It has no reply-edge
+    // request field, so deliberately omit replyToMessageId here; the shared
+    // delivery service distinguishes omission from the primary route's null.
+    const responseMessage = await deliverMessageToAgents({
+      podId,
+      podType: pod.type,
+      message,
+      userId,
+      requestUser: req.user,
+    });
 
     res.json(responseMessage);
   } catch (err) {

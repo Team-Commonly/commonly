@@ -8,6 +8,7 @@ const Integration = require('../models/Integration');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { isPersonalPodType } = require('../services/podTypePolicyService');
 const {
   COMMUNITY_LISTING_QUERY,
   NON_LISTABLE_POD_TYPES,
@@ -219,7 +220,7 @@ exports.getAllPods = async (req: any, res: any) => {
     // their own pod list must be their own pods, otherwise every
     // private DM in the instance leaks into their sidebar (which made
     // xcjsam see — and try to post into — sam-demo's agent-rooms).
-    const isPersonal = type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm';
+    const isPersonal = isPersonalPodType(type);
     if (req.userId && !isCommunityScope && !isDiscoverScope) {
       const wantsAll = scope === 'all';
       const isAdmin = wantsAll ? await isGlobalAdminRequest(req) : false;
@@ -288,7 +289,7 @@ exports.getPodsByType = async (req: any, res: any) => {
     // Personal pod types (agent-admin, agent-room, agent-dm) are always
     // filtered to caller membership — admins included. The instance-wide
     // moderation view is a separate admin tool, not this typed listing.
-    if ((type === 'agent-admin' || type === 'agent-room' || type === 'agent-dm') && req.userId) {
+    if (isPersonalPodType(type) && req.userId) {
       const uid = String(req.userId);
       const memberPods = pods.filter((p: any) => p.members.some((m: any) => String(m._id || m) === uid));
       return res.json(memberPods);
@@ -340,8 +341,7 @@ exports.getPodById = async (req: any, res: any) => {
     // `agent-room` and `agent-admin` keep strict membership: those are
     // truly private surfaces (user↔agent rooms; ops admin pods) and we
     // don't want admins resolving someone else's agent-room by ID either.
-    const personalTypes = new Set(['agent-room', 'agent-dm', 'agent-admin']);
-    if (personalTypes.has(pod.type) && req.userId) {
+    if (isPersonalPodType(pod.type) && req.userId) {
       const uid = String(req.userId);
       const isMember = (pod.members || []).some(
         (m: any) => String(m?._id || m) === uid,
@@ -384,10 +384,10 @@ exports.createPod = async (req: any, res: any) => {
       return res.status(400).json({ msg: 'Invalid pod type' });
     }
 
-    // ADR-001 §3.10 / ADR-016 invariant 3: DM pods are strictly 1:1 and are
-    // created only by paths that establish BOTH members (dmService
+    // ADR-001 §3.10 / ADR-016 invariant 3: agent-room and agent-dm are
+    // strictly 1:1 and are created only by paths that establish BOTH members (dmService
     // .getOrCreateAgentDmRoom, ensureAgentInPod, commonly_open_dm). This
-    // endpoint writes `members: [req.userId]`, so allowing a DM type here
+    // endpoint writes `members: [req.userId]`, so allowing a strict-DM type here
     // mints a one-member DM pod — and every later guard is an *entrance*
     // guard (join, invite create, invite redeem, install), so none of them
     // can repair a pod that was born malformed.
@@ -395,8 +395,8 @@ exports.createPod = async (req: any, res: any) => {
     // Derived from DM_POD_TYPES_GUARD rather than by narrowing
     // VALID_POD_TYPES: that constant is also the read filter for
     // getPodsByType above, so narrowing it for a creation reason would
-    // silently 400 a read endpoint. The guard is the thing that *is* the DM
-    // predicate; a hand-maintained allowlist only happens to agree with it.
+    // silently 400 a read endpoint. The guard is the strict-DM predicate; a
+    // hand-maintained allowlist only happens to agree with it.
     const { DM_POD_TYPES_GUARD } = require('../services/agentIdentityService');
     if (DM_POD_TYPES_GUARD.has(String(type))) {
       return res.status(400).json({
@@ -489,8 +489,8 @@ exports.joinPod = async (req: any, res: any) => {
     // effectively dead for agent-rooms because `pod.createdBy` is the
     // host *agent*, not a human user. For multi-party human↔agent
     // surfaces, use `type: 'chat'` instead.
-    // DM pods (agent-room / agent-dm / agent-admin) are strictly 1:1.
-    // ADR-001 §3.10. Third-party joins must spawn a NEW DM pod with the
+    // Only agent-room and agent-dm are strictly 1:1. Third-party joins must
+    // spawn a NEW DM pod with the
     // requesting party + the relevant agent — see dmService
     // .getOrCreateAgentDmRoom. Same invariant lives in
     // agentIdentityService.DM_POD_TYPES_GUARD.

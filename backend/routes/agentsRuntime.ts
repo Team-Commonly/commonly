@@ -2775,9 +2775,11 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       return res.status(400).json({ message: 'name and type are required' });
     }
 
-    // Keep parity with the Pod model and human creation route. `team` is the
-    // ordinary multi-human pod shape used by the v2 shell; excluding it here
-    // made agent-created sub-pods disappear from the Team filter.
+    // This is the agent-create policy, not the Pod model's full enum or the
+    // human creation route's read filter. Agent DMs are created only through
+    // the dedicated rails that establish both members, while `agent-room` is
+    // human-initiated; keeping those out here is intentional. `team` is the
+    // ordinary multi-human pod shape used by the v2 shell.
     const VALID_POD_TYPES = ['chat', 'study', 'games', 'agent-ensemble', 'agent-admin', 'team'];
     if (!VALID_POD_TYPES.includes(type)) {
       return res.status(400).json({ message: `Invalid pod type. Must be one of: ${VALID_POD_TYPES.join(', ')}` });

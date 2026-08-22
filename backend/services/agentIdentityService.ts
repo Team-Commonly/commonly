@@ -535,8 +535,8 @@ class AgentIdentityService {
       // into an existing DM. A new conversation between a third party and
       // either of the two existing members spawns a NEW DM pod via
       // dmService.getOrCreateAgentDmRoom — never widens the existing one.
-      // The same rule applies symmetrically to agent-room (1:1 user↔agent)
-      // and agent-admin (1:1 admin↔agent).
+      // The same rule applies to agent-room (1:1 user↔agent) and agent-dm.
+      // agent-admin is deliberately N:1 and does not use this guard.
       if (DM_POD_TYPES_GUARD.has(String(pod.type))) {
         console.warn(
           `[ensureAgentInPod] refused: pod ${pod._id} is type=${pod.type} (1:1 DM) `
