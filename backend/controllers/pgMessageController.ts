@@ -147,7 +147,10 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const newMessage = await PGMessage.create(podId, userId, content);
-    const message = await PGMessage.findById(newMessage.id) as CreatedMessage | null;
+    // Match the primary controller: the post-write JOIN supplies the author
+    // for the response and wake frame, while the INSERT row remains a valid
+    // persisted-message fallback if that re-read is unavailable.
+    const message = ((await PGMessage.findById(newMessage.id)) || newMessage) as CreatedMessage;
 
     // This endpoint is older than the PG-primary /api/messages path, but it
     // still writes the same user-authored messages. Dispatch them through the
