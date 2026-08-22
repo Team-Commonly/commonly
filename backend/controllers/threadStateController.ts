@@ -22,6 +22,7 @@
 const ThreadUserState = require('../models/pg/ThreadUserState');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
+const { MIGRATION_NAME } = require('../scripts/backfill-thread-root-id');
 
 interface Req {
   params: { messageId?: string };
@@ -48,6 +49,27 @@ async function resolveRoot(messageId: number): Promise<{ rootId: number; podId: 
   );
   if (!rows.length) return null;
   return { rootId: Number(rows[0].root_id), podId: String(rows[0].pod_id) };
+}
+
+/**
+ * The threading cutoff, from the migration ledger the backfill writes.
+ *
+ * Best-effort by design: an instance that has not run the backfill, or one
+ * whose ledger table predates this feature, gets null — which the response
+ * documents as "no pre-cutoff roots", the safe reading. Failing the whole
+ * thread-state read because a ledger row is missing would take the render
+ * path down for a cosmetic default.
+ */
+async function readThreadingCutoff(): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(
+      "SELECT details->>'threadingCutoff' AS cutoff FROM migration_records WHERE name = $1",
+      [MIGRATION_NAME],
+    );
+    return rows[0]?.cutoff || null;
+  } catch {
+    return null;
+  }
 }
 
 async function authorize(req: Req, res: Res): Promise<{ rootId: number; podId: string; userId: string } | null> {
@@ -125,13 +147,31 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       res.status(403).json({ msg: 'not a member of this pod' });
       return;
     }
-    const rows = await ThreadUserState.stateForPod(userId, podId);
+    const [rows, threadingCutoff] = await Promise.all([
+      ThreadUserState.stateForPod(userId, podId),
+      readThreadingCutoff(),
+    ]);
     res.status(200).json({
       podId,
       // Defaults are stated in the response so a client never has to hardcode
       // them, and so a change to them is visible at the wire rather than only
       // in two codebases that have to agree.
-      defaults: { collapsed: true, following: null },
+      //
+      // `expandedForRootsCreatedBefore` is the #1115 carve-out: a thread whose
+      // root pre-dates the threading migration renders expanded, so nothing
+      // visible in history disappears under a headline card on ship day.
+      //
+      // Returned as ONE timestamp rather than resolved per thread. Resolving
+      // server-side would mean enumerating every root in the pod and joining
+      // messages.created_at — duplicating data the client already has, since
+      // it is rendering those messages. This is O(1) and the comparison is a
+      // date compare. @sprint-review (56862) was right that the shipped
+      // contract could not express the rule; this is the smallest thing that
+      // can.
+      //
+      // null = no pre-cutoff roots exist (fresh instance, or the backfill has
+      // not run). NOT "unknown" — a client must not expand everything on null.
+      defaults: { collapsed: true, following: null, expandedForRootsCreatedBefore: threadingCutoff },
       threads: rows.map((r: any) => ({
         threadRootId: Number(r.thread_root_id),
         following: r.following === null ? null : Boolean(r.following),

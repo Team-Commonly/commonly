@@ -163,3 +163,40 @@ describe('the modules actually load', () => {
     }
   });
 });
+
+describe('the pre-cutoff expanded default reaches the client', () => {
+  // @sprint-review (56862): #1115 says pre-cutoff roots default to EXPANDED,
+  // which changes what an absent row means — and the shipped contract
+  // ("caller applies collapsed true") could not express it. 4/4 would have
+  // discovered that while wiring the component.
+  const CONTROLLER_SRC = read('controllers/threadStateController.ts');
+
+  it('the response carries the cutoff, not just a boolean default', () => {
+    expect(CONTROLLER_SRC).toMatch(/expandedForRootsCreatedBefore: threadingCutoff/);
+  });
+
+  it('it is read from the migration ledger, by the backfill\'s own name', () => {
+    // Not a hardcoded date, and not a second definition of the name.
+    expect(CONTROLLER_SRC).toMatch(/require\('\.\.\/scripts\/backfill-thread-root-id'\)/);
+    expect(CONTROLLER_SRC).toMatch(/FROM migration_records WHERE name = \$1/);
+    expect(CONTROLLER_SRC).not.toMatch(/threadingCutoff = '20\d\d-/);
+  });
+
+  it('one timestamp, not a per-thread resolution', () => {
+    // Resolving server-side would enumerate every root and join
+    // messages.created_at — data the client already has, since it is
+    // rendering those messages.
+    expect(CONTROLLER_SRC).not.toMatch(/JOIN messages[\s\S]{0,80}created_at[\s\S]{0,80}thread_user_state/);
+    expect(CONTROLLER_SRC).toMatch(/Promise\.all\(\[/);
+  });
+
+  it('a missing ledger row degrades to null rather than failing the read', () => {
+    // A cosmetic default must never take the render path down.
+    expect(CONTROLLER_SRC).toMatch(/} catch {\s*return null;/);
+  });
+
+  it('null is documented as "no pre-cutoff roots", never as "unknown"', () => {
+    // The dangerous misreading would expand every thread on a fresh instance.
+    expect(CONTROLLER_SRC).toMatch(/NOT "unknown"/);
+  });
+});
