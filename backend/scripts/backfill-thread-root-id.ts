@@ -70,6 +70,28 @@ import { Pool } from 'pg';
 
 const APPLY = process.argv.includes('--apply');
 
+export const MIGRATION_NAME = 'threading-thread-root-id-backfill';
+
+/**
+ * The threading cutoff: the newest message that carries a reply edge and no
+ * root. "Has a reply edge and no root" IS the definition of "written before
+ * derivation-on-write shipped", so this boundary is exact rather than
+ * approximate — not a deploy timestamp guessed after the fact.
+ *
+ * Read BEFORE the UPDATE. The UPDATE eliminates the predicate, so afterwards
+ * there is nothing left to measure. A hardcoded date would be wrong on every
+ * instance that migrates on a different day, and self-hosting is in scope.
+ *
+ * NULL when there is nothing to backfill — a fresh instance has no
+ * pre-threading history, so no root is pre-cutoff and the surface rule is
+ * simply inert. Consumers must treat NULL as "no pre-cutoff roots exist",
+ * never as "unknown, assume everything is pre-cutoff".
+ */
+export const CUTOFF_SQL = `
+  SELECT MAX(created_at) AS cutoff
+    FROM messages
+   WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`;
+
 async function main(): Promise<void> {
   if (!process.env.PG_HOST) {
     console.error('PG_HOST is required');
@@ -122,9 +144,17 @@ async function main(): Promise<void> {
           + 'Those stay NULL and render unthreaded, which is correct: an unreachable root is not a thread.',
         );
       }
+      const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
+      console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} (newest pre-threading reply)`);
       console.log('DRY RUN — nothing written. Re-run with --apply.');
       return;
     }
+
+    // MUST be read BEFORE the UPDATE. The predicate is "has a reply edge and
+    // no root", which is precisely "written before derivation-on-write
+    // shipped" — every row written after carries a root. The UPDATE destroys
+    // that predicate, so afterwards the boundary is unrecoverable.
+    const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
 
     const result = await pool.query(
       `WITH RECURSIVE chain AS (
@@ -143,6 +173,29 @@ async function main(): Promise<void> {
           AND chain.root <> m.id`,
     );
     console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
+
+    // The ruling in #1115 says pre-cutoff roots render expanded, with the
+    // cutoff "read from the migration record". This script is the only process
+    // that ever knows it, and until now it discarded it (@sprint-review 56860).
+    //
+    // ON CONFLICT DO NOTHING, not DO UPDATE: a second run must not move a
+    // boundary the surface has already been rendering against. The script stays
+    // idempotent; the FIRST run's answer is the true one, because by the second
+    // run the population it measured no longer exists.
+    await pool.query(
+      `INSERT INTO migration_records (name, details)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (name) DO NOTHING`,
+      [
+        MIGRATION_NAME,
+        JSON.stringify({
+          threadingCutoff: boundary.cutoff,
+          rowsUpdated: result.rowCount,
+          rowsEligible: before.needs_root,
+        }),
+      ],
+    );
+    console.log(`recorded ${MIGRATION_NAME}: cutoff = ${boundary.cutoff ?? '(none)'}`);
 
     const { rows: [after] } = await pool.query(
       `SELECT count(*)::int AS still_null

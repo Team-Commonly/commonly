@@ -57,6 +57,30 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 -- as is_bot above. NULL for ordinary messages.
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS payload JSONB;
 
+-- Migration records. There was no such table anywhere under backend/ before
+-- this (@sprint-review, 56859, checked with a positive control): schema.sql is
+-- idempotent boot DDL, which says what the shape IS and never when it changed.
+-- That is fine until a RULE needs to reference the change — the threading
+-- surface ruling (#1115) says pre-cutoff thread roots default to expanded,
+-- "cutoff = the migration timestamp, read from the migration record", and that
+-- record did not exist.
+--
+-- Deliberately general rather than a threading-specific row. A one-off
+-- `threading_migration` table is the thing that has to be generalised the
+-- second time someone needs this, and the second time is when it gets done
+-- wrong. `details` is JSONB so a migration can record what only IT knew — for
+-- the threading backfill, the boundary timestamp it would otherwise discard.
+--
+-- NOT a migration RUNNER. Nothing reads this to decide what to apply; boot DDL
+-- still owns that. It is a ledger, and the distinction matters: a reader must
+-- never infer "migration X has not run" from a missing row — it may have run
+-- on an instance that predates this table.
+CREATE TABLE IF NOT EXISTS migration_records (
+  name VARCHAR(255) PRIMARY KEY,
+  applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  details JSONB
+);
+
 -- Sprint B5: message reactions. One row per (message, user, emoji) — a user
 -- can stack different emojis on the same message but each emoji is binary
 -- (toggle on/off). PG-only; Mongo fallback path doesn't get reactions in v1.
