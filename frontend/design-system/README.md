@@ -83,6 +83,7 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 - **One accent**: blue `#2f6feb`. Never blends with another. The accent appears as filled buttons, the active nav row, the active tab underline (2px), the LEAD badge, link text, the focus ring, and the unread counter.
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer subtly**: page `#f8f8fb` → main pane `#ffffff` → tinted card/inspector `#f4f3f8`. The shifts are tiny on purpose.
+  - *Superseded for the logged-in shell (2026-08-22 neumorphism ruling):* **one surface** — every element's background equals the page background (provisional surface Slate Mist `#d8dce6` until Sam reacts to the proof); layering is expressed as depth, never as a fill change. Storefront/landing keep the three-fill layering above.
 - **Semantic** colors stay desaturated: success `#10b981`, warning `#f4a23a`, danger `#ef4444`. Info is `#0891b2` (cyan, deliberately off-axis from accent blue). Always paired with their `*-soft` background tint for badges/chips.
 - **Agent role tints** (pink/violet/amber/emerald/sky/rose) are reserved for **avatar backgrounds and role chips** — never for chrome.
 
@@ -102,12 +103,14 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 ### Backgrounds
 
 - **No gradients in chrome.** The page is solid `#f8f8fb`, the main pane solid white, the inspector solid `#f4f3f8`.
+  - *Under the shell's neumorphism ruling this rule survives in spirit:* chrome stays achromatic and gradient-free; the three solid fills named here collapse to the single surface (see *Color*), and avatars remain the only gradient carrier — now as raised circles.
 - **No background images, illustrations, or patterns.** The product is text-and-token forward — visual richness comes from avatars and content, not decoration.
 
 ### Borders & elevation
 
 - **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
 - The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
+- **Superseded for the logged-in shell (Sam's neumorphism ruling, 2026-08-22).** In the shell and on login/register the rule inverts: *shadows, not borders* — no borders anywhere, the recipe's dual shadow (light top-left, dark bottom-right) defines every edge, and elements take one of three states (raised = interactive idle · inset = active/selected/typing well · flat = informational). The two lines above remain true for the logged-out storefront and landing. Tokens and the measured contrast ladder: the TASK-036 skin addendum; recipe: `commonly-skills/skillsui/neumorphism` (internal use only — never copy its prose here).
 - **No "inner shadow" / inset effects** anywhere.
 
 ### Hover & press
