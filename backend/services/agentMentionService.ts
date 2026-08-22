@@ -958,8 +958,37 @@ const enqueueWakeOnMessage = async ({
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
 }): Promise<string[]> => {
   const woken: string[] = [];
-  const targets = (installations || []).filter(wakeOnMessageEnabled);
+  let targets = (installations || []).filter(wakeOnMessageEnabled);
   if (targets.length === 0) return woken;
+
+  // Ambient-only thread scoping (W-T 3/4, #1045). A reply inside a thread is
+  // AMBIENT: it reaches the thread's effective followers, not the room.
+  //
+  // Applied HERE, to the already-computed opt-in list, and nowhere else. Two
+  // consequences that are the point rather than side effects:
+  //  - it can only NARROW. A thread follower who never opted into
+  //    wake-on-message still gets nothing, because threading is additive and
+  //    must not start delivering to seats that opted into nothing.
+  //  - it cannot touch addressing. This branch runs only when `!isRouted`, so
+  //    an @mention or a reply edge has already left via the mention path. A
+  //    mute scopes ambient activity; it never suppresses being addressed.
+  //
+  // Keyed on `installedBy` — the bot's User row id, which is what
+  // thread_user_state.user_id holds. An install without one is KEPT by
+  // narrowToThread rather than dropped: an unclassifiable target must degrade
+  // to today's behaviour, never to silence.
+  const threadRootId = (message as { thread_root_id?: unknown; threadRootId?: unknown })?.thread_root_id
+    ?? (message as { threadRootId?: unknown })?.threadRootId ?? null;
+  if (threadRootId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { narrowToThread } = require('./threadWakeScopeService');
+    targets = await narrowToThread(
+      Number(threadRootId),
+      targets,
+      (inst: Record<string, unknown>) => (inst.installedBy ? String(inst.installedBy) : null),
+    );
+    if (targets.length === 0) return woken;
+  }
 
   let podRow: { type?: string } | null = null;
   try {
