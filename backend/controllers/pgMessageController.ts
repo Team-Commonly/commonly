@@ -9,6 +9,8 @@ const MongoPod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const AgentMentionService = require('../services/agentMentionService');
 // eslint-disable-next-line global-require
+const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
 interface AuthRequest extends Request {
@@ -28,6 +30,12 @@ type CreatedMessage = {
   username?: string;
   user?: { username?: string };
   userId?: { username?: string } | string;
+  agentDelivery?: {
+    enqueued: number;
+    implicit: string[];
+    agentsInPod: number;
+    woken: number;
+  };
 };
 
 function authorUsername(message: CreatedMessage | null | undefined, requestUser?: AuthRequest['user']): string | undefined {
@@ -157,13 +165,31 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // same mention/DM pipeline after persistence so a post here cannot be a
     // silent escape hatch around agent delivery.
     const username = authorUsername(message, req.user);
+    let responseMessage = message;
     if (AgentMentionService.isAutoRoutedDmPod(pod.type)) {
       await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
     } else {
-      await AgentMentionService.enqueueMentions({ podId, message, userId, username });
+      const mentionResult = await AgentMentionService.enqueueMentions({ podId, message, userId, username });
+      let agentsInPod = 0;
+      try {
+        agentsInPod = await AgentInstallation.countDocuments({ podId, status: 'active' });
+      } catch (countErr) {
+        // Delivery metadata is advisory feedback. Do not turn an already
+        // persisted message into a failed post when the count is unavailable.
+        console.warn('[pgMessageController] active-agent delivery count failed:', (countErr as Error).message);
+      }
+      responseMessage = {
+        ...message,
+        agentDelivery: {
+          enqueued: mentionResult.enqueued.length,
+          implicit: mentionResult.implicit || [],
+          agentsInPod,
+          woken: mentionResult.woken?.length ?? 0,
+        },
+      };
     }
 
-    res.json(message);
+    res.json(responseMessage);
   } catch (err) {
     const e = err as { message?: string; kind?: string };
     console.error('Error in PG createMessage:', e.message);
