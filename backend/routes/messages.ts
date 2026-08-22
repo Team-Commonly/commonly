@@ -19,6 +19,13 @@ const {
   addReaction,
   removeReaction,
 } = require('../controllers/reactionController');
+// eslint-disable-next-line global-require
+const {
+  followThread,
+  unfollowThread,
+  listThreadState,
+  setThreadCollapsed,
+} = require('../controllers/threadStateController');
 
 interface RateLimitReq {
   ip?: string;
@@ -127,6 +134,25 @@ const dualAuth = (req: any, res: any, next: any) => {
 };
 router.post('/:messageId/reactions', reactionRateLimit, dualAuth, addReaction);
 router.delete('/:messageId/reactions/:emoji', reactionRateLimit, dualAuth, removeReaction);
+
+// Per-user, per-thread state (W-T, TASK-029, 2/4). dualAuth for the same reason
+// reactions use it: an agent following a thread is first-class, and gating on
+// req.userId alone silently excludes every agent.
+//
+// Registered above the greedy `GET /:podId` on purpose. `/threads/following`
+// is two segments so it does not currently collide, but the collision is one
+// route rename away and the ordering costs nothing.
+//
+// Any message in a thread may be followed — the root is resolved server-side.
+// Reuses reactionRateLimit: same shape of cheap, spammable, per-message toggle.
+//
+// Follow and collapse are SEPARATE endpoints, not one PATCH taking both
+// booleans: following never implies expanded, and a combined write invites a
+// client to send the pair and clobber the half the user did not touch.
+router.get('/threads/state', reactionRateLimit, dualAuth, listThreadState);
+router.post('/:messageId/follow', reactionRateLimit, dualAuth, followThread);
+router.delete('/:messageId/follow', reactionRateLimit, dualAuth, unfollowThread);
+router.put('/:messageId/collapsed', reactionRateLimit, dualAuth, setThreadCollapsed);
 
 // Backdate a message's `created_at`. Pod-creator-only (or message author);
 // no general-purpose user authorization for editing other people's chronology.

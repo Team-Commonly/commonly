@@ -83,3 +83,113 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(SCRIPT).toMatch(/never as "unknown, assume everything is pre-cutoff"/);
   });
 });
+
+describe('the population is re-measured, never quoted', () => {
+  // @ux-lead's #1115 ruling: the number goes in a PR body as "re-measured at
+  // merge time", not as 227 or 245. Those two figures are one day apart and
+  // both were taken from the same instance, which is the argument.
+  const SCRIPT_SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('the dry run prints the live count and the cutoff BEFORE writing', () => {
+    // The mechanism that makes quoting unnecessary: whoever runs it gets the
+    // real number for free, at the moment it matters.
+    const dry = SCRIPT_SRC.slice(
+      SCRIPT_SRC.indexOf('if (!APPLY)'),
+      SCRIPT_SRC.indexOf('DRY RUN — nothing written'),
+    );
+    expect(dry).toMatch(/would set a root on/);
+    expect(dry).toMatch(/would record cutoff/);
+  });
+
+  it('the header marks its figures as dated observations, not current facts', () => {
+    expect(SCRIPT_SRC).toMatch(/RE-MEASURED AT RUN TIME, NEVER QUOTED/);
+    expect(SCRIPT_SRC).toMatch(/DATED OBSERVATION/);
+  });
+
+  it('and shows the two figures disagreeing, which is the argument', () => {
+    // A rule stated without its counter-example gets read as pedantry and
+    // dropped. Both numbers are named, a day apart, from the same instance.
+    expect(SCRIPT_SRC).toMatch(/227[\s\S]{0,80}2026-08-21/);
+    expect(SCRIPT_SRC).toMatch(/245[\s\S]{0,40}2026-08-22/);
+  });
+
+  it('no figure is presented as the current population', () => {
+    // The specific phrasing the ruling rejects: a bare count asserted as fact.
+    expect(SCRIPT_SRC).not.toMatch(/POPULATION, measured/);
+    expect(SCRIPT_SRC).not.toMatch(/~227-row UPDATE/);
+  });
+});
+
+describe('the ordering precondition is written where it is actioned', () => {
+  // @sprint-review 56911 verified the DO NOTHING and the read-before-UPDATE.
+  // Following that through surfaced a constraint neither the script nor the
+  // deploy shows on its own: the zero-edges branch writes a NULL cutoff
+  // meaning "no pre-threading history", and that is only TRUE once
+  // derivation-on-write is live. Run earlier and it means "not yet" — wrong,
+  // and DO NOTHING makes it permanent.
+  const SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('the header states the after-deploy ordering as a precondition', () => {
+    expect(SRC).toMatch(/RUN THIS \*AFTER\* DERIVATION-ON-WRITE IS DEPLOYED/);
+  });
+
+  it('and says what goes wrong if it is run early', () => {
+    // A bare "run after X" gets treated as advice. The consequence is what
+    // makes it a precondition.
+    expect(SRC).toMatch(/zero edges means "not yet" rather than "none"/);
+    // Spans a comment line break, so normalise before matching rather than
+    // guessing at the wrap position — the reason the first two attempts failed.
+    const flat = SRC.replace(/\n\s*\*\s?/g, ' ');
+    expect(flat).toMatch(/ON CONFLICT DO NOTHING` would make it permanent/);
+  });
+
+  it('both ledger writes are DO NOTHING, which is what makes it permanent', () => {
+    // Two INSERTs since the zero-edges branch was added. If either became
+    // DO UPDATE the precondition would relax — and the comment would be wrong.
+    const inserts = SRC.match(/INSERT INTO migration_records/g) || [];
+    const doNothing = SRC.match(/ON CONFLICT \(name\) DO NOTHING/g) || [];
+    expect(inserts.length).toBe(2);
+    expect(doNothing.length).toBe(2);
+  });
+});
+
+describe('the ordering precondition is CHECKED, not only warned about', () => {
+  // @sprint-review 56912: the header warned about the ordering and nothing
+  // enforced it — "there's no check that derivation is live". A warning is the
+  // part people skip, and the DO NOTHING that protects a correct boundary
+  // equally freezes an incorrect one.
+  const SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('uses POSITIVE evidence: a row with both a reply edge and a root', () => {
+    // Only derivation-on-write can have produced such a row before the
+    // backfill runs. Presence is proof.
+    expect(SRC).toMatch(/DERIVATION_LIVE_SQL[\s\S]{0,200}reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL/);
+  });
+
+  it('and says why absence is NOT proof of the opposite', () => {
+    // A live instance with no replies looks identical to one whose backend
+    // predates the feature. That asymmetry is the reason for the flag.
+    expect(SRC).toMatch(/Absence is NOT proof/);
+  });
+
+  it('refuses the ambiguous write rather than guessing', () => {
+    expect(SRC).toMatch(/REFUSING to record a null cutoff/);
+    expect(SRC).toMatch(/if \(!derivationProven && !ASSUME_DERIVATION_LIVE\)/);
+  });
+
+  it('offers an explicit operator override, and records which path was taken', () => {
+    // A later reader must be able to tell observed evidence from an assertion.
+    expect(SRC).toMatch(/--derivation-live/);
+    expect(SRC).toMatch(/derivationEvidence: derivationProven \? 'observed' : 'asserted-by-flag'/);
+  });
+
+  it('the refusal exits non-zero, so a script runner notices', () => {
+    expect(SRC).toMatch(/process\.exitCode = 3;/);
+  });
+});
