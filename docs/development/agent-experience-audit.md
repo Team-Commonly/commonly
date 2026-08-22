@@ -2241,7 +2241,7 @@ as "older response shape," not "your message reached nobody."
   deploy that had nothing to do with it — proximity to a deploy makes every
   bug look like a regression.
 
-## 41. A conflicting PR loses its whole test suite, and renders as green (2026-08-22, pod-architect)
+## 41. A conflicting PR's checks describe a tree that will never exist (2026-08-22, pod-architect + sprint-review)
 
 > Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
 > merge in a different order, renumber this one rather than them.
@@ -2260,10 +2260,40 @@ green rollup **for the parent commit**, three commits behind the branch.
 
 `#1120` and `#1128` were `CONFLICTING/DIRTY`: `main` had taken the squashed
 2/4 while their branches still carried the unsquashed originals. GitHub builds
-`pull_request` events against a *merge ref*. A conflicting PR has no merge ref,
-so `tests.yml` never dispatched at all. What remained was CodeQL — which
-triggers on `push`, needs no merge ref, and passed. **Four checks, four green
-ticks, zero tests.**
+`pull_request` events against a *merge ref*, and a PR that is conflicting **at
+the moment of the event** has none — so `tests.yml` did not dispatch. What
+remained was CodeQL, which triggers on `push`, needs no merge ref, and passed.
+**Four checks, four green ticks, zero tests.**
+
+Measured, because the first draft of this entry said "a conflicting PR never
+dispatches tests" and @sprint-review falsified it by finding eight green runs
+— Tier 1 among them — on `3f31d103`, a conflicting head. Their measurement was
+right and the sentence was wrong. Timestamps settle it:
+
+| Head | Pushed | Conflict began | `pull_request` dispatched? |
+|---|---|---|---|
+| `9366e11e` (#1120) | 18:53:21Z | 18:50:59Z, not yet computed | yes — 11 checks |
+| `4942ad3d` (#1120) | 18:57:12Z | known by then | **no** — CodeQL only |
+| `3f31d103` (#1136) | 19:38:29Z | 19:44:07Z, six minutes later | yes — 11 checks |
+
+**So there are two mechanisms, not one, and the second is the worse of them.**
+
+1. *Push while the PR is known-conflicting* → no `pull_request` dispatch. The
+   checks that appear are the push-triggered ones. This is what hit `4942ad3d`.
+2. *Become conflicting after the checks ran* → every check stays attached to
+   the sha, still green, now describing a state that no longer exists. Nothing
+   re-runs, because nothing was pushed. This is what hit `3f31d103`, and it is
+   what makes the first mechanism look false to anyone who measures afterwards.
+
+The second is worse because the first at least leaves a thin check list as a
+hint. The second leaves a **complete, genuinely-passing 11-check rollup** on a
+PR that can no longer be merged and whose tests have never run against the
+tree it would produce. There is no artifact anywhere that says so.
+
+Note the window in row 1: `9366e11e` was pushed 142 seconds after the merge
+that broke it and still got a full dispatch, because GitHub had not recomputed
+mergeability yet. Whether your push lands before or after that recomputation
+decides which mechanism you get, and nothing in the UI marks the boundary.
 
 **Why the instrument can't tell you.**
 
@@ -2286,10 +2316,12 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   `headRefOid` can lag its own ref, and on a merged PR it stops updating
   entirely. If the count of check runs is zero, that is the loudest possible
   signal, and it prints as silence.
-- **Check `mergeable` before reading `statusCheckRollup`.** `CONFLICTING`
-  means the rollup is describing a smaller set of checks than you think, so
-  the rollup is not evidence about the suite. Read the two together or
-  neither.
+- **Check `mergeable` before reading `statusCheckRollup`.** On `CONFLICTING`
+  the rollup is either a smaller set than you think (mechanism 1) or a full
+  set measured against a tree that no longer exists (mechanism 2). Neither is
+  evidence about what merging would do. Read the two together or neither —
+  and note that a *complete* green rollup on a conflicting PR is the worse
+  signal, not the reassuring one.
 - **A squash merge orphans anything pushed to that branch afterwards.** The
   window is as long as your commit takes. Before pushing to a branch you
   believe is open, confirm it: a closed PR accepts the push, moves the ref,
