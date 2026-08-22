@@ -183,34 +183,26 @@ describe('the pre-cutoff expanded default reaches the client', () => {
   // discovered that while wiring the component.
   const CONTROLLER_SRC = read('controllers/threadStateController.ts');
 
-  it('the response carries the cutoff, not just a boolean default', () => {
-    // Matches the KEY, not the local variable feeding it. Pinning the local
-    // broke on a rename of my own making.
-    expect(CONTROLLER_SRC).toMatch(/expandedForRootsCreatedBefore:/);
-  });
+  // REPLACED by execution, per @ux-lead's ruling (56996). Two tests lived
+  // here: "the response carries the cutoff, not just a boolean default" and
+  // "one timestamp, not a per-thread resolution". Both pinned the shape the
+  // ruling overturned — the second by name.
+  //
+  // They are not rewritten in place because they were regex over
+  // CONTROLLER_SRC, which is the pattern @sprint-review blocked on #1106: a
+  // source match cannot tell you what the endpoint returns. The properties
+  // they were reaching for are now asserted by running the thing:
+  //
+  //   threadStateReadContract.test.js  — the payload carries no cutoff, no
+  //                                      collapsed default, and every root
+  //                                      arrives already resolved
+  //   threadEffectiveCollapsed.test.js — the per-thread resolution itself,
+  //                                      across all three cutoff states
+  //
+  // Deleting a test is worth more scrutiny than editing one, so: the
+  // behaviour is covered strictly better than before, and by tests that would
+  // fail if the code were wrong rather than merely reworded.
 
-  it('it is read from the migration ledger, by the shared constant', () => {
-    // Not a hardcoded date, and not a second definition of the name.
-    //
-    // This assertion originally required the name to come from the backfill
-    // SCRIPT. That was the bug: the script calls main() at module scope, so
-    // importing it to read one string executed the migration on the server
-    // boot path. The name now lives in constants/migrations.ts, which has no
-    // imports and no side effects — and this test must assert the script is
-    // NOT imported, or it would pin the defect it used to describe.
-    expect(CONTROLLER_SRC).toMatch(/require\('\.\.\/constants\/migrations'\)/);
-    expect(CONTROLLER_SRC).not.toMatch(/require\('\.\.\/scripts\//);
-    expect(CONTROLLER_SRC).toMatch(/FROM migration_records WHERE name = \$1/);
-    expect(CONTROLLER_SRC).not.toMatch(/threadingCutoff = '20\d\d-/);
-  });
-
-  it('one timestamp, not a per-thread resolution', () => {
-    // Resolving server-side would enumerate every root and join
-    // messages.created_at — data the client already has, since it is
-    // rendering those messages.
-    expect(CONTROLLER_SRC).not.toMatch(/JOIN messages[\s\S]{0,80}created_at[\s\S]{0,80}thread_user_state/);
-    expect(CONTROLLER_SRC).toMatch(/Promise\.all\(\[/);
-  });
 
   it('a read failure degrades toward EXPAND, not toward collapse', () => {
     // Not just "does not throw": the direction matters. Collapsed hides

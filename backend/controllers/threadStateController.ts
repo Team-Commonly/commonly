@@ -150,10 +150,21 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
 
 /**
  * The render path's question: my state for every thread in this pod, in one
- * query. Only rows that EXIST are returned — a thread the caller has never
- * touched is absent and the client applies the defaults (collapsed, and
- * following resolved from participation). Sending a row per thread would mean
- * materialising state nobody has expressed.
+ * query, with `collapsed` ALREADY RESOLVED — @ux-lead's ruling (56996).
+ *
+ * The client never sees absence and never learns the threading cutoff. Both
+ * used to be its job: notice that a root has no row, then compare that root's
+ * createdAt against a migration timestamp it had to be told. That is a
+ * migration detail in every client's model of the system, permanently, for one
+ * boolean. The row is storage; the payload is meaning.
+ *
+ * `following` is deliberately NOT resolved the same way. Its absence is a
+ * VALUE — `null` means "defer to participation", which the wake path computes
+ * against live authorship (threadWakeScopeService). Collapsing it to a boolean
+ * here would either lie or force this endpoint to recompute participation on
+ * the read path. Flagged to @ux-lead, whose 56996 assumed following was
+ * already effective; it is not, and the asymmetry is intentional rather than
+ * an oversight to be tidied.
  */
 export async function listThreadState(req: Req, res: Res): Promise<void> {
   try {
@@ -171,45 +182,26 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       res.status(403).json({ msg: 'not a member of this pod' });
       return;
     }
-    const [rows, threadingCutoff] = await Promise.all([
-      ThreadUserState.stateForPod(userId, podId),
-      readThreadingCutoff(),
-    ]);
-    const { cutoff, cutoffUnknown } = threadingCutoff;
+    const { cutoff, cutoffUnknown } = await readThreadingCutoff();
+    const rows = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
     res.status(200).json({
       podId,
-      // Defaults are stated in the response so a client never has to hardcode
-      // them, and so a change to them is visible at the wire rather than only
-      // in two codebases that have to agree.
-      //
-      // `expandedForRootsCreatedBefore` is the #1115 carve-out: a thread whose
-      // root pre-dates the threading migration renders expanded, so nothing
-      // visible in history disappears under a headline card on ship day.
-      //
-      // Returned as ONE timestamp rather than resolved per thread. Resolving
-      // server-side would mean enumerating every root in the pod and joining
-      // messages.created_at — duplicating data the client already has, since
-      // it is rendering those messages. This is O(1) and the comparison is a
-      // date compare. @sprint-review (56862) was right that the shipped
-      // contract could not express the rule; this is the smallest thing that
-      // can.
-      //
-      // Three states, and the third is the one that matters:
-      //   cutoff set                    -> roots at or before it render expanded
-      //   cutoff null, unknown false    -> the backfill ran and rooted nothing;
-      //                                    there is no pre-cutoff history
-      //   cutoffUnknown true            -> no ledger row. EXPAND EVERYTHING;
-      //                                    never collapse on an unknown.
+      // `following: null` is still a value the client must interpret, so its
+      // default stays stated at the wire. `collapsed` no longer appears here
+      // because there is no case left in which the client supplies it.
       defaults: {
-        collapsed: true,
         following: null,
-        expandedForRootsCreatedBefore: cutoff,
-        cutoffUnknown,
       },
-      threads: rows.map((r: any) => ({
-        threadRootId: Number(r.thread_root_id),
-        following: r.following === null ? null : Boolean(r.following),
-        collapsed: Boolean(r.collapsed),
+      // Mapped, not passed through. The model speaks the table's language
+      // (`thread_root_id`); the wire has said `threadRootId` since 2/4 shipped
+      // and no ruling changed that. Handing the rows straight out silently
+      // renamed a public field — caught by threadStateReadContract, which is
+      // the reason that suite reads through the controller rather than the
+      // model.
+      threads: rows.map((r: { thread_root_id: number; following: boolean | null; collapsed: boolean }) => ({
+        threadRootId: r.thread_root_id,
+        following: r.following,
+        collapsed: r.collapsed,
       })),
     });
   } catch (err: any) {

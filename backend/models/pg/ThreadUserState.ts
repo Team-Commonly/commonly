@@ -173,9 +173,77 @@ class ThreadUserState {
   }
 
   /**
-   * Everything the render path needs for one pod in one query. Returns only
-   * rows that exist — a thread the user has never touched is absent, and the
-   * caller applies the defaults (collapsed true, following from participation).
+   * Everything the render path needs for one pod, with `collapsed` ALREADY
+   * RESOLVED for every root in the pod — @ux-lead's ruling (56996).
+   *
+   * The sparse version below returns only rows that exist, which pushes two
+   * jobs onto the client: notice absence, and know the threading cutoff to
+   * interpret it (`collapsed = row?.collapsed ?? (root.createdAt >= cutoff)`).
+   * That makes the cutoff part of every client's model of the system for the
+   * sake of one boolean. The row is storage; the payload is meaning.
+   *
+   * So this enumerates the pod's roots and left-joins the caller's state. A
+   * root is a message something else points at, which is exactly when a thread
+   * starts existing. Written as an uncorrelated `IN (SELECT DISTINCT …)`
+   * rather than a correlated `EXISTS`: pg-mem cannot resolve the outer alias
+   * inside a correlated subquery here ("column root.id does not exist"), and
+   * the uncorrelated form is equivalent, runs on both, and keeps this query
+   * exercisable at the unit tier instead of only against a real server.
+   *
+   * The three-state cutoff is resolved here rather than at the wire, and the
+   * ORDER of the CASE arms is the whole #1115 ruling:
+   *   cutoffUnknown          -> false. Never collapse on an unknown.
+   *   cutoff NULL, known     -> true. The backfill ran and rooted nothing, so
+   *                             there is no pre-cutoff history to protect.
+   *   otherwise              -> created_at >= cutoff.
+   *
+   * Cost, since a comment on the old shape argued against paying it: this is
+   * one extra join bounded by the pod's THREAD count, not its message count,
+   * and the caller is already rendering those messages. The argument that it
+   * "duplicates data the client already has" was mine and it was the wrong
+   * trade — it bought an O(1) payload by making every future client carry a
+   * migration detail.
+   */
+  static async effectiveStateForPod(
+    userId: string,
+    podId: string,
+    cutoff: Date | string | null,
+    cutoffUnknown: boolean,
+  ): Promise<Array<{ thread_root_id: number; following: boolean | null; collapsed: boolean }>> {
+    const { rows } = await (pool as PgPool).query(
+      `SELECT root.id AS thread_root_id,
+              s.following AS following,
+              COALESCE(
+                s.collapsed,
+                CASE WHEN $4::boolean THEN false
+                     WHEN $3::timestamptz IS NULL THEN true
+                     ELSE root.created_at >= $3::timestamptz
+                END
+              ) AS collapsed
+         FROM messages root
+         LEFT JOIN thread_user_state s
+           ON s.thread_root_id = root.id AND s.user_id = $1
+        WHERE root.pod_id = $2
+          AND root.id IN (
+                SELECT DISTINCT child.thread_root_id
+                  FROM messages child
+                 WHERE child.pod_id = $2 AND child.thread_root_id IS NOT NULL
+              )
+        ORDER BY root.id`,
+      [userId, podId, cutoff, cutoffUnknown],
+    );
+    return rows.map((r: any) => ({
+      thread_root_id: Number(r.thread_root_id),
+      following: r.following === null || r.following === undefined ? null : Boolean(r.following),
+      collapsed: Boolean(r.collapsed),
+    }));
+  }
+
+  /**
+   * The sparse read: only rows that exist. Retained because the wake path and
+   * the state-setters reason about the ROW, where absence is meaningful —
+   * `following IS NULL` is "defer to participation", which is not a value the
+   * effective read can express. Do not use it for the render payload.
    */
   static async stateForPod(userId: string, podId: string): Promise<ThreadUserStateRow[]> {
     const { rows } = await (pool as PgPool).query(
