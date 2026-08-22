@@ -103,13 +103,30 @@ async function main(): Promise<void> {
     console.error('PG_HOST is required');
     process.exit(2);
   }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const fs = require('fs');
+  const caPath = process.env.PG_SSL_CA_PATH;
   const pool = new Pool({
     host: process.env.PG_HOST,
     port: Number(process.env.PG_PORT) || 5432,
     user: process.env.PG_USER,
     password: process.env.PG_PASSWORD,
     database: process.env.PG_DATABASE,
-    ssl: { rejectUnauthorized: false },
+    // SSL decided the same way config/db-pg does — presence of PG_SSL_CA_PATH,
+    // not a hardcoded object. This was `ssl: { rejectUnauthorized: false }`,
+    // which makes the script UNRUNNABLE against any Postgres without SSL: it
+    // fails with "The server does not support SSL connections" before reading
+    // a single row. That is `./dev.sh up`, a plain docker postgres, and any
+    // self-hosted instance — and self-hosting is in scope for the cutoff this
+    // script records. Found by rehearsing the migration against a local
+    // postgres:16 rather than only against the dev cluster.
+    //
+    // rejectUnauthorized: true when a CA is supplied, matching db-pg. The old
+    // `false` silently accepted any certificate on the one path where it did
+    // work, which is a weaker posture than the app's own connection.
+    ssl: caPath && fs.existsSync(caPath)
+      ? { rejectUnauthorized: true, ca: fs.readFileSync(caPath).toString() }
+      : false,
   });
 
   try {
