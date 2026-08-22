@@ -19,8 +19,20 @@ const { newDb } = require('pg-mem');
 const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
+// Mock ONLY the part that touches Mongo. `getCallerId` comes from
+// requireActual, so this suite exercises the real identity resolution.
+//
+// It previously hand-wrote `getCallerId: (req) => req.userId`, which is the
+// defect @sprint-review found in #1113's test mocks and @sprint-impl fixed the
+// same way at ad274e3e. Mine was worse than a copied list: the real function is
+// `req.user?._id || req.userId || req.agentUser?._id`, so the mock ignored the
+// first branch entirely and — the part that matters — the AGENT branch, which
+// is the whole reason these routes are dualAuth. Every read test here was
+// passing without ever resolving an agent caller.
 jest.mock('../../../services/podWriteAccessService', () => ({
-  getCallerId: (req) => req.userId,
+  ...jest.requireActual('../../../services/podWriteAccessService'),
+  // The membership check is the only thing that needs stubbing: it queries
+  // AgentInstallation and pod_members, neither of which exists in pg-mem here.
   callerHasPodWriteAccess: async () => true,
 }));
 
@@ -58,7 +70,7 @@ const seedRoot = async (id) => mockPool.query(
 beforeAll(async () => {
   await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p','chat','u')", [POD]);
   await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p2','chat','u')", [OTHER_POD]);
-  for (const id of [10, 11, 20, 21, 22, 30, 31, 32]) await seedRoot(id);
+  for (const id of [10, 11, 20, 21, 22, 30, 31, 32, 40, 41]) await seedRoot(id);
 });
 
 beforeEach(async () => { await mockPool.query('DELETE FROM thread_user_state'); });
@@ -113,6 +125,31 @@ describe('following round-trips as three states, not two', () => {
     const byRoot = Object.fromEntries((await read()).threads.map((t) => [t.threadRootId, t.following]));
     expect(byRoot[21]).toBe(true);
     expect(byRoot[22]).toBe(false);
+  });
+});
+
+describe('an agent caller resolves through the real identity chain', () => {
+  test('a cm_agent_* caller (req.agentUser) sees its own rows', async () => {
+    // The dualAuth path. agentRuntimeAuth sets req.agentUser and NOT
+    // req.userId, so a mock that only reads req.userId can never reach this —
+    // which is exactly why it went unnoticed.
+    await ThreadUserState.follow(40, 'bot-user-1', POD);
+    let payload;
+    const res = { status: () => res, json: (d) => { payload = d; } };
+    await listThreadState(
+      { agentUser: { _id: 'bot-user-1' }, query: { podId: POD }, params: {} }, res,
+    );
+    expect(payload.threads.map((t) => t.threadRootId)).toEqual([40]);
+  });
+
+  test('req.user._id wins over req.userId, as the real chain orders them', async () => {
+    await ThreadUserState.follow(41, 'preferred-id', POD);
+    let payload;
+    const res = { status: () => res, json: (d) => { payload = d; } };
+    await listThreadState(
+      { user: { _id: 'preferred-id' }, userId: 'ignored-id', query: { podId: POD }, params: {} }, res,
+    );
+    expect(payload.threads.map((t) => t.threadRootId)).toEqual([41]);
   });
 });
 
