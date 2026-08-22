@@ -1,5 +1,11 @@
 /**
- * Thread follow / unfollow (W-T, TASK-029, 2/4).
+ * Per-user, per-thread state — follow and collapse (W-T, TASK-029, 2/4).
+ *
+ * Two independent booleans on ONE record, per the threading surface ruling
+ * (docs/design/threading-surface-ruling.md, "One state record, two booleans").
+ * They are written by SEPARATE endpoints even so: following never implies
+ * expanded, and one PATCH taking both invites a client to send the pair and
+ * clobber the half the user did not touch.
  *
  * Following is a SUBSCRIPTION, deliberately not an addressing edge. Nothing
  * here writes reply_to_message_id and nothing here enqueues a mention — 3/4
@@ -13,13 +19,14 @@
  * whether the message it is looking at happens to be a root.
  */
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
-const ThreadFollow = require('../models/pg/ThreadFollow');
+const ThreadUserState = require('../models/pg/ThreadUserState');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
 
 interface Req {
   params: { messageId?: string };
   query: { podId?: string };
+  body?: { collapsed?: unknown };
   user?: { _id?: unknown };
   userId?: unknown;
   agentUser?: { _id?: unknown };
@@ -72,7 +79,7 @@ export async function followThread(req: Req, res: Res): Promise<void> {
   try {
     const ctx = await authorize(req, res);
     if (!ctx) return;
-    const row = await ThreadFollow.follow(ctx.rootId, ctx.userId, ctx.podId);
+    const row = await ThreadUserState.follow(ctx.rootId, ctx.userId, ctx.podId);
     // 200 rather than 201 on both create and re-follow. The client asked for a
     // state, it has that state; distinguishing "already following" would make
     // a double-click look like a failure for no gain to any caller.
@@ -86,7 +93,7 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
   try {
     const ctx = await authorize(req, res);
     if (!ctx) return;
-    await ThreadFollow.unfollow(ctx.rootId, ctx.userId);
+    await ThreadUserState.unfollow(ctx.rootId, ctx.userId, ctx.podId);
     // Same reasoning: unfollowing what you do not follow is the state you
     // asked for, so it is a 200 and not a 404.
     res.status(200).json({ threadRootId: ctx.rootId, following: false });
@@ -95,8 +102,14 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
   }
 }
 
-/** What am I following in this pod — the render path's question. */
-export async function listFollowedThreads(req: Req, res: Res): Promise<void> {
+/**
+ * The render path's question: my state for every thread in this pod, in one
+ * query. Only rows that EXIST are returned — a thread the caller has never
+ * touched is absent and the client applies the defaults (collapsed, and
+ * following resolved from participation). Sending a row per thread would mean
+ * materialising state nobody has expressed.
+ */
+export async function listThreadState(req: Req, res: Res): Promise<void> {
   try {
     const userId = getCallerId(req);
     if (!userId) {
@@ -112,12 +125,46 @@ export async function listFollowedThreads(req: Req, res: Res): Promise<void> {
       res.status(403).json({ msg: 'not a member of this pod' });
       return;
     }
-    const threadRootIds = await ThreadFollow.followedRootsForUser(userId, podId);
-    res.status(200).json({ podId, threadRootIds });
+    const rows = await ThreadUserState.stateForPod(userId, podId);
+    res.status(200).json({
+      podId,
+      // Defaults are stated in the response so a client never has to hardcode
+      // them, and so a change to them is visible at the wire rather than only
+      // in two codebases that have to agree.
+      defaults: { collapsed: true, following: null },
+      threads: rows.map((r: any) => ({
+        threadRootId: Number(r.thread_root_id),
+        following: r.following === null ? null : Boolean(r.following),
+        collapsed: Boolean(r.collapsed),
+      })),
+    });
   } catch (err: any) {
-    res.status(500).json({ msg: 'failed to list followed threads', error: err?.message });
+    res.status(500).json({ msg: 'failed to list thread state', error: err?.message });
   }
 }
 
-module.exports = { followThread, unfollowThread, listFollowedThreads };
+/**
+ * The expand/collapse gesture — the only writer of `collapsed`.
+ *
+ * Separate from follow on purpose: following never implies expanded, so a
+ * single "thread state" PATCH taking both booleans would invite a client to
+ * send the pair and silently overwrite the one the user did not touch.
+ */
+export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
+  try {
+    const collapsedRaw = (req.body || {}).collapsed;
+    if (typeof collapsedRaw !== 'boolean') {
+      res.status(400).json({ msg: 'collapsed (boolean) is required' });
+      return;
+    }
+    const ctx = await authorize(req, res);
+    if (!ctx) return;
+    await ThreadUserState.setCollapsed(ctx.rootId, ctx.userId, ctx.podId, collapsedRaw);
+    res.status(200).json({ threadRootId: ctx.rootId, collapsed: collapsedRaw });
+  } catch (err: any) {
+    res.status(500).json({ msg: 'failed to set collapse state', error: err?.message });
+  }
+}
+
+module.exports = { followThread, unfollowThread, listThreadState, setThreadCollapsed };
 Object.assign(module.exports, exports);
