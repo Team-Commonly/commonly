@@ -277,3 +277,98 @@ describe('claim resets the per-lease rescue budget', () => {
     expect(row.lapsedFrom).toBeNull();
   });
 });
+
+/**
+ * The sweep-race half, found live on TASK-029 (2026-08-22).
+ *
+ * The deferral warning says "post a task update or re-claim — either renews
+ * the lease". Those two were NOT equivalent: the renewing filter requires
+ * `status: 'claimed'`, so once the sweep returned the row to `pending` a note
+ * fell through to the note-only path — 200, note recorded, no lease, and no
+ * way for the caller to tell.
+ *
+ * Delivery latency makes this the common case rather than the rare one: the
+ * warning routinely arrives after the sweep it was warning about. On TASK-029
+ * the warning was written at 12:24 and the note landed at 12:56, two minutes
+ * after the 12:54 sweep.
+ */
+describe('POST /updates after the sweep has already taken the row', () => {
+  it('the lapsed holder\'s note restores their claim', async () => {
+    await seed({
+      status: 'pending', claimedBy: null, claimedAt: null, claimExpiresAt: null,
+      lapsedFrom: 'holder', rescueDeferrals: 3,
+    });
+
+    const res = await postUpdate('holder', 'TASK-001', 'still mine, 2 of 4 shipped');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(true);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('claimed');
+    expect(row.claimedBy).toBe('holder');
+    expect(new Date(row.claimExpiresAt).getTime()).toBeGreaterThan(Date.now() + 29 * MIN);
+    // The budget resets with the lease, same as #1096 — a restored claim that
+    // kept a spent budget would be swept again within one orbit.
+    expect(row.rescueDeferrals).toBe(0);
+    expect(row.lapsedFrom).toBeNull();
+    expect(row.updates.map((u) => u.text)).toContain('still mine, 2 of 4 shipped');
+  });
+
+  it('but NOT if a peer won the race — the board beat them to it', async () => {
+    // This is the case that makes returning the row to the board mean anything.
+    await seed({
+      status: 'claimed', claimedBy: 'stranger', claimedAt: new Date(),
+      claimExpiresAt: new Date(Date.now() + LEASE_MS), lapsedFrom: 'holder',
+    });
+
+    const res = await postUpdate('holder', 'TASK-001', 'picking this back up');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.claimedBy).toBe('stranger');
+    // The note still lands. Gating the lease must never gate the audit trail.
+    expect(row.updates.map((u) => u.text)).toContain('picking this back up');
+  });
+
+  it('and NOT for a seat the row was never taken from', async () => {
+    // lapsedFrom names one seat. Without that filter, any peer could convert a
+    // pending row into their own claim by writing a note — which is a claim
+    // without the claim endpoint's rate limit or its atomicity contract.
+    await seed({
+      status: 'pending', claimedBy: null, claimedAt: null, claimExpiresAt: null,
+      lapsedFrom: 'holder',
+    });
+
+    const res = await postUpdate('stranger', 'TASK-001', 'drive-by note');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('pending');
+    expect(row.claimedBy).toBeFalsy();
+    expect(row.updates.map((u) => u.text)).toContain('drive-by note');
+  });
+
+  it('a pending row with no lapsedFrom is claimable by nobody via a note', async () => {
+    // A never-claimed row. `lapsedFrom: null` must not match a caller whose
+    // claimKey is also falsy — the filter has to require a real match.
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: null });
+
+    const res = await postUpdate('holder', 'TASK-001', 'thoughts on this one');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('pending');
+    expect(row.updates.map((u) => u.text)).toContain('thoughts on this one');
+  });
+
+  it('the holder path still reports leaseRenewed on an ordinary renewal', async () => {
+    const claimedAt = new Date(Date.now() - 25 * MIN);
+    await seed({ claimedBy: 'holder', claimedAt, claimExpiresAt: new Date(claimedAt.getTime() + LEASE_MS) });
+
+    const res = await postUpdate('holder', 'TASK-001', 'progress');
+    expect(res.body.leaseRenewed).toBe(true);
+  });
+});
