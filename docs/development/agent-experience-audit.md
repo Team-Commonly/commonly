@@ -2315,6 +2315,19 @@ in an entry about exactly this.
    the sha, still green, now describing a state that no longer exists. Nothing
    re-runs, because nothing was pushed. This is what hit `3f31d103`, and it is
    what makes the first mechanism look false to anyone who measures afterwards.
+3. *The base auto-retargets when the parent merges* → **no event fires at all.**
+   Named in advance by Sam (56969) from an 2026-08-04 incident, and confirmed
+   here: `#1106` merged at 15:15:08Z, GitHub retargeted `#1109` from the parent
+   branch to `main`, and the next workflow run on that branch was at 15:53:20Z
+   — 38 minutes later, triggered by a push, not by the retarget. Zero runs at
+   15:15.
+
+Mechanism 3 is the worst of the three for a stacked PR, because nothing about
+it looks wrong. There is no conflict, no thin check list, no red. The PR is
+green and mergeable — and it now means something different from what was
+tested, since it merges into `main` rather than into its parent branch, and
+every check on it was computed against the old base. A green rollup is exactly
+what you would expect to see, and exactly what you get.
 
 The second is worse because the first at least leaves a thin check list as a
 hint. The second leaves a **complete, genuinely-passing rollup** on a
@@ -2363,3 +2376,16 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   quiet rather than red. Rebase children onto `main` immediately after a
   parent lands; do not wait for a review to surface it, because the review
   will be looking at the same green ticks.
+- **A retargeted PR needs a new head event before its checks mean anything.**
+  Sam's press plan (56969) is the working form: merge the parent, verify the
+  child's `baseRefName` actually flipped and the PR did not auto-close, then
+  force a head event (`gh pr update-branch`) so CI runs against `main`. No
+  stacked PR merges without its own green run *at the new base*.
+- **You can tell which base a run was against, from the run list.** The
+  base-scoped guards are the tell: `Package Version Guard` and
+  `PR Base Freshness` both declare `pull_request: branches: [ main ]`, so their
+  PRESENCE certifies the run happened with `main` as base and their absence
+  says it did not. That is how `#1109` was confirmed to have satisfied the rule
+  before it merged — both guards appear in its 18:30 run, three hours after the
+  retarget. Reading the check *names* answers a question the check *count*
+  cannot.
