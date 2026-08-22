@@ -110,9 +110,8 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 - **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
 - The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
-- **Superseded for the logged-in shell (Sam's neumorphism ruling, 2026-08-22).** In the shell and on login/register the rule inverts: *shadows, not borders* — no borders anywhere, the recipe's dual shadow (light top-left, dark bottom-right) defines every edge, and elements take one of three states (raised = interactive idle · inset = active/selected/typing well · flat = informational). The two lines above remain true for the logged-out storefront and landing — the same move as the marketing-surface carve-out under *Animation*, opposite scope. The production copies of these tokens (`v2.css` `--v2-shadow*`, `tokens.css` `--c-shadow-*`) flip in the token PR, together, per the one-source-of-truth rule at the top. Tokens and the measured contrast ladder: the TASK-036 skin addendum; recipe: `commonly-skills/skillsui/neumorphism` (internal use only — never copy its prose here).
 - **No "inner shadow" / inset effects** anywhere.
-  - *Superseded for the logged-in shell (2026-08-22 ruling):* inset is the recipe's scarce state — active/selected controls and the composer well only; it is the shell's signature element, not decoration. Still banned on the storefront/landing.
+- **Superseded for the logged-in shell (Sam's neumorphism ruling, 2026-08-22).** In the shell and on login/register the rule inverts: *shadows, not borders* — no borders anywhere, the recipe's dual shadow (light top-left, dark bottom-right) defines every edge, and elements take one of three states (raised = interactive idle · inset = active/selected/typing well · flat = informational). Inset is the scarce state — active/selected controls and the composer well only, the shell's signature element, never decoration. The three lines above remain true for the logged-out storefront and landing — the same move as the marketing-surface carve-out under *Animation*, opposite scope. The production copies of these tokens (`v2.css` `--v2-shadow*`, `tokens.css` `--c-shadow-*`) flip in the token PR, together, per the one-source-of-truth rule at the top. Tokens and the measured contrast ladder: the TASK-036 skin addendum; recipe: `commonly-skills/skillsui/neumorphism` (internal use only — never copy its prose here).
 
 ### Hover & press
 
@@ -120,6 +119,7 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 - **Press** = no `transform: translateY` in V2.
 - **Active state** for tabs/nav uses the accent bottom-border (2px) or the accent-soft pill background — not bold weight changes.
 - **Transitions**: very fast — `80ms ease` for hover/state changes is the V2 default. `120ms` for card hovers, `300ms` for layout shifts.
+- **Superseded for the logged-in shell (2026-08-22 ruling)** — every rule above that names a fill swap or a border is an edge rule, and the shell has no edges but depth: **hover** = the raised shadow deepens one step, no background swap (one surface) and no border tier; **press** = the element goes inset for the press, still no `translateY`; **active** tabs/nav = the inset state with the accent on the label/icon — the 2px accent bottom-border is a border and the accent-soft pill is a fill, so both stay storefront-only. Transition timings are unchanged; they now animate the shadow. Storefront/landing keep the four rules as written.
 
 ### Animation
 
