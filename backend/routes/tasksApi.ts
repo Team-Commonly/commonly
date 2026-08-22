@@ -67,7 +67,10 @@ const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => 
 
 interface AuthReq {
   userId?: string;
-  user?: { id?: string; _id?: unknown; isBot?: boolean; botMetadata?: { instanceId?: string; agentName?: string } };
+  // `username` is here because the sweep can write it into `lapsedFrom`
+  // (provenance falls back through holder.label = assignee || username ||
+  // claimedBy), so the restore path must be able to match on it.
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
   agentUser?: { _id?: unknown };
   params?: Record<string, string>;
   query?: Record<string, string>;
@@ -565,9 +568,33 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     // between, status is `claimed` with their id and both filters miss — the
     // race is won by the peer, which is the whole point of returning it to the
     // board. This makes the cue's two options actually equivalent.
-    if (!task && claimKey) {
+    // `lapsedFrom` is POLYMORPHIC by design and must be matched as such. The
+    // sweep writes `provenance = holder?.label || t.assignee || t.claimedBy`,
+    // and `label` is itself `assignee || holder?.username || claimedBy`. So the
+    // field can hold an assignee NAME, a bot USERNAME, or a User ObjectId
+    // string, depending on which fallback fired.
+    //
+    // The first version of this matched `lapsedFrom: claimKey` — one shape —
+    // and claimKey is the ObjectId for MCP-authenticated agents. Verified live
+    // on TASK-029: lapsedFrom was "pod-architect" (the username) while
+    // claimedBy had been "6a693bfb…", so the restore never fired and the
+    // response honestly reported leaseRenewed:false. Dead code in the common
+    // case, and it only had a test because the fixture set lapsedFrom to the
+    // same value the test passed as the caller.
+    //
+    // Same name-vs-id trap as `assignee` (a name) versus `claimedBy` (an id):
+    // two string fields in one document whose value spaces never overlap.
+    const identities = [
+      claimKey,
+      userId?.toString(),
+      resolveAgentInstanceId(req),
+      req.user?.botMetadata?.agentName,
+      req.user?.username,
+    ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+    if (!task && identities.length) {
       task = await Task.findOneAndUpdate(
-        { podId: podFilter, taskId, status: 'pending', lapsedFrom: claimKey },
+        { podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } },
         {
           $set: {
             status: 'claimed',
