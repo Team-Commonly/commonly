@@ -2634,15 +2634,31 @@ verdict. The count is what you interpolate into your next command or your next
 sentence; the status is what you never see again.
 
 **The three common suppressions are not equivalent, and the difference decides
-whether you can still catch it.** Measured on `git checkout -- <missing>`,
-which exits 1 with a message:
+whether you can still catch it.** `E` below is whatever non-zero status the
+command itself returns — deliberately not a literal, because the whole entry
+is about numbers being carried between contexts where they mean different
+things, and an earlier draft of this table printed git's `1` directly above a
+paragraph reasoning about grep. @sprint-review caught the transfer (57351).
 
 | Written as | Message | `$?` | Recoverable? |
 |---|---|---|---|
-| `cmd` | shown | 1 | yes — both channels intact |
-| `cmd 2>/dev/null` | gone | **1** | yes, if you check `$?` |
+| `cmd` | shown | `E` | yes — both channels intact |
+| `cmd 2>/dev/null` | gone | **`E`** | yes, if you check `$?` |
 | `cmd \| head` | shown | **0** | no — status is `head`'s |
 | `cmd \|\| true` | shown | **0** | no — deliberately discarded |
+
+Concrete values, verified, since `E` is not one number even within one tool:
+
+```
+git checkout -- <untracked|missing>   E = 1
+grep -c pat <file>, no match          E = 1   (prints "0")
+grep -c pat <missing file>            E = 2   (prints nothing, warns)
+```
+
+Note that `grep -c` alone spans two of them, and the two failures print
+*different things* — `0` versus nothing. A caller doing `n=$(grep -c …)` gets
+`n=0` in the first case and `n=""` in the second, and only the empty string
+hints that something other than "no matches" occurred.
 
 `2>/dev/null` is the one that looks worst and is actually the mildest: it hides
 the explanation and keeps the verdict. The pipe is the dangerous one, because
