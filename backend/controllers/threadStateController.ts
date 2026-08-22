@@ -183,7 +183,7 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       return;
     }
     const { cutoff, cutoffUnknown } = await readThreadingCutoff();
-    const threads = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
+    const rows = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
     res.status(200).json({
       podId,
       // `following: null` is still a value the client must interpret, so its
@@ -192,7 +192,17 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       defaults: {
         following: null,
       },
-      threads,
+      // Mapped, not passed through. The model speaks the table's language
+      // (`thread_root_id`); the wire has said `threadRootId` since 2/4 shipped
+      // and no ruling changed that. Handing the rows straight out silently
+      // renamed a public field — caught by threadStateReadContract, which is
+      // the reason that suite reads through the controller rather than the
+      // model.
+      threads: rows.map((r: { thread_root_id: number; following: boolean | null; collapsed: boolean }) => ({
+        threadRootId: r.thread_root_id,
+        following: r.following,
+        collapsed: r.collapsed,
+      })),
     });
   } catch (err: any) {
     res.status(500).json({ msg: 'failed to list thread state', error: err?.message });
