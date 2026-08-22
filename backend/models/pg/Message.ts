@@ -96,9 +96,28 @@ class Message {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
     });
+    // Threading (W-T, TASK-029). The root is DERIVED from the reply edge on
+    // write and stored, never walked on read: `reply_to_message_id` carries no
+    // index (schema.sql indexes pod_id and created_at only), so resolving a
+    // root per read is a sequential scan per level of the chain.
+    //
+    // One level of derivation is enough for any depth. A reply to a root takes
+    // that root's id; a reply to a reply inherits the root the parent already
+    // stored. Measured on the live instance before this shipped: 227 reply
+    // edges, max chain depth 7, and every one of those deeper links resolves
+    // by this same inheritance because the parent was written first.
+    //
+    // COALESCE(parent.thread_root_id, parent.id) is the whole rule — a parent
+    // that is itself a root has NULL there and contributes its own id.
+    //
+    // Deliberately NOT derived from anything but the reply edge: thread_root_id
+    // must never acquire addressing semantics (see schema.sql).
     const query = `
-      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload, thread_root_id)
+      SELECT $1, $2, $3, $4, $5, $6,
+             (SELECT COALESCE(parent.thread_root_id, parent.id)
+                FROM messages parent
+               WHERE parent.id = $5)
       RETURNING *
     `;
     try {

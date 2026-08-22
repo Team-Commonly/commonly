@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   message_type VARCHAR(20) DEFAULT 'text' NOT NULL,
   reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  -- Threading (W-T, TASK-029). DELIBERATELY separate from reply_to_message_id,
+  -- which is an ADDRESSING edge: it feeds `isRouted` and the implicit-reply
+  -- chat.mention (agentMentionService :1025 / :1356), so a human replying to an
+  -- agent addresses that agent. If thread membership rode the same column,
+  -- joining a thread would ping the parent's author — the opposite of what
+  -- ambient scoping is for (fable's #1045 ruling). thread_root_id carries no
+  -- addressing. NULL means "not in a thread"; a root is an ordinary message
+  -- other messages point at, and a root's own thread_root_id stays NULL.
+  thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -64,6 +73,10 @@ CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_messages_pod_id ON messages(pod_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+-- Threading reads are "give me this thread" and "how many replies has it", both
+-- keyed on the root. reply_to_message_id has no index, which is why the root is
+-- stored rather than walked: deriving it per read is a seq-scan per level.
+CREATE INDEX IF NOT EXISTS idx_messages_thread_root_id ON messages(thread_root_id);
 CREATE INDEX IF NOT EXISTS idx_pod_members_pod_id ON pod_members(pod_id);
 CREATE INDEX IF NOT EXISTS idx_pod_members_user_id ON pod_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_pods_created_by ON pods(created_by);
