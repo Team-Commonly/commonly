@@ -2270,11 +2270,22 @@ dispatches tests" and @sprint-review falsified it by finding eight green runs
 — Tier 1 among them — on `3f31d103`, a conflicting head. Their measurement was
 right and the sentence was wrong. Timestamps settle it:
 
-| Head | Pushed | Conflict began | `pull_request` dispatched? |
-|---|---|---|---|
-| `9366e11e` (#1120) | 18:53:21Z | 18:50:59Z, not yet computed | yes — 11 checks |
-| `4942ad3d` (#1120) | 18:57:12Z | known by then | **no** — CodeQL only |
-| `3f31d103` (#1136) | 19:38:29Z | 19:44:07Z, six minutes later | yes — 11 checks |
+| Head | Pushed | Conflict began | `pull_request` dispatched? | Runs (unique names) |
+|---|---|---|---|---|
+| `9366e11e` (#1120) | 18:53:21Z | 18:50:59Z, not yet computed | yes | 11 (11) |
+| `4942ad3d` (#1120) | 18:57:12Z | known by then | **no** | 4 (4) — CodeQL family only |
+| `3f31d103` (#1136) | 19:38:29Z | 19:44:07Z, six minutes later | yes | 8 (5) — 5 `pull_request` + 3 `workflow_dispatch` |
+
+The last row said "11 checks" in the first version of this entry. @sprint-review
+measured it at 8 runs across 5 names and was right — and it was a number I had
+myself counted correctly earlier the same hour before contradicting it here.
+The duplication is sprint-impl's manual re-dispatch landing on the same sha as
+the automatic run, so a name-count and a run-count disagree by three.
+
+NOT chased, and so not claimed: the two PRs' `pull_request` sets differ in
+membership (11 names vs 5), not just in size. #1120 targets `main` and #1136
+targeted a feature branch, and several workflows filter on base — but that is
+a hypothesis about the difference, not a measurement of it.
 
 **So there are two mechanisms, not one, and the second is the worse of them.**
 
@@ -2286,7 +2297,7 @@ right and the sentence was wrong. Timestamps settle it:
    what makes the first mechanism look false to anyone who measures afterwards.
 
 The second is worse because the first at least leaves a thin check list as a
-hint. The second leaves a **complete, genuinely-passing 11-check rollup** on a
+hint. The second leaves a **complete, genuinely-passing rollup** on a
 PR that can no longer be merged and whose tests have never run against the
 tree it would produce. There is no artifact anywhere that says so.
 
