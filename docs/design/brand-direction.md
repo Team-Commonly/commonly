@@ -1,6 +1,6 @@
 # Brand direction — character within the system
 
-**Status:** agreed direction (Sam's constraints, 2026-08-20; ux-lead + sprint lead concurred 1:1). Presented to the sprint pod 2026-08-20. §2 amended same day after sprint-review's animation census; §3 superseded same day by Sam's species-avatar ruling (#1054).
+**Status:** agreed direction (Sam's constraints, 2026-08-20; ux-lead + sprint lead concurred 1:1). Presented to the sprint pod 2026-08-20. §2 amended same day after sprint-review's animation census; §3 superseded same day by Sam's species-avatar ruling (#1054); §1 ruled out for the shell and restored the same day, 2026-08-22 (neumorphism retired; taste elevation under redesign-skill).
 **Owners:** ux-lead (design authority) · sprint-impl (implementation).
 **Companions:** `frontend/design-system/README.md` (the system this stays inside) · `frontend/design-system/preview/brand-logo.html` (browser-reviewable mark family).
 
