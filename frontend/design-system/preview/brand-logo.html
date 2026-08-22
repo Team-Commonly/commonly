@@ -102,6 +102,17 @@
     <circle cx="32" cy="32" r="2.4" fill="currentColor"/>
     <circle cx="39" cy="32" r="2.4" fill="currentColor"/>
   </symbol>
+  <symbol id="mark-bubble" viewBox="0 0 64 64">
+    <!-- Marketing variant: explicit bubble with tail, dots knocked out even-odd.
+         Same C ring and dot geometry as #mark. Source: assets/commonly-mark-bubble.svg -->
+    <path d="M 50 17.7 A 22 22 0 1 0 50 46.3"
+          fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>
+    <path fill-rule="evenodd" fill="currentColor"
+          d="M 28.07 42.81 A 11.5 11.5 0 1 0 20.89 34.98 L 20.69 43.31 Z
+             M 22.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z
+             M 29.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z
+             M 36.6 32 a 2.4 2.4 0 1 0 4.8 0 a 2.4 2.4 0 1 0 -4.8 0 Z"/>
+  </symbol>
 </svg>
 
 <div class="col">
@@ -123,6 +134,27 @@
         <div class="mark-tile dark"><svg viewBox="0 0 64 64"><use href="#mark"/></svg></div>
         <div class="name">on dark</div>
         <div class="meta">fg-primary surface</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="label">Marketing variant · explicit bubble with tail · ≥56px surfaces only</div>
+    <div class="row">
+      <div class="tile">
+        <div class="mark-tile"><svg viewBox="0 0 64 64"><use href="#mark-bubble"/></svg></div>
+        <div class="name">marketing</div>
+        <div class="meta">hero · login · social</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile inverse"><svg viewBox="0 0 64 64"><use href="#mark-bubble"/></svg></div>
+        <div class="name">inverse</div>
+        <div class="meta">on white</div>
+      </div>
+      <div class="tile">
+        <div class="mark-tile sm"><svg viewBox="0 0 64 64"><use href="#mark-bubble"/></svg></div>
+        <div class="name">floor</div>
+        <div class="meta">56 · smallest legal</div>
       </div>
     </div>
   </div>
@@ -201,7 +233,7 @@
   </div>
 
   <div class="note">
-    <strong>The idea.</strong> The C and the chat bubble are <em>one shape</em>. The empty interior of the C is read as the bubble's body; three dots float in that void as the bubble's content; a small tail extrudes from the C's right-side opening to lock the metaphor. Drawn as a single even-odd path so the void is true negative space — it stays white on the accent tile and accent-colored on white. One glyph, one color, scales from 20px favicon to a 512px marketing tile without rasterizing. Source: <span class="mono">assets/commonly-mark.svg</span>.
+    <strong>The idea.</strong> The C and the chat bubble are <em>one shape</em>, expressed at two fidelities. The <em>minimal mark</em> reads the C's empty interior as the bubble's body, with three dots floating in the void as content — one glyph, one color, no detail loss down to a 20px favicon. The <em>marketing variant</em> makes the bubble explicit: a filled bubble with a tail nests in the counter, its dots knocked out even-odd as true negative space. Both variants share the identical C ring and identical dot geometry (<span class="mono">r 2.4 at 25/32/39, y 32</span>) — the typing-ellipsis animation target never moves between them. The bubble variant is legible at ≥56px and mushes below; under that, always the minimal mark. Sources: <span class="mono">assets/commonly-mark.svg</span> · <span class="mono">assets/commonly-mark-bubble.svg</span>.
   </div>
 
 </div></body></html>
