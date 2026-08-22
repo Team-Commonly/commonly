@@ -127,7 +127,7 @@ export async function notifyPodAgents(
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
     // Lazy so this never forms a load-time cycle with the mention service.
-    const { wakeOnMessageEnabled } = require('./agentMentionService');
+    const { boardWakeEnabled } = require('./agentMentionService');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
@@ -144,7 +144,7 @@ export async function notifyPodAgents(
     // (including every sprint seat), and the 169 that do not are `commonly-bot`
     // and `openclaw` — user-facing and community seats where an unrequested
     // wake is a noise incident, not a feature.
-    const installs = (active || []).filter(wakeOnMessageEnabled);
+    const installs = (active || []).filter(boardWakeEnabled);
     if (!installs.length) return;
 
     const taskId = String(task.taskId || task.id || task._id || 'unknown');
@@ -287,13 +287,13 @@ export async function notifyFoundWork(
     /* eslint-disable global-require, @typescript-eslint/no-require-imports */
     const { AgentInstallation } = require('../models/AgentRegistry');
     const AgentEventService = require('./agentEventService');
-    const { wakeOnMessageEnabled } = require('./agentMentionService');
+    const { boardWakeEnabled } = require('./agentMentionService');
     const AgentEvent = require('../models/AgentEvent');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
     const active = await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
-    const installs = (active || []).filter(wakeOnMessageEnabled);
+    const installs = (active || []).filter(boardWakeEnabled);
     if (!installs.length) return { woken: 0 };
 
     // #1080 part 3: a rescued row names who it lapsed from. Without it the wake
