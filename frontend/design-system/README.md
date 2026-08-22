@@ -81,6 +81,7 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 ### Color
 
 - **One accent**: blue `#2f6feb`. Never blends with another. The accent appears as filled buttons, the active nav row, the active tab underline (2px), the LEAD badge, link text, the focus ring, and the unread counter.
+  - *Under the shell's neumorphism ruling:* same single accent, rationed by size as well as role — `#2f6feb` measures 3.3:1 on the provisional surface, so it is legal for UI/large text (active label/icon, CTA fill, focus ring, badges) and body-size link text uses `--accent-ink #1d4ed8` (4.9:1). The active-tab underline and active-row fill listed here are storefront-only in the shell (see *Hover & press*).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
 - **Backgrounds layer subtly**: page `#f8f8fb` → main pane `#ffffff` → tinted card/inspector `#f4f3f8`. The shifts are tiny on purpose.
   - *Superseded for the logged-in shell (2026-08-22 neumorphism ruling):* **one surface** — every element's background equals the page background (provisional surface Slate Mist `#d8dce6` until Sam reacts to the proof); layering is expressed as depth, never as a fill change. Storefront/landing keep the three-fill layering above.
