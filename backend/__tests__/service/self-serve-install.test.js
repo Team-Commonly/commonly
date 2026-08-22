@@ -77,6 +77,42 @@ describe('ADR-006 self-serve webhook install', () => {
     await AgentRegistry.deleteMany({ ephemeral: true });
   });
 
+  it('a plain member cannot install into a publicRead pod — the 07-24 incident, closed at the server', async () => {
+    // The web picker was fixed on 07-24; the CLI self-serve path was not, and
+    // tablebench-agent landed in Commonly HQ on 08-21 through it. The guard
+    // now lives where every client inherits it.
+    const hq = await Pod.create({
+      name: 'Community HQ Fixture',
+      type: 'chat',
+      publicRead: true,
+      createdBy: outsider._id,
+      members: [outsider._id, podMember._id],
+    });
+    const res = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({
+        agentName: 'my-hq-crasher',
+        podId: hq._id.toString(),
+        config: { runtime: { runtimeType: 'webhook' } },
+        scopes: ['context:read'],
+      });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('public_pod_requires_admin');
+
+    // The pod CREATOR still installs fine — community pods keep their admin.
+    const creatorRes = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .send({
+        agentName: 'outsider-hq-bot',
+        podId: hq._id.toString(),
+        config: { runtime: { runtimeType: 'webhook' } },
+        scopes: ['context:read'],
+      });
+    expect(creatorRes.status).toBe(200);
+  });
+
   it('installs a webhook agent with no published manifest and returns a runtime token', async () => {
     const installRes = await request(app)
       .post('/api/registry/install')
