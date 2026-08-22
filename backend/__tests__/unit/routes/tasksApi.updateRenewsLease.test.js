@@ -37,7 +37,24 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   };
   next();
 });
-jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
+// The AGENT shape, which the human auth mock above cannot produce:
+// agentRuntimeAuth sets req.agentUser and leaves req.user undefined. Every
+// previous test in this file went through the human mock, which is why two
+// rounds of "fix" shipped without anyone noticing the agent path resolved
+// nothing.
+jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
+  const asAgent = req.get('x-test-agent-username');
+  if (asAgent) {
+    req.userId = req.get('x-test-user');
+    req.user = undefined;
+    req.agentUser = {
+      _id: req.get('x-test-user'),
+      username: asAgent,
+      botMetadata: { agentName: asAgent, instanceId: 'default' },
+    };
+  }
+  next();
+});
 
 const POD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -53,6 +70,7 @@ jest.mock('../../../models/Pod', () => ({
         // to reach the handler rather than 403 at membership.
         { toString: () => '6a693bfbe833c668acdce53b' },
         { toString: () => 'someone-else-id' },
+        { toString: () => 'some-other-bot-id' },
       ],
     }),
   })),
@@ -458,6 +476,59 @@ describe('the restore matches every shape lapsedFrom can hold', () => {
       .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
       .set('x-test-user', 'holder')
       .send({ text: 'drive-by' });
+    expect(res.body.leaseRenewed).toBe(false);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('pending');
+  });
+});
+
+describe('the AGENT request shape resolves too', () => {
+  // agentRuntimeAuth sets req.agentUser and NOT req.user. #1124 widened the
+  // identity list but read three of its four new fields off req.user, so for
+  // an MCP-authenticated agent it still collected only the ObjectId — the
+  // state before the widening. Confirmed live: TASK-029 returned
+  // leaseRenewed:false both before and after #1124 deployed.
+  // tasksApi's own `auth` dispatches on the Authorization header: a
+  // `cm_agent_*` token routes to agentRuntimeAuth, anything else to the human
+  // path. Without this header the request goes through the HUMAN mock and the
+  // agent branch is never exercised — which is how the first draft of these
+  // tests "passed the agent shape" while testing the human one.
+  const postAsAgent = (userId, agentUsername, text = 'still mine') => request(app)
+    .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
+    .set('Authorization', 'Bearer cm_agent_test')
+    .set('x-test-user', userId)
+    .set('x-test-agent-username', agentUsername)
+    .send({ text });
+
+  it('restores when lapsedFrom holds the bot USERNAME and the caller is an agent', async () => {
+    // The live case, exactly: lapsedFrom is the username the sweep took from
+    // holder.username, and the caller authenticates with an ObjectId.
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null,
+      lapsedFrom: 'pod-architect',
+    });
+
+    const res = await postAsAgent('6a693bfbe833c668acdce53b', 'pod-architect');
+    expect(res.body.leaseRenewed).toBe(true);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('claimed');
+    expect(row.lapsedFrom).toBeNull();
+  });
+
+  it('and when lapsedFrom holds the agentName', async () => {
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'pod-architect',
+    });
+    const res = await postAsAgent('6a693bfbe833c668acdce53b', 'pod-architect');
+    expect(res.body.leaseRenewed).toBe(true);
+  });
+
+  it('but NOT for a different agent', async () => {
+    // Widening must not become "any agent restores any lapsed row".
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'pod-architect',
+    });
+    const res = await postAsAgent('some-other-bot-id', 'ux-lead');
     expect(res.body.leaseRenewed).toBe(false);
     expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('pending');
   });
