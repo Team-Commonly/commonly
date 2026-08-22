@@ -2,11 +2,10 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
-// v1 auth / OAuth / use-case entry stubs — retained as thin pass-through pages
-// so hard-loaded external links (and their query strings) still resolve. The
-// rest of the v1 UI (Layout shell + feed/agents/pods/dashboard/… and the old
-// LandingPage) is deprecated and no longer mounted; NavigationHandler's
-// getV2EquivalentPath map redirects every legacy path into the v2 shell.
+// Auth, OAuth, and use-case entry stubs remain so hard-loaded external links
+// (and their query strings) still resolve. The former v1 shell and marketing
+// surfaces have been deleted; NavigationHandler redirects their old paths to
+// the v2 shell.
 import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
@@ -212,8 +211,8 @@ function NavigationHandler(): null {
 
   useEffect(() => {
     // v2 is the default UI: redirect any non-/v2 path that has a v2
-    // equivalent into the v2 shell. /v2/* stays directly routable; paths
-    // without a v2 equivalent (e.g. /legacy-landing) render as-is.
+    // equivalent into the v2 shell. /v2/* stays directly routable; remaining
+    // unmatched paths fall through to the router's v2 catch-all.
     if (!location.pathname.startsWith('/v2')) {
       const v2Path = getV2EquivalentPath(location.pathname, location.search);
       if (v2Path) {
@@ -281,11 +280,6 @@ function App(): React.ReactElement {
                     <Route path="/discord/callback" element={<DiscordCallback />} />
                     <Route path="/discord/success" element={<DiscordCallback type="success" />} />
                     <Route path="/discord/error" element={<DiscordCallback type="error" />} />
-                    {/* v1 shell (Layout + feed/agents/pods/dashboard/digest/apps/
-                        skills/activity/profile/admin/dev and the old /legacy-landing)
-                        is deprecated and no longer mounted. NavigationHandler
-                        redirects every legacy path into the v2 shell; the v1 component
-                        files remain on disk for now, just unrendered. */}
                     </Routes>
                   </div>
                 </BrowserRouter>

@@ -9,8 +9,8 @@ const RATING_ICON = '★';
 // V2 marketplace detail page — `/v2/marketplace/:installableId`.
 //
 // Surfaces a single Installable manifest from /api/marketplace/manifests/:id
-// (PR #215/#230 backend). Companion to the legacy AppsMarketplacePage mounted
-// at /v2/marketplace; this is the missing detail surface the audit at
+// (PR #215/#230 backend). Companion to the v2 marketplace browse page; this
+// is the missing detail surface the audit at
 // docs/audits/ui-smoke-2026-05-23/marketplace-v2-gaps.md called out as the
 // next-biggest gap after the browse-rewire (PR #436).
 //

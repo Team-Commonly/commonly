@@ -195,33 +195,10 @@ The application uses a combination of React Context API and local component stat
 The v2 shell (`frontend/src/v2/V2App.tsx`, mounted at `/v2/*`) is the default experience. Any non-`/v2` path that has a v2 equivalent is **redirected into the v2 shell** by `NavigationHandler` in `App.tsx` (via `getV2EquivalentPath`) — e.g. `/` → `/v2`, `/login` → `/v2/login`, `/register` → `/v2/register`, `/apps` → `/v2/marketplace`, `/feed` → `/v2/feed`. `/v2/*` is directly routable; a logged-out visitor lands on `/v2/login`.
 
 - **Auth pair**: `/v2/login` (`V2Login`) + `/v2/register` (`V2Register`, `src/v2/components/`) are v2-native (the `.v2-login` styles). The legacy MUI `Login`/`Register` only render at the bypassed v1 paths. Note: v2 auth components must put `.v2-login__card` on the `<form>`/`<div>` directly — a bare `<form>` picks up a dark global background.
-- **Landing**: the public marketing page is `V2LandingPage` (`src/v2/landing/`) at `/v2/landing`; the pre-v2 landing is preserved at `/legacy-landing`.
-- **Marketplace browse**: `V2MarketplacePage` (`src/v2/marketplace/`) at `/v2/marketplace`; the legacy `AppsMarketplacePage` stays on the v1 `/apps` mount.
-- Paths without a v2 equivalent (e.g. `/legacy-landing`, some `/admin/*`) render as-is.
-
-The v1 routes below are the **legacy surface** — mostly redirect sources now, kept for direct-link/back-compat.
-
-The application uses React Router with the following main routes:
-
-- `/`: Home page with feed of posts
-- `/`: Public landing page (marketing)
-- `/use-cases/:useCaseId`: Public use-case detail pages linked from landing
-- `/login`: User login
-- `/register`: User registration
-- `/register/invite-required`: Invitation code gate for invite-only signup
-- `/profile/:username`: User profile
-- `/pods`: List of available pods
-- `/pods/:podId`: Specific pod chat room
-- `/settings`: User settings
-- `/apps`: Apps Marketplace (webhook apps + built-in integrations catalog)
-- `/agents`: Agent Hub (agent registry)
-- `/admin/integrations/global`: Global Social Feed Integrations admin page (global admin only)
-- `/profile?tab=user-admin`: Global admin user + waitlist + invitation management (role assignment, user delete, waitlist review, invite code generation/revocation, invite-email send, paginated waitlist/invite lists)
-- `/admin/users`: Legacy global-admin route that redirects to `/profile?tab=user-admin`
-- Agent Hub includes per-agent model preferences (Gemini default), runtime token issuance, and revoke for external agents.
-- Agent installs can target multiple pods via the install dialog; remove actions surface for pod admins and installers.
-- Pod sidebar shows installed agents for the current pod with a Manage link to Agent Hub and per-agent remove (admin/installer only).
-- Pod member online indicators are driven by real-time presence updates (`podPresence`) from Socket.io.
+- **Landing**: the public marketing page is `V2LandingPage` (`src/v2/landing/`) at `/v2/landing`. The pre-v2 landing has been deleted.
+- **Marketplace browse**: `V2MarketplacePage` (`src/v2/marketplace/`) at `/v2/marketplace`. `/apps` redirects there; the pre-v2 marketplace has been deleted.
+- **Back-compatible entry points**: `Login`, `Register`, email verification, Discord OAuth, and public use-case pages remain thin direct-load stubs while in-app navigation redirects to v2.
+- The former v1 shell (feed, pods, dashboard, profile, agent hub, skills, activity, digest, admin, and dev pages) no longer has a router mount. Their old paths redirect to their v2 equivalents where one exists; other paths land on the v2 catch-all.
 
 ## Styling Approach
 
