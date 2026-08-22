@@ -77,6 +77,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-pods__item-snippet-row');
   });
 
+  test('the unread dot stays clear of the rounded row corner (name-wrap side effect)', () => {
+    // The title-row is align-items: flex-start (for the 2-line name wrap),
+    // which parks the dot flush at the row's top-right — inside the row's
+    // border-radius + overflow:hidden clip, where the rounding visibly
+    // shaved it (reported live 2026-08-22). Both margins are load-bearing:
+    // top centers it on the first text line, right clears the 10px curve.
+    // jsdom cannot see corner clipping — presence pin per this file's rule.
+    const dot = ruleBody(v2, '.v2-pods__item-dot');
+    expect(dot).toContain('margin-top: 6px');
+    expect(dot).toContain('margin-right: 4px');
+  });
+
   test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
     // Consecutive same-author messages within the grouping window drop the
     // header row; the ghost cell must match the .v2-msg grid's 38px avatar
