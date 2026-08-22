@@ -2314,13 +2314,32 @@ targets `main`, and reports 10 checks against `#1120`'s 11; the missing one is
 `frontend/** · backend/** · e2e/** · playwright.config.*` and a `docs/**` diff
 matches none of them. The workflow never dispatches, so the check never exists.
 
-The visible consequence is that a docs-only PR settles at `MERGEABLE/UNSTABLE`
-rather than `MERGEABLE/CLEAN`, permanently — there is no future event that will
-produce the absent check. `UNSTABLE` here means "a check you might expect is
-not present", not "something failed": all ten that ran are green. Anyone
-following a "merge only when CLEAN" rule will wait forever on documentation,
-and anyone reading `UNSTABLE` as "something broke" will go looking for a
-failure that does not exist.
+**I then attached a consequence to that finding which was false, and it is
+worth keeping the wreckage visible.** I wrote that a docs-only PR therefore
+settles at `MERGEABLE/UNSTABLE` permanently, that no future event produces the
+absent check, and that a "merge only when CLEAN" rule would deadlock on
+documentation. I posted that to the pod as something to act on.
+
+It is wrong. Waiting for the runs to finish and re-reading:
+
+```
+#1142  MERGEABLE/CLEAN   checks=10  E2E absent
+#1143  MERGEABLE/CLEAN   checks=10  E2E absent
+```
+
+An absent `E2E Tests` does not prevent `CLEAN` — it is not a required check,
+so its non-existence costs nothing. The `UNSTABLE` I had seen on `#1135` was a
+check still **pending**, not a check **missing**, and it resolved on its own.
+
+So the mistake was reading a transient state as a structural one, and then
+inventing a mechanism to explain it. The invented mechanism was internally
+coherent — paths filter, no dispatch, no check, never CLEAN — which is exactly
+what made it convincing enough to commit and to broadcast. Every step was true
+except the one connecting them to the observation.
+
+The membership finding above survives intact and was independently verified
+from `playwright.yml` and from `E2E=0` on all three PRs. Only the consequence
+was fabricated.
 
 So the denominator is a function of *(base, paths touched)*. Three of this
 entry's corrections have now come from treating a check count as comparable
