@@ -171,7 +171,63 @@ describe('the read is scoped', () => {
   });
 });
 
-describe('a missing cutoff is two different states, not one', () => {
+describe('unknown resolves to expand, never to collapse', () => {
+  // The merged ruling (threading-surface-ruling.md) went further than my two
+  // earlier attempts, and both were wrong in the same direction — toward
+  // collapsing. Collapsed hides history and the user cannot tell; expanded is
+  // noisy and one click fixes it.
+
+  const readDefaults = async () => (await read()).defaults;
+  beforeEach(async () => { await mockPool.query('DELETE FROM migration_records'); });
+
+  test('no ledger row => cutoffUnknown, whatever the history looks like', async () => {
+    // Previously this returned pending:false when no un-rooted edges existed,
+    // which told the client to collapse everything. On an already-backfilled
+    // instance whose row was lost, that hides all history.
+    await mockPool.query('UPDATE messages SET reply_to_message_id = NULL');
+    const d = await readDefaults();
+    expect(d.cutoffUnknown).toBe(true);
+    expect(d.expandedForRootsCreatedBefore).toBeNull();
+  });
+
+  test('and still unknown when un-rooted history exists', async () => {
+    await mockPool.query('UPDATE messages SET reply_to_message_id = 10 WHERE id = 11');
+    expect((await readDefaults()).cutoffUnknown).toBe(true);
+  });
+
+  test('a row with a NULL cutoff is KNOWLEDGE, not absence', async () => {
+    // The backfill ran and rooted nothing. That is a migrated instance with no
+    // pre-threading history — collapse is correct here, and it is the one case
+    // where a null cutoff does not mean unknown.
+    await mockPool.query(
+      `INSERT INTO migration_records (name, details)
+       VALUES ('threading-thread-root-id-backfill', '{"threadingCutoff":null}'::jsonb)`,
+    );
+    const d = await readDefaults();
+    expect(d.cutoffUnknown).toBe(false);
+    expect(d.expandedForRootsCreatedBefore).toBeNull();
+  });
+
+  test('a row with a cutoff governs, and un-rooted orphans do not override it', async () => {
+    // Orphans stay un-rooted forever by design. The retired probe counted them,
+    // so one dead row would have pinned the instance to expand permanently.
+    await mockPool.query('UPDATE messages SET reply_to_message_id = 10 WHERE id = 11');
+    await mockPool.query(
+      `INSERT INTO migration_records (name, details)
+       VALUES ('threading-thread-root-id-backfill', '{"threadingCutoff":"2026-08-22T12:21:11Z"}'::jsonb)`,
+    );
+    const d = await readDefaults();
+    expect(d.expandedForRootsCreatedBefore).toBe('2026-08-22T12:21:11Z');
+    expect(d.cutoffUnknown).toBe(false);
+  });
+});
+
+describe.skip('SUPERSEDED by the merged ruling — the pending-probe shape', () => {
+  // Left skipped rather than deleted for one release: these encode the
+  // behaviour the ruling replaced (un-rooted count as the discriminator), and
+  // a reader who finds only the new tests cannot tell that the old shape was
+  // considered and rejected.
+
   // @sprint-review 56862 asked whether the pre-cutoff comparison resolves
   // server-side. It does — via one timestamp. Following that through against
   // the live instance exposed an ambiguity in my own answer: a missing ledger

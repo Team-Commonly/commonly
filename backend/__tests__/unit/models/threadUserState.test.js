@@ -184,7 +184,9 @@ describe('the pre-cutoff expanded default reaches the client', () => {
   const CONTROLLER_SRC = read('controllers/threadStateController.ts');
 
   it('the response carries the cutoff, not just a boolean default', () => {
-    expect(CONTROLLER_SRC).toMatch(/expandedForRootsCreatedBefore: threadingCutoff/);
+    // Matches the KEY, not the local variable feeding it. Pinning the local
+    // broke on a rename of my own making.
+    expect(CONTROLLER_SRC).toMatch(/expandedForRootsCreatedBefore:/);
   });
 
   it('it is read from the migration ledger, by the shared constant', () => {
@@ -210,13 +212,18 @@ describe('the pre-cutoff expanded default reaches the client', () => {
     expect(CONTROLLER_SRC).toMatch(/Promise\.all\(\[/);
   });
 
-  it('a missing ledger row degrades to null rather than failing the read', () => {
-    // A cosmetic default must never take the render path down.
-    expect(CONTROLLER_SRC).toMatch(/} catch {\s*return null;/);
+  it('a read failure degrades toward EXPAND, not toward collapse', () => {
+    // Not just "does not throw": the direction matters. Collapsed hides
+    // history invisibly; expanded is noisy and recoverable by one click.
+    expect(CONTROLLER_SRC).toMatch(/} catch \{[\s\S]{0,400}return \{ cutoff: null, cutoffUnknown: true \};/);
   });
 
-  it('null is documented as "no pre-cutoff roots", never as "unknown"', () => {
-    // The dangerous misreading would expand every thread on a fresh instance.
-    expect(CONTROLLER_SRC).toMatch(/NOT "unknown"/);
+  it('a missing row is UNKNOWN and unknown expands', () => {
+    // Two earlier shapes of mine were wrong in the same direction. The merged
+    // ruling settles it: absence of a ledger row never licenses collapse.
+    expect(CONTROLLER_SRC).toMatch(/cutoffUnknown/);
+    expect(CONTROLLER_SRC).toMatch(/EXPAND EVERYTHING/);
+    // and the retired probe is really gone, not just unused
+    expect(CONTROLLER_SRC).not.toMatch(/backfillPending/);
   });
 });
