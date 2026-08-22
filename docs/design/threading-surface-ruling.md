@@ -24,6 +24,15 @@
 
 **Not part of the skeleton (explicitly):** thread titles, pinning, moving messages into threads, thread search. Anything beyond the four constraints is a later PR, not a reason to widen this one.
 
+## One state record, two booleans (consequence costed 2026-08-22, sprint-review 56796)
+
+Persisted collapse (constraint 2) and follow state share the key `(userId, podId, threadRootId)`. Ruling: **one record per key carrying both `following` and `collapsed`** — not two tables, not two writes for one gesture. The two are independent booleans with different defaults and different writers:
+
+- `following` defaults from participation (post or @-mention → `true`); the header toggle writes it.
+- `collapsed` defaults to `true` for everyone, including followers; only the expand/collapse gesture writes it. **Following never implies expanded** — a followed thread wakes you and floats in Activity, it does not open itself in the channel.
+
+Skeleton implication: the follow-state migration in the walking skeleton adds the `collapsed` column at birth rather than in a later PR, since the key already exists.
+
 ## Provenance of each line
 
 - Constraints 1–3, persisted collapse, and the three reasons: 55852 (above).
