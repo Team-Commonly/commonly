@@ -126,6 +126,8 @@ export interface UseV2PodDetailResult {
   agents: V2Agent[];
   loading: boolean;
   error: string | null;
+  /** Send failures belong beside the composer; load failures use `error`. */
+  sendError: string | null;
   /** A full page came back, so older history probably exists. */
   hasMore: boolean;
   loadingOlder: boolean;
@@ -207,6 +209,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [agents, setAgents] = useState<V2Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
@@ -294,10 +297,12 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       setPod(null);
       setMessages([]);
       setAgents([]);
+      setSendError(null);
       return;
     }
     setLoading(true);
     setError(null);
+    setSendError(null);
     try {
       await fetchPod(podId);
       const [messagesResult] = await Promise.allSettled([
@@ -393,7 +398,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const sendMessage = useCallback(async (content: string, messageType = 'text', replyToMessageId?: string): Promise<V2Message | null> => {
     if (!podId || !content.trim()) return null;
     try {
-      setError(null);
+      setSendError(null);
       const created = await api.post<V2Message>(
         `/api/messages/${podId}`,
         { content: content.trim(), messageType, ...(replyToMessageId ? { replyToMessageId } : {}) },
@@ -419,7 +424,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       return normalized;
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
+      setSendError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
       return null;
     }
   }, [api, podId]);
@@ -429,7 +434,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   );
 
   return {
-    pod, members, messages, agents, loading, error, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
+    pod, members, messages, agents, loading, error, sendError, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
   };
 };
 

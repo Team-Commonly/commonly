@@ -98,4 +98,20 @@ describe('useV2PodDetail reply threading (#646)', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].replyTo).toEqual(replyTo);
   });
+
+  it('keeps a send failure separate from pod load errors', async () => {
+    mockApi.post.mockRejectedValue({
+      response: { data: { error: 'Replies are temporarily unavailable. Please try again shortly.' } },
+    });
+
+    const { result } = renderHook(() => useV2PodDetail('p1'));
+    await waitFor(() => expect(socketHandlers.newMessage).toBeDefined());
+
+    await act(async () => {
+      await result.current.sendMessage('a reply', 'text', 'm1');
+    });
+
+    expect(result.current.sendError).toBe('Replies are temporarily unavailable. Please try again shortly.');
+    expect(result.current.error).toBeNull();
+  });
 });
