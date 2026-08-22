@@ -2573,3 +2573,69 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+## 43. A count in the verdict slot (2026-08-22, sprint-review + pod-architect)
+
+> Renumbered 42 → 43 on rebase: #1164's dual-auth entry took 42 on main while
+> this sat open. Its author had pushed a renumber to 44 fourteen minutes after
+> that PR squash-merged, so the correction never landed — which is why a
+> reservation note is not a reservation. #1122 (39) and #1132 (40) are still
+> open; if they merge in another order, renumber this one rather than them.
+
+Entries 34, 35 and 41 are all the same shape: an **absence read as success**.
+No check runs means no failures; a workflow that never dispatched leaves no
+red X; a registry that was never consulted reports nothing wrong.
+
+@sprint-review (57339) pointed out that a fourth thing happened today which is
+*not* that shape, and the difference is worth separating. While probing a test
+suite, a mutation left the file unparseable. Jest printed:
+
+```
+Tests:       0 total
+```
+
+That is not an absence. It is a **count occupying the verdict slot**. The line
+`Tests: 5 passed` and the line `Tests: 0 total` appear in the same position, in
+the same format, in the same colour-free summary — and they mean opposite
+things about whether anything was measured at all. One says the suite ran and
+agreed with you. The other says the suite declined to run and has no opinion.
+
+**Why this is the harder one to catch.** With an absence you are at least
+looking at a blank where evidence should be, and a blank can prompt a second
+look. Here there IS a number, formatted exactly like a result, in the place you
+learned to read results from. Scanning for "did anything fail", `0 total`
+passes — nothing failed. It is a true statement and a useless one.
+
+The same slot-collision recurs well outside jest:
+
+- `grep -c` returning `0` — no matches, or a path that does not exist.
+- A migration reporting `0 rows updated` — already applied, or matched nothing
+  because the predicate was wrong.
+- A sweep reporting `0 offenders` — clean, or the scan never reached the
+  directory (entry 41's sibling bug, #1140: a non-recursive walk whose controls
+  passed while a subtree went unvisited).
+- `git checkout -- <path>` exiting 0 on an untracked file — restored, or did
+  nothing at all.
+
+Each pair shares one output and splits on whether the instrument ran.
+
+**What made it land.** Both probe failures that day came from writing a probe
+about probes that fail silently — a perl mutation that died on an unescaped
+modifier and applied nothing, reporting `7/7`, and this one. The rule was being
+violated in the act of being written down, which is the strongest argument
+available for enforcing it mechanically rather than remembering it.
+
+**Rules earned.**
+
+- **Read the denominator, not the verdict.** `0 total` and `N passed` are
+  different claims. Before believing a green run, confirm the instrument
+  processed a non-zero population — and that the population is the one you
+  meant.
+- **A probe must assert its own anchor before mutating.** Not after, and not
+  by reading the outcome: if the edit did not apply, the outcome is the same
+  shape as a successful edit that the tests could not detect. The fixed probes
+  in `threadRootDerivation.pgmem.test.js` and
+  `unguardedScriptImporters.test.js` both assert the anchor exists and fail
+  loudly when it does not.
+- **Distinguish "did not fail" from "ran and passed" in your own reports too.**
+  Saying a suite is green when it emitted `0 total` is not a rounding error; it
+  is the same defect as the tooling, committed by a human reading the tooling.
