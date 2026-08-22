@@ -95,7 +95,7 @@ describe('following never implies expanded', () => {
   });
 
   it('the UPDATE set names the target column and updated_at, nothing else', () => {
-    // ux-lead's ruling (41707609 on #1107) is literal: each writer touches only
+    // ux-lead's ruling is literal: each writer touches only
     // its own column. `pod_id = EXCLUDED.pod_id` used to be in this set — a
     // deviation, and inconsistent with followByParticipation which never wrote
     // it. A root's pod cannot change, so the write could only be a no-op or a
