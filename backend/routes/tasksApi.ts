@@ -16,8 +16,6 @@ const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
-const GitHubAppService = require('../services/githubAppService');
-// eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
 
 /**
@@ -69,7 +67,10 @@ const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => 
 
 interface AuthReq {
   userId?: string;
-  user?: { id?: string; _id?: unknown; isBot?: boolean; botMetadata?: { instanceId?: string; agentName?: string } };
+  // `username` is here because the sweep can write it into `lapsedFrom`
+  // (provenance falls back through holder.label = assignee || username ||
+  // claimedBy), so the restore path must be able to match on it.
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
   agentUser?: { _id?: unknown };
   params?: Record<string, string>;
   query?: Record<string, string>;
@@ -220,9 +221,6 @@ router.post('/:podId', rateLimit({
       parentTask: parentTaskInput,
       source: sourceInput,
       sourceRef: sourceRefInput,
-      githubIssueNumber: githubIssueNumberInput,
-      githubIssueUrl: githubIssueUrlInput,
-      createGithubIssue: createGithubIssueInput,
     } = req.body || {};
     const stringInputs: Record<string, unknown> = {
       title: titleInput,
@@ -231,24 +229,14 @@ router.post('/:podId', rateLimit({
       parentTask: parentTaskInput,
       source: sourceInput,
       sourceRef: sourceRefInput,
-      githubIssueUrl: githubIssueUrlInput,
     };
     const invalidStringField = Object.entries(stringInputs)
       .find(([, value]) => value !== undefined && typeof value !== 'string');
     if (invalidStringField) {
       return res.status(400).json({ error: `${invalidStringField[0]} must be a string` });
     }
-    if (githubIssueNumberInput !== undefined
-      && (typeof githubIssueNumberInput !== 'number'
-        || !Number.isSafeInteger(githubIssueNumberInput)
-        || githubIssueNumberInput < 1)) {
-      return res.status(400).json({ error: 'githubIssueNumber must be a positive integer' });
-    }
     if (depMockOkInput !== undefined && typeof depMockOkInput !== 'boolean') {
       return res.status(400).json({ error: 'depMockOk must be a boolean' });
-    }
-    if (createGithubIssueInput !== undefined && typeof createGithubIssueInput !== 'boolean') {
-      return res.status(400).json({ error: 'createGithubIssue must be a boolean' });
     }
     // Materialize primitives after runtime validation so Mongo never receives
     // user-supplied query objects (for example, operator-shaped values).
@@ -258,10 +246,7 @@ router.post('/:podId', rateLimit({
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
     const sourceRef = sourceRefInput === undefined ? undefined : String(sourceRefInput);
-    const githubIssueUrl = githubIssueUrlInput === undefined ? undefined : String(githubIssueUrlInput);
-    const githubIssueNumber = githubIssueNumberInput === undefined ? undefined : Number(githubIssueNumberInput);
     const depMockOk = depMockOkInput === true;
-    const createGithubIssue = createGithubIssueInput === true;
     if (!title) return res.status(400).json({ error: 'title is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -273,8 +258,8 @@ router.post('/:podId', rateLimit({
           existing.assignee = assignee || undefined;
           existing.claimedAt = null;
           existing.claimExpiresAt = null;
-          existing.notes = 'Reopened — previously completed but issue is still open.';
-          existing.updates.push({ text: 'Reopened: task was done but linked issue is still open — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
+          existing.notes = 'Reopened — the same source is active again.';
+          existing.updates.push({ text: 'Reopened: task was done but its source is active again — picking up again.', author: 'system', authorId: null, createdAt: new Date() });
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
@@ -284,43 +269,21 @@ router.post('/:podId', rateLimit({
         return res.json({ task: existing.toObject(), alreadyExists: true });
       }
     }
-    let ghNumber = githubIssueNumber || null;
-    let ghUrl = githubIssueUrl || null;
-    // Provenance, not decoration. `githubIssueNumber` arrives from the caller
-    // and is validated only as a positive integer — it can name ANY issue in
-    // the repo. Only an issue this server opened may later be written to.
-    let ghOwned = false;
-    if (createGithubIssue && title && GitHubAppService.isPatConfigured()) {
-      try {
-        const bodyParts: string[] = [];
-        if (assignee) bodyParts.push(`Assigned to: ${assignee}`);
-        if (parentTask) bodyParts.push(`Parent task: ${parentTask}`);
-        if (dep) bodyParts.push(`Blocked by: ${dep}`);
-        const issue = await GitHubAppService.createIssue({ title, body: bodyParts.join('\n') || undefined }) as { number: number; html_url: string };
-        ghNumber = issue.number;
-        ghUrl = issue.html_url;
-        ghOwned = true;
-      } catch (ghErr) {
-        console.warn('createGithubIssue failed (non-fatal):', (ghErr as Error).message);
-      }
-    }
     const author = await resolveAuthor(req);
     const { taskId, taskNum } = await nextTaskId(podId || '');
     const initUpdate: { text: string; author: string; authorId: string | null; createdAt: Date } = { text: `Created by ${author}`, author, authorId: userId?.toString() || null, createdAt: new Date() };
     if (assignee) initUpdate.text = `Created by ${author} · assigned to ${assignee}`;
     if (sourceRef) initUpdate.text = `Created by ${author} from ${sourceRef}${assignee ? ` · assigned to ${assignee}` : ''}`;
-    if (ghNumber) initUpdate.text += ` · GH#${ghNumber}`;
     if (parentTask) initUpdate.text += ` · sub-task of ${parentTask}`;
     // `source` is provenance for task creation, so an agent-authenticated
-    // caller may not self-identify as human (or any other source) through
-    // the request body. Human callers retain the existing source override
-    // for GitHub/import workflows.
+    // caller may not self-identify as human (or any other source) through the
+    // request body. Human callers retain the explicit source override.
     const taskSource = req.agentUser?._id
       ? 'agent'
-      : source || (ghNumber ? 'github' : 'human');
+      : source || 'human';
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef: sourceRef || (ghNumber ? `GH#${ghNumber}` : undefined), githubIssueNumber: ghNumber, githubIssueUrl: ghUrl, githubIssueOwned: ghOwned, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
@@ -349,20 +312,6 @@ router.post('/:podId', rateLimit({
       }) as { toObject: () => unknown } | null;
       if (!existing) throw createErr;
       return res.json({ task: existing.toObject(), alreadyExists: true });
-    }
-    if (parentTask && GitHubAppService.isPatConfigured()) {
-      try {
-        const parent = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId: parentTask }).lean() as { githubIssueNumber?: number; githubIssueOwned?: boolean } | null;
-        // Same provenance gate as the close path: a parent task's issue number
-        // is caller-supplied too, so commenting on it unowned would let any
-        // caller post attacker-chosen text (`title`) to an arbitrary issue.
-        if (parent?.githubIssueNumber && parent.githubIssueOwned) {
-          const depNote = dep ? ` (blocked by ${dep})` : '';
-          GitHubAppService.addIssueComment({ issueNumber: parent.githubIssueNumber, comment: `**Sub-task created:** ${taskId} — ${title}${depNote}\nAssigned to: ${assignee || 'unassigned'}` }).catch((e: Error) => console.warn('GH sub-task comment failed:', e.message));
-        }
-      } catch (e) {
-        console.warn('Parent GH lookup failed (non-fatal):', (e as Error).message);
-      }
     }
     emitTaskUpdated(podId, task, 'created');
     notifyAgents(req, podId, task, 'created');
@@ -468,7 +417,11 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const now = new Date();
-    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS) }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
+    // `rescueDeferrals` and `lapsedFrom` reset on every claim (#1080 part 2/3).
+    // The deferral budget is per-lease, not per-task: a seat that renews
+    // normally must never inherit a predecessor's spent budget, or the third
+    // holder of a hot task gets rescued on its first lapse.
+    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
     // One CAS, four ways to win: the task is unclaimed; the caller already
     // holds it (renewal); the holder's lease lapsed; or the claim predates
     // leases entirely (claimExpiresAt null) and is older than one lease —
@@ -511,33 +464,11 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
     const update = { $set: { status: 'done', completedAt: new Date(), ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: new Date() } } };
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { githubIssueNumber?: number; githubIssueOwned?: boolean; taskId?: string; updates?: unknown[] } | null;
+    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId, status: { $in: ['claimed', 'pending'] } }, update, { new: true }) as { taskId?: string; updates?: unknown[] } | null;
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       return res.status(409).json({ error: 'Task is already done', status: existing.status });
-    }
-    // `githubIssueOwned` gates the write, NOT `githubIssueNumber`. The number is
-    // caller-supplied on create and validated only as a positive integer, so
-    // trusting it here let any agent token close an arbitrary issue in our
-    // repository under our PAT — with `prUrl`, also caller-supplied, appearing
-    // in the closing comment. Legacy tasks predate the flag and therefore no
-    // longer auto-close: failing closed is the correct direction for a write we
-    // cannot prove we own.
-    if (task.githubIssueNumber && task.githubIssueOwned && GitHubAppService.isPatConfigured()) {
-      (async () => {
-        try {
-          const subTasks = await Task.find({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), parentTask: task.taskId }).select('taskId title status prUrl').lean() as Array<{ taskId?: string; title?: string; status?: string; prUrl?: string }>;
-          let closeComment = prUrl ? `Completed via ${prUrl}` : `Completed by ${author}`;
-          if (subTasks.length > 0) {
-            const subLines = subTasks.map((s) => { const icon = s.status === 'done' ? '✅' : s.status === 'blocked' ? '❌' : '⏳'; return `${icon} ${s.taskId}: ${s.title}${s.prUrl ? ` — [PR](${s.prUrl})` : ''}`; });
-            closeComment += `\n\n**Sub-tasks:**\n${subLines.join('\n')}`;
-          }
-          await GitHubAppService.closeIssue({ issueNumber: task.githubIssueNumber, comment: closeComment });
-        } catch (err) {
-          console.warn(`Failed to auto-close GH#${task.githubIssueNumber}:`, (err as Error).message);
-        }
-      })();
     }
     // ADR-012 §4: task-completed trigger. Fire-and-forget; only writes when
     // the assignee is a recognized agent member of the pod.
@@ -579,11 +510,117 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const author = await resolveAuthor(req);
-    const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, { $push: { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: new Date() } } }, { new: true });
+    const now = new Date();
+    const note = { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: now } };
+    const podFilter = mongoose.Types.ObjectId.createFromHexString(podId || '');
+
+    // #1080 part 1 (fable's ruling; @sprint-impl's shape): renewal derives
+    // from WORK. A progress note is the signal a working holder naturally
+    // produces, and the lease ignored it — @sprint-review measured exactly
+    // that on TASK-015, where a 09:27:30 rebase note did not stop a 09:51:11
+    // lapse. So a note from the holder renews; a note from anyone else does
+    // not, or any passing peer could keep a dead seat's claim alive forever.
+    //
+    // Holder-match is evaluated SERVER-SIDE, in the filter, never from a
+    // snapshot — same rule the rescue CAS follows. Two attempts rather than
+    // one conditional write: the renewing form first, the note-only form as
+    // fallback. The note lands either way; only the lease extension is gated.
+    const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
+    let task = claimKey
+      ? await Task.findOneAndUpdate(
+        { podId: podFilter, taskId, status: 'claimed', claimedBy: claimKey },
+        // `rescueDeferrals: 0` alongside the lease. Found by @sprint-review
+        // (pod 56544) after #1082 shipped: the note-renewal wrote only
+        // `claimExpiresAt`, so a holder who renews by posting progress —
+        // the natural habit, since you write updates anyway — extended the
+        // lease indefinitely while the deferral budget ticked down and never
+        // came back. Three lapses later the kernel rescues them for doing
+        // exactly what its own cue told them to do ("Renew by posting a task
+        // update or re-claiming", offered as equivalent choices).
+        //
+        // Part 1 (renewal-from-work) and part 2 (the deferral budget) shipped
+        // in one PR and were never composed. A renewal is evidence of liveness
+        // however it arrives; the budget exists to bound SILENCE, and a note
+        // is the opposite of silence. Observed live on TASK-025: note at
+        // 04:35:54 moved claimExpiresAt to 05:05:54 with rescueDeferrals stuck
+        // at 1.
+        { $set: { claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0 }, $push: note },
+        { new: true },
+      )
+      : null;
+    let leaseRenewed = Boolean(task);
+
+    // Second attempt: the row was already swept back to `pending` before the
+    // note arrived. The renewing filter above requires `status: 'claimed'`, so
+    // it misses — and the note-only fallback below then returns 200 with no
+    // lease, leaving the caller believing it renewed when it did not.
+    //
+    // That is not a hypothetical. The deferral warning tells the holder "post a
+    // task update or re-claim — either renews the lease", and delivery latency
+    // means the warning routinely ARRIVES after the sweep it was warning about.
+    // Observed on TASK-029, 2026-08-22: warning written 12:24 (2 deferrals
+    // left), row swept to pending 12:54, note posted 12:56 landed with
+    // status still `pending` and claimedBy null. The seat only noticed because
+    // it read the response body.
+    //
+    // `lapsedFrom` names the seat the sweep took it from, so this restores the
+    // claim to its former holder and NOBODY else. If a peer claimed the row in
+    // between, status is `claimed` with their id and both filters miss — the
+    // race is won by the peer, which is the whole point of returning it to the
+    // board. This makes the cue's two options actually equivalent.
+    // `lapsedFrom` is POLYMORPHIC by design and must be matched as such. The
+    // sweep writes `provenance = holder?.label || t.assignee || t.claimedBy`,
+    // and `label` is itself `assignee || holder?.username || claimedBy`. So the
+    // field can hold an assignee NAME, a bot USERNAME, or a User ObjectId
+    // string, depending on which fallback fired.
+    //
+    // The first version of this matched `lapsedFrom: claimKey` — one shape —
+    // and claimKey is the ObjectId for MCP-authenticated agents. Verified live
+    // on TASK-029: lapsedFrom was "pod-architect" (the username) while
+    // claimedBy had been "6a693bfb…", so the restore never fired and the
+    // response honestly reported leaseRenewed:false. Dead code in the common
+    // case, and it only had a test because the fixture set lapsedFrom to the
+    // same value the test passed as the caller.
+    //
+    // Same name-vs-id trap as `assignee` (a name) versus `claimedBy` (an id):
+    // two string fields in one document whose value spaces never overlap.
+    const identities = [
+      claimKey,
+      userId?.toString(),
+      resolveAgentInstanceId(req),
+      req.user?.botMetadata?.agentName,
+      req.user?.username,
+    ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+    if (!task && identities.length) {
+      task = await Task.findOneAndUpdate(
+        { podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } },
+        {
+          $set: {
+            status: 'claimed',
+            claimedBy: claimKey,
+            claimedAt: now,
+            claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS),
+            rescueDeferrals: 0,
+            lapsedFrom: null,
+          },
+          $push: note,
+        },
+        { new: true },
+      );
+      leaseRenewed = Boolean(task);
+    }
+
+    if (!task) {
+      task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
+    }
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
-    return res.json({ task });
+    // Reported explicitly. A note that did not renew is a legitimate outcome
+    // (a peer now holds the row, or you never did), but it must never be
+    // indistinguishable from one that did — that silence is the whole bug.
+    return res.json({ task, leaseRenewed });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
     return res.status(500).json({ error: 'Failed to add update' });
@@ -665,5 +702,11 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
 });
 
 module.exports = router;
+// `module.exports = router` CLOBBERS the ES named exports above — under CJS
+// require, `claimableConditions` did not survive and destructuring it returned
+// undefined (found when the kernel-sweep contract pin tried to import it; the
+// export had been unreachable since #1022 shipped it). Re-attached explicitly
+// so the single definition of "claimable" is actually consumable.
+module.exports.claimableConditions = claimableConditions;
 
 export {};

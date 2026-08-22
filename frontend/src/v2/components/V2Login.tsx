@@ -119,6 +119,16 @@ const V2Login: React.FC = () => {
           {' '}
           <Link to="/v2/register" className="v2-login__link">{t('auth.login.createAccount')}</Link>
         </div>
+
+        {/* LICENSE REQUIREMENT, not decoration: the bigSmile avatar style is
+            CC BY 4.0 and its terms require visible attribution. If avatar
+            styles change, this line and the license re-check move together —
+            see the character-tier note in v2/utils/avatars.ts. */}
+        <div className="v2-login__hint" style={{ fontSize: 11, opacity: 0.7 }}>
+          {'Avatars: '}
+          <a className="v2-login__link" href="https://www.dicebear.com" target="_blank" rel="noreferrer">DiceBear</a>
+          {' — “Big Smile” (CC BY 4.0)'}
+        </div>
       </form>
     </div>
   );

@@ -51,6 +51,14 @@ const renderAt = (path: string, auth = baseAuth) => render(
 );
 
 describe('V2 routing', () => {
+  test('auth boot centers the branded typing mark instead of an inline spinner', () => {
+    renderAt('/v2', { ...baseAuth, loading: true });
+
+    expect(screen.getByRole('status', { name: 'Loading Commonly' })).toBeInTheDocument();
+    expect(document.querySelectorAll('.v2-boot__mark-dot')).toHaveLength(3);
+    expect(document.querySelector('.v2-spinner')).not.toBeInTheDocument();
+  });
+
   test('login route renders v2 login form', () => {
     renderAt('/v2/login');
     expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();

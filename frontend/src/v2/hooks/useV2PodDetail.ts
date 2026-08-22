@@ -16,11 +16,15 @@ export interface V2Message {
   user?: {
     username: string;
     profile_picture?: string | null;
+    // Face-vs-robot avatar tier. The PG SELECT always fetched u.is_bot; the
+    // backend mapper now forwards it instead of dropping it.
+    isBot?: boolean;
   };
   userId?: string | {
     _id?: string;
     username?: string;
     profilePicture?: string | null;
+    isBot?: boolean;
   };
   // Reply threading (PG reply_to_message_id). POST/GET responses carry either
   // the normalized `replyTo` object or the raw reply_* columns; the bubble
@@ -122,6 +126,8 @@ export interface UseV2PodDetailResult {
   agents: V2Agent[];
   loading: boolean;
   error: string | null;
+  /** Send failures belong beside the composer; load failures use `error`. */
+  sendError: string | null;
   /** A full page came back, so older history probably exists. */
   hasMore: boolean;
   loadingOlder: boolean;
@@ -151,6 +157,7 @@ const normalizeMessage = (raw: V2Message): V2Message => {
   const userObject = typeof rawUserId === 'object' && rawUserId !== null ? rawUserId : null;
   const username = raw.user?.username || userObject?.username || 'Unknown';
   const profilePicture = raw.user?.profile_picture || userObject?.profilePicture || null;
+  const isBot = raw.user?.isBot ?? userObject?.isBot;
   return {
     ...raw,
     id: raw.id || (raw as { _id?: string })._id || '',
@@ -162,6 +169,10 @@ const normalizeMessage = (raw: V2Message): V2Message => {
     user: {
       username,
       profile_picture: profilePicture,
+      // Absent on old cached payloads and some socket shapes — undefined means
+      // "unknown", and V2Avatar renders the neutral tier for unknown rather
+      // than guessing a species.
+      ...(isBot === undefined ? {} : { isBot }),
     },
   };
 };
@@ -198,6 +209,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [agents, setAgents] = useState<V2Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
@@ -285,10 +297,12 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       setPod(null);
       setMessages([]);
       setAgents([]);
+      setSendError(null);
       return;
     }
     setLoading(true);
     setError(null);
+    setSendError(null);
     try {
       await fetchPod(podId);
       const [messagesResult] = await Promise.allSettled([
@@ -384,7 +398,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const sendMessage = useCallback(async (content: string, messageType = 'text', replyToMessageId?: string): Promise<V2Message | null> => {
     if (!podId || !content.trim()) return null;
     try {
-      setError(null);
+      setSendError(null);
       const created = await api.post<V2Message>(
         `/api/messages/${podId}`,
         { content: content.trim(), messageType, ...(replyToMessageId ? { replyToMessageId } : {}) },
@@ -410,7 +424,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       return normalized;
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
-      setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
+      setSendError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to send message');
       return null;
     }
   }, [api, podId]);
@@ -420,7 +434,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   );
 
   return {
-    pod, members, messages, agents, loading, error, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
+    pod, members, messages, agents, loading, error, sendError, hasMore, loadingOlder, loadOlder, refresh, sendMessage,
   };
 };
 

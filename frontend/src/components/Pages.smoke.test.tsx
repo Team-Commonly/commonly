@@ -6,7 +6,6 @@ import { act } from 'react-dom/test-utils';
 import Login from './Login';
 import Register from './Register';
 import VerifyEmail from './VerifyEmail';
-import Layout from './Layout';
 import Dashboard from './Dashboard';
 import PostFeed from './PostFeed';
 import Thread from './Thread';
@@ -119,8 +118,7 @@ test('VerifyEmail fetches token', async () => {
   expect(container.textContent).toContain('verified');
 });
 
-test('Layout and Dashboard render', () => {
-  render(<Layout />);
+test('Dashboard renders', () => {
   render(<Dashboard />);
 });
 

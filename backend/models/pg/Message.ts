@@ -34,7 +34,7 @@ interface FormattedMessage extends MessageRow {
   text: string;
   messageType: string;
   createdAt: unknown;
-  userId: { _id: string; username: string; profilePicture?: string } | string;
+  userId: { _id: string; username: string; profilePicture?: string; isBot?: boolean } | string;
   replyTo: { id: string; content: string; username: string; userId: string } | null;
 }
 
@@ -62,7 +62,16 @@ function formatMessage(msg: MessageRow): FormattedMessage {
     createdAt: msg.created_at,
     user_id: userId,
     userId: msg.username
-      ? { _id: userId, username: msg.username || 'Unknown User', profilePicture: msg.profile_picture }
+      ? {
+        _id: userId,
+        username: msg.username || 'Unknown User',
+        profilePicture: msg.profile_picture,
+        // The SELECT has fetched u.is_bot since the beginning; this mapper was
+        // dropping it, so the frontend could never tell an agent's message
+        // from a human's without a second lookup. Needed by the avatar tier
+        // split (humans get faces, agents get robots).
+        isBot: msg.is_bot === true,
+      }
       : userId,
     replyTo: msg.reply_msg_id
       ? {
@@ -87,9 +96,34 @@ class Message {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
     });
+    // Threading (W-T, TASK-029). The root is DERIVED from the reply edge on
+    // write and stored, never walked on read: `reply_to_message_id` carries no
+    // index (schema.sql indexes pod_id and created_at only), so resolving a
+    // root per read is a sequential scan per level of the chain.
+    //
+    // One level of derivation is enough for any depth. A reply to a root takes
+    // that root's id; a reply to a reply inherits the root the parent already
+    // stored. Measured on the live instance before this shipped: 227 reply
+    // edges, max chain depth 7, and every one of those deeper links resolves
+    // by this same inheritance because the parent was written first.
+    //
+    // COALESCE(parent.thread_root_id, parent.id) is the whole rule — a parent
+    // that is itself a root has NULL there and contributes its own id.
+    //
+    // Deliberately NOT derived from anything but the reply edge: thread_root_id
+    // must never acquire addressing semantics (see schema.sql).
+    //
+    // The `::int` casts are explicit on purpose. Postgres infers them fine
+    // either way, but without them the scalar subquery is typed as an array by
+    // pg-mem — which is what lets this exact query be exercised at the unit
+    // tier instead of only against a real server. A cast that costs nothing in
+    // production and buys a fast test everywhere is worth writing down.
     const query = `
-      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload, thread_root_id)
+      SELECT $1, $2, $3, $4, $5::int, $6,
+             (SELECT COALESCE(parent.thread_root_id, parent.id)
+                FROM messages parent
+               WHERE parent.id = $5::int)::int
       RETURNING *
     `;
     try {
@@ -158,7 +192,7 @@ class Message {
         SELECT
           m.id, m.pod_id, m.user_id, m.content, m.message_type, m.payload,
           m.reply_to_message_id, m.created_at, m.updated_at,
-          u._id as user_db_id, u.username, u.profile_picture,
+          u._id as user_db_id, u.username, u.profile_picture, u.is_bot,
           rm.id as reply_msg_id, rm.content as reply_content,
           rm.user_id as reply_user_id, ru.username as reply_username
         FROM messages m

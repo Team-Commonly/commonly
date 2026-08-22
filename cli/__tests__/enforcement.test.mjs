@@ -125,6 +125,37 @@ describe('createCascadeGovernor', () => {
 // silence. It is neither. These pin the shape the docstring now claims, so a
 // future edit that makes refusals record (or that shares state across pods)
 // fails here instead of quietly re-arming the wrong mental model.
+describe('classifyTrigger — the kernel branch (#1044)', () => {
+  it('classifies a kernel-found wake as kernel, before any dmKind reading', () => {
+    // triggerAuthor is the honest field (#1018) and wins where both appear.
+    expect(classifyTrigger({ payload: { triggerAuthor: 'kernel' } }, [])).toBe('kernel');
+    expect(classifyTrigger(
+      { payload: { triggerAuthor: 'kernel', dmKind: 'agent-agent' } }, [],
+    )).toBe('kernel');
+  });
+
+  it('a kernel wake neither counts toward the streak nor clears it', () => {
+    // Priced as agent it silences seats exactly when the board is busiest;
+    // priced as human it clears the brake on unrelated cascades. Neutral,
+    // by design rather than by fallback.
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+
+    gov.record('pod', 'kernel');
+    // Still capped: the kernel turn did not reset the brake...
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+    // ...and the kernel wake itself is always admitted.
+    expect(gov.admit('pod', 'kernel', 'message.posted').allowed).toBe(true);
+  });
+
+  it('an old-CLI payload shape (no triggerAuthor, no messageId) stays unknown-neutral', () => {
+    // Graceful degradation: a fleet that predates the branch prices kernel
+    // wakes as unknown, which is also neutral — never silencing.
+    expect(classifyTrigger({ payload: { boardWake: true, content: 'x' } }, [])).toBe('unknown');
+  });
+});
+
 describe('cascade governor — token-bucket shape', () => {
   // Mirrors the run loop: agent.js returns on a refusal WITHOUT calling
   // record(), so only admitted turns move `lastAgentTurnAt`.

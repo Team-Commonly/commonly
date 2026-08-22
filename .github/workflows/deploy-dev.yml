@@ -192,15 +192,28 @@ jobs:
       #
       # `kubectl rollout status` is the honest instrument: it returns non-zero
       # on a genuine stuck rollout, so a real regression still fails the job.
-      # Per-deployment timeouts, because clawdbot-gateway carries two init
-      # containers and legitimately takes minutes longer than the rest.
+      #
+      # The list is DERIVED from the cluster, never hardcoded. The hardcoded
+      # version waited 8 minutes for clawdbot-gateway after #1051 parked it
+      # (enabled: false removes the Deployment entirely), which made every
+      # deploy go red while succeeding — alarm fatigue over the exact signal
+      # this step exists to give. Deriving also means a future workload joins
+      # the gate the moment its chart ships it, and a parked one leaves it the
+      # moment it is disabled — the gate follows the release, not a memory of
+      # it. A deployment scaled to zero passes instantly (0 of 0 updated),
+      # which is correct: parked is not stuck.
       - name: Verify rollout of the deployed workloads
         run: |
           set -uo pipefail
           FAILED=""
-          for d in backend frontend clawdbot-gateway commonly-bot; do
+          DEPLOYS=$(kubectl get deploy -n "$NAMESPACE" -o name)
+          if [ -z "$DEPLOYS" ]; then
+            echo "::error title=Rollout failed::no deployments found in $NAMESPACE — nothing to verify is itself a failure"
+            exit 1
+          fi
+          for d in $DEPLOYS; do
             echo "::group::rollout status $d"
-            if kubectl rollout status "deploy/$d" -n "$NAMESPACE" --timeout=8m; then
+            if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
               echo "$d: rolled out"
             else
               echo "::error title=Rollout failed::$d did not become ready within 8m"

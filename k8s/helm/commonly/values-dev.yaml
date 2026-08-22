@@ -91,6 +91,21 @@ backend:
     # key lands in the api-keys secret.
     nativeRuntimeGuardrails: "injection-guard"
 
+    # Kernel work-sweep kill switch (#1080). Commented out = sweep runs.
+    # Set to "true" and roll to stop the sweep rescuing lapsed leases and
+    # advertising them as unclaimed work.
+    #
+    # Why the knob exists: on 2026-08-21 the sweep produced 14 rescues in
+    # under three hours, none of them abandoned work — every rescued row had
+    # an open PR or a live holder. A 30-minute lease against multi-hour tasks
+    # plus a 10-minute sweep locks into a 40-minute orbit, and rescued rows
+    # re-claim seconds later so their orbits converge onto one tick.
+    #
+    # This is a stopgap for @fable-lead's ruling on #1080; the durable fix is
+    # liveness-gated rescue + renewal-from-work + provenance (PR #1082).
+    # Remove the override once that has merged AND deployed.
+    # agentWorkSweepDisabled: "true"
+
 frontend:
   replicaCount: 1
   image:

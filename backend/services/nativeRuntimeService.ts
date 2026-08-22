@@ -30,7 +30,13 @@ import axios, { AxiosError } from 'axios';
 // --- public surface --------------------------------------------------------
 
 export interface NativeRunTrigger {
-  type: 'mention' | 'heartbeat' | 'task.assigned' | 'chat.message' | 'pod.join' | 'first_contact' | 'manual';
+  // The RAW event type, forwarded verbatim by agentEventService:994 — not a
+  // mapped vocabulary. The previous union listed names the caller never sends
+  // ('mention', 'chat.message', 'task.assigned', 'pod.join') and omitted the
+  // ones it does ('chat.mention', 'message.posted', 'dm.message'), which is
+  // how a branch that never fired went unnoticed. `string` is honest here;
+  // narrowing it again means narrowing it to what the producer emits.
+  type: string;
   eventId?: string;
   payload?: unknown;
 }
@@ -476,7 +482,15 @@ function buildSystemPrompt(installation: any, cfg: PlainConfig): string {
   );
 }
 
-function buildUserMessage(
+// The mention-shaped raw event types the caller actually sends, plus the
+// legacy union spellings. Deliberately a superset of what matches today: a
+// name in here that never arrives costs nothing, a name missing from it costs
+// a discarded cue, and this file has already paid that once.
+const MENTION_RAW_TYPES = new Set([
+  'chat.mention', 'thread.mention', 'dm.message', 'mention', 'chat.message',
+]);
+
+export function buildUserMessage(
   trigger: NativeRunTrigger,
   podName: string,
 ): string {
@@ -484,13 +498,45 @@ function buildUserMessage(
     ? trigger.payload as Record<string, any>
     : {}) as Record<string, any>;
 
-  if (trigger.type === 'mention') {
+  // Producer parity with the wrapper (#1071, TASK-034). `payload.content` is
+  // the server-composed cue and it is ALWAYS the best prompt when present:
+  // the pod-context frame, the ADR-012 §9 DM frame, the board-wake task list
+  // and the lease warning are all written inline there precisely because
+  // metadata gets deprioritised by the model. The wrapper's `extractPrompt`
+  // has always preferred it; this tier did not, and the gap was invisible
+  // because both tiers "ran".
+  //
+  // WHAT WAS BROKEN. The branches below compare `trigger.type` against
+  // 'mention' / 'chat.message', but the caller passes the RAW event type —
+  // agentEventService:994 forwards `type` verbatim, and the claimable-set gate
+  // at :697 in this same file says so out loud ("raw-type gate mirrors the
+  // wrapper's claimable set"). So `chat.mention` never matched 'mention', and
+  // every message-shaped wake fell through to the generic "Trigger: X, use
+  // commonly_read_context" below — which discards the cue entirely and tells
+  // the agent to go look around instead.
+  //
+  // Measured before the fix: of 58 events ever delivered to the 17 active
+  // native installs, 24 `message.posted` + 6 `chat.mention` = 30 took the
+  // fallthrough. Only `heartbeat` and `first_contact` ever matched a branch.
+  //
+  // The `NativeRunTrigger` union at the top of this file declares a vocabulary
+  // ('mention', 'chat.message', 'task.assigned', 'pod.join') that the caller
+  // never speaks, and omits the types it does. `require()` at the call site
+  // meant TypeScript never had to reconcile them.
+  const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
+  if (inlineCue) return inlineCue;
+
+  // Fallbacks below are for events that carry NO content. They keep the raw
+  // type names the caller actually sends, plus the legacy union names, so a
+  // future mapped caller still lands somewhere sensible.
+  if (MENTION_RAW_TYPES.has(String(trigger.type))) {
     const user = String(payload.username || payload.userId || 'someone');
-    const text = String(payload.content || payload.text || '').trim();
+    const messageId = String(payload.messageId || '');
     return (
-      `User @${user} mentioned you in pod ${podName}: "${text}". `
-      + 'Call commonly_read_context if you need more history, then call '
-      + 'commonly_post_message with your reply.'
+      `You were mentioned in pod ${podName} by @${user}, but the event carried no `
+      + 'content — a producer bug, not your fault. '
+      + (messageId ? `It named message ${messageId}. ` : '')
+      + 'Call commonly_read_context to find it, then commonly_post_message with your reply.'
     );
   }
 
@@ -639,6 +685,50 @@ export async function runAgent(
     }
   }
 
+  // ADR-022 D5 invariant: the per-user daily ceiling — keyed on installedBy,
+  // summed across ALL the user's hosted installs. The per-install cap above
+  // stays as the runaway-loop guard; this is the spend promise ("1 hosted
+  // colleague included" needs a number that cannot silently multiply when a
+  // user hires a second persona or places one in three rooms). Two deliberate
+  // reversals from the cap above: the decline is TRUTHFUL (failed +
+  // errorKind, never an empty success), and a count failure fails CLOSED —
+  // a runaway guard and a spend ceiling have opposite safe directions.
+  // Forward-only: rows without userId predate the stamp and cannot be
+  // counted; the window inherits the cap's fixed-UTC-midnight semantics.
+  const userCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
+  if (Number.isFinite(userCeiling) && userCeiling > 0) {
+    const installedBy = installation.installedBy ? String(installation.installedBy) : '';
+    if (!installedBy) {
+      console.warn(
+        `[native-runtime] ${agentName}:${instanceId} has no installedBy — `
+        + 'per-user ceiling unenforceable for this install',
+      );
+    } else {
+      try {
+        const AgentRunModel = require('../models/AgentRun');
+        const dayStart = new Date();
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const userRunsToday = await AgentRunModel.countDocuments({
+          userId: installedBy,
+          startedAt: { $gte: dayStart },
+        });
+        if (userRunsToday >= userCeiling) {
+          console.warn(
+            `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
+            + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
+          );
+          return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
+        }
+      } catch (err) {
+        return failedResult(
+          '',
+          'user_ceiling_check_failed',
+          `per-user ceiling count failed (failing closed): ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   // ADR-018 D3: native is one of OUR drivers — deterministic claim-before-act,
   // the same rule the CLI wrapper enforces (#894). Fleet audit (Sharpen msg
   // 53016) found this gap: the event queue pre-claims DELIVERY, but nothing
@@ -696,6 +786,8 @@ export async function runAgent(
     podId: installation.podId,
     agentName,
     instanceId,
+    // D5 denormalization: the per-user ceiling counts on this. Forward-only.
+    userId: installation.installedBy ? String(installation.installedBy) : undefined,
     trigger: triggerType,
     triggerEventId: trigger.eventId || undefined,
     status: 'queued',

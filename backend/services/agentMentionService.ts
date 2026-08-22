@@ -837,10 +837,11 @@ const resolveImplicitReplyTarget = async (
 
 // Pod types that auto-route every message to non-sender members as a
 // chat.mention event. Adding a new private 1:1 type without listing it
-// here silently drops every message; mirrored in
-// `messageController.createMessage` and called out in
-// docs/agents/AGENT_RUNTIME.md "Routing Invariants".
+// here silently drops every message; controllers call the predicate below
+// rather than maintaining a second copy of this delivery rule.
 const DM_POD_TYPES = new Set(['agent-admin', 'agent-room', 'agent-dm']);
+
+const isAutoRoutedDmPod = (type: unknown): boolean => DM_POD_TYPES.has(String(type));
 
 // ── ADR-018 D8: wake-on-message ─────────────────────────────────────────────
 //
@@ -865,6 +866,42 @@ const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean =>
   (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
     ?.config?.wakeOnMessage?.enabled === true
 );
+
+/**
+ * Board wakes (task-board deltas and the #1055 kernel found-work sweep) are a
+ * SEPARATE subscription from ambient chat, and this predicate is the split.
+ *
+ * They were one flag until now, which made the two indistinguishable at
+ * install time: a persona whose whole job is the board — Planner is the case
+ * that forced this (#1071, TASK-033) — could only subscribe by also taking
+ * every chat message in the pod. That is the opposite of what a board-shaped
+ * card wants, and "just set wakeOnMessage" was the only available answer.
+ *
+ * Backward compatibility is the load-bearing half. `boardWake` ABSENT inherits
+ * `wakeOnMessage`, so every existing install keeps exactly the delivery it has
+ * today — measured at 34 of 263 active installs with wakeOnMessage on and zero
+ * carrying a boardWake key, so the inherit branch is the entire live
+ * population and the explicit branch is currently unreachable. Setting
+ * `boardWake.enabled` explicitly overrides in either direction:
+ *
+ *   boardWake absent, wakeOnMessage on   -> board wakes  (today's behaviour)
+ *   boardWake absent, wakeOnMessage off  -> no board wakes (today's behaviour)
+ *   boardWake.enabled true               -> board wakes, whatever chat says
+ *   boardWake.enabled false              -> no board wakes, whatever chat says
+ *
+ * The fourth row is the one that did not exist before: a seat can now hear the
+ * room without hearing the board, and a seat can hear the board without
+ * hearing the room.
+ */
+const boardWakeEnabled = (installation: Record<string, unknown>): boolean => {
+  const cfg = (installation as {
+    config?: { boardWake?: { enabled?: unknown } };
+  })?.config;
+  const explicit = cfg?.boardWake?.enabled;
+  if (explicit === true) return true;
+  if (explicit === false) return false;
+  return wakeOnMessageEnabled(installation);
+};
 
 // #508's shape, pointed at the wake path: a BOT-authored message that would
 // wake a target already woken >MENTION_LOOP_MAX times in the window is a wake
@@ -932,7 +969,7 @@ const enqueueWakeOnMessage = async ({
     // into a DM pod that enqueueDmEvent already covers.
     return woken;
   }
-  if (podRow?.type && DM_POD_TYPES.has(podRow.type)) return woken;
+  if (podRow?.type && isAutoRoutedDmPod(podRow.type)) return woken;
 
   // Truthful inputs, not a hardcoded false: the collab cue is held off
   // wakes by its own event-type gate inside buildContentForTarget, so
@@ -1425,7 +1462,7 @@ const enqueueDmEvent = async ({
   podId, message, userId, username,
 }: EnqueueDmOptions): Promise<EnqueueDmResult> => {
   const pod = await Pod.findById(podId).lean() as Record<string, unknown> | null;
-  if (!pod || !DM_POD_TYPES.has(pod.type as string)) {
+  if (!pod || !isAutoRoutedDmPod(pod.type)) {
     return { enqueued: false, reason: 'not_dm_pod' };
   }
 
@@ -1670,9 +1707,11 @@ export {
   enqueueMentions,
   enqueueDmEvent,
   MENTION_ALIASES,
+  isAutoRoutedDmPod,
   // Exported so the ADR-024 D1 board fan-out (taskEventService.notifyPodAgents)
   // gates on the SAME opt-in rather than reimplementing the predicate. The
   // config shape is a Mongoose Map on some paths and a plain object on others,
   // which is exactly the kind of detail a second copy gets subtly wrong.
   wakeOnMessageEnabled,
+  boardWakeEnabled,
 };

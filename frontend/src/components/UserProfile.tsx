@@ -34,13 +34,12 @@ import KeyIcon from '@mui/icons-material/Key';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { avatarOptions, getAvatarColor, getAvatarSrc } from '../utils/avatarUtils';
+import { avatarOptions, getAvatarColor, getAvatarSrc, presetFaceOptions } from '../utils/avatarUtils';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { blurActiveElement } from '../utils/focusUtils';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AppsManagement from './AppsManagement';
-import AvatarGenerator from './agents/AvatarGenerator';
 import AdminUsers from './admin/AdminUsers';
 import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 
@@ -102,7 +101,6 @@ const UserProfile = () => {
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [avatarPreview, setAvatarPreview] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
-    const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
     const [currentTab, setCurrentTab] = useState('overview');
     const [apiToken, setApiToken] = useState<string | null>(null);
     const [apiTokenCreatedAt, setApiTokenCreatedAt] = useState<string | null>(null);
@@ -227,14 +225,6 @@ const UserProfile = () => {
         setSelectedAvatar(avatarId);
         setAvatarFile(null);
         setAvatarPreview('');
-    };
-
-    const handleGeneratedAvatarSelect = (avatarDataUri: string) => {
-        if (!avatarDataUri) return;
-        setSelectedAvatar(avatarDataUri);
-        setAvatarFile(null);
-        setAvatarPreview('');
-        setAvatarGeneratorOpen(false);
     };
 
     const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -851,30 +841,29 @@ const UserProfile = () => {
                                     onChange={handleAvatarFileChange}
                                 />
                             </Button>
-                            <Button
-                                variant="outlined"
-                                onClick={() => setAvatarGeneratorOpen(true)}
-                            >
-                                Generate with AI
-                            </Button>
                         </Box>
                     </Box>
+                    {/* Generated face presets (Sam, 2026-08-20; archetype grid
+                        2026-08-21). Replaces the flat color circles AND the deprecated
+                        Generate-with-AI flow: curated bigSmile archetype cells (four
+                        ethnic rows, female- and male-leaning looks) seeded off the
+                        user's identity, so the grid is personal and never reshuffles
+                        between visits. The pick is stored as 'bigsmile:<seed>' and
+                        regenerated locally by every renderer — no image hosting, no
+                        API spend, no 404s. */}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', my: 2 }}>
-                        {avatarOptions.map((avatar) => (
+                        {presetFaceOptions(user.username || 'user').map((face) => (
                             <Avatar
-                                key={avatar.id}
+                                key={face.id}
+                                src={face.src || undefined}
                                 sx={{
                                     width: 60,
                                     height: 60,
-                                    bgcolor: avatar.color,
-                                    fontSize: '1.5rem',
                                     cursor: 'pointer',
-                                    border: selectedAvatar === avatar.id ? '3px solid #1976d2' : 'none',
+                                    border: selectedAvatar === face.id ? '3px solid #1976d2' : 'none',
                                 }}
-                                onClick={() => handleAvatarSelect(avatar.id)}
-                            >
-                                {user.username.charAt(0).toUpperCase()}
-                            </Avatar>
+                                onClick={() => handleAvatarSelect(face.id)}
+                            />
                         ))}
                     </Box>
                 </DialogContent>
@@ -889,16 +878,6 @@ const UserProfile = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-            )}
-
-            {isOwnProfile && (
-            <AvatarGenerator
-                open={avatarGeneratorOpen}
-                onClose={() => setAvatarGeneratorOpen(false)}
-                onSelect={handleGeneratedAvatarSelect}
-                agentName={user.username || 'user'}
-                targetType="user"
-            />
             )}
 
             {/* Snackbar for notifications */}

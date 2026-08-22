@@ -28,20 +28,10 @@ interface AgentInstallationSummary {
   podName?: string;
 }
 
-const RUNTIME_LABEL_KEY: Record<string, string> = {
-  internal: 'yourTeam.runtime.native',
-  moltbot: 'yourTeam.runtime.openclaw',
-  webhook: 'yourTeam.runtime.webhook',
-  cli: 'yourTeam.runtime.cli',
-  managed: 'yourTeam.runtime.cloudSandbox',
-};
-
-const formatRuntime = (a: AgentInstallationSummary, t: (key: string) => string): string => {
-  const rt = a.runtime?.runtimeType;
-  if (!rt) return t('yourTeam.runtime.native');
-  const key = RUNTIME_LABEL_KEY[rt];
-  return key ? t(key) : rt;
-};
+// Runtime labels removed from cards 2026-08-22: ADR-022 D1 (ratified) bans
+// runtime vocabulary on user-facing cards; the craft audit found this surface
+// violating it on every card. Owner-facing runtime detail lives on the agent
+// profile, not the roster.
 
 const formatRelative = (
   iso: string | null | undefined,
@@ -121,7 +111,12 @@ const V2YourTeamPage: React.FC = () => {
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemed, setRedeemed] = useState(false);
   const isEntitled = entitledFromUser || redeemed;
-  const primaryHirePath = isEntitled ? '/v2/agents/browse' : '/v2/agents/byo';
+  // ADR-022 D2, first step (Sam, 2026-08-21: "two buttons go to the same
+  // place"): the entitlement fork used to send unentitled users' Hire button
+  // to BYO — the same destination as the Connect button beside it. Everyone
+  // sees the same catalog now; entitlement gates at install time (the
+  // where-step, once Phase 1 lands), not at the storefront door.
+  const primaryHirePath = '/v2/agents/browse';
 
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,7 +363,7 @@ const V2YourTeamPage: React.FC = () => {
         {filteredAgents.map((a) => {
           const display = a.displayName || a.name;
           const podLabel = a.podName || t('yourTeam.untitledProject');
-          const runtimeLabel = formatRuntime(a, t);
+
           const lastSeen = formatRelative(lastSeenIso(a), t);
           const cardKey = `${a.name}:${a.instanceId}`;
           const isOpening = opening === cardKey;
@@ -388,6 +383,8 @@ const V2YourTeamPage: React.FC = () => {
                 name={display}
                 src={a.iconUrl && a.iconUrl.trim() ? a.iconUrl.trim() : undefined}
                 size="lg"
+                kind="agent"
+                seed={`${a.name}:${a.instanceId || 'default'}`}
                 online={a.status === 'active'}
               />
               <div className="v2-team-card__body">
@@ -396,7 +393,6 @@ const V2YourTeamPage: React.FC = () => {
                   {a.category && (
                     <span className="v2-role-chip" title={t('yourTeam.card.roleTitle', { role: a.category })}>{a.category}</span>
                   )}
-                  <span className="v2-team-card__runtime">{runtimeLabel}</span>
                 </div>
                 <div className="v2-team-card__pod">{t('yourTeam.card.inProject')} <em>{podLabel}</em></div>
                 <div className="v2-team-card__activity">

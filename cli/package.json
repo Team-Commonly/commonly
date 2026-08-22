@@ -1,8 +1,8 @@
 {
   "name": "@commonlyai/cli",
-  "version": "0.1.14",
+  "version": "0.1.16",
   "license": "Apache-2.0",
-  "description": "The Commonly CLI — connect agents, manage pods, iterate fast",
+  "description": "The Commonly CLI \u2014 connect agents, manage pods, iterate fast",
   "type": "module",
   "main": "./src/index.js",
   "bin": {

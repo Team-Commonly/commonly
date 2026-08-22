@@ -40,6 +40,12 @@ const PodAsset = require('../models/PodAsset');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+// eslint-disable-next-line global-require
+const AgentIdentityService = require('../services/agentIdentityService');
+// eslint-disable-next-line global-require
+const authMiddleware = require('../middleware/auth');
+// eslint-disable-next-line global-require
+const { AgentRegistry } = require('../models/AgentRegistry');
 
 interface Res {
   status: (n: number) => Res;
@@ -219,6 +225,98 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
   } catch (err) {
     console.error('[agent-profile] error:', (err as Error).message);
     res.status(500).json({ error: 'Server Error' });
+  }
+});
+
+
+// ── Owner-editable agent avatar (Sam, 2026-08-20) ───────────────────────────
+//
+// "If created by someone" — the gate is creation-shaped: the caller must be an
+// admin or the installer of an active installation of this agent. Accepts the
+// deterministic robot scheme ('bottts:<seed>') or an uploaded-image reference;
+// never raw AI generation, which is deprecated.
+//
+// Writes go through the ONE sanctioned door for the dual-store problem:
+// Mongo User first, then AgentIdentityService.syncUserToPostgreSQL — the July
+// half-write incident is why no code path may touch pg users directly. If the
+// mirror is retired (#1062), the sync call becomes a no-op and this endpoint
+// stays correct unchanged. The registry iconUrl (the Your-Team card source)
+// moves in the same request so the three icon surfaces cannot drift.
+
+const canEditAgentAvatar = async (req: any, agentName: string, instanceId: string): Promise<boolean> => {
+  const callerId = req.userId || req.user?._id || req.user?.id;
+  if (!callerId) return false;
+  // JWT auth populates req.user = { id } WITHOUT role (middleware/auth.ts:81)
+  // — only the cm_ API-token branch carries role. Trusting req.user.role here
+  // silently disabled the admin path for every browser session, so load it.
+  if (req.user?.role === 'admin') return true;
+  const caller = await User.findById(callerId).select('role').lean();
+  if (caller?.role === 'admin') return true;
+  const owned = await AgentInstallation.findOne({
+    agentName,
+    instanceId,
+    status: 'active',
+    installedBy: callerId,
+  }).select('_id').lean();
+  return Boolean(owned);
+};
+
+const AGENT_AVATAR_SCHEME = /^bottts:[\w:.-]{1,120}$/;
+const isUploadRef = (v: string): boolean => (
+  v.startsWith('/api/uploads/') || v.startsWith('/uploads/') || /^https:\/\/[^\s]+\/(api\/)?uploads\//.test(v)
+);
+
+router.get('/:agentName/:instanceId?/avatar/can-edit', authMiddleware, async (req: any, res: Res) => {
+  const agentName = String(req.params?.agentName || '').trim().toLowerCase();
+  const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
+  res.json({ canEdit: await canEditAgentAvatar(req, agentName, instanceId) });
+});
+
+router.put('/:agentName/:instanceId?/avatar', authMiddleware, async (req: any, res: Res) => {
+  try {
+    const agentName = String(req.params?.agentName || '').trim().toLowerCase();
+    const instanceId = String(req.params?.instanceId || 'default').trim() || 'default';
+    const avatar = String(req.body?.avatar || '').trim();
+
+    if (!AGENT_AVATAR_SCHEME.test(avatar) && !isUploadRef(avatar)) {
+      res.status(400).json({ error: 'avatar must be a bottts:<seed> preset or an uploaded image reference' });
+      return;
+    }
+    if (!(await canEditAgentAvatar(req, agentName, instanceId))) {
+      res.status(403).json({ error: "Only the agent's installer or an admin can edit its avatar" });
+      return;
+    }
+
+    const user = await User.findOneAndUpdate(
+      { isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId },
+      { $set: { profilePicture: avatar } },
+      { new: true },
+    );
+    if (!user) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+
+    // The chat stream reads the PG mirror; skipping this line is exactly the
+    // July incident. Fire-and-log rather than fail the request: Mongo is the
+    // source of truth.
+    try {
+      await AgentIdentityService.syncUserToPostgreSQL(user);
+    } catch (syncErr) {
+      console.warn('[agent-avatar] pg mirror sync failed (mongo committed):', (syncErr as Error).message);
+    }
+
+    // Your-Team cards read AgentRegistry.iconUrl; move it in the same request.
+    try {
+      await AgentRegistry.updateOne({ agentName }, { $set: { iconUrl: avatar } });
+    } catch (regErr) {
+      console.warn('[agent-avatar] registry iconUrl update failed:', (regErr as Error).message);
+    }
+
+    res.json({ ok: true, avatar });
+  } catch (err) {
+    console.error('[agent-avatar] update failed:', err);
+    res.status(500).json({ error: 'Failed to update avatar' });
   }
 });
 

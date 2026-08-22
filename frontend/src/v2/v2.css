@@ -71,6 +71,17 @@
   --v2-pods-w: 272px;
   --v2-inspector-w: 336px;
 
+  /* Keep production's scoped V2 layer in step with design-system/tokens.css.
+     The typing cadence belongs to the minimal mark; pulse/spin retain their
+     separate state-affordance semantics. */
+  --motion-stagger: 0.18s;
+  --motion-breath: 1.2s;
+  --motion-pulse: 1.6s;
+  --motion-spin: 0.8s;
+  --motion-ease-breath: ease-in-out;
+  --motion-ease-state: ease-out;
+  --motion-ease-linear: linear;
+
   font-family: var(--v2-font);
   color: var(--v2-text-primary);
   background: var(--v2-page-bg);
@@ -1001,12 +1012,17 @@
 
 .v2-pods__item-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
-  height: 20px;
+  min-height: 20px;
 }
 
+/* Craft baseline rule 1: the pod name is the row's primary identifier and
+   never loses to its own timestamp — wrap to two lines instead of
+   ellipsizing (same idiom as the team-card name fix, #1104). The clamp
+   keeps pathological names from unbounding the row; the timestamp lives on
+   the snippet row so it never shares a line with the name. */
 .v2-pods__item-title {
   flex: 1;
   min-width: 0;
@@ -1014,10 +1030,21 @@
   line-height: 20px;
   font-weight: 600;
   color: var(--v2-text-primary);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
+
+.v2-pods__item-snippet-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.v2-pods__item-snippet-row .v2-pods__item-snippet { flex: 1; min-width: 0; }
 
 .v2-pods__status {
   height: 18px;
@@ -1517,6 +1544,16 @@
   gap: 0;
 }
 
+/* Craft audit 2026-08-22, rule 2 — corrected same day. The first cut
+   centered the message column, which left it misaligned with the full-width
+   header and composer ("a floating island" — Sam, accurately: a disaster).
+   The right mechanic caps the TEXT measure only: rows stay left-anchored so
+   messages, composer, and header share one edge; long lines still break at
+   a readable width. */
+.v2-msg__body {
+  max-width: 76ch;
+}
+
 /* Sender-only teaching cue shown once per pod/session when a message reaches
    a pod with agents but addresses none of them. Aligns with message text,
    stays quiet/secondary, and disappears naturally with transcript scroll. */
@@ -1766,11 +1803,11 @@
   height: 4px;
   border-radius: 50%;
   background: var(--v2-text-tertiary);
-  animation: v2-typing-dot 1.2s infinite ease-in-out;
+  animation: v2-typing-dot var(--motion-breath) infinite var(--motion-ease-breath);
 }
 
-.v2-chat__typing-dots > span:nth-child(2) { animation-delay: 0.18s; }
-.v2-chat__typing-dots > span:nth-child(3) { animation-delay: 0.36s; }
+.v2-chat__typing-dots > span:nth-child(2) { animation-delay: var(--motion-stagger); }
+.v2-chat__typing-dots > span:nth-child(3) { animation-delay: calc(var(--motion-stagger) + var(--motion-stagger)); }
 
 @keyframes v2-typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
@@ -2435,6 +2472,35 @@
   padding: 10px 0;
 }
 
+/* Consecutive-author grouping (craft baseline rule 3): grouped rows drop
+   the 22px head + avatar and tighten padding, so a run of messages from one
+   author reads as one block. The ghost keeps the grid's avatar column so
+   text alignment never shifts. Reply becomes a hover affordance pinned to
+   the row's top-right, since the head row (and its Reply button) is gone. */
+.v2-msg--grouped { padding: 2px 0; position: relative; }
+.v2-msg__avatar-ghost { width: 38px; }
+.v2-msg__reply-float {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  appearance: none;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.v2-msg--grouped:hover .v2-msg__reply-float,
+.v2-msg__reply-float:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .v2-msg__body {
   flex: 1;
   min-width: 0;
@@ -2976,7 +3042,7 @@
   border-radius: 50%;
   background: var(--v2-success);
   box-shadow: 0 0 0 0 var(--v2-success-ring-strong);
-  animation: v2-now-pulse 1.6s ease-out infinite;
+  animation: v2-now-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
   flex-shrink: 0;
 }
 
@@ -4186,12 +4252,31 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font-weight: 700;
+  font-weight: 650;
   font-size: 11px;
   flex-shrink: 0;
   border: 2px solid var(--v2-surface);
   text-transform: uppercase;
   position: relative;
+  /* Two initials at 700 with default tracking collide at 24px — the pair reads
+     as one glyph. 650 with positive tracking separates them without making the
+     avatar shout; the optical centre then sits ~0.5px right, so the tracking is
+     compensated with an equal indent rather than left as a visible lean. */
+  letter-spacing: 0.04em;
+  text-indent: 0.04em;
+  /* The seeded gradient is the identity; a flat inner highlight over it reads
+     as a lit sphere rather than a filled circle, and costs nothing. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+  overflow: hidden;
+}
+
+/* A photo is the identity when one exists — the gradient underneath is only a
+   backing plate for transparent PNGs, so the inner highlight must not sit on
+   top of someone's face. */
+.v2-avatar:has(img) {
+  box-shadow: none;
 }
 
 .v2-avatar--lg {
@@ -5006,68 +5091,6 @@
   background-color: var(--v2-accent);
 }
 
-/* Apps marketplace: soften the old gradient hero and align filters/cards. */
-.v2-feature__legacy .v2-apps-marketplace {
-  padding-top: 0;
-}
-
-.v2-feature__legacy .v2-apps-hero {
-  margin-bottom: 28px !important;
-  padding: 28px 30px !important;
-  border: 1px solid var(--v2-border-strong);
-  border-radius: var(--v2-radius-lg) !important;
-  background: var(--v2-surface) !important;
-  color: var(--v2-text-primary) !important;
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiTypography-root {
-  color: var(--v2-text-primary) !important;
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiTypography-body1 {
-  color: var(--v2-text-secondary) !important;
-  opacity: 1 !important;
-}
-
-.v2-feature__legacy .v2-apps-hero .MuiButton-contained {
-  background: #ffffff !important;
-  color: var(--v2-accent-text) !important;
-  border: 1px solid var(--v2-border-strong);
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-marketplace > .MuiBox-root:nth-of-type(2),
-.v2-feature__legacy .v2-apps-marketplace > .MuiBox-root:nth-of-type(3) {
-  padding: 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  background: #ffffff;
-  box-shadow: var(--v2-shadow-sm);
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiGrid-container {
-  align-items: stretch;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiCard-root {
-  min-height: 100%;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiCard-root .MuiAvatar-root {
-  background-color: var(--v2-accent-soft) !important;
-  color: var(--v2-accent-text) !important;
-  border-color: var(--v2-border-strong) !important;
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiRating-iconFilled {
-  color: var(--v2-warning);
-}
-
-.v2-feature__legacy .v2-apps-marketplace .MuiChip-root {
-  border-color: var(--v2-border) !important;
-}
-
 .v2-feature__legacy [style*="#1d9bf0"],
 .v2-feature__legacy [style*="#1976d2"],
 .v2-feature__legacy [style*="#6366f1"],
@@ -5103,6 +5126,38 @@
   color: var(--v2-text-tertiary);
 }
 
+/* App boot has no content state to impersonate, so the minimal mark can own
+   the moment. The dots use the exact typing keyframes; inline spinners retain
+   their state-specific v2-spin affordance below. */
+.v2-boot {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--v2-page-bg);
+}
+
+.v2-boot__mark {
+  width: 64px;
+  height: 64px;
+  color: var(--v2-accent);
+  overflow: visible;
+}
+
+.v2-boot__mark-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: v2-typing-dot var(--motion-breath) infinite var(--motion-ease-breath);
+}
+
+.v2-boot__mark-dot:nth-of-type(2) {
+  animation-delay: var(--motion-stagger);
+}
+
+.v2-boot__mark-dot:nth-of-type(3) {
+  animation-delay: calc(var(--motion-stagger) + var(--motion-stagger));
+}
+
 .v2-empty__title {
   font-size: 16px;
   font-weight: 700;
@@ -5121,7 +5176,7 @@
   border: 2px solid var(--v2-border);
   border-top-color: var(--v2-accent);
   border-radius: 50%;
-  animation: v2-spin 0.8s linear infinite;
+  animation: v2-spin var(--motion-spin) var(--motion-ease-linear) infinite;
   display: inline-block;
 }
 
@@ -5506,22 +5561,20 @@
   font-weight: 600;
   font-size: 15px;
   color: #1a1c22;
-  white-space: nowrap;
+  /* Craft audit 2026-08-22, rule 1: a primary identifier never ellipsizes at
+     one line — at 1440px HALF the fleet's names truncated. Wrap to two lines;
+     clamp only pathological lengths. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
-.v2-team-card__runtime {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: #6b6f7a;
-  background: #f1f2f5;
-  padding: 2px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
+/* .v2-team-card__runtime removed 2026-08-22: runtime vocabulary on cards
+   violated ratified ADR-022 D1 (craft audit finding 2). */
 
 .v2-team-card__pod {
   font-size: 13px;

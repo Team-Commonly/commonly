@@ -25,6 +25,11 @@ interface NormalizedMessage {
   id: string;
   pod_id: string;
   user_id: string;
+  // PG normalizes its joined author onto userId; the Mongo fallback keeps the
+  // historical user shape below. Agent wake author resolution must accept both
+  // stores so a JWT-posted human message never becomes "raised by unknown".
+  userId?: { username?: string } | string;
+  username?: string;
   content: string;
   message_type: string;
   // ADR-020 D3: structured card payload — must survive the Mongo fallback's
@@ -243,12 +248,44 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // response would lack username/profile_picture and the v2 chat would
       // render the author as "Unknown" until a refresh pulled the joined
       // row. findById re-fetches with the JOIN so the optimistic render
-      // already has the right author identity.
-      const populated = created?.id ? await PGMessage.findById(created.id) : null;
+      // already has the right author identity. A JOIN failure is not a write
+      // failure: falling into the Mongo fallback after INSERT would duplicate
+      // the message (or falsely reject an already-persisted reply).
+      let populated = null;
+      try {
+        populated = created?.id ? await PGMessage.findById(created.id) : null;
+      } catch (readErr) {
+        console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
+      }
       message = (populated || created) as NormalizedMessage;
     } catch (pgErr) {
       const e = pgErr as { message?: string };
       console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
+      // Mongo messages have no reply_to_message_id column and are never
+      // reconciled into PG. A reply written here would look successful while
+      // permanently losing its parent edge, so only non-replies may use this
+      // availability fallback.
+      //
+      // "NEVER RECONCILED" IS A CURRENT FACT, NOT AN INVARIANT — and this
+      // guard is correct only while it holds (@sprint-review, pod 56881).
+      // Reconciling Mongo into PG was the other option considered on TASK-040;
+      // #1116 chose this one instead, so nothing reconciles today and the 503
+      // is the resolution rather than a stopgap.
+      //
+      // If reconciliation is ever built, this stops being a data-loss guard
+      // and becomes a rejection with no remaining reason: a user told
+      // "Replies are temporarily unavailable" about a path that would now
+      // preserve their reply. Whoever builds it must remove or relax this in
+      // the same change. The dependency runs both ways and appears in neither
+      // diff, which is why it is written at both ends — TASK-040 carries the
+      // pointer back here.
+      if (replyToMessageId) {
+        res.status(503).json({
+          error: 'Replies are temporarily unavailable. Please try again shortly.',
+          code: 'REPLY_REQUIRES_POSTGRES',
+        });
+        return;
+      }
       const mongoMsg = await MongoMessage.create({
         podId,
         userId,
@@ -277,16 +314,17 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // new high-severity js/missing-rate-limiting alerts, one per authed route.
     // Those routes were already unrate-limited and the read already happened —
     // but drowning the real alerts is its own harm.
+    const pgAuthor = message.userId;
     const username = req.user?.username
-      || (message as { user?: { username?: string } } | undefined)?.user?.username;
+      || (pgAuthor && typeof pgAuthor === 'object' ? pgAuthor.username : undefined)
+      || message.username
+      || message.user?.username;
     // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
     // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
     // human message to the agent — no @mention needed. Other pod types only
-    // fire on explicit @mentions. Adding a new private 1:1 pod type without
-    // updating this allow-list silently drops every message; see
-    // docs/agents/AGENT_RUNTIME.md "Routing Invariants" for the canonical
-    // version of this rule.
-    const isDmPod = pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm';
+    // fire on explicit @mentions. `isAutoRoutedDmPod` owns that allow-list so
+    // the legacy PG endpoint cannot silently drift from this primary path.
+    const isDmPod = AgentMentionService.isAutoRoutedDmPod(pod.type);
     let responseMessage: NormalizedMessage | (NormalizedMessage & {
       agentDelivery: {
         enqueued: number; implicit: string[]; agentsInPod: number; woken: number;

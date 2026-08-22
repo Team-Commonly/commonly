@@ -53,6 +53,11 @@ const RECENT_ATTACH_WINDOW_MS = 5 * 60 * 1000;
 // pattern it feeds, which matches at the start of a statement.
 const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 
+// Runtime artifacts are exact values, not a language heuristic. Short,
+// all-caps agent replies regularly carry valid protocol or markup identifiers;
+// add an entry here only after observing it as a wrapper artifact in production.
+const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -1685,6 +1690,15 @@ class AgentMessageService {
     return /^⚠️\s*\p{Extended_Pictographic}[^:\n]{0,30}:?\s.*\bfailed\b\.?$/iu.test(c);
   }
 
+  static isBareRuntimeArtifact(content: unknown): boolean {
+    if (!content) return false;
+
+    // TASK-042: a Codex wrapper emitted this value instead of a silent reply.
+    // `sanitizeAgentContent` calls us only after it has established that the
+    // value is the complete, unformatted agent payload.
+    return BARE_RUNTIME_ARTIFACTS.has(String(content));
+  }
+
   static sanitizeAgentContent(content: unknown): string {
     if (content === null || content === undefined) return '';
     const raw = String(content);
@@ -1791,7 +1805,11 @@ class AgentMessageService {
     // Do not map/trim individual lines here. Whitespace-sensitive payloads
     // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
     // line-wise sanitizer previously flattened their indentation.
-    return cleaned.trim();
+    const normalized = cleaned.trim();
+
+    // Apply the artifact floor after protected inline-code ranges have been
+    // copied into `cleaned`; a literal mentioned as code is not runtime noise.
+    return AgentMessageService.isBareRuntimeArtifact(normalized) ? '' : normalized;
   }
 
   /**

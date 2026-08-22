@@ -90,6 +90,12 @@ interface V2MessageBubbleProps {
   // Sets this message as the composer's reply target (reply threading —
   // backend replyToMessageId; agents already use it, this is the human side).
   onReply?: (message: V2Message) => void;
+  // Consecutive-author grouping (craft audit finding 7): when the previous
+  // message is the same author within the grouping window, the header row
+  // (avatar / name / time) is suppressed and the row tightens. The avatar
+  // column is kept as an empty grid cell so text stays aligned. Reply moves
+  // to a hover affordance since the head row is gone.
+  grouped?: boolean;
 }
 
 interface ParsedFile {
@@ -287,7 +293,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
 // columns in mobile shells.
 const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, grouped }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const api = useV2Api();
@@ -392,8 +398,10 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
     && new RegExp(`@${meUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(stripped);
 
   return (
-    <div className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}`}>
-      {isClickable ? (
+    <div className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}`}>
+      {grouped ? (
+        <div className="v2-msg__avatar-ghost" aria-hidden="true" />
+      ) : isClickable ? (
         <button
           type="button"
           className="v2-msg__avatar-btn"
@@ -404,6 +412,8 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             name={author}
             src={message.user?.profile_picture || undefined}
             size="md"
+            kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
+            seed={message.user_id || undefined}
           />
         </button>
       ) : (
@@ -411,9 +421,22 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           name={author}
           src={message.user?.profile_picture || undefined}
           size="md"
+          kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
+          seed={message.user_id || undefined}
         />
       )}
       <div className="v2-msg__body">
+        {grouped && onReply && (
+          <button
+            type="button"
+            className="v2-msg__reply-float"
+            aria-label={`Reply to ${author}`}
+            onClick={() => onReply(message)}
+          >
+            Reply
+          </button>
+        )}
+        {!grouped && (
         <div className="v2-msg__head">
           {isClickable ? (
             <button type="button" className="v2-msg__author-btn" onClick={handleAuthorClick}>
@@ -435,6 +458,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             </button>
           )}
         </div>
+        )}
         {(() => {
           // Quoted context for replies. POST responses carry a normalized
           // `replyTo` object; list rows may carry raw reply_* columns instead.

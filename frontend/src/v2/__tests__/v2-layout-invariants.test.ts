@@ -40,8 +40,13 @@ const ruleBody = (css: string, selector: string): string => {
   return end === -1 ? '' : css.slice(start, end);
 };
 
+const cssVariable = (css: string, name: string): string | undefined => (
+  new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
+);
+
 describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
+  const tokens = read('../../../design-system/tokens.css');
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
@@ -50,6 +55,88 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
     expect(rule).toContain('flex: 1 0 100%');
     expect(rule).toContain('min-width: 0');
+  });
+
+  test('Your Team card name WRAPS — a primary identifier never one-line-ellipsizes (craft audit rule 1)', () => {
+    // At 1440px half the fleet's names truncated ("Commonly…", "Pod Summ…").
+    // The name wraps to two lines; single-line nowrap+ellipsis was the defect.
+    const rule = ruleBody(v2, '.v2-team-card__name');
+    expect(rule).toContain('white-space: normal');
+    expect(rule).toContain('-webkit-line-clamp: 2');
+    expect(rule).not.toContain('white-space: nowrap');
+  });
+
+  test('sidebar pod name WRAPS — it never loses to its own timestamp (craft audit finding 8)', () => {
+    // "Sharpen — pod m…", "Team Orchestra…": the name shared its line with the
+    // relative time and ellipsized at desktop width. Same primary-identifier
+    // rule as the team-card name: wrap to two lines, and the timestamp lives
+    // on the snippet row so it never competes with the name at all.
+    const title = ruleBody(v2, '.v2-pods__item-title');
+    expect(title).toContain('-webkit-line-clamp: 2');
+    expect(title).not.toContain('white-space: nowrap');
+    expect(v2).toContain('.v2-pods__item-snippet-row');
+  });
+
+  test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
+    // Consecutive same-author messages within the grouping window drop the
+    // header row; the ghost cell must match the .v2-msg grid's 38px avatar
+    // column or grouped text mis-aligns with headed text by exactly the
+    // avatar width — a defect jsdom cannot see.
+    expect(ruleBody(v2, '.v2-msg')).toContain('grid-template-columns: 38px');
+    expect(ruleBody(v2, '.v2-msg__avatar-ghost')).toContain('width: 38px');
+    expect(v2).toContain('.v2-msg--grouped');
+  });
+
+  test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
+    // The chip shipped in violation of the ratified rule; the craft audit
+    // (finding 2) removed it. This pins the removal against reintroduction.
+    expect(v2).not.toContain('.v2-team-card__runtime {');
+  });
+
+  test('chat text holds a readable measure WITHOUT centering (craft audit rule 2, corrected)', () => {
+    // ~150 chars/line was the defect; the first fix centered the whole
+    // message column and left it misaligned with the full-width composer and
+    // header — worse than the disease. The correct mechanic caps the text
+    // measure only, rows left-anchored. Both halves are load-bearing: the
+    // cap must exist, and the centering must never come back.
+    const body = ruleBody(v2, '.v2-msg__body');
+    expect(v2).toContain('max-width: 76ch');
+    expect(v2).not.toContain('.v2-chat__messages > *');
+  });
+
+  test('motion timing is tokenized and all three existing V2 animations consume it', () => {
+    expect(tokens).toContain('--motion-stagger:    0.18s');
+    expect(tokens).toContain('--motion-breath:     1.2s');
+    expect(tokens).toContain('--motion-ease-breath: ease-in-out');
+    expect(tokens).toContain('--motion-ease-state:  ease-out');
+    expect(tokens).toContain('--motion-ease-linear: linear');
+
+    // V2 is a scoped stylesheet, so it cannot inherit :root tokens directly.
+    // Bind its local copy to the design-system source of truth rather than
+    // allowing the two timing layers to quietly diverge.
+    const v2Root = ruleBody(v2, '.v2-root');
+    for (const name of [
+      '--motion-stagger',
+      '--motion-breath',
+      '--motion-pulse',
+      '--motion-spin',
+      '--motion-ease-breath',
+      '--motion-ease-state',
+      '--motion-ease-linear',
+    ]) {
+      expect(cssVariable(v2Root, name)).toBe(cssVariable(tokens, name));
+    }
+
+    expect(ruleBody(v2, '.v2-chat__typing-dots > span')).toContain('var(--motion-breath)');
+    expect(ruleBody(v2, '.v2-inspector__now-pulse')).toContain('var(--motion-pulse)');
+    expect(ruleBody(v2, '.v2-spinner')).toContain('var(--motion-spin)');
+  });
+
+  test('the app boot mark reuses the typing keyframes and does not replace state spinners', () => {
+    expect(ruleBody(v2, '.v2-boot__mark-dot')).toContain('animation: v2-typing-dot');
+    expect(ruleBody(v2, '.v2-boot__mark-dot:nth-of-type(2)')).toContain('var(--motion-stagger)');
+    expect(ruleBody(v2, '.v2-boot__mark-dot:nth-of-type(3)')).toContain('var(--motion-stagger)');
+    expect(ruleBody(v2, '.v2-spinner')).toContain('animation: v2-spin');
   });
 
   test('Your Team grid columns can shrink below 320px on phones', () => {
@@ -332,5 +419,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const landingCss = read('../landing/v2-landing.css');
     expect(ruleBody(landingCss, '.v2-compare__head')).not.toContain('max-width');
     expect(ruleBody(landingCss, '.v2-compare__head > *')).toContain('max-width');
+  });
+
+  test('an uploaded avatar photo is not overlaid by the initials-plate highlight', () => {
+    // .v2-avatar carries an inset highlight so a seeded gradient reads as a lit
+    // sphere rather than a flat disc. That shading is correct behind INITIALS
+    // and wrong on top of a person's photo, where it lands as a bright band
+    // across the image. The `:has(img)` override removes it for the photo case.
+    //
+    // jsdom cannot see this — it has no compositing — so a render test would
+    // pass with the highlight sitting on every uploaded face. Guarding the
+    // rule's presence is the same stand-in used for the invariants above.
+    const base = ruleBody(v2, '.v2-avatar');
+    expect(base).toContain('inset');
+
+    const photo = ruleBody(v2, '.v2-avatar:has(img)');
+    expect(photo).toContain('box-shadow');
+    expect(photo).toContain('none');
   });
 });

@@ -257,6 +257,7 @@ const V2AgentBYO: React.FC = () => {
       if (cancelled) return;
       if (Date.now() - startedAt > 15 * 60 * 1000) {
         setListenState('timeout');
+        byoStep('listen-timeout');
         return;
       }
       try {
@@ -266,7 +267,10 @@ const V2AgentBYO: React.FC = () => {
           === issued.agentName.toLowerCase();
         const afterIssue = data.lastUsedAt
           && new Date(data.lastUsedAt).getTime() >= issued.issuedAt - 60_000; // clock-skew slack
-        if (sameAgent && afterIssue) setListenState('listening');
+        if (sameAgent && afterIssue) {
+          setListenState('listening');
+          byoStep('listen-confirmed');
+        }
       } catch {
         // Transient read failure — keep polling; the checkmark can only be
         // late, never wrong.
@@ -275,11 +279,21 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; clearInterval(timer); };
   }, [issued, listenState]);
 
+  // BYO funnel telemetry: 7 of 7 recent seats died between token issuance and
+  // the first authenticated call, and the server cannot see whether the user
+  // even copied a command. Fire-and-forget; the flow never waits on it.
+  const byoStep = (step: string) => {
+    axios.post('/api/stats/byo-step', { step }).catch(() => {});
+  };
+
   const copy = async (key: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
+      if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
+      else if (key === 'listen') byoStep('cli-command-copied');
+      else if (key === 'tok') byoStep('token-copied');
     } catch {
       // Clipboard may be unavailable (non-HTTPS, sandbox); user can select manually.
     }

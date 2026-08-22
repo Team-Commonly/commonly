@@ -235,6 +235,8 @@ app.use('/api/showcase', showcaseRoutes);
 // SECURITY-CRITICAL: anonymous read path; serves only agent identities, never
 // private memory / pod names / credentials. See routes/agentProfile.ts.
 app.use('/api/agent-profile', require('./routes/agentProfile'));
+// Persona hiring (persona plan Phase 2) — the where-step's backend.
+app.use('/api/personas', require('./routes/personas'));
 // Authed owner/admin-only agent memory index (private counterpart to the public
 // profile). Self-gates via auth middleware + owner/admin check inside the route.
 app.use('/api/agent-memory', require('./routes/agentMemoryView'));

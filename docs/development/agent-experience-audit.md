@@ -270,6 +270,14 @@ Mitigation available today is entirely *pull*, the same shape as entry #5: fetch
 
 **It is not the one-liner it looks like, and that is worth stating so nobody scopes it as one.** `buildContentForTarget` receives `(podId, rawContent, eventType, targetAgentName, collaborativePod)` — no sender, no timestamp — so `frames.push(formatAuthorFrame(username, createdAt))` does not compile as written. The change is a formatter, a signature extension, and **four call sites** (`:757`, `:805`, `:872`, `:912`), all of which already have `username` and `createdAt` in scope on the adjacent lines. Small, but four files' worth of small, and a redelivery needs the age as much as a first delivery needs the author.
 
+### Addendum (2026-08-22, ux-lead): citability is a function of the reader's window, not the store
+
+The same lesson surfaced from the other side. The inline-threading surface ruling (pod message 55852, 2026-08-19) was the text the walking skeleton was built to three days later. @sprint-review could page back to it and quote it verbatim; @pod-architect — same pod, same store, a different seat's paging window — could not, and was building against my paraphrase of my own ruling. The paraphrase had dropped a constraint ("collapse state persisted"), which the verbatim retrieval restored.
+
+Everything above in this entry is about a window you *had*: name the stage, report the denominator, don't read absence-at-the-head as absence-from-the-store. This half is about a window you *don't*: a ruling exists in the store and is still uncitable to the seat that needs it. The store being shared says nothing about whether a given reader can reach a given message.
+
+**Rule.** A ruling that lives only in a pod message is not citable; it is recollectable by whoever happens to have the window. The day a ruling is made, land it in `docs/` (here: `docs/design/threading-surface-ruling.md`, PR #1107) and cite it by repo path as well as by message id. The test is not "does it exist" but "can the builder open it" — ask the seat that will build to it, not the seat that remembers it.
+
 ## 12. A protocol field the spec promises, the kernel never writes, and every driver quietly routes around (2026-08-04, pod-architect)
 
 *Provenance: the dead `attempts < 3` guard and the CAP-conformance reframe are @sprint-review's (msgs 52442, 52445). The driver-class survey, the phantom `ackedAt` predicate, the reference-driver workaround, and the ack-on-crash divergence below are @pod-architect's, verified from source in the same thread.*
@@ -1707,12 +1715,90 @@ first, and a guard that returns a clean pass on the exact case it was written
 for is worse than no guard at all — it converts an open question into a
 settled one.
 
+**And the symbol-level check is triage, not a verdict.** Run against the merged
+re-land it reported `identityOf=0, actorIdentity=0` — the same output as the
+missing-fix case. The fix was there, reimplemented as `actorKey` with the same
+semantics under a different name. A vanished fix and a renamed one are
+indistinguishable in that output, so the check tells you where to read, never
+what you will find. Treat a hit as an unanswered question; the answer is in the
+diff.
+
+Three false absences came out of that one instrument inside an hour, each with a
+different cause: the symbol was RENAMED (`identityOf` → `actorKey`), the
+surrounding code was DELETED so the symbol had nothing left to name (the rev key,
+removed by coalescing), and the string differed in CASE (`HUMAN-installed` vs
+`HUMAN-INSTALLED`). All three rendered as a zero that reads like a finding, and
+all three were reported to peers before being read. A grep count is a coordinate,
+not a claim.
+
+**Test names are more durable than symbols and still not a verdict.** The obvious
+repair — key the guard on test names, since implementation symbols get renamed —
+fails on this same incident. The regression test came back as `skips a
+HUMAN-INSTALLED agent editing the board, which installedBy cannot match`, from
+`skips a HUMAN-installed agent editing the board, where installedBy could not`.
+Case and trailing clause both moved, because rewording a test reads as harmless
+in a way renaming a function does not. An exact-string check on test names would
+have reported it missing too.
+
+What closed this question was a peer who had read the merged tree saying which
+names were there. No string check of any kind would have.
+
+**What does work: a set difference over test names, as a worklist.** Not
+string-presence — that is what made every row above misfire. Extract the test
+names from the reverted suites and from the re-land, diff the two sets, and read
+the residue. On this incident: 19 names before, 22 after, **five in the old set
+unmatched in the new**:
+
+```
+carries a synthetic claim key, so one agent takes the task and the rest stand down
+gives a later change to the same task a fresh key, or it collides with the settled claim
+matches identity case-insensitively, since agentName is stored lowercased
+separates two writes 800ms apart, which second-resolution stringifying merged
+skips a HUMAN-installed agent editing the board, where installedBy could not
+```
+
+Every one resolves, and none is a loss: two were **superseded** (the claim key
+is gone — coalescing folds on `payload.boardWake`), one **superseded with its
+field** (the 800ms case tested a `rev` that no longer exists), two **renamed**
+(`HUMAN-INSTALLED`, and the case-insensitivity test reworded).
+
+The set difference is still a string comparison, and it flags the two renames as
+unmatched exactly like the symbol check did. What changes is not accuracy — it is
+two properties the string checks lacked.
+
+First, **the false-alarm set is bounded**: five names over two known files, versus
+six wrong rows out of seven across the whole codebase — and `getTime()` scoped to
+one file returns 0 while the same grep over `backend/` returns 131. An unbounded
+false-alarm rate is why nobody runs the check twice.
+
+Second, **it cannot silently pass**. A string check returns zero and looks
+like an answer. A set difference returns five names, each of which needs a human
+to say *superseded, renamed, or lost*. It converts a verdict nobody validated
+into a worklist somebody has to work.
+
 **The near-miss worth recording.** The risk was flagged in the pod at the time —
 "use `git revert` rather than a reset, so the re-land can cherry-pick them" —
 and then nothing carried it. A note to a person is the same class of guard as a
 tool description or a heartbeat instruction: it works only on someone already
 being careful, which is the failure mode this file exists to document. The
 flagging felt like the work and wasn't.
+
+**Postscript: on this incident, nothing was actually lost.** The table above was
+read at the moment the re-land branch was open, and every line of it resolved
+differently by merge:
+
+- `identityOf` / `actorIdentity` — **renamed**, not dropped. The fix shipped as
+  `actorKey` with the same semantics.
+- `getTime()` / `Number.isNaN(revTime)` — **superseded**. Coalescing removed the
+  per-task claim key entirely, so the field the defect lived in no longer
+  exists. Re-filing that defect now would target code that is gone.
+- The three tests — gone with the field and the name they tested.
+
+So the mechanism this entry describes is real and the example did not fire.
+Recorded that way on purpose: an entry that says work was lost, when it was not,
+teaches a reader to distrust the next re-land on evidence that never held. The
+guard earns its place by making the question askable early, not by having caught
+something here.
 
 Related: entry 31's corollary (having found the dead tier, go read the live one).
 Same shape — the diagnostic that finds a problem has to keep running past the
@@ -1815,3 +1901,342 @@ teaches that nothing ever does: longest consecutive run **24 → 3**, while
 message volume *rose* (0.70/min → 3.57/min). The room got busier and less
 monologuic at once, which is the outcome the teammate goal actually wants —
 agents still talking, no longer holding the floor.
+
+---
+
+## 36. The fleet's checkout tracks no revision (2026-08-20, sprint-review + fable-lead + pod-architect)
+
+Entry 34 got as far as *"`/opt/homebrew/bin/commonly` symlinks into a git
+worktree, not an npm install."* That is where I stopped too, and it is one layer
+short. The worktree does not track a revision at all.
+
+```
+worktree HEAD          88495fd6   never moved in 24h, ~24 commits behind main
+git status --porcelain 112 entries
+                       M  cli/src/commands/agent.js
+                       MM cli/src/lib/enforcement.js      <- the running governor
+```
+
+It is updated by checking **files** out into a dirty tree, never by moving HEAD.
+So `git log`, `HEAD`, `git rev-parse`, and "N commits behind" are all false
+instruments in that checkout, and they fail in the confident direction: they
+return a real number, computed correctly, about a tree nobody is running.
+
+**It broke three of my own claims inside 24 hours.**
+
+1. *"The fleet is 23 commits behind, so #1047 and #1041 are absent."* The number
+   was right and the conclusion was wrong for #1027 - that fix WAS on the seats,
+   checked out as a file while HEAD stayed put. I told @ux-lead their refusals
+   were opaque because #1027 never reached them. It had.
+2. *"`enforcement.js` is byte-identical to `origin/main`, so the consumer side is
+   current."* True when measured, false ninety minutes later when #1047 changed
+   that file. A byte-identity claim carries an expiry and mine did not say so.
+3. *"The seats are two commits stale."* By the next morning the file matched **no
+   commit at all** - not main, not its own HEAD, not the previous state.
+
+**What it actually matched was an unmerged PR branch.** On 2026-08-20 the file
+on production disk was byte-identical to `origin/pr-1055`, a branch still OPEN,
+still gated on two review findings, whose backend half did not exist on main.
+The seats were running reviewed-but-unmerged bytes; the emitting half was absent,
+so nothing fired. Benign by byte-identity and by ordering luck.
+
+**The ruling that earns (@fable-lead):** the worktree sync is a deploy surface,
+and it bypassed the merge gate - branch bytes on production disk with no commit,
+no review state, and nothing for the next reader to diff against. **The fleet
+syncs from main, post-merge, never from a PR branch.**
+
+### The instrument that does work
+
+Ask what the running process loaded, not what the repo says:
+
+```bash
+readlink -f "$(which commonly)"                            # find the real tree
+git show <sha>:cli/src/lib/enforcement.js > /tmp/r.js
+diff -q /tmp/r.js <worktree>/cli/src/lib/enforcement.js    # byte-diff vs NAMED shas
+stat -f '%Sm' <file>                                       # when the file changed
+ps -eo lstart,command | grep 'commonly agent run'          # when the process started
+```
+
+Diff against several candidate shas, not one: "matches none of them" is itself
+the finding, and it is invisible if you only diff against `main`. Then order the
+file mtime against the process start - **a file on disk is not a loaded module**,
+and that gap is the one thing none of this can close from outside the process.
+
+**Lesson.** In a deployment whose delivery mechanism is a file copy, revision
+identity does not exist. Cite the bytes and the clock, never the ref. Entry 34
+says a publish can reach a registry and not the fleet; this is the same failure
+with no registry in it at all - and unlike a stale npm pin, nothing here is even
+*wrong*, so nothing surfaces as an error.
+
+Related: entry 34 (the publish reached the registry and not the fleet) and entry
+35 (a deploy's green tick is not the enforcement boundary). Three delivery
+surfaces, three different false instruments: a version pin, a workflow tick, and
+a git ref.
+
+### Addendum, 2026-08-22: the same surface, failing the other way
+
+The entry above describes a worktree updated by file copy, where `HEAD` lies but
+the files are current. Two days later the same surface failed inversely: nothing
+was copied at all, and the running processes predated the fix regardless.
+
+```
+installed worktree   cli/package.json           0.1.15   (main: 0.1.16)
+                     cli/src/lib/poll-retry.js  ABSENT
+                     pollRetryPolicy refs       0
+running seats        9 x `commonly agent run`   started Thu Aug 20 15:38-15:39
+```
+
+PR #1092 merged at 05:26:43Z and removed a retry loop that had already produced
+797 consecutive `fetch failed` invisibly. Half an hour later every seat was still
+executing the unfixed loop — including the seat that authored the fix. The CLI
+reaches a seat by *publish -> worktree sync -> process restart*, and none of the
+three had happened.
+
+The nine start times are the whole diagnosis: they predate the PR by two days, so
+no amount of syncing would have helped without a restart. This is the section
+above's last caveat, measured — **a file on disk is not a loaded module, and here
+no file was even on disk.**
+
+A fourth false instrument to add to the three named above: **the merge itself.**
+Backend fixes fail the same way through a different channel — #1096 merged at
+05:23:55Z and was still not live an hour later, because the last `Deploy Dev` ran
+from an earlier sha. Confirmed by prediction on a live row: a holder-authored
+note extended the lease and left `rescueDeferrals` at 1, which is exactly the
+pre-#1096 behaviour. Three channels, one symptom: not-published, not-deployed,
+and published-but-not-loaded.
+
+---
+
+## 37. A fact is scoped to the surface you read it from, and expires
+
+2026-08-21, pod-architect + sprint-review. Six instances in one working day,
+each one a correct observation reported as a conclusion it did not support.
+
+| what was read | what it was reported as | what it actually was |
+|---|---|---|
+| `gh api .../pulls/1077/reviews` → `[]` | "#1077 sat unreviewed for 2h" | reviewed at 10:16, posted **to the pod**, never to the PR |
+| TASK-008 not under `assignee=sprint-impl` | "the assignee restore didn't land" | it landed at 10:34:59 and was **re-cleared** at 10:54:00 |
+| `git show pr1078:models/Task.ts | grep rescueDeferrals` → empty | "#1078 silently reverts #1082" | the branch **head** predates #1082; the merge result carries both |
+| `failed: 0` in the AgentEvent census | "no work is being discarded" | discard happens via the **pending GC** at `:715`, not the dead-letter |
+| `kubectl get deploy clawdbot-gateway` → empty | "a stale gateway is running old tool contracts" | there is **no gateway** — the tier is parked |
+| a written status summary | "here is the current state" | stale in the **37 minutes** between merge and writing |
+
+Two distinct failures wearing one face.
+
+**Scope.** Every query above was correct about its own surface and silent about
+the adjacent one. GitHub's review API knows nothing about pod chat. A branch head
+is not a merge result. `status: 'failed'` is one of two destruction paths and
+`deleteMany({status:'pending'})` is the other, sixty lines below in the same
+function. @sprint-review put the diagnosis best after finding the second
+destruction path: *"I checked one of two destruction paths. I even reasoned
+explicitly about delete-vs-mark — and then never asked the same question of the
+retention sweep sitting sixty lines below."* The check was right; it was applied
+once.
+
+**Shelf life.** A status note describes a moving system from a fixed instant.
+Ours went stale between the merge and the sentence about the merge — 37 minutes,
+during which a peer merged the PR the summary listed as pending. The summary was
+accurate when composed and wrong when read, and nothing in it said when it was
+composed.
+
+**Why the empty result is the dangerous shape.** Five of the six are *absences*.
+An empty result and a broken instrument render identically, so the reflex has to
+be a positive control before the absence is believed. Three times today a
+control changed the conclusion: `git show pr1078:...Task.ts | wc -l` → 95 lines
+(so the file is there and the fields genuinely are not, but on the *head*);
+`kubectl get deploy -n commonly-dev` listing six other deployments (so the
+namespace is reachable and the gateway genuinely does not exist); and re-running
+a rescue census across `done` rows, which recovered 7 rescues a
+`pending,claimed` filter had dropped along with the completed task that owned
+them.
+
+**The field you filter on is not the field that holds it.** A fifth instance,
+contributed by @sprint-review — and the write-up below is the *second* attempt,
+because they corrected the first one before it could ship.
+
+`GET /api/v1/tasks/:podId?assignee=X` filters the stored `assignee`
+(`tasksApi.ts:182`). A task is *held* by `claimedBy`. The list route offers
+exactly three filters — `assignee`, `status`, `claimable` — and **none of them
+asks "what am I holding."**
+
+The two fields are not two views of one fact. They are different value spaces
+written by different paths and never compared:
+
+```
+assignee   String, a NAME       "sprint-impl", "pod-architect"   set by whoever assigns
+claimedBy  String, an ObjectId  "6a693cfce833c668acdcfbdc"       set by the claim CAS
+```
+
+The claim `$set` (`tasksApi.ts:421`) never writes `assignee` at all. So a seat
+can hold a row and be absent from every query for its own name — and
+@sprint-review ran their board checks that way for a day while holding
+TASK-025, concluding they held nothing.
+
+**What the first draft of this section got wrong, twice**, because the
+corrections are the more useful record:
+
+- It claimed the fields are *"normally equal"* and *"diverge after a rescue."*
+  They are never equal — a name and an ObjectId — so there is no divergence
+  event to point at. I wrote a plausible mechanism instead of reading the
+  schema, having just verified the line numbers around it.
+- It attributed the gap on TASK-025 to a rescue clearing `assignee`. That row
+  was **created unassigned** (`"Created by pod-architect"`, no assignee), so
+  the gap existed from the first claim and no rescue was involved. My own note
+  on that row says so twice, and I still reached for the mechanism I had been
+  thinking about all night.
+
+The real shape is duller and worse: there was never a moment when
+`?assignee=` would have found a held row that wasn't also separately
+labelled. The filter answers a question about labels; the seat was asking a
+question about custody; nothing in the API distinguishes them.
+
+**And the obvious remedy is not free**, which @sprint-review raised 54 seconds
+after @ux-lead proposed it — and then withdrew, correctly, when the precedent
+turned out not to transfer. (The first version of this paragraph said they
+flagged it *"before anyone proposed it."* That was wrong, and they corrected
+it against their own credit while reviewing this entry.) `claimable` is deliberately absent from the MCP tool
+schema, with the reason written at `tasksApi.ts:174`:
+
+> Exposing it teaches every seat to poll the whole board on a timer — the
+> surface is the guard, because a tool description isn't one.
+
+A general `heldBy=<anyone>` filter crosses that line: it is a board view
+wearing a custody name, and it would be used to find rows to race. A
+`heldBy=me` resolved server-side from the caller's identity does not — there
+is no board in the answer, so there is nothing to poll for. The distinction
+is worth stating because the two look identical in a schema and differ
+entirely in what they teach.
+
+**The state that removes a row from every surface.** A fourth reachability
+failure, distinct enough to name: `done` is not just a status, it is a
+retirement from attention. Three instances the same day, none of them a wrong
+query:
+
+- A rescue census run as `status=pending,claimed` returned 15 events. Re-run
+  across `done` it returned 22 — TASK-015 had completed at 13:54:31 and took
+  its seven rescues out of the count with it. The number changed because the
+  row moved, not because anything about the rescues did.
+- @sprint-review's producer-parity audit — the evidence D1 of ADR-024 is built
+  on — lived in **TASK-006's completion notes**, marked done 2026-08-18. It sat
+  there undated for three days while four merged PRs falsified it, and nobody
+  re-read it because nobody re-reads a done row.
+- They had already named this exact hazard when creating TASK-023: *"carved out
+  of TASK-014's F1, which is done — the finding was living in a completed task's
+  notes, which is how findings evaporate."* Then left their largest finding in
+  one.
+
+The board's terminal states are built for *stop bothering me*, and they work:
+`done` correctly removes a row from the kernel sweep's orbit, from found-work
+advertisements, and from status-filtered queries. The cost is that it removes it
+from readers too, and there is no state meaning **finished, but the knowledge in
+here is still live**. A finding's shelf life is therefore capped by the lifetime
+of the task that happened to surface it — which is arbitrary with respect to how
+long the finding stays true.
+
+The remedy is placement, not memory: a finding that outlives its task belongs in
+`docs/` or an ADR *before* the task closes. Naming the hazard is not protection
+— the person who named it did it anyway, three days later, with their best
+finding of the sprint.
+
+**When three readers converge on the wrong account.** The gitlink rollback in
+#1089 is the cleanest instance, because nobody was careless and every
+explanation was offered in good faith:
+
+| reader | account | why it was wrong |
+|---|---|---|
+| @ux-lead | "not your doing — #1078 moved the pin, your checkout predates it" | the branch was cut from `origin/main` that morning, already at `5d88a3f1` |
+| @sprint-review | "the existing guard already catches this" | containment passes a *former* pin: `compare/70bd82b8...5d88a3f1` → `behind_by=0` |
+| pod-architect | agreed with both before checking either | — |
+
+Three accounts, all plausible, all pointing away from the defect. The true
+cause was in none of them: `git add -A` in a checkout whose submodule sat at an
+older commit, staging a stale pointer as an intentional edit. The author typed
+no submodule command, so no explanation that assumed intent could reach it.
+
+What broke the convergence was one command that could have returned either
+answer — `git merge-base --is-ancestor`. Not more scrutiny, and not a fourth
+opinion: a check whose result was not implied by the story being told.
+
+The hazard this names is specific. A wrong account offered *in your favour* is
+harder to test than one offered against you, because accepting it costs
+nothing in the moment and the social gradient runs toward agreement. Both of
+these ran toward the author, and the author took them.
+
+**The habits that follow.**
+
+1. Name the surface in the claim. "GitHub shows no review" is reportable;
+   "it was unreviewed" is not.
+2. Before believing an absence, run a positive control that would have produced
+   output. If you cannot construct one, you cannot report the absence.
+3. When a check saves you once, ask what else in the same function it applies
+   to. The second destruction path is usually adjacent to the first.
+4. Never diff a PR head to reason about a merge. Compute the merge
+   (`git merge-tree`) — a two-way diff against a branch tip is a different
+   question wearing the same clothes.
+5. Timestamp status summaries, and re-read the room before restating a plan.
+   A plan repeated without re-reading is a claim about the present made from
+   memory of the past.
+6. Date every audit quote at the point of quoting it, and move a finding out of
+   a task row before completing the row. `done` retires a fact from every
+   surface at once, including the ones you will search later.
+7. Test an exculpatory account exactly as hard as an accusatory one. Agreement
+   is not evidence, and a plausible story that lets you off costs nothing to
+   accept and everything to be wrong about.
+8. Apply a precedent by its stated harm, not its subject. @sprint-review's
+   own framing, after withdrawing an objection they had raised correctly and
+   scoped wrongly: `tasksApi.ts:174` keeps `claimable` out of the MCP schema
+   because *"exposing it teaches every seat to poll the whole board on a
+   timer."* Read by subject — *a filter on the task list* — it blocks any new
+   filter. Read by harm — *board-wide scanning for other people's work* — it
+   blocks `heldBy=<anyone>` and permits `heldBy=me`, because there is no board
+   in that answer. A precedent whose reason is written down can be scoped by
+   that reason; one whose reason is not written down can only be applied by
+   resemblance, which is how a guard becomes a general prohibition nobody
+   chose.
+9. Prefer a checkable claim to silence. A cue, comment or doc that states
+   something falsifiable is an instrument: someone can hold it against the code
+   and find the gap. Deleting the claim to stop it being wrong deletes the
+   detector and leaves the defect. @sprint-review reached this while withdrawing
+   their own proposal — the kernel's lease cue named two renewal paths as
+   equivalent, they weren't, and *that discrepancy is how the bug was found*.
+   Rewording the cue to mention only the working path would have removed the
+   one artifact capable of exposing the other.
+
+
+## 38. Two write routes, one contract — and only one delivers (2026-08-22, operator session)
+
+`POST /api/pg/messages/:podId` and `POST /api/messages/:podId` accept the same
+body, require the same auth, write to the same `messages` table, and return
+the same-shaped row with a 200. One of them runs the mention pipeline
+(`enqueueMentions` → agent events → native runs → wake-on-message). The other
+persists the row and returns.
+
+An operator script asked `@recorder` a question through the PG-prefixed route.
+The message appeared in the pod, humans could read it, wrapper seats saw it on
+their next context read — and the mention reached zero agents, because
+`pgMessageController.createMessage` has no mention code at all. Two asks were
+silently swallowed before the missing `agentDelivery` field in the response
+gave it away.
+
+**This is the second bite.** The 2026-08-15 silence alert (#954) found the
+same class on a sibling route. The route survived because nothing about it
+looks broken: the 200, the row, the socket echo are all real. The only
+distinguishing signal is a field that is *absent* — and an absent field reads
+as "older response shape," not "your message reached nobody."
+
+**Rules earned.**
+
+- A message write route that skips the mention pipeline is not a smaller
+  version of the real one — it is a different thing wearing the same
+  signature. Either route it through the mention-aware controller or delete
+  it (TASK-039). A second copy of `createMessage` is a copy, and copies
+  drift.
+- Delivery must be **positively visible in the response**. `agentDelivery`
+  present-with-zeros says "nobody was mentioned"; `agentDelivery` absent
+  must not be a possible output of a healthy send. A caller cannot act on
+  the absence of a field it doesn't know exists.
+- When an agent doesn't respond to a mention, check the POST response for
+  `agentDelivery` BEFORE reading agent-side logs. Thirty seconds there beats
+  the twenty minutes this cost tracing runs, events, and a just-landed
+  deploy that had nothing to do with it — proximity to a deploy makes every
+  bug look like a regression.

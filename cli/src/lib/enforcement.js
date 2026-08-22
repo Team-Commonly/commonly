@@ -45,6 +45,14 @@ export const CLAIMABLE_EVENT_TYPES = new Set([
  */
 export const classifyTrigger = (event, recentMessages) => {
   const p = event?.payload || {};
+  // The third pricing branch (#1044, fable 55845). Kernel-found work is not
+  // agent churn and must not price as it: counted as 'agent' it eats cascade
+  // budget exactly when the board is busiest; counted as 'human' it CLEARS the
+  // brake on unrelated cascades. 'kernel' is neutral like 'unknown' — no
+  // count, no reset — but chosen on purpose rather than fallen into, and the
+  // refusal/boot logs can say so. Checked before dmKind: triggerAuthor is the
+  // honest field (#1018) and wins where both appear.
+  if (p.triggerAuthor === 'kernel') return 'kernel';
   if (p.dmKind === 'agent-agent') return 'agent';
   if (p.dmKind === 'user-agent') return 'human';
   if (!p.messageId || !Array.isArray(recentMessages)) return 'unknown';
@@ -275,7 +283,8 @@ export const createCascadeGovernor = ({
         const s = stateFor(podId);
         pods.set(podId, { streak: s.streak + 1, lastAgentTurnAt: now() });
       }
-      // 'unknown' is neutral: no count, no reset.
+      // 'unknown' is neutral by FALLBACK; 'kernel' is neutral by DESIGN —
+      // both take this path, but only one of them is an accident.
     },
   };
 };

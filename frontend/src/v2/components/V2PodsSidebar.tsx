@@ -671,10 +671,12 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                         <span className="v2-pods__item-title-row">
                           <span className="v2-pods__item-title">{pod.name}</span>
                           {unread && <span className="v2-pods__item-dot" aria-label={t('podsSidebar.unreadAriaLabel')} />}
-                          <span className="v2-pods__item-time">{time}</span>
                         </span>
-                        <span className={`v2-pods__item-snippet${typing ? ' v2-pods__item-snippet--typing' : ''}`}>
-                          {typing ? t('podsSidebar.typing') : snippet}
+                        <span className="v2-pods__item-snippet-row">
+                          <span className={`v2-pods__item-snippet${typing ? ' v2-pods__item-snippet--typing' : ''}`}>
+                            {typing ? t('podsSidebar.typing') : snippet}
+                          </span>
+                          <span className="v2-pods__item-time">{time}</span>
                         </span>
                       </span>
                     </button>

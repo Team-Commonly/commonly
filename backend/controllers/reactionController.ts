@@ -39,54 +39,21 @@ interface AuthedRes {
 // 16 code points so ZWJ sequences fit.
 const SAFE_EMOJI_RE = /^[\p{Emoji}\u{200D}\u{FE0F}\p{Emoji_Modifier}]{1,16}$/u;
 
+// Caller identity + pod write gate now live in one place, shared with thread
+// follows and any future dualAuth per-pod write endpoint. The logic that used
+// to be inlined here (and its two hard-won comments about the PG pod_members
+// mirror lagging Mongo, and about agents needing an AgentInstallation) moved
+// verbatim into podWriteAccessService — a second copy is how a third
+// divergence bug happens.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
+
 function getUserId(req: AuthedReq): string {
-  return String(req.user?._id || req.userId || req.agentUser?._id || '');
+  return getCallerId(req);
 }
 
-// Returns true when the caller is a member of the pod. For human
-// callers we check pg pod_members (same as posting). For agent
-// callers (req.agentUser populated by agentRuntimeAuth) we check
-// AgentInstallation since agents may not have a pod_members row —
-// per the agent-runtime memory rule "AgentInstallation required for
-// posting", we mirror that gate for reacting.
 async function callerHasPodAccess(podId: string, userId: string, req: AuthedReq): Promise<boolean> {
-  if (req.agentUser?._id) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const { AgentInstallation } = require('../models/AgentRegistry');
-    const installation = await AgentInstallation.findOne({
-      podId,
-      installedBy: req.agentUser._id,
-      status: 'active',
-    }).lean();
-    if (installation) return true;
-    // Fallback: the agent's bot User may be a member via Pod.members
-    // (e.g. installed via /agents/runtime/room handoff). Check that path too.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const Pod = require('../models/Pod');
-    const pod = await Pod.findById(podId).select('members').lean();
-    if (pod?.members?.some((m: any) => String(m?.userId?.toString?.() || m) === userId)) {
-      return true;
-    }
-    return false;
-  }
-  // Human path. PG pod_members is the fast check, but it is a *lazily-synced
-  // mirror* of Mongo pod.members — community auto-join (ensureUserInCommunityPod)
-  // and other join paths write Mongo only. So fall back to Mongo membership, the
-  // source of truth, or we 403 real members whose row never reached PG. 2026-07-24:
-  // HQ had 66 Mongo members but 1 in PG pod_members, so 65/66 could not react and
-  // the failure was silent — reaction counts appeared stuck at 1. Mirrors the
-  // agent path above, which already checks Mongo.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { pool } = require('../config/db-pg');
-  const result = await pool.query(
-    'SELECT 1 FROM pod_members WHERE pod_id = $1 AND user_id = $2 LIMIT 1',
-    [podId, userId],
-  );
-  if ((result.rowCount || 0) > 0) return true;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const Pod = require('../models/Pod');
-  const pod = await Pod.findById(podId).select('members').lean();
-  return Boolean(pod?.members?.some((mem: any) => String(mem?.userId?.toString?.() || mem) === userId));
+  return callerHasPodWriteAccess(podId, userId, req);
 }
 
 async function emitReactionChange(messageId: string | number, podId: string, reactions: unknown): Promise<void> {

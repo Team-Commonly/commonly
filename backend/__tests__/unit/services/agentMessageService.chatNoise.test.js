@@ -66,4 +66,17 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
       '```text\nNO_REPLY is discussed here.\n```',
     )).toBe('NO_REPLY is discussed here.');
   });
+
+  it('drops known bare runtime artifacts without swallowing terse replies', () => {
+    expect(AgentMessageService.sanitizeAgentContent('RGCTX')).toBe('');
+
+    // Short acknowledgements and formatted literals are intentional agent
+    // output; only observed wrapper artifacts are silent.
+    for (const content of [
+      'Yes', 'Done', 'LGTM', 'HTTP', 'HTTPS', 'XHTML', 'SHTML', 'MSSQL',
+      'KHTML', 'GRPCS', '`RGCTX`',
+    ]) {
+      expect(AgentMessageService.sanitizeAgentContent(content)).toBe(content);
+    }
+  });
 });

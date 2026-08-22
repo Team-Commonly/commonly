@@ -28,6 +28,7 @@ import V2MarketplacePage from './marketplace/V2MarketplacePage';
 import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
 import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
+import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
@@ -69,16 +70,33 @@ class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { e
   }
 }
 
+// This is inline rather than an <img> so the mark's existing three dots can
+// use the product typing rhythm. Its geometry matches the canonical minimal
+// mark in frontend/design-system/assets/commonly-mark.svg: one C ring, then
+// dots at x=25/32/39 with r=2.4 in a 64px viewBox.
+const V2Boot: React.FC = () => (
+  <div className="v2-boot" role="status" aria-label="Loading Commonly">
+    <svg className="v2-boot__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <path
+        d="M 50 17.7 A 22 22 0 1 0 50 46.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="9"
+        strokeLinecap="round"
+      />
+      <circle className="v2-boot__mark-dot" cx="25" cy="32" r="2.4" fill="currentColor" />
+      <circle className="v2-boot__mark-dot" cx="32" cy="32" r="2.4" fill="currentColor" />
+      <circle className="v2-boot__mark-dot" cx="39" cy="32" r="2.4" fill="currentColor" />
+    </svg>
+  </div>
+);
+
 const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="v2-empty">
-        <span className="v2-spinner" />
-      </div>
-    );
+    return <V2Boot />;
   }
 
   if (!isAuthenticated) {
@@ -96,11 +114,7 @@ const V2Home: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="v2-empty">
-        <span className="v2-spinner" />
-      </div>
-    );
+    return <V2Boot />;
   }
 
   if (!isAuthenticated) {
@@ -248,9 +262,16 @@ const V2App: React.FC = () => {
                     false,
                   )}
                 />
+                {/* Phase 1 (ADR-022 D2): the browse route sells personas.
+                    The old hub survives at agents/manage for installed-agent
+                    ops until the where-step absorbs the rest of it. */}
                 <Route
                   path="agents/browse"
-                  element={feature('Hire an agent', 'Browse and install agents from the catalog.', <AgentsHub />)}
+                  element={feature('Hire a colleague', 'Pick who joins your team — where they run comes second.', <V2PersonaCatalog />, false, false)}
+                />
+                <Route
+                  path="agents/manage"
+                  element={feature('Manage agents', 'Installed agents and registry operations.', <AgentsHub />)}
                 />
                 <Route
                   path="agents/byo"

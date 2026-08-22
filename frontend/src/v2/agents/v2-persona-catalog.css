@@ -1,0 +1,207 @@
+/* Persona catalog — Phase 1 of the persona plan. Token-only per the design
+   system: one accent, borders not shadows, sentence case, calm motion. */
+
+.v2-pcat {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 8px 24px 40px;
+}
+
+.v2-pcat__head { margin-bottom: 24px; }
+.v2-pcat__title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 850;
+  letter-spacing: -0.03em;
+  color: var(--v2-text);
+}
+.v2-pcat__sub {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.v2-pcat__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* At phone width the 300px column minimum exceeds what the nav rail leaves;
+   a single fluid column keeps every card fully inside the viewport. */
+@media (max-width: 640px) {
+  .v2-pcat { padding: 8px 14px 32px; }
+  .v2-pcat__grid { grid-template-columns: 1fr; }
+  .v2-pcat__card { min-width: 0; }
+}
+
+.v2-pcat__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  transition: border-color 120ms ease;
+}
+.v2-pcat__card:hover { border-color: var(--v2-text-secondary); }
+
+.v2-pcat__card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.v2-pcat__card-title { flex: 1 1 auto; min-width: 0; }
+.v2-pcat__name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--v2-text);
+}
+.v2-pcat__role {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pcat__liveness {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--v2-text-secondary);
+  white-space: nowrap;
+}
+.v2-pcat__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-border);
+}
+.v2-pcat__liveness--live .v2-pcat__dot { background: #15803d; }
+.v2-pcat__liveness--session .v2-pcat__dot { background: #b45309; }
+.v2-pcat__liveness--soon .v2-pcat__dot { background: var(--v2-border); }
+
+.v2-pcat__oneliner {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--v2-text);
+}
+
+.v2-pcat__kicker {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-text-secondary);
+  margin-bottom: 2px;
+}
+.v2-pcat__first p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pcat__sample {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-md, 8px);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.v2-pcat__sample-ask { color: var(--v2-text-secondary); }
+.v2-pcat__sample-ask::before { content: '“'; }
+.v2-pcat__sample-ask::after { content: '”'; }
+.v2-pcat__sample-reply {
+  color: var(--v2-text);
+  padding-left: 10px;
+  border-left: 2px solid var(--v2-accent);
+}
+
+.v2-pcat__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-pcat__chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+}
+
+.v2-pcat__limits {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--v2-text-secondary);
+  font-style: italic;
+}
+
+.v2-pcat__how summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+.v2-pcat__how[open] summary { color: var(--v2-text); }
+.v2-pcat__how p {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pcat__card-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+.v2-pcat__tier-note {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+.v2-pcat__cta {
+  margin-left: auto;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--v2-accent);
+  border: none;
+  border-radius: var(--v2-radius-md, 8px);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-pcat__cta:hover { background: var(--v2-accent-strong); }
+.v2-pcat__soon-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-pcat__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  font-size: 12.5px;
+  color: var(--v2-text-secondary);
+}
+.v2-pcat__manage { color: var(--v2-text-secondary); }
+.v2-pcat__manage:hover { color: var(--v2-text); }

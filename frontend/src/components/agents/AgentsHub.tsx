@@ -59,7 +59,6 @@ import {
 } from '@mui/icons-material';
 import AgentCard from './AgentCard';
 import ClawdbotConfigPanel from './ClawdbotConfigPanel';
-import AvatarGenerator from './AvatarGenerator';
 import AgentEventsDebugPage from '../admin/AgentEventsDebugPage';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -125,8 +124,14 @@ const getPresetSkillStatus = (skill) => {
 };
 
 const TAB_DISCOVER = 0;
-const TAB_PRESETS = 1;
-const TAB_INSTALLED = 2;
+// TAB_PRESETS removed 2026-08-20: the presets were moltbot templates for the
+// PARKED tier (#1050), and rendering the tab exec'd into a gateway that runs
+// at zero replicas — four cards stuck on "Loading preset..." for 30 seconds,
+// then offers of agents nothing would ever run. Deprecated per Sam. The
+// backend endpoint stays for admin tooling; this surface is gone. When the
+// pi/OpenCode adapters bring templated agents back, they come back through
+// the catalog with a live runtime, not through a bespoke tab.
+const TAB_INSTALLED = 1;
 const ADMIN_VIEW_INSTALLATIONS = 'installations';
 const ADMIN_VIEW_EVENTS = 'events';
 
@@ -244,7 +249,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   const [runtimeStatusLoading, setRuntimeStatusLoading] = useState(false);
   const [createAgentAvatarFile, setCreateAgentAvatarFile] = useState(null);
   const [createAgentAvatarPreview, setCreateAgentAvatarPreview] = useState('');
-  const [avatarGeneratorOpen, setAvatarGeneratorOpen] = useState(false);
   const [editTemplateOpen, setEditTemplateOpen] = useState(false);
   const [editTemplate, setEditTemplate] = useState(null);
   const [editTemplateAvatarFile, setEditTemplateAvatarFile] = useState(null);
@@ -372,7 +376,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     return creatorId?.toString?.() === currentUserId.toString();
   };
 
-  const adminTabIndex = isGlobalAdmin ? 3 : -1;
+  const adminTabIndex = isGlobalAdmin ? 2 : -1;
 
   const formatDateTime = (value) => {
     if (!value) return '—';
@@ -450,7 +454,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   useEffect(() => {
     fetchAgents();
     fetchTemplates();
-    fetchAgentPresets();
+    // fetchAgentPresets() removed with the Presets tab — the endpoint execs
+    // into the parked moltbot gateway and hangs ~30s against a deployment
+    // that does not exist. See TAB_PRESETS removal note above.
   }, [category, searchQuery]);
 
   // Fetch installed agents for selected pod
@@ -666,6 +672,15 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
   }, [isGlobalAdmin, activeTab, adminTabIndex, adminSearch]);
 
   const openInstallDialog = (agent, options: any = {}) => {
+    // A local wrapper is CONNECTED, not installed: the BYO flow carries the
+    // token handoff, the "answers only while your session runs" honesty
+    // (#943/#945/#947), and the awaiting-seat truth. The old dialog offered
+    // it moltbot gateway fields instead — the broken install UI Sam flagged.
+    const agentKey = (agent?.agentName || agent?.name || '').toLowerCase();
+    if (agentKey === 'claude-code') {
+      navigate('/v2/agents/byo');
+      return;
+    }
     const defaultPodId = selectedPodId
       || accessiblePods[0]?._id
       || userPods[0]?._id
@@ -933,6 +948,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   };
 
+  // Unwired 2026-08-21 with the New Agent button (template flow deprecated);
+  // kept because the create dialog it opens still exists, dormant, until
+  // Phase 1 retires this component whole.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const openCreateDialog = () => {
     setCreateAgentType('');
     setCreateAgentName('');
@@ -988,7 +1007,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
 
     setCreateAgentAvatarFile(file);
     setCreateAgentAvatarPreview(avatarDataUri);
-    setAvatarGeneratorOpen(false);
   };
 
   /**
@@ -1552,25 +1570,12 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     setAgentOverviewError('');
     setAgentOverviewLoading(false);
   };
-  const allAgents = [
-    ...agents,
-    ...templates.map((template) => ({
-      name: template.agentName,
-      agentName: template.agentName,
-      displayName: template.displayName,
-      description: template.description,
-      iconUrl: template.iconUrl,
-      verified: false,
-      categories: [
-        ...(agents.find((agent) => agent.name === template.agentName)?.categories || []),
-        'custom',
-      ],
-      isTemplate: true,
-      templateId: template.id,
-      visibility: template.visibility,
-      createdBy: template.createdBy,
-    })),
-  ];
+  // Template rows no longer surface in Discover (Sam, 2026-08-21: the flow is
+  // deprecated, and the rows were 11 pieces of internal junk — parked moltbot
+  // "team agents", FakeSam, test personas — advertised beside the curated
+  // catalog). The create/edit machinery below stays dormant until Phase 1 of
+  // the persona plan retires this component whole.
+  const allAgents = [...agents];
   const filteredAgents = category === 'all'
     ? allAgents
     : allAgents.filter((agent) => (agent.categories || []).includes(category));
@@ -2649,9 +2654,9 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
         )}
 
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Button variant="outlined" size="small" onClick={openCreateDialog}>
-            New Agent
-          </Button>
+          {/* "New Agent" (template creator) removed 2026-08-21: the template
+              flow is deprecated and its rows no longer render in Discover —
+              a creator whose output is invisible is a trap, not a feature. */}
           <Button href="/apps" variant="outlined" size="small">
             Apps Marketplace
           </Button>
@@ -2759,7 +2764,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)}>
           <Tab label="Discover" />
-          <Tab label={`Presets ${presets.length > 0 ? `(${presets.length})` : ''}`} />
           <Tab label={`Installed ${installedAgents.length > 0 ? `(${installedAgents.length})` : ''}`} />
           {isGlobalAdmin && (
             <Tab label={`Admin ${adminTotal > 0 ? `(${adminTotal})` : ''}`} />
@@ -2792,7 +2796,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {searchQuery
-                    ? 'Matching agents from the registry and your templates.'
+                    ? 'Matching agents from the catalog.'
                     : 'Agents you can install into the selected pod.'}
                 </Typography>
               </Box>
@@ -2837,182 +2841,7 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       )}
 
       {/* Installed Tab */}
-      {activeTab === TAB_PRESETS && (
-        <Box>
-          {presetsError && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              {presetsError}
-            </Alert>
-          )}
-          {presetCapabilities && (
-            <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Default Gateway Capability Snapshot
-              </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip
-                  size="small"
-                  color={presetCapabilities.pluginStatus === 'detected' ? 'success' : 'default'}
-                  label={`Plugins: ${presetCapabilities.pluginStatus}`}
-                />
-                <Chip size="small" label={`Gemini ${presetCapabilities.llmProviders?.google ? 'configured' : 'missing'}`} />
-                <Chip size="small" label={`OpenAI ${presetCapabilities.llmProviders?.openai ? 'configured' : 'missing'}`} />
-                <Chip size="small" label={`Anthropic ${presetCapabilities.llmProviders?.anthropic ? 'configured' : 'missing'}`} />
-                <Chip size="small" label={`LiteLLM ${presetCapabilities.llmProviders?.litellm ? 'configured' : 'missing'}`} />
-              </Stack>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                <Chip
-                  size="small"
-                  label={`Built-in skills ${presetRuntimeSkills?.status || 'unknown'}${
-                    presetRuntimeSkills?.skills?.length ? ` (${presetRuntimeSkills.skills.length})` : ''
-                  }`}
-                  variant="outlined"
-                />
-                <Chip
-                  size="small"
-                  label={`Dockerfile.commonly ${presetDockerCapabilities?.status || 'unknown'}`}
-                  variant="outlined"
-                />
-              </Stack>
-            </Paper>
-          )}
-          {presetCategories.length > 1 && (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-              {presetCategories.map((cat) => (
-                <Chip
-                  key={cat}
-                  label={cat === 'all' ? 'All Presets' : cat}
-                  color={presetCategory === cat ? 'primary' : 'default'}
-                  variant={presetCategory === cat ? 'filled' : 'outlined'}
-                  onClick={() => setPresetCategory(cat)}
-                />
-              ))}
-            </Stack>
-          )}
-          <Grid container spacing={2}>
-            {presetsLoading
-              ? [1, 2, 3, 4].map((id) => (
-                  <Grid item xs={12} md={6} key={id}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle1">Loading preset...</Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))
-              : filteredPresets.map((preset) => (
-                  <Grid item xs={12} md={6} key={preset.id}>
-                    <Card variant="outlined" sx={{ height: '100%' }}>
-                      <CardContent>
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
-                          <Typography variant="h6">{preset.title}</Typography>
-                          <Chip size="small" label={preset.category} />
-                          <Chip
-                            size="small"
-                            color={preset.readiness?.ready ? 'success' : 'warning'}
-                            label={preset.readiness?.ready ? 'Ready' : 'Needs setup'}
-                          />
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          {preset.description}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                          Usage: {preset.targetUsage}
-                        </Typography>
-
-                        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Required Tools</Typography>
-                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-                          {(preset.requiredTools || []).map((tool) => (
-                            <Chip
-                              key={tool.id}
-                              size="small"
-                              color={tool.available ? 'success' : 'default'}
-                              variant={tool.available ? 'filled' : 'outlined'}
-                              label={`${tool.label}${tool.available ? '' : ' (missing)'}`}
-                            />
-                          ))}
-                        </Stack>
-
-                        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>API Setup</Typography>
-                        <Stack spacing={0.5}>
-                          {(preset.apiRequirements || []).map((requirement) => (
-                            <Typography key={requirement.key} variant="caption" color="text.secondary">
-                              {requirement.configured ? 'Configured' : 'Missing'}: `{requirement.key}` - {requirement.purpose}
-                            </Typography>
-                          ))}
-                        </Stack>
-                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>Default Skills</Typography>
-                        <Stack spacing={1}>
-                          {(preset.defaultSkills || []).map((skill) => {
-                            const status = getPresetSkillStatus(skill);
-                            return (
-                              <Box key={skill.id} sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1.5, p: 1 }}>
-                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                                    {skill.id}
-                                  </Typography>
-                                  <Chip size="small" color={status.color as any} label={status.label} />
-                                </Stack>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                  {skill.reason}
-                                </Typography>
-                                {(skill.binStatus || []).length > 0 && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                    Bins: {(skill.binStatus || [])
-                                      .map((entry) => `${entry.bin}${entry.installed ? '' : ' (missing)'}`)
-                                      .join(', ')}
-                                  </Typography>
-                                )}
-                                {(skill.envStatus || []).length > 0 && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                                    Env: {(skill.envStatus || [])
-                                      .map((entry) => `${entry.key}${entry.configured ? '' : ' (missing)'}`)
-                                      .join(', ')}
-                                  </Typography>
-                                )}
-                              </Box>
-                            );
-                          })}
-                        </Stack>
-                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
-                          Recommended Env/API Variables
-                        </Typography>
-                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                          {(preset.recommendedEnv || []).map((entry) => (
-                            <Chip
-                              key={entry.key}
-                              size="small"
-                              color={entry.configured ? 'success' : 'default'}
-                              variant={entry.configured ? 'filled' : 'outlined'}
-                              label={`${entry.key}${entry.configured ? '' : ' (missing)'}`}
-                              title={entry.purpose || ''}
-                            />
-                          ))}
-                        </Stack>
-                      </CardContent>
-                      <CardActions sx={{ px: 2, pb: 2, pt: 0 }}>
-                        <Button
-                          variant="contained"
-                          onClick={() => handleInstallPreset(preset)}
-                          disabled={presetInstallLoadingId === preset.id}
-                        >
-                          {presetInstallLoadingId === preset.id ? 'Preparing...' : 'Install Preset'}
-                        </Button>
-                        <Button variant="text" size="small" onClick={() => setActiveTab(TAB_DISCOVER)}>
-                          Browse Agent
-                        </Button>
-                      </CardActions>
-                    </Card>
-                  </Grid>
-                ))}
-          </Grid>
-          {!presetsLoading && filteredPresets.length === 0 && !presetsError && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              No presets available for this category.
-            </Alert>
-          )}
-        </Box>
-      )}
+      {/* Presets panel removed with the tab — see TAB_PRESETS note near the top. */}
 
       {activeTab === TAB_INSTALLED && (
         <Box>
@@ -4599,7 +4428,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
             sx={{ mb: 2 }}
             helperText={`Derived from name: "${deriveInstanceId(installInstanceName, installAgent?.agentName || installAgent?.name)}"`}
           />
-          {(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (
+          {/* Keyed on the AGENT, not the removed presets flow — the old
+              condition read installPresetContext, which nothing sets since the
+              Presets tab retired, so webhook installs lost their URL fields. */}
+          {((installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'webhook') && (
             <>
               <Divider sx={{ my: 2 }} />
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -4631,151 +4463,11 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               />
             </>
           )}
-          {!(['webhook', 'claude-code'].includes(installPresetContext?.installHints?.runtime || '')) && (<>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Runtime gateway
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Use the shared gateway or select a custom gateway for this agent installation.
-          </Typography>
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <RadioGroup
-              value={installGatewayMode}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setInstallGatewayMode(nextValue);
-                if (nextValue === 'shared') {
-                  setInstallGatewayId('');
-                }
-              }}
-            >
-              <FormControlLabel value="shared" control={<Radio />} label="Shared gateway (default)" />
-              <FormControlLabel
-                value="custom"
-                control={<Radio />}
-                label="Custom gateway"
-                disabled={!isGlobalAdmin}
-              />
-            </RadioGroup>
-          </FormControl>
-          {!isGlobalAdmin && (
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Gateway selection is available to global admins.
-            </Typography>
-          )}
-          {installGatewayMode === 'custom' && (
-            <>
-              <FormControl
-                fullWidth
-                sx={{ mb: 2 }}
-                disabled={!isGlobalAdmin || runtimeGatewayLoading || runtimeGatewayOptions.length === 0}
-              >
-                <InputLabel id="install-gateway-label">Gateway</InputLabel>
-                <Select
-                  labelId="install-gateway-label"
-                  label="Gateway"
-                  value={installGatewayId}
-                  onChange={(event) => setInstallGatewayId(event.target.value)}
-                >
-                  {runtimeGatewayOptions.map((gateway) => (
-                    <MenuItem key={gateway._id} value={gateway._id}>
-                      {gateway.name || gateway.slug}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-                <Button
-                  variant="outlined"
-                  onClick={openInstallGatewayCreateDialog}
-                  disabled={!isGlobalAdmin}
-                >
-                  Create gateway
-                </Button>
-              </Stack>
-              {runtimeGatewayLoading && (
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Loading gateways...
-                </Typography>
-              )}
-              {runtimeGatewayError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {runtimeGatewayError}
-                </Alert>
-              )}
-              {!runtimeGatewayLoading && runtimeGatewayOptions.length === 0 && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  No custom gateways available yet.
-                </Alert>
-              )}
-            </>
-          )}
-          {installGatewayToken && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <TextField
-                fullWidth
-                label="Gateway token (copy now)"
-                value={installGatewayToken}
-                size="small"
-                InputProps={{ readOnly: true }}
-              />
-              <Tooltip title="Copy">
-                <IconButton onClick={handleCopyInstallGatewayToken}>
-                  <CopyIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          )}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            LLM credentials
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Use the gateway’s default keys or provide custom keys for this agent.
-            Custom keys are stored per installation and applied on gateway restart.
-          </Typography>
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <RadioGroup
-              value={installLlmMode}
-              onChange={(event) => setInstallLlmMode(event.target.value)}
-            >
-              <FormControlLabel value="default" control={<Radio />} label="Use gateway defaults" />
-              <FormControlLabel value="custom" control={<Radio />} label="Provide custom keys" />
-            </RadioGroup>
-          </FormControl>
-          {installLlmMode === 'custom' && (
-            <>
-              <TextField
-                fullWidth
-                label="Google / Gemini API key"
-                value={installLlmKeys.google}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, google: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                label="Anthropic / Claude API key"
-                value={installLlmKeys.anthropic}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, anthropic: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-              <TextField
-                fullWidth
-                label="OpenAI / GPT API key"
-                value={installLlmKeys.openai}
-                onChange={(event) => setInstallLlmKeys((prev) => ({ ...prev, openai: event.target.value }))}
-                size="small"
-                type="password"
-                sx={{ mb: 2 }}
-              />
-            </>
-          )}
-          </>)}
+          {/* The gateway-mode and per-agent LLM-key sections that lived here
+              were moltbot-era config (#1050 parked that tier); no catalog row
+              reaches them anymore, and rendering them for native/BYO installs
+              was exactly the broken config UI Sam flagged. Phase 1 of the
+              persona plan replaces this dialog whole. */}
           {(installAgent?.agentName || installAgent?.name || '').toLowerCase() === 'openclaw' && (
             <>
               <Divider sx={{ my: 2 }} />
@@ -4921,14 +4613,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
               src={createAgentAvatarPreview || undefined}
             />
             <Stack direction="row" spacing={1}>
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => setAvatarGeneratorOpen(true)}
-                disabled={!createAgentName}
-              >
-                🎨 Generate AI Avatar
-              </Button>
               <Button variant="outlined" size="small" component="label">
                 Upload
                 <input
@@ -5025,13 +4709,6 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
       </Dialog>
 
       {/* AI Avatar Generator Modal */}
-      <AvatarGenerator
-        open={avatarGeneratorOpen}
-        onClose={() => setAvatarGeneratorOpen(false)}
-        onSelect={handleAvatarGenerated}
-        agentName={createAgentName}
-        targetType="agent"
-      />
     </Container>
   );
 };

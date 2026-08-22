@@ -98,6 +98,17 @@
   --c-dur-slow:    200ms;
   --c-dur-page:    300ms;       /* layout shifts */
 
+  /* Motion identity — the mark's three dots and the chat typing cue share
+     one cadence. State affordances use the same named timing layer without
+     inheriting the typing semantics. */
+  --motion-stagger:    0.18s;
+  --motion-breath:     1.2s;
+  --motion-pulse:      1.6s;
+  --motion-spin:       0.8s;
+  --motion-ease-breath: ease-in-out;
+  --motion-ease-state:  ease-out;
+  --motion-ease-linear: linear;
+
   /* ---------- Typography ---------- */
   /* SF-first stack — uses the OS-installed San Francisco family on Apple
      devices; falls through to BlinkMacSystemFont (Chrome's SF alias) and
