@@ -69,6 +69,27 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   UNIQUE (message_id, user_id, emoji)
 );
 CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id);
+-- Thread follow state (W-T, TASK-029). A SEPARATE record rather than widening
+-- User.followedThreads, which is typed `postId: ObjectId ref 'Post', required`
+-- and cannot hold a Postgres messages.id — widening it would silently drop
+-- chat rows from every consumer that does Post.find({_id: {$in: postIds}})
+-- (postController:457/:513/:548, activityService:614/:712, ActivityFeedPage).
+--
+-- Keyed on (user_id, thread_root_id). pod_id is denormalised for the
+-- "my follows in this pod" read; the root already implies the pod, so pod_id
+-- is convenience, never identity — it is deliberately NOT part of the unique.
+CREATE TABLE IF NOT EXISTS thread_follows (
+  id SERIAL PRIMARY KEY,
+  thread_root_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id VARCHAR(255) NOT NULL,
+  pod_id VARCHAR(255) NOT NULL,
+  followed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (thread_root_id, user_id)
+);
+-- The wake path asks "who follows this thread" on every threaded reply, so the
+-- root is the hot key. The user index serves the "what am I following" read.
+CREATE INDEX IF NOT EXISTS idx_thread_follows_root ON thread_follows(thread_root_id);
+CREATE INDEX IF NOT EXISTS idx_thread_follows_user_pod ON thread_follows(user_id, pod_id);
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_messages_pod_id ON messages(pod_id);
