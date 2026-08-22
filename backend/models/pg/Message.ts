@@ -112,12 +112,18 @@ class Message {
     //
     // Deliberately NOT derived from anything but the reply edge: thread_root_id
     // must never acquire addressing semantics (see schema.sql).
+    //
+    // The `::int` casts are explicit on purpose. Postgres infers them fine
+    // either way, but without them the scalar subquery is typed as an array by
+    // pg-mem — which is what lets this exact query be exercised at the unit
+    // tier instead of only against a real server. A cast that costs nothing in
+    // production and buys a fast test everywhere is worth writing down.
     const query = `
       INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload, thread_root_id)
-      SELECT $1, $2, $3, $4, $5, $6,
+      SELECT $1, $2, $3, $4, $5::int, $6,
              (SELECT COALESCE(parent.thread_root_id, parent.id)
                 FROM messages parent
-               WHERE parent.id = $5)
+               WHERE parent.id = $5::int)::int
       RETURNING *
     `;
     try {
