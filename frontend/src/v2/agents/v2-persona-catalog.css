@@ -5,13 +5,17 @@
    cobalt appears on action alone. Un-migrated surfaces keep the flat system —
    never mix languages inside one surface. */
 
+/* The WHOLE pane is the material — the recipe's core rule holds at page
+   level or nowhere. A rounded slab on the white shell reads as broken
+   neumorphism (first local cut proved it; Sam called it). The nav rail is a
+   separate fixed plane, like a dock — it keeps the flat system. */
+.v2-feature:has(.v2-pcat) { background: var(--neo-surface); }
+
 .v2-pcat {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 8px 24px 40px;
-  background: var(--neo-surface);
+  padding: 16px 8px 48px;
   color: var(--neo-ink);
-  border-radius: 20px;
 }
 
 .v2-pcat__head { margin-bottom: 24px; }
@@ -33,7 +37,7 @@
 .v2-pcat__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
+  gap: 30px;
 }
 
 /* At phone width the 300px column minimum exceeds what the nav rail leaves;
@@ -47,11 +51,11 @@
 .v2-pcat__card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
+  gap: 14px;
+  padding: 26px 24px 22px;
   background: var(--neo-surface);
   border: none;
-  border-radius: 18px;
+  border-radius: 20px;
   box-shadow: var(--neo-raised);
   transition: box-shadow 140ms ease, transform 140ms ease;
 }
@@ -60,7 +64,21 @@
 .v2-pcat__card-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  /* When a long name wraps, the liveness chip drops to its own line instead
+     of crushing the title column. */
+  flex-wrap: wrap;
+}
+/* The mock's signature: the avatar sits in an inset well, a coin pressed
+   into the surface. */
+.v2-pcat__avatar-well {
+  border-radius: 50%;
+  background: var(--neo-surface);
+  box-shadow: var(--neo-inset-soft);
+  padding: 5px;
+  flex: none;
+  display: grid;
+  place-items: center;
 }
 .v2-pcat__card-title { flex: 1 1 auto; min-width: 0; }
 .v2-pcat__name {
@@ -75,9 +93,13 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--neo-ink-2);
+  /* Kickers never hyphen-break ("PULL-" / "REQUEST" read as two words). */
+  hyphens: none;
+  overflow-wrap: normal;
 }
 
 .v2-pcat__liveness {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -149,7 +171,7 @@
   border-radius: 999px;
   color: var(--neo-ink-2);
   background: var(--neo-surface);
-  box-shadow: var(--neo-raised-soft);
+  box-shadow: -2px -2px 5px var(--neo-shadow-light), 2px 2px 5px var(--neo-shadow-dark);
 }
 
 .v2-pcat__limits {
