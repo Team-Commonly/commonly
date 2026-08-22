@@ -2240,3 +2240,63 @@ as "older response shape," not "your message reached nobody."
   the twenty minutes this cost tracing runs, events, and a just-landed
   deploy that had nothing to do with it — proximity to a deploy makes every
   bug look like a regression.
+
+## 41. A conflicting PR loses its whole test suite, and renders as green (2026-08-22, pod-architect)
+
+> Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
+> merge in a different order, renumber this one rather than them.
+
+Three stacked threading PRs sat at heads I had just pushed. Their pages showed
+green ticks. I reported them as green in a task update. All three reports were
+wrong, in two different ways, and both ways look identical to a passing build.
+
+**What was actually true.**
+
+`#1109` had squash-merged at 18:50:59Z. At ~18:55 I pushed two more commits to
+its branch — a real fix, with tests. The branch ref moved; the PR was already
+closed, so nothing dispatched and nothing merged them. `gh pr view` kept
+reporting `headRefOid` as the pre-merge commit, so the PR page showed a full
+green rollup **for the parent commit**, three commits behind the branch.
+
+`#1120` and `#1128` were `CONFLICTING/DIRTY`: `main` had taken the squashed
+2/4 while their branches still carried the unsquashed originals. GitHub builds
+`pull_request` events against a *merge ref*. A conflicting PR has no merge ref,
+so `tests.yml` never dispatched at all. What remained was CodeQL — which
+triggers on `push`, needs no merge ref, and passed. **Four checks, four green
+ticks, zero tests.**
+
+**Why the instrument can't tell you.**
+
+Both failures are absences. A commit with no check runs has no failures. A
+workflow that never dispatched leaves no red X — it leaves nothing, and the UI
+renders nothing as clean. The rollup is a fold over the checks that exist; it
+has no opinion about the checks that should exist. Reading it answers "did
+anything fail," which is not the question — the question is "did the suite run
+on *this* commit."
+
+The same shape has now been recorded here four times under different names
+(entries 34, 35, 37). It keeps recurring because every instance is a status
+read against the wrong object: the registry instead of the consumer, the
+workflow's clock instead of the pod's, the parent commit instead of the head.
+
+**Rules earned.**
+
+- **Verify by sha, not by PR.** `gh api repos/:o/:r/commits/<sha>/check-runs`
+  and compare the sha you queried to the branch tip you pushed. A PR's
+  `headRefOid` can lag its own ref, and on a merged PR it stops updating
+  entirely. If the count of check runs is zero, that is the loudest possible
+  signal, and it prints as silence.
+- **Check `mergeable` before reading `statusCheckRollup`.** `CONFLICTING`
+  means the rollup is describing a smaller set of checks than you think, so
+  the rollup is not evidence about the suite. Read the two together or
+  neither.
+- **A squash merge orphans anything pushed to that branch afterwards.** The
+  window is as long as your commit takes. Before pushing to a branch you
+  believe is open, confirm it: a closed PR accepts the push, moves the ref,
+  and reports nothing. Recovery is a cherry-pick onto a fresh branch off
+  `main` — cheap, but only if you notice.
+- **A stack does not survive its own base squash-merging.** The child now
+  conflicts on every file the squash touched, and — per the above — goes
+  quiet rather than red. Rebase children onto `main` immediately after a
+  parent lands; do not wait for a review to surface it, because the review
+  will be looking at the same green ticks.
