@@ -52,46 +52,47 @@ async function resolveRoot(messageId: number): Promise<{ rootId: number; podId: 
 }
 
 /**
- * The threading cutoff, from the migration ledger the backfill writes — plus
- * whether the backfill has run at all, which is NOT the same question.
+ * The threading cutoff from the migration ledger, and whether it is knowable.
  *
- * A missing ledger row was originally reported as `cutoff: null` and
- * documented as "no pre-cutoff roots exist (fresh instance, or the backfill
- * has not run)". Those two are lumped together and they need OPPOSITE renders:
+ * Final shape per the merged ruling (docs/design/threading-surface-ruling.md,
+ * "Pre-cutoff roots default to expanded"), which went further than my first
+ * two attempts and is worth restating because both were wrong in the same
+ * direction — toward collapsing:
  *
- *   fresh instance, no history   -> nothing is pre-cutoff, collapse everything.
- *   backfill pending, history    -> the cutoff is UNKNOWN, and collapsing
- *                                   everything buries existing conversation
- *                                   under headline cards on ship day. That is
- *                                   precisely the failure #1115's carve-out
- *                                   exists to prevent.
+ *   row exists  -> the cutoff governs. Roots at or before it render expanded.
+ *   row missing -> UNKNOWN, and unknown resolves to EXPAND EVERYTHING.
  *
- * The live instance is the second case right now: 245 reply edges with no
- * root, ledger empty. So the ambiguity is not hypothetical — it is today.
+ * Not "no pre-cutoff roots". Collapsed hides history and the user cannot tell
+ * anything is missing; expanded is merely noisy and one click fixes it. An
+ * ambiguous state must resolve to the non-destructive side.
  *
- * Distinguished by the one fact that separates them: un-rooted reply edges
- * only exist if there is pre-threading history the backfill has not processed.
- * The extra query runs only when the ledger row is missing.
+ * The un-rooted probe I had here is GONE. It tried to distinguish "fresh
+ * instance" from "backfill not yet run" by counting un-rooted edges, and the
+ * ruling retires it for two reasons. It cannot work: after a backfill the old
+ * threads are rooted and indistinguishable from new ones, so zero un-rooted
+ * means "no history" OR "already backfilled", and the row that would tell them
+ * apart is the one that is missing. And it counted ORPHANS — a reply whose
+ * parent is gone stays un-rooted by design, so one dead row would have pinned
+ * the whole instance to expand forever.
+ *
+ * The backfill now always writes the row, even when it roots zero edges, so a
+ * migrated instance can never present a missing row. That is what makes
+ * "missing means unknown" safe rather than permanent.
  */
-async function readThreadingCutoff(): Promise<{ cutoff: string | null; backfillPending: boolean }> {
+async function readThreadingCutoff(): Promise<{ cutoff: string | null; cutoffUnknown: boolean }> {
   try {
     const { rows } = await pool.query(
       "SELECT details->>'threadingCutoff' AS cutoff FROM migration_records WHERE name = $1",
       [MIGRATION_NAME],
     );
-    if (rows[0]?.cutoff) return { cutoff: rows[0].cutoff, backfillPending: false };
-
-    const { rows: pending } = await pool.query(
-      `SELECT 1 FROM messages
-        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL LIMIT 1`,
-    );
-    return { cutoff: null, backfillPending: pending.length > 0 };
+    // A row with a NULL cutoff still counts as written: the backfill ran and
+    // found nothing to root, which is knowledge, not absence.
+    if (rows.length > 0) return { cutoff: rows[0].cutoff ?? null, cutoffUnknown: false };
+    return { cutoff: null, cutoffUnknown: true };
   } catch {
-    // Best-effort, and it fails toward "pending" rather than "nothing is
-    // pre-cutoff": a render that expands too much is recoverable by one click,
-    // one that hides history is not obviously recoverable because the user
-    // cannot tell anything is missing.
-    return { cutoff: null, backfillPending: true };
+    // Fails toward unknown, i.e. toward expanding. Same reasoning: the
+    // recoverable error is the noisy one.
+    return { cutoff: null, cutoffUnknown: true };
   }
 }
 
@@ -174,7 +175,7 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       ThreadUserState.stateForPod(userId, podId),
       readThreadingCutoff(),
     ]);
-    const { cutoff, backfillPending } = threadingCutoff;
+    const { cutoff, cutoffUnknown } = threadingCutoff;
     res.status(200).json({
       podId,
       // Defaults are stated in the response so a client never has to hardcode
@@ -193,16 +194,17 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       // contract could not express the rule; this is the smallest thing that
       // can.
       //
-      // Three states, not two:
-      //   timestamp                     -> roots at or before it render expanded
-      //   null + backfillPending false  -> no pre-cutoff roots; collapse all
-      //   null + backfillPending true   -> cutoff UNKNOWN; do NOT collapse
-      //                                    pre-existing threads yet
+      // Three states, and the third is the one that matters:
+      //   cutoff set                    -> roots at or before it render expanded
+      //   cutoff null, unknown false    -> the backfill ran and rooted nothing;
+      //                                    there is no pre-cutoff history
+      //   cutoffUnknown true            -> no ledger row. EXPAND EVERYTHING;
+      //                                    never collapse on an unknown.
       defaults: {
         collapsed: true,
         following: null,
         expandedForRootsCreatedBefore: cutoff,
-        threadingBackfillPending: backfillPending,
+        cutoffUnknown,
       },
       threads: rows.map((r: any) => ({
         threadRootId: Number(r.thread_root_id),

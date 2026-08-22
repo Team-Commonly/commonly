@@ -147,7 +147,29 @@ async function main(): Promise<void> {
     );
     console.log(`rows with a reply edge and no root: ${before.needs_root}`);
     if (before.needs_root === 0) {
-      console.log('nothing to do.');
+      // ZERO EDGES STILL WRITES THE LEDGER ROW. Per the merged ruling, a
+      // missing row means "cutoff unknown" and the surface then expands every
+      // thread — the non-destructive render. If a fresh instance could finish
+      // this script without a row, it would sit in that permanently-expanded
+      // state forever while being perfectly migrated.
+      //
+      // "Ran and rooted nothing" is knowledge. Absence of a row is not. The
+      // whole safety of "missing means unknown" depends on a migrated instance
+      // being unable to present a missing row, and this is the branch that
+      // would otherwise break it.
+      if (APPLY) {
+        await pool.query(
+          `INSERT INTO migration_records (name, details)
+           VALUES ($1, $2::jsonb)
+           ON CONFLICT (name) DO NOTHING`,
+          [MIGRATION_NAME, JSON.stringify({
+            threadingCutoff: null, rowsUpdated: 0, rowsEligible: 0,
+          })],
+        );
+        console.log(`nothing to root — recorded ${MIGRATION_NAME} with a null cutoff.`);
+      } else {
+        console.log('nothing to root. --apply would still record the ledger row.');
+      }
       return;
     }
 
