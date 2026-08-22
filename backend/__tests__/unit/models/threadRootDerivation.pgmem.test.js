@@ -4,9 +4,15 @@
  * BEFORE YOU RUN THE MUTATION THIS SUITE EXISTS FOR, read this.
  *
  * `COALESCE(parent.thread_root_id, parent.id)` appears TWICE in Message.ts:
- * once at :110 in the comment that explains the rule, once at :124 in the SQL
- * that implements it. A text-based mutation without /g, or any first-match
- * edit, rewrites the COMMENT and leaves the behaviour untouched.
+ * once inside the comment that explains the rule, once inside the SELECT that
+ * implements it — the comment occurrence comes FIRST. A text-based mutation
+ * without /g, or any first-match edit, rewrites the comment and leaves the
+ * behaviour untouched.
+ *
+ * (Described by position-in-the-file rather than by line number. @sprint-review
+ * (57333): citing `:110`/`:124` inside a warning about fragile text anchors is
+ * the joke writing itself — those drift on the next reflow. The structure is
+ * pinned executably instead, in twoOccurrencesInMessageTs below.)
  *
  * The result is not a silent no-op — it is worse. The suite passes 5/5, which
  * reads as "these tests cannot detect the thing they were built to detect",
@@ -14,8 +20,8 @@
  * fine. @sprint-review identified the mechanism (56937); both runs measured
  * against main afterwards:
  *
- *   first-match mutation (hits :110, the comment) -> 5 passed  [MEANINGLESS]
- *   line-targeted mutation (hits :124, the SQL)   -> 3 failed  [THE REAL KILL]
+ *   first-match mutation (hits the comment) -> 5 passed  [MEANINGLESS]
+ *   code-targeted mutation (hits the SQL)   -> 3 failed  [THE REAL KILL]
  *
  * So the derivation IS covered — sprint-review's A/B/C case, depth 7, and
  * two-chains-in-one-pod all die when the code actually changes. Anchor the
@@ -91,6 +97,33 @@ beforeAll(async () => {
     id VARCHAR(255) PRIMARY KEY, updated_at TIMESTAMP WITH TIME ZONE
   )`);
   await mockPool.query("INSERT INTO pods (id) VALUES ('pod-1')");
+});
+
+describe('the two-target hazard this suite warns about is still real', () => {
+  // The header tells the next person that a first-match mutation hits the
+  // comment. That instruction is only useful while it is TRUE, and prose
+  // cannot notice when it stops being. @sprint-review (57333) made the point
+  // against line numbers; it applies to the claim itself.
+  const EXPR = 'COALESCE(parent.thread_root_id, parent.id)';
+  const src = require('fs')
+    .readFileSync(require('path').join(__dirname, '../../../models/pg/Message.ts'), 'utf8');
+  const lines = src.split('\n').filter((l) => l.includes(EXPR));
+  const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+
+  test('the expression appears exactly twice — one comment, one code', () => {
+    // A third occurrence, or a deduped comment, changes which target a
+    // first-match edit lands on. Either way the header would be giving
+    // directions to somewhere that no longer exists.
+    expect(lines).toHaveLength(2);
+    expect(lines.filter(isComment)).toHaveLength(1);
+    expect(lines.filter((l) => !isComment(l))).toHaveLength(1);
+  });
+
+  test('and the COMMENT one comes first, which is why the hazard exists', () => {
+    // If the order ever flips, a first-match mutation starts hitting the real
+    // SQL and the warning above becomes actively misleading rather than stale.
+    expect(isComment(lines[0])).toBe(true);
+  });
 });
 
 describe('the derivation runs, and depth is the thing it proves', () => {
