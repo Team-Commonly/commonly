@@ -3,8 +3,13 @@ name: Tests
 on:
   push:
     branches: [ main, v1.0.x ]
+  # No branches filter on pull_request: stacked PRs (base = another feature
+  # branch) previously got ZERO test runs — every number on them was
+  # single-sourced to the author's local sweep, and the 2026-08-22 threading
+  # train shipped two real failures that only surfaced once CI was dispatched
+  # by hand. Merge-to-main guards (base-freshness, version-guard) stay scoped
+  # to main; the test tiers run for every PR regardless of base.
   pull_request:
-    branches: [ main, v1.0.x ]
   workflow_dispatch:
 
 permissions:

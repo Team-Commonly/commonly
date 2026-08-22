@@ -13,6 +13,11 @@ jest.mock('../../context/SocketContext', () => ({
   useSocket: () => ({ socket: null, connected: false }),
 }));
 
+// Composer behavior does not depend on avatar rendering. Keep this test
+// isolated from the external DiceBear package graph used by V2Avatar.
+jest.mock('../components/V2Avatar', () => () => <span data-testid="avatar" />);
+jest.mock('../utils/avatars', () => ({ initialsFor: (name: string) => name.slice(0, 2) }));
+
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
@@ -56,6 +61,7 @@ const makeDetail = (overrides = {}) => ({
   sendMessage: jest.fn(() => Promise.resolve({ _id: 'm1' })),
   loading: false,
   error: null,
+  sendError: null,
   refresh: jest.fn(),
   ...overrides,
 });
@@ -86,5 +92,44 @@ describe('V2PodChat composer send button', () => {
   test('send button is disabled while the draft is empty', () => {
     renderChat(makeDetail());
     expect(screen.getByRole('button', { name: /send message/i })).toBeDisabled();
+  });
+
+  test('shows send failures by the composer and keeps the reply draft intact', async () => {
+    const detail = makeDetail({
+      messages: [{
+        id: 'm1',
+        pod_id: 'p1',
+        user_id: 'u2',
+        content: 'Can you check this?',
+        message_type: 'text',
+        created_at: '2026-08-22T13:00:00Z',
+        user: { username: 'teammate' },
+      }],
+      sendMessage: jest.fn(() => Promise.resolve(null)),
+    });
+    const { rerender } = renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply to teammate/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'I am checking it now.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('I am checking it now.', 'text', 'm1');
+    });
+
+    rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2PodChat detail={{ ...detail, sendError: 'Replies are temporarily unavailable. Please try again shortly.' }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    const sendError = screen.getByText('Replies are temporarily unavailable. Please try again shortly.');
+    expect(sendError.closest('.v2-chat__composer')).not.toBeNull();
+    expect(sendError.closest('.v2-chat__messages')).toBeNull();
+    expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
+    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-chat__reply-chip')).not.toBeNull();
   });
 });

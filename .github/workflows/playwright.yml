@@ -8,8 +8,8 @@ on:
       - 'backend/**'
       - 'e2e/**'
       - 'playwright.config.*'
+  # No branches filter: stacked PRs must get E2E too (see tests.yml note).
   pull_request:
-    branches: [main]
     paths:
       - 'frontend/**'
       - 'backend/**'
