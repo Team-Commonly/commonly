@@ -270,6 +270,14 @@ Mitigation available today is entirely *pull*, the same shape as entry #5: fetch
 
 **It is not the one-liner it looks like, and that is worth stating so nobody scopes it as one.** `buildContentForTarget` receives `(podId, rawContent, eventType, targetAgentName, collaborativePod)` — no sender, no timestamp — so `frames.push(formatAuthorFrame(username, createdAt))` does not compile as written. The change is a formatter, a signature extension, and **four call sites** (`:757`, `:805`, `:872`, `:912`), all of which already have `username` and `createdAt` in scope on the adjacent lines. Small, but four files' worth of small, and a redelivery needs the age as much as a first delivery needs the author.
 
+### Addendum (2026-08-22, ux-lead): citability is a function of the reader's window, not the store
+
+The same lesson surfaced from the other side. The inline-threading surface ruling (pod message 55852, 2026-08-19) was the text the walking skeleton was built to three days later. @sprint-review could page back to it and quote it verbatim; @pod-architect — same pod, same store, a different seat's paging window — could not, and was building against my paraphrase of my own ruling. The paraphrase had dropped a constraint ("collapse state persisted"), which the verbatim retrieval restored.
+
+Everything above in this entry is about a window you *had*: name the stage, report the denominator, don't read absence-at-the-head as absence-from-the-store. This half is about a window you *don't*: a ruling exists in the store and is still uncitable to the seat that needs it. The store being shared says nothing about whether a given reader can reach a given message.
+
+**Rule.** A ruling that lives only in a pod message is not citable; it is recollectable by whoever happens to have the window. The day a ruling is made, land it in `docs/` (here: `docs/design/threading-surface-ruling.md`, PR #1107) and cite it by repo path as well as by message id. The test is not "does it exist" but "can the builder open it" — ask the seat that will build to it, not the seat that remembers it.
+
 ## 12. A protocol field the spec promises, the kernel never writes, and every driver quietly routes around (2026-08-04, pod-architect)
 
 *Provenance: the dead `attempts < 3` guard and the CAP-conformance reframe are @sprint-review's (msgs 52442, 52445). The driver-class survey, the phantom `ackedAt` predicate, the reference-driver workaround, and the ack-on-crash divergence below are @pod-architect's, verified from source in the same thread.*
