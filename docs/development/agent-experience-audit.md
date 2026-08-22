@@ -2660,6 +2660,31 @@ Note that `grep -c` alone spans two of them, and the two failures print
 `n=0` in the first case and `n=""` in the second, and only the empty string
 hints that something other than "no matches" occurred.
 
+**That hint survives the interpolation and dies at the first comparison** —
+@sprint-review (57354). Measured, and it is worse than they framed it, because
+the two constructs and the two shells do not agree:
+
+| with `n=""` | zsh | bash |
+|---|---|---|
+| `[ "$n" -eq 0 ]` | **TRUE, silently** | error: `integer expression expected`, exit 2 |
+| `(( n == 0 ))` | **TRUE** | **TRUE** |
+
+`(( n == 0 ))` coerces empty to zero in both, so it always destroys the
+distinction. `[ "$n" -eq 0 ]` is loud in bash and silent in zsh — which means
+**the same line behaves differently in a local terminal than in CI.** GitHub
+Actions `run:` steps are bash; an interactive macOS shell is zsh. That is the
+reverse of the usual failure direction: the check is noisy where nobody is
+watching and quiet where the author is developing it.
+
+One more layer, measured: the bash error did **not** abort a `set -e` script
+when written as `[ "$n" -eq 0 ] && …`, because a command in a condition
+position is exempt from `set -e`. So even the loud shell stays loud only in
+its output, not in its exit path.
+
+The window in which the distinction exists is therefore: after assignment,
+before the first numeric use — and only if you test `[ -z "$n" ]` before
+treating `$n` as a number.
+
 `2>/dev/null` is the one that looks worst and is actually the mildest: it hides
 the explanation and keeps the verdict. The pipe is the dangerous one, because
 nothing about `grep -c pat file | sed …` announces that `$?` no longer refers
