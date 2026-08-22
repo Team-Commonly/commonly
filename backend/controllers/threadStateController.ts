@@ -52,23 +52,46 @@ async function resolveRoot(messageId: number): Promise<{ rootId: number; podId: 
 }
 
 /**
- * The threading cutoff, from the migration ledger the backfill writes.
+ * The threading cutoff, from the migration ledger the backfill writes — plus
+ * whether the backfill has run at all, which is NOT the same question.
  *
- * Best-effort by design: an instance that has not run the backfill, or one
- * whose ledger table predates this feature, gets null — which the response
- * documents as "no pre-cutoff roots", the safe reading. Failing the whole
- * thread-state read because a ledger row is missing would take the render
- * path down for a cosmetic default.
+ * A missing ledger row was originally reported as `cutoff: null` and
+ * documented as "no pre-cutoff roots exist (fresh instance, or the backfill
+ * has not run)". Those two are lumped together and they need OPPOSITE renders:
+ *
+ *   fresh instance, no history   -> nothing is pre-cutoff, collapse everything.
+ *   backfill pending, history    -> the cutoff is UNKNOWN, and collapsing
+ *                                   everything buries existing conversation
+ *                                   under headline cards on ship day. That is
+ *                                   precisely the failure #1115's carve-out
+ *                                   exists to prevent.
+ *
+ * The live instance is the second case right now: 245 reply edges with no
+ * root, ledger empty. So the ambiguity is not hypothetical — it is today.
+ *
+ * Distinguished by the one fact that separates them: un-rooted reply edges
+ * only exist if there is pre-threading history the backfill has not processed.
+ * The extra query runs only when the ledger row is missing.
  */
-async function readThreadingCutoff(): Promise<string | null> {
+async function readThreadingCutoff(): Promise<{ cutoff: string | null; backfillPending: boolean }> {
   try {
     const { rows } = await pool.query(
       "SELECT details->>'threadingCutoff' AS cutoff FROM migration_records WHERE name = $1",
       [MIGRATION_NAME],
     );
-    return rows[0]?.cutoff || null;
+    if (rows[0]?.cutoff) return { cutoff: rows[0].cutoff, backfillPending: false };
+
+    const { rows: pending } = await pool.query(
+      `SELECT 1 FROM messages
+        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL LIMIT 1`,
+    );
+    return { cutoff: null, backfillPending: pending.length > 0 };
   } catch {
-    return null;
+    // Best-effort, and it fails toward "pending" rather than "nothing is
+    // pre-cutoff": a render that expands too much is recoverable by one click,
+    // one that hides history is not obviously recoverable because the user
+    // cannot tell anything is missing.
+    return { cutoff: null, backfillPending: true };
   }
 }
 
@@ -151,6 +174,7 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       ThreadUserState.stateForPod(userId, podId),
       readThreadingCutoff(),
     ]);
+    const { cutoff, backfillPending } = threadingCutoff;
     res.status(200).json({
       podId,
       // Defaults are stated in the response so a client never has to hardcode
@@ -169,9 +193,17 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       // contract could not express the rule; this is the smallest thing that
       // can.
       //
-      // null = no pre-cutoff roots exist (fresh instance, or the backfill has
-      // not run). NOT "unknown" — a client must not expand everything on null.
-      defaults: { collapsed: true, following: null, expandedForRootsCreatedBefore: threadingCutoff },
+      // Three states, not two:
+      //   timestamp                     -> roots at or before it render expanded
+      //   null + backfillPending false  -> no pre-cutoff roots; collapse all
+      //   null + backfillPending true   -> cutoff UNKNOWN; do NOT collapse
+      //                                    pre-existing threads yet
+      defaults: {
+        collapsed: true,
+        following: null,
+        expandedForRootsCreatedBefore: cutoff,
+        threadingBackfillPending: backfillPending,
+      },
       threads: rows.map((r: any) => ({
         threadRootId: Number(r.thread_root_id),
         following: r.following === null ? null : Boolean(r.following),

@@ -170,3 +170,55 @@ describe('the read is scoped', () => {
     expect((await read('u1', POD)).threads.map((t) => t.threadRootId)).toEqual([32]);
   });
 });
+
+describe('a missing cutoff is two different states, not one', () => {
+  // @sprint-review 56862 asked whether the pre-cutoff comparison resolves
+  // server-side. It does — via one timestamp. Following that through against
+  // the live instance exposed an ambiguity in my own answer: a missing ledger
+  // row meant BOTH "fresh instance, no history" and "backfill has not run",
+  // and those need opposite renders. Collapsing everything is right for the
+  // first and buries existing conversation for the second, which is exactly
+  // what #1115's carve-out prevents.
+
+  const readDefaults = async () => (await read()).defaults;
+
+  beforeEach(async () => { await mockPool.query('DELETE FROM migration_records'); });
+
+  test('no ledger row and NO un-rooted history: not pending, collapse all', async () => {
+    // Fresh instance. Nothing is pre-cutoff, so collapsing everything is right.
+    await mockPool.query('UPDATE messages SET reply_to_message_id = NULL');
+    const d = await readDefaults();
+    expect(d.expandedForRootsCreatedBefore).toBeNull();
+    expect(d.threadingBackfillPending).toBe(false);
+  });
+
+  test('no ledger row WITH un-rooted history: pending, do not collapse history', async () => {
+    // Today's live state: 245 reply edges, empty ledger. The dangerous case.
+    await mockPool.query('UPDATE messages SET reply_to_message_id = 10 WHERE id = 11');
+    const d = await readDefaults();
+    expect(d.expandedForRootsCreatedBefore).toBeNull();
+    expect(d.threadingBackfillPending).toBe(true);
+  });
+
+  test('once the ledger row exists, pending is false and the cutoff is served', async () => {
+    await mockPool.query('UPDATE messages SET reply_to_message_id = 10 WHERE id = 11');
+    await mockPool.query(
+      `INSERT INTO migration_records (name, details)
+       VALUES ('threading-thread-root-id-backfill', '{"threadingCutoff":"2026-08-22T12:21:11Z"}'::jsonb)`,
+    );
+    const d = await readDefaults();
+    expect(d.expandedForRootsCreatedBefore).toBe('2026-08-22T12:21:11Z');
+    expect(d.threadingBackfillPending).toBe(false);
+  });
+
+  test('the cutoff wins even if un-rooted rows remain — a partial run is not pending', async () => {
+    // Orphans legitimately stay NULL forever, so their presence must not make
+    // the ledger look unwritten. The row is the authority once it exists.
+    await mockPool.query('UPDATE messages SET reply_to_message_id = 10 WHERE id = 11');
+    await mockPool.query(
+      `INSERT INTO migration_records (name, details)
+       VALUES ('threading-thread-root-id-backfill', '{"threadingCutoff":"2026-08-22T12:21:11Z"}'::jsonb)`,
+    );
+    expect((await readDefaults()).threadingBackfillPending).toBe(false);
+  });
+});
