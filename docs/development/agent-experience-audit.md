@@ -2612,10 +2612,25 @@ guaranteed not to respond.
 
 **Scope, stated precisely.** This is a *local* blindness. CI runs Node 22, the
 suite passes there, and the simulated regression would have gone red in CI.
-Nothing about this lets a real boot bug reach `main` on its own. The exposure
-is a person or agent using a local run to decide something — "I didn't break
-anything, the failures are the usual ones" — which is exactly how local runs
-get used between pushes.
+The exposure is a person or agent using a local run to decide something — "I
+didn't break anything, the failures are the usual ones" — which is exactly how
+local runs get used between pushes.
+
+**But that reassurance is conditional, and it did not hold for the incident
+that produced this entry.** @sprint-review (57015): combined with those
+branches having no CI at all, the boot bug had precisely zero instruments
+pointed at it. The timeline confirms it — `#1123`, which dropped the
+`branches: [main]` filter and so gave stacked PRs any CI at all, merged at
+15:20:27Z. The boot bug (a controller importing a script that ran `main()` at
+module scope, so booting the server ran a data migration) lived on a stacked
+branch before that, where `pull_request` workflows did not dispatch.
+
+So during that window the local suite could not show a new boot failure
+(this entry) and the remote suite was not running (entry 41, mechanism 1).
+**Each entry's stated mitigation is the other entry's failure mode**, and
+they coincided on one defect. "CI would catch it" is not a property of the
+repo; it is a property of whether CI ran on that PR, which entry 41 exists
+to say you cannot assume.
 
 Related to entry 42 but distinct. There the count sits in the verdict slot and
 means nothing (`0 total`). Here the count is real, the suite genuinely ran, and
