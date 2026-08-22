@@ -121,3 +121,38 @@ describe('the population is re-measured, never quoted', () => {
     expect(SCRIPT_SRC).not.toMatch(/~227-row UPDATE/);
   });
 });
+
+describe('the ordering precondition is written where it is actioned', () => {
+  // @sprint-review 56911 verified the DO NOTHING and the read-before-UPDATE.
+  // Following that through surfaced a constraint neither the script nor the
+  // deploy shows on its own: the zero-edges branch writes a NULL cutoff
+  // meaning "no pre-threading history", and that is only TRUE once
+  // derivation-on-write is live. Run earlier and it means "not yet" — wrong,
+  // and DO NOTHING makes it permanent.
+  const SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('the header states the after-deploy ordering as a precondition', () => {
+    expect(SRC).toMatch(/RUN THIS \*AFTER\* DERIVATION-ON-WRITE IS DEPLOYED/);
+  });
+
+  it('and says what goes wrong if it is run early', () => {
+    // A bare "run after X" gets treated as advice. The consequence is what
+    // makes it a precondition.
+    expect(SRC).toMatch(/zero edges means "not yet" rather than "none"/);
+    // Spans a comment line break, so normalise before matching rather than
+    // guessing at the wrap position — the reason the first two attempts failed.
+    const flat = SRC.replace(/\n\s*\*\s?/g, ' ');
+    expect(flat).toMatch(/ON CONFLICT DO NOTHING` would make it permanent/);
+  });
+
+  it('both ledger writes are DO NOTHING, which is what makes it permanent', () => {
+    // Two INSERTs since the zero-edges branch was added. If either became
+    // DO UPDATE the precondition would relax — and the comment would be wrong.
+    const inserts = SRC.match(/INSERT INTO migration_records/g) || [];
+    const doNothing = SRC.match(/ON CONFLICT \(name\) DO NOTHING/g) || [];
+    expect(inserts.length).toBe(2);
+    expect(doNothing.length).toBe(2);
+  });
+});
