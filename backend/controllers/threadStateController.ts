@@ -22,7 +22,7 @@
 const ThreadUserState = require('../models/pg/ThreadUserState');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
-const { MIGRATION_NAME } = require('../scripts/backfill-thread-root-id');
+const { THREADING_BACKFILL_MIGRATION: MIGRATION_NAME } = require('../constants/migrations');
 
 interface Req {
   params: { messageId?: string };
