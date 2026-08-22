@@ -14,6 +14,24 @@
   --v2-border: #e5e7eb;
   --v2-border-soft: #eef0f6;
   --v2-border-strong: #d7dce7;
+
+  /* ── Neumorphic layer (Sam's shell direction, accepted 2026-08-22) ──
+     skillsui neumorphism recipe with OUR constants: Slate Mist ground,
+     cobalt on action only, SF stack. Core physics: an element's background
+     MUST equal its page ground — depth comes only from the dual shadow.
+     Additive: surfaces migrate one at a time (persona catalog is the
+     pilot); un-migrated surfaces keep the flat token set above. */
+  --neo-surface: #d8dce6;
+  --neo-surface-deep: #cbd0dd;
+  --neo-ink: #2a2e38;
+  --neo-ink-2: #6a7183;
+  --neo-shadow-light: rgba(255, 255, 255, 0.85);
+  --neo-shadow-dark: rgba(146, 156, 176, 0.55);
+  --neo-raised: -6px -6px 14px var(--neo-shadow-light), 6px 6px 14px var(--neo-shadow-dark);
+  --neo-raised-soft: -3px -3px 8px var(--neo-shadow-light), 3px 3px 8px var(--neo-shadow-dark);
+  --neo-raised-lg: -8px -8px 18px var(--neo-shadow-light), 8px 8px 18px var(--neo-shadow-dark);
+  --neo-inset: inset -4px -4px 10px var(--neo-shadow-light), inset 4px 4px 10px var(--neo-shadow-dark);
+  --neo-inset-soft: inset -2px -2px 5px var(--neo-shadow-light), inset 2px 2px 5px var(--neo-shadow-dark);
   --v2-text-primary: #111827;
   --v2-text-secondary: #4b5563;
   --v2-text-tertiary: #7b8494;
