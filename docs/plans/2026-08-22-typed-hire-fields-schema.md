@@ -1,6 +1,6 @@
 # Typed hire fields — schema shape (proposal)
 
-Status: **Proposal** — TASK-032, persona plan Phase 0. Consumer named:
+Status: **Proposal, revision 2** — TASK-032, persona plan Phase 0. Consumer named:
 @ux-lead's where-step brief (TASK-035) renders a "name your colleague"
 sub-step *"only once typed hire fields land"*, and ships without it until then.
 
@@ -69,13 +69,35 @@ Two coherent answers, and they are not both implementable cheaply:
 | matches | identity continuity (ADR-001 #8) — one colleague, one name | the where-step's own flow, which names at placement |
 | cost | second hire silently renames the first room's colleague | one colleague renders under two names; `resolveAgentDisplayLabel` prefers `botMetadata.displayName` and would need a per-pod override plumbed to every render site |
 
-**Recommendation: per-user.** One name for one colleague is what a user means
-by naming it, and the per-pod variant requires threading pod context into
-`resolveAgentDisplayLabel`, which CLAUDE.md's display-label rule exists
-specifically to avoid ("collisions live in DB, not in display logic"). The
-cost is real and should be stated in the UI: the where-step's naming sub-step
-is naming **the colleague**, not the placement, and on a second hire it should
-show the existing name rather than an empty field.
+**Recommendation: PER-POD. This reverses the first version of this document,
+which recommended per-user; @ux-lead's review found the question is already
+answered in code.**
+
+`agentMessageService.ts:1461`, with the rationale written above the line:
+
+```ts
+// The installation label belongs to this pod; the User label belongs to
+// the portable principal. A live post must render with the former so a
+// sibling pod's label cannot leak into this room through the shared User.
+const senderDisplayName = displayName || agentUser?.botMetadata?.displayName || agentUser?.username;
+```
+
+The installation label wins **specifically to stop a name chosen in one pod
+leaking into another** through the shared User row. `dmService.ts:555` follows
+the same order when creating the install (`member.displayName ||
+member.agentName`).
+
+So the per-pod route needs no new plumbing — it is what already renders — and
+the argument the first version made against it (that it would require threading
+pod context into `resolveAgentDisplayLabel`) was wrong: `resolveAgentDisplayLabel`
+is not the surface that decides, and the surfaces that do decide already prefer
+the installation.
+
+**Consequence for the where-step, and it inverts the earlier guidance:** the
+naming sub-step names **this placement**, not the colleague. A second hire into
+a different room should offer a fresh field, NOT prefill from the first room's
+name — prefilling would reintroduce by default exactly the cross-pod leak the
+render order exists to prevent.
 
 ### 2.3 Two members of one pod can name their personas the same thing
 
@@ -114,13 +136,28 @@ race.
 
 | field | lands in | write mode | why there |
 |---|---|---|---|
-| `displayName` | `User.botMetadata.displayName` | set on first hire; on re-hire, only if the caller supplies one | per-user identity (§2.2); survives reinstall by ADR-001 #8 |
-| `avatarUrl` | `User.profilePicture` | same | already the render source for agent avatars |
-| `focus` | `AgentInstallation.config.hire.focus` | `$set` — it is placement-scoped context, not identity | it *is* per-room ("our stack is React + Node" differs by team) |
+| `displayName` | `AgentInstallation.displayName` | `$setOnInsert`, or `$set` only when the caller supplies one | it is what renders (§2.2); per-pod isolation is deliberate |
+| `avatarUrl` | `User.profilePicture` | same | per-user: no per-pod avatar surface exists, so there is nothing to isolate |
+| `focus` | `AgentInstallation.hireFocus` — a **typed top-level field**, not inside `config` | `$setOnInsert`, or `$set` only when supplied | see below |
 
-`focus` is deliberately the one per-pod field. It answers "what should you know
-about this room", which is genuinely placement-scoped, and it has no render
-path to collide over.
+**Why `focus` is not in `config`.** The first version put it at
+`config.hire.focus`. @ux-lead's review killed that twice over:
+
+1. `config` is `{ type: Map, of: Schema.Types.Mixed }` (`AgentRegistry.ts:235`).
+   Putting a typed hire field inside an untyped Map is the bag this task exists
+   to get fields *out of*.
+2. The hire upsert `$set`s the **whole** `config: buildInstallationConfig(manifest)`
+   on every call (`personaHireService.ts:87`). So `config.hire.focus` would be
+   wiped on every re-hire — destroyed by the exact §2.1 mechanism this document
+   catches for `displayName`, one line below the line it catches it on.
+
+The second point is the sharper one: the document identified the trap and then
+walked into it with the next field.
+
+**The `displayName`/`avatarUrl` asymmetry is load-bearing, not incidental.**
+Names are per-pod because pod-label isolation is enforced at render; avatars
+are per-user because no surface distinguishes them per-pod, so splitting them
+would create a distinction nothing reads.
 
 **The manifest defaults stop being written on re-hire.** `displayName` moves
 from `$set` to `$setOnInsert` in the installation upsert, and
