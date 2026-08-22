@@ -248,12 +248,30 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // response would lack username/profile_picture and the v2 chat would
       // render the author as "Unknown" until a refresh pulled the joined
       // row. findById re-fetches with the JOIN so the optimistic render
-      // already has the right author identity.
-      const populated = created?.id ? await PGMessage.findById(created.id) : null;
+      // already has the right author identity. A JOIN failure is not a write
+      // failure: falling into the Mongo fallback after INSERT would duplicate
+      // the message (or falsely reject an already-persisted reply).
+      let populated = null;
+      try {
+        populated = created?.id ? await PGMessage.findById(created.id) : null;
+      } catch (readErr) {
+        console.warn('[messageController] PG post-write read failed:', (readErr as Error).message);
+      }
       message = (populated || created) as NormalizedMessage;
     } catch (pgErr) {
       const e = pgErr as { message?: string };
       console.warn('PG unavailable for createMessage, falling back to MongoDB:', e.message);
+      // Mongo messages have no reply_to_message_id column and are never
+      // reconciled into PG. A reply written here would look successful while
+      // permanently losing its parent edge, so only non-replies may use this
+      // availability fallback.
+      if (replyToMessageId) {
+        res.status(503).json({
+          error: 'Replies are temporarily unavailable. Please try again shortly.',
+          code: 'REPLY_REQUIRES_POSTGRES',
+        });
+        return;
+      }
       const mongoMsg = await MongoMessage.create({
         podId,
         userId,
@@ -290,11 +308,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
     // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
     // human message to the agent — no @mention needed. Other pod types only
-    // fire on explicit @mentions. Adding a new private 1:1 pod type without
-    // updating this allow-list silently drops every message; see
-    // docs/agents/AGENT_RUNTIME.md "Routing Invariants" for the canonical
-    // version of this rule.
-    const isDmPod = pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm';
+    // fire on explicit @mentions. `isAutoRoutedDmPod` owns that allow-list so
+    // the legacy PG endpoint cannot silently drift from this primary path.
+    const isDmPod = AgentMentionService.isAutoRoutedDmPod(pod.type);
     let responseMessage: NormalizedMessage | (NormalizedMessage & {
       agentDelivery: {
         enqueued: number; implicit: string[]; agentsInPod: number; woken: number;

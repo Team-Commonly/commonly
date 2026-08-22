@@ -67,7 +67,10 @@ const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => 
 
 interface AuthReq {
   userId?: string;
-  user?: { id?: string; _id?: unknown; isBot?: boolean; botMetadata?: { instanceId?: string; agentName?: string } };
+  // `username` is here because the sweep can write it into `lapsedFrom`
+  // (provenance falls back through holder.label = assignee || username ||
+  // claimedBy), so the restore path must be able to match on it.
+  user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
   agentUser?: { _id?: unknown };
   params?: Record<string, string>;
   query?: Record<string, string>;
@@ -545,13 +548,79 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         { new: true },
       )
       : null;
+    let leaseRenewed = Boolean(task);
+
+    // Second attempt: the row was already swept back to `pending` before the
+    // note arrived. The renewing filter above requires `status: 'claimed'`, so
+    // it misses — and the note-only fallback below then returns 200 with no
+    // lease, leaving the caller believing it renewed when it did not.
+    //
+    // That is not a hypothetical. The deferral warning tells the holder "post a
+    // task update or re-claim — either renews the lease", and delivery latency
+    // means the warning routinely ARRIVES after the sweep it was warning about.
+    // Observed on TASK-029, 2026-08-22: warning written 12:24 (2 deferrals
+    // left), row swept to pending 12:54, note posted 12:56 landed with
+    // status still `pending` and claimedBy null. The seat only noticed because
+    // it read the response body.
+    //
+    // `lapsedFrom` names the seat the sweep took it from, so this restores the
+    // claim to its former holder and NOBODY else. If a peer claimed the row in
+    // between, status is `claimed` with their id and both filters miss — the
+    // race is won by the peer, which is the whole point of returning it to the
+    // board. This makes the cue's two options actually equivalent.
+    // `lapsedFrom` is POLYMORPHIC by design and must be matched as such. The
+    // sweep writes `provenance = holder?.label || t.assignee || t.claimedBy`,
+    // and `label` is itself `assignee || holder?.username || claimedBy`. So the
+    // field can hold an assignee NAME, a bot USERNAME, or a User ObjectId
+    // string, depending on which fallback fired.
+    //
+    // The first version of this matched `lapsedFrom: claimKey` — one shape —
+    // and claimKey is the ObjectId for MCP-authenticated agents. Verified live
+    // on TASK-029: lapsedFrom was "pod-architect" (the username) while
+    // claimedBy had been "6a693bfb…", so the restore never fired and the
+    // response honestly reported leaseRenewed:false. Dead code in the common
+    // case, and it only had a test because the fixture set lapsedFrom to the
+    // same value the test passed as the caller.
+    //
+    // Same name-vs-id trap as `assignee` (a name) versus `claimedBy` (an id):
+    // two string fields in one document whose value spaces never overlap.
+    const identities = [
+      claimKey,
+      userId?.toString(),
+      resolveAgentInstanceId(req),
+      req.user?.botMetadata?.agentName,
+      req.user?.username,
+    ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+    if (!task && identities.length) {
+      task = await Task.findOneAndUpdate(
+        { podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } },
+        {
+          $set: {
+            status: 'claimed',
+            claimedBy: claimKey,
+            claimedAt: now,
+            claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS),
+            rescueDeferrals: 0,
+            lapsedFrom: null,
+          },
+          $push: note,
+        },
+        { new: true },
+      );
+      leaseRenewed = Boolean(task);
+    }
+
     if (!task) {
       task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
     }
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
-    return res.json({ task });
+    // Reported explicitly. A note that did not renew is a legitimate outcome
+    // (a peer now holds the row, or you never did), but it must never be
+    // indistinguishable from one that did — that silence is the whole bug.
+    return res.json({ task, leaseRenewed });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
     return res.status(500).json({ error: 'Failed to add update' });

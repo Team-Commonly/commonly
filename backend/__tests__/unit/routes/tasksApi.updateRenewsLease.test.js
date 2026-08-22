@@ -25,7 +25,16 @@ const mongoose = require('mongoose');
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = req.get('x-test-user') || 'holder';
-  req.user = { id: req.userId, _id: req.userId };
+  // A separate USERNAME header, because the whole point of the shape tests
+  // below is that a caller's id and their username are different strings and
+  // `lapsedFrom` may hold either. The original fixture set them equal, which
+  // is exactly why it passed against a filter that only matched one.
+  req.user = {
+    id: req.userId,
+    _id: req.userId,
+    username: req.get('x-test-username') || undefined,
+    isBot: Boolean(req.get('x-test-username')),
+  };
   next();
 });
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
@@ -36,7 +45,15 @@ jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(() => ({
     lean: jest.fn().mockResolvedValue({
       type: 'chat',
-      members: [{ toString: () => 'holder' }, { toString: () => 'stranger' }],
+      members: [
+        { toString: () => 'holder' },
+        { toString: () => 'stranger' },
+        // Distinct id/username pair for the lapsedFrom shape tests below — the
+        // point of those is that the two strings differ, so both must be able
+        // to reach the handler rather than 403 at membership.
+        { toString: () => '6a693bfbe833c668acdce53b' },
+        { toString: () => 'someone-else-id' },
+      ],
     }),
   })),
 }));
@@ -275,5 +292,173 @@ describe('claim resets the per-lease rescue budget', () => {
     // task inherits a spent budget and gets rescued on their first lapse.
     expect(row.rescueDeferrals).toBe(0);
     expect(row.lapsedFrom).toBeNull();
+  });
+});
+
+/**
+ * The sweep-race half, found live on TASK-029 (2026-08-22).
+ *
+ * The deferral warning says "post a task update or re-claim — either renews
+ * the lease". Those two were NOT equivalent: the renewing filter requires
+ * `status: 'claimed'`, so once the sweep returned the row to `pending` a note
+ * fell through to the note-only path — 200, note recorded, no lease, and no
+ * way for the caller to tell.
+ *
+ * Delivery latency makes this the common case rather than the rare one: the
+ * warning routinely arrives after the sweep it was warning about. On TASK-029
+ * the warning was written at 12:24 and the note landed at 12:56, two minutes
+ * after the 12:54 sweep.
+ */
+describe('POST /updates after the sweep has already taken the row', () => {
+  it('the lapsed holder\'s note restores their claim', async () => {
+    await seed({
+      status: 'pending', claimedBy: null, claimedAt: null, claimExpiresAt: null,
+      lapsedFrom: 'holder', rescueDeferrals: 3,
+    });
+
+    const res = await postUpdate('holder', 'TASK-001', 'still mine, 2 of 4 shipped');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(true);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('claimed');
+    expect(row.claimedBy).toBe('holder');
+    expect(new Date(row.claimExpiresAt).getTime()).toBeGreaterThan(Date.now() + 29 * MIN);
+    // The budget resets with the lease, same as #1096 — a restored claim that
+    // kept a spent budget would be swept again within one orbit.
+    expect(row.rescueDeferrals).toBe(0);
+    expect(row.lapsedFrom).toBeNull();
+    expect(row.updates.map((u) => u.text)).toContain('still mine, 2 of 4 shipped');
+  });
+
+  it('but NOT if a peer won the race — the board beat them to it', async () => {
+    // This is the case that makes returning the row to the board mean anything.
+    await seed({
+      status: 'claimed', claimedBy: 'stranger', claimedAt: new Date(),
+      claimExpiresAt: new Date(Date.now() + LEASE_MS), lapsedFrom: 'holder',
+    });
+
+    const res = await postUpdate('holder', 'TASK-001', 'picking this back up');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.claimedBy).toBe('stranger');
+    // The note still lands. Gating the lease must never gate the audit trail.
+    expect(row.updates.map((u) => u.text)).toContain('picking this back up');
+  });
+
+  it('and NOT for a seat the row was never taken from', async () => {
+    // lapsedFrom names one seat. Without that filter, any peer could convert a
+    // pending row into their own claim by writing a note — which is a claim
+    // without the claim endpoint's rate limit or its atomicity contract.
+    await seed({
+      status: 'pending', claimedBy: null, claimedAt: null, claimExpiresAt: null,
+      lapsedFrom: 'holder',
+    });
+
+    const res = await postUpdate('stranger', 'TASK-001', 'drive-by note');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('pending');
+    expect(row.claimedBy).toBeFalsy();
+    expect(row.updates.map((u) => u.text)).toContain('drive-by note');
+  });
+
+  it('a pending row with no lapsedFrom is claimable by nobody via a note', async () => {
+    // A never-claimed row. `lapsedFrom: null` must not match a caller whose
+    // claimKey is also falsy — the filter has to require a real match.
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: null });
+
+    const res = await postUpdate('holder', 'TASK-001', 'thoughts on this one');
+    expect(res.status).toBe(200);
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('pending');
+    expect(row.updates.map((u) => u.text)).toContain('thoughts on this one');
+  });
+
+  it('the holder path still reports leaseRenewed on an ordinary renewal', async () => {
+    const claimedAt = new Date(Date.now() - 25 * MIN);
+    await seed({ claimedBy: 'holder', claimedAt, claimExpiresAt: new Date(claimedAt.getTime() + LEASE_MS) });
+
+    const res = await postUpdate('holder', 'TASK-001', 'progress');
+    expect(res.body.leaseRenewed).toBe(true);
+  });
+});
+
+/**
+ * `lapsedFrom` is polymorphic, and matching one shape is matching none.
+ *
+ * The sweep writes `provenance = holder?.label || t.assignee || t.claimedBy`,
+ * where `label` is itself `assignee || holder?.username || claimedBy`. So the
+ * field holds an assignee NAME, a bot USERNAME, or a User ObjectId string.
+ *
+ * The first restore filter matched `lapsedFrom: claimKey` — the id — and the
+ * tests passed because the fixture set lapsedFrom to the SAME value it sent as
+ * the caller. Live on TASK-029 the field held "pod-architect" while claimedBy
+ * had been an ObjectId, so the restore silently never fired.
+ */
+describe('the restore matches every shape lapsedFrom can hold', () => {
+  const postAs = (userId, username, text = 'still mine') => request(app)
+    .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
+    .set('x-test-user', userId)
+    .set('x-test-username', username)
+    .send({ text });
+
+  it('restores when lapsedFrom holds the USERNAME and the caller authed by id', async () => {
+    // The live case. These two strings are different and must both resolve to
+    // the same seat.
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null,
+      lapsedFrom: 'pod-architect',
+    });
+
+    const res = await postAs('6a693bfbe833c668acdce53b', 'pod-architect');
+    expect(res.body.leaseRenewed).toBe(true);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('claimed');
+    expect(row.claimedBy).toBe('6a693bfbe833c668acdce53b');
+    expect(row.lapsedFrom).toBeNull();
+  });
+
+  it('restores when lapsedFrom holds the ID', async () => {
+    // The shape the original filter handled. Kept so the widening is additive.
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null,
+      lapsedFrom: '6a693bfbe833c668acdce53b',
+    });
+    const res = await postAs('6a693bfbe833c668acdce53b', 'pod-architect');
+    expect(res.body.leaseRenewed).toBe(true);
+  });
+
+  it('does NOT restore for a seat whose username merely resembles nothing', async () => {
+    // Widening must not become "any caller restores any lapsed row".
+    await seed({
+      status: 'pending', claimedBy: null, claimExpiresAt: null,
+      lapsedFrom: 'pod-architect',
+    });
+    const res = await postAs('someone-else-id', 'ux-lead');
+    expect(res.body.leaseRenewed).toBe(false);
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('pending');
+    expect(row.updates.map((u) => u.text)).toContain('still mine');
+  });
+
+  it('does NOT restore a row with no lapsedFrom, even for a caller with no username', async () => {
+    // The empty-matches-empty hazard: a filter built from a list must never
+    // let undefined match null.
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: null });
+    const res = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
+      .set('x-test-user', 'holder')
+      .send({ text: 'drive-by' });
+    expect(res.body.leaseRenewed).toBe(false);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('pending');
   });
 });
