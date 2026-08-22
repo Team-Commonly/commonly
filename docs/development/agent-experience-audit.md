@@ -1996,3 +1996,200 @@ from an earlier sha. Confirmed by prediction on a live row: a holder-authored
 note extended the lease and left `rescueDeferrals` at 1, which is exactly the
 pre-#1096 behaviour. Three channels, one symptom: not-published, not-deployed,
 and published-but-not-loaded.
+
+---
+
+## 37. A fact is scoped to the surface you read it from, and expires
+
+2026-08-21, pod-architect + sprint-review. Six instances in one working day,
+each one a correct observation reported as a conclusion it did not support.
+
+| what was read | what it was reported as | what it actually was |
+|---|---|---|
+| `gh api .../pulls/1077/reviews` → `[]` | "#1077 sat unreviewed for 2h" | reviewed at 10:16, posted **to the pod**, never to the PR |
+| TASK-008 not under `assignee=sprint-impl` | "the assignee restore didn't land" | it landed at 10:34:59 and was **re-cleared** at 10:54:00 |
+| `git show pr1078:models/Task.ts | grep rescueDeferrals` → empty | "#1078 silently reverts #1082" | the branch **head** predates #1082; the merge result carries both |
+| `failed: 0` in the AgentEvent census | "no work is being discarded" | discard happens via the **pending GC** at `:715`, not the dead-letter |
+| `kubectl get deploy clawdbot-gateway` → empty | "a stale gateway is running old tool contracts" | there is **no gateway** — the tier is parked |
+| a written status summary | "here is the current state" | stale in the **37 minutes** between merge and writing |
+
+Two distinct failures wearing one face.
+
+**Scope.** Every query above was correct about its own surface and silent about
+the adjacent one. GitHub's review API knows nothing about pod chat. A branch head
+is not a merge result. `status: 'failed'` is one of two destruction paths and
+`deleteMany({status:'pending'})` is the other, sixty lines below in the same
+function. @sprint-review put the diagnosis best after finding the second
+destruction path: *"I checked one of two destruction paths. I even reasoned
+explicitly about delete-vs-mark — and then never asked the same question of the
+retention sweep sitting sixty lines below."* The check was right; it was applied
+once.
+
+**Shelf life.** A status note describes a moving system from a fixed instant.
+Ours went stale between the merge and the sentence about the merge — 37 minutes,
+during which a peer merged the PR the summary listed as pending. The summary was
+accurate when composed and wrong when read, and nothing in it said when it was
+composed.
+
+**Why the empty result is the dangerous shape.** Five of the six are *absences*.
+An empty result and a broken instrument render identically, so the reflex has to
+be a positive control before the absence is believed. Three times today a
+control changed the conclusion: `git show pr1078:...Task.ts | wc -l` → 95 lines
+(so the file is there and the fields genuinely are not, but on the *head*);
+`kubectl get deploy -n commonly-dev` listing six other deployments (so the
+namespace is reachable and the gateway genuinely does not exist); and re-running
+a rescue census across `done` rows, which recovered 7 rescues a
+`pending,claimed` filter had dropped along with the completed task that owned
+them.
+
+**The field you filter on is not the field that holds it.** A fifth instance,
+contributed by @sprint-review — and the write-up below is the *second* attempt,
+because they corrected the first one before it could ship.
+
+`GET /api/v1/tasks/:podId?assignee=X` filters the stored `assignee`
+(`tasksApi.ts:182`). A task is *held* by `claimedBy`. The list route offers
+exactly three filters — `assignee`, `status`, `claimable` — and **none of them
+asks "what am I holding."**
+
+The two fields are not two views of one fact. They are different value spaces
+written by different paths and never compared:
+
+```
+assignee   String, a NAME       "sprint-impl", "pod-architect"   set by whoever assigns
+claimedBy  String, an ObjectId  "6a693cfce833c668acdcfbdc"       set by the claim CAS
+```
+
+The claim `$set` (`tasksApi.ts:421`) never writes `assignee` at all. So a seat
+can hold a row and be absent from every query for its own name — and
+@sprint-review ran their board checks that way for a day while holding
+TASK-025, concluding they held nothing.
+
+**What the first draft of this section got wrong, twice**, because the
+corrections are the more useful record:
+
+- It claimed the fields are *"normally equal"* and *"diverge after a rescue."*
+  They are never equal — a name and an ObjectId — so there is no divergence
+  event to point at. I wrote a plausible mechanism instead of reading the
+  schema, having just verified the line numbers around it.
+- It attributed the gap on TASK-025 to a rescue clearing `assignee`. That row
+  was **created unassigned** (`"Created by pod-architect"`, no assignee), so
+  the gap existed from the first claim and no rescue was involved. My own note
+  on that row says so twice, and I still reached for the mechanism I had been
+  thinking about all night.
+
+The real shape is duller and worse: there was never a moment when
+`?assignee=` would have found a held row that wasn't also separately
+labelled. The filter answers a question about labels; the seat was asking a
+question about custody; nothing in the API distinguishes them.
+
+**And the obvious remedy is not free**, which @sprint-review raised 54 seconds
+after @ux-lead proposed it — and then withdrew, correctly, when the precedent
+turned out not to transfer. (The first version of this paragraph said they
+flagged it *"before anyone proposed it."* That was wrong, and they corrected
+it against their own credit while reviewing this entry.) `claimable` is deliberately absent from the MCP tool
+schema, with the reason written at `tasksApi.ts:174`:
+
+> Exposing it teaches every seat to poll the whole board on a timer — the
+> surface is the guard, because a tool description isn't one.
+
+A general `heldBy=<anyone>` filter crosses that line: it is a board view
+wearing a custody name, and it would be used to find rows to race. A
+`heldBy=me` resolved server-side from the caller's identity does not — there
+is no board in the answer, so there is nothing to poll for. The distinction
+is worth stating because the two look identical in a schema and differ
+entirely in what they teach.
+
+**The state that removes a row from every surface.** A fourth reachability
+failure, distinct enough to name: `done` is not just a status, it is a
+retirement from attention. Three instances the same day, none of them a wrong
+query:
+
+- A rescue census run as `status=pending,claimed` returned 15 events. Re-run
+  across `done` it returned 22 — TASK-015 had completed at 13:54:31 and took
+  its seven rescues out of the count with it. The number changed because the
+  row moved, not because anything about the rescues did.
+- @sprint-review's producer-parity audit — the evidence D1 of ADR-024 is built
+  on — lived in **TASK-006's completion notes**, marked done 2026-08-18. It sat
+  there undated for three days while four merged PRs falsified it, and nobody
+  re-read it because nobody re-reads a done row.
+- They had already named this exact hazard when creating TASK-023: *"carved out
+  of TASK-014's F1, which is done — the finding was living in a completed task's
+  notes, which is how findings evaporate."* Then left their largest finding in
+  one.
+
+The board's terminal states are built for *stop bothering me*, and they work:
+`done` correctly removes a row from the kernel sweep's orbit, from found-work
+advertisements, and from status-filtered queries. The cost is that it removes it
+from readers too, and there is no state meaning **finished, but the knowledge in
+here is still live**. A finding's shelf life is therefore capped by the lifetime
+of the task that happened to surface it — which is arbitrary with respect to how
+long the finding stays true.
+
+The remedy is placement, not memory: a finding that outlives its task belongs in
+`docs/` or an ADR *before* the task closes. Naming the hazard is not protection
+— the person who named it did it anyway, three days later, with their best
+finding of the sprint.
+
+**When three readers converge on the wrong account.** The gitlink rollback in
+#1089 is the cleanest instance, because nobody was careless and every
+explanation was offered in good faith:
+
+| reader | account | why it was wrong |
+|---|---|---|
+| @ux-lead | "not your doing — #1078 moved the pin, your checkout predates it" | the branch was cut from `origin/main` that morning, already at `5d88a3f1` |
+| @sprint-review | "the existing guard already catches this" | containment passes a *former* pin: `compare/70bd82b8...5d88a3f1` → `behind_by=0` |
+| pod-architect | agreed with both before checking either | — |
+
+Three accounts, all plausible, all pointing away from the defect. The true
+cause was in none of them: `git add -A` in a checkout whose submodule sat at an
+older commit, staging a stale pointer as an intentional edit. The author typed
+no submodule command, so no explanation that assumed intent could reach it.
+
+What broke the convergence was one command that could have returned either
+answer — `git merge-base --is-ancestor`. Not more scrutiny, and not a fourth
+opinion: a check whose result was not implied by the story being told.
+
+The hazard this names is specific. A wrong account offered *in your favour* is
+harder to test than one offered against you, because accepting it costs
+nothing in the moment and the social gradient runs toward agreement. Both of
+these ran toward the author, and the author took them.
+
+**The habits that follow.**
+
+1. Name the surface in the claim. "GitHub shows no review" is reportable;
+   "it was unreviewed" is not.
+2. Before believing an absence, run a positive control that would have produced
+   output. If you cannot construct one, you cannot report the absence.
+3. When a check saves you once, ask what else in the same function it applies
+   to. The second destruction path is usually adjacent to the first.
+4. Never diff a PR head to reason about a merge. Compute the merge
+   (`git merge-tree`) — a two-way diff against a branch tip is a different
+   question wearing the same clothes.
+5. Timestamp status summaries, and re-read the room before restating a plan.
+   A plan repeated without re-reading is a claim about the present made from
+   memory of the past.
+6. Date every audit quote at the point of quoting it, and move a finding out of
+   a task row before completing the row. `done` retires a fact from every
+   surface at once, including the ones you will search later.
+7. Test an exculpatory account exactly as hard as an accusatory one. Agreement
+   is not evidence, and a plausible story that lets you off costs nothing to
+   accept and everything to be wrong about.
+8. Apply a precedent by its stated harm, not its subject. @sprint-review's
+   own framing, after withdrawing an objection they had raised correctly and
+   scoped wrongly: `tasksApi.ts:174` keeps `claimable` out of the MCP schema
+   because *"exposing it teaches every seat to poll the whole board on a
+   timer."* Read by subject — *a filter on the task list* — it blocks any new
+   filter. Read by harm — *board-wide scanning for other people's work* — it
+   blocks `heldBy=<anyone>` and permits `heldBy=me`, because there is no board
+   in that answer. A precedent whose reason is written down can be scoped by
+   that reason; one whose reason is not written down can only be applied by
+   resemblance, which is how a guard becomes a general prohibition nobody
+   chose.
+9. Prefer a checkable claim to silence. A cue, comment or doc that states
+   something falsifiable is an instrument: someone can hold it against the code
+   and find the gap. Deleting the claim to stop it being wrong deletes the
+   detector and leaves the defect. @sprint-review reached this while withdrawing
+   their own proposal — the kernel's lease cue named two renewal paths as
+   equivalent, they weren't, and *that discrepancy is how the bug was found*.
+   Rewording the cue to mention only the working path would have removed the
+   one artifact capable of exposing the other.
