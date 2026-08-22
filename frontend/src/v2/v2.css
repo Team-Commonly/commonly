@@ -7168,6 +7168,14 @@
 
 /* ── Threading: headline card + reply rail (W-T 4/4) ────────────────────────
    Built to @ux-lead's render brief. Numbers here are theirs, not invented:
+   NOTE the `.v2-root button.` prefix on every button rule below. The global
+   reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
+   `color: inherit`, so a bare `.v2-thread-card__main` (0-1-0) loses and the
+   card renders at body colour with no accent on the follow state. Same trap
+   as #870, recorded in the note above that reset. Caught here by measuring in
+   a real browser — computed colour was rgb(17,24,39) while the rule said
+   #4b5563 — which no presence guard can see, because the rule IS present.
+
    card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px
    secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
    dropping to 24px at 390; layout transition 300ms. */
@@ -7179,7 +7187,7 @@
   margin: 4px 0 0 0; /* brief: no gap > 8px between root and card */
 }
 
-.v2-thread-card__main {
+.v2-root button.v2-thread-card__main {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -7195,7 +7203,7 @@
   transition: border-color 300ms ease;
 }
 
-.v2-thread-card__main:hover {
+.v2-root button.v2-thread-card__main:hover {
   border-color: #d7dce7;
 }
 
@@ -7239,7 +7247,7 @@
   line-height: 1;
 }
 
-.v2-thread-card__follow {
+.v2-root button.v2-thread-card__follow {
   border: none;
   background: transparent;
   cursor: pointer;
@@ -7248,7 +7256,7 @@
   padding: 4px 6px;
 }
 
-.v2-thread-card__follow--on {
+.v2-root button.v2-thread-card__follow--on {
   color: var(--v2-accent);
 }
 
@@ -7261,7 +7269,7 @@
   transition: height 300ms ease;
 }
 
-.v2-thread-replies__aim {
+.v2-root button.v2-thread-replies__aim {
   border: none;
   background: transparent;
   color: #7b8494;
@@ -7270,7 +7278,7 @@
   padding: 6px 0;
 }
 
-.v2-thread-replies__aim:hover {
+.v2-root button.v2-thread-replies__aim:hover {
   color: var(--v2-accent);
 }
 
@@ -7283,13 +7291,13 @@
     margin-left: 24px; /* brief: rail offset drops to 24px at 390 */
   }
 
-  .v2-thread-card__main {
+  .v2-root button.v2-thread-card__main {
     flex-wrap: wrap; /* brief: card goes to two lines at 390 */
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .v2-thread-card__main,
+  .v2-root button.v2-thread-card__main,
   .v2-thread-card__chevron,
   .v2-thread-replies {
     transition: none;

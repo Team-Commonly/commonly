@@ -470,9 +470,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Two separate brief constraints that both fail silently: a shadow reads
     // as "slightly wrong depth" and an accent at rest destroys the ONE signal
     // the card has for being addressed.
-    const card = ruleBody(v2, '.v2-thread-card__main');
+    // Selector carries the `.v2-root button.` prefix ON PURPOSE: the global
+    // reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
+    // `color: inherit`, so a bare class rule loses and the card renders at
+    // body colour. Pinning the prefixed selector means dropping the prefix
+    // fails here rather than silently in production (#870's trap).
+    const card = ruleBody(v2, '.v2-root button.v2-thread-card__main');
     expect(card).toContain('box-shadow: none');
     expect(card).toContain('min-height: 44px');
+    expect(card).toContain('color: #4b5563');
     expect(card).not.toContain('var(--v2-accent)');
 
     // Accent is reachable only through the addressed modifier.
