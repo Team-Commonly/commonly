@@ -57,6 +57,29 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('min-width: 0');
   });
 
+  test('Your Team card name WRAPS — a primary identifier never one-line-ellipsizes (craft audit rule 1)', () => {
+    // At 1440px half the fleet's names truncated ("Commonly…", "Pod Summ…").
+    // The name wraps to two lines; single-line nowrap+ellipsis was the defect.
+    const rule = ruleBody(v2, '.v2-team-card__name');
+    expect(rule).toContain('white-space: normal');
+    expect(rule).toContain('-webkit-line-clamp: 2');
+    expect(rule).not.toContain('white-space: nowrap');
+  });
+
+  test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
+    // The chip shipped in violation of the ratified rule; the craft audit
+    // (finding 2) removed it. This pins the removal against reintroduction.
+    expect(v2).not.toContain('.v2-team-card__runtime {');
+  });
+
+  test('chat messages hold a readable measure (craft audit rule 2)', () => {
+    // ~150 chars/line at full content width was the audit's largest
+    // rendering defect. The centered 820px column is load-bearing.
+    expect(v2).toContain('.v2-chat__messages > *');
+    const rule = ruleBody(v2, '.v2-chat__messages > *');
+    expect(rule).toContain('max-width: 820px');
+  });
+
   test('motion timing is tokenized and all three existing V2 animations consume it', () => {
     expect(tokens).toContain('--motion-stagger:    0.18s');
     expect(tokens).toContain('--motion-breath:     1.2s');
