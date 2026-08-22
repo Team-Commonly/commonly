@@ -92,6 +92,11 @@ class Message {
     messageType = 'text',
     replyToMessageId: string | null = null,
     payload: unknown = null,
+    // Already RESOLVED and validated by services/threadRootResolver — this
+    // model does not decide precedence. When null the SQL derives from the
+    // reply edge, which is the pre-existing behaviour and what the backfill
+    // and explicit replies rely on.
+    resolvedThreadRootId: number | null = null,
   ): Promise<MessageRow> {
     console.log('Creating message with params:', {
       podId, userId, content, messageType, podIdType: typeof podId,
@@ -113,6 +118,15 @@ class Message {
     // Deliberately NOT derived from anything but the reply edge: thread_root_id
     // must never acquire addressing semantics (see schema.sql).
     //
+    // TWO SHAPES since @ux-lead's 56879 amendment. An ordinary in-thread post
+    // carries NO reply edge — the composer sends thread_root_id explicitly, so
+    // joining a thread never pings the root's author. Explicit replies and the
+    // backfill still derive. `COALESCE($7, <derivation>)` is that precedence in
+    // one line: explicit wins, derivation fills. Reconciling the two (and
+    // rejecting a mismatch) happens in services/threadRootResolver, before
+    // this runs — a model that silently picked a winner would hide a caller's
+    // contradictory belief about which thread a message is in.
+    //
     // The `::int` casts are explicit on purpose. Postgres infers them fine
     // either way, but without them the scalar subquery is typed as an array by
     // pg-mem — which is what lets this exact query be exercised at the unit
@@ -121,15 +135,19 @@ class Message {
     const query = `
       INSERT INTO messages (pod_id, user_id, content, message_type, reply_to_message_id, payload, thread_root_id)
       SELECT $1, $2, $3, $4, $5::int, $6,
-             (SELECT COALESCE(parent.thread_root_id, parent.id)
-                FROM messages parent
-               WHERE parent.id = $5::int)::int
+             COALESCE(
+               $7::int,
+               (SELECT COALESCE(parent.thread_root_id, parent.id)
+                  FROM messages parent
+                 WHERE parent.id = $5::int)
+             )::int
       RETURNING *
     `;
     try {
       const result = await (pool as PgPool).query(query, [
         podId, userId, content || '', messageType, replyToMessageId || null,
         payload == null ? null : JSON.stringify(payload),
+        resolvedThreadRootId ?? null,
       ]);
       await (pool as PgPool).query(
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',

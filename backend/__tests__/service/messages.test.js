@@ -114,6 +114,10 @@ describe('Message Routes Integration Tests', () => {
       user._id.toString(),
       'Hi there',
       'text',
+      null,   // replyToMessageId
+      null,   // payload
+      // resolvedThreadRootId. Null means "no explicit root, let the INSERT
+      // derive one from the reply edge" — NOT "this message has no thread".
       null,
     );
   });

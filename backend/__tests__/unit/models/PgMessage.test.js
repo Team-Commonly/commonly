@@ -30,7 +30,10 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('INSERT INTO messages'),
-      ['p', 'u', 'c', 'text', null, null],
+      // Seventh param is the RESOLVED thread root (@ux-lead 56879): null here
+      // because this call names none, which makes the SQL fall through to
+      // deriving from the reply edge — the pre-existing behaviour.
+      ['p', 'u', 'c', 'text', null, null, null],
     );
     expect(pool.query).toHaveBeenNthCalledWith(
       2,
