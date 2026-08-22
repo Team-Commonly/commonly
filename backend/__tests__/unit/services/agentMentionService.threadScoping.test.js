@@ -22,6 +22,9 @@ jest.mock('../../../services/welcomeWakeService', () => ({ maybeFireWelcomeWake:
 jest.mock('../../../models/pg/Message', () => ({
   findById: jest.fn(async (id) => (String(id) === '101' ? { id: 101, user_id: 'bot-1' } : null)),
 }));
+jest.mock('../../../models/pg/ThreadUserState', () => ({
+  followByParticipation: jest.fn(),
+}));
 jest.mock('../../../services/threadWakeScopeService', () => ({
   narrowToThread: jest.fn(async (_root, targets) => targets),
   effectiveFollowerIds: jest.fn(async () => new Set()),
@@ -35,6 +38,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { narrowToThread } = require('../../../services/threadWakeScopeService');
+const ThreadUserState = require('../../../models/pg/ThreadUserState');
 
 // `installedBy` is deliberately a DIFFERENT id from the bot's User row here.
 // It is the human installer on five of the write paths (podController:119,
@@ -86,6 +90,7 @@ beforeEach(() => {
       : { _id: 'user-1', isBot: false }),
   }));
   AgentEvent.countDocuments.mockResolvedValue(0);
+  ThreadUserState.followByParticipation.mockResolvedValue(true);
 });
 
 describe('the hook fires only for threaded messages', () => {
@@ -221,5 +226,63 @@ describe('scoping cannot reach the addressing path', () => {
     narrowToThread.mockImplementation(async () => []);
     await send({ id: 'm10', content: '@seat-a you muted this but I need you', thread_root_id: 101 });
     expect(byType('chat.mention').map((e) => e.agentName)).toEqual(['seat-a']);
+  });
+});
+
+describe('a delivered thread mention follows by participation', () => {
+  test('the shared delivery record follows the BOT user only after its mention enqueues', async () => {
+    await send({ id: 'm11', content: '@seat-a please review', thread_root_id: 101 });
+
+    expect(ThreadUserState.followByParticipation).toHaveBeenCalledTimes(1);
+    expect(ThreadUserState.followByParticipation).toHaveBeenCalledWith(101, 'bot-user-a', 'pod-1');
+
+    const mentionCall = AgentEventService.enqueue.mock.calls.find(
+      ([event]) => event.type === 'chat.mention' && event.agentName === 'seat-a',
+    );
+    expect(mentionCall).toBeDefined();
+    expect(ThreadUserState.followByParticipation.mock.invocationCallOrder[0])
+      .toBeGreaterThan(AgentEventService.enqueue.mock.invocationCallOrder[
+        AgentEventService.enqueue.mock.calls.indexOf(mentionCall)
+      ]);
+  });
+
+  test('a delivery failure cannot create a follow for an address that was never delivered', async () => {
+    AgentEventService.enqueue.mockRejectedValueOnce(new Error('queue down'));
+    await send({ id: 'm12', content: '@seat-a please review', thread_root_id: 101 });
+
+    expect(ThreadUserState.followByParticipation).not.toHaveBeenCalled();
+  });
+
+  test('a follow-write failure is visible but cannot fail a send whose address already delivered', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    ThreadUserState.followByParticipation.mockRejectedValueOnce(new Error('pg down'));
+
+    await expect(send({ id: 'm12b', content: '@seat-a please review', thread_root_id: 101 }))
+      .resolves.toMatchObject({ enqueued: ['seat-a'] });
+
+    expect(warn).toHaveBeenCalledWith(
+      '[thread-follow] mention delivery succeeded but follow write failed:',
+      'pg down',
+    );
+    warn.mockRestore();
+  });
+
+  test('a reply edge is addressing, not an explicit mention, so it does not create a follow', async () => {
+    await send(
+      {
+        id: 'm13', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-1' },
+      },
+      { replyToMessageId: '101' },
+    );
+
+    expect(byType('chat.mention')).toHaveLength(1);
+    expect(ThreadUserState.followByParticipation).not.toHaveBeenCalled();
+  });
+
+  test('CONTROL: the same successful mention outside a thread does not create thread state', async () => {
+    await send({ id: 'm14', content: '@seat-a please review' });
+
+    expect(byType('chat.mention')).toHaveLength(1);
+    expect(ThreadUserState.followByParticipation).not.toHaveBeenCalled();
   });
 });

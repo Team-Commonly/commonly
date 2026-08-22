@@ -13,28 +13,18 @@
  *    read from `messages`, never stored: it is a fact about the conversation,
  *    and materialising it would mean a second writer that can disagree with
  *    the first. This is the `following IS NULL` case from the tri-state.
- *  - `explicitFollowers` — `following IS TRUE`. Today that means one thing:
- *    someone used the header toggle. `ThreadUserState.followByParticipation`
- *    exists to make an @mention write the row too, and NOTHING CALLS IT —
- *    @sprint-review's third blocker on 3/4 (57306). So a user @-mentioned in
- *    a thread who never posts is not an effective follower and stops
- *    receiving its ambient activity.
- *
- *    That is a spec gap rather than a regression: the mention itself still
- *    wakes them, because addressing never passes through this service. It
- *    also cannot be closed by writing a caller anywhere convenient — a
- *    synchronous Postgres write on the mention hot path is a decision, not a
- *    detail. Tracked as TASK-045; this comment previously asserted the wiring
- *    existed, which is the thing that made it invisible.
- *
- *    WHOEVER CLOSES TASK-045: the shouted phrase three paragraphs up is load
- *    bearing. threadFollowByParticipationWiring.test.js reads it and asserts
- *    the call graph agrees, so adding a caller without editing this comment
- *    turns that suite red on purpose. Swap it for the WIRED marker defined at
- *    the top of that test and the same suite flips to requiring a caller.
- *    (Deliberately not quoting the other marker here — the suite asserts
- *    EXACTLY ONE is present, and spelling both out is how this very edit
- *    first went red.)
+  *  - `explicitFollowers` — `following IS TRUE`. The header toggle writes it,
+  *    and THE MENTION PATH CALLS IT after a delivered agent @mention in a
+  *    thread. That writes TRUE only where it is NULL through
+  *    `ThreadUserState.followByParticipation`, so a queue failure never creates
+  *    a follow for an address that did not happen and a mute (FALSE) is never
+  *    overwritten.
+  *
+  *    This row only makes later AMBIENT activity reach an agent who was
+  *    explicitly addressed and never posts. The mention itself still wakes the
+  *    target whether or not they follow the thread. The executable guard in
+  *    threadFollowByParticipationWiring.test.js keeps this header and its one
+  *    production caller agreeing.
  *  - `muted` — `following IS FALSE`. Subtracted LAST, because an explicit mute
  *    outranks participation. A participant who muted must stay muted.
  *
@@ -45,8 +35,9 @@
  *
  * NOT the addressing path. An explicit @mention still wakes its target whether
  * or not they follow the thread, and whether or not they muted it: a mute
- * scopes ambient activity, never addressing. That path never reaches this
- * service, because `isRouted` short-circuits before the ambient branch.
+ * scopes ambient activity, never addressing. A routed message's ambient
+ * companion DOES reach this service, but its already-delivered mention target
+ * is excluded before this narrowing runs.
  */
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 const { pool } = require('../config/db-pg');

@@ -46,6 +46,9 @@ jest.mock('../../../services/welcomeWakeService', () => ({ maybeFireWelcomeWake:
 jest.mock('../../../models/pg/Message', () => ({
   findById: jest.fn(async (id) => (String(id) === '101' ? { id: 101, user_id: 'bot-1' } : null)),
 }));
+jest.mock('../../../models/pg/ThreadUserState', () => ({
+  followByParticipation: jest.fn().mockResolvedValue(true),
+}));
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
