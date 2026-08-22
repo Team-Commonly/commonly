@@ -31,4 +31,28 @@ function createTableFor(name) {
   return m[0];
 }
 
-module.exports = { createTableFor, SCHEMA_PATH };
+/**
+ * The `ALTER TABLE <name> ADD COLUMN IF NOT EXISTS ...` retrofits for a table.
+ *
+ * `createTableFor` alone is not the table. Late columns are added by ALTER, not
+ * inside the CREATE — that is the two-declaration rule this repo learned the
+ * hard way, and it applies to fixtures too. A suite that only ran the CREATE
+ * got a `messages` with no `payload` and no `thread_root_id`, which fails as
+ * "column does not exist" a long way from the cause.
+ */
+function retrofitsFor(name) {
+  const sql = fs.readFileSync(SCHEMA_PATH, 'utf8');
+  const re = new RegExp(`ALTER TABLE ${name}\\s+ADD COLUMN IF NOT EXISTS[^;]*;`, 'gi');
+  return sql.match(re) || [];
+}
+
+/** The whole table as it exists after boot DDL: CREATE plus its retrofits. */
+async function applyTable(pool, name) {
+  await pool.query(createTableFor(name));
+  for (const stmt of retrofitsFor(name)) {
+    // eslint-disable-next-line no-await-in-loop
+    await pool.query(stmt.replace(/\s+/g, ' '));
+  }
+}
+
+module.exports = { createTableFor, retrofitsFor, applyTable, SCHEMA_PATH };
