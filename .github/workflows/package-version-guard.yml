@@ -40,7 +40,32 @@ jobs:
         run: |
           set -euo pipefail
           BASE="origin/${{ github.event.pull_request.base.ref }}"
-          git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.ref }}" >/dev/null 2>&1 || true
+
+          # NO --depth here. `checkout` above already fetched full history
+          # (fetch-depth: 0); a --depth=1 fetch of the base UNDOES that by
+          # shallowing the ref, and once the base is one commit deep the fork
+          # point is unreachable. `git diff BASE...HEAD` then dies with
+          # "fatal: <base>...HEAD: no merge base" — which reads like a problem
+          # with the PR's diff and is entirely a problem with this fetch.
+          #
+          # It only fires once the base has advanced past the fork point, which
+          # is why the guard worked for weeks and then failed on #1113. Locally
+          # reproducible: full clone, advance base 12 commits past a feature
+          # branch, `git fetch --depth=1 origin <base>`, and the very next
+          # three-dot diff fails.
+          #
+          # Also dropped the `|| true`. A base we cannot fetch means every
+          # comparison below is meaningless, so it must stop rather than
+          # silently compare against whatever ref happens to be on disk — the
+          # failure mode this whole guard exists to prevent.
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}"
+
+          # Prove the base is usable before trusting any diff against it. A
+          # guard that cannot see its own baseline must say so, not pass.
+          if ! git merge-base "$BASE" HEAD >/dev/null 2>&1; then
+            echo "::error::No merge base between $BASE and HEAD — the checkout is too shallow for this guard to compare anything. Not passing on an unusable baseline."
+            exit 1
+          fi
 
           fail=0
           # pkg_dir : the published package root (holds package.json)
