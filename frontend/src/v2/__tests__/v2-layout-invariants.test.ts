@@ -72,12 +72,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
-  test('chat messages hold a readable measure (craft audit rule 2)', () => {
-    // ~150 chars/line at full content width was the audit's largest
-    // rendering defect. The centered 820px column is load-bearing.
-    expect(v2).toContain('.v2-chat__messages > *');
-    const rule = ruleBody(v2, '.v2-chat__messages > *');
-    expect(rule).toContain('max-width: 820px');
+  test('chat text holds a readable measure WITHOUT centering (craft audit rule 2, corrected)', () => {
+    // ~150 chars/line was the defect; the first fix centered the whole
+    // message column and left it misaligned with the full-width composer and
+    // header — worse than the disease. The correct mechanic caps the text
+    // measure only, rows left-anchored. Both halves are load-bearing: the
+    // cap must exist, and the centering must never come back.
+    const body = ruleBody(v2, '.v2-msg__body');
+    expect(v2).toContain('max-width: 76ch');
+    expect(v2).not.toContain('.v2-chat__messages > *');
   });
 
   test('motion timing is tokenized and all three existing V2 animations consume it', () => {
