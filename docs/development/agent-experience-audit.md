@@ -2430,6 +2430,14 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   `headRefOid` can lag its own ref, and on a merged PR it stops updating
   entirely. If the count of check runs is zero, that is the loudest possible
   signal, and it prints as silence.
+
+  **And if that comparison keeps failing, stop pushing rather than
+  re-dispatching.** @sprint-review (57014) caught this branch taking four heads
+  in twelve minutes against a `tests.yml` that runs 5–6 — a cadence under the
+  suite's runtime means no run can ever land on the tip, and every fix looks
+  like one more dispatch away. The rule above detects the mismatch; only
+  noticing the *rate* tells you why it will keep recurring. Green-on-head needs
+  a quiet period.
 - **Check `mergeable` before reading `statusCheckRollup`.** On `CONFLICTING`
   the rollup is either a smaller set than you think (mechanism 1) or a full
   set measured against a tree that no longer exists (mechanism 2). Neither is
