@@ -2307,6 +2307,25 @@ never ran on it. Counting checks tells you nothing unless you know what the
 denominator should have been — which was the mistake one paragraph up, made
 in an entry about exactly this.
 
+**And base is necessary, not sufficient — the CHANGED PATHS move it too.**
+Found by applying the paragraph above to this very PR. `#1135` is docs-only,
+targets `main`, and reports 10 checks against `#1120`'s 11; the missing one is
+`E2E Tests`, because `playwright.yml` filters on
+`frontend/** · backend/** · e2e/** · playwright.config.*` and a `docs/**` diff
+matches none of them. The workflow never dispatches, so the check never exists.
+
+The visible consequence is that a docs-only PR settles at `MERGEABLE/UNSTABLE`
+rather than `MERGEABLE/CLEAN`, permanently — there is no future event that will
+produce the absent check. `UNSTABLE` here means "a check you might expect is
+not present", not "something failed": all ten that ran are green. Anyone
+following a "merge only when CLEAN" rule will wait forever on documentation,
+and anyone reading `UNSTABLE` as "something broke" will go looking for a
+failure that does not exist.
+
+So the denominator is a function of *(base, paths touched)*. Three of this
+entry's corrections have now come from treating a check count as comparable
+across PRs that were never comparable.
+
 **So there are two mechanisms, not one, and the second is the worse of them.**
 
 1. *Push while the PR is known-conflicting* → no `pull_request` dispatch. The
