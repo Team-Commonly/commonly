@@ -57,6 +57,25 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT false;
 -- as is_bot above. NULL for ordinary messages.
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS payload JSONB;
 
+-- Threading (W-T, TASK-029). MUST be retrofitted, not only declared in the
+-- CREATE TABLE above — `CREATE TABLE IF NOT EXISTS` is a no-op on an existing
+-- table, so a column declared only there NEVER reaches an instance that
+-- already has a messages table. Verified on the live dev instance 2026-08-22:
+-- 7,001 rows, oldest 2026-07-07, and thread_root_id absent while `payload`
+-- (which has this retrofit) is present.
+--
+-- Without this line the failure is not subtle: the index below throws at boot
+-- and every PGMessage.create fails, because the INSERT names a column that
+-- does not exist. Chat posting stops on every existing instance.
+--
+-- The tier-1 test suite could not catch it — CI provisions a FRESH postgres:16
+-- per run, where the CREATE TABLE path is the one exercised. Any new column on
+-- an existing table needs BOTH declarations, and a test that starts from the
+-- old shape (see threadingSchemaRetrofit.test.js). Caught by @sprint-review's
+-- caveat on #1106, not by anything I ran.
+ALTER TABLE messages
+  ADD COLUMN IF NOT EXISTS thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL;
+
 -- Migration records. There was no such table anywhere under backend/ before
 -- this (@sprint-review, 56859, checked with a positive control): schema.sql is
 -- idempotent boot DDL, which says what the shape IS and never when it changed.
