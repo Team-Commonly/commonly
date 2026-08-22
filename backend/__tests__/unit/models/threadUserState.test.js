@@ -94,6 +94,18 @@ describe('following never implies expanded', () => {
     expect(TABLE).toMatch(/collapsed BOOLEAN NOT NULL DEFAULT TRUE/);
   });
 
+  it('the UPDATE set names the target column and updated_at, nothing else', () => {
+    // ux-lead's ruling (41707609 on #1107) is literal: each writer touches only
+    // its own column. `pod_id = EXCLUDED.pod_id` used to be in this set — a
+    // deviation, and inconsistent with followByParticipation which never wrote
+    // it. A root's pod cannot change, so the write could only be a no-op or a
+    // bug papered over.
+    const setClause = MODEL.slice(MODEL.indexOf('DO UPDATE SET'), MODEL.indexOf('RETURNING *'));
+    expect(setClause).toMatch(/\$\{column\} = EXCLUDED\.\$\{column\}/);
+    expect(setClause).toMatch(/updated_at = CURRENT_TIMESTAMP/);
+    expect(setClause).not.toMatch(/pod_id/);
+  });
+
   it('each writer touches exactly one column', () => {
     // upsertOne is the single write path and takes the column as an argument,
     // so a follow cannot re-collapse and an expand cannot subscribe.

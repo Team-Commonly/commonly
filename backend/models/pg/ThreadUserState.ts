@@ -54,12 +54,22 @@ async function upsertOne(
 ): Promise<ThreadUserStateRow> {
   // `column` is never caller-supplied — it is one of two literals chosen by
   // the call sites below, so the interpolation cannot carry user input.
+  //
+  // The UPDATE set names EXACTLY the target column plus updated_at, per
+  // ux-lead's ruling (41707609 on #1107). It previously also wrote
+  // `pod_id = EXCLUDED.pod_id`, which was both a deviation and inconsistent
+  // with followByParticipation, which never rewrote it. A thread root's pod
+  // cannot change — the root implies it — so that write could only ever be a
+  // no-op or a bug quietly papered over. If a row's pod_id ever disagrees with
+  // the caller's, that is a fact worth surfacing rather than overwriting.
+  //
+  // On INSERT the other column is not supplied at all, so it takes its schema
+  // default: `following` → NULL (defer to participation), `collapsed` → TRUE.
   const { rows } = await (pool as PgPool).query(
     `INSERT INTO thread_user_state (thread_root_id, user_id, pod_id, ${column})
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (thread_root_id, user_id)
      DO UPDATE SET ${column} = EXCLUDED.${column},
-                   pod_id = EXCLUDED.pod_id,
                    updated_at = CURRENT_TIMESTAMP
      RETURNING *`,
     [threadRootId, userId, podId, value],
