@@ -108,19 +108,28 @@ const { THREADING_BACKFILL_MIGRATION } = require('../constants/migrations');
 export const MIGRATION_NAME = THREADING_BACKFILL_MIGRATION;
 
 /**
- * The threading cutoff: the newest message that carries a reply edge and no
- * root. "Has a reply edge and no root" IS the definition of "written before
- * derivation-on-write shipped", so this boundary is exact rather than
- * approximate — not a deploy timestamp guessed after the fact.
+ * The threading cutoff: the FIRST reply that derivation-on-write ever wrote —
+ * the oldest message that carries a reply edge AND a root. Every such row was
+ * written by the deployed backend, so this boundary is exact to within one
+ * reply, per instance, and it is immune to retention orphans (a descendant of
+ * a deleted root loses its root and cannot move a MIN over rooted rows).
  *
- * Read BEFORE the UPDATE. The UPDATE eliminates the predicate, so afterwards
- * there is nothing left to measure. A hardcoded date would be wrong on every
- * instance that migrates on a different day, and self-hosting is in scope.
+ * It is NOT the newest un-rooted reply. That older definition (TASK-046) was
+ * poisoned by retention: delete a root and its descendants lose thread_root_id
+ * while keeping a live parent, so a recent orphan set the boundary days late.
+ * And it is NOT a hardcoded deploy instant: that is wrong on every
+ * self-hosted instance that ships derivation on a different day. The
+ * deploy instant is the cross-check for one instance, never the source.
  *
- * NULL when there is nothing to backfill — a fresh instance has no
- * pre-threading history, so no root is pre-cutoff and the surface rule is
- * simply inert. Consumers must treat NULL as "no pre-cutoff roots exist",
- * never as "unknown, assume everything is pre-cutoff".
+ * Only when no rooted reply exists yet does the script fall back to the newest
+ * un-rooted reply — and only behind --derivation-live, because without a
+ * rooted reply there is no evidence derivation is deployed and the fallback
+ * would freeze a growing population's boundary under ON CONFLICT DO NOTHING.
+ *
+ * Read BEFORE the UPDATE so the fallback, which depends on the un-rooted
+ * predicate, is still measurable. A MISSING ledger row means "cutoff unknown"
+ * and the surface expands everything; a row with a NULL cutoff (the zero-edges
+ * branch) means "ran, and there was no pre-threading history".
  */
 /**
  * POSITIVE evidence that derivation-on-write is live: any message that has a
@@ -139,9 +148,14 @@ export const DERIVATION_LIVE_SQL = `
    LIMIT 1`;
 
 export const CUTOFF_SQL = `
-  SELECT MAX(created_at) AS cutoff
-    FROM messages
-   WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`;
+  SELECT COALESCE(rooted.first_rooted, unrooted.newest_unrooted) AS cutoff,
+         rooted.first_rooted IS NOT NULL AS from_rooted
+    FROM (SELECT MIN(created_at) AS first_rooted
+            FROM messages
+           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL) rooted,
+         (SELECT MAX(created_at) AS newest_unrooted
+            FROM messages
+           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL) unrooted`;
 
 async function main(): Promise<void> {
   if (!process.env.PG_HOST) {
@@ -266,7 +280,12 @@ async function main(): Promise<void> {
         );
       }
       const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
-      console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} (newest pre-threading reply)`);
+      console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} `
+        + `(${boundary.from_rooted ? 'first derivation-written reply' : 'newest un-rooted reply — FALLBACK, needs --derivation-live'})`);
+      if (!boundary.from_rooted && !ASSUME_DERIVATION_LIVE) {
+        console.error('--apply would REFUSE: no message has both a reply edge and a root, so the boundary '
+          + 'cannot be measured from derivation. Deploy derivation-on-write first, or pass --derivation-live.');
+      }
       console.log('DRY RUN — nothing written. Re-run with --apply.');
       return;
     }
@@ -276,6 +295,19 @@ async function main(): Promise<void> {
     // shipped" — every row written after carries a root. The UPDATE destroys
     // that predicate, so afterwards the boundary is unrecoverable.
     const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
+
+    if (!boundary.from_rooted && !ASSUME_DERIVATION_LIVE) {
+      // No rooted reply means no evidence derivation is deployed. The fallback
+      // boundary (newest un-rooted reply) is only right if the population has
+      // stopped growing, and DO NOTHING makes a wrong answer permanent.
+      console.error(
+        'REFUSING to record a fallback cutoff: no message has both a reply edge '
+        + 'and a root, so derivation-on-write is not observed. Deploy it first, '
+        + 'or re-run with --derivation-live to record the newest un-rooted reply.',
+      );
+      process.exitCode = 3;
+      return;
+    }
 
     const result = await pool.query(
       `WITH RECURSIVE chain AS (
@@ -311,6 +343,7 @@ async function main(): Promise<void> {
         MIGRATION_NAME,
         JSON.stringify({
           threadingCutoff: boundary.cutoff,
+          cutoffSource: boundary.from_rooted ? 'first-rooted-reply' : 'newest-unrooted-fallback',
           rowsUpdated: result.rowCount,
           rowsEligible: before.needs_root,
         }),
