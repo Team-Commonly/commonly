@@ -12,6 +12,7 @@ import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 import { initialsFor } from '../utils/avatars';
+import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { V2InviteTab } from './V2InviteModal';
@@ -1159,7 +1160,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   )}
                 </div>
               )}
-              {messages.map((m) => (
+              {messages.map((m, i) => (
                 <React.Fragment key={m.id}>
                   <V2MessageBubble
                     message={m}
@@ -1168,6 +1169,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                     onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
                     onOpenFile={onOpenFile}
                     onReply={setReplyTarget}
+                    grouped={isGroupedWithPrevious(m, messages[i - 1])}
                   />
                   {agentDeliveryHint?.messageId === m.id && (
                     <div className="v2-chat__delivery-hint" role="status">

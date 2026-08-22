@@ -1012,12 +1012,17 @@
 
 .v2-pods__item-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
-  height: 20px;
+  min-height: 20px;
 }
 
+/* Craft baseline rule 1: the pod name is the row's primary identifier and
+   never loses to its own timestamp — wrap to two lines instead of
+   ellipsizing (same idiom as the team-card name fix, #1104). The clamp
+   keeps pathological names from unbounding the row; the timestamp lives on
+   the snippet row so it never shares a line with the name. */
 .v2-pods__item-title {
   flex: 1;
   min-width: 0;
@@ -1025,10 +1030,21 @@
   line-height: 20px;
   font-weight: 600;
   color: var(--v2-text-primary);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
+
+.v2-pods__item-snippet-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.v2-pods__item-snippet-row .v2-pods__item-snippet { flex: 1; min-width: 0; }
 
 .v2-pods__status {
   height: 18px;
@@ -2454,6 +2470,35 @@
   align-items: start;
   gap: 12px;
   padding: 10px 0;
+}
+
+/* Consecutive-author grouping (craft baseline rule 3): grouped rows drop
+   the 22px head + avatar and tighten padding, so a run of messages from one
+   author reads as one block. The ghost keeps the grid's avatar column so
+   text alignment never shifts. Reply becomes a hover affordance pinned to
+   the row's top-right, since the head row (and its Reply button) is gone. */
+.v2-msg--grouped { padding: 2px 0; position: relative; }
+.v2-msg__avatar-ghost { width: 38px; }
+.v2-msg__reply-float {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  appearance: none;
+  border: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.v2-msg--grouped:hover .v2-msg__reply-float,
+.v2-msg__reply-float:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .v2-msg__body {

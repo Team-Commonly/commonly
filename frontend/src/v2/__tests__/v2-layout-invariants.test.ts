@@ -66,6 +66,27 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).not.toContain('white-space: nowrap');
   });
 
+  test('sidebar pod name WRAPS — it never loses to its own timestamp (craft audit finding 8)', () => {
+    // "Sharpen — pod m…", "Team Orchestra…": the name shared its line with the
+    // relative time and ellipsized at desktop width. Same primary-identifier
+    // rule as the team-card name: wrap to two lines, and the timestamp lives
+    // on the snippet row so it never competes with the name at all.
+    const title = ruleBody(v2, '.v2-pods__item-title');
+    expect(title).toContain('-webkit-line-clamp: 2');
+    expect(title).not.toContain('white-space: nowrap');
+    expect(v2).toContain('.v2-pods__item-snippet-row');
+  });
+
+  test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
+    // Consecutive same-author messages within the grouping window drop the
+    // header row; the ghost cell must match the .v2-msg grid's 38px avatar
+    // column or grouped text mis-aligns with headed text by exactly the
+    // avatar width — a defect jsdom cannot see.
+    expect(ruleBody(v2, '.v2-msg')).toContain('grid-template-columns: 38px');
+    expect(ruleBody(v2, '.v2-msg__avatar-ghost')).toContain('width: 38px');
+    expect(v2).toContain('.v2-msg--grouped');
+  });
+
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
     // The chip shipped in violation of the ratified rule; the craft audit
     // (finding 2) removed it. This pins the removal against reintroduction.
