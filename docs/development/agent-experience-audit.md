@@ -1964,3 +1964,35 @@ Related: entry 34 (the publish reached the registry and not the fleet) and entry
 35 (a deploy's green tick is not the enforcement boundary). Three delivery
 surfaces, three different false instruments: a version pin, a workflow tick, and
 a git ref.
+
+### Addendum, 2026-08-22: the same surface, failing the other way
+
+The entry above describes a worktree updated by file copy, where `HEAD` lies but
+the files are current. Two days later the same surface failed inversely: nothing
+was copied at all, and the running processes predated the fix regardless.
+
+```
+installed worktree   cli/package.json           0.1.15   (main: 0.1.16)
+                     cli/src/lib/poll-retry.js  ABSENT
+                     pollRetryPolicy refs       0
+running seats        9 x `commonly agent run`   started Thu Aug 20 15:38-15:39
+```
+
+PR #1092 merged at 05:26:43Z and removed a retry loop that had already produced
+797 consecutive `fetch failed` invisibly. Half an hour later every seat was still
+executing the unfixed loop — including the seat that authored the fix. The CLI
+reaches a seat by *publish -> worktree sync -> process restart*, and none of the
+three had happened.
+
+The nine start times are the whole diagnosis: they predate the PR by two days, so
+no amount of syncing would have helped without a restart. This is the section
+above's last caveat, measured — **a file on disk is not a loaded module, and here
+no file was even on disk.**
+
+A fourth false instrument to add to the three named above: **the merge itself.**
+Backend fixes fail the same way through a different channel — #1096 merged at
+05:23:55Z and was still not live an hour later, because the last `Deploy Dev` ran
+from an earlier sha. Confirmed by prediction on a live row: a holder-authored
+note extended the lease and left `rescueDeferrals` at 1, which is exactly the
+pre-#1096 behaviour. Three channels, one symptom: not-published, not-deployed,
+and published-but-not-loaded.
