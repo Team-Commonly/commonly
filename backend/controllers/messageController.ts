@@ -290,11 +290,9 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     // agent-admin (legacy 1:1 admin DM), agent-room (1:1 user↔agent DM), and
     // agent-dm (any 2-member DM, including agent↔agent) all auto-route every
     // human message to the agent — no @mention needed. Other pod types only
-    // fire on explicit @mentions. Adding a new private 1:1 pod type without
-    // updating this allow-list silently drops every message; see
-    // docs/agents/AGENT_RUNTIME.md "Routing Invariants" for the canonical
-    // version of this rule.
-    const isDmPod = pod.type === 'agent-admin' || pod.type === 'agent-room' || pod.type === 'agent-dm';
+    // fire on explicit @mentions. `isAutoRoutedDmPod` owns that allow-list so
+    // the legacy PG endpoint cannot silently drift from this primary path.
+    const isDmPod = AgentMentionService.isAutoRoutedDmPod(pod.type);
     let responseMessage: NormalizedMessage | (NormalizedMessage & {
       agentDelivery: {
         enqueued: number; implicit: string[]; agentsInPod: number; woken: number;

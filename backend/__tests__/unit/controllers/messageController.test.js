@@ -6,10 +6,14 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/pg/Message');
-jest.mock('../../../services/agentMentionService', () => ({
-  enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], implicit: [], skipped: [] }),
-  enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
-}));
+jest.mock('../../../services/agentMentionService', () => {
+  const { isAutoRoutedDmPod } = jest.requireActual('../../../services/agentMentionService');
+  return {
+    enqueueMentions: jest.fn().mockResolvedValue({ enqueued: [], implicit: [], skipped: [] }),
+    enqueueDmEvent: jest.fn().mockResolvedValue({ enqueued: [], skipped: [] }),
+    isAutoRoutedDmPod,
+  };
+});
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { countDocuments: jest.fn() },
 }));

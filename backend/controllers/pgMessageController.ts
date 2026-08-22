@@ -7,11 +7,35 @@ const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line global-require
 const MongoPod = require('../models/Pod');
 // eslint-disable-next-line global-require
+const AgentMentionService = require('../services/agentMentionService');
+// eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
 
 interface AuthRequest extends Request {
   userId?: string;
-  user?: { id: string };
+  user?: { id: string; username?: string };
+}
+
+type CreatedMessage = {
+  _id?: string;
+  id?: string;
+  content?: string;
+  text?: string;
+  messageType?: string;
+  message_type?: string;
+  createdAt?: unknown;
+  created_at?: unknown;
+  username?: string;
+  user?: { username?: string };
+  userId?: { username?: string } | string;
+};
+
+function authorUsername(message: CreatedMessage | null | undefined, requestUser?: AuthRequest['user']): string | undefined {
+  const joinedAuthor = message?.userId;
+  return requestUser?.username
+    || (joinedAuthor && typeof joinedAuthor === 'object' ? joinedAuthor.username : undefined)
+    || message?.username
+    || message?.user?.username;
 }
 
 // Check if user is a member via PG, falling back to MongoDB as source of truth
@@ -123,7 +147,22 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const newMessage = await PGMessage.create(podId, userId, content);
-    const message = await PGMessage.findById(newMessage.id);
+    // Match the primary controller: the post-write JOIN supplies the author
+    // for the response and wake frame, while the INSERT row remains a valid
+    // persisted-message fallback if that re-read is unavailable.
+    const message = ((await PGMessage.findById(newMessage.id)) || newMessage) as CreatedMessage;
+
+    // This endpoint is older than the PG-primary /api/messages path, but it
+    // still writes the same user-authored messages. Dispatch them through the
+    // same mention/DM pipeline after persistence so a post here cannot be a
+    // silent escape hatch around agent delivery.
+    const username = authorUsername(message, req.user);
+    if (AgentMentionService.isAutoRoutedDmPod(pod.type)) {
+      await AgentMentionService.enqueueDmEvent({ podId, message, userId, username });
+    } else {
+      await AgentMentionService.enqueueMentions({ podId, message, userId, username });
+    }
+
     res.json(message);
   } catch (err) {
     const e = err as { message?: string; kind?: string };

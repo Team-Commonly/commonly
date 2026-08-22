@@ -76,6 +76,16 @@ describe('AgentMentionService', () => {
     expect(result).toEqual(['someoneelse']);
   });
 
+  test.each([
+    ['agent-admin', true],
+    ['agent-room', true],
+    ['agent-dm', true],
+    ['chat', false],
+    ['team', false],
+  ])('classifies %s as an auto-routed DM pod: %s', (type, expected) => {
+    expect(AgentMentionService.isAutoRoutedDmPod(type)).toBe(expected);
+  });
+
   test('enqueueMentions skips when not installed', async () => {
     AgentInstallation.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([]),
