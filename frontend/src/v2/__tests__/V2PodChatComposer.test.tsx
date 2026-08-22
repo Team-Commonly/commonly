@@ -85,7 +85,10 @@ describe('V2PodChat composer send button', () => {
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
 
     await waitFor(() => {
-      expect(detail.sendMessage).toHaveBeenCalledWith('hello team', 'text', undefined);
+      // 4th arg is threadRootId (W-T 4/4). Both trailing args are undefined
+      // for an ordinary send, and that IS the assertion: a plain message must
+      // carry neither an addressing edge nor a thread membership.
+      expect(detail.sendMessage).toHaveBeenCalledWith('hello team', 'text', undefined, undefined);
     });
   });
 
@@ -115,7 +118,10 @@ describe('V2PodChat composer send button', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
-      expect(detail.sendMessage).toHaveBeenCalledWith('I am checking it now.', 'text', 'm1');
+      // Reply-to-person sets the addressing edge and NOT the thread root —
+      // the two are mutually exclusive at the composer, and the resolver 400s
+      // a message carrying both.
+      expect(detail.sendMessage).toHaveBeenCalledWith('I am checking it now.', 'text', 'm1', undefined);
     });
 
     rerender(

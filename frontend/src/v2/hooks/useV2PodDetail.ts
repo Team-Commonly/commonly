@@ -30,6 +30,11 @@ export interface V2Message {
   // the normalized `replyTo` object or the raw reply_* columns; the bubble
   // renders whichever is present.
   replyTo?: { id: string; content: string; username: string; userId?: string } | null;
+  // Threading (PG thread_root_id, #1106). Present on every message the PG
+  // reads return; null on a root and on anything predating the backfill.
+  // Distinct from reply_to_message_id ON PURPOSE — that one is ADDRESSING and
+  // wakes the parent's author, this one is membership and wakes nobody.
+  thread_root_id?: number | string | null;
   reply_msg_id?: string | null;
   reply_content?: string | null;
   reply_username?: string | null;
@@ -133,7 +138,16 @@ export interface UseV2PodDetailResult {
   loadingOlder: boolean;
   loadOlder: () => Promise<void>;
   refresh: () => Promise<void>;
-  sendMessage: (content: string, messageType?: string, replyToMessageId?: string) => Promise<V2Message | null>;
+  // `threadRootId` posts INTO a thread without addressing anyone: the backend
+  // takes it as membership and leaves reply_to null, so joining a thread does
+  // not ping the root's author (@ux-lead 56879, resolver in #1128). Passing
+  // both is a caller bug and the resolver 400s it rather than picking.
+  sendMessage: (
+    content: string,
+    messageType?: string,
+    replyToMessageId?: string,
+    threadRootId?: string,
+  ) => Promise<V2Message | null>;
 }
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -395,13 +409,23 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     };
   }, [podId, socket, connected, joinPod, leavePod, currentUser?._id]);
 
-  const sendMessage = useCallback(async (content: string, messageType = 'text', replyToMessageId?: string): Promise<V2Message | null> => {
+  const sendMessage = useCallback(async (
+    content: string,
+    messageType = 'text',
+    replyToMessageId?: string,
+    threadRootId?: string,
+  ): Promise<V2Message | null> => {
     if (!podId || !content.trim()) return null;
     try {
       setSendError(null);
       const created = await api.post<V2Message>(
         `/api/messages/${podId}`,
-        { content: content.trim(), messageType, ...(replyToMessageId ? { replyToMessageId } : {}) },
+        {
+          content: content.trim(),
+          messageType,
+          ...(replyToMessageId ? { replyToMessageId } : {}),
+          ...(threadRootId ? { threadRootId } : {}),
+        },
         { timeout: SEND_TIMEOUT_MS },
       );
       const normalized = normalizeMessage(created);

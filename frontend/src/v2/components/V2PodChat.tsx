@@ -17,6 +17,10 @@ import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { V2InviteTab } from './V2InviteModal';
 
+import V2ThreadCard from './V2ThreadCard';
+import { useV2ThreadState } from '../hooks/useV2ThreadState';
+import { buildThreadView } from '../utils/threadView';
+
 const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
@@ -252,6 +256,27 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // placing it after broke the hook order (React #310) and crashed the pod
   // page on first load (caught in post-deploy browser verification).
   const [replyTarget, setReplyTarget] = useState<import('../hooks/useV2PodDetail').V2Message | null>(null);
+
+  // The thread the composer is aimed at (constraint 4). ONE composer, two chip
+  // states, never both: setting either target clears the other. Kept beside
+  // replyTarget and above the `if (!pod)` return for the same hook-order
+  // reason recorded above — this file has crashed on that once already.
+  const [threadTarget, setThreadTarget] = useState<{ id: string; preview: string } | null>(null);
+
+  // Per-user thread state for this pod (#1145). `collapsed` arrives resolved;
+  // this component must never compute it.
+  const threadState = useV2ThreadState(detail?.pod?._id);
+
+  // Setting one composer target clears the other. Two chips would be two
+  // meanings for one send, and the resolver rejects a message carrying both.
+  const aimAtThread = useCallback((rootId: string, preview: string) => {
+    setReplyTarget(null);
+    setThreadTarget({ id: rootId, preview });
+  }, []);
+  const aimAtMessage = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
+    setThreadTarget(null);
+    setReplyTarget(m);
+  }, []);
 
   // @-mention dropdown state. mentionStart is the index of the `@` in the
   // textarea so we know the slice to replace on select.
@@ -812,7 +837,15 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     setSending(true);
     setComposerError(null);
     try {
-      const created = await sendMessage(text, 'text', replyTarget?.id || undefined);
+      // reply_to and thread_root are mutually exclusive by construction here:
+      // aimAtThread/aimAtMessage each clear the other, so at most one is set.
+      // The resolver 400s a message carrying both rather than choosing.
+      const created = await sendMessage(
+        text,
+        'text',
+        replyTarget?.id || undefined,
+        threadTarget?.id || undefined,
+      );
       if (created) {
         const delivery = created.agentDelivery;
         const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
@@ -856,6 +889,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         }
         setDraft('');
         setReplyTarget(null);
+        // Cleared only on SUCCESS, alongside the draft. #1118's rule: a send
+        // failure keeps the draft and its target, so a retry still lands in
+        // the thread the user aimed at.
+        setThreadTarget(null);
       }
     } finally {
       setSending(false);
@@ -1160,28 +1197,84 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   )}
                 </div>
               )}
-              {messages.map((m, i) => (
-                <React.Fragment key={m.id}>
-                  <V2MessageBubble
-                    message={m}
-                    agentDisplayNames={agentDisplayNames}
-                    agentAuthorKeys={agentAuthorKeys}
-                    onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-                    onOpenFile={onOpenFile}
-                    onReply={setReplyTarget}
-                    grouped={isGroupedWithPrevious(m, messages[i - 1])}
-                  />
-                  {agentDeliveryHint?.messageId === m.id && (
-                    <div className="v2-chat__delivery-hint" role="status">
-                      <Trans
-                        i18nKey="podChat.deliveryHint"
-                        values={{ handle: agentDeliveryHint.mentionHandle }}
-                        components={{ handle: <strong /> }}
+              {buildThreadView(messages, threadState.byRoot).map((item, i, view) => {
+                if (item.kind === 'message') {
+                  const m = item.message;
+                  const prev = view[i - 1];
+                  return (
+                    <React.Fragment key={m.id}>
+                      <V2MessageBubble
+                        message={m}
+                        agentDisplayNames={agentDisplayNames}
+                        agentAuthorKeys={agentAuthorKeys}
+                        onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                        onOpenFile={onOpenFile}
+                        onReply={aimAtMessage}
+                        grouped={isGroupedWithPrevious(
+                          m,
+                          prev && prev.kind === 'message' ? prev.message : undefined,
+                        )}
                       />
-                    </div>
-                  )}
-                </React.Fragment>
-              ))}
+                      {agentDeliveryHint?.messageId === m.id && (
+                        <div className="v2-chat__delivery-hint" role="status">
+                          <Trans
+                            i18nKey="podChat.deliveryHint"
+                            values={{ handle: agentDeliveryHint.mentionHandle }}
+                            components={{ handle: <strong /> }}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                }
+
+                const st = threadState.byRoot.get(item.rootId);
+                // No state row means the server does not consider this a
+                // thread. Render the replies flat rather than inventing a
+                // collapsed card around them — absence is not "collapsed".
+                const collapsed = st ? st.collapsed : false;
+                return (
+                  <React.Fragment key={`thread-${item.rootId}`}>
+                    <V2ThreadCard
+                      replyCount={item.replyCount}
+                      participants={item.participants}
+                      lastActivityAt={item.lastActivityAt}
+                      collapsed={collapsed}
+                      following={st ? st.following : null}
+                      onToggleCollapsed={() => threadState.toggleCollapsed(item.rootId)}
+                      onToggleFollowing={() => threadState.toggleFollowing(item.rootId)}
+                    />
+                    {!collapsed && (
+                      <div className="v2-thread-replies">
+                        {item.replies.map((r, ri) => (
+                          <V2MessageBubble
+                            key={r.id}
+                            message={r}
+                            agentDisplayNames={agentDisplayNames}
+                            agentAuthorKeys={agentAuthorKeys}
+                            onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+                            onOpenFile={onOpenFile}
+                            onReply={aimAtMessage}
+                            grouped={isGroupedWithPrevious(r, item.replies[ri - 1])}
+                          />
+                        ))}
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            className="v2-thread-replies__aim"
+                            onClick={() => aimAtThread(
+                              item.rootId,
+                              String(messages.find((x) => String(x.id) === item.rootId)?.content || ''),
+                            )}
+                          >
+                            {t('podChat.thread.replyInThread')}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1226,6 +1319,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
               </div>
             ) : (
             <div className="v2-chat__composer">
+              {threadTarget && (
+                <div className="v2-chat__reply-chip v2-chat__reply-chip--thread" role="status">
+                  <span className="v2-chat__reply-chip-label">
+                    {t('podChat.thread.replyingInThread')}{' '}
+                    {threadTarget.preview.replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 40)}
+                  </span>
+                  <button
+                    type="button"
+                    className="v2-chat__reply-chip-cancel"
+                    aria-label={t('podChat.cancelReply')}
+                    onClick={() => setThreadTarget(null)}
+                  >
+                    {CLOSE_MARK}
+                  </button>
+                </div>
+              )}
               {replyTarget && (
                 <div className="v2-chat__reply-chip" role="status">
                   <span className="v2-chat__reply-chip-label">
