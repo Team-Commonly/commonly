@@ -132,6 +132,46 @@ CREATE TABLE IF NOT EXISTS message_reactions (
   UNIQUE (message_id, user_id, emoji)
 );
 CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id);
+-- Per-user, per-thread state (W-T, TASK-029). ONE record carrying both
+-- booleans, per ux-lead's ruling in docs/design/threading-surface-ruling.md
+-- ("One state record, two booleans"): persisted collapse and follow share the
+-- key (user, pod, thread root), so two tables would mean two writes for one
+-- gesture. The collapsed column is here at birth rather than in the render PR.
+--
+-- NOT a widened User.followedThreads: that field is typed
+-- `postId: ObjectId ref 'Post', required` and cannot hold a Postgres
+-- messages.id. Widening it would silently drop chat rows from every consumer
+-- doing Post.find({_id: {$in: postIds}}) -- postController 457/513/548,
+-- activityService 614/712, ActivityFeedPage 584.
+--
+-- A row means "this user has non-default state on this thread". Row PRESENCE
+-- carries no meaning on its own, which is why `following` is a column and not
+-- row-existence: `collapsed` writes create rows for users who are not
+-- following, and if presence meant following, expanding a thread would
+-- subscribe you to it.
+CREATE TABLE IF NOT EXISTS thread_user_state (
+  id SERIAL PRIMARY KEY,
+  thread_root_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id VARCHAR(255) NOT NULL,
+  pod_id VARCHAR(255) NOT NULL,
+  -- TRI-STATE, deliberately nullable. NULL = "no explicit choice, defer to the
+  -- participation default" (posted in the thread or was @-mentioned => following).
+  -- TRUE = explicitly followed. FALSE = explicitly unfollowed, which for a
+  -- participant is a MUTE and must outrank the participation default.
+  -- A NOT NULL DEFAULT false here would be a live bug: a collapse-only row
+  -- would silently unfollow a participant who had never touched the toggle.
+  following BOOLEAN,
+  -- Defaults TRUE for everyone including followers -- following never implies
+  -- expanded. Only the expand/collapse gesture writes it.
+  collapsed BOOLEAN NOT NULL DEFAULT TRUE,
+  followed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (thread_root_id, user_id)
+);
+-- The wake path asks "who follows this thread" on every threaded reply, so the
+-- root is the hot key. The user index serves the per-pod render read.
+CREATE INDEX IF NOT EXISTS idx_thread_user_state_root ON thread_user_state(thread_root_id);
+CREATE INDEX IF NOT EXISTS idx_thread_user_state_user_pod ON thread_user_state(user_id, pod_id);
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_messages_pod_id ON messages(pod_id);
