@@ -106,6 +106,7 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Borders & elevation
 
+- **Neumorphic surfaces (accepted direction, 2026-08-22): the two rules below are superseded THERE, deliberately.** Sam ruled the shell migrates to the neumorphism recipe (`commonly-skills/skillsui/neumorphism`): ground `--neo-surface` (#d8dce6), depth via the dual-shadow token sets (`--neo-raised*` / `--neo-inset*`), element background ALWAYS equal to the page ground, cobalt reserved for action. On a migrated surface, shadows ARE the structure and borders disappear; on un-migrated surfaces the flat rules below still bind until their conversion PR. Never mix the two languages inside one surface.
 - **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
 - The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
 - **No "inner shadow" / inset effects** on chrome surfaces. Avatars again excepted: the initials plate carries a 1px inset highlight/shade pair so the seeded gradient reads as a lit sphere rather than a flat disc — removed via `:has(img)` when a photo is present, so shading never sits on a face.
