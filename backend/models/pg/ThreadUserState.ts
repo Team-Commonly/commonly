@@ -88,6 +88,42 @@ class ThreadUserState {
     return upsertOne('following', threadRootId, userId, podId, null);
   }
 
+  /**
+   * Follow because you participated — posted in the thread, or were mentioned
+   * in it (55854: "implicit by participation").
+   *
+   * Writes TRUE only where `following IS NULL`. An explicit FALSE is a MUTE and
+   * outranks participation, so this must never flip it: otherwise a mute is one
+   * @mention away from being silently revoked, and the user never asked for
+   * that. Muting a thread and then being mentioned in it is the ordinary case,
+   * not an edge one.
+   *
+   * The mention still WAKES the muted user — a mute scopes ambient activity,
+   * never addressing. That is the wake path's job (3/4); this only decides
+   * whether the subscription gets created.
+   *
+   * Returns the resulting state by re-reading, NOT by trusting rowCount: a
+   * conditional DO UPDATE that matches nothing is not distinguishable from one
+   * that wrote, across drivers.
+   */
+  static async followByParticipation(
+    threadRootId: number, userId: string, podId: string,
+  ): Promise<boolean | null> {
+    await (pool as PgPool).query(
+      `INSERT INTO thread_user_state (thread_root_id, user_id, pod_id, following)
+       VALUES ($1, $2, $3, TRUE)
+       ON CONFLICT (thread_root_id, user_id)
+       DO UPDATE SET following = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE thread_user_state.following IS NULL`,
+      [threadRootId, userId, podId],
+    );
+    const { rows } = await (pool as PgPool).query(
+      'SELECT following FROM thread_user_state WHERE thread_root_id = $1 AND user_id = $2',
+      [threadRootId, userId],
+    );
+    return rows[0]?.following ?? null;
+  }
+
   /** The expand/collapse gesture. The ONLY writer of `collapsed`. */
   static async setCollapsed(
     threadRootId: number, userId: string, podId: string, collapsed: boolean,
