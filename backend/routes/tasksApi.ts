@@ -545,13 +545,55 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
         { new: true },
       )
       : null;
+    let leaseRenewed = Boolean(task);
+
+    // Second attempt: the row was already swept back to `pending` before the
+    // note arrived. The renewing filter above requires `status: 'claimed'`, so
+    // it misses — and the note-only fallback below then returns 200 with no
+    // lease, leaving the caller believing it renewed when it did not.
+    //
+    // That is not a hypothetical. The deferral warning tells the holder "post a
+    // task update or re-claim — either renews the lease", and delivery latency
+    // means the warning routinely ARRIVES after the sweep it was warning about.
+    // Observed on TASK-029, 2026-08-22: warning written 12:24 (2 deferrals
+    // left), row swept to pending 12:54, note posted 12:56 landed with
+    // status still `pending` and claimedBy null. The seat only noticed because
+    // it read the response body.
+    //
+    // `lapsedFrom` names the seat the sweep took it from, so this restores the
+    // claim to its former holder and NOBODY else. If a peer claimed the row in
+    // between, status is `claimed` with their id and both filters miss — the
+    // race is won by the peer, which is the whole point of returning it to the
+    // board. This makes the cue's two options actually equivalent.
+    if (!task && claimKey) {
+      task = await Task.findOneAndUpdate(
+        { podId: podFilter, taskId, status: 'pending', lapsedFrom: claimKey },
+        {
+          $set: {
+            status: 'claimed',
+            claimedBy: claimKey,
+            claimedAt: now,
+            claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS),
+            rescueDeferrals: 0,
+            lapsedFrom: null,
+          },
+          $push: note,
+        },
+        { new: true },
+      );
+      leaseRenewed = Boolean(task);
+    }
+
     if (!task) {
       task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
     }
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
-    return res.json({ task });
+    // Reported explicitly. A note that did not renew is a legitimate outcome
+    // (a peer now holds the row, or you never did), but it must never be
+    // indistinguishable from one that did — that silence is the whole bug.
+    return res.json({ task, leaseRenewed });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
     return res.status(500).json({ error: 'Failed to add update' });
