@@ -50,6 +50,12 @@ export const perUserInstanceId = (userId: string): string => (
 
 export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promise<HireResult> => {
   const key = String(agentName || '').trim().toLowerCase();
+  // Taint boundary: everything downstream (registry lookup, identity
+  // creation, display-label regexes) receives a validated slug or nothing.
+  // Persona names are lowercase slugs by construction (FIRST_PARTY_APPS).
+  if (!/^[a-z0-9-]{1,64}$/.test(key)) {
+    throw new HireError('persona_not_found', 404, 'No such persona');
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { FIRST_PARTY_APPS } = require('../config/native-agents/apps');
@@ -122,7 +128,8 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
           || `Hi — I'm ${manifest.displayName}. Mention me when you need me.`,
       });
     } catch (err) {
-      console.warn(`[persona-hire] intro post failed for ${key}:${instanceId}:`, (err as Error).message);
+      // Constant format string; the identifiers ride as arguments.
+      console.warn('[persona-hire] intro post failed:', key, instanceId, (err as Error).message);
     }
   }
 
