@@ -152,8 +152,9 @@ export const DERIVATION_LIVE_SQL = `
 
 export const CUTOFF_SQL = `
   SELECT COALESCE(rooted.first_rooted, unrooted.newest_unrooted) AS cutoff,
-         rooted.first_rooted IS NOT NULL AS from_rooted
-    FROM (SELECT MIN(created_at) AS first_rooted
+         rooted.first_rooted IS NOT NULL AS from_rooted,
+         rooted.rooted_replies
+    FROM (SELECT MIN(created_at) AS first_rooted, count(*)::int AS rooted_replies
             FROM messages
            WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL) rooted,
          (SELECT MAX(created_at) AS newest_unrooted
@@ -299,6 +300,7 @@ async function main(): Promise<void> {
         );
       }
       const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
+      console.log(`rooted replies (derivation-written): ${boundary.rooted_replies}`);
       console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} `
         + `(${boundary.from_rooted ? 'first derivation-written reply' : 'newest un-rooted reply — FALLBACK, needs --derivation-live'})`);
       if (!boundary.from_rooted && !ASSUME_DERIVATION_LIVE) {

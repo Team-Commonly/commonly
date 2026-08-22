@@ -58,6 +58,10 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     // Without a rooted reply there is no evidence derivation is deployed, and
     // DO NOTHING would freeze a growing population's boundary.
     expect(SCRIPT).toMatch(/MAX\(created_at\) AS newest_unrooted/);
+    // The dry run shows WHY the fallback fired (sprint-review 57398): the
+    // primary's row count, not only the chosen value.
+    expect(SCRIPT).toMatch(/count\(\*\)::int AS rooted_replies/);
+    expect(SCRIPT).toMatch(/rooted replies \(derivation-written\): \$\{boundary\.rooted_replies\}/);
     expect(SCRIPT).toMatch(/if \(!boundary\.from_rooted && !ASSUME_DERIVATION_LIVE\)/);
     expect(SCRIPT).toMatch(/REFUSING to record a fallback cutoff/);
     expect(SCRIPT).toMatch(/cutoffSource: boundary\.from_rooted \? 'first-rooted-reply' : 'newest-unrooted-fallback'/);
