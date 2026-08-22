@@ -108,19 +108,31 @@ const { THREADING_BACKFILL_MIGRATION } = require('../constants/migrations');
 export const MIGRATION_NAME = THREADING_BACKFILL_MIGRATION;
 
 /**
- * The threading cutoff: the newest message that carries a reply edge and no
- * root. "Has a reply edge and no root" IS the definition of "written before
- * derivation-on-write shipped", so this boundary is exact rather than
- * approximate — not a deploy timestamp guessed after the fact.
+ * The threading cutoff: the FIRST reply that derivation-on-write ever wrote —
+ * the oldest message that carries a reply edge AND a root. Every such row was
+ * written by the deployed backend, so this boundary is exact to within one
+ * reply, per instance, and it is immune to retention orphans (a descendant of
+ * a deleted root loses its root and cannot move a MIN over rooted rows).
  *
- * Read BEFORE the UPDATE. The UPDATE eliminates the predicate, so afterwards
- * there is nothing left to measure. A hardcoded date would be wrong on every
- * instance that migrates on a different day, and self-hosting is in scope.
+ * It is NOT the newest un-rooted reply. That older definition (TASK-046) was
+ * poisoned by retention: delete a root and its descendants lose thread_root_id
+ * while keeping a live parent, so a recent orphan set the boundary days late.
+ * And it is NOT a hardcoded deploy instant: that is wrong on every
+ * self-hosted instance that ships derivation on a different day. The
+ * deploy instant is the cross-check for one instance, never the source.
  *
- * NULL when there is nothing to backfill — a fresh instance has no
- * pre-threading history, so no root is pre-cutoff and the surface rule is
- * simply inert. Consumers must treat NULL as "no pre-cutoff roots exist",
- * never as "unknown, assume everything is pre-cutoff".
+ * Only when no rooted reply exists yet does the script fall back to the newest
+ * un-rooted reply — and only behind --derivation-live, because without a
+ * rooted reply there is no evidence derivation is deployed and the fallback
+ * would freeze a growing population's boundary under ON CONFLICT DO NOTHING.
+ *
+ * Read BEFORE the UPDATE — and only when no ledger row exists. After the
+ * UPDATE every pre-threading reply also carries a root, so this MIN would
+ * return the oldest reply ever written: a plausible wrong answer, which is
+ * worse than the old query's useless one. The ledger row is the only true
+ * boundary once it exists; a later run reports it and never re-measures. A MISSING ledger row means "cutoff unknown"
+ * and the surface expands everything; a row with a NULL cutoff (the zero-edges
+ * branch) means "ran, and there was no pre-threading history".
  */
 /**
  * POSITIVE evidence that derivation-on-write is live: any message that has a
@@ -139,9 +151,15 @@ export const DERIVATION_LIVE_SQL = `
    LIMIT 1`;
 
 export const CUTOFF_SQL = `
-  SELECT MAX(created_at) AS cutoff
-    FROM messages
-   WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`;
+  SELECT COALESCE(rooted.first_rooted, unrooted.newest_unrooted) AS cutoff,
+         rooted.first_rooted IS NOT NULL AS from_rooted,
+         rooted.rooted_replies
+    FROM (SELECT MIN(created_at) AS first_rooted, count(*)::int AS rooted_replies
+            FROM messages
+           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL) rooted,
+         (SELECT MAX(created_at) AS newest_unrooted
+            FROM messages
+           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL) unrooted`;
 
 async function main(): Promise<void> {
   if (!process.env.PG_HOST) {
@@ -175,6 +193,22 @@ async function main(): Promise<void> {
   });
 
   try {
+    // LEDGER FIRST (sprint-review 57397). After a backfill every pre-threading
+    // reply has BOTH fields set, so re-measuring the boundary returns the
+    // oldest reply ever written — a plausible wrong answer, not a useless one.
+    // The recorded value is the only true one; a second run reports it and
+    // stops, and never prints a recomputed number an operator could act on.
+    const { rows: [ledger] } = await pool.query(
+      `SELECT details->>'threadingCutoff' AS cutoff, applied_at
+         FROM migration_records WHERE name = $1`,
+      [MIGRATION_NAME],
+    );
+    if (ledger) {
+      console.log(`${MIGRATION_NAME} already recorded at ${ledger.applied_at}: `
+        + `cutoff = ${ledger.cutoff ?? '(none)'}. Nothing to do — the boundary is not re-measured.`);
+      return;
+    }
+
     const { rows: [before] } = await pool.query(
       `SELECT count(*)::int AS needs_root
          FROM messages
@@ -266,7 +300,13 @@ async function main(): Promise<void> {
         );
       }
       const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
-      console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} (newest pre-threading reply)`);
+      console.log(`rooted replies (derivation-written): ${boundary.rooted_replies}`);
+      console.log(`would record cutoff = ${boundary.cutoff ?? '(none)'} `
+        + `(${boundary.from_rooted ? 'first derivation-written reply' : 'newest un-rooted reply — FALLBACK, needs --derivation-live'})`);
+      if (!boundary.from_rooted && !ASSUME_DERIVATION_LIVE) {
+        console.error('--apply would REFUSE: no message has both a reply edge and a root, so the boundary '
+          + 'cannot be measured from derivation. Deploy derivation-on-write first, or pass --derivation-live.');
+      }
       console.log('DRY RUN — nothing written. Re-run with --apply.');
       return;
     }
@@ -277,46 +317,75 @@ async function main(): Promise<void> {
     // that predicate, so afterwards the boundary is unrecoverable.
     const { rows: [boundary] } = await pool.query(CUTOFF_SQL);
 
-    const result = await pool.query(
-      `WITH RECURSIVE chain AS (
-         SELECT id, reply_to_message_id, id AS root
-           FROM messages WHERE reply_to_message_id IS NULL
-         UNION ALL
-         SELECT m.id, m.reply_to_message_id, c.root
-           FROM messages m JOIN chain c ON m.reply_to_message_id = c.id
-       )
-       UPDATE messages m
-          SET thread_root_id = chain.root
-         FROM chain
-        WHERE m.id = chain.id
-          AND m.reply_to_message_id IS NOT NULL
-          AND m.thread_root_id IS NULL
-          AND chain.root <> m.id`,
-    );
-    console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
+    if (!boundary.from_rooted && !ASSUME_DERIVATION_LIVE) {
+      // No rooted reply means no evidence derivation is deployed. The fallback
+      // boundary (newest un-rooted reply) is only right if the population has
+      // stopped growing, and DO NOTHING makes a wrong answer permanent.
+      console.error(
+        'REFUSING to record a fallback cutoff: no message has both a reply edge '
+        + 'and a root, so derivation-on-write is not observed. Deploy it first, '
+        + 'or re-run with --derivation-live to record the newest un-rooted reply.',
+      );
+      process.exitCode = 3;
+      return;
+    }
 
-    // The ruling in #1115 says pre-cutoff roots render expanded, with the
-    // cutoff "read from the migration record". This script is the only process
-    // that ever knows it, and until now it discarded it (@sprint-review 56860).
-    //
-    // ON CONFLICT DO NOTHING, not DO UPDATE: a second run must not move a
-    // boundary the surface has already been rendering against. The script stays
-    // idempotent; the FIRST run's answer is the true one, because by the second
-    // run the population it measured no longer exists.
-    await pool.query(
-      `INSERT INTO migration_records (name, details)
-       VALUES ($1, $2::jsonb)
-       ON CONFLICT (name) DO NOTHING`,
-      [
-        MIGRATION_NAME,
-        JSON.stringify({
-          threadingCutoff: boundary.cutoff,
-          rowsUpdated: result.rowCount,
-          rowsEligible: before.needs_root,
-        }),
-      ],
-    );
-    console.log(`recorded ${MIGRATION_NAME}: cutoff = ${boundary.cutoff ?? '(none)'}`);
+    // ONE TRANSACTION for the UPDATE and the ledger INSERT (sprint-review,
+    // TASK-046 note). Losing the INSERT after the UPDATE would leave every
+    // chain rooted and no cutoff recorded — and 'the backfill always writes
+    // the ledger row' is the only remaining guarantee between a partial run
+    // and a permanently unknown cutoff. Aspiration becomes property here.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `WITH RECURSIVE chain AS (
+           SELECT id, reply_to_message_id, id AS root
+             FROM messages WHERE reply_to_message_id IS NULL
+           UNION ALL
+           SELECT m.id, m.reply_to_message_id, c.root
+             FROM messages m JOIN chain c ON m.reply_to_message_id = c.id
+         )
+         UPDATE messages m
+            SET thread_root_id = chain.root
+           FROM chain
+          WHERE m.id = chain.id
+            AND m.reply_to_message_id IS NOT NULL
+            AND m.thread_root_id IS NULL
+            AND chain.root <> m.id`,
+      );
+      console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
+
+      // The ruling in #1115 says pre-cutoff roots render expanded, with the
+      // cutoff "read from the migration record". This script is the only process
+      // that ever knows it, and until now it discarded it (@sprint-review 56860).
+      //
+      // ON CONFLICT DO NOTHING, not DO UPDATE: a second run must not move a
+      // boundary the surface has already been rendering against. The script stays
+      // idempotent; the FIRST run's answer is the true one, because by the second
+      // run the population it measured no longer exists.
+      await client.query(
+        `INSERT INTO migration_records (name, details)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (name) DO NOTHING`,
+        [
+          MIGRATION_NAME,
+          JSON.stringify({
+            threadingCutoff: boundary.cutoff,
+            cutoffSource: boundary.from_rooted ? 'first-rooted-reply' : 'newest-unrooted-fallback',
+            rowsUpdated: result.rowCount,
+            rowsEligible: before.needs_root,
+          }),
+        ],
+      );
+      console.log(`recorded ${MIGRATION_NAME}: cutoff = ${boundary.cutoff ?? '(none)'}`);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
     const { rows: [after] } = await pool.query(
       `SELECT count(*)::int AS still_null

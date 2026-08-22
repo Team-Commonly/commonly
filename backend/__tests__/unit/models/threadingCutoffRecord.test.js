@@ -45,14 +45,33 @@ describe('the ledger is general, not threading-shaped', () => {
 });
 
 describe('the cutoff is measured before it becomes unmeasurable', () => {
-  it('is defined as the newest row with a reply edge and no root', () => {
-    // That predicate IS "written before derivation-on-write shipped" — exact,
-    // not a deploy timestamp guessed after the fact.
-    expect(SCRIPT).toMatch(/SELECT MAX\(created_at\) AS cutoff[\s\S]{0,120}reply_to_message_id IS NOT NULL AND thread_root_id IS NULL/);
+  it('is defined as the FIRST reply that carries a root, not the newest un-rooted one', () => {
+    // TASK-046: MAX over un-rooted rows is poisoned by retention orphans (a
+    // descendant of a deleted root keeps a live parent and loses its root), and
+    // a hardcoded deploy instant is wrong on every self-hosted instance. The
+    // first rooted reply is exact per instance and orphan-immune.
+    expect(SCRIPT).toMatch(/MIN\(created_at\) AS first_rooted[\s\S]{0,120}reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL/);
+    expect(SCRIPT).not.toMatch(/SELECT MAX\(created_at\) AS cutoff/);
+  });
+
+  it('falls back to the newest un-rooted reply ONLY behind --derivation-live', () => {
+    // Without a rooted reply there is no evidence derivation is deployed, and
+    // DO NOTHING would freeze a growing population's boundary.
+    expect(SCRIPT).toMatch(/MAX\(created_at\) AS newest_unrooted/);
+    // The dry run shows WHY the fallback fired (sprint-review 57398): the
+    // primary's row count, not only the chosen value.
+    expect(SCRIPT).toMatch(/count\(\*\)::int AS rooted_replies/);
+    expect(SCRIPT).toMatch(/rooted replies \(derivation-written\): \$\{boundary\.rooted_replies\}/);
+    expect(SCRIPT).toMatch(/if \(!boundary\.from_rooted && !ASSUME_DERIVATION_LIVE\)/);
+    expect(SCRIPT).toMatch(/REFUSING to record a fallback cutoff/);
+    expect(SCRIPT).toMatch(/cutoffSource: boundary\.from_rooted \? 'first-rooted-reply' : 'newest-unrooted-fallback'/);
   });
 
   it('is read BEFORE the UPDATE, because the UPDATE destroys the predicate', () => {
-    const cutoffRead = SCRIPT.indexOf('const { rows: [boundary] } = await pool.query(CUTOFF_SQL);\n\n    const result');
+    // The apply-path read is the LAST occurrence (the dry run reads it too);
+    // the fallback guard now sits between the read and the UPDATE, which is
+    // why this no longer pins the two as adjacent lines.
+    const cutoffRead = SCRIPT.lastIndexOf('const { rows: [boundary] } = await pool.query(CUTOFF_SQL);');
     const update = SCRIPT.indexOf('UPDATE messages m');
     expect(cutoffRead).toBeGreaterThan(-1);
     expect(cutoffRead).toBeLessThan(update);
@@ -61,6 +80,34 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
   it('is written to the ledger with the row counts that produced it', () => {
     expect(SCRIPT).toMatch(/INSERT INTO migration_records \(name, details\)/);
     expect(SCRIPT).toMatch(/threadingCutoff: boundary\.cutoff/);
+  });
+
+  it('a run that finds the ledger row reports it and never re-measures', () => {
+    // sprint-review 57397: after the backfill, MIN over rooted replies is the
+    // oldest reply ever written — plausible and wrong. The ledger read comes
+    // before the population count and returns before CUTOFF_SQL runs.
+    const ledgerRead = SCRIPT.indexOf("FROM migration_records WHERE name = $1");
+    const populationRead = SCRIPT.indexOf('count(*)::int AS needs_root');
+    expect(ledgerRead).toBeGreaterThan(-1);
+    expect(ledgerRead).toBeLessThan(populationRead);
+    expect(SCRIPT).toMatch(/already recorded at \$\{ledger\.applied_at\}/);
+    expect(SCRIPT).toMatch(/the boundary is not re-measured/);
+  });
+
+  it('the UPDATE and the ledger INSERT are one transaction', () => {
+    // sprint-review (TASK-046 note): losing the INSERT after the UPDATE leaves
+    // every chain rooted and no cutoff recorded. BEGIN precedes the UPDATE,
+    // COMMIT follows the INSERT, and the catch rolls back.
+    const begin = SCRIPT.indexOf("await client.query('BEGIN')");
+    const update = SCRIPT.indexOf('UPDATE messages m');
+    const insert = SCRIPT.lastIndexOf('INSERT INTO migration_records (name, details)');
+    const commit = SCRIPT.indexOf("await client.query('COMMIT')");
+    expect(begin).toBeGreaterThan(-1);
+    expect(begin).toBeLessThan(update);
+    expect(update).toBeLessThan(insert);
+    expect(insert).toBeLessThan(commit);
+    expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
+    expect(SCRIPT).toMatch(/client\.release\(\)/);
   });
 
   it('a second run does NOT move the boundary', () => {
@@ -77,10 +124,12 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(dry).toMatch(/CUTOFF_SQL/);
   });
 
-  it('NULL is documented as "no pre-cutoff roots", not "unknown"', () => {
-    // The dangerous misreading: a fresh instance has no pre-threading history,
-    // and treating NULL as unknown would expand every thread on it.
-    expect(SCRIPT).toMatch(/never as "unknown, assume everything is pre-cutoff"/);
+  it('a MISSING row is unknown (expand); a NULL cutoff in a written row is knowledge', () => {
+    // The sentence this test used to pin said the opposite — "never as
+    // unknown" — and the ruling (docs/design/threading-surface-ruling.md)
+    // rejected it: collapsed hides history, so unknown must never resolve there.
+    expect(SCRIPT).not.toMatch(/never as "unknown, assume everything is pre-cutoff"/);
+    expect(SCRIPT).toMatch(/A MISSING ledger row means "cutoff unknown"/);
   });
 });
 
