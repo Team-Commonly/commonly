@@ -639,6 +639,50 @@ export async function runAgent(
     }
   }
 
+  // ADR-022 D5 invariant: the per-user daily ceiling — keyed on installedBy,
+  // summed across ALL the user's hosted installs. The per-install cap above
+  // stays as the runaway-loop guard; this is the spend promise ("1 hosted
+  // colleague included" needs a number that cannot silently multiply when a
+  // user hires a second persona or places one in three rooms). Two deliberate
+  // reversals from the cap above: the decline is TRUTHFUL (failed +
+  // errorKind, never an empty success), and a count failure fails CLOSED —
+  // a runaway guard and a spend ceiling have opposite safe directions.
+  // Forward-only: rows without userId predate the stamp and cannot be
+  // counted; the window inherits the cap's fixed-UTC-midnight semantics.
+  const userCeiling = Number(process.env.AGENT_USER_DAILY_RUN_CEILING ?? 120);
+  if (Number.isFinite(userCeiling) && userCeiling > 0) {
+    const installedBy = installation.installedBy ? String(installation.installedBy) : '';
+    if (!installedBy) {
+      console.warn(
+        `[native-runtime] ${agentName}:${instanceId} has no installedBy — `
+        + 'per-user ceiling unenforceable for this install',
+      );
+    } else {
+      try {
+        const AgentRunModel = require('../models/AgentRun');
+        const dayStart = new Date();
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const userRunsToday = await AgentRunModel.countDocuments({
+          userId: installedBy,
+          startedAt: { $gte: dayStart },
+        });
+        if (userRunsToday >= userCeiling) {
+          console.warn(
+            `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
+            + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
+          );
+          return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
+        }
+      } catch (err) {
+        return failedResult(
+          '',
+          'user_ceiling_check_failed',
+          `per-user ceiling count failed (failing closed): ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   // ADR-018 D3: native is one of OUR drivers — deterministic claim-before-act,
   // the same rule the CLI wrapper enforces (#894). Fleet audit (Sharpen msg
   // 53016) found this gap: the event queue pre-claims DELIVERY, but nothing
@@ -696,6 +740,8 @@ export async function runAgent(
     podId: installation.podId,
     agentName,
     instanceId,
+    // D5 denormalization: the per-user ceiling counts on this. Forward-only.
+    userId: installation.installedBy ? String(installation.installedBy) : undefined,
     trigger: triggerType,
     triggerEventId: trigger.eventId || undefined,
     status: 'queued',
