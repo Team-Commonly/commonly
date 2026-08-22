@@ -181,6 +181,78 @@ describe('POST /updates renews a holder-authored lease', () => {
   });
 });
 
+describe('a holder-authored note resets the deferral budget too', () => {
+  // Found by @sprint-review after #1082 shipped (pod 56544). Part 1 renewed
+  // the lease and part 2 counted deferrals, and the two never met: a holder
+  // renewing by notes extended the lease forever while the budget ticked down
+  // and never reset, so the kernel eventually rescued them for following its
+  // own cue. Observed live on TASK-025 before the fix — note at 04:35:54
+  // moved claimExpiresAt to 05:05:54 with rescueDeferrals stuck at 1.
+
+  it('the holder\'s note zeroes rescueDeferrals, like a re-claim does', async () => {
+    await seed({
+      claimedBy: 'holder',
+      claimedAt: new Date(Date.now() - 25 * MIN),
+      claimExpiresAt: new Date(Date.now() + 5 * MIN),
+      rescueDeferrals: 2,
+    });
+
+    await postUpdate('holder', 'TASK-001', 'still on it');
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.rescueDeferrals).toBe(0);
+  });
+
+  it('a peer\'s note does NOT reset it — same gate as the lease', async () => {
+    await seed({
+      claimedBy: 'holder',
+      claimedAt: new Date(Date.now() - 25 * MIN),
+      claimExpiresAt: new Date(Date.now() + 5 * MIN),
+      rescueDeferrals: 2,
+    });
+
+    await postUpdate('stranger', 'TASK-001', 'passing comment');
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    // A passing peer must not top up someone else's budget any more than
+    // they may extend someone else's lease.
+    expect(row.rescueDeferrals).toBe(2);
+  });
+
+  it('renewal and budget move together — the property that was missing', async () => {
+    const before = new Date(Date.now() + 5 * MIN);
+    await seed({
+      claimedBy: 'holder',
+      claimedAt: new Date(Date.now() - 25 * MIN),
+      claimExpiresAt: before,
+      rescueDeferrals: 3,
+    });
+
+    await postUpdate('holder', 'TASK-001', 'progress');
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    // Both or neither. A renewal that moves one and not the other is exactly
+    // the shipped bug, and asserting them jointly is what pins the pairing.
+    expect(new Date(row.claimExpiresAt).getTime()).toBeGreaterThan(before.getTime());
+    expect(row.rescueDeferrals).toBe(0);
+  });
+
+  it('an already-lapsed holder recovers the full budget by writing a note', async () => {
+    await seed({
+      claimedBy: 'holder',
+      claimedAt: new Date(Date.now() - 90 * MIN),
+      claimExpiresAt: new Date(Date.now() - 60 * MIN),
+      rescueDeferrals: 2,
+    });
+
+    await postUpdate('holder', 'TASK-001', 'back on it');
+
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(new Date(row.claimExpiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(row.rescueDeferrals).toBe(0);
+  });
+});
+
 describe('claim resets the per-lease rescue budget', () => {
   it('a fresh claim zeroes rescueDeferrals and clears lapsedFrom', async () => {
     await seed({
