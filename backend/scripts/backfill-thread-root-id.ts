@@ -95,6 +95,9 @@
 import { Pool } from 'pg';
 
 const APPLY = process.argv.includes('--apply');
+// Operator's assertion that derivation-on-write is deployed, for the one case
+// the script cannot determine: zero eligible edges and no positive evidence.
+const ASSUME_DERIVATION_LIVE = process.argv.includes('--derivation-live');
 
 // Re-exported for callers that already import this script. The NAME itself
 // lives in constants/migrations.ts, which has no side effects — see the note
@@ -119,6 +122,22 @@ export const MIGRATION_NAME = THREADING_BACKFILL_MIGRATION;
  * simply inert. Consumers must treat NULL as "no pre-cutoff roots exist",
  * never as "unknown, assume everything is pre-cutoff".
  */
+/**
+ * POSITIVE evidence that derivation-on-write is live: any message that has a
+ * reply edge AND a root can only have been written by it (the backfill has not
+ * run, or these rows would not be the question).
+ *
+ * Presence is proof. Absence is NOT proof of the opposite — a live instance
+ * with no replies yet looks identical to one whose backend predates the
+ * feature. That asymmetry is why the zero-edges branch asks rather than
+ * assumes: @sprint-review (56912) pointed out the header warned about the
+ * ordering and nothing checked it, and a warning is the part people skip.
+ */
+export const DERIVATION_LIVE_SQL = `
+  SELECT 1 FROM messages
+   WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL
+   LIMIT 1`;
+
 export const CUTOFF_SQL = `
   SELECT MAX(created_at) AS cutoff
     FROM messages
@@ -173,18 +192,49 @@ async function main(): Promise<void> {
       // whole safety of "missing means unknown" depends on a migrated instance
       // being unable to present a missing row, and this is the branch that
       // would otherwise break it.
+      // Zero eligible edges is ambiguous, and the two readings write opposite
+      // records. Derivation live => genuinely no pre-threading history, and a
+      // null cutoff is correct. Derivation NOT live => the population is still
+      // growing, and a null cutoff is wrong AND permanent, because the DO
+      // NOTHING that protects a correct boundary equally freezes an incorrect
+      // one. So: take positive evidence if it exists, and otherwise ASK rather
+      // than assume.
+      const { rows: evidence } = await pool.query(DERIVATION_LIVE_SQL);
+      const derivationProven = evidence.length > 0;
+
+      if (!derivationProven && !ASSUME_DERIVATION_LIVE) {
+        console.error(
+          'REFUSING to record a null cutoff: nothing to root, and no evidence '
+          + 'that derivation-on-write is deployed (no message has both a reply '
+          + 'edge and a root).\n'
+          + 'If the backend HAS shipped derivation, this is a genuinely empty '
+          + 'instance — re-run with --derivation-live to confirm and record.\n'
+          + 'If it has NOT, deploy first: recording now writes a wrong boundary '
+          + 'that ON CONFLICT DO NOTHING makes permanent.',
+        );
+        process.exitCode = 3;
+        return;
+      }
+
       if (APPLY) {
         await pool.query(
           `INSERT INTO migration_records (name, details)
            VALUES ($1, $2::jsonb)
            ON CONFLICT (name) DO NOTHING`,
           [MIGRATION_NAME, JSON.stringify({
-            threadingCutoff: null, rowsUpdated: 0, rowsEligible: 0,
+            threadingCutoff: null,
+            rowsUpdated: 0,
+            rowsEligible: 0,
+            // How we concluded the instance really is empty, so a later reader
+            // can tell evidence from an operator's assertion.
+            derivationEvidence: derivationProven ? 'observed' : 'asserted-by-flag',
           })],
         );
-        console.log(`nothing to root — recorded ${MIGRATION_NAME} with a null cutoff.`);
+        console.log(`nothing to root — recorded ${MIGRATION_NAME} with a null cutoff `
+          + `(${derivationProven ? 'derivation observed' : 'operator-asserted'}).`);
       } else {
-        console.log('nothing to root. --apply would still record the ledger row.');
+        console.log(`nothing to root. --apply would record the ledger row `
+          + `(${derivationProven ? 'derivation observed' : 'operator-asserted'}).`);
       }
       return;
     }

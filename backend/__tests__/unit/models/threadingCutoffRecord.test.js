@@ -156,3 +156,40 @@ describe('the ordering precondition is written where it is actioned', () => {
     expect(doNothing.length).toBe(2);
   });
 });
+
+describe('the ordering precondition is CHECKED, not only warned about', () => {
+  // @sprint-review 56912: the header warned about the ordering and nothing
+  // enforced it — "there's no check that derivation is live". A warning is the
+  // part people skip, and the DO NOTHING that protects a correct boundary
+  // equally freezes an incorrect one.
+  const SRC = fs.readFileSync(
+    path.join(__dirname, '../../../scripts/backfill-thread-root-id.ts'), 'utf8',
+  );
+
+  it('uses POSITIVE evidence: a row with both a reply edge and a root', () => {
+    // Only derivation-on-write can have produced such a row before the
+    // backfill runs. Presence is proof.
+    expect(SRC).toMatch(/DERIVATION_LIVE_SQL[\s\S]{0,200}reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL/);
+  });
+
+  it('and says why absence is NOT proof of the opposite', () => {
+    // A live instance with no replies looks identical to one whose backend
+    // predates the feature. That asymmetry is the reason for the flag.
+    expect(SRC).toMatch(/Absence is NOT proof/);
+  });
+
+  it('refuses the ambiguous write rather than guessing', () => {
+    expect(SRC).toMatch(/REFUSING to record a null cutoff/);
+    expect(SRC).toMatch(/if \(!derivationProven && !ASSUME_DERIVATION_LIVE\)/);
+  });
+
+  it('offers an explicit operator override, and records which path was taken', () => {
+    // A later reader must be able to tell observed evidence from an assertion.
+    expect(SRC).toMatch(/--derivation-live/);
+    expect(SRC).toMatch(/derivationEvidence: derivationProven \? 'observed' : 'asserted-by-flag'/);
+  });
+
+  it('the refusal exits non-zero, so a script runner notices', () => {
+    expect(SRC).toMatch(/process\.exitCode = 3;/);
+  });
+});
