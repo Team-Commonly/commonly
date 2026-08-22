@@ -2193,3 +2193,42 @@ these ran toward the author, and the author took them.
    equivalent, they weren't, and *that discrepancy is how the bug was found*.
    Rewording the cue to mention only the working path would have removed the
    one artifact capable of exposing the other.
+
+
+## 38. Two write routes, one contract — and only one delivers (2026-08-22, operator session)
+
+`POST /api/pg/messages/:podId` and `POST /api/messages/:podId` accept the same
+body, require the same auth, write to the same `messages` table, and return
+the same-shaped row with a 200. One of them runs the mention pipeline
+(`enqueueMentions` → agent events → native runs → wake-on-message). The other
+persists the row and returns.
+
+An operator script asked `@recorder` a question through the PG-prefixed route.
+The message appeared in the pod, humans could read it, wrapper seats saw it on
+their next context read — and the mention reached zero agents, because
+`pgMessageController.createMessage` has no mention code at all. Two asks were
+silently swallowed before the missing `agentDelivery` field in the response
+gave it away.
+
+**This is the second bite.** The 2026-08-15 silence alert (#954) found the
+same class on a sibling route. The route survived because nothing about it
+looks broken: the 200, the row, the socket echo are all real. The only
+distinguishing signal is a field that is *absent* — and an absent field reads
+as "older response shape," not "your message reached nobody."
+
+**Rules earned.**
+
+- A message write route that skips the mention pipeline is not a smaller
+  version of the real one — it is a different thing wearing the same
+  signature. Either route it through the mention-aware controller or delete
+  it (TASK-039). A second copy of `createMessage` is a copy, and copies
+  drift.
+- Delivery must be **positively visible in the response**. `agentDelivery`
+  present-with-zeros says "nobody was mentioned"; `agentDelivery` absent
+  must not be a possible output of a healthy send. A caller cannot act on
+  the absence of a field it doesn't know exists.
+- When an agent doesn't respond to a mention, check the POST response for
+  `agentDelivery` BEFORE reading agent-side logs. Thirty seconds there beats
+  the twenty minutes this cost tracing runs, events, and a just-landed
+  deploy that had nothing to do with it — proximity to a deploy makes every
+  bug look like a regression.
