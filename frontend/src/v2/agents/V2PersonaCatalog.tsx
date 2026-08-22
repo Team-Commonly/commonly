@@ -30,7 +30,9 @@ const PersonaCardView: React.FC<{ card: PersonaCard }> = ({ card }) => {
   return (
     <article className="v2-pcat__card">
       <header className="v2-pcat__card-head">
-        <V2Avatar name={card.name} size="md" kind="agent" seed={card.avatarSeed} />
+        <span className="v2-pcat__avatar-well">
+          <V2Avatar name={card.name} size="md" kind="agent" seed={card.avatarSeed} />
+        </span>
         <div className="v2-pcat__card-title">
           <h2 className="v2-pcat__name">{card.name}</h2>
           <div className="v2-pcat__role">{card.role}</div>
