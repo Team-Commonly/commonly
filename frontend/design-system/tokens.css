@@ -28,6 +28,24 @@
   /* ---------- Borders ---------- */
   --c-border:          #e5e7eb;   /* default */
   --c-border-soft:     #eef0f6;   /* dividers */
+
+  /* ── Neumorphic layer (Sam's shell direction, accepted 2026-08-22) ──
+     skillsui neumorphism recipe with OUR constants: Slate Mist ground,
+     cobalt on action only, SF stack. Core physics: an element's background
+     MUST equal its page ground — depth comes only from the dual shadow.
+     Additive: surfaces migrate one at a time (persona catalog is the
+     pilot); un-migrated surfaces keep the flat token set above. */
+  --c-neo-surface: #d8dce6;
+  --c-neo-surface-deep: #cbd0dd;
+  --c-neo-ink: #2a2e38;
+  --c-neo-ink-2: #6a7183;
+  --c-neo-shadow-light: rgba(255, 255, 255, 0.85);
+  --c-neo-shadow-dark: rgba(146, 156, 176, 0.55);
+  --c-neo-raised: -6px -6px 14px var(--c-neo-shadow-light), 6px 6px 14px var(--c-neo-shadow-dark);
+  --c-neo-raised-soft: -3px -3px 8px var(--c-neo-shadow-light), 3px 3px 8px var(--c-neo-shadow-dark);
+  --c-neo-raised-lg: -8px -8px 18px var(--c-neo-shadow-light), 8px 8px 18px var(--c-neo-shadow-dark);
+  --c-neo-inset: inset -4px -4px 10px var(--c-neo-shadow-light), inset 4px 4px 10px var(--c-neo-shadow-dark);
+  --c-neo-inset-soft: inset -2px -2px 5px var(--c-neo-shadow-light), inset 2px 2px 5px var(--c-neo-shadow-dark);
   --c-border-strong:   #d7dce7;   /* hover/focus */
 
   /* ---------- Text ---------- */
