@@ -24,8 +24,17 @@
  *    wakes them, because addressing never passes through this service. It
  *    also cannot be closed by writing a caller anywhere convenient — a
  *    synchronous Postgres write on the mention hot path is a decision, not a
- *    detail. Tracked separately; this comment previously asserted the wiring
+ *    detail. Tracked as TASK-045; this comment previously asserted the wiring
  *    existed, which is the thing that made it invisible.
+ *
+ *    WHOEVER CLOSES TASK-045: the shouted phrase three paragraphs up is load
+ *    bearing. threadFollowByParticipationWiring.test.js reads it and asserts
+ *    the call graph agrees, so adding a caller without editing this comment
+ *    turns that suite red on purpose. Swap it for the WIRED marker defined at
+ *    the top of that test and the same suite flips to requiring a caller.
+ *    (Deliberately not quoting the other marker here — the suite asserts
+ *    EXACTLY ONE is present, and spelling both out is how this very edit
+ *    first went red.)
  *  - `muted` — `following IS FALSE`. Subtracted LAST, because an explicit mute
  *    outranks participation. A participant who muted must stay muted.
  *
