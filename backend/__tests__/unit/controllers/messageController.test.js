@@ -149,6 +149,30 @@ describe('messageController', () => {
       }));
     });
 
+    it('uses the raw PG username for a JWT-posted chat wake without a joined author', async () => {
+      const pgMessage = {
+        id: 33,
+        content: '@aria please review this',
+        username: 'sam',
+      };
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      PGMessage.create.mockResolvedValue({ id: 33 });
+      PGMessage.findById.mockResolvedValueOnce(pgMessage);
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: pgMessage.content },
+        user: { id: 'u1' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await messageController.createMessage(req, res);
+
+      expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+        message: pgMessage,
+        username: 'sam',
+      }));
+    });
+
     it('counts wake-on-message targets so the composer hint stays truthful (#914)', async () => {
       const mockMessage = { id: 4, content: 'hello with no mention' };
       Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
