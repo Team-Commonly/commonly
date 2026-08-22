@@ -265,6 +265,20 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // reconciled into PG. A reply written here would look successful while
       // permanently losing its parent edge, so only non-replies may use this
       // availability fallback.
+      //
+      // "NEVER RECONCILED" IS A CURRENT FACT, NOT AN INVARIANT — and this
+      // guard is correct only while it holds (@sprint-review, pod 56881).
+      // Reconciling Mongo into PG was the other option considered on TASK-040;
+      // #1116 chose this one instead, so nothing reconciles today and the 503
+      // is the resolution rather than a stopgap.
+      //
+      // If reconciliation is ever built, this stops being a data-loss guard
+      // and becomes a rejection with no remaining reason: a user told
+      // "Replies are temporarily unavailable" about a path that would now
+      // preserve their reply. Whoever builds it must remove or relax this in
+      // the same change. The dependency runs both ways and appears in neither
+      // diff, which is why it is written at both ends — TASK-040 carries the
+      // pointer back here.
       if (replyToMessageId) {
         res.status(503).json({
           error: 'Replies are temporarily unavailable. Please try again shortly.',
