@@ -211,7 +211,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const { t, i18n } = useTranslation();
   const numberFormatter = new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en');
   const {
-    pod, members, messages, agents, sendMessage, loading, error,
+    pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
   } = detail;
   const api = useV2Api();
@@ -1349,9 +1349,9 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   </svg>
                 </button>
               </div>
-              {composerError && (
+              {(composerError || sendError) && (
                 <div className="v2-chat__composer-footer">
-                  <span className="v2-chat__composer-error">{composerError}</span>
+                  <span className="v2-chat__composer-error">{composerError || sendError}</span>
                 </div>
               )}
               {unreachableMentioned.length > 0 && (
