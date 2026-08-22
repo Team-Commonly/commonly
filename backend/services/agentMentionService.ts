@@ -933,6 +933,50 @@ const isWakeLoopDampened = async (
   return false;
 };
 
+/** `agentName:instanceId`, lowercased — the identity an install and a bot User row share. */
+const installKey = (inst: Record<string, unknown>): string => `${
+  String(inst.agentName || '').toLowerCase()}:${String(inst.instanceId || 'default')}`;
+
+/**
+ * Map each install to its BOT's User row id — the key thread_user_state uses.
+ *
+ * One query for the whole target list rather than one per target: the wake
+ * fan-out already runs per message, and a per-install lookup would put N
+ * round-trips on the hot path.
+ *
+ * A failure resolves to an EMPTY map, not a throw. Every `identify` then
+ * returns null, narrowToThread keeps every target, and scoping degrades to
+ * today's unscoped delivery. Losing the narrowing is a noisier pod; losing
+ * the wake is a message nobody sees.
+ */
+const resolveBotUserIds = async (
+  targets: Array<Record<string, unknown>>,
+): Promise<Map<string, string>> => {
+  const out = new Map<string, string>();
+  const wanted = [...new Set(targets.map(installKey))].filter((k) => !k.startsWith(':'));
+  if (wanted.length === 0) return out;
+  try {
+    const rows = await User.find({
+      isBot: true,
+      $or: wanted.map((k) => {
+        const [agentName, instanceId] = k.split(':');
+        return { 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId };
+      }),
+    }).select('_id botMetadata.agentName botMetadata.instanceId').lean() as Array<{
+      _id: unknown; botMetadata?: { agentName?: string; instanceId?: string };
+    }>;
+    for (const row of rows) {
+      const key = `${String(row.botMetadata?.agentName || '').toLowerCase()}:${
+        String(row.botMetadata?.instanceId || 'default')}`;
+      out.set(key, String(row._id));
+    }
+  } catch (err) {
+    console.warn('[thread-scope] bot user resolution failed (delivering unscoped):', (err as Error).message);
+    return new Map();
+  }
+  return out;
+};
+
 /**
  * Fan a message out to the pod's wake-on-message opt-ins. Skips the sender's
  * own identity (an agent never wakes on its own post), anything the mention
@@ -973,19 +1017,38 @@ const enqueueWakeOnMessage = async ({
   //    an @mention or a reply edge has already left via the mention path. A
   //    mute scopes ambient activity; it never suppresses being addressed.
   //
-  // Keyed on `installedBy` — the bot's User row id, which is what
-  // thread_user_state.user_id holds. An install without one is KEPT by
-  // narrowToThread rather than dropped: an unclassifiable target must degrade
-  // to today's behaviour, never to silence.
+  // Keyed on the BOT's User row id, which is what thread_user_state.user_id
+  // holds: the follow/mute routes are dualAuth, so an agent writing its own
+  // thread state writes under `req.agentUser._id`.
+  //
+  // NOT `installedBy`. @sprint-review's blocker (57291) was right and the
+  // comment that used to sit here was wrong. `installedBy` is written with
+  // two different identities depending on who installed the agent — the bot
+  // itself at agentAutoJoinService:80, podWriteAccessService:48 and three
+  // sites in agentsRuntime, but the HUMAN installer at podController:119,
+  // personaHireService:93, podCurationService:147, authController:201 and
+  // agentProfile:259 (AgentRun.ts:65 calls it "the hiring user" outright).
+  // The schema declares a bare ObjectId with no ref, so nothing at the type
+  // level distinguishes them.
+  //
+  // Keying on it would have read a human-installed agent's thread state off
+  // its INSTALLER's row: the human's mute would silence the agent, and the
+  // agent's own mute would be ignored. Both directions wrong, on a field
+  // whose name reads correct.
+  //
+  // An install whose bot User row cannot be resolved is KEPT by
+  // narrowToThread rather than dropped — an unclassifiable target must
+  // degrade to today's behaviour, never to silence.
   const threadRootId = (message as { thread_root_id?: unknown; threadRootId?: unknown })?.thread_root_id
     ?? (message as { threadRootId?: unknown })?.threadRootId ?? null;
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { narrowToThread } = require('./threadWakeScopeService');
+    const botUserIds = await resolveBotUserIds(targets);
     targets = await narrowToThread(
       Number(threadRootId),
       targets,
-      (inst: Record<string, unknown>) => (inst.installedBy ? String(inst.installedBy) : null),
+      (inst: Record<string, unknown>) => botUserIds.get(installKey(inst)) ?? null,
     );
     if (targets.length === 0) return woken;
   }

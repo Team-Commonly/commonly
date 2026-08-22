@@ -36,10 +36,24 @@ const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { narrowToThread } = require('../../../services/threadWakeScopeService');
 
+// `installedBy` is deliberately a DIFFERENT id from the bot's User row here.
+// It is the human installer on five of the write paths (podController:119,
+// personaHireService:93, podCurationService:147, authController:201,
+// agentProfile:259) and the bot itself on the rest — so a fixture where the
+// two coincide cannot tell a correct key from the wrong one. These differ so
+// the assertion below discriminates.
 const optIn = (agentName, installedBy) => ({
-  agentName, instanceId: 'default', displayName: agentName, installedBy,
+  agentName,
+  instanceId: 'default',
+  displayName: agentName,
+  installedBy,
   config: { wakeOnMessage: { enabled: true } },
 });
+
+const BOT_USER_ROWS = [
+  { _id: 'bot-user-a', botMetadata: { agentName: 'seat-a', instanceId: 'default' } },
+  { _id: 'bot-user-b', botMetadata: { agentName: 'seat-b', instanceId: 'default' } },
+];
 
 const byType = (t) => AgentEventService.enqueue.mock.calls.map(([a]) => a).filter((a) => a.type === t);
 
@@ -51,7 +65,12 @@ beforeEach(() => {
   jest.clearAllMocks();
   narrowToThread.mockImplementation(async (_root, targets) => targets);
   AgentInstallation.find.mockReturnValue({
-    lean: jest.fn().mockResolvedValue([optIn('seat-a', 'uid-a'), optIn('seat-b', 'uid-b')]),
+    lean: jest.fn().mockResolvedValue([
+      optIn('seat-a', 'human-installer-a'), optIn('seat-b', 'human-installer-b'),
+    ]),
+  });
+  User.find.mockReturnValue({
+    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(BOT_USER_ROWS) }),
   });
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   Pod.findById.mockReturnValue({
@@ -82,8 +101,45 @@ describe('the hook fires only for threaded messages', () => {
     const [root, targets, identify] = narrowToThread.mock.calls[0];
     expect(root).toBe(101);
     expect(targets.map((t) => t.agentName)).toEqual(['seat-a', 'seat-b']);
-    // Keyed on installedBy — the bot User id thread_user_state holds.
-    expect(identify(targets[0])).toBe('uid-a');
+    // The BOT's User row id, which is what thread_user_state.user_id holds —
+    // NOT `installedBy`, which on this fixture is the human who installed it.
+    expect(identify(targets[0])).toBe('bot-user-a');
+    expect(identify(targets[1])).toBe('bot-user-b');
+    expect(identify(targets[0])).not.toBe(targets[0].installedBy);
+  });
+
+  test('an install whose bot User row is missing keys to null, so it is KEPT', async () => {
+    // narrowToThread's contract: an unclassifiable target degrades to today's
+    // delivery rather than to silence. That only holds if `identify` says
+    // "unknown" instead of guessing a plausible id.
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([BOT_USER_ROWS[0]]) }),
+    });
+    await send({ id: 'm2b', content: 'in a thread', thread_root_id: 101 });
+    const [, targets, identify] = narrowToThread.mock.calls[0];
+    expect(identify(targets[0])).toBe('bot-user-a');
+    expect(identify(targets[1])).toBeNull();
+  });
+
+  test('the lookup fails closed to unscoped delivery, never to silence', async () => {
+    // A resolution failure must not drop wakes. Empty map -> every identify
+    // returns null -> narrowToThread keeps everyone.
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('mongo down')) }),
+    });
+    await send({ id: 'm2c', content: 'in a thread', thread_root_id: 101 });
+    const [, targets, identify] = narrowToThread.mock.calls[0];
+    expect(identify(targets[0])).toBeNull();
+    expect(identify(targets[1])).toBeNull();
+    expect(byType('message.posted')).toHaveLength(2);
+  });
+
+  test('one query for the whole target list, not one per target', async () => {
+    await send({ id: 'm2d', content: 'in a thread', thread_root_id: 101 });
+    expect(User.find).toHaveBeenCalledTimes(1);
+    const [filter] = User.find.mock.calls[0];
+    expect(filter.isBot).toBe(true);
+    expect(filter.$or).toHaveLength(2);
   });
 
   test('the camelCase spelling works too — callers pass either', async () => {
@@ -140,7 +196,9 @@ describe('scoping cannot reach the addressing path', () => {
   test('a reply edge in a thread likewise still delivers its mention', async () => {
     narrowToThread.mockImplementation(async () => []);
     await send(
-      { id: 'm8', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-1' } },
+      {
+        id: 'm8', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-1' }, 
+      },
       { replyToMessageId: '101' },
     );
     expect(byType('chat.mention')).toHaveLength(1);
