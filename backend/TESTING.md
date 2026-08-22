@@ -45,6 +45,20 @@ cd backend && INTEGRATION_TEST=true \
 
 Schema source: `backend/config/schema.sql`. `testUtils.setupPgDb()` applies it verbatim after `CREATE EXTENSION IF NOT EXISTS pgcrypto`.
 
+> **Blind spot both tiers share: neither exercises an EXISTING database.**
+> Tier 1 provisions a fresh `postgres:16` per CI run, so `CREATE TABLE IF NOT
+> EXISTS` always takes the CREATE branch. Tier 0 reads `schema.sql` as text.
+> A column added to an existing table therefore needs a *third* arrangement to
+> be tested at all: start from the pre-threading table shape, apply the
+> retrofit `ALTER`s, assert the column appears. See
+> `__tests__/unit/models/threadingSchemaRetrofit.test.js`.
+>
+> This is not hypothetical. On 2026-08-22 `thread_root_id` shipped declared
+> only inside its `CREATE TABLE`; both tiers were green and the column would
+> never have existed on the live instance, throwing at boot on the index and
+> failing every INSERT that named it. Any PR adding a column to an existing
+> table should be read for both declarations.
+
 Tier-1 setup logs `[tier1] Connected to real MongoDB …` and `[tier1] Connected to real Postgres …` so the CI run log makes the mode obvious.
 
 ## Test helpers (`__tests__/utils/testUtils.js`)
