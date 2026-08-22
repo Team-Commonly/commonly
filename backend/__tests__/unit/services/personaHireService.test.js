@@ -92,6 +92,19 @@ describe('personaHireService.hirePersona', () => {
     expect(AgentInstallation.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('refuses a hostile agentName at the taint boundary — nothing downstream sees it', async () => {
+    // The route feeds req.params into this service; the slug gate is what
+    // keeps user input out of the registry lookup, identity creation, and
+    // the display-label regexes (CodeQL js/polynomial-redos dataflow).
+    for (const hostile of ['(((((((((((', 'a/../b', 'x'.repeat(65), 'UPPER CASE']) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(hirePersona({ agentName: hostile, userId: 'u', podId: 'p' }))
+        .rejects.toMatchObject({ code: 'persona_not_found' });
+    }
+    expect(AgentRegistry.findOne).not.toHaveBeenCalled();
+    expect(AgentIdentityService.getOrCreateAgentUser).not.toHaveBeenCalled();
+  });
+
   it('refuses an unknown persona', async () => {
     await expect(hirePersona({ agentName: 'nonexistent', userId: 'u', podId: 'p' }))
       .rejects.toMatchObject({ code: 'persona_not_found' });
