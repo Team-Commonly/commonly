@@ -16,6 +16,7 @@ const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
 const { resolveThreadRoot, ThreadRootError } = require('../../../services/threadRootResolver');
+const PGMessageTop = require('../../../models/pg/Message');
 
 const POD = 'pod-1';
 const OTHER = 'pod-2';
@@ -161,5 +162,42 @@ describe('the root survives the round trip the wake path actually takes', () => 
     const populated = await PGMessage.findById(plain.id);
     expect(populated).toHaveProperty('thread_root_id');
     expect(populated.thread_root_id).toBeNull();
+  });
+});
+
+describe('the resolver is not consulted when there is nothing to reconcile', () => {
+  /**
+   * It runs ONLY when the caller names a root. Without one it would re-derive
+   * COALESCE(parent.thread_root_id, parent.id) — which the INSERT already does
+   * — adding a query per message and changing nothing.
+   *
+   * Found by CI: calling it unconditionally added a query the controller tests
+   * do not mock, and broke seven of them. I had run the model suites on this
+   * branch and not the controller suite, which is the same miss as earlier the
+   * same day. The redundancy was real independently of the breakage.
+   */
+  const CONTROLLER_SRC = require('fs').readFileSync(
+    require('path').join(__dirname, '../../../controllers/messageController.ts'), 'utf8',
+  );
+
+  test('the controller gates the call on an explicit threadRootId', () => {
+    const gate = CONTROLLER_SRC.indexOf("if (threadRootId != null && threadRootId !== '')");
+    const call = CONTROLLER_SRC.indexOf('await resolveThreadRoot(');
+    expect(gate).toBeGreaterThan(-1);
+    expect(call).toBeGreaterThan(gate);
+  });
+
+  test('and still passes null through to create, so derivation runs in SQL', () => {
+    // The no-explicit-root path must not become "no thread root" — it becomes
+    // "let the INSERT derive it", which is a different thing.
+    expect(CONTROLLER_SRC).toMatch(/let resolvedThreadRootId: number \| null = null;/);
+    expect(CONTROLLER_SRC).toMatch(/resolvedThreadRootId,/);
+  });
+
+  test('a plain reply still gets its root, with the resolver never called', async () => {
+    // The behavioural half: derivation is unaffected by the gate.
+    const root = await PGMessageTop.create(POD, 'u', 'gate-root', 'text', null);
+    const reply = await PGMessageTop.create(POD, 'u', 'gate-reply', 'text', String(root.id));
+    expect(reply.thread_root_id).toBe(root.id);
   });
 });
