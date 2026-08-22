@@ -242,11 +242,19 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
 
     // Reconcile the two shapes BEFORE the insert, so a caller whose reply edge
     // and named root disagree is told, rather than having one silently win.
+    //
+    // ONLY when the caller names a root. With no explicit threadRootId the
+    // resolver would just re-derive COALESCE(parent.thread_root_id, parent.id)
+    // — which the INSERT already does — so calling it would add a query per
+    // message and change nothing. There is nothing to reconcile until there
+    // are two claims to reconcile.
     let resolvedThreadRootId: number | null = null;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      const { resolveThreadRoot } = require('../services/threadRootResolver');
-      resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
+      if (threadRootId != null && threadRootId !== '') {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const { resolveThreadRoot } = require('../services/threadRootResolver');
+        resolvedThreadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId });
+      }
     } catch (err) {
       const e = err as { name?: string; code?: string; message?: string };
       if (e.name === 'ThreadRootError') {
