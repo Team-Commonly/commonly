@@ -11,6 +11,7 @@ const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
+const { createTableFor } = require('../../utils/schemaTable');
 const { effectiveFollowerIds, narrowToThread } = require('../../../services/threadWakeScopeService');
 
 const POD = 'pod-1';
@@ -25,19 +26,26 @@ const rootMsg = (id, userId) => mockPool.query(
   'INSERT INTO messages (id, pod_id, user_id, content, thread_root_id) VALUES ($1,$2,$3,$4,NULL)',
   [id, POD, userId, 'root'],
 );
+// thread_user_state has a live FK to messages in the shipped schema, so a root
+// referenced by state must exist as a row.
+const stateRow = (rootId, userId, following, collapsed) => mockPool.query(
+  `INSERT INTO thread_user_state (thread_root_id, user_id, pod_id, following, collapsed)
+   VALUES ($1,$2,$3,$4,$5)`,
+  [rootId, userId, POD, following, collapsed],
+);
 const state = (rootId, userId, following) => mockPool.query(
   'INSERT INTO thread_user_state (thread_root_id, user_id, pod_id, following) VALUES ($1,$2,$3,$4)',
   [rootId, userId, POD, following],
 );
 
 beforeAll(async () => {
-  await mockPool.query(`CREATE TABLE messages (
-    id INTEGER PRIMARY KEY, pod_id VARCHAR(255), user_id VARCHAR(255), content TEXT,
-    thread_root_id INTEGER)`);
-  await mockPool.query(`CREATE TABLE thread_user_state (
-    id SERIAL PRIMARY KEY, thread_root_id INTEGER NOT NULL, user_id VARCHAR(255) NOT NULL,
-    pod_id VARCHAR(255) NOT NULL, following BOOLEAN, collapsed BOOLEAN NOT NULL DEFAULT TRUE,
-    UNIQUE (thread_root_id, user_id))`);
+  // Shipped DDL, not hand-written — same correction as 2/4's suites
+  // (@sprint-review 56811). This file still had a hand-rolled `messages` and
+  // `thread_user_state`, so every constraint it leaned on was one typed here.
+  await mockPool.query(createTableFor('pods'));
+  await mockPool.query(createTableFor('messages'));
+  await mockPool.query(createTableFor('thread_user_state'));
+  await mockPool.query("INSERT INTO pods (id, name, type, created_by) VALUES ($1,'p','chat','u')", [POD]);
 });
 
 describe('the three terms', () => {
@@ -177,5 +185,63 @@ describe('narrowToThread only ever narrows', () => {
   test('a thread with no followers at all wakes nobody', async () => {
     const kept = await narrowToThread(88888, [inst('a', 'u1')], identify);
     expect(kept).toEqual([]);
+  });
+});
+
+describe('readers filter on following = true, never on EXISTS(row)', () => {
+  // @ux-lead (56820, doc 5e7060fd on #1107): once rows exist for non-followers,
+  // every reader of follow state must filter on the COLUMN. Row presence stopped
+  // meaning anything the moment collapse started writing rows.
+
+  test('THE third state: (following=false, collapsed=false) gets no wake', async () => {
+    // Muted AND expanded — the row most likely to be mistaken for engagement,
+    // because it exists and the user actively opened the thread. Neither fact
+    // is consent to be woken.
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await post(r, 'muted-reader', r + 4000);
+    await stateRow(r, 'muted-reader', false, false);
+
+    expect([...await effectiveFollowerIds(r)]).toEqual(['author']);
+  });
+
+  test('and it still gets no wake when they are the ONLY participant', async () => {
+    // The version with no one else to mask it: the set must be empty, not
+    // fall back to "well, somebody should hear this".
+    const r = nextRoot();
+    await rootMsg(r, 'solo');
+    await stateRow(r, 'solo', false, false);
+    expect([...await effectiveFollowerIds(r)]).toEqual([]);
+  });
+
+  test('CONTROL: the same row with following=true DOES wake', async () => {
+    // Proves the two above measure `following`, not the mere presence of a
+    // row or the value of `collapsed`.
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await stateRow(r, 'reader', true, false);
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['author', 'reader']);
+  });
+
+  test('CONTROL: and with following=NULL it falls back to participation', async () => {
+    // The third value of the tri-state, so all three are covered here and not
+    // just the two booleans.
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    await post(r, 'participant', r + 5000);
+    await stateRow(r, 'participant', null, false);
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['author', 'participant']);
+  });
+
+  test('the query says following IS TRUE, not EXISTS', async () => {
+    // Structural backstop for the rule itself, so a rewrite that reintroduces
+    // EXISTS(row) is flagged even if it happens to pass the cases above.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../services/threadWakeScopeService.ts'), 'utf8',
+    );
+    expect(src).toMatch(/following IS TRUE/);
+    expect(src).not.toMatch(/EXISTS\s*\(\s*SELECT[^)]*thread_user_state/i);
   });
 });
