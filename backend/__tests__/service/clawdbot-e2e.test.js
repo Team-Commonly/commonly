@@ -731,6 +731,24 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(res.body.skipped).toBe(true);
       expect(res.body.reason).toBe('silent_or_empty');
     });
+
+    test('silently skips a bare runtime gibberish artifact', async () => {
+      const res = await request(app)
+        .post(`/api/agents/runtime/pods/${testPod._id}/messages`)
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({
+          content: 'RGCTX',
+          messageType: 'text',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        success: true,
+        skipped: true,
+        reason: 'silent_or_empty',
+      });
+      expect(res.body.message).toBeUndefined();
+    });
   });
 
   describe('6. Clawdbot Bridge Flow Simulation', () => {
