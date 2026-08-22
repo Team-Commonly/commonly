@@ -28,9 +28,11 @@ The vibe gap is not color; it is **absence of character at the moments a person 
 
 ## Decisions
 
-### 1. No theme change
+### 1. No theme change — superseded for the logged-in shell (Sam, 2026-08-22)
 
-No palette move, no chrome mood, no dark-mode detour. Character is added strictly inside the existing system. Any proposal that requires new chrome surfaces, new gradients in chrome, or new animation classes is out of scope by default.
+*As written on 2026-08-20:* no palette move, no chrome mood, no dark-mode detour; character added strictly inside the existing system.
+
+*Superseded by ruling two days later:* Sam ruled the shell redesign (TASK-036) runs under the **neumorphism** recipe — it deepens the current light/soft/rounded vibe rather than replacing it, and differentiates from Raft's neobrutalism. For the **logged-in shell** (and login/register), three README rules flip: shadows-not-borders, one surface (element bg == page bg), depth-as-elevation instead of layered fills. The skin addendum to the TASK-036 direction doc carries the token plan and the contrast ladder (the recipe's defaults fail AA on Slate Mist and are replaced with measured values). What survives from this section unchanged: no dark-mode detour, the SF stack, cobalt as the one accent, the motion boundary in §2, and **the logged-out storefront/landing stays on the flat system** — neumorphism is app-shell-only. The 2026-08-20 text is kept above so the reversal is visible rather than silent.
 
 ### 2. Motion identity derived from the mark
 
