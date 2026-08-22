@@ -1,9 +1,16 @@
 /**
  * ThreadUserState — per-user, per-thread state (W-T, TASK-029).
  *
- * ONE record carrying both `following` and `collapsed`, per ux-lead's ruling
- * in docs/design/threading-surface-ruling.md ("One state record, two
- * booleans"): they share the key (user, pod, thread root), so two tables would
+ * ONE record carrying both `following` and `collapsed`, per the ruling in
+ * docs/design/threading-surface-ruling.md, section "One state record, two
+ * booleans".
+ *
+ * Cited by DOC AND SECTION, never by commit sha. #1107 and #1112 were both
+ * squash-merged, which rewrote every sha discussed in the pod — 5e7060fd,
+ * 392b86e5 and 41707609 all resolve in a working clone that still has the
+ * branches and are on NONE of main. A sha citation to a squashed PR is a
+ * dangling pointer the moment anyone clones fresh (@ux-lead 56830, who hit
+ * the same thing checking their own work): they share the key (user, pod, thread root), so two tables would
  * mean two writes for one gesture. The collapse column ships here rather than
  * in the render PR because the key already exists.
  *
@@ -56,7 +63,7 @@ async function upsertOne(
   // the call sites below, so the interpolation cannot carry user input.
   //
   // The UPDATE set names EXACTLY the target column plus updated_at, per
-  // ux-lead's ruling (41707609 on #1107). It previously also wrote
+  // ux-lead's ruling. It previously also wrote
   // `pod_id = EXCLUDED.pod_id`, which was both a deviation and inconsistent
   // with followByParticipation, which never rewrote it. A thread root's pod
   // cannot change — the root implies it — so that write could only ever be a
