@@ -2,9 +2,14 @@ module.exports = {
   testEnvironment: 'node',
   testPathIgnorePatterns: [
     '/node_modules/',
-    '__tests__/utils/testUtils.js',
-    '__tests__/utils/globalSetup.js',
-    '__tests__/utils/mongoBinaryConfig.js',
+    // The whole helper directory, not a file-by-file list. Enumerating each
+    // helper meant the list went stale the moment anyone added one — adding
+    // __tests__/utils/schemaTable.js broke CI with "your test suite must
+    // contain at least one test", and a targeted local run never sees it
+    // because the file is only collected by a full sweep.
+    // collectCoverageFrom below already treats this directory as non-test
+    // (!**/__tests__/utils/**); this makes the two agree.
+    '__tests__/utils/',
     '__tests__/setup.js',
   ],
   // Pre-download/cache the mongod binary ONCE before any worker starts so
