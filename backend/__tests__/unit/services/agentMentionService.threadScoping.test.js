@@ -20,7 +20,7 @@ jest.mock('../../../services/chatSummarizerService', () => ({
 jest.mock('../../../models/AgentEvent', () => ({ countDocuments: jest.fn() }));
 jest.mock('../../../services/welcomeWakeService', () => ({ maybeFireWelcomeWake: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({
-  findById: jest.fn(async (id) => (String(id) === '101' ? { id: 101, user_id: 'bot-1' } : null)),
+  findById: jest.fn(async (id) => (String(id) === '101' ? { id: 101, user_id: 'bot-user-a' } : null)),
 }));
 jest.mock('../../../models/pg/ThreadUserState', () => ({
   followByParticipation: jest.fn(),
@@ -39,6 +39,7 @@ const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { narrowToThread } = require('../../../services/threadWakeScopeService');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
+const PGMessage = require('../../../models/pg/Message');
 
 // `installedBy` is deliberately a DIFFERENT id from the bot's User row here.
 // It is the human installer on five of the write paths (podController:119,
@@ -54,6 +55,17 @@ const optIn = (agentName, installedBy) => ({
   config: { wakeOnMessage: { enabled: true } },
 });
 
+// ONE id per agent across the whole fixture. @sprint-review (57037): seat-a
+// used to be `bot-1` through User.findById (as the thread root's author) and
+// `bot-user-a` through User.find (as a wake target) — the same agent with two
+// identities depending on which lookup you went through. Nothing asserted the
+// difference, so nothing failed; but a later test asking "is the seat that
+// authored the root scoped out?" would have got contradictory answers from
+// the two paths and read it as a scoping bug rather than a fixture bug.
+//
+// That is the same shape as the defect this suite exists for: an identity
+// fixture that quietly disagrees with itself cannot discriminate a correct
+// key from a wrong one.
 const BOT_USER_ROWS = [
   { _id: 'bot-user-a', botMetadata: { agentName: 'seat-a', instanceId: 'default' } },
   { _id: 'bot-user-b', botMetadata: { agentName: 'seat-b', instanceId: 'default' } },
@@ -79,18 +91,42 @@ beforeEach(() => {
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   Pod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-1'] }),
+      lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-user-a'] }),
     }),
     lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat', members: ['user-1'] }),
   });
   User.findById.mockImplementation((id) => ({
     select: jest.fn().mockReturnThis(),
-    lean: jest.fn().mockResolvedValue(String(id) === 'bot-1'
-      ? { _id: 'bot-1', isBot: true, botMetadata: { agentName: 'seat-a', instanceId: 'default' } }
+    lean: jest.fn().mockResolvedValue(String(id) === 'bot-user-a'
+      ? { _id: 'bot-user-a', isBot: true, botMetadata: { agentName: 'seat-a', instanceId: 'default' } }
       : { _id: 'user-1', isBot: false }),
   }));
   AgentEvent.countDocuments.mockResolvedValue(0);
   ThreadUserState.followByParticipation.mockResolvedValue(true);
+});
+
+describe('the fixture agrees with itself about who seat-a is', () => {
+  // @sprint-review (57037) found seat-a carrying two ids: `bot-1` through
+  // User.findById and `bot-user-a` through User.find. Renaming them to match
+  // is hygiene, and hygiene drifts — probed it, and reintroducing the split
+  // passes 18/18, so nothing here would have caught it coming back.
+  //
+  // This is that consistency made executable. It is a test ABOUT THE FIXTURE,
+  // which is unusual and deliberate: the suite's whole subject is which id a
+  // seat is keyed by, so a fixture that disagrees with itself cannot tell a
+  // correct key from a wrong one — exactly the defect that let `installedBy`
+  // look right for as long as it did.
+  test('the root author resolves to the same id User.find maps seat-a to', async () => {
+    const viaFind = BOT_USER_ROWS
+      .find((r) => r.botMetadata.agentName === 'seat-a')._id;
+
+    const rootAuthorId = (await PGMessage.findById('101')).user_id;
+    const viaFindById = await User.findById(rootAuthorId).select().lean();
+
+    expect(viaFindById.botMetadata.agentName).toBe('seat-a');
+    expect(viaFindById._id).toBe(viaFind);
+    expect(rootAuthorId).toBe(viaFind);
+  });
 });
 
 describe('the hook fires only for threaded messages', () => {
@@ -202,7 +238,7 @@ describe('scoping cannot reach the addressing path', () => {
     narrowToThread.mockImplementation(async () => []);
     await send(
       {
-        id: 'm8', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-1' }, 
+        id: 'm8', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-user-a' }, 
       },
       { replyToMessageId: '101' },
     );
@@ -270,7 +306,7 @@ describe('a delivered thread mention follows by participation', () => {
   test('a reply edge is addressing, not an explicit mention, so it does not create a follow', async () => {
     await send(
       {
-        id: 'm13', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-1' },
+        id: 'm13', content: 'replying', thread_root_id: 101, replyTo: { userId: 'bot-user-a' },
       },
       { replyToMessageId: '101' },
     );
