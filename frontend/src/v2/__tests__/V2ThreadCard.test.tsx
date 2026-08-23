@@ -19,6 +19,7 @@ const people = [
 const setup = (over: Partial<React.ComponentProps<typeof V2ThreadCard>> = {}) => {
   const onToggleCollapsed = jest.fn();
   const onToggleFollowing = jest.fn();
+  const onReplyInThread = over.onReplyInThread || jest.fn();
   const utils = render(
     <V2ThreadCard
       replyCount={3}
@@ -28,11 +29,12 @@ const setup = (over: Partial<React.ComponentProps<typeof V2ThreadCard>> = {}) =>
       following={null}
       onToggleCollapsed={onToggleCollapsed}
       onToggleFollowing={onToggleFollowing}
+      onReplyInThread={onReplyInThread}
       now={NOW}
       {...over}
     />,
   );
-  return { ...utils, onToggleCollapsed, onToggleFollowing };
+  return { ...utils, onToggleCollapsed, onToggleFollowing, onReplyInThread };
 };
 
 describe('content is a count, faces and a time — and nothing else', () => {
@@ -99,6 +101,17 @@ describe('collapse is driven by the prop and reported to the caller', () => {
     const { onToggleCollapsed } = setup();
     fireEvent.click(screen.getByRole('button', { name: /Expand thread/ }));
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+  });
+
+  test('Reply in thread is a sibling action that does not need an expand', () => {
+    const { container, onReplyInThread, onToggleCollapsed } = setup({ collapsed: true });
+    const main = container.querySelector('.v2-thread-card__main');
+    const reply = screen.getByRole('button', { name: /^reply in thread$/i });
+
+    expect(main?.contains(reply)).toBe(false);
+    fireEvent.click(reply);
+    expect(onReplyInThread).toHaveBeenCalledTimes(1);
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
   });
 });
 

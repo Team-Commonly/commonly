@@ -337,7 +337,9 @@
     "loadOlder": "Load older messages",
     "loadingOlder": "Loading…",
     "thread": {
+      "startThread": "Thread",
       "replyInThread": "Reply in thread",
+      "replyFromExpandedThread": "Reply from expanded thread",
       "replyingInThread": "Replying in thread ·"
     }
   },

@@ -2482,28 +2482,35 @@
 /* Consecutive-author grouping (craft baseline rule 3): grouped rows drop
    the 22px head + avatar and tighten padding, so a run of messages from one
    author reads as one block. The ghost keeps the grid's avatar column so
-   text alignment never shifts. Reply becomes a hover affordance pinned to
-   the row's top-right, since the head row (and its Reply button) is gone. */
+   text alignment never shifts. Reply and Thread become hover affordances
+   pinned to the row's top-right, since the head row is gone. */
 .v2-msg--grouped { padding: 2px 0; position: relative; }
 .v2-msg__avatar-ghost { width: 38px; }
-.v2-msg__reply-float {
+.v2-msg__thread-actions--float {
   position: absolute;
-  top: 0;
+  top: -11px;
   right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.v2-root button.v2-msg__reply-float,
+.v2-root button.v2-msg__thread-float {
   appearance: none;
   border: 1px solid var(--v2-border);
   background: var(--v2-surface);
   color: var(--v2-text-secondary);
   font-size: 11px;
   border-radius: 6px;
-  padding: 2px 8px;
+  min-height: 44px;
+  padding: 0 8px;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
 }
-.v2-msg--grouped:hover .v2-msg__reply-float,
-.v2-msg__reply-float:focus-visible {
+.v2-msg--grouped:hover .v2-msg__thread-actions--float,
+.v2-msg__thread-actions--float:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
@@ -6402,10 +6409,23 @@
   }
 }
 
-/* Reply threading (human side of replyToMessageId). */
-.v2-root button.v2-msg__reply-btn {
+/* Reply and Thread are distinct composer targets. The 44px actions sit on a
+   22px desktop header using a negative vertical margin, then become a visible
+   row on touch-sized layouts below. This preserves channel density without
+   reducing the hit area (TASK-052). */
+.v2-msg__thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: 4px;
-  padding: 0 6px;
+}
+.v2-root button.v2-msg__reply-btn,
+.v2-root button.v2-msg__thread-btn {
+  margin-left: 4px;
+  min-height: 44px;
+  margin-top: -11px;
+  margin-bottom: -11px;
+  padding: 0 8px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--v2-text-secondary);
@@ -6417,10 +6437,13 @@
   transition: opacity 0.1s ease;
 }
 .v2-msg:hover .v2-msg__reply-btn,
-.v2-msg__reply-btn:focus-visible {
+.v2-msg:hover .v2-msg__thread-btn,
+.v2-msg__reply-btn:focus-visible,
+.v2-msg__thread-btn:focus-visible {
   opacity: 1;
 }
-.v2-root button.v2-msg__reply-btn:hover { color: var(--v2-accent); }
+.v2-root button.v2-msg__reply-btn:hover,
+.v2-root button.v2-msg__thread-btn:hover { color: var(--v2-accent); }
 
 .v2-msg__quote {
   display: flex;
@@ -7207,6 +7230,24 @@
   border-color: #d7dce7;
 }
 
+/* This is deliberately outside the expand button: it must aim the composer
+   without toggling the rail, and nested controls are invalid HTML. */
+.v2-root button.v2-thread-card__reply {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #7b8494;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-thread-card__reply:hover {
+  color: var(--v2-accent);
+}
+
 .v2-thread-card__count {
   font-weight: 500;
   display: inline-flex;
@@ -7328,6 +7369,37 @@
 }
 
 @media (max-width: 640px) {
+  /* Touch has no hover. Keep Thread and Reply discoverable and keep their
+     44px hit areas in normal flow rather than over the message content. */
+  .v2-msg__head {
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .v2-msg__thread-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+    gap: 4px;
+  }
+
+  .v2-root button.v2-msg__reply-btn,
+  .v2-root button.v2-msg__thread-btn {
+    margin-top: 0;
+    margin-bottom: 0;
+    opacity: 1;
+  }
+
+  .v2-msg__thread-actions--float {
+    position: static;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .v2-thread-card {
+    flex-wrap: wrap;
+  }
+
   /* The axis does NOT move at 390 — no channel-row override exists at this
      breakpoint, so the root avatar centre is still x = 15. Only the inner
      padding tightens: 16 + 8 + 24 + 8 = x = 56. */
@@ -7337,6 +7409,7 @@
   }
 
   .v2-root button.v2-thread-card__main {
+    flex: 1 1 100%;
     flex-wrap: wrap; /* brief: card goes to two lines at 390 */
   }
 }

@@ -170,11 +170,13 @@ describe('V2PodChat composer send button', () => {
     },
   ]);
 
-  test('"Reply in thread" sends threadRootId and no reply edge', async () => {
+  const replyFromExpandedThread = () => screen.getByRole('button', { name: /reply from expanded thread/i });
+
+  test('"Reply in thread" from the expanded rail sends threadRootId and no reply edge', async () => {
     const detail = makeDetail({ messages: threadMessages() });
     renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(replyFromExpandedThread());
     expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: 'Joining the thread.' },
@@ -192,7 +194,7 @@ describe('V2PodChat composer send button', () => {
     // Reply-to-person first, then "Reply in thread": the thread wins, the
     // reply edge is gone.
     fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
-    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(replyFromExpandedThread());
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: 'thread wins' },
     });
@@ -203,7 +205,7 @@ describe('V2PodChat composer send button', () => {
 
     // The other order: thread first, then reply-to-person. The reply edge
     // wins, the thread root is gone.
-    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(replyFromExpandedThread());
     fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
       target: { value: 'reply wins' },
@@ -230,7 +232,7 @@ describe('V2PodChat composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     const { container } = renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(replyFromExpandedThread());
 
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['x'], 'x.png', { type: 'image/png' });
@@ -282,7 +284,7 @@ describe('V2PodChat composer send button', () => {
     const detail = makeDetail({ messages: threadMessages() });
     const { container } = renderChat(detail);
 
-    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    fireEvent.click(replyFromExpandedThread());
     upload(container);
     await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
 
@@ -296,6 +298,67 @@ describe('V2PodChat composer send button', () => {
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
       expect(detail.sendMessage).toHaveBeenLastCalledWith('unaimed', 'text', undefined, undefined);
+    });
+  });
+
+  test('Thread from a message without replies starts a thread without replying to its author', async () => {
+    const detail = makeDetail({ messages: [threadMessages()[0]] });
+    renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /thread from teammate/i }));
+    expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'Starting a thread.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('Starting a thread.', 'text', undefined, 'm1');
+    });
+  });
+
+  test('Thread from a reply keeps its existing root instead of asking the server to nest it', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'Still in the first thread.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('Still in the first thread.', 'text', undefined, 'm1');
+    });
+  });
+
+  test('the headline card aims the same root without requiring an expand', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /^reply in thread$/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'Joining through the card.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('Joining through the card.', 'text', undefined, 'm1');
+    });
+  });
+
+  test('Reply still sends only the reply edge', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'Replying to a person.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('Replying to a person.', 'text', 'm2', undefined);
     });
   });
 });

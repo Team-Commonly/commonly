@@ -277,6 +277,14 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     setThreadTarget(null);
     setReplyTarget(m);
   }, []);
+  const aimAtMessageThread = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
+    // The action is available on every visible message, including replies.
+    // Explicit roots may not themselves be inside a thread (#1128), so a
+    // reply joins its existing root while a standalone message starts one.
+    const rootId = String(m.thread_root_id ?? m.id);
+    const root = messages.find((candidate) => String(candidate.id) === rootId);
+    aimAtThread(rootId, String(root?.content || m.content || ''));
+  }, [aimAtThread, messages]);
 
   // Memoized: it was called in the render body, so every keystroke in the
   // composer re-folded the whole message list. @sprint-review on #1150.
@@ -1247,7 +1255,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                         agentAuthorKeys={agentAuthorKeys}
                         onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
                         onOpenFile={onOpenFile}
-                        onReply={aimAtMessage}
+                        onReply={isReadOnly ? undefined : aimAtMessage}
+                        onThread={isReadOnly ? undefined : aimAtMessageThread}
                         grouped={isGroupedWithPrevious(
                           m,
                           prev && prev.kind === 'message' ? prev.message : undefined,
@@ -1281,6 +1290,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                       following={st ? st.following : null}
                       onToggleCollapsed={() => threadState.toggleCollapsed(item.rootId)}
                       onToggleFollowing={() => threadState.toggleFollowing(item.rootId)}
+                      onReplyInThread={isReadOnly ? undefined : () => aimAtThread(
+                        item.rootId,
+                        String(messages.find((x) => String(x.id) === item.rootId)?.content || ''),
+                      )}
                     />
                     {!collapsed && (
                       <div className="v2-thread-replies">
@@ -1292,7 +1305,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                             agentAuthorKeys={agentAuthorKeys}
                             onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
                             onOpenFile={onOpenFile}
-                            onReply={aimAtMessage}
+                            onReply={isReadOnly ? undefined : aimAtMessage}
+                            onThread={isReadOnly ? undefined : aimAtMessageThread}
                             grouped={isGroupedWithPrevious(r, item.replies[ri - 1])}
                             // Only the rail passes this. The same message
                             // rendered flat keeps its quote, which is the
@@ -1304,6 +1318,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                           <button
                             type="button"
                             className="v2-thread-replies__aim"
+                            aria-label={t('podChat.thread.replyFromExpandedThread')}
                             onClick={() => aimAtThread(
                               item.rootId,
                               String(messages.find((x) => String(x.id) === item.rootId)?.content || ''),
