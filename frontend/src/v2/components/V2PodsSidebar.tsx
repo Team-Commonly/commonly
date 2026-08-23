@@ -370,7 +370,23 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   // doubles as a count of how many a2a conversations are happening.
   const grouped = useMemo(() => {
     if (filter === 'community' && communityView === 'discover') return [];
-    if (filter !== 'private') return groupPods(filtered, pinned);
+    if (filter !== 'private') {
+      // groupPods returns stable PodGroup KEYS ('Today', 'This week', …);
+      // rendering them raw shipped English headers into zh-CN (Sam's
+      // "cn version is messed up" report, 2026-08-23). Translate at this
+      // boundary, exactly like the DM buckets below already do.
+      const chronoKeys: Record<string, string> = {
+        Pinned: 'podsSidebar.groups.pinned',
+        Today: 'podsSidebar.groups.today',
+        Yesterday: 'podsSidebar.groups.yesterday',
+        'This week': 'podsSidebar.groups.thisWeek',
+        Earlier: 'podsSidebar.groups.earlier',
+      };
+      return groupPods(filtered, pinned).map((g) => ({
+        ...g,
+        label: chronoKeys[g.label] ? t(chronoKeys[g.label]) : g.label,
+      }));
+    }
     const sortByRecency = <T extends { lastMessage?: { createdAt?: string | Date | null } | null; updatedAt?: string | Date; createdAt?: string | Date }>(items: T[]): T[] => {
       const ts = (it: T) => {
         const raw = it.lastMessage?.createdAt || it.updatedAt || it.createdAt;

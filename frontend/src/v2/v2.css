@@ -822,11 +822,16 @@
 }
 
 .v2-pods__filters {
-  display: grid;
-  /* Community is product vocabulary, not a layout compromise. The first
-     three filters share the available width; Community keeps its readable
-     content width but is capped so it cannot consume a narrow rail. */
-  grid-template-columns: repeat(3, minmax(0, 1fr)) fit-content(92px);
+  /* Third mechanism for this row (Sam's taste ruling 2026-08-23). The grid
+     of three equal cells + one capped cell allocated width exactly
+     backwards — the short words got wide boxes, the longest word got the
+     capped one, and in zh-CN four 2-character labels floated as scattered
+     text. Content-sized chips fix both locales by construction: every box
+     hugs its own label with identical padding, so the row reads as one
+     segmented control whatever the strings are. Measured to fit the 240px
+     rail in both locales at 12px (EN ≈ 217px, zh-CN ≈ 180px incl. gaps).
+     Intent preserved from the 2026-08-13 invariant: one row, no wrap. */
+  display: flex;
   gap: 4px;
   padding: 0;
   margin-bottom: 18px;
@@ -836,16 +841,13 @@
 
 .v2-pods__filter {
   height: 32px;
-  min-width: 0;
-  padding: 0 2px;
+  padding: 0 9px;
   font-size: 12px;
   font-weight: 500;
   color: #4b5563;
   border-radius: var(--v2-radius-sm);
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: background 80ms ease, color 80ms ease;
 }
 
@@ -1551,12 +1553,32 @@
   gap: 0;
 }
 
-/* Craft audit 2026-08-22, rule 2 — corrected same day. The first cut
-   centered the message column, which left it misaligned with the full-width
-   header and composer ("a floating island" — Sam, accurately: a disaster).
-   The right mechanic caps the TEXT measure only: rows stay left-anchored so
-   messages, composer, and header share one edge; long lines still break at
-   a readable width. */
+/* Conversation measure — third revision of craft rule 2, ruled by Sam
+   2026-08-23 ("message still halved after right sidebar closed").
+   History matters here: v1 centered ONLY the messages ("a floating island"
+   — a disaster, because the composer and header kept a different edge);
+   v2 capped text at 76ch left-anchored, which reads correctly at narrow
+   widths and as a half-empty page once the inspector closes (~420px of
+   dead space at 1092px). v3 centers the WHOLE conversation: messages,
+   typing indicator, delivery hint, starter prompts, and the composer's
+   inner content all share one measure and one centerline — the coherence
+   v1 lacked. Header stays full-bleed; it is chrome, not conversation.
+   The measure = 76ch of text + the 50px avatar column. */
+.v2-root {
+  --v2-conv-measure: calc(76ch + 50px);
+}
+
+.v2-chat__messages > * {
+  width: 100%;
+  max-width: var(--v2-conv-measure);
+  margin-inline: auto;
+}
+
+.v2-chat__composer > * {
+  max-width: var(--v2-conv-measure);
+  margin-inline: auto;
+}
+
 .v2-msg__body {
   max-width: 76ch;
 }
@@ -1832,7 +1854,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-width: 100%;
+  /* Part of the conversation column (see --v2-conv-measure): siblings of
+     the messages list must share its centerline or they read as a second
+     edge — the v1-island lesson applied to every conversation element.
+     min(…, 100%) keeps the mobile-shrink property the 390px pane needs. */
+  width: 100%;
+  max-width: min(var(--v2-conv-measure), 100%);
+  margin-inline: auto;
   padding: 10px 24px 0;
   background: var(--v2-surface);
   flex-shrink: 0;
@@ -2484,35 +2512,63 @@
    author reads as one block. The ghost keeps the grid's avatar column so
    text alignment never shifts. Reply and Thread become hover affordances
    pinned to the row's top-right, since the head row is gone. */
-.v2-msg--grouped { padding: 2px 0; position: relative; }
+.v2-msg--grouped { padding: 2px 0; }
 .v2-msg__avatar-ghost { width: 38px; }
-.v2-msg__thread-actions--float {
+
+/* The message action cluster (Sam's taste rulings 2026-08-23): Reply,
+   Thread, and the reaction trigger share ONE floating pill at the row's
+   top-right, identical for headed and grouped rows. Absolute + hover means
+   zero layout shift; icon buttons instead of text keep it quiet at rest and
+   compact under the cursor. The reaction picker anchors to the cluster so
+   the trigger sits with its siblings instead of orphaned in an empty band
+   below the message (the old absolute "+"). */
+.v2-msg { position: relative; }
+.v2-msg__actions {
   position: absolute;
-  top: -11px;
+  top: -12px;
   right: 8px;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
+  padding: 2px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(16, 20, 30, 0.08);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition: opacity 0.1s ease;
+  z-index: 6;
 }
-.v2-root button.v2-msg__reply-float,
-.v2-root button.v2-msg__thread-float {
-  appearance: none;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  border-radius: 6px;
-  min-height: 44px;
-  padding: 0 8px;
-  cursor: pointer;
-}
-.v2-msg--grouped:hover .v2-msg__thread-actions--float,
-.v2-msg__thread-actions--float:focus-within {
+.v2-msg:hover .v2-msg__actions,
+.v2-msg__actions:focus-within {
   opacity: 1;
   pointer-events: auto;
+}
+.v2-root button.v2-msg__action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.v2-root button.v2-msg__action:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+.v2-msg__action-wrap { position: relative; display: inline-flex; }
+.v2-msg__actions .v2-msg__reaction-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  bottom: auto;
+  right: 0;
+  left: auto;
 }
 
 .v2-msg__body {
@@ -5783,74 +5839,13 @@
   opacity: 0.8;
 }
 
-.v2-msg__reaction-add-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.v2-root button.v2-msg__reaction-add {
-  height: 24px;
-  width: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px dashed #d1d5db;
-  border-radius: 999px;
-  font-size: 14px;
-  color: #6b7280;
-  cursor: pointer;
-}
-.v2-root button.v2-msg__reaction-add:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
-  color: #111827;
-}
-
-/* Hover-only "+" reaction trigger on devices with a pointer.
- * Fade the wrapper (not display:none) so layout stays stable and the
- * picker keeps anchoring correctly. :focus-within keeps the wrap visible
- * while the emoji-picker popover is open (picker buttons inside hold
- * focus). Mobile (hover: none) keeps the trigger always visible — there's
- * no hover affordance to lean on. Reaction count badges
- * (.v2-msg__reaction) are unaffected and always render when count > 0. */
-@media (hover: hover) {
-  .v2-msg .v2-msg__reaction-add-wrap {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.12s ease;
-  }
-  .v2-msg:hover .v2-msg__reaction-add-wrap,
-  .v2-msg__reaction-add-wrap:focus-within {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
-/* A reactions row with no chips (--bare) holds only the invisible hover
- * "+" — but it still reserved 24px + 6px margin under EVERY message, and
- * that phantom band is what made the approval card sit visibly far from
- * the text that triggered it (Sam, 2026-08-13). Bare rows collapse to
- * zero height and the trigger floats at the row's top-right, in the empty
- * space beside the author line — no layout shift on hover, nothing
- * overlapped (head content is all left-aligned). Rows with chips, or a
- * transient error line, stay in flow: those are content, not chrome.
- * The picker keeps anchoring to the add-wrap and opens above it. */
-.v2-msg {
-  position: relative;
-}
-.v2-msg__reactions--bare {
-  height: 0;
-  margin-top: 0;
-}
-.v2-msg__reactions--bare .v2-msg__reaction-add-wrap {
-  position: absolute;
-  top: 10px;
-  right: 4px;
-}
-/* With the trigger at the row's right edge, a left-anchored picker grows
- * rightward out of the chat column (measured jutting over the inspector);
- * anchor it right so it opens leftward into the chat area instead. */
-.v2-msg__reactions--bare .v2-msg__reaction-picker {
+/* The standalone "+" trigger, its hover wrap, and the --bare collapsed row
+ * were retired 2026-08-23: the reaction trigger lives in the
+ * .v2-msg__actions hover cluster (Sam's placement ruling), and a reactions
+ * row with no chips simply does not render — the phantom-band problem the
+ * --bare machinery solved cannot occur at all now. The picker below is
+ * shared by the cluster (which overrides its anchor to open downward). */
+.v2-msg__reaction-picker {
   left: auto;
   right: 0;
 }
@@ -6409,41 +6404,24 @@
   }
 }
 
-/* Reply and Thread are distinct composer targets. The 44px actions sit on a
-   22px desktop header using a negative vertical margin, then become a visible
-   row on touch-sized layouts below. This preserves channel density without
-   reducing the hit area (TASK-052). */
-.v2-msg__thread-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 4px;
+/* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
+   the actions live in the .v2-msg__actions hover cluster now — one pill,
+   all row variants, zero layout shift. See the cluster block near .v2-msg.
+   Touch layouts keep ≥44px targets via the media block below. */
+@media (hover: none), (pointer: coarse) {
+  /* No hover on touch: the cluster stays in its absolute top-right slot
+     but is always visible, and its targets grow to the 44px floor (craft
+     baseline rule 9). Keeping it absolute preserves the .v2-msg grid —
+     a static third child would break the avatar|body columns. */
+  .v2-msg__actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .v2-root button.v2-msg__action {
+    width: 44px;
+    height: 44px;
+  }
 }
-.v2-root button.v2-msg__reply-btn,
-.v2-root button.v2-msg__thread-btn {
-  margin-left: 4px;
-  min-height: 44px;
-  margin-top: -11px;
-  margin-bottom: -11px;
-  padding: 0 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: transparent;
-  border: none;
-  border-radius: var(--v2-radius-sm);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.1s ease;
-}
-.v2-msg:hover .v2-msg__reply-btn,
-.v2-msg:hover .v2-msg__thread-btn,
-.v2-msg__reply-btn:focus-visible,
-.v2-msg__thread-btn:focus-visible {
-  opacity: 1;
-}
-.v2-root button.v2-msg__reply-btn:hover,
-.v2-root button.v2-msg__thread-btn:hover { color: var(--v2-accent); }
 
 .v2-msg__quote {
   display: flex;
@@ -7369,31 +7347,23 @@
 }
 
 @media (max-width: 640px) {
-  /* Touch has no hover. Keep Thread and Reply discoverable and keep their
-     44px hit areas in normal flow rather than over the message content. */
+  /* Touch has no hover: the action cluster (Reply/Thread/React) is always
+     visible at its top-right anchor with 44px targets — see the
+     hover:none/pointer:coarse block by the cluster rules. The old inline
+     head buttons this block used to force visible were retired 2026-08-23. */
   .v2-msg__head {
     height: auto;
     flex-wrap: wrap;
   }
 
-  .v2-msg__thread-actions {
-    flex-basis: 100%;
-    margin-left: 0;
-    gap: 4px;
-  }
-
-  .v2-root button.v2-msg__reply-btn,
-  .v2-root button.v2-msg__thread-btn {
-    margin-top: 0;
-    margin-bottom: 0;
-    opacity: 1;
-  }
-
-  .v2-msg__thread-actions--float {
-    position: static;
-    margin: 0;
+  .v2-msg__actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .v2-root button.v2-msg__action {
+    width: 44px;
+    height: 44px;
   }
 
   .v2-thread-card {

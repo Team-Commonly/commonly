@@ -43,10 +43,11 @@ describe('V2MessageBubble', () => {
     );
   });
 
-  // The reactions row must not reserve layout space when it holds only the
-  // hover "+" trigger — the invisible band under every message pushed
-  // approval cards visibly away from their trigger text (2026-08-13).
-  it('collapses the reactions row (--bare) when a message has no reactions', () => {
+  // A message with no reactions renders NO reactions row at all — the
+  // trigger lives in the hover action cluster (2026-08-23), so the 2026-08-13
+  // phantom-band bug cannot recur structurally. The trigger must still be
+  // reachable, just from the cluster.
+  it('renders no reactions row when a message has no reactions — the trigger lives in the cluster', () => {
     render(
       <MemoryRouter>
         <V2MessageBubble
@@ -64,8 +65,8 @@ describe('V2MessageBubble', () => {
       </MemoryRouter>,
     );
 
-    const row = screen.getByLabelText('Reactions');
-    expect(row.className).toContain('v2-msg__reactions--bare');
+    expect(screen.queryByLabelText('Reactions')).toBeNull();
+    // Reachability is preserved: the cluster carries the trigger.
     expect(screen.getByRole('button', { name: 'Add reaction' })).toBeInTheDocument();
   });
 
