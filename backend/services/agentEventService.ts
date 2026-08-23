@@ -1319,8 +1319,13 @@ class AgentEventService {
     // personaHireService.
     if (typeof eventId !== 'string' && typeof eventId !== 'number') return null;
     const eventIdStr = String(eventId);
+    // Same gate for the co-tenants of the query object: every operand of a
+    // Mongo filter built from caller input must be a primitive by
+    // construction, not by trust in the call site.
+    const safeAgentName = typeof agentName === 'string' ? agentName.toLowerCase() : '';
+    const safeInstanceId = typeof instanceId === 'string' ? instanceId : 'default';
     return AgentEvent.findOneAndUpdate(
-      { _id: eventIdStr, agentName: agentName.toLowerCase(), instanceId },
+      { _id: eventIdStr, agentName: safeAgentName, instanceId: safeInstanceId },
       {
         $set: {
           status: 'delivered',
