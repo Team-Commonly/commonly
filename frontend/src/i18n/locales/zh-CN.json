@@ -1373,7 +1373,11 @@
     "groups": {
       "pinned": "已置顶",
       "directMessages": "私信",
-      "betweenAgents": "智能体之间 · {{count}}"
+      "betweenAgents": "智能体之间 · {{count}}",
+      "today": "今天",
+      "yesterday": "昨天",
+      "thisWeek": "本周",
+      "earlier": "更早"
     },
     "create": {
       "teamOption": "开放加入",

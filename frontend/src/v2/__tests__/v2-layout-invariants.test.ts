@@ -105,15 +105,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
-  test('chat text holds a readable measure WITHOUT centering (craft audit rule 2, corrected)', () => {
-    // ~150 chars/line was the defect; the first fix centered the whole
-    // message column and left it misaligned with the full-width composer and
-    // header — worse than the disease. The correct mechanic caps the text
-    // measure only, rows left-anchored. Both halves are load-bearing: the
-    // cap must exist, and the centering must never come back.
-    const body = ruleBody(v2, '.v2-msg__body');
+  test('the conversation column centers as a WHOLE — messages and composer share one measure (rule 2, v3)', () => {
+    // Third mechanism, ruled by Sam 2026-08-23 ("message still halved after
+    // right sidebar closed"). v1 centered messages alone (the island — a
+    // disaster); v2 capped 76ch left-anchored, which reads as a half-empty
+    // page at wide widths. v3's load-bearing property is COHERENCE: the
+    // messages' children AND the composer's children must share the same
+    // measure token — centering one without the other recreates the island.
+    expect(v2).toContain('--v2-conv-measure:');
+    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('max-width: var(--v2-conv-measure)');
+    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: auto');
+    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('max-width: var(--v2-conv-measure)');
+    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('margin-inline: auto');
+    // Text measure inside the column stays readable.
     expect(v2).toContain('max-width: 76ch');
-    expect(v2).not.toContain('.v2-chat__messages > *');
   });
 
   test('motion timing is tokenized and all three existing V2 animations consume it', () => {
@@ -238,18 +243,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('the four pod filters stay on one row in the narrow sidebar', () => {
-    // The desktop sidebar leaves only ~240px inside its gutter (less than the
-    // mobile drawer). A four-column grid keeps Community beside the existing
-    // filters without horizontal scrolling or wrapping in either locale.
-    // Pattern updated 2026-08-13 (Sam's raggedness flag): three EQUAL
-    // segments + one content-sized, capped Community column — the per-label
-    // hand-tuned fractions read as four random widths. The invariant's intent
-    // (one row, no wrap) is unchanged.
+    // Third mechanism (Sam, 2026-08-23): content-sized chips. The equal-grid
+    // versions allocated width backwards (wide boxes for short words, a
+    // capped box for the longest) and scattered zh-CN's four 2-character
+    // labels across phantom cells. Chips hug their labels with uniform
+    // padding, so both locales read as one segmented control. The intent
+    // from 2026-08-13 is unchanged: one row, no wrap — pinned here as
+    // flex + nowrap + no width-allocating grid.
     const rule = ruleBody(v2, '.v2-pods__filters');
-    expect(rule).toContain('display: grid');
-    expect(rule).toContain('grid-template-columns: repeat(3, minmax(0, 1fr)) fit-content(92px)');
+    expect(rule).toContain('display: flex');
+    expect(rule).not.toContain('grid-template-columns');
     expect(rule).toContain('overflow: visible');
-    expect(ruleBody(v2, '.v2-pods__filter')).toContain('text-overflow: ellipsis');
+    expect(ruleBody(v2, '.v2-pods__filter')).toContain('white-space: nowrap');
   });
 
   test('accent treatment is a wash, never a message rail', () => {
@@ -327,7 +332,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const row = ruleBody(v2, '.v2-chat__starter-prompts');
     const chip = ruleBody(v2, '.v2-root button.v2-chat__starter-prompt');
     expect(row).toContain('flex-wrap: wrap');
-    expect(row).toContain('max-width: 100%');
+    // min(measure, 100%): shares the conversation column's centerline at
+    // desktop widths while keeping the 390px shrink this pin exists for.
+    expect(row).toContain('max-width: min(var(--v2-conv-measure), 100%)');
     expect(chip).toContain('max-width: 100%');
     expect(chip).toContain('white-space: normal');
   });
@@ -390,17 +397,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg__reaction-emoji')).toContain('line-height: 22px');
   });
 
-  test('the bare reactions row collapses instead of reserving a blank band', () => {
-    // A no-chips row holds only the opacity-0 hover "+", but it used to keep
-    // 24px + 6px of layout space under EVERY message — the phantom band that
-    // pushed approval cards visibly away from their trigger text (2026-08-13).
-    // Both halves are load-bearing: height 0 removes the band; the absolute
-    // add-wrap keeps the trigger reachable without re-expanding the row. The
-    // rule looks inert in isolation — do not "clean it up".
-    expect(ruleBody(v2, '.v2-msg__reactions--bare')).toContain('height: 0');
-    expect(ruleBody(v2, '.v2-msg__reactions--bare .v2-msg__reaction-add-wrap')).toContain(
-      'position: absolute',
-    );
+  test('message actions live in ONE hover cluster, and its picker opens downward', () => {
+    // 2026-08-23 (Sam's placement rulings): Reply, Thread, and the reaction
+    // trigger share a floating pill at the row's top-right — no inline head
+    // buttons (layout shift), no orphaned "+" in an empty reactions band
+    // (the 2026-08-13 phantom-band bug cannot recur because a chip-less row
+    // no longer renders at all). The picker anchor override is load-bearing:
+    // the base picker opens UPWARD (bottom: 100%) for the old in-row anchor;
+    // from the cluster at the message's top edge it must open downward or it
+    // clips under the previous message.
+    const cluster = ruleBody(v2, '.v2-msg__actions');
+    expect(cluster).toContain('position: absolute');
+    expect(v2).toContain('.v2-msg:hover .v2-msg__actions');
+    const pickerInCluster = ruleBody(v2, '.v2-msg__actions .v2-msg__reaction-picker');
+    expect(pickerInCluster).toContain('top: calc(100% + 6px)');
+    expect(pickerInCluster).toContain('bottom: auto');
+    // Touch keeps the 44px floor with the cluster always visible.
+    expect(v2).toContain('.v2-root button.v2-msg__action');
   });
 
   test('create-pod panel no longer ships audience options (ADR-016 / #768)', () => {
@@ -498,15 +511,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(addressed).toContain('var(--v2-accent)');
   });
 
-  test('thread entry actions retain 44px targets and become visible on touch layouts', () => {
-    // TASK-052: Thread has to be reachable from an unthreaded message, while
-    // Reply preserves its existing addressing meaning. Desktop may reveal the
-    // row on hover; a 390px touch surface cannot depend on hover.
-    const messageAction = ruleBody(v2, '.v2-root button.v2-msg__reply-btn,\n.v2-root button.v2-msg__thread-btn');
-    expect(messageAction).toContain('min-height: 44px');
+  test('message actions retain 44px targets and become visible on touch layouts', () => {
+    // TASK-052 intent, third mechanism: the hover cluster carries
+    // Reply/Thread/React. Desktop reveals it on hover; a 390px touch
+    // surface cannot depend on hover, so both touch blocks (pointer:coarse
+    // and max-width:640px) force it visible with 44px targets.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg__actions[\s\S]*?opacity: 1/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
     const cardAction = ruleBody(v2, '.v2-root button.v2-thread-card__reply');
     expect(cardAction).toContain('min-height: 44px');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__reply-btn,[\s\S]*?\.v2-root button\.v2-msg__thread-btn[\s\S]*?opacity: 1/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);
   });
 

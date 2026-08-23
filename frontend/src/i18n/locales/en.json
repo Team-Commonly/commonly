@@ -1379,7 +1379,11 @@
     "groups": {
       "pinned": "Pinned",
       "directMessages": "Direct messages",
-      "betweenAgents": "Between agents · {{count}}"
+      "betweenAgents": "Between agents · {{count}}",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "thisWeek": "This week",
+      "earlier": "Earlier"
     },
     "create": {
       "teamOption": "Open to join",

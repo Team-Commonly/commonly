@@ -414,6 +414,43 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
     && !!meUsername
     && new RegExp(`@${meUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(stripped);
 
+  // --- reactions state, hoisted from the render tail so the hover cluster
+  // owns the trigger while the chips row keeps rendering below the text ---
+  const liveReactions = message.reactions;
+  const hasLive = Array.isArray(liveReactions);
+  const reactMessageId = String(message.id || '');
+  const canInteract = !!(hasLive && reactMessageId && /^\d+$/.test(reactMessageId));
+  const renderList = hasLive
+    ? liveReactions!
+    : reactions.map((r) => ({ emoji: r.emoji, count: r.count, mine: false }));
+  const toggleReaction = async (emoji: string, mine: boolean) => {
+    if (!canInteract) return;
+    try {
+      if (mine) {
+        await api.del(`/api/messages/${reactMessageId}/reactions/${encodeURIComponent(emoji)}`);
+      } else {
+        await api.post(`/api/messages/${reactMessageId}/reactions`, { emoji });
+      }
+      // Optimistic update is unnecessary — the socket `messageReaction`
+      // event from the backend updates the message list in place.
+    } catch (err) {
+      const e = err as { response?: { status?: number; data?: { msg?: string; error?: string } } };
+      const status = e.response?.status;
+      const serverMsg = e.response?.data?.msg || e.response?.data?.error;
+      setReactionError(
+        serverMsg
+        || (status === 403 ? "You're not a member of this pod." : '')
+        || (status === 429 ? 'Too many reactions — give it a moment.' : '')
+        || 'Could not add that reaction.',
+      );
+      window.setTimeout(() => setReactionError(null), 4000);
+      // eslint-disable-next-line no-console
+      console.warn('[reactions] toggle failed:', (err as Error).message);
+    } finally {
+      setPickerOpen(false);
+    }
+  };
+
   return (
     <div className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}`}>
       {grouped ? (
@@ -442,31 +479,83 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           seed={message.user_id || undefined}
         />
       )}
+      {/* One hover cluster for every row variant (Sam's taste rulings
+          2026-08-23): Reply, Thread, and the reaction trigger live together
+          in a floating pill at the message's top-right — visible on hover
+          or keyboard focus, never in the head's text flow (the inline text
+          buttons crowded the head and shifted layout), and identical for
+          headed and grouped rows. The reaction picker anchors here too, so
+          the trigger sits with its siblings instead of orphaned at the far
+          edge of an empty reactions band. */}
+      {(onReply || onThread || canInteract) && (
+        <div className="v2-msg__actions" role="toolbar" aria-label="Message actions">
+          {onReply && (
+            <button
+              type="button"
+              className="v2-msg__action"
+              aria-label={`Reply to ${author}`}
+              title={`Reply to ${author}`}
+              onClick={() => onReply(message)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="9 17 4 12 9 7" />
+                <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+              </svg>
+            </button>
+          )}
+          {onThread && (
+            <button
+              type="button"
+              className="v2-msg__action"
+              aria-label={`${t('podChat.thread.startThread')} from ${author}`}
+              title={t('podChat.thread.startThread')}
+              onClick={() => onThread(message)}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          )}
+          {canInteract && (
+            <span className="v2-msg__action-wrap">
+              <button
+                type="button"
+                className="v2-msg__action"
+                aria-label="Add reaction"
+                title="Add reaction"
+                onClick={() => setPickerOpen((v) => !v)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                  <line x1="9" y1="9" x2="9.01" y2="9" />
+                  <line x1="15" y1="9" x2="15.01" y2="9" />
+                </svg>
+              </button>
+              {pickerOpen && (
+                <span className="v2-msg__reaction-picker" role="menu">
+                  {REACTION_PALETTE.map((e) => {
+                    const existing = renderList.find((x) => x.emoji === e);
+                    const mine = !!existing?.mine;
+                    return (
+                      <button
+                        key={e}
+                        type="button"
+                        role="menuitem"
+                        className={`v2-msg__reaction-picker-item${mine ? ' v2-msg__reaction-picker-item--mine' : ''}`}
+                        onClick={() => toggleReaction(e, mine)}
+                      >
+                        {e}
+                      </button>
+                    );
+                  })}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      )}
       <div className="v2-msg__body">
-        {grouped && (onReply || onThread) && (
-          <div className="v2-msg__thread-actions v2-msg__thread-actions--float">
-            {onReply && (
-              <button
-                type="button"
-                className="v2-msg__reply-float"
-                aria-label={`Reply to ${author}`}
-                onClick={() => onReply(message)}
-              >
-                Reply
-              </button>
-            )}
-            {onThread && (
-              <button
-                type="button"
-                className="v2-msg__thread-float"
-                aria-label={`${t('podChat.thread.startThread')} from ${author}`}
-                onClick={() => onThread(message)}
-              >
-                {t('podChat.thread.startThread')}
-              </button>
-            )}
-          </div>
-        )}
         {!grouped && (
         <div className="v2-msg__head">
           {isClickable ? (
@@ -478,30 +567,6 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           )}
           {isLead && <span className="v2-msg__lead-badge">Lead</span>}
           {time && <span className="v2-msg__time">{time}</span>}
-          {(onReply || onThread) && (
-            <div className="v2-msg__thread-actions">
-              {onReply && (
-                <button
-                  type="button"
-                  className="v2-msg__reply-btn"
-                  aria-label={`Reply to ${author}`}
-                  onClick={() => onReply(message)}
-                >
-                  Reply
-                </button>
-              )}
-              {onThread && (
-                <button
-                  type="button"
-                  className="v2-msg__thread-btn"
-                  aria-label={`${t('podChat.thread.startThread')} from ${author}`}
-                  onClick={() => onThread(message)}
-                >
-                  {t('podChat.thread.startThread')}
-                </button>
-              )}
-            </div>
-          )}
         </div>
         )}
         {(() => {
@@ -567,54 +632,13 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
         ))}
         {(() => {
           // Sprint B5: real reactions come from message.reactions (server-
-          // aggregated `[{emoji, count, mine}]`). Legacy fixtures use the
-          // token-parsed `reactions` from parseReactions above. Real wins
-          // when present; tokens are the demo-recording stand-in.
-          const liveReactions = message.reactions;
-          const hasLive = Array.isArray(liveReactions);
-          const messageId = String(message.id || '');
-          const canInteract = hasLive && messageId && /^\d+$/.test(messageId);
-
-          const toggle = async (emoji: string, mine: boolean) => {
-            if (!canInteract) return;
-            try {
-              if (mine) {
-                await api.del(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
-              } else {
-                await api.post(`/api/messages/${messageId}/reactions`, { emoji });
-              }
-              // Optimistic update is unnecessary — the socket `messageReaction`
-              // event from the backend updates the message list in place.
-            } catch (err) {
-              const e = err as { response?: { status?: number; data?: { msg?: string; error?: string } } };
-              const status = e.response?.status;
-              const serverMsg = e.response?.data?.msg || e.response?.data?.error;
-              setReactionError(
-                serverMsg
-                || (status === 403 ? "You're not a member of this pod." : '')
-                || (status === 429 ? 'Too many reactions — give it a moment.' : '')
-                || 'Could not add that reaction.',
-              );
-              window.setTimeout(() => setReactionError(null), 4000);
-              // eslint-disable-next-line no-console
-              console.warn('[reactions] toggle failed:', (err as Error).message);
-            } finally {
-              setPickerOpen(false);
-            }
-          };
-
-          if (hasLive && liveReactions!.length === 0 && !canInteract) {
-            // Token-fixture path with no parsed entries: render nothing.
-            if (reactions.length === 0) return null;
-          }
-
-          // Decide which list to render. If the server gave us a real
-          // reactions array (even empty) use it; else fall back to tokens.
-          const renderList = hasLive
-            ? liveReactions!
-            : reactions.map((r) => ({ emoji: r.emoji, count: r.count, mine: false }));
-
-          if (renderList.length === 0 && !canInteract) return null;
+          // aggregated `[{emoji, count, mine}]`); legacy fixtures use the
+          // token-parsed list. Both are hoisted above as `renderList` so the
+          // hover cluster shares the trigger. This row now renders ONLY when
+          // there are chips (or a transient error) to show — the trigger
+          // lives in the cluster, so the empty "bare band" state no longer
+          // exists at all rather than being collapsed by CSS.
+          if (renderList.length === 0 && !reactionError) return null;
 
           // Google-Chat-style attribution: build a names-line for the
           // reaction-chip tooltip from the decorated `users` array when
@@ -635,61 +659,21 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
           };
 
-          // A row with no chips holds only the hover "+" trigger; --bare
-          // collapses it out of layout so it stops reserving a blank band
-          // under the message. A transient error line re-expands the row —
-          // it's real content the user must be able to read.
-          const bare = renderList.length === 0 && !reactionError;
-
           return (
-            <div
-              className={`v2-msg__reactions${bare ? ' v2-msg__reactions--bare' : ''}`}
-              aria-label="Reactions"
-            >
+            <div className="v2-msg__reactions" aria-label="Reactions">
               {renderList.map((r, idx) => (
                 <button
                   key={`${r.emoji}-${idx}`}
                   type="button"
                   className={`v2-msg__reaction${r.mine ? ' v2-msg__reaction--mine' : ''}`}
                   title={formatReactionTitle(r)}
-                  onClick={() => toggle(r.emoji, !!r.mine)}
+                  onClick={() => toggleReaction(r.emoji, !!r.mine)}
                   disabled={!canInteract}
                 >
                   <span className="v2-msg__reaction-emoji">{r.emoji}</span>
                   <span className="v2-msg__reaction-count">{r.count}</span>
                 </button>
               ))}
-              {canInteract && (
-                <span className="v2-msg__reaction-add-wrap">
-                  <button
-                    type="button"
-                    className="v2-msg__reaction-add"
-                    aria-label="Add reaction"
-                    onClick={() => setPickerOpen((v) => !v)}
-                  >
-                    +
-                  </button>
-                  {pickerOpen && (
-                    <span className="v2-msg__reaction-picker" role="menu">
-                      {REACTION_PALETTE.map((e) => {
-                        const existing = renderList.find((x) => x.emoji === e);
-                        const mine = !!existing?.mine;
-                        return (
-                          <button
-                            key={e}
-                            type="button"
-                            role="menuitem"
-                            className={`v2-msg__reaction-picker-item${mine ? ' v2-msg__reaction-picker-item--mine' : ''}`}
-                            onClick={() => toggle(e, mine)}
-                          >
-                            {e}
-                          </button>
-                        );
-                      })}
-                    </span>
-                  )}
-                </span>
-              )}
               {reactionError && (
                 <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>
               )}
