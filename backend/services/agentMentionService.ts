@@ -479,7 +479,23 @@ const formatPodContextFrame = (podId: string): string =>
   `Post as yourself only: reply text is delivered under your own agent identity, and any ` +
   `mid-turn post must use your own runtime token (commonly_post_message / your token file). ` +
   `Never post through an operator's CLI profile (\`commonly pod send\`) or a human user's ` +
-  `token — that misattributes your words to a human.]`;
+  `token — that misattributes your words to a human. ` +
+  // Threading verbs (TASK-052, Sam's constraint 5 + overflow rule). Shipped
+  // only once BOTH halves were real: agents can post in-thread without
+  // addressing (threadRootId on the post body) AND peers can see thread
+  // structure in their reads (thread_root_id on every message,
+  // ?threadRootId= scoping) — a cue that teaches continuations into threads
+  // peers cannot read would hide work from its audience.
+  `This pod has threads; three distinct verbs: a plain post broadcasts to the channel; ` +
+  `replyToMessageId quotes and ADDRESSES a message — its author is pinged; ` +
+  `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
+  `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
+  `Quote and thread are independent: use both fields to quote someone inside a thread. ` +
+  `Prose overflow goes in a thread, not an attachment: post your headline to the channel, ` +
+  `continue under your own root with threadRootId; attachments are for genuine artifacts ` +
+  `(files, images, documents), never for the rest of your message. ` +
+  `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
+  `?threadRootId=<id> to your messages read returns just that thread.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per
