@@ -118,9 +118,10 @@ describe('V2PodChat composer send button', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
-      // Reply-to-person sets the addressing edge and NOT the thread root —
-      // the two are mutually exclusive at the composer, and the resolver 400s
-      // a message carrying both.
+      // Reply-to-person sets the addressing edge and NOT the thread root.
+      // Exclusive at the composer for a semantic reason — an in-thread post
+      // must not ping the root author — and NOT because the backend refuses
+      // the pair; it only refuses a pair that disagrees.
       expect(detail.sendMessage).toHaveBeenCalledWith('I am checking it now.', 'text', 'm1', undefined);
     });
 
@@ -142,8 +143,11 @@ describe('V2PodChat composer send button', () => {
   // W-T 4/4, constraint 4 (docs/design/threading-surface-ruling.md; ux-lead
   // 57449): the composer has ONE target with two kinds. "Reply in thread"
   // sends threadRootId and NO reply edge; "Reply to <person>" sends the reply
-  // edge and NO thread root; aiming at one clears the other. The resolver
-  // 400s a message carrying both, so these pin the client never builds one.
+  // edge and NO thread root; aiming at one clears the other.
+  //
+  // These pin it CLIENT-SIDE because nothing else does: the resolver rejects
+  // the pair only when the two disagree, so a message carrying both that
+  // happen to agree sails through and silently pings the root author.
   const threadMessages = () => ([
     {
       id: 'm1',
@@ -207,6 +211,35 @@ describe('V2PodChat composer send button', () => {
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
       expect(detail.sendMessage).toHaveBeenLastCalledWith('reply wins', 'text', 'm2', undefined);
+    });
+  });
+
+  test('an image upload carries the thread target too', async () => {
+    // The regression @sprint-review caught on #1150: the TEXT path passed the
+    // thread root and the image path did not, so uploading a picture while
+    // the composer read "Replying in thread" posted it to the channel. Two
+    // send sites, one of them updated — the classic shape, and there was no
+    // test on this path at all, which is why it was missed.
+    const axios = require('axios');
+    axios.post.mockImplementation((url: string) => (
+      String(url).includes('/api/uploads')
+        ? Promise.resolve({ data: { kind: 'image', url: 'https://cdn/x.png' } })
+        : Promise.resolve({ data: {} })
+    ));
+
+    const detail = makeDetail({ messages: threadMessages() });
+    const { container } = renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['x'], 'x.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith(
+        'https://cdn/x.png', 'image', undefined, 'm1',
+      );
     });
   });
 });

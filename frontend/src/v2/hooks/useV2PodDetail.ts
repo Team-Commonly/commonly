@@ -140,8 +140,13 @@ export interface UseV2PodDetailResult {
   refresh: () => Promise<void>;
   // `threadRootId` posts INTO a thread without addressing anyone: the backend
   // takes it as membership and leaves reply_to null, so joining a thread does
-  // not ping the root's author (@ux-lead 56879, resolver in #1128). Passing
-  // both is a caller bug and the resolver 400s it rather than picking.
+  // not ping the root's author (@ux-lead 56879, resolver in #1128).
+  //
+  // Passing both is a caller bug, but NOT one the backend catches: the
+  // resolver 400s the pair only when they DISAGREE, and returns happily when
+  // a reply edge and an explicit root point at the same thread. Keeping them
+  // exclusive is therefore the client's job and nothing downstream will
+  // notice if it stops.
   sendMessage: (
     content: string,
     messageType?: string,
