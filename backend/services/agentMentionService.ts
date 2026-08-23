@@ -173,7 +173,7 @@ const aliasMap = buildAliasMap();
 const extractMentions = (content = ''): string[] => {
   if (!content || typeof content !== 'string') return [];
   const mentions = new Set<string>();
-  const regex = /@([a-z0-9-]{2,})/gi;
+  const regex = /@([a-z0-9_-]{2,})/gi;
   let match;
   // eslint-disable-next-line no-cond-assign
   while ((match = regex.exec(content)) !== null) {
@@ -992,33 +992,62 @@ const resolveBotUserIds = async (
 };
 
 /**
- * Persist the follow implied by a DELIVERED explicit mention in a thread.
+ * Resolve explicit @handles that belong to humans, not installed agents.
  *
- * This is deliberately awaited after the agent event has been enqueued: the
- * participation state becomes durable before this mention operation completes,
- * but a PG failure cannot turn an already-persisted post or delivered address
- * into a 500. `followByParticipation` itself preserves an explicit mute by
- * writing only where `following IS NULL`.
+ * The composer inserts a member's real username, while `extractMentions`
+ * normalizes that handle to lowercase for the agent resolver. Usernames are
+ * not themselves case-normalized at write time, so the lookup is anchored and
+ * case-insensitive rather than assuming a lowercased stored value. Handles
+ * are extracted from `[a-z0-9_-]`, but anchoring keeps a prefix such as
+ * `@casey` from following `casey-admin` too.
+ *
+ * This is deliberately best-effort for the same reason as bot resolution:
+ * the message is already durable. A Mongo failure must not turn a successful
+ * send into a 500; it only leaves this one implicit follow unmaterialized.
  */
-const followDeliveredThreadMentions = async (
+const resolveHumanMentionUserIds = async (
+  mentions: Iterable<string>,
+  podMemberIds: Set<string>,
+): Promise<Set<string>> => {
+  const handles = [...new Set(Array.from(mentions).filter(Boolean))];
+  if (handles.length === 0 || podMemberIds.size === 0) return new Set<string>();
+  try {
+    const rows = await User.find({
+      isBot: false,
+      $or: handles.map((username) => ({ username: new RegExp(`^${username}$`, 'i') })),
+    }).select('_id username').lean() as Array<{ _id?: unknown }>;
+    return new Set(
+      rows
+        .map((row) => String(row._id || ''))
+        .filter((userId) => Boolean(userId) && podMemberIds.has(userId)),
+    );
+  } catch (err) {
+    console.warn('[thread-follow] human mention resolution failed:', (err as Error).message);
+    return new Set<string>();
+  }
+};
+
+/**
+ * Persist the follow implied by explicit mention targets in a thread.
+ *
+ * Agent ids enter this list only after their event has been enqueued; human
+ * ids come from the same message's explicit handles, because humans have no
+ * AgentEvent delivery row. This keeps all implicit mention follows at the
+ * one post-persistence choke point. `followByParticipation` preserves an
+ * explicit mute by writing only where `following IS NULL`.
+ */
+const followMentionedThreadUsers = async (
   threadRootId: number,
   podId: string,
-  targets: Iterable<MentionTarget>,
-  botUserIds: Map<string, string>,
+  userIds: Iterable<string>,
 ): Promise<void> => {
-  const userIds = new Set(
-    Array.from(targets)
-      .map((target) => botUserIds.get(installKey(target)))
-      .filter((userId): userId is string => Boolean(userId)),
-  );
-
-  await Promise.all([...userIds].map(async (userId) => {
+  await Promise.all([...new Set(userIds)].map(async (userId) => {
     try {
       await ThreadUserState.followByParticipation(threadRootId, userId, podId);
     } catch (error) {
       // The message and its address are already durable. Keep the failure
       // visible without making a successful send look failed to the author.
-      console.warn('[thread-follow] mention delivery succeeded but follow write failed:', (error as Error).message);
+      console.warn('[thread-follow] mention follow write failed:', (error as Error).message);
     }
   }));
 };
@@ -1292,7 +1321,7 @@ const enqueueMentions = async ({
   // This is deliberately distinct from `enqueuedIdentityKeys`: the latter
   // also records a reply-edge delivery, which is addressing but not an
   // explicit @mention and therefore must not create a follow.
-  const deliveredMentionTargets = new Map<string, MentionTarget>();
+  const deliveredAgentMentionTargets = new Map<string, MentionTarget>();
   const identityKey = (target: MentionTarget): string => (
     `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`
   );
@@ -1303,24 +1332,35 @@ const enqueueMentions = async ({
   ): void => {
     enqueuedIdentityKeys.add(identityKey(target));
     enqueued.push(resultLabel);
-    if (isExplicitMention) deliveredMentionTargets.set(identityKey(target), target);
+    if (isExplicitMention) deliveredAgentMentionTargets.set(identityKey(target), target);
   };
 
   const { map: mentionMap, byAgent } = buildMentionMap(installations, profiles);
+  // Preserve established agent routing when a handle is an agent alias. Human
+  // resolution owns only names no installed-agent path already claims; the
+  // composer otherwise has no typed identity on the wire to disambiguate a
+  // human username from an agent display alias.
+  const humanMentionHandles = rawMentions.filter((handle) => (
+    !mentionMap.has(handle) && !aliasMap.has(handle)
+  ));
   let pod: Record<string, unknown> | null = null;
 
-  // Resolve "collaborative pod" once per enqueueMentions call so all
-  // mention targets see a consistent cue surface for the same pod.
-  // Pod.type lookup is fire-and-forget — if it fails, the heuristic
-  // falls back to "installations-only" which still correctly excludes
-  // 1:1 utility-agent pods (≥2 non-utility peers required).
+  // Resolve pod type + membership once per enqueueMentions call. Type gives
+  // every agent target a consistent collaboration cue; membership ensures a
+  // manually typed human @handle cannot create state for someone outside the
+  // pod. If the lookup fails, the cue falls back to "installations-only" and
+  // human follow materialization safely skips rather than guessing.
   let podType: string | null = null;
+  let podMemberIds = new Set<string>();
   try {
-    const podRow = await Pod.findById(podId).select('type').lean() as { type?: string } | null;
+    const podRow = await Pod.findById(podId).select('type members').lean() as {
+      type?: string; members?: unknown[];
+    } | null;
     podType = podRow?.type || null;
+    podMemberIds = new Set((podRow?.members || []).map((member) => String(member)));
   } catch (error) {
     // Non-fatal — collab detection falls back to count-only heuristic.
-    console.warn('[mention-collab-cue] pod.type lookup failed:', (error as Error).message);
+    console.warn('[mention-context] pod lookup failed:', (error as Error).message);
   }
   const collaborativePod = isCollaborativePod(podType, installations);
 
@@ -1541,22 +1581,26 @@ const enqueueMentions = async ({
     }),
   );
 
-  // One BOT User lookup serves both the delivered mention below and the
+  // One BOT User lookup serves both the delivered agent mention below and the
   // routed message's ambient wake fan-out. An auto-joined target is not in
   // the initial installation list yet, so include the actual delivery set.
   const threadRootId = resolveThreadRootId(message);
   let resolvedBotUserIds: Map<string, string> | undefined;
-  if (threadRootId && deliveredMentionTargets.size > 0) {
-    resolvedBotUserIds = await resolveBotUserIds([
-      ...installations,
-      ...deliveredMentionTargets.values(),
-    ]);
-    await followDeliveredThreadMentions(
-      threadRootId,
-      podId,
-      deliveredMentionTargets.values(),
-      resolvedBotUserIds,
-    );
+  if (threadRootId) {
+    const followedUserIds = await resolveHumanMentionUserIds(humanMentionHandles, podMemberIds);
+    if (deliveredAgentMentionTargets.size > 0) {
+      resolvedBotUserIds = await resolveBotUserIds([
+        ...installations,
+        ...deliveredAgentMentionTargets.values(),
+      ]);
+      for (const target of deliveredAgentMentionTargets.values()) {
+        const userId = resolvedBotUserIds.get(installKey(target));
+        if (userId) followedUserIds.add(userId);
+      }
+    }
+    if (followedUserIds.size > 0) {
+      await followMentionedThreadUsers(threadRootId, podId, followedUserIds);
+    }
   }
 
   // Human replies to an agent are an addressing signal even when the human

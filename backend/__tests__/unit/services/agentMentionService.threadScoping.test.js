@@ -70,6 +70,9 @@ const BOT_USER_ROWS = [
   { _id: 'bot-user-a', botMetadata: { agentName: 'seat-a', instanceId: 'default' } },
   { _id: 'bot-user-b', botMetadata: { agentName: 'seat-b', instanceId: 'default' } },
 ];
+const HUMAN_MENTION_ROWS = [
+  { _id: 'human-casey', username: 'Casey_Dev', isBot: false },
+];
 
 const byType = (t) => AgentEventService.enqueue.mock.calls.map(([a]) => a).filter((a) => a.type === t);
 
@@ -85,15 +88,21 @@ beforeEach(() => {
       optIn('seat-a', 'human-installer-a'), optIn('seat-b', 'human-installer-b'),
     ]),
   });
-  User.find.mockReturnValue({
-    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(BOT_USER_ROWS) }),
-  });
+  User.find.mockImplementation((filter) => ({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(filter.isBot === false ? HUMAN_MENTION_ROWS : BOT_USER_ROWS),
+    }),
+  }));
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   Pod.findById.mockReturnValue({
     select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-user-a'] }),
+      lean: jest.fn().mockResolvedValue({
+        type: 'chat', members: ['user-1', 'bot-user-a', 'human-casey'],
+      }),
     }),
-    lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat', members: ['user-1'] }),
+    lean: jest.fn().mockResolvedValue({
+      _id: 'pod-1', type: 'chat', members: ['user-1', 'human-casey'],
+    }),
   });
   User.findById.mockImplementation((id) => ({
     select: jest.fn().mockReturnThis(),
@@ -265,7 +274,7 @@ describe('scoping cannot reach the addressing path', () => {
   });
 });
 
-describe('a delivered thread mention follows by participation', () => {
+describe('an explicit thread mention follows by participation', () => {
   test('the shared delivery record follows the BOT user only after its mention enqueues', async () => {
     await send({ id: 'm11', content: '@seat-a please review', thread_root_id: 101 });
 
@@ -297,10 +306,39 @@ describe('a delivered thread mention follows by participation', () => {
       .resolves.toMatchObject({ enqueued: ['seat-a'] });
 
     expect(warn).toHaveBeenCalledWith(
-      '[thread-follow] mention delivery succeeded but follow write failed:',
+      '[thread-follow] mention follow write failed:',
       'pg down',
     );
     warn.mockRestore();
+  });
+
+  test('an explicitly mentioned human follows even without posting in the thread', async () => {
+    // Casey is not the root author or a reply author in this fixture. The
+    // only reason their id reaches thread_user_state is the explicit @handle
+    // on this delivered message.
+    await send({ id: 'm12c', content: '@Casey_Dev please review', thread_root_id: 101 });
+
+    expect(ThreadUserState.followByParticipation).toHaveBeenCalledWith(
+      101, 'human-casey', 'pod-1',
+    );
+    const [humanQuery] = User.find.mock.calls.find(([filter]) => filter.isBot === false);
+    expect(humanQuery.$or).toHaveLength(1);
+    expect(humanQuery.$or[0].username).toEqual(expect.any(RegExp));
+    expect(humanQuery.$or[0].username.test('CASEY_DEV')).toBe(true);
+    expect(humanQuery.$or[0].username.test('casey_dev-admin')).toBe(false);
+  });
+
+  test('a manual @handle for a human outside the pod cannot create their thread state', async () => {
+    Pod.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ type: 'chat', members: ['user-1', 'bot-user-a'] }),
+      }),
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: 'chat', members: ['user-1'] }),
+    });
+
+    await send({ id: 'm12d', content: '@Casey_Dev private update', thread_root_id: 101 });
+
+    expect(ThreadUserState.followByParticipation).not.toHaveBeenCalled();
   });
 
   test('a reply edge is addressing, not an explicit mention, so it does not create a follow', async () => {
