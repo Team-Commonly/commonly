@@ -7198,12 +7198,14 @@
    secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
    dropping to 24px at 390; layout transition 300ms. */
 
-/* Card + rail travel as ONE column row. As loose siblings their margin
-   shorthands beat the column's `> *` centering on source order, so threads
-   sat left-anchored while messages centered (Sam, 2026-08-23). The bottom
-   margin is the rail's terminator: without it the rail's last pixel abuts
-   the next outer message and reads as connected to it. */
+/* Card + rail travel as ONE column row, indented to the message TEXT
+   column like an attachment (Sam, 2026-08-23): 38px avatar column + 12px
+   gap = 50px, so the thread visibly belongs to the message above it
+   rather than starting a new row at the avatar edge. The bottom margin is
+   the rail's terminator: without it the rail's last pixel abuts the next
+   outer message and reads as connected to it. */
 .v2-thread-block {
+  margin-left: 50px;
   margin-bottom: 14px;
 }
 
@@ -7305,14 +7307,14 @@
   color: var(--v2-accent);
 }
 
-/* Expanded replies hang off a left rail at the root avatar's centre. */
-/* Rail ON the root avatar's axis. The root avatar is .v2-avatar--md = 30px in
-   a 38px grid column, so its centre is x = 15; margin-left 14 + the 2px border
-   puts the rule through that centre. Rev 1 used 19 and was measuring the
-   column, not the avatar (@ux-lead, thread-reply-row-alignment rev 2). */
+/* Expanded replies hang off a left rail at the thread block's own edge.
+   The rail used to aim at the root avatar's centre (margin-left 14, rev 2);
+   with the whole block indented to the text column like an attachment
+   (Sam, 2026-08-23), the rail sits AT that column edge — margin 0 — so
+   card, rail, and message text share one line. */
 .v2-thread-replies {
   position: relative;
-  margin-left: 14px;
+  margin-left: 0;
   padding-left: 12px;
   border-left: 2px solid #eef0f6;
   transition: height 300ms ease;
@@ -7397,11 +7399,15 @@
     flex-wrap: wrap;
   }
 
-  /* The axis does NOT move at 390 — no channel-row override exists at this
-     breakpoint, so the root avatar centre is still x = 15. Only the inner
-     padding tightens: 16 + 8 + 24 + 8 = x = 56. */
+  /* The block's 50px attachment indent is expensive at 390 — tighten it,
+     but keep the rail on the block edge (aligned with the card), and the
+     inner padding tightens with it. */
+  .v2-thread-block {
+    margin-left: 24px;
+  }
+
   .v2-thread-replies {
-    margin-left: 14px;
+    margin-left: 0;
     padding-left: 8px;
   }
 
