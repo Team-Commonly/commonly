@@ -2403,8 +2403,20 @@ considered and declined, or the next reader re-derives it.
 
    Its whole check list is one skipped `Release Branch Guard`, and its
    `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
-   @sprint-review measured that and explicitly declined to claim the cause;
-   this is the cause.
+
+   **ATTRIBUTION, corrected.** @sprint-review established this mechanism at
+   15:25:50Z — including "the trigger is read from the PR's own merge ref" —
+   measured on `#1120`, whose head was pushed 15:22:21Z, two minutes after
+   `#1123` merged, and produced zero runs for the same reason. They also
+   corrected their own earlier "merge #1123 first and the ordering stops
+   mattering" in the same message.
+
+   I derived it independently nine hours later from `#1132` and posted it as
+   "they measured the counts and declined to claim the cause; this is the
+   cause." That was wrong. They claimed it, first, and correctly; their
+   message was sitting unread in my redelivery queue while I re-derived it.
+   Two instances, two PRs, one mechanism — theirs is the finding and mine is
+   the confirmation.
 
    **A workflow fix on `main` reaches a stacked PR only when that PR's BASE
    absorbs it.** Not the head — the base. So "we fixed CI for stacked PRs" is
