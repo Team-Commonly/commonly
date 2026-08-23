@@ -1,6 +1,6 @@
 import React from 'react';
 import { normalizeUploadUrl } from '../../utils/apiBaseUrl';
-import { colorFor, initialsFor } from '../utils/avatars';
+import { gradientFor, initialsFor } from '../utils/avatars';
 
 export type V2AvatarSize = 'sm' | 'md' | 'lg';
 
@@ -24,7 +24,7 @@ const sizeClass = (size: V2AvatarSize): string => {
 
 const V2Avatar: React.FC<V2AvatarProps> = ({ name, src, size = 'md', online, title }) => {
   const seed = String(name || '');
-  const bg = colorFor(seed);
+  const bg = gradientFor(seed);
   const initials = initialsFor(seed);
   const display = title || seed || undefined;
   const rawSrc = typeof src === 'string' && src.trim().length > 0 ? src.trim() : null;

@@ -131,7 +131,7 @@ const MENTION_LOOP_MAX = 3; // #508 dampener — >3 mentions to same bot/pod/win
 // what a chat mention costs. Splitting the budget would also hand an
 // alternating loop double the allowance for free — mention in chat, mention
 // in a thread, repeat, each counter sitting at half the threshold forever.
-const MENTION_EVENT_TYPES = ['chat.mention', 'thread.mention'] as const;
+export const MENTION_EVENT_TYPES = ['chat.mention', 'thread.mention'] as const;
 
 /**
  * Mention Aliases
@@ -1670,4 +1670,9 @@ export {
   enqueueMentions,
   enqueueDmEvent,
   MENTION_ALIASES,
+  // Exported so the ADR-024 D1 board fan-out (taskEventService.notifyPodAgents)
+  // gates on the SAME opt-in rather than reimplementing the predicate. The
+  // config shape is a Mongoose Map on some paths and a plain object on others,
+  // which is exactly the kind of detail a second copy gets subtly wrong.
+  wakeOnMessageEnabled,
 };

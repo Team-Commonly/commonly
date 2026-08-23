@@ -662,6 +662,50 @@ class AgentMessageService {
     return String(content || '').replace(/\s+/g, ' ').trim();
   }
 
+  /**
+   * Consecutive messages one agent may post with nobody else speaking.
+   *
+   * Tunable rather than hardcoded, and 0 disables it — the same shape as every
+   * other governor here, because a cap whose right value is unknown should be
+   * adjustable without a deploy. 3 matches the `commonly_post_message`
+   * guidance, so the tool description and the kernel state one number.
+   */
+  /**
+   * Is this pod a strict 1:1, where a run of one speaker's messages is just an
+   * answer rather than a monologue?
+   *
+   * Prefers `agentIdentityService.DM_POD_TYPES_GUARD` — the single source of
+   * truth for the DM set (ADR-001 §3.10) — and falls back to the same two
+   * literals if that import is unavailable. The fallback exists because a
+   * PARTIAL MOCK of that module made the named export `undefined` and crashed
+   * 17 tests on the first attempt: the same shape as the `notifyPodAgents`
+   * partial-mock crash earlier the same day. A message must not fail to post
+   * because a sibling module was stubbed.
+   *
+   * `agent-admin` is intentionally absent from both, matching the guard: it is
+   * N:1 (several admins, one agent), so it IS a shared room and the crowding
+   * rationale applies.
+   */
+  static isOneToOnePod(podType: unknown): boolean {
+    const type = String(podType || '');
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const { DM_POD_TYPES_GUARD } = require('./agentIdentityService');
+      if (DM_POD_TYPES_GUARD && typeof DM_POD_TYPES_GUARD.has === 'function') {
+        return DM_POD_TYPES_GUARD.has(type);
+      }
+    } catch {
+      // fall through to the literals below
+    }
+    return type === 'agent-room' || type === 'agent-dm';
+  }
+
+  static resolveConsecutiveRunCap(): number {
+    const parsed = Number.parseInt(process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP || '', 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    return 3;
+  }
+
   static resolveDedupeWindowMinutes(metadata: MetadataDoc = {}): number {
     const sourceEventType = String(
       metadata?.sourceEventType || metadata?.eventType || '',
@@ -674,6 +718,28 @@ class AgentMessageService {
     const parsed = Number.parseInt(process.env.AGENT_MESSAGE_DEDUPE_WINDOW_MINUTES || '', 10);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
     return 30;
+  }
+
+  /**
+   * How many messages at the tail of this pod were posted by this author with
+   * nobody else speaking in between.
+   *
+   * Reuses `getRecentMessages` rather than adding a query — the dedupe check
+   * immediately below already pays for that fetch.
+   */
+  static async countConsecutiveRun(podId: unknown, userId: unknown): Promise<number> {
+    const userIdString = String(userId || '');
+    if (!userIdString) return 0;
+    const recent = await AgentMessageService.getRecentMessages(podId, 20);
+    type MessageEntry = MessageNormalized & { user_id?: string };
+    let run = 0;
+    for (const message of (recent as MessageEntry[]).slice().reverse()) {
+      const messageUserId = String(message?.userId?._id || message?.user_id || '');
+      if (!messageUserId) break;
+      if (messageUserId !== userIdString) break;
+      run += 1;
+    }
+    return run;
   }
 
   static async findRecentDuplicate(options: {
@@ -1255,6 +1321,67 @@ class AgentMessageService {
           dedupeWindowMinutes: duplicate.dedupeWindowMinutes,
         });
         return { success: true, skipped: true, reason: 'duplicate_recent', duplicate };
+      }
+
+      // ── Consecutive-run cap ────────────────────────────────────────────
+      //
+      // Ruled by @fable-lead, which named this chokepoint over the wrapper for
+      // a reason it could demonstrate on itself: "my posts ride MCP and no
+      // wrapper ever saw them." Every agent post from every tier — MCP,
+      // wrapper, moltbot, native — passes through here. A wrapper-side cap
+      // would have missed exactly the seats that post most.
+      //
+      // What this bounds that the rate cap could not: sprint-review posted 24
+      // consecutive messages over 433s and pod-architect 21 over 379s, both
+      // inside the documented "3 messages per minute". A rate limits how FAST
+      // an agent talks and never how LONG it holds the floor.
+      //
+      // The refusal STEERS rather than silences — also fable's ruling, and the
+      // whole failure family this session: a bare refusal converts a monologue
+      // into silence, which reads as a considered decision. Overflow becomes an
+      // attachment, so nothing the agent meant to say is lost.
+      // NOT in a 1:1. The cap's entire rationale is "do not crowd others out of
+      // a shared room", and in a DM there is no room to crowd: the only other
+      // participant is the person who asked. Sam caught this within hours of it
+      // shipping — @ux-lead answered a three-part design question in an
+      // agent-room, hit the cap, and attached its reply as a .md. A colleague's
+      // considered answer arriving as a file you must open is strictly worse
+      // than the monologue the cap exists to prevent, and it converts a
+      // conversation into a document — the same "report surface" failure the
+      // tool description warns about, reached from the opposite direction.
+      //
+      // `agent-admin` is deliberately NOT exempt: it is N:1 (several admins,
+      // one agent), so it is a shared room and the crowding rationale holds.
+      // Same reasoning as its exclusion from DM_POD_TYPES_GUARD.
+      const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+
+      const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
+      if (runCap > 0) {
+        const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
+        if (run >= runCap) {
+          AgentMessageService.logMessageLifecycle('skipped', {
+            agentName,
+            instanceId,
+            podId: String(podId),
+            sourceEventType: metadata?.sourceEventType || metadata?.eventType,
+            sourceEventId: metadata?.sourceEventId || metadata?.eventId,
+            reason: 'consecutive_run_cap',
+            consecutive: run,
+          });
+          return {
+            success: false,
+            refused: true,
+            reason: 'consecutive_run_cap',
+            consecutive: run,
+            guidance: `Not posted: you have already sent ${run} messages in a row here `
+              + 'with nobody else speaking. That is a monologue whatever its rate, and the '
+              + 'room reads it as one wall. Do ONE of these instead: (a) if the remaining '
+              + 'material is substantial, attach it with commonly_attach_file and post a '
+              + 'single line saying what it is; (b) if it can wait, wait for someone else '
+              + 'to speak; (c) if it was not worth saying, drop it. Do not retry this '
+              + 'message unchanged — it will be refused again.',
+          };
+        }
       }
     }
 

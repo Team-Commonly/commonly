@@ -104,6 +104,14 @@ describe('performRun', () => {
       '/api/agents/runtime/events',
       expect.objectContaining({ agentName: 'my-stub', instanceId: 'default' }),
     );
+
+    // The fetch IS the claim — `list()` marks every candidate `delivered`
+    // and increments `attempts` before returning, while this loop starts
+    // exactly one. Asking for more claims work it cannot begin, and the
+    // backend's requeue sweep then reclaims the remainder at `attempts + 1`
+    // until the poison cap retires them unread. Pinned as its own assertion
+    // because the previous value (10) looked like a harmless batch size.
+    expect(mockGet.mock.calls[0][1].limit).toBe(1);
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0]).toBe('hello from tester');
 
@@ -1598,22 +1606,20 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(post.mock.calls.some(([r]) => r.endsWith('/claim'))).toBe(false);
   });
 
-  test('cascade cap: agent-triggered turns beyond the cap are declined without a spawn or a claim', async () => {
+  test('cascade cap: agent-DM chat.mentions beyond the cap are declined without a spawn or a claim', async () => {
     const { post } = makeClient({
       events: [
-        makeClaimEvent({ _id: 'evt-a' }),
-        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
+        makeClaimEvent({ _id: 'evt-a', payload: { content: 'hello', messageId: 'msg-1', dmKind: 'agent-agent' } }),
+        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2', dmKind: 'agent-agent' } }),
       ],
-      // Both trigger messages are BOT-authored — this is a mention cascade.
+      // Both are agent-DM events, which use chat.mention but carry dmKind.
       messages: [
         { _id: 'msg-1', isBot: true, self: false },
         { _id: 'msg-2', isBot: true, self: false },
       ],
     });
     const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
-    // grace 0 pins the PURE cap contract. makeEvent defaults to chat.mention,
-    // which now carries an addressed grace — without this the test would be
-    // silently exercising the grace path instead of the cap it names.
+    // DM-backed chat.mentions stay locally bounded when grace is disabled.
     const { stop } = run(
       { name: 'stub', detect: stubAdapter.detect, spawn },
       { cascadeCap: 1, cascadeAddressedGrace: 0 },
@@ -1625,24 +1631,88 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            messageId: 'msg-2',
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
     );
     // The declined event never reached the claim step.
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
   });
 
-  test('cascade cap: a directly-addressed seat gets a bounded grace, then is capped too', async () => {
-    // The failure this fixes, measured 2026-08-18: a seat took 28 consecutive
-    // cap refusals, five of them chat.mention. Peers named it and got silence.
-    //
-    // The grace is bounded on purpose. An unbounded pass for addressed events
-    // restores the A-mentions-B-mentions-A echo the governor exists to kill, so
-    // the third event below must still be declined.
+  test('cascade cap: the env vars reach the governor, not just the run() params', async () => {
+    // Pins the DELIVERY, not the constant. Extracting the literals into a
+    // resolver is worth nothing if the run loop keeps its own copy — and a
+    // resolver-only unit test cannot tell the difference. Same scenario as the
+    // test above, with the two values arriving from the environment instead.
+    const prior = {
+      cap: process.env.COMMONLY_CASCADE_CAP,
+      grace: process.env.COMMONLY_CASCADE_ADDRESSED_GRACE,
+    };
+    process.env.COMMONLY_CASCADE_CAP = '1';
+    process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = '0';
+    try {
+      const { post } = makeClient({
+        events: [
+          makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
+          makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
+        ],
+        messages: [
+          { _id: 'msg-1', isBot: true, self: false },
+          { _id: 'msg-2', isBot: true, self: false },
+        ],
+      });
+      const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith(
+        '/api/agents/runtime/events/evt-b/ack',
+        {
+          result: {
+            outcome: 'no_action',
+            reason: 'cascade-cap',
+            details: {
+              messageId: 'msg-2',
+              streak: 1,
+              cap: 1,
+              addressedGrace: 0,
+              resetMs: 600000,
+              addressed: true,
+              graceApplied: false,
+            },
+          },
+        },
+      );
+    } finally {
+      if (prior.cap === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior.cap;
+      if (prior.grace === undefined) delete process.env.COMMONLY_CASCADE_ADDRESSED_GRACE;
+      else process.env.COMMONLY_CASCADE_ADDRESSED_GRACE = prior.grace;
+    }
+  });
+
+  test('cascade cap: a legacy direct-address event gets a bounded grace, then is capped too', async () => {
+    // Mention types are producer-dampened and exempted separately. Legacy
+    // direct-address vocabulary remains on the local bounded-grace path.
     const { post } = makeClient({
       events: [
-        makeClaimEvent({ _id: 'evt-a' }),
-        makeClaimEvent({ _id: 'evt-b', payload: { content: 'again', messageId: 'msg-2' } }),
-        makeClaimEvent({ _id: 'evt-c', payload: { content: 'and again', messageId: 'msg-3' } }),
+        makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
+        makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
+        makeClaimEvent({ _id: 'evt-c', type: 'dm.message', payload: { content: 'and again', messageId: 'msg-3' } }),
       ],
       messages: [
         { _id: 'msg-1', isBot: true, self: false },
@@ -1662,7 +1732,64 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-c/ack',
-      { result: { outcome: 'no_action', reason: 'cascade-cap' } },
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            messageId: 'msg-3',
+            streak: 2,
+            cap: 1,
+            addressedGrace: 1,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: true,
+          },
+        },
+      },
+    );
+  });
+
+  test('cascade: a kernel-dampened mention bypasses the cap but still spends broadcast liveness', async () => {
+    const { post } = makeClient({
+      events: [
+        // First broadcast fills the local cap without entering a claim race.
+        makeEvent({
+          _id: 'evt-broadcast-before',
+          type: 'message.posted',
+          payload: { content: 'ambient work', dmKind: 'agent-agent' },
+        }),
+        // The named bot-to-bot mention remains live even though the cap is
+        // full. Its completed turn must still record before the next wake.
+        makeClaimEvent({
+          _id: 'evt-mentioned',
+          payload: { content: '@my-stub please weigh in', messageId: 'msg-mentioned' },
+        }),
+        makeEvent({
+          _id: 'evt-broadcast-after',
+          type: 'message.posted',
+          payload: { content: 'ambient work again', dmKind: 'agent-agent' },
+        }),
+      ],
+      messages: [{ _id: 'msg-mentioned', isBot: true, self: false }],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // The mention is the second spawn. Before the exemption it was refused at
+    // the cap; without the completion-time record the final broadcast would
+    // instead be admitted.
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-broadcast-after/ack',
+      expect.objectContaining({
+        result: expect.objectContaining({ outcome: 'no_action', reason: 'cascade-cap' }),
+      }),
     );
   });
 
@@ -1713,6 +1840,112 @@ describe('performRun — ADR-018 enforcement', () => {
       '/api/agents/runtime/events/evt-c/ack',
       { result: { outcome: 'no_action', reason: 'cascade-cap' } },
     );
+  });
+
+  test('cascade: a grace=0 seat is not told a grace was spent', async () => {
+    // Pins the DELIVERY of the fix, not just the governor field: the log line
+    // and the governor are in different files and only the log is read by a
+    // human trying to explain a silent seat.
+    const { post } = makeClient({
+      events: [
+        makeClaimEvent({ _id: 'evt-a', type: 'dm.message' }),
+        makeClaimEvent({ _id: 'evt-b', type: 'dm.message', payload: { content: 'again', messageId: 'msg-2' } }),
+      ],
+      messages: [
+        { _id: 'msg-1', isBot: true, self: false },
+        { _id: 'msg-2', isBot: true, self: false },
+      ],
+    });
+    const log = jest.fn();
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn },
+      { log, cascadeCap: 1, cascadeAddressedGrace: 0 },
+    );
+    await drainMicrotasks();
+    stop();
+
+    // The refusal happened — without this the assertion below passes vacuously
+    // on a run where nothing was ever capped.
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-b/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'cascade-cap',
+          details: {
+            messageId: 'msg-2',
+            streak: 1,
+            cap: 1,
+            addressedGrace: 0,
+            resetMs: 600000,
+            addressed: true,
+            graceApplied: false,
+          },
+        },
+      },
+    );
+    const refusal = log.mock.calls.map(([l]) => l).find((l) => l.includes('cascade cap:'));
+    expect(refusal).toBeDefined();
+    expect(refusal).not.toContain('addressed grace');
+  });
+
+  test('cascade: the resolved triple is logged at boot, marked as defaults', async () => {
+    // Without this line the log of a retuned seat is byte-identical to the log
+    // of a default one — and an env var, unlike the source edit it replaces,
+    // leaves no git evidence of which seat diverged. The other cascade log on
+    // this path is the warn callback, which fires only on a BAD value, so a
+    // cleanly-booted seat had no record of what it resolved at all.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+    await drainMicrotasks();
+    stop();
+
+    const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+    expect(line).toBe('cascade: cap=3 grace=2 reset=600000ms (defaults)');
+  });
+
+  test('cascade: a retuned seat says so, and the marker is what distinguishes it', async () => {
+    const prior = process.env.COMMONLY_CASCADE_CAP;
+    process.env.COMMONLY_CASCADE_CAP = '8';
+    try {
+      makeClient({ events: [] });
+      const log = jest.fn();
+      const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() }, { log });
+      await drainMicrotasks();
+      stop();
+
+      const line = log.mock.calls.map(([l]) => l).find((l) => l.startsWith('cascade:'));
+      expect(line).toContain('cap=8');
+      // Asserted separately from the value: a marker that never appears would
+      // pass a value-only assertion while making every seat look retuned.
+      expect(line).not.toContain('(defaults)');
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_CASCADE_CAP;
+      else process.env.COMMONLY_CASCADE_CAP = prior;
+    }
+  });
+
+  test('cascade: a bad flag value is quoted back as typed, and the seat keeps the default', async () => {
+    // The flag path used to coerce with Number() before the resolver saw it,
+    // so `--cascade-cap abc` warned `--cascade-cap='NaN'` — naming a value the
+    // operator never typed, on the one line whose job is to name their typo.
+    // Raw strings arrive here now, which is why this passes one in.
+    makeClient({ events: [] });
+    const log = jest.fn();
+    const { stop } = run(
+      { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn() },
+      { log, cascadeCap: 'abc' },
+    );
+    await drainMicrotasks();
+    stop();
+
+    const lines = log.mock.calls.map(([l]) => l);
+    const warning = lines.find((l) => l.startsWith('cascade config:'));
+    expect(warning).toContain("'abc'");
+    expect(warning).not.toContain('NaN');
+    expect(lines.find((l) => l.startsWith('cascade:'))).toContain('cap=3');
   });
 
   test('human-triggered turns are never cascade-capped', async () => {

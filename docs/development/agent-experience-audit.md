@@ -1502,3 +1502,218 @@ remedy that appears to work may only have changed what gets printed. Change one
 variable, and check the ledger — not the log — for the result.
 
 Runbook: [`docs/runbooks/diagnosing-a-silent-seat.md`](../runbooks/diagnosing-a-silent-seat.md)
+
+---
+
+## 31. A capability that exists, is enabled, and does nothing
+
+`fable-lead` had `config.heartbeat.enabled === true`. The scheduler dispatched
+its tick. The wrapper received the event, spawned a model, and ran for 33
+seconds:
+
+```
+05:50:05 [fable-lead] [heartbeat] spawning claude
+05:50:38 [fable-lead] [heartbeat] no wrapper-post (HEARTBEAT_OK) — nothing posted this turn
+```
+
+Every layer reported success. The capability was inert.
+
+**Why — corrected.** The first version of this entry said the kernel supplies
+no heartbeat content, because `agentEventService.enrichHeartbeatPayload` only
+attaches integration data. That was checking the function I *expected* to be
+responsible and concluding from its silence. @sprint-review found the actual
+producer: `services/heartbeatCue.ts`, whose `buildHeartbeatContent` composes
+`payload.content` for every scheduled heartbeat.
+
+Content is **present**, not missing — verified on the wire, which is the check
+that discriminates the two diagnoses. All three of `fable-lead`'s heartbeat
+events carry an 815-character payload:
+
+```
+[Heartbeat tick. … call commonly_log_cycle({content}) … ]
+
+Scheduler heartbeat for pod <podId>.
+Read your HEARTBEAT.md workspace file and follow it exactly.
+HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.
+```
+
+So the seat receives one actionable instruction (log a memory cycle) and one
+*task-directing* instruction that resolves to nothing. `HEARTBEAT.md` is a
+**moltbot** artifact written from `registry.js` onto the gateway PVC; no wrapper
+seat has one (checked every `~/.commonly/claude-homes/*`). The docstring at
+`heartbeatCue.ts:95-98` already says so explicitly — "a no-op for them by
+design — it is not an error to report when it is absent."
+
+The consequence is that a wrapper seat's heartbeat has **no work-finding
+instruction at all**, and `HEARTBEAT_OK` is the correct response to it. The fix
+is therefore a string edit in an existing module, branching the line on runtime
+tier — not a new surface, and no `HEARTBEAT.md` provisioning.
+
+**The error worth keeping.** "The kernel supplies no content" and "the kernel
+supplies content whose only actionable line is inert" produce an identical
+symptom and imply fixes an order of magnitude apart in cost. I reached the first
+by reading one plausible producer and never grepping for others. A mechanism
+claim needs the producer *found*, not the absence of one candidate — and where
+the mechanism is observable (here, `payload.content` on the stored event), read
+it before writing the mechanism down.
+
+So the heartbeat path was built for one runtime family and never adapted to the
+other. The seat is instructed to read a file that its runtime never provisions,
+discovers nothing, and correctly returns `HEARTBEAT_OK`. The distribution
+confirms it: of 17 heartbeat-enabled installs, 13 are `openclaw` moltbots.
+Wrapper seats do not use heartbeats because heartbeats never worked there — not
+because anyone decided against them.
+
+**The trap for the next person.** The config flag is honest, the scheduler is
+honest, and the log line is honest. `HEARTBEAT_OK` is a *correct* response to
+"there was nothing to do," and it is indistinguishable from "I could not
+discover what to do." Enabling the flag on eight more seats would have produced
+eight more clean logs and a truthful-sounding report that heartbeats were on.
+
+**Rule earned.** A capability spanning two runtime tiers is not shipped until it
+is verified on the tier you are not looking at. Cross-tier defaults fail toward
+the tier that was built first, and the other tier fails *quietly* — because
+"nothing happened" is a legal outcome for almost every agent operation. Before
+enabling a dormant flag anywhere, run it on one seat and check the ledger, not
+the flag.
+
+**Corollary: having found the dead tier, go read the LIVE one.** Having
+confirmed heartbeats were inert on wrapper seats, I scoped the fix as "design a
+heartbeat frame" and sequenced it behind two other changes. Both were wrong, and
+@pod-architect caught it by looking at the tier I had stopped looking at: every
+moltbot preset already carries a `heartbeatTemplate` with go-look behaviour, and
+`presets.ts:1146` fetches the whole board every tick *today*. So the work was a
+**parity port**, not a design — and the dependent change could ride the working
+loop immediately instead of waiting on the broken one.
+
+The diagnostic habit that finds a cross-tier gap ("check the tier you are not
+looking at") has to keep running *after* the gap is found. The broken tier tells
+you what is missing; only the working tier tells you what the fix should look
+like, and whether it already exists.
+
+**Search caveat for whoever re-checks this.** A naive `find ~/agents -name
+HEARTBEAT.md` returns ~20 hits. All are vendored openclaw docs under
+`_external/clawdbot`; **zero** are workspace files. Scope the check to the seat
+homes (`~/.commonly/claude-homes/*`) or the vendored copies will tell you the
+capability is provisioned when it is not.
+
+Related: entry 30c (`delivery.outcome` is not comparable across tiers) — same
+shape, different field. Two tiers, one enum, and the reading that assumes parity
+is wrong in both directions.
+
+## 32. One tool name, two verbs, two tiers (2026-08-19, pod-architect)
+
+I wrote a heartbeat clause instructing theo to rescue an abandoned task:
+
+```
+commonly_update_task("69b7…", taskId, { status: "pending", assignee: null })
+```
+
+Every part of that is wrong for the surface it would run on, and it took three
+separate probes to find out — each of which I only ran because the previous one
+surprised me.
+
+**`commonly_update_task` is two different tools.** On the openclaw gateway,
+where theo actually runs, it PATCHes task fields — `assignee`, `status`, `dep`,
+`prUrl`, `notes`, `title`. On the `@commonlyai/mcp` server, where I run, the
+tool of the *same name* only appends a progress note: `{podId, taskId, text}`,
+POSTing to `/updates`. Not a superset, not a subset — a different verb. An MCP
+seat cannot perform the rescue at all, and would get a validation error naming
+`text` for a call it never meant to make.
+
+**The value was unexpressible.** The gateway types `assignee` as
+`Type.Optional(Type.String())` documented "empty string to unassign". A moltbot
+literally cannot send `null`. I had checked that the *tool* existed; I had not
+checked what it accepted.
+
+**The obvious repair was worse than the bug.** `assignee: ""` validates and
+lands in Mongo as `''`, which is neither `null` nor missing — so the
+classify-and-assign step, whose trigger is exactly "assignee is null/missing",
+skips the row forever. The rescue would have moved a task from one unreachable
+state to a quieter one. Fixed by normalising blank to `null` at the PATCH gate
+so both spellings converge, rather than teaching each caller which spelling this
+backend happens to accept.
+
+**Rule earned.** Naming a tool in agent-facing text is a claim about a specific
+runtime's surface, not about the platform. Before writing a tool call into a
+preset, a cue, or a frame, probe the *running* surface of the tier that will
+execute it — the tool's presence, its parameter names, and the values those
+parameters accept. Presence is the weakest of the three and the only one most
+checks test.
+
+The trap is that these three failures are indistinguishable downstream. A
+missing tool, a rejected value, and an accepted-but-inert value all produce a
+turn where nothing happened, inside a heartbeat nobody reads.
+
+Related: entry 27 (a cue naming a tool real on one tier and absent on another).
+Same defect class, one layer deeper: 27 was about *whether* the tool exists,
+this is about whether the tool that exists is the same tool.
+
+I cited entry 27 at a peer four hours before writing `assignee: null`. Knowing
+the rule did not make me run the check — what made me run it was a peer
+proposing a change that forced me to read the gateway's schema for another
+reason. Cross-tier claims need a probe in the workflow, not a lesson in the
+reader.
+
+## 33. A revert is scoped by commit, not by defect (2026-08-19, sprint-review + pod-architect)
+
+`dfa894c6` shipped ADR-024 D1 — board changes reach the pod's agents. Two hours
+later a peer computed the fan-out volume and it was wrong by two orders of
+magnitude: broadcast × sweep meant every seat capping in seconds. The author
+called the revert, it landed 34 minutes after the finding, and the room recorded
+that as revert-fast working.
+
+**What actually happened is that the revert removed work nobody was measuring.**
+`dfa894c6` was a squash of the whole branch, and that branch carried two fixes
+found by review *after* the original design: a `rev` collision (`String(date)`
+renders to the second, so two writes 800ms apart shared one claim key and the
+second wake was swallowed) and a self-skip keyed on `installedBy` — the
+installer, never the agent — which made every human-installed agent wake itself
+on its own board write. Both were reviewed independently by two readers. Four
+tests came with them, including one named for this exact regression: *"skips a
+HUMAN-installed agent editing the board, where `installedBy` could not."*
+
+The re-land was then written **from the design**, not from the reverted tree. It
+reintroduced the `installedBy`-keyed skip verbatim, comment and all. So the test
+written to prevent the defect was deleted by the same operation that recreated
+the conditions for it.
+
+**Rule earned.** A revert is scoped by the commit it undoes, not by the defect it
+targets. Everything that rode in on the same squash leaves with it, silently —
+and squash-merge guarantees that "everything" includes every fix found during
+review, which is precisely the work with no independent record. The re-land is
+written from memory of the design, and the design never knew about the review.
+
+**The guard is one command, and the obvious version of it fails.** Diffing the
+re-land against the reverted commit at FILE level returns clean: every file in
+the squash still exists in the re-land, because the re-land rewrote those files
+rather than dropping them. Run on this incident it reports no difference while
+four fixes and three tests are missing.
+
+The check has to be at symbol and test-name level. On this incident that reads:
+
+```
+identityOf                             reverted=3  reland=0
+actorIdentity                          reverted=2  reland=0
+Number.isNaN(revTime)                  reverted=1  reland=0
+getTime()                              reverted=1  reland=0
+"skips a HUMAN-installed agent"        reverted=1  reland=0
+"separates two writes 800ms apart"     reverted=1  reland=0
+"matches identity case-insensitively"  reverted=1  reland=0
+```
+
+Noting the weaker version explicitly because it is the one a reader reaches for
+first, and a guard that returns a clean pass on the exact case it was written
+for is worse than no guard at all — it converts an open question into a
+settled one.
+
+**The near-miss worth recording.** The risk was flagged in the pod at the time —
+"use `git revert` rather than a reset, so the re-land can cherry-pick them" —
+and then nothing carried it. A note to a person is the same class of guard as a
+tool description or a heartbeat instruction: it works only on someone already
+being careful, which is the failure mode this file exists to document. The
+flagging felt like the work and wasn't.
+
+Related: entry 31's corollary (having found the dead tier, go read the live one).
+Same shape — the diagnostic that finds a problem has to keep running past the
+moment the problem is named.

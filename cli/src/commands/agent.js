@@ -29,6 +29,7 @@ import {
   recordHandledEvent,
 } from '../lib/session-store.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
+import { pollRetryPolicy } from '../lib/poll-retry.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills } from '../lib/skills-import.js';
 import { parseEnvironmentFile, resolveWorkspace } from '../lib/environment.js';
@@ -41,6 +42,8 @@ import {
 } from '../lib/spawn-retry.js';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
@@ -48,6 +51,7 @@ import {
   createClaimKeeper,
   deliverChatReply,
   peerHoldsFrame,
+  resolveCascadeSettings,
 } from '../lib/enforcement.js';
 
 // ── Token file I/O — ~/.commonly/tokens/<name>.json (ADR-005) ───────────────
@@ -709,9 +713,12 @@ export const performRun = ({
   clearIntervalImpl = clearInterval,
   retryJitterRatio,
   claimLeaseSeconds = 90,
-  cascadeCap = 3,
-  cascadeAddressedGrace = 2,
-  cascadeResetMs = 10 * 60 * 1000,
+  // Undefined means "not overridden" — resolveCascadeSettings falls back to
+  // the env var, then to the shipped default. Passing a value here still
+  // wins, which is how the tests pin a cap of 1.
+  cascadeCap,
+  cascadeAddressedGrace,
+  cascadeResetMs,
   chatCharLimit = 400,
   maxChatChunks = 3,
   claimYieldDelayMs = 3000,
@@ -726,15 +733,32 @@ export const performRun = ({
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
+  let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
-  const cascadeGovernor = createCascadeGovernor({
-    cap: cascadeCap,
-    addressedGrace: cascadeAddressedGrace,
-    resetMs: cascadeResetMs,
+  const cascadeSettings = resolveCascadeSettings({
+    overrides: {
+      cap: cascadeCap,
+      addressedGrace: cascadeAddressedGrace,
+      resetMs: cascadeResetMs,
+    },
+    warn: (message) => log(`cascade config: ${message}`),
   });
+  const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  // Unconditional, because the only other cascade line on this path is the
+  // warn callback above — which fires only when a value is BAD. Without this,
+  // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
+  // shipped default logs, and an env var (unlike the source edit it replaces)
+  // leaves no git evidence of which seat diverged. The `(defaults)` marker
+  // makes "show me every retuned seat" a grep for its absence.
+  const cascadeIsDefault = Object.keys(CASCADE_DEFAULTS)
+    .every((key) => cascadeSettings[key] === CASCADE_DEFAULTS[key]);
+  log(
+    `cascade: cap=${cascadeSettings.cap} grace=${cascadeSettings.addressedGrace} `
+    + `reset=${cascadeSettings.resetMs}ms${cascadeIsDefault ? ' (defaults)' : ''}`,
+  );
   // Fairness: recent broadcast-race winners start the next race from the back.
   const claimHandicap = createClaimHandicap({ delayMs: claimYieldDelayMs });
 
@@ -837,15 +861,57 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
-    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type);
+    const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
+      // Name the MESSAGE, not just the pod. Without this the refusal is silent at
+      // three ends, not two: the mentioning agent gets no signal its mention died,
+      // an operator reading the log cannot tell which mentions were dropped, and
+      // the suppressed seat cannot say what it ignored — it never saw the id. Two
+      // real mentions were lost this way on 2026-08-19 and the seat they were
+      // addressed to could not enumerate them afterwards.
       log(
         `[${event.type}] cascade cap: ${admission.streak} consecutive agent-triggered `
         + `turns in pod ${eventPodId}`
-        + (admission.addressed ? ' (addressed grace also spent)' : '')
-        + ' — standing down until a human speaks or the pod goes quiet for the reset window',
+        + (event?.payload?.messageId ? ` (dropped message ${event.payload.messageId})` : '')
+        + (admission.graceApplied ? ' (addressed grace also spent)' : '')
+        // NOT "until the pod goes quiet": other seats' traffic never touches
+        // this seat's clock, and a refusal returns here without reaching
+        // `record()` below — so the window is measured from this seat's last
+        // ADMITTED turn in this pod and runs regardless of how loud the room
+        // is. Saying "the pod goes quiet" told an operator to wait for a lull
+        // that is neither necessary nor sufficient (#989).
+        + ` — standing down until a human speaks or ${cascadeSettings.resetMs}ms `
+        + 'passes with no admitted turn from this seat in this pod',
       );
-      return { outcome: 'no_action', reason: 'cascade-cap' };
+      // `details` rides through to the AgentEvent row untouched:
+      // normalizeDeliveryMeta whitelists outcome/reason/messageId and passes
+      // `details` straight into `delivery.details`, typed Schema.Types.Mixed.
+      // So the settings that produced this refusal become queryable with NO
+      // backend change and no deploy.
+      //
+      // This is the half the boot log cannot cover. The log says what a seat
+      // resolved; it does not survive a restart, and nothing joins it to the
+      // refusals it caused. Once cap is per-seat and arbitrary, a refusal
+      // whose cap is unknown cannot be compared against one from another seat.
+      // `reason` deliberately stays the fixed literal 'cascade-cap' — :1111
+      // matches it with === and the run-loop tests assert it — so the value
+      // goes in a sibling field instead of being spelled into the reason.
+      return {
+        outcome: 'no_action',
+        reason: 'cascade-cap',
+        details: {
+          // The id of what was dropped. `reason` and `streak` say a refusal
+          // happened; only this says WHICH message never got answered, which is
+          // what anyone auditing a missed mention actually needs to join on.
+          messageId: event?.payload?.messageId || null,
+          streak: admission.streak,
+          cap: cascadeSettings.cap,
+          addressedGrace: cascadeSettings.addressedGrace,
+          resetMs: cascadeSettings.resetMs,
+          addressed: admission.addressed,
+          graceApplied: admission.graceApplied,
+        },
+      };
     }
 
     // ── ADR-018 enforcement: claim-before-act ───────────────────────────────
@@ -1107,10 +1173,32 @@ export const performRun = ({
     if (!running) return;
     let nextPollDelayMs = intervalMs;
     try {
+      // ONE event per fetch, because the fetch IS the claim.
+      //
+      // `AgentEventService.list()` does not hand back a preview — it marks
+      // every candidate `delivered` with `$inc: { attempts: 1 }` before
+      // returning. This loop then processes them SERIALLY, one full model
+      // turn each. So asking for 10 claims 10 and starts 1.
+      //
+      // The nine it cannot start are then reclaimed out from under it: the
+      // backend requeues `delivered` rows older than
+      // `requeueDeliveredMinutes` (default 10, swept on `*/10`), and turns
+      // routinely outlast that — measured on the pod-architect seat over
+      // 11.5h: median 128s, p90 669s, 13 turns over 600s, max 1153s. Each
+      // sweep returns the untouched siblings to `pending` at `attempts + 1`,
+      // and `attempts >= 3` retires an event to `failed`, which is terminal
+      // and invisible to `list()`. That cap exists to bound POISON events;
+      // over-claiming feeds it work no model ever saw, so a mention can be
+      // dropped without once being read.
+      //
+      // `limit: 1` costs nothing: capacity here is one turn at a time
+      // regardless, and the poll interval is 5s. It only stops the loop
+      // claiming work it has no way to begin.
       const { events = [] } = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: 10,
+        agentName, instanceId, limit: 1,
       });
       consecutiveAuthErrors = 0;
+      consecutivePollFailures = 0;
       for (const event of events) {
         if (!running) break;
         let result;
@@ -1200,6 +1288,33 @@ export const performRun = ({
           ));
           running = false;
           return;
+        }
+      } else {
+        // TASK-025: everything that is not an auth rejection used to fall
+        // through to `onError` with `nextPollDelayMs` still at `intervalMs`,
+        // because that variable is only reassigned in the spawn-retry branch
+        // above and a failed fetch never reaches it. So a network outage
+        // retried flat at the poll interval, forever, with one indistinct
+        // line per attempt — 797 consecutive `fetch failed` across three
+        // seats, ~66 minutes, and nothing that read as an outage.
+        //
+        // Deliberately NOT a stop. `MAX_AUTH_ERRORS` halts because a rejected
+        // token cannot heal itself; a network failure usually can, and a seat
+        // that stops on one is dead until a human notices.
+        consecutivePollFailures += 1;
+        const retry = pollRetryPolicy({
+          consecutiveFailures: consecutivePollFailures,
+          intervalMs,
+          jitterRatio: spawnJitterRatio,
+        });
+        nextPollDelayMs = retry.delayMs;
+        if (retry.escalate) {
+          log(
+            `poll failed ${consecutivePollFailures}x in a row `
+            + `(${err?.message || 'unknown error'}) — backing off to `
+            + `${formatRetryDelay(retry.delayMs)}`
+            + `${retry.atCeiling ? ', at the ceiling' : ''}`,
+          );
         }
       }
       onError?.(err);
@@ -1403,6 +1518,23 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+
+/**
+ * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
+ *
+ * Exported because the mapping is where the flag path can go wrong invisibly:
+ * an earlier version coerced with Number() here, so `--cascade-cap abc`
+ * reached the resolver as NaN and the warning read `--cascade-cap='NaN'` —
+ * naming a value the user never typed, on the one line whose whole job is to
+ * tell them which input was bad. The values pass through RAW; the resolver is
+ * the only thing that parses, for the same reason it is the only thing that
+ * validates.
+ */
+export const cascadeOverridesFromOpts = (opts = {}) => ({
+  cascadeCap: opts.cascadeCap,
+  cascadeAddressedGrace: opts.cascadeGrace,
+  cascadeResetMs: opts.cascadeReset,
+});
 
 export const registerAgent = (program) => {
   const agent = program.command('agent').description('Manage agents');
@@ -1744,6 +1876,9 @@ Docs:
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
     .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex); ignored when a token file already exists')
+    .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
+    .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
+    .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .action(async (name, opts) => {
       let record = loadAgentToken(name);
       if (!record) {
@@ -1797,6 +1932,7 @@ Docs:
         environment: record.environment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
+        ...cascadeOverridesFromOpts(opts),
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
         // Both sinks are stamped, and both must be — but not for the reason
         // this comment gave until now, which its own PR falsified.

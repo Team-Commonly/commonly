@@ -63,21 +63,44 @@ const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Floor: past the first requeue (10m), so the alert cannot fire inside a
- * legitimate retry. That bound is unchanged.
+ * FLOOR — and the current value is below it. See #1008.
  *
- * The ceiling used to be the 30-minute pending-GC window, and #993 removed it.
- * Left there, the only surviving constraint is ">10", which admits 25 or 60 as
- * readily as 15 — the value would be right by inertia, with nothing recorded to
- * stop the next editor moving it.
+ * The floor is not `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` (10). That constant
+ * is a threshold, and the requeue runs on a ten-minute cron, so redelivery lands
+ * uniformly across `[T, T+P)` = 10-20 minutes, mean ~15 — stated outright at
+ * `agentEventService.ts:632-635`, which ends "Change both numbers together."
+ * The real floor is therefore **20 plus margin**, and 15 sits at the MEAN of
+ * the window it was supposed to clear: for any delivered-but-unacked event,
+ * roughly half of legitimate retries are still in flight when this fires.
  *
- * So the ceiling is re-derived from the reply distribution instead of from the
- * collector: every genuine reply measured over 21 days landed inside 107
- * SECONDS, and the next cluster was 10+ hours. Nothing legitimate lives between
- * two minutes and ten hours, so waiting beyond the floor buys no accuracy — it
- * only delays the alert. **Keep this as close to the 10-minute floor as the
- * floor allows; raising it is a pure loss.** That is a real constraint and it
- * does not depend on the collector at all.
+ * Ceiling: re-derived from the reply distribution rather than from the
+ * collector, after #993 removed the 30-minute pending-GC bracket. Every genuine
+ * reply measured over 21 days landed inside 107 SECONDS, next cluster 10+ hours.
+ * Nothing legitimate occupies the gap, so time above the floor buys no accuracy
+ * — it only delays the alert.
+ *
+ * Those two together give the rule, and note it INVERTS the guidance this
+ * comment carried until 2026-08-18: keep the value just above the 20-minute
+ * band, not just above 10. Raising 15 → ~22 is a gain, not the "pure loss" the
+ * earlier text claimed, because the earlier text had the floor wrong. The value
+ * is left at 15 here deliberately — moving a live alert is #1008's call, with
+ * the false-positive rate measured rather than derived.
+ *
+ * NOT CURRENTLY MISFIRING, and the reason is the same distribution
+ * (@sprint-review). A reply produced by a redelivery would have to land at
+ * 10-20+ min — inside the span that measured EMPTY over 21 days — so the retry
+ * path has never produced a genuine reply here, and an alert at 15 has never
+ * pre-empted one. #1008 is a documentation inconsistency plus a latent defect,
+ * not a live incident.
+ *
+ * The latent half is worth naming, because #993's fix arms it: those 21 days
+ * were measured in a regime where the retry path was structurally broken — the
+ * `attempts < cap` guard vacuous, the retire pass unreachable, and pending rows
+ * deleted at 30 min before three deliveries could accumulate. Give events 168h
+ * and they get retried for real. More retries is more chance a retry succeeds,
+ * and the first retry-produced reply lands squarely in the window this
+ * threshold sits at the mean of. Re-measure the distribution after that
+ * deploys; do not carry the empty-gap finding across it.
  */
 export const SILENCE_THRESHOLD_MINUTES = Number(
   process.env.ONBOARDING_SILENCE_THRESHOLD_MINUTES || 15,

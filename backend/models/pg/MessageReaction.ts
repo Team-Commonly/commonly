@@ -24,14 +24,21 @@ export interface ReactionSummary {
 }
 
 class MessageReaction {
-  /** Add (idempotent on the unique constraint — INSERT…ON CONFLICT DO NOTHING). */
-  static async add(messageId: string | number, userId: string, emoji: string): Promise<void> {
-    await pool.query(
+  /**
+   * Add a reaction and report whether this call inserted it.
+   *
+   * Callers need that distinction for side effects such as agent receipts:
+   * retrying an already-present reaction must remain a true no-op rather than
+   * waking the message author again.
+   */
+  static async add(messageId: string | number, userId: string, emoji: string): Promise<boolean> {
+    const result = await pool.query(
       `INSERT INTO message_reactions (message_id, user_id, emoji)
        VALUES ($1, $2, $3)
        ON CONFLICT (message_id, user_id, emoji) DO NOTHING`,
       [Number(messageId), userId, emoji],
     );
+    return (result.rowCount || 0) > 0;
   }
 
   /** Remove (idempotent — DELETE matches at most one row per the unique key). */

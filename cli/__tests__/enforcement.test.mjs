@@ -15,12 +15,16 @@
 import { jest } from '@jest/globals';
 import {
   ADDRESSED_EVENT_TYPES,
+  CASCADE_DEFAULTS,
+  CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
+  MENTION_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
   createClaimHandicap,
   createClaimKeeper,
   peerHoldsFrame,
+  resolveCascadeSettings,
   splitForChat,
   deliverChatReply,
 } from '../src/lib/enforcement.js';
@@ -31,6 +35,24 @@ describe('classifyTrigger', () => {
   test('dmKind agent-agent → agent, user-agent → human, regardless of snapshot', () => {
     expect(classifyTrigger(event({ dmKind: 'agent-agent', messageId: 'm1' }), [])).toBe('agent');
     expect(classifyTrigger(event({ dmKind: 'user-agent', messageId: 'm1' }), [])).toBe('human');
+  });
+
+  // ADR-024 D1 board wakes carry `dmKind` and NO `messageId` — deliberately, so
+  // every opted-in seat looks and the per-task claim CAS arbitrates
+  // (taskEventService.ts:237). That backend comment is only safe because the
+  // dmKind branches sit ABOVE the messageId check here. Move the messageId
+  // check up, or add an early `if (!p.messageId) return 'unknown'`, and every
+  // board wake classifies 'unknown' — which by design neither counts toward the
+  // cascade cap nor resets it, so the cap silently stops engaging and the
+  // 156-wake sweep this governor exists to bound comes back.
+  //
+  // The suite already asserted dmKind pricing and messageId fallback, but every
+  // dmKind case supplied a messageId and every messageId case omitted dmKind —
+  // so the one combination the backend actually emits was never exercised, and
+  // both reorderings passed 107/107.
+  test('prices by dmKind with NO messageId — the board-wake shape', () => {
+    expect(classifyTrigger(event({ dmKind: 'agent-agent' }), [])).toBe('agent');
+    expect(classifyTrigger(event({ dmKind: 'user-agent' }), [])).toBe('human');
   });
 
   test('falls back to the trigger message isBot flag from the snapshot', () => {
@@ -99,6 +121,78 @@ describe('createCascadeGovernor', () => {
   });
 });
 
+// #989: the governor was documented as a static ceiling released by pod
+// silence. It is neither. These pin the shape the docstring now claims, so a
+// future edit that makes refusals record (or that shares state across pods)
+// fails here instead of quietly re-arming the wrong mental model.
+describe('classifyTrigger — the kernel branch (#1044)', () => {
+  it('classifies a kernel-found wake as kernel, before any dmKind reading', () => {
+    // triggerAuthor is the honest field (#1018) and wins where both appear.
+    expect(classifyTrigger({ payload: { triggerAuthor: 'kernel' } }, [])).toBe('kernel');
+    expect(classifyTrigger(
+      { payload: { triggerAuthor: 'kernel', dmKind: 'agent-agent' } }, [],
+    )).toBe('kernel');
+  });
+
+  it('a kernel wake neither counts toward the streak nor clears it', () => {
+    // Priced as agent it silences seats exactly when the board is busiest;
+    // priced as human it clears the brake on unrelated cascades. Neutral,
+    // by design rather than by fallback.
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+
+    gov.record('pod', 'kernel');
+    // Still capped: the kernel turn did not reset the brake...
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+    // ...and the kernel wake itself is always admitted.
+    expect(gov.admit('pod', 'kernel', 'message.posted').allowed).toBe(true);
+  });
+
+  it('an old-CLI payload shape (no triggerAuthor, no messageId) stays unknown-neutral', () => {
+    // Graceful degradation: a fleet that predates the branch prices kernel
+    // wakes as unknown, which is also neutral — never silencing.
+    expect(classifyTrigger({ payload: { boardWake: true, content: 'x' } }, [])).toBe('unknown');
+  });
+});
+
+describe('cascade governor — token-bucket shape', () => {
+  // Mirrors the run loop: agent.js returns on a refusal WITHOUT calling
+  // record(), so only admitted turns move `lastAgentTurnAt`.
+  const admitsPerHour = (intervalMs, pods = ['pod-1']) => {
+    let clock = 0;
+    const gov = createCascadeGovernor({ now: () => clock });
+    let admits = 0;
+    for (let i = 0; clock <= 3600_000; i += 1) {
+      const pod = pods[i % pods.length];
+      if (gov.admit(pod, 'agent', 'message.posted').allowed) {
+        admits += 1;
+        gov.record(pod, 'agent');
+      }
+      clock += intervalMs;
+    }
+    return admits;
+  };
+
+  test('a capped seat self-releases every window however loud the pod is', () => {
+    // cap 3 per 10-min window = 18/hr, and it does not climb as arrivals get
+    // faster: the burst is absorbed, not admitted.
+    expect(admitsPerHour(30_000)).toBe(18);
+    expect(admitsPerHour(1_000)).toBe(18);
+  });
+
+  test('below saturation the arrival rate binds, not the cap', () => {
+    expect(admitsPerHour(600_000)).toBe(6);
+    expect(admitsPerHour(60_000)).toBe(15);
+  });
+
+  test('the ceiling is per pod — N pods hold N independent buckets', () => {
+    expect(admitsPerHour(1_000, ['pod-1'])).toBe(18);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2'])).toBe(36);
+    expect(admitsPerHour(1_000, ['pod-1', 'pod-2', 'pod-3'])).toBe(54);
+  });
+});
+
 describe('cascade governor — addressed grace', () => {
   const burn = (gov, n, type) => {
     for (let i = 0; i < n; i += 1) {
@@ -121,19 +215,61 @@ describe('cascade governor — addressed grace', () => {
     expect(gov.admit('pod', 'agent', 'message.posted').addressed).toBe(false);
   });
 
-  it('is a grace, not an exemption — a mention echo still terminates', () => {
-    // The regression this guards: an unbounded pass for addressed events
-    // restores the A-mentions-B-mentions-A loop the governor exists to kill.
-    const gov = createCascadeGovernor({ cap: 3, addressedGrace: 2 });
-    burn(gov, 5, 'chat.mention');
+  it('does not report a grace it never granted to a legacy direct-address event, at addressedGrace 0', () => {
+    // The refusal log is the one line an operator reads to understand why a
+    // seat went quiet. Keyed on `addressed` alone it announced "(addressed
+    // grace also spent)" on a grace=0 seat — asserting a grace that does not
+    // exist, three screens under a boot line that says grace=0. The event is
+    // still addressed; nothing was granted for it. Agent-DM wakes use
+    // chat.mention, but the legacy dm.message vocabulary remains supported.
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    const admission = gov.admit('pod', 'agent', 'dm.message');
+    expect(admission.addressed).toBe(true);
+    expect(admission.graceApplied).toBe(false);
+    // And the limit really is the plain cap — the message was the only defect.
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
+  });
 
-    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+  it('exempts only kernel-dampened non-DM mentions; DM-backed mentions stay in the streak', () => {
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    gov.record('pod', 'agent');
+
+    // The kernel's bot-to-bot dampener owns these two types. A named seat must
+    // stay reachable after broadcasts fill this local budget.
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+    expect(gov.admit('pod', 'agent', 'thread.mention').allowed).toBe(true);
+
+    // Agent DMs also use chat.mention, but dmKind identifies the other
+    // producer. They must remain locally bounded; otherwise a type-only
+    // exemption opens a second unbounded bot-to-bot loop.
+    expect(gov.admit('pod', 'agent', 'chat.mention', { dmKind: 'agent-agent' }).allowed).toBe(false);
+
+    // dm.message is legacy direct-address vocabulary, not in the kernel
+    // mention budget, so it remains bounded locally. Broadcasts do too.
+    expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
+    expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(false);
+  });
+
+  it('records a completed mention, so it spends broadcast liveness', () => {
+    const gov = createCascadeGovernor({ cap: 1, addressedGrace: 0 });
+    gov.record('pod', 'agent');
+
+    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+    // Mirrors agent.js: exemption only changes admit(); a completed turn still
+    // reaches record(). The following broadcast remains capped at the new
+    // streak rather than acquiring an extra unmetered pass.
+    gov.record('pod', 'agent');
+    expect(gov.admit('pod', 'agent', 'message.posted')).toMatchObject({
+      allowed: false,
+      streak: 2,
+    });
   });
 
   it('a human turn still clears the streak for addressed and broadcast alike', () => {
     const gov = createCascadeGovernor({ cap: 1, addressedGrace: 1 });
-    burn(gov, 2, 'chat.mention');
-    expect(gov.admit('pod', 'agent', 'chat.mention').allowed).toBe(false);
+    burn(gov, 2, 'dm.message');
+    expect(gov.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
 
     gov.record('pod', 'human');
     expect(gov.admit('pod', 'agent', 'message.posted').allowed).toBe(true);
@@ -457,6 +593,13 @@ describe('peerHoldsFrame / ADDRESSED_EVENT_TYPES', () => {
   });
 });
 
+describe('MENTION_EVENT_TYPES', () => {
+  test('contains only the two producer-dampened mention types, not DMs', () => {
+    expect([...MENTION_EVENT_TYPES]).toEqual(['chat.mention', 'thread.mention']);
+    expect(MENTION_EVENT_TYPES.has('dm.message')).toBe(false);
+  });
+});
+
 describe('CLAIMABLE_EVENT_TYPES', () => {
   test('covers message-bearing wakes and excludes one-shot / private events', () => {
     expect(CLAIMABLE_EVENT_TYPES.has('chat.mention')).toBe(true);
@@ -465,5 +608,95 @@ describe('CLAIMABLE_EVENT_TYPES', () => {
     expect(CLAIMABLE_EVENT_TYPES.has('first_contact')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('heartbeat')).toBe(false);
     expect(CLAIMABLE_EVENT_TYPES.has('agent.ask')).toBe(false);
+  });
+});
+
+
+describe('resolveCascadeSettings', () => {
+  // Pass an explicit empty env everywhere: reading the real process.env would
+  // make these pass or fail depending on the shell that ran them, which is the
+  // one thing a config test must not do.
+  const noEnv = {};
+  const silent = () => {};
+
+  test('with nothing set, resolves the shipped defaults', () => {
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({
+      cap: 3,
+      addressedGrace: 2,
+      resetMs: 10 * 60 * 1000,
+    });
+    // Pinned against CASCADE_DEFAULTS too, so a default changed in one place
+    // and not the other is a failure rather than a silent drift.
+    expect(resolveCascadeSettings({ env: noEnv, warn: silent })).toEqual({ ...CASCADE_DEFAULTS });
+  });
+
+  test('env vars are read, and an override outranks them', () => {
+    const env = {
+      [CASCADE_ENV_VARS.cap]: '5',
+      [CASCADE_ENV_VARS.addressedGrace]: '0',
+      [CASCADE_ENV_VARS.resetMs]: '60000',
+    };
+    expect(resolveCascadeSettings({ env, warn: silent })).toEqual({
+      cap: 5, addressedGrace: 0, resetMs: 60000,
+    });
+    expect(resolveCascadeSettings({ env, overrides: { cap: 9 }, warn: silent }).cap).toBe(9);
+  });
+
+  test('zero is honoured, not treated as absent', () => {
+    // Legacy direct-address events remain on the configurable grace path. A
+    // `|| default` style resolver would silently ignore 0 and admit one more.
+    const settings = resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.addressedGrace]: '0' }, warn: silent,
+    });
+    expect(settings.addressedGrace).toBe(0);
+    const governor = createCascadeGovernor({ ...settings, now: () => 1000 });
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    governor.record('pod', 'agent');
+    expect(governor.admit('pod', 'agent', 'dm.message').allowed).toBe(false);
+  });
+
+  test('a garbage override falls back and warns, exactly like a garbage env var', () => {
+    // The regression this exists for: overrides used to skip validation, so
+    // `--cascade-cap abc` reached the governor as NaN. `streak < NaN` is false
+    // for every streak, so the seat silently refused every agent turn forever.
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: noEnv,
+      overrides: { cap: Number('abc') },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings.cap).toBe(CASCADE_DEFAULTS.cap);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('--cascade-cap');
+
+    // And the value that reaches the governor still admits a fresh pod, which
+    // is the behaviour NaN destroyed.
+    expect(createCascadeGovernor(settings).admit('pod', 'agent', 'chat.mention').allowed).toBe(true);
+  });
+
+  test('out-of-range and non-integer values fall back, naming their source', () => {
+    const warnings = [];
+    const settings = resolveCascadeSettings({
+      env: {
+        [CASCADE_ENV_VARS.cap]: '-1',
+        [CASCADE_ENV_VARS.addressedGrace]: '1.5',
+        [CASCADE_ENV_VARS.resetMs]: '10',
+      },
+      warn: (m) => warnings.push(m),
+    });
+    expect(settings).toEqual({ ...CASCADE_DEFAULTS });
+    expect(warnings).toHaveLength(3);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.cap);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.addressedGrace);
+    expect(warnings.join('\n')).toContain(CASCADE_ENV_VARS.resetMs);
+  });
+
+  test('an empty-string env var is absence, not a zero', () => {
+    // Unset and exported-empty look identical in a shell launch script; the
+    // second must not silently become cap=0 and mute the seat.
+    expect(resolveCascadeSettings({
+      env: { [CASCADE_ENV_VARS.cap]: '  ' }, warn: silent,
+    }).cap).toBe(CASCADE_DEFAULTS.cap);
   });
 });

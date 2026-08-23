@@ -187,4 +187,96 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect(res.body.task.claimedBy).toBe(rival._id.toString());
     expect(res.body.task.claimExpiresAt).toBeTruthy();
   });
+
+  // Every test above drives the CAS directly, which is why the suite could go
+  // green while a lapsed task was unreachable: "claimable by a peer" was only
+  // ever asserted against the predicate, never against what a peer can FIND.
+  // ADR-018 declined a reaper, so discovery is the whole recovery path —
+  // these reach the task the way an agent actually would.
+  describe('discovery — a peer must be able to FIND the work the CAS would grant', () => {
+    const list = (token, query = '') => request(app)
+      .get(`/api/v1/tasks/${pod._id}${query}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    const lapsed = () => seedTask({
+      status: 'claimed',
+      claimedBy: 'ghost-agent',
+      claimedAt: new Date(Date.now() - 2 * LEASE_MS),
+      claimExpiresAt: new Date(Date.now() - LEASE_MS),
+    });
+
+    // EVERY test here seeds this too. Without it they pass against the unfixed
+    // route: an unknown query param is ignored, so `?claimable=true` returns
+    // the whole board — which of course contains the lapsed task. Asserting
+    // "the lapsed one is present" therefore proves nothing. The control is a
+    // task that must be ABSENT, so an ignored filter fails loudly. Found by
+    // running these against origin/main before opening the PR; three of five
+    // were green there, which is the same defect this PR exists to fix.
+    const liveHeld = () => Task.create({
+      podId: pod._id,
+      taskNum: 2,
+      taskId: 'T-2',
+      title: 'held by a living claimant',
+      status: 'claimed',
+      claimedBy: 'busy-agent',
+      claimedAt: new Date(),
+      claimExpiresAt: new Date(Date.now() + LEASE_MS),
+    });
+
+    test('?claimable=true surfaces a lapsed lease that ?status=pending cannot, and only that one', async () => {
+      await lapsed();
+      await liveHeld();
+      const pending = await list(rivalToken, '?status=pending');
+      expect(pending.status).toBe(200);
+      expect(pending.body.tasks).toHaveLength(0);
+
+      const claimableRes = await list(rivalToken, '?claimable=true');
+      expect(claimableRes.status).toBe(200);
+      expect(claimableRes.body.tasks.map((t) => t.taskId)).toEqual(['T-1']);
+    });
+
+    test('a peer can go from discovery to a granted claim without being told the taskId', async () => {
+      await lapsed();
+      await liveHeld();
+      const found = await list(rivalToken, '?claimable=true');
+      expect(found.body.tasks).toHaveLength(1);
+      const [discovered] = found.body.tasks;
+      const res = await request(app)
+        .post(`/api/v1/tasks/${pod._id}/${discovered.taskId}/claim`)
+        .set('Authorization', `Bearer ${rivalToken}`)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.task.claimedBy).toBe(rival._id.toString());
+    });
+
+    test('a LIVE lease is not offered — the filter narrows, it does not just return the board', async () => {
+      await liveHeld();
+      const res = await list(rivalToken, '?claimable=true');
+      expect(res.status).toBe(200);
+      expect(res.body.tasks).toHaveLength(0);
+    });
+
+    test('a RECENT legacy claim stays hidden while a STALE one surfaces', async () => {
+      await seedTask({
+        status: 'claimed',
+        claimedBy: 'legacy-agent',
+        claimedAt: new Date(Date.now() - 60 * 1000),
+        claimExpiresAt: null,
+      });
+      expect((await list(rivalToken, '?claimable=true')).body.tasks).toHaveLength(0);
+
+      await Task.updateOne(
+        { podId: pod._id, taskId: 'T-1' },
+        { $set: { claimedAt: new Date(Date.now() - 2 * LEASE_MS) } },
+      );
+      expect((await list(rivalToken, '?claimable=true')).body.tasks.map((t) => t.taskId)).toEqual(['T-1']);
+    });
+
+    test('claimable composes with status rather than overriding it', async () => {
+      await lapsed();
+      await liveHeld();
+      const both = await list(rivalToken, '?status=claimed&claimable=true');
+      expect(both.body.tasks.map((t) => t.taskId)).toEqual(['T-1']);
+    });
+  });
 });

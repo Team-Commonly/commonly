@@ -18,7 +18,54 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const GitHubAppService = require('../services/githubAppService');
 // eslint-disable-next-line global-require
-const { emitTaskUpdated } = require('../services/taskEventService');
+const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
+
+/**
+ * Who made this board change, for the agent fan-out.
+ *
+ * `isAgent` prices the wake against the cascade cap, so it is derived from the
+ * auth shape rather than guessed: `agentRuntimeAuth` sets `req.agentUser` and
+ * never `req.user`. Returned explicitly as `false` for humans because
+ * `notifyPodAgents` treats *undefined* as "assume agent" — the safe default
+ * there, and not one to trip over by accident here.
+ */
+const actorOf = (req: any) => {
+  const isAgent = Boolean(req.agentUser?._id || req.user?.isBot);
+  // Identity, not just a user id. The self-skip downstream keys on
+  // (agentName, instanceId) because `installedBy` means the agent on a
+  // self-install and the HUMAN on a human-install — supplying only userId let a
+  // human-installed agent fail to match its own install and wake itself.
+  // Both auth shapes carry the same metadata: agentRuntimeAuth sets
+  // `req.agentUser`, the dual-auth path leaves the bot on `req.user`.
+  const meta = req.agentUser?.botMetadata || req.user?.botMetadata || {};
+  return {
+    userId: req.userId || req.user?._id || req.user?.id || req.agentUser?._id,
+    isAgent,
+    agentName: isAgent ? (meta.agentName || undefined) : undefined,
+    instanceId: isAgent ? (meta.instanceId || 'default') : undefined,
+  };
+};
+
+/**
+ * Board change -> pod agents. Deliberately NOT folded into `emitTaskUpdated`:
+ * that is a synchronous best-effort socket emit, this is an async DB fan-out.
+ *
+ * try/catch AND .catch, deliberately. A promise `.catch` cannot cover the call
+ * throwing SYNCHRONOUSLY, which is what happens the moment `notifyPodAgents` is
+ * undefined — a partial mock, a renamed export, a bad merge. That threw through
+ * into the route and turned every board write into a 500: strictly worse than
+ * the silent fan-out this exists to fix.
+ */
+const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string) => {
+  try {
+    const pending = notifyPodAgents(podId, task, kind, actorOf(req));
+    if (pending?.catch) {
+      pending.catch((e: Error) => console.warn('[tasks] agent notify failed:', e.message));
+    }
+  } catch (e) {
+    console.warn('[tasks] agent notify threw:', (e as Error).message);
+  }
+};
 
 interface AuthReq {
   userId?: string;
@@ -118,14 +165,32 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const { assignee, status } = req.query || {};
+    // Coerced at the boundary rather than destructured. Express's extended
+    // query parser turns `?assignee[$ne]=x` into an OBJECT and `?status=a&status=b`
+    // into an ARRAY, and both used to flow straight into the Mongo query below:
+    // the first as an operator injection, the second as a silent switch from
+    // String.includes to Array.includes, where `status.includes(',')` stops
+    // meaning what it reads as. Anything that is not a string is dropped.
+    const assignee = typeof req.query?.assignee === 'string' ? req.query.assignee : undefined;
+    const status = typeof req.query?.status === 'string' ? req.query.status : undefined;
+    const claimable = req.query?.claimable === 'true';
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const query: Record<string, unknown> = { podId: mongoose.Types.ObjectId.createFromHexString(podId || '') };
     if (assignee) query.assignee = assignee;
     if (status) query.status = status.includes(',') ? { $in: status.split(',') } : status;
+    // Composes with `status` by AND rather than overriding it, so
+    // ?status=claimed&claimable=true asks the useful narrow question — show me
+    // the lapsed claims specifically — while ?claimable=true alone answers
+    // "what can this pod's agents pick up right now", lapsed leases included.
+    if (claimable) query.$or = claimableConditions(new Date());
     const tasks = await Task.find(query).sort({ taskNum: 1 }).lean();
-    return res.json({ tasks });
+    // One `now` for the whole page: derived per row, two rows either side of a
+    // tick boundary could otherwise report lease states that never coexisted.
+    const now = new Date();
+    return res.json({
+      tasks: tasks.map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+    });
   } catch (err) {
     console.error('GET /tasks error:', err);
     return res.status(500).json({ error: 'Failed to list tasks' });
@@ -209,6 +274,7 @@ router.post('/:podId', rateLimit({
           await existing.save();
           const reopenedObj = existing.toObject();
           emitTaskUpdated(podId, reopenedObj, 'updated');
+          notifyAgents(req, podId, reopenedObj, 'updated');
           return res.json({ task: reopenedObj, alreadyExists: false, reopened: true });
         }
         return res.json({ task: existing.toObject(), alreadyExists: true });
@@ -295,6 +361,7 @@ router.post('/:podId', rateLimit({
       }
     }
     emitTaskUpdated(podId, task, 'created');
+    notifyAgents(req, podId, task, 'created');
     return res.status(201).json({ task });
   } catch (err) {
     console.error('POST /tasks error:', err);
@@ -309,6 +376,73 @@ router.post('/:podId', rateLimit({
 // call: a holder re-claiming wins against itself and gets a fresh lease —
 // identical semantics to message claims (messageClaimService).
 const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
+
+// The single definition of "claimable", shared by the CLAIM path and the LIST
+// path. They used to disagree: the CAS below grants a lapsed lease, while
+// GET /tasks could only filter on stored `status`, so a lapsed task was
+// grantable and unfindable at the same time. That is why
+// tasks.claim-lease.test.js:154 ("a lapsed lease is claimable by a peer")
+// passes while no peer can reach the task — it drives the CAS directly and
+// never asks whether the work can be discovered.
+//
+// ADR-018 put kernel enforcement of claims out of scope, so there is no reaper
+// and recovery is lazy: discovery IS the recovery mechanism. That makes this
+// predicate load-bearing rather than a convenience filter.
+//
+// Parameterised, never copied. `claimedBy` adds the self-renewal branch the
+// CAS needs; the list omits it deliberately, because "what can I pick up" does
+// not mean work the caller already holds. One function, so the expiry rule
+// cannot drift between call sites and quietly re-open this gap.
+export const claimableConditions = (
+  now: Date,
+  claimedBy?: string,
+): Record<string, unknown>[] => [
+  { status: 'pending' },
+  ...(claimedBy ? [{ status: 'claimed', claimedBy }] : []),
+  { status: 'claimed', claimExpiresAt: { $lt: now } },
+  { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+];
+
+export type TaskLeaseState = 'unleased' | 'held' | 'lapsed';
+
+// `claimableConditions` above is a QUERY PREDICATE — it selects rows, and for the
+// CAS it also takes the caller. It cannot LABEL a row, and a rescuer needs the
+// label: theo must tell "assign this" (unleased) from "rescue this" (lapsed) in
+// one pass over a board it already has. So this is a second expression of the
+// same expiry rule, kept deliberately and pinned to the first by the differential
+// in tasksApi.leaseState.test.js — mutate either side and that test reds.
+//
+// Both read one `TASK_CLAIM_LEASE_MS`. That shared constant is what makes the two
+// shapes agree; the test is what proves they still do.
+//
+// It is deliberately NOT called `claimable`, and the difference is load-bearing.
+// Claimability is a RELATION between a row and an asker: the CAS's second branch
+// (`{ status: 'claimed', claimedBy }`) admits the current holder renewing its own
+// lease, and no per-row field can express that — the same row is claimable by its
+// holder and not by anyone else, simultaneously. So read `held` as "someone holds
+// a live lease", never as "do not attempt": a seat resuming ITS OWN task must
+// still call claim and will still win. Three of the CAS's four branches are
+// representable here; the fourth is structurally out of reach.
+//
+// Combine with `status` before deciding anything. A `done` row is `unleased`
+// because nobody holds a lease on it, not because it is available to work.
+function deriveLeaseState(
+  task: { status?: string; claimedAt?: Date | string | null; claimExpiresAt?: Date | string | null },
+  now: Date,
+): TaskLeaseState {
+  if (task?.status !== 'claimed') return 'unleased';
+  // Mirrors CAS branch 3 (`claimExpiresAt: { $lt: now }`), strict-less included.
+  if (task.claimExpiresAt) {
+    return new Date(task.claimExpiresAt).getTime() < now.getTime() ? 'lapsed' : 'held';
+  }
+  // Mirrors CAS branch 4: claims that predate leases entirely carry a null
+  // `claimExpiresAt`, so their expiry is derived from `claimedAt` — they lapse one
+  // lease after they were taken, not instantly, so nobody steals work claimed two
+  // minutes ago during a rollout. A claimed row carrying NEITHER timestamp cannot
+  // be proven lapsed and the CAS refuses it too, so it reads `held`.
+  if (!task.claimedAt) return 'held';
+  return new Date(task.claimedAt).getTime() < now.getTime() - TASK_CLAIM_LEASE_MS ? 'lapsed' : 'held';
+}
 
 router.post('/:podId/:taskId/claim', rateLimit({
   windowMs: 60_000,
@@ -339,12 +473,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const task = await Task.findOneAndUpdate({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
-      $or: [
-        { status: 'pending' },
-        { status: 'claimed', claimedBy },
-        { status: 'claimed', claimExpiresAt: { $lt: now } },
-        { status: 'claimed', claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
-      ],
+      $or: claimableConditions(now, claimedBy),
     }, update, { new: true });
     if (!task) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
@@ -360,6 +489,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       });
     }
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/claim error:', err);
@@ -428,6 +558,7 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
       console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
     }
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/complete error:', err);
@@ -447,6 +578,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, { $push: { updates: { text: text.trim(), author, authorId: userId?.toString() || null, createdAt: new Date() } } }, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/updates error:', err);
@@ -481,6 +613,17 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const fieldUpdates: Record<string, unknown> = {};
     const body = (req.body || {}) as Record<string, unknown>;
     allowed.forEach((k) => { if (body[k] !== undefined) fieldUpdates[k] = body[k]; });
+    // Unassign has two spellings and only one of them was reaching the DB. The
+    // openclaw tool types `assignee` as a plain string and documents "empty string
+    // to unassign", so a moltbot literally cannot send null; an MCP or HTTP caller
+    // sends null. Stored as '', the row is neither null NOR missing, so theo's
+    // classify-and-assign step — whose trigger is exactly "assignee is null/missing"
+    // — skips it forever, and a rescued task lands in a lane no seat fetches. One
+    // normalisation here beats teaching every caller which spelling this backend
+    // happens to accept.
+    if (typeof fieldUpdates.assignee === 'string' && fieldUpdates.assignee.trim() === '') {
+      fieldUpdates.assignee = null;
+    }
     if (Object.keys(fieldUpdates).length === 0) return res.status(400).json({ error: 'No updatable fields provided' });
     if (fieldUpdates.status !== undefined) {
       const raw = String(fieldUpdates.status).trim().toLowerCase();
@@ -509,6 +652,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, update, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     emitTaskUpdated(podId, task, 'updated');
+    notifyAgents(req, podId, task, 'updated');
     return res.json({ task });
   } catch (err) {
     console.error('PATCH /tasks error:', err);
@@ -517,5 +661,11 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
 });
 
 module.exports = router;
+// `module.exports = router` CLOBBERS the ES named exports above — under CJS
+// require, `claimableConditions` did not survive and destructuring it returned
+// undefined (found when the kernel-sweep contract pin tried to import it; the
+// export had been unreachable since #1022 shipped it). Re-attached explicitly
+// so the single definition of "claimable" is actually consumable.
+module.exports.claimableConditions = claimableConditions;
 
 export {};
