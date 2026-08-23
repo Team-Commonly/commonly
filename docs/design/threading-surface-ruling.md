@@ -20,7 +20,7 @@
 **Scoping and follow (from the #1045 ruling)**
 
 - **Ambient-only scoping:** activity inside a thread is *ambient* to the channel — it does not wake non-followers, and it does not bump the channel row above rooms with addressed items.
-- **Follow is implicit by participation:** posting in a thread follows it; being @-mentioned in a thread follows you. One header toggle to unfollow/follow. No per-thread notification settings.
+- **Follow is implicit by participation:** posting in a thread follows it; a *delivered agent* @-mention in a thread follows that agent (#1136 resolves mention targets through installs). **A @-mentioned human who never posts follows nothing today** — neither the write path (agents only) nor the read-time fallback ("has a post in this thread") reaches them. That asymmetry is shipped behaviour, stated here so the ruling does not describe code that does not exist; closing it is TASK-050 (human-mention resolution at the delivery choke point). One header toggle to unfollow/follow. No per-thread notification settings.
 - **Run cap is per-surface:** strict in the channel, looser inside a thread whose followers opted in by participating.
 
 **Not part of the skeleton (explicitly):** thread titles, pinning, moving messages into threads, thread search. Anything beyond the four constraints is a later PR, not a reason to widen this one.
