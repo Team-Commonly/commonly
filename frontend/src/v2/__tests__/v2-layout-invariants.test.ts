@@ -449,4 +449,49 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(photo).toContain('box-shadow');
     expect(photo).toContain('none');
   });
+
+  test('the thread rail geometry survives, because jsdom cannot see it', () => {
+    // @ux-lead's brief fixes the rail at 28px with replies 40px off it, and
+    // 24px at 390. jsdom has no layout engine, so a render test cannot tell a
+    // correct rail from a missing one — the card and replies still appear,
+    // just unindented and with no rule. This pins the three numbers that a
+    // reader would otherwise have to take from a comment.
+    const rail = ruleBody(v2, '.v2-thread-replies');
+    expect(rail).toContain('margin-left: 28px');
+    expect(rail).toContain('padding-left: 40px');
+    expect(rail).toContain('border-left: 2px solid #eef0f6');
+
+    // The 390 override lives in a media block, so read the file rather than
+    // the rule body — ruleBody stops at the first closing brace.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 24px/);
+  });
+
+  test('the thread card has no shadow and no accent at rest', () => {
+    // Two separate brief constraints that both fail silently: a shadow reads
+    // as "slightly wrong depth" and an accent at rest destroys the ONE signal
+    // the card has for being addressed.
+    // Selector carries the `.v2-root button.` prefix ON PURPOSE: the global
+    // reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
+    // `color: inherit`, so a bare class rule loses and the card renders at
+    // body colour. Pinning the prefixed selector means dropping the prefix
+    // fails here rather than silently in production (#870's trap).
+    const card = ruleBody(v2, '.v2-root button.v2-thread-card__main');
+    expect(card).toContain('box-shadow: none');
+    expect(card).toContain('min-height: 44px');
+    expect(card).toContain('color: #4b5563');
+    expect(card).not.toContain('var(--v2-accent)');
+
+    // Accent is reachable only through the addressed modifier.
+    const addressed = ruleBody(v2, '.v2-thread-card--addressed .v2-thread-card__count');
+    expect(addressed).toContain('var(--v2-accent)');
+  });
+
+  test('reduced motion actually reaches the thread transitions', () => {
+    // The 300ms layout transition is a brief requirement AND a reduced-motion
+    // hazard. Easy to add the transition and forget the opt-out; nothing in a
+    // render test notices, and the people it affects are not the ones testing.
+    expect(v2).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.v2-thread-replies[\s\S]*?transition: none/,
+    );
+  });
 });

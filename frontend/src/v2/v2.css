@@ -7165,3 +7165,141 @@
   color: var(--v2-text-muted);
   font-style: italic;
 }
+
+/* ── Threading: headline card + reply rail (W-T 4/4) ────────────────────────
+   Built to @ux-lead's render brief. Numbers here are theirs, not invented:
+   NOTE the `.v2-root button.` prefix on every button rule below. The global
+   reset `.v2-root button:not(.MuiButtonBase-root)` is 0-2-1 and sets
+   `color: inherit`, so a bare `.v2-thread-card__main` (0-1-0) loses and the
+   card renders at body colour with no accent on the follow state. Same trap
+   as #870, recorded in the note above that reset. Caught here by measuring in
+   a real browser — computed colour was rgb(17,24,39) while the rule said
+   #4b5563 — which no presence guard can see, because the rule IS present.
+
+   card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px
+   secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
+   dropping to 24px at 390; layout transition 300ms. */
+
+.v2-thread-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0 0; /* brief: no gap > 8px between root and card */
+}
+
+.v2-root button.v2-thread-card__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px; /* brief: 44px min hit height */
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #4b5563;
+  transition: border-color 300ms ease;
+}
+
+.v2-root button.v2-thread-card__main:hover {
+  border-color: #d7dce7;
+}
+
+.v2-thread-card__count {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The card's ONLY accent, and only when something in the thread addresses me.
+   Ambient activity never colours it — that is the whole point of 3/4's
+   ambient/addressed split being visible in the UI rather than only in the
+   wake path. */
+.v2-thread-card--addressed .v2-thread-card__count {
+  color: var(--v2-accent);
+}
+
+.v2-thread-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+}
+
+.v2-thread-card__faces {
+  display: inline-flex;
+}
+
+.v2-thread-card__faces > * + * {
+  margin-left: -6px; /* brief: overlapping −6px */
+}
+
+.v2-thread-card__time {
+  color: #7b8494;
+}
+
+.v2-thread-card__chevron {
+  transform: rotate(180deg);
+  transition: transform 300ms ease;
+  line-height: 1;
+}
+
+.v2-root button.v2-thread-card__follow {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: #7b8494; /* tertiary — the null "Follow" and the false "Muted" */
+  padding: 4px 6px;
+}
+
+.v2-root button.v2-thread-card__follow--on {
+  color: var(--v2-accent);
+}
+
+/* Expanded replies hang off a left rail at the root avatar's centre. */
+.v2-thread-replies {
+  position: relative;
+  margin-left: 28px;
+  padding-left: 40px;
+  border-left: 2px solid #eef0f6;
+  transition: height 300ms ease;
+}
+
+.v2-root button.v2-thread-replies__aim {
+  border: none;
+  background: transparent;
+  color: #7b8494;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.v2-root button.v2-thread-replies__aim:hover {
+  color: var(--v2-accent);
+}
+
+.v2-chat__reply-chip--thread .v2-chat__reply-chip-label {
+  color: #4b5563;
+}
+
+@media (max-width: 640px) {
+  .v2-thread-replies {
+    margin-left: 24px; /* brief: rail offset drops to 24px at 390 */
+  }
+
+  .v2-root button.v2-thread-card__main {
+    flex-wrap: wrap; /* brief: card goes to two lines at 390 */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-root button.v2-thread-card__main,
+  .v2-thread-card__chevron,
+  .v2-thread-replies {
+    transition: none;
+  }
+}

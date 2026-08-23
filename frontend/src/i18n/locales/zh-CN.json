@@ -335,7 +335,11 @@
       "uploadFailed": "文件上传失败，请重试。"
     },
     "loadOlder": "加载更早的消息",
-    "loadingOlder": "加载中…"
+    "loadingOlder": "加载中…",
+    "thread": {
+      "replyInThread": "在话题中回复",
+      "replyingInThread": "正在话题中回复："
+    }
   },
   "landing": {
     "nav": {

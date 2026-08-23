@@ -335,7 +335,11 @@
       "uploadFailed": "Failed to upload file. Please try again."
     },
     "loadOlder": "Load older messages",
-    "loadingOlder": "Loading…"
+    "loadingOlder": "Loading…",
+    "thread": {
+      "replyInThread": "Reply in thread",
+      "replyingInThread": "Replying in thread ·"
+    }
   },
   "landing": {
     "nav": {
