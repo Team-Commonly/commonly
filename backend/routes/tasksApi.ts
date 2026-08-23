@@ -71,7 +71,10 @@ interface AuthReq {
   // (provenance falls back through holder.label = assignee || username ||
   // claimedBy), so the restore path must be able to match on it.
   user?: { id?: string; _id?: unknown; isBot?: boolean; username?: string; botMetadata?: { instanceId?: string; agentName?: string } };
-  agentUser?: { _id?: unknown };
+  // Same reason as `user.username` above: `agentRuntimeAuth` puts the bot's
+  // User row here, and its username is what the sweep writes into
+  // `lapsedFrom` for an agent holder.
+  agentUser?: { _id?: unknown; username?: string };
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
@@ -609,10 +612,25 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     // Narrow — it needs a real collision between a username and an assignee
     // in the same pod — and it is a new failure direction, not a smaller one.
     // The next widening should know it is buying reach with precision.
+    //
+    // BOTH request shapes, and only the username from each. `agentRuntimeAuth`
+    // assigns `req.agentUser` and never `req.user` (the standing CLAUDE.md
+    // rule), so on every MCP-authenticated call — which is every seat that
+    // touches this endpoint — the human term above is undefined and the list
+    // collected the ObjectId alone: exactly the pre-widening state, which is
+    // why TASK-029 read `leaseRenewed: false` on both sides of #1124.
+    //
+    // Deliberately NOT `agentUser.botMetadata.agentName` or `.instanceId`,
+    // though both are now in reach. The value-space argument above rules them
+    // out unchanged: no writer produces either, and `agentName` is the literal
+    // string 'openclaw' for every OpenClaw seat, so making it matchable would
+    // let one agent restore another's lapsed row. The agent path gets the
+    // same single term the human path gets.
     const identities = [
       claimKey,
       userId?.toString(),
       req.user?.username,
+      req.agentUser?.username,
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!task && identities.length) {
