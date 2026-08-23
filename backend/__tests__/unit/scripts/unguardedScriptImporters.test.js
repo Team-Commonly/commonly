@@ -52,6 +52,20 @@ const SCRIPTS = path.join(BACKEND, 'scripts');
 const SELF_EXECUTES = /^\s*(?:main|run)\s*\(\s*\)|^\s*void \(async|^\s*\(async\s*\(\)\s*=>/m;
 const GUARDED = /require\.main\s*===\s*module/;
 
+/**
+ * FLAT ONLY, and both halves of this sweep share the blind spot —
+ * @sprint-review (57329). `readdirSync` is not recursive, and the importer
+ * pattern below captures `[\w.-]+`, which stops at a slash, so it cannot
+ * match `scripts/sub/foo` either. A nested script would be neither scanned
+ * for self-execution nor recognised as imported.
+ *
+ * Inert today: `backend/scripts` is flat, verified. Recorded rather than
+ * fixed because the failure is silent in the worst way — **both controls
+ * below still pass**, since each finds the flat things it was built to find.
+ * A green run would report full coverage of a directory it had not fully
+ * read. If a subdirectory ever appears here, make this recursive and widen
+ * the capture in the same change; do not trust the controls to notice.
+ */
 const scriptFiles = () => fs.readdirSync(SCRIPTS)
   .filter((f) => /\.(ts|js)$/.test(f))
   .map((f) => path.join(SCRIPTS, f));
