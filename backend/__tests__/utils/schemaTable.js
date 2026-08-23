@@ -46,7 +46,21 @@ function retrofitsFor(name) {
   return sql.match(re) || [];
 }
 
-/** The whole table as it exists after boot DDL: CREATE plus its retrofits. */
+/**
+ * The whole table as it exists after boot DDL: CREATE plus its retrofits.
+ *
+ * Prefer this over `createTableFor` in every fixture. @sprint-review found two
+ * suites still on the bare CREATE, and the reason it had not bitten them is
+ * pure luck rather than proof they are fine: `thread_root_id` happens to be
+ * declared in BOTH the CREATE and an ALTER, so the column the threading tests
+ * care about arrived either way. `payload` is declared ONLY in the ALTER, so
+ * those fixtures were carrying a `messages` with no `payload` — latent until
+ * one of them exercised a projection that selects it, which is a long way
+ * from the line that would have to change.
+ *
+ * `createTableFor` stays exported because `retrofitsFor` and the guard tests
+ * need to read the two halves separately. It is not the table.
+ */
 async function applyTable(pool, name) {
   await pool.query(createTableFor(name));
   for (const stmt of retrofitsFor(name)) {
