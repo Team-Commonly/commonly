@@ -278,3 +278,114 @@ describe('a leftover is a violation where the FK binds, not a design note', () =
     expect(SRC).toMatch(/the recorded boundary[\s\S]{0,40}assumes this set is empty/);
   });
 });
+
+/**
+ * CUTOFF_SQL EXECUTES — @sprint-review (57266) on the layer above: the script
+ * refuses to record a boundary it cannot prove, and the harness that checked
+ * that refusal could not tell "setup failed" from "no evidence exists". Every
+ * assertion in this file was `expect(SCRIPT).toMatch(...)` over the source.
+ *
+ * `CUTOFF_SQL` is exported and, until now, never run. It is the query the whole
+ * TASK-046 argument turns on — orphan immunity, per-instance measurement, and
+ * the `from_rooted` flag that doubles as the derivation-liveness evidence — and
+ * a regex can only show the text is present, never that it answers correctly.
+ */
+describe('CUTOFF_SQL, executed', () => {
+  const { newDb } = require('pg-mem');
+  const { applyTable } = require('../../utils/schemaTable');
+  const { CUTOFF_SQL } = require('../../../scripts/backfill-thread-root-id');
+
+  const seeded = async (rows) => {
+    const db = newDb();
+    const pool = new (db.adapters.createPg().Pool)();
+    await applyTable(pool, 'pods');
+    await applyTable(pool, 'users');
+    await applyTable(pool, 'messages');
+    await pool.query("INSERT INTO pods (id, name, type, created_by) VALUES ('1', 'p', 'general', 'u')");
+    for (const r of rows) {
+      await pool.query(
+        `INSERT INTO messages (id, pod_id, user_id, content, reply_to_message_id, thread_root_id, created_at)
+         VALUES ($1, '1', 'u', 'c', $2::int, $3::int, $4::timestamptz)`,
+        [r.id, r.replyTo ?? null, r.root ?? null, r.at],
+      );
+    }
+    const { rows: [b] } = await pool.query(CUTOFF_SQL);
+    return b;
+  };
+
+  const T = (s) => `2026-08-22T${s}Z`;
+
+  it('measures the FIRST rooted reply, not the newest', async () => {
+    const b = await seeded([
+      { id: 1, at: T('10:00:00') },
+      { id: 2, replyTo: 1, root: 1, at: T('16:05:00') },
+      { id: 3, replyTo: 1, root: 1, at: T('18:00:00') },
+    ]);
+
+    expect(b.from_rooted).toBe(true);
+    expect(new Date(b.cutoff).toISOString()).toBe('2026-08-22T16:05:00.000Z');
+  });
+
+  it('a recent retention orphan does NOT move it — the TASK-046 regression', async () => {
+    // The rejected form was MAX(created_at) over UN-ROOTED edges. Delete a root
+    // and its grandchild keeps a live parent with a null root, so one orphan
+    // dragged the boundary hours late. Here the orphan is the newest row in the
+    // table and must be invisible to the measurement.
+    const b = await seeded([
+      { id: 1, at: T('10:00:00') },
+      { id: 2, replyTo: 1, root: 1, at: T('16:05:00') },
+      { id: 9, replyTo: 1, at: T('23:59:00') },
+    ]);
+
+    expect(new Date(b.cutoff).toISOString()).toBe('2026-08-22T16:05:00.000Z');
+  });
+
+  it('CONTROL: that orphan IS what the rejected query would have returned', async () => {
+    // Without this the test above passes for any query ignoring row 9 —
+    // including one that ignores everything. Run the rejected form on the same
+    // three rows and watch it pick the orphan.
+    const db = newDb();
+    const pool = new (db.adapters.createPg().Pool)();
+    await applyTable(pool, 'pods');
+    await applyTable(pool, 'users');
+    await applyTable(pool, 'messages');
+    await pool.query("INSERT INTO pods (id, name, type, created_by) VALUES ('1', 'p', 'general', 'u')");
+    for (const r of [
+      { id: 1, replyTo: null, root: null, at: T('10:00:00') },
+      { id: 2, replyTo: 1, root: 1, at: T('16:05:00') },
+      { id: 9, replyTo: 1, root: null, at: T('23:59:00') },
+    ]) {
+      await pool.query(
+        `INSERT INTO messages (id, pod_id, user_id, content, reply_to_message_id, thread_root_id, created_at)
+         VALUES ($1, '1', 'u', 'c', $2::int, $3::int, $4::timestamptz)`,
+        [r.id, r.replyTo, r.root, r.at],
+      );
+    }
+    const { rows: [old] } = await pool.query(
+      `SELECT MAX(created_at) AS cutoff FROM messages
+        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`,
+    );
+
+    expect(new Date(old.cutoff).toISOString()).toBe('2026-08-22T23:59:00.000Z');
+  });
+
+  it('no rooted reply => from_rooted false, and the fallback value is the un-rooted max', async () => {
+    // This is the refusal's input. `from_rooted` false is what makes
+    // `!boundary.from_rooted && !ASSUME_DERIVATION_LIVE` fire and exit 3, so
+    // the flag is derivation-liveness evidence and the boundary in one read.
+    const b = await seeded([
+      { id: 1, at: T('10:00:00') },
+      { id: 2, replyTo: 1, at: T('12:00:00') },
+    ]);
+
+    expect(b.from_rooted).toBe(false);
+    expect(new Date(b.cutoff).toISOString()).toBe('2026-08-22T12:00:00.000Z');
+  });
+
+  it('an empty instance yields no boundary at all', async () => {
+    const b = await seeded([{ id: 1, at: T('10:00:00') }]);
+
+    expect(b.from_rooted).toBe(false);
+    expect(b.cutoff).toBeNull();
+  });
+});
