@@ -822,16 +822,15 @@
 }
 
 .v2-pods__filters {
-  /* Third mechanism for this row (Sam's taste ruling 2026-08-23). The grid
-     of three equal cells + one capped cell allocated width exactly
-     backwards — the short words got wide boxes, the longest word got the
-     capped one, and in zh-CN four 2-character labels floated as scattered
-     text. Content-sized chips fix both locales by construction: every box
-     hugs its own label with identical padding, so the row reads as one
-     segmented control whatever the strings are. Measured to fit the 240px
-     rail in both locales at 12px (EN ≈ 217px, zh-CN ≈ 180px incl. gaps).
-     Intent preserved from the 2026-08-13 invariant: one row, no wrap. */
-  display: flex;
+  /* Fourth mechanism for this row (Sam's ruling 2026-08-23): every chip the
+     SAME size, at least as roomy as the widest label. Content-sized chips
+     read ragged (EN measured 33/49/44/84px), and four equal cells cannot
+     share one 239px rail — "Community" alone needs 84px. Equal therefore
+     means a 2×2 grid, the exact mechanism .v2-pods__community-tabs below
+     already uses, so the two stacked sections align by construction. This
+     retires the 2026-08-13 one-row intent deliberately. */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   padding: 0;
   margin-bottom: 18px;
@@ -844,19 +843,32 @@
    hit of this trap — measured live as 25px chips hugging bare text. */
 .v2-root button.v2-pods__filter {
   height: 32px;
-  padding: 0 9px;
+  min-width: 0;
+  padding: 0 10px;
   font-size: 12px;
   font-weight: 500;
   color: #4b5563;
   border-radius: var(--v2-radius-sm);
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background 80ms ease, color 80ms ease;
 }
 
 .v2-pods__filter:hover {
   color: var(--v2-text-primary);
   background: var(--v2-surface-hover);
+}
+
+/* Must sit AFTER the base chip rule: both this and the shared
+   .v2-root button.v2-filter-segment__item--active rule weigh 0-2-1, so
+   source order decides — with the base chip rule later in the file, the
+   selected chip shipped grey-on-blue (measured live 2026-08-23). */
+.v2-root button.v2-pods__filter--active {
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+  font-weight: 700;
 }
 
 .v2-pods__community-tabs {
