@@ -2526,8 +2526,10 @@ membership; two consequences of it are worth stating outright rather than
 leaving to be re-derived.
 
 **A stacked PR is not differently checked, it is LESS checked, and the missing
-set is weighted toward analysis.** Three of the six extras are CodeQL's. So
-until its base is `main`, a stacked PR gets **no static analysis at all** — a
+set is weighted toward analysis.** Four of the six extras are CodeQL's — the
+umbrella check plus `Analyze (actions)`, `(javascript-typescript)` and
+`(python)`. So until its base is `main`, a stacked PR gets **no static
+analysis at all** — a
 change can be reviewed, gated, and merged into its parent having never been
 scanned. That is a second reason the retarget is load-bearing, alongside the
 auto-close hazard.
