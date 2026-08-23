@@ -584,11 +584,34 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     //
     // Same name-vs-id trap as `assignee` (a name) versus `claimedBy` (an id):
     // two string fields in one document whose value spaces never overlap.
+    // THREE sources, matched to what can actually be written. `lapsedFrom`
+    // has exactly one value-writer — kernelWorkSweepService:279,
+    // `lapsedFrom: provenance`, where
+    //   provenance = holder?.label || t.assignee || t.claimedBy
+    //   label      = assignee || holder?.username || claimedBy
+    // so the reachable value space is {assignee, username, claimedBy}, and
+    // nothing else can ever land in the column.
+    //
+    // Two terms have been removed for being unreachable against that space.
+    // `resolveAgentInstanceId(req)` because `claimKey` above already IS it
+    // when it exists and is filtered out when it does not
+    // (@sprint-review 57050). And `botMetadata.agentName`, which no writer
+    // ever produces — worth being glad about rather than merely tidy, since
+    // for OpenClaw seats that value is the literal string 'openclaw' for
+    // EVERY instance. Had it been reachable, one openclaw agent could have
+    // restored another's lapsed row.
+    //
+    // WHAT THIS FIX SPENDS, named because it is now a precondition rather
+    // than an observation (@sprint-review 57051). Matching one shape could
+    // only ever MISS. A `$in` across three can MISMATCH: two of the three
+    // reachable values are free strings, so a caller whose `username` equals
+    // the `assignee` string on someone else's lapsed row would restore it.
+    // Narrow — it needs a real collision between a username and an assignee
+    // in the same pod — and it is a new failure direction, not a smaller one.
+    // The next widening should know it is buying reach with precision.
     const identities = [
       claimKey,
       userId?.toString(),
-      resolveAgentInstanceId(req),
-      req.user?.botMetadata?.agentName,
       req.user?.username,
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
