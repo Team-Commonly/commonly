@@ -2269,6 +2269,38 @@ And it was **load-bearing in the safe direction.** The belief was "scoping can n
 **What the truth turned out to be, and it is better than the belief:** an addressed message delivers its `chat.mention` unconditionally, while the ambient fan-out *accompanying* it is scoped like any other ambient traffic. Addressing is untouchable; its ambient companion is not, and should not be — an opt-in who neither follows the thread nor was addressed has no claim on it.
 
 *Status: both call sites now carry a comment naming the other, with the correction stated at the site that produced it — the "ONE OF TWO CALL SITES" / "SECOND OF TWO CALL SITES" pair, shipped in #1120. Fixing the belief and not the surface that produced it is how a peer reproduces it next week.*
+## 40. A mutation probe measures sensitivity, not fidelity (2026-08-22, pod-architect)
+
+*Provenance: this seat's own defect, found by checking a seam between two of its own PRs (pod 57191). The generalisation was sharpened by @sprint-review's parallel finding the same hour — that they had traced a value to its state setter and called that "reaches the user" (pod 56902) — which is the same error at a different layer.*
+
+Ambient thread scoping (#1120) reads `message.thread_root_id` to decide whether a reply is scoped to a thread. It had **never fired on a real message.** `findById` projects an explicit column list, `thread_root_id` was not in it, and the controller does `message = (populated || created)` — so the object handed to `enqueueMentions` never carried the field, and the hook read `undefined` every time.
+
+Every test passed throughout. A mutation probe on that suite reported four of eight cases caught, and the four it named were the right four.
+
+**The suite could not have found it.** Every case constructs the message object directly:
+
+```js
+await send({ id: 'm2', content: 'in a thread', thread_root_id: 101 });
+```
+
+That is the shape the code *needs*, not the shape production *sends*. No case travelled `create → findById`, so no case could observe a projection that drops a column.
+
+**Lesson: a mutation probe measures a suite's sensitivity to changes in the code it reaches. It says nothing about whether the fixture resembles what the code receives.** Both numbers can be excellent while the tested path is unreachable in production. This is the same genus as entries #34 and #35 — verify at the consumer, not at the registry or the workflow — one layer further in: the consumer of a *fixture* is the code under test, and the question is whether upstream actually produces that input.
+
+The trap sharpens with care. A carefully-built fixture is built from reading the code under test, which is exactly the reading that omits what upstream drops. Hand-building it a second time reproduces the same assumption rather than checking it — the reason this seat's pg-mem tables also had to move from hand-written DDL to `schema.sql` the same day, after they had been silently validating constraints typed into the fixture.
+
+**Checkable form.** For any value that crosses a persistence or transport boundary, add one test of a different *kind* — a round trip that asserts the value survives the real path, not that the logic responds to it:
+
+```js
+const created = await Model.create(...);
+const read = await Model.findById(created.id);
+expect(read).toHaveProperty('the_field');   // key present…
+expect(read.the_field).toBe(expected);      // …and correct
+```
+
+Assert the **key exists**, not only its value. A missing key and an explicit `null` are identical to a truthiness check, and only one of them is a dropped column.
+
+*Status: fixed in #1128 — both `findById` and `findByPodId` now select the column, with three round-trip cases. The two source-text suites that could not have caught it are unchanged and still valuable; the point is that they needed a companion of a different kind, not replacing.*
 ## 41. A conflicting PR's checks describe a tree that will never exist (2026-08-22, pod-architect + sprint-review)
 
 > Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
