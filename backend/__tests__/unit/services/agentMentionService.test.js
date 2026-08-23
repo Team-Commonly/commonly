@@ -66,9 +66,9 @@ describe('AgentMentionService', () => {
 
   test('extractMentions finds supported agent aliases', () => {
     const result = AgentMentionService.extractMentions(
-      'Ping @commonly-bot and @Clawdbot plus @commonlybot',
+      'Ping @commonly-bot and @Clawdbot plus @commonlybot and @casey_dev',
     );
-    expect(result.sort()).toEqual(['commonly-bot', 'clawdbot', 'commonlybot'].sort());
+    expect(result.sort()).toEqual(['commonly-bot', 'clawdbot', 'commonlybot', 'casey_dev'].sort());
   });
 
   test('extractMentions ignores unknown mentions', () => {

@@ -13,6 +13,7 @@ jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
 const { createTableFor } = require('../../utils/schemaTable');
 const { effectiveFollowerIds, narrowToThread } = require('../../../services/threadWakeScopeService');
+const ThreadUserState = require('../../../models/pg/ThreadUserState');
 
 const POD = 'pod-1';
 let seq = 100;
@@ -67,11 +68,14 @@ describe('the three terms', () => {
     expect([...await effectiveFollowerIds(r)]).toEqual(['author']);
   });
 
-  test('an explicit follower who never posted is included', async () => {
+  test('a mentioned human who never posted is included after the delivery writer follows them', async () => {
     const r = nextRoot();
     await rootMsg(r, 'author');
-    await state(r, 'lurker', true);
-    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['author', 'lurker']);
+    // The delivery-layer wiring is covered in agentMentionService's suite.
+    // This keeps the consumer-side promise executable: once the human
+    // mention writer materializes TRUE, a non-poster belongs in the wake set.
+    await ThreadUserState.followByParticipation(r, 'mentioned-human', POD);
+    expect([...await effectiveFollowerIds(r)].sort()).toEqual(['author', 'mentioned-human']);
   });
 
   test('a muted participant is excluded — mute outranks participation', async () => {
@@ -79,6 +83,16 @@ describe('the three terms', () => {
     await rootMsg(r, 'author');
     await post(r, 'quitter', r + 1000);
     await state(r, 'quitter', false);
+    expect([...await effectiveFollowerIds(r)]).toEqual(['author']);
+  });
+
+  test('a muted mentioned human who never posted is excluded from the wake set', async () => {
+    const r = nextRoot();
+    await rootMsg(r, 'author');
+    // followByParticipation writes only where following IS NULL; an earlier
+    // unfollow is therefore still FALSE after a later @mention.
+    await ThreadUserState.unfollow(r, 'mentioned-human', POD);
+    await ThreadUserState.followByParticipation(r, 'mentioned-human', POD);
     expect([...await effectiveFollowerIds(r)]).toEqual(['author']);
   });
 
