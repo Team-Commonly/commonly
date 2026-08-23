@@ -306,6 +306,80 @@ class Message {
    * than replacing it — operator-pinned pods and paid pods are both exempt,
    * for different reasons.
    */
+  /**
+   * Re-root chains an ancestor's deletion orphaned (TASK-043).
+   *
+   * `thread_root_id` is ON DELETE SET NULL, which is right for the row being
+   * pointed at and wrong for everything below it. Delete root R from
+   * R <- C <- G and Postgres nulls BOTH pointers:
+   *
+   *   C : reply_to -> NULL (its own FK), thread_root_id -> NULL   correct — C
+   *       is now a root, and a root's thread_root_id is NULL by design.
+   *   G : reply_to = C (ALIVE), thread_root_id -> NULL            WRONG — G's
+   *       root should now be C, and nothing sets it.
+   *
+   * G then matches `reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`
+   * permanently: it is not a dangling edge (its parent is alive), so the
+   * `reply_to_message_id` FK cannot help, and no write path revisits it.
+   * @sprint-review found it (57204) and the distinction from the dangling-edge
+   * case is the part that makes it easy to mis-close.
+   *
+   * The data is recoverable because the CHAIN is intact — only the pointer was
+   * cleared. So this is derivation-on-write applied repeatedly: the same
+   * COALESCE-of-parent expression `create` uses, run against parents that
+   * already know their own root. Each pass fixes one level, so a chain of
+   * depth d converges in d passes.
+   *
+   * (Deliberately not quoting that expression verbatim here. It appears twice
+   * in this file — once in create's comment, once in its SQL — and
+   * threadRootDerivation.pgmem.test.js pins the count at two, because a
+   * first-match text mutation must land on the comment and not the SQL. A
+   * third copy silently changes which one a probe hits. My own guard caught
+   * this edit, which is the guard working.)
+   *
+   * Iterative rather than a recursive CTE ON PURPOSE. The backfill uses
+   * `WITH RECURSIVE` and pg-mem cannot run it, which pushes its only coverage
+   * to tier 1. This form is plain SQL, so the repair and its regression test
+   * run at the unit tier — which is where a retention bug should be provable,
+   * since reproducing it needs a DELETE and not a fixture.
+   */
+  static async reRootOrphanedChains(maxPasses = 32): Promise<{ reRooted: number; passes: number }> {
+    let reRooted = 0;
+    let passes = 0;
+    for (let i = 0; i < maxPasses; i += 1) {
+      // Read the level, then write it by id. `UPDATE ... FROM` with a
+      // self-join is the natural single statement and pg-mem cannot run it
+      // ("Unknown alias"), which would push this repair's only coverage to
+      // tier 1 — the same trap the recursive CTE in the backfill fell into.
+      // A JOINed SELECT plus keyed UPDATEs runs on both, and the population
+      // is bounded by one delete's orphans.
+      //
+      // Only from a parent that KNOWS its root: either it is itself a root
+      // (reply_to IS NULL) or it has been rooted already. Without that guard a
+      // pass could copy one NULL onto another and report progress forever.
+      // eslint-disable-next-line no-await-in-loop
+      const { rows } = await (pool as PgPool).query(
+        `SELECT m.id AS id, COALESCE(p.thread_root_id, p.id) AS root
+           FROM messages m
+           JOIN messages p ON m.reply_to_message_id = p.id
+          WHERE m.thread_root_id IS NULL
+            AND (p.reply_to_message_id IS NULL OR p.thread_root_id IS NOT NULL)`,
+      );
+      for (const r of rows as Array<{ id: number; root: number }>) {
+        // eslint-disable-next-line no-await-in-loop
+        await (pool as PgPool).query(
+          'UPDATE messages SET thread_root_id = $2::int WHERE id = $1::int',
+          [r.id, r.root],
+        );
+      }
+      const n = rows.length;
+      passes += 1;
+      reRooted += n;
+      if (n === 0) break;
+    }
+    return { reRooted, passes };
+  }
+
   static async deleteOlderThan(
     days: number,
     protectedPodIds: string[] = [],
@@ -328,6 +402,30 @@ class Message {
     const deleted = typeof result.rowCount === 'number'
       ? result.rowCount
       : (Array.isArray(result.rows) ? result.rows.length : 0);
+
+    // Repair before returning. Deleting a thread root orphans everything below
+    // it (see reRootOrphanedChains), and the caller has no way to know it
+    // happened — the delete reports rows removed, not rows corrupted. Doing it
+    // here rather than in the retention cron means every caller of this method
+    // gets it, including a future one written by someone who never read
+    // TASK-043.
+    if (deleted > 0) {
+      try {
+        const repair = await Message.reRootOrphanedChains();
+        if (repair.reRooted > 0) {
+          console.log(
+            `[pg-retention] re-rooted ${repair.reRooted} orphaned reply row(s) `
+            + `in ${repair.passes} pass(es) after deleting ${deleted}`,
+          );
+        }
+      } catch (err) {
+        // Never fail the delete for a repair. The rows are already gone; a
+        // failed re-root leaves an over-expand, which the reader treats as
+        // unknown and renders expanded — noisy and non-destructive. Throwing
+        // here would make retention look broken for a cosmetic consequence.
+        console.warn('[pg-retention] re-root after delete failed:', (err as Error).message);
+      }
+    }
     return { deleted };
   }
 
