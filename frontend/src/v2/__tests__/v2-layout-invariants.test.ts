@@ -248,18 +248,26 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // capped box for the longest) and scattered zh-CN's four 2-character
     // labels across phantom cells. Chips hug their labels with uniform
     // padding, so both locales read as one segmented control. The intent
-    // from 2026-08-13 is unchanged: one row, no wrap — pinned here as
-    // flex + nowrap + no width-allocating grid.
+    // Superseded 2026-08-23 (Sam): equal cells beat one row. Four equal
+    // chips can't share the 239px rail (EN "Community" needs 84px alone),
+    // so equal means the same 2×2 grid the community-tabs below use.
     const rule = ruleBody(v2, '.v2-pods__filters');
-    expect(rule).toContain('display: flex');
-    expect(rule).not.toContain('grid-template-columns');
+    expect(rule).toContain('display: grid');
+    expect(rule).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
     expect(rule).toContain('overflow: visible');
     // The `.v2-root button.` prefix is load-bearing: the global button reset
     // (0-1-1) zeroes padding on a bare-class rule (0-1-0), which shipped as
     // 25px chips hugging bare text — the third hit of this exact trap.
     const chip = ruleBody(v2, '.v2-root button.v2-pods__filter');
     expect(chip).toContain('white-space: nowrap');
-    expect(chip).toContain('padding: 0 9px');
+    expect(chip).toContain('padding: 0 10px');
+    // The active rule must FOLLOW the base chip rule: both weigh 0-2-1, so
+    // source order decides the selected chip's color — the wrong order
+    // shipped grey-on-blue (measured live 2026-08-23).
+    const active = ruleBody(v2, '.v2-root button.v2-pods__filter--active');
+    expect(active).toContain('color: var(--v2-surface)');
+    expect(v2.indexOf('.v2-root button.v2-pods__filter--active'))
+      .toBeGreaterThan(v2.indexOf('.v2-root button.v2-pods__filter {'));
   });
 
   test('accent treatment is a wash, never a message rail', () => {
