@@ -84,6 +84,17 @@ interface V2MessageBubbleProps {
   // Clicking the author avatar / name opens the inspector to that member's
   // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
   onAuthorClick?: (author: string) => void;
+  /**
+   * The root this bubble is being rendered UNDER, when it sits inside an
+   * expanded thread rail. Undefined everywhere else, including for the same
+   * message rendered flat in the channel.
+   *
+   * Only used to suppress a quote that would restate the context the rail
+   * already provides — see the predicate at the quote block. Deliberately not
+   * a boolean like `inThread`: the suppression has to compare the quote's
+   * target to THIS root, and a boolean cannot express "the right root".
+   */
+  insideThreadRoot?: string;
   // Clicking a file pill routes to the inspector artifact preview by
   // ObjectStore filename (or originalName for static demo tokens).
   onOpenFile?: (fileName: string) => void;
@@ -293,7 +304,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
 // columns in mobile shells.
 const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, grouped }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const api = useV2Api();
@@ -411,7 +422,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           <V2Avatar
             name={author}
             src={message.user?.profile_picture || undefined}
-            size="md"
+            size={insideThreadRoot ? 'sm' : 'md'}
             kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
             seed={message.user_id || undefined}
           />
@@ -420,7 +431,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
         <V2Avatar
           name={author}
           src={message.user?.profile_picture || undefined}
-          size="md"
+          size={insideThreadRoot ? 'sm' : 'md'}
           kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
           seed={message.user_id || undefined}
         />
@@ -470,6 +481,27 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             : rawQuote;
           const quoteAuthor = message.replyTo?.username ?? message.reply_username;
           if (!quoteContent) return null;
+
+          // Suppress the quote IFF it points at the root of the rail we are
+          // already inside (Sam 57491, ruling constraint 5). Both halves are
+          // required and neither is sufficient:
+          //
+          //   - inside a rail, quoting SOMEONE ELSE in the thread  -> show.
+          //     That is a reply-to-person and the quote is the only thing
+          //     naming who.
+          //   - quoting the root but rendered FLAT in the channel   -> show.
+          //     There is no rail supplying the context, so removing the quote
+          //     would strand the reply.
+          //
+          // The failure mode of getting this wrong is asymmetric: showing a
+          // redundant quote is visual noise, hiding a needed one loses the
+          // only pointer to what a message answers.
+          const quoteTargetId = message.replyTo?.id ?? message.reply_msg_id;
+          const quotesTheRailRoot = insideThreadRoot !== undefined
+            && quoteTargetId !== undefined
+            && quoteTargetId !== null
+            && String(quoteTargetId) === String(insideThreadRoot);
+          if (quotesTheRailRoot) return null;
           return (
             <div className="v2-msg__quote">
               <span className="v2-msg__quote-author">{quoteAuthor || 'earlier message'}</span>

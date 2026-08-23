@@ -7261,12 +7261,50 @@
 }
 
 /* Expanded replies hang off a left rail at the root avatar's centre. */
+/* Rail ON the root avatar's axis. The root avatar is .v2-avatar--md = 30px in
+   a 38px grid column, so its centre is x = 15; margin-left 14 + the 2px border
+   puts the rule through that centre. Rev 1 used 19 and was measuring the
+   column, not the avatar (@ux-lead, thread-reply-row-alignment rev 2). */
 .v2-thread-replies {
   position: relative;
-  margin-left: 28px;
-  padding-left: 40px;
+  margin-left: 14px;
+  padding-left: 12px;
   border-left: 2px solid #eef0f6;
   transition: height 300ms ease;
+}
+
+/* Replies are SMALLER rows, not channel rows. Reusing the channel's
+   38px + 12px column opened a second text column 70px right of the root's —
+   two columns and an off-axis rail was the raggedness. One inner column:
+   16 (rail) + 12 (padding) + 24 (sm avatar) + 8 (gap) = x = 60, the same for
+   every reply, grouped or not. */
+.v2-thread-replies .v2-msg {
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.v2-thread-replies .v2-msg:first-child {
+  margin-top: 4px;
+}
+
+.v2-thread-replies .v2-msg--grouped {
+  padding: 2px 0;
+}
+
+/* Tighter head inside the rail. The root keeps 700 — weight is hierarchy, so
+   the reply author must not match it. */
+.v2-thread-replies .v2-msg__head {
+  height: 18px;
+}
+
+.v2-thread-replies .v2-msg__author {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.v2-thread-replies .v2-msg__time {
+  font-size: 12px;
 }
 
 .v2-root button.v2-thread-replies__aim {
@@ -7275,7 +7313,10 @@
   color: #7b8494;
   font-size: 12px;
   cursor: pointer;
-  padding: 6px 0;
+  /* Same x = 60 column as every reply: 24px avatar + 8px gap of dead space,
+     so it reads as an affordance on the column rather than a message. */
+  margin-left: 32px;
+  padding: 8px 0 4px;
 }
 
 .v2-root button.v2-thread-replies__aim:hover {
@@ -7287,8 +7328,12 @@
 }
 
 @media (max-width: 640px) {
+  /* The axis does NOT move at 390 — no channel-row override exists at this
+     breakpoint, so the root avatar centre is still x = 15. Only the inner
+     padding tightens: 16 + 8 + 24 + 8 = x = 56. */
   .v2-thread-replies {
-    margin-left: 24px; /* brief: rail offset drops to 24px at 390 */
+    margin-left: 14px;
+    padding-left: 8px;
   }
 
   .v2-root button.v2-thread-card__main {

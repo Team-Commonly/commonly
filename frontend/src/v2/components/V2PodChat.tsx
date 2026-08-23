@@ -948,12 +948,31 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       if (uploaded.kind === 'image' && uploaded.url) {
-        // Carries the thread target too. Without it, uploading an image while
-        // aimed at a thread posted it to the channel instead — the composer
-        // showed "Replying in thread" and the picture landed somewhere else.
-        // @sprint-review caught it on #1150; the text path had it and this one
-        // was simply missed.
-        await sendMessage(uploaded.url, 'image', undefined, threadTarget?.id || undefined);
+        // BOTH targets, and consumed on success — the image path is a second
+        // send site and has now been half-updated twice. #1150 gave it the
+        // thread root and left `replyTarget` hardcoded undefined (@ux-lead
+        // 57473), so aiming at a person and uploading posted the picture
+        // unrouted while the chip still read "Replying to {name}". And it
+        // never cleared its targets, so the aim survived a completed send and
+        // silently applied to the next one.
+        //
+        // Safe by construction rather than by care: aimAtThread and
+        // aimAtMessage each clear the other, so the two can never both be set
+        // and the resolver never sees a pair.
+        //
+        // The rule the ruling states is "a send consumes the target on EVERY
+        // path" — written that way precisely because per-path wiring is what
+        // keeps going wrong here.
+        const created = await sendMessage(
+          uploaded.url,
+          'image',
+          replyTarget?.id || undefined,
+          threadTarget?.id || undefined,
+        );
+        if (created) {
+          setReplyTarget(null);
+          setThreadTarget(null);
+        }
         return;
       }
       if (uploaded.fileName) {
@@ -1275,6 +1294,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                             onOpenFile={onOpenFile}
                             onReply={aimAtMessage}
                             grouped={isGroupedWithPrevious(r, item.replies[ri - 1])}
+                            // Only the rail passes this. The same message
+                            // rendered flat keeps its quote, which is the
+                            // half of constraint 5 that is easy to lose.
+                            insideThreadRoot={item.rootId}
                           />
                         ))}
                         {!isReadOnly && (

@@ -456,14 +456,26 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // correct rail from a missing one — the card and replies still appear,
     // just unindented and with no rule. This pins the three numbers that a
     // reader would otherwise have to take from a comment.
+    // REV 2 (@ux-lead, thread-reply-row-alignment rev 2, TASK-049 item 3).
+    // These numbers are inverted from rev 1 and the ruling authorises it:
+    // the root avatar is .v2-avatar--md = 30px inside a 38px column, so its
+    // centre is x = 15, not 19. margin-left 14 + the 2px border puts the rule
+    // through that centre. rev 1 measured the column and not the avatar.
     const rail = ruleBody(v2, '.v2-thread-replies');
-    expect(rail).toContain('margin-left: 28px');
-    expect(rail).toContain('padding-left: 40px');
+    expect(rail).toContain('margin-left: 14px');
+    expect(rail).toContain('padding-left: 12px');
     expect(rail).toContain('border-left: 2px solid #eef0f6');
 
-    // The 390 override lives in a media block, so read the file rather than
-    // the rule body — ruleBody stops at the first closing brace.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 24px/);
+    // ONE inner column for every reply: 16 + 12 + 24 + 8 = x = 60. Reusing the
+    // channel's 38px+12px grid is what opened a second text column, so the
+    // override is the fix and pinning it is the point.
+    const railRow = ruleBody(v2, '.v2-thread-replies .v2-msg');
+    expect(railRow).toContain('grid-template-columns: 24px minmax(0, 1fr)');
+    expect(railRow).toContain('gap: 8px');
+
+    // 390: the AXIS does not move (no channel-row override at this
+    // breakpoint), only the inner padding tightens to give x = 56.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 14px[\s\S]*?padding-left: 8px/);
   });
 
   test('the thread card has no shadow and no accent at rest', () => {
