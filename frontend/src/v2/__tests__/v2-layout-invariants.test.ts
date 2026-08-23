@@ -521,7 +521,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Reply/Thread/React. Desktop reveals it on hover; a 390px touch
     // surface cannot depend on hover, so both touch blocks (pointer:coarse
     // and max-width:640px) force it visible with 44px targets.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg__actions[\s\S]*?opacity: 1/);
+    // Tap-reveal, not always-on: the touch blocks must gate visibility on
+    // .v2-msg--reveal (set by the bubble's tap handler) — an ungated
+    // `.v2-msg__actions { opacity: 1 }` here would put chrome over every
+    // message by default (Sam's report, 2026-08-23).
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
     const cardAction = ruleBody(v2, '.v2-root button.v2-thread-card__reply');
     expect(cardAction).toContain('min-height: 44px');
