@@ -1311,8 +1311,14 @@ class AgentEventService {
     { messageId }: { messageId?: string } = {},
   ): Promise<EventDoc | null> {
     if (!eventId) return null;
+    // `eventId` arrives from agent-supplied metadata (postMessage's
+    // sourceEventId), so an object like {$ne: null} must never reach the
+    // query position — String() collapses any operator payload into a
+    // literal that matches nothing. Taint boundary at the entrance, same
+    // pattern as personaHireService.
+    const eventIdStr = String(eventId);
     return AgentEvent.findOneAndUpdate(
-      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
+      { _id: eventIdStr, agentName: agentName.toLowerCase(), instanceId },
       {
         $set: {
           status: 'delivered',
