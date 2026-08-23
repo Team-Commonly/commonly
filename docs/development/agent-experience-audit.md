@@ -2240,3 +2240,281 @@ as "older response shape," not "your message reached nobody."
   the twenty minutes this cost tracing runs, events, and a just-landed
   deploy that had nothing to do with it — proximity to a deploy makes every
   bug look like a regression.
+
+## 41. A conflicting PR's checks describe a tree that will never exist (2026-08-22, pod-architect + sprint-review)
+
+> Numbering assumes #1122 (entry 39) and #1132 (entry 40) land first. If they
+> merge in a different order, renumber this one rather than them.
+
+Three stacked threading PRs sat at heads I had just pushed. Their pages showed
+green ticks. I reported them as green in a task update. All three reports were
+wrong, in two different ways, and both ways look identical to a passing build.
+
+**What was actually true.**
+
+`#1109` had squash-merged at 18:50:59Z. At ~18:55 I pushed two more commits to
+its branch — a real fix, with tests. The branch ref moved; the PR was already
+closed, so nothing dispatched and nothing merged them. `gh pr view` kept
+reporting `headRefOid` as the pre-merge commit, so the PR page showed a full
+green rollup **for the parent commit**, three commits behind the branch.
+
+`#1120` and `#1128` were `CONFLICTING/DIRTY`: `main` had taken the squashed
+2/4 while their branches still carried the unsquashed originals. GitHub builds
+`pull_request` events against a *merge ref*, and a PR that is conflicting **at
+the moment of the event** has none — so `tests.yml` did not dispatch. What
+remained was CodeQL, which triggers on `push`, needs no merge ref, and passed.
+**Four checks, four green ticks, zero tests.**
+
+Measured, because the first draft of this entry said "a conflicting PR never
+dispatches tests" and @sprint-review falsified it by finding eight green runs
+— Tier 1 among them — on `3f31d103`, a conflicting head. Their measurement was
+right and the sentence was wrong. Timestamps settle it:
+
+| Head | Pushed | Conflict began | `pull_request` dispatched? | Runs (unique names) |
+|---|---|---|---|---|
+| `9366e11e` (#1120) | 18:53:21Z | 18:50:59Z, not yet computed | yes | 11 (11) |
+| `4942ad3d` (#1120) | 18:57:12Z | known by then | **no** | 4 (4) — CodeQL family only |
+| `3f31d103` (#1136) | 19:38:29Z | 19:44:07Z, six minutes later | yes | 8 (5) — 5 `pull_request` + 3 `workflow_dispatch` |
+
+The last row said "11 checks" in the first version of this entry. @sprint-review
+measured it at 8 runs across 5 names and was right — and it was a number I had
+myself counted correctly earlier the same hour before contradicting it here.
+The duplication is sprint-impl's manual re-dispatch landing on the same sha as
+the automatic run, so a name-count and a run-count disagree by three.
+
+The two PRs' `pull_request` sets also differ in **membership**, 11 names
+against 5, not merely in size. I left that labelled as an unchased hypothesis;
+@sprint-review measured it, and re-deriving it confirms the 5 are a strict
+subset of the 11 with exactly six extras:
+
+```
+CodeQL · Analyze (actions) · Analyze (javascript-typescript) · Analyze (python)
+Source changed ⇒ version bumped · Stale-base merge guard
+```
+
+Two are merge-to-main guards and are correctly base-scoped — both
+`package-version-guard.yml` and `pr-base-freshness.yml` declare
+`pull_request: branches: [ main ]`, so a PR onto a feature branch is outside
+their remit by design. The other four are CodeQL's, and there is no
+`codeql.yml` in the repo: that is GitHub default setup, scoped outside our
+workflow files entirely.
+
+**Which means a PR's "full" check set is a property of its BASE, not of the
+repo.** There is no fixed number to compare against. Eleven is complete for a
+PR onto `main`; five is complete for a PR onto a feature branch; and a stacked
+PR that gets retargeted to `main` at merge time will be judged by guards that
+never ran on it. Counting checks tells you nothing unless you know what the
+denominator should have been — which was the mistake one paragraph up, made
+in an entry about exactly this.
+
+**And base is necessary, not sufficient — the CHANGED PATHS move it too.**
+Found by applying the paragraph above to this very PR. `#1135` is docs-only,
+targets `main`, and reports 10 checks against `#1120`'s 11; the missing one is
+`E2E Tests`, because `playwright.yml` filters on
+`frontend/** · backend/** · e2e/** · playwright.config.*` and a `docs/**` diff
+matches none of them. The workflow never dispatches, so the check never exists.
+
+**I then attached a consequence to that finding which was false, and it is
+worth keeping the wreckage visible.** I wrote that a docs-only PR therefore
+settles at `MERGEABLE/UNSTABLE` permanently, that no future event produces the
+absent check, and that a "merge only when CLEAN" rule would deadlock on
+documentation. I posted that to the pod as something to act on.
+
+It is wrong. Waiting for the runs to finish and re-reading:
+
+```
+#1142  MERGEABLE/CLEAN   checks=10  E2E absent
+#1143  MERGEABLE/CLEAN   checks=10  E2E absent
+```
+
+An absent `E2E Tests` does not prevent `CLEAN` — it is not a required check,
+so its non-existence costs nothing. The `UNSTABLE` I had seen on `#1135` was a
+check still **pending**, not a check **missing**, and it resolved on its own.
+
+So the mistake was reading a transient state as a structural one, and then
+inventing a mechanism to explain it. The invented mechanism was internally
+coherent — paths filter, no dispatch, no check, never CLEAN — which is exactly
+what made it convincing enough to commit and to broadcast. Every step was true
+except the one connecting them to the observation.
+
+The membership finding above survives intact and was independently verified
+from `playwright.yml` and from `E2E=0` on all three PRs. Only the consequence
+was fabricated.
+
+So the denominator is a function of *(base, paths touched)*. Three of this
+entry's corrections have now come from treating a check count as comparable
+across PRs that were never comparable.
+
+**So there are two mechanisms, not one, and the second is the worse of them.**
+
+1. *Push while the PR is known-conflicting* → no `pull_request` dispatch. The
+   checks that appear are the push-triggered ones. This is what hit `4942ad3d`.
+2. *Become conflicting after the checks ran* → every check stays attached to
+   the sha, still green, now describing a state that no longer exists. Nothing
+   re-runs, because nothing was pushed. This is what hit `3f31d103`, and it is
+   what makes the first mechanism look false to anyone who measures afterwards.
+3. *The base auto-retargets when the parent merges* → **no event fires at all.**
+   Named in advance by Sam (56969) from an 2026-08-04 incident, and confirmed
+   here: `#1106` merged at 15:15:08Z, GitHub retargeted `#1109` from the parent
+   branch to `main`, and the next workflow run on that branch was at 15:53:20Z
+   — 38 minutes later, triggered by a push, not by the retarget. Zero runs at
+   15:15.
+
+**Why nothing fires, not just that nothing fired.** @sprint-review (57010)
+supplied the cause behind the measurement, and re-deriving it confirms every
+part. A base change emits `pull_request.edited`, and **no workflow in this repo
+subscribes to `edited`** — `grep -rn 'edited' .github/workflows/` returns
+nothing. Three declare their types explicitly:
+
+```
+release-safety.yml         [opened, synchronize, reopened, ready_for_review]
+package-version-guard.yml  [opened, synchronize, reopened, ready_for_review]
+pr-base-freshness.yml      [opened, synchronize, reopened]
+```
+
+and the four others on `pull_request` — `tests.yml`, `playwright.yml`,
+`secret-scan.yml`, `mintlify.yml` — take GitHub's default set, which is the
+same list minus `ready_for_review`. `edited` is in none of them. So the
+retarget does fire an event; it fires one that nothing is listening for, which
+is why `update-branch` works and a base flip does not: the former pushes a head
+commit and produces `synchronize`.
+
+Stated precisely, because the two halves have different evidence: *zero runs at
+the retarget* and *no subscriber to `edited`* are both measured here. That
+GitHub emits `edited` specifically on a base change is from its documentation,
+not from an event payload I captured — consistent with the observation rather
+than demonstrated by it.
+
+**The root fix exists and is probably not worth taking.** Adding `edited` to
+those `types` lists would make a retarget re-run CI on its own. It would also
+re-run CI on every title and body edit, since `edited` covers those too. That
+is a bad trade on a busy repo, so the mitigation stays where Sam put it: force
+a head event deliberately. Worth writing down that the alternative was
+considered and declined, or the next reader re-derives it.
+
+4. *The base branch predates the workflow fix* → the fix never applies. For a
+   `pull_request` event GitHub reads the workflow definition from the **merge
+   ref**, which is base + head — so the BASE branch's copy of the file decides
+   whether the event matches. `#1123` dropped `branches: [main]` from
+   `tests.yml` on main at 15:20:27Z, and `#1132` still got zero test runs from
+   a head pushed at 18:11:30Z, three hours later, because its base
+   (`docs/ax-two-call-sites`, last touched 06:52) still carries the old
+   filter. Verified by reading `tests.yml` on that branch.
+
+   Its whole check list is one skipped `Release Branch Guard`, and its
+   `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
+
+   **ATTRIBUTION, corrected.** @sprint-review established this mechanism at
+   15:25:50Z — including "the trigger is read from the PR's own merge ref" —
+   measured on `#1120`, whose head was pushed 15:22:21Z, two minutes after
+   `#1123` merged, and produced zero runs for the same reason. They also
+   corrected their own earlier "merge #1123 first and the ordering stops
+   mattering" in the same message.
+
+   I derived it independently nine hours later from `#1132` and posted it as
+   "they measured the counts and declined to claim the cause; this is the
+   cause." That was wrong. They claimed it, first, and correctly; their
+   message was sitting unread in my redelivery queue while I re-derived it.
+   Two instances, two PRs, one mechanism — theirs is the finding and mine is
+   the confirmation.
+
+   **Read `event`, not the count, when asking whether a fix reached a PR.**
+   @sprint-review (57058) measured zero runs on `#1120`'s `0147fa24`, then one
+   run six minutes later — a flip that reads exactly like "my earlier claim
+   was wrong, #1123 did reach it after all." It was my hand-dispatch landing
+   between their two checks. The discriminator is the `event` field:
+   `workflow_dispatch` proves someone pushed a button, `pull_request` proves
+   the trigger matched. Only the second is evidence about the fix.
+
+   This is worth more than the instance because a manual dispatch is the
+   standard response to noticing a PR has no checks — so the act of working
+   around the bug produces exactly the artifact that makes the bug look
+   absent, and the person most likely to measure afterwards is the one who
+   dispatched. Both counts in the table above are split by event for this
+   reason.
+
+   **A workflow fix on `main` reaches a stacked PR only when that PR's BASE
+   absorbs it.** Not the head — the base. So "we fixed CI for stacked PRs" is
+   true of the repo and false of every PR already stacked on a stale branch,
+   and there is no signal distinguishing the two.
+
+   I got this wrong twice before reading the file. First guess: the head
+   predated the fix (refuted by timestamps — it postdates it by three hours).
+   Second: a paths filter (refuted — `tests.yml` has none). Rule 16's "make
+   the mechanism predict something" is what killed both.
+
+Mechanism 3 is the worst of the three for a stacked PR, because nothing about
+it looks wrong. There is no conflict, no thin check list, no red. The PR is
+green and mergeable — and it now means something different from what was
+tested, since it merges into `main` rather than into its parent branch, and
+every check on it was computed against the old base. A green rollup is exactly
+what you would expect to see, and exactly what you get.
+
+The second is worse because the first at least leaves a thin check list as a
+hint. The second leaves a **complete, genuinely-passing rollup** on a
+PR that can no longer be merged and whose tests have never run against the
+tree it would produce. There is no artifact anywhere that says so.
+
+Note the window in row 1: `9366e11e` was pushed 142 seconds after the merge
+that broke it and still got a full dispatch, because GitHub had not recomputed
+mergeability yet. Whether your push lands before or after that recomputation
+decides which mechanism you get, and nothing in the UI marks the boundary.
+
+**Why the instrument can't tell you.**
+
+Both failures are absences. A commit with no check runs has no failures. A
+workflow that never dispatched leaves no red X — it leaves nothing, and the UI
+renders nothing as clean. The rollup is a fold over the checks that exist; it
+has no opinion about the checks that should exist. Reading it answers "did
+anything fail," which is not the question — the question is "did the suite run
+on *this* commit."
+
+The same shape has now been recorded here four times under different names
+(entries 34, 35, 37). It keeps recurring because every instance is a status
+read against the wrong object: the registry instead of the consumer, the
+workflow's clock instead of the pod's, the parent commit instead of the head.
+
+**Rules earned.**
+
+- **Verify by sha, not by PR.** `gh api repos/:o/:r/commits/<sha>/check-runs`
+  and compare the sha you queried to the branch tip you pushed. A PR's
+  `headRefOid` can lag its own ref, and on a merged PR it stops updating
+  entirely. If the count of check runs is zero, that is the loudest possible
+  signal, and it prints as silence.
+
+  **And if that comparison keeps failing, stop pushing rather than
+  re-dispatching.** @sprint-review (57014) caught this branch taking four heads
+  in twelve minutes against a `tests.yml` that runs 5–6 — a cadence under the
+  suite's runtime means no run can ever land on the tip, and every fix looks
+  like one more dispatch away. The rule above detects the mismatch; only
+  noticing the *rate* tells you why it will keep recurring. Green-on-head needs
+  a quiet period.
+- **Check `mergeable` before reading `statusCheckRollup`.** On `CONFLICTING`
+  the rollup is either a smaller set than you think (mechanism 1) or a full
+  set measured against a tree that no longer exists (mechanism 2). Neither is
+  evidence about what merging would do. Read the two together or neither —
+  and note that a *complete* green rollup on a conflicting PR is the worse
+  signal, not the reassuring one.
+- **A squash merge orphans anything pushed to that branch afterwards.** The
+  window is as long as your commit takes. Before pushing to a branch you
+  believe is open, confirm it: a closed PR accepts the push, moves the ref,
+  and reports nothing. Recovery is a cherry-pick onto a fresh branch off
+  `main` — cheap, but only if you notice.
+- **A stack does not survive its own base squash-merging.** The child now
+  conflicts on every file the squash touched, and — per the above — goes
+  quiet rather than red. Rebase children onto `main` immediately after a
+  parent lands; do not wait for a review to surface it, because the review
+  will be looking at the same green ticks.
+- **A retargeted PR needs a new head event before its checks mean anything.**
+  Sam's press plan (56969) is the working form: merge the parent, verify the
+  child's `baseRefName` actually flipped and the PR did not auto-close, then
+  force a head event (`gh pr update-branch`) so CI runs against `main`. No
+  stacked PR merges without its own green run *at the new base*.
+- **You can tell which base a run was against, from the run list.** The
+  base-scoped guards are the tell: `Package Version Guard` and
+  `PR Base Freshness` both declare `pull_request: branches: [ main ]`, so their
+  PRESENCE certifies the run happened with `main` as base and their absence
+  says it did not. That is how `#1109` was confirmed to have satisfied the rule
+  before it merged — both guards appear in its 18:30 run, three hours after the
+  retarget. Reading the check *names* answers a question the check *count*
+  cannot.
