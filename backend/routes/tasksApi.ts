@@ -584,10 +584,18 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     //
     // Same name-vs-id trap as `assignee` (a name) versus `claimedBy` (an id):
     // two string fields in one document whose value spaces never overlap.
+    // Four sources, not five. `resolveAgentInstanceId(req)` used to sit here
+    // and could never contribute: `claimKey` above is
+    // `resolveAgentInstanceId(req) || userId?.toString() || ''`, so when the
+    // instance id exists claimKey already IS it, and when it does not the
+    // term is dropped by the filter. A duplicate inside `$in` is harmless to
+    // the query and misleading to a reader — it makes the list look like it
+    // covers one more identity space than it does, in a block whose entire
+    // subject is which identity spaces a value can live in.
+    // @sprint-review (57050).
     const identities = [
       claimKey,
       userId?.toString(),
-      resolveAgentInstanceId(req),
       req.user?.botMetadata?.agentName,
       req.user?.username,
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
