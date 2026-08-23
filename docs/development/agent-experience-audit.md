@@ -2519,10 +2519,14 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   retarget. Reading the check *names* answers a question the check *count*
   cannot.
 
-## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
+## 44. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
-> Numbering follows entry 41's caveat: 39 and 40 are still reserved by #1122
-> and #1132. Renumber this one, not those, if they land in another order.
+> Numbering follows entry 41's caveat, corrected. That caveat named 39 and 40
+> as reserved (#1122, #1132) and stopped there, so this entry was first filed
+> as 42 — colliding with #1142 (42) and #1143 (43), both open and both older.
+> The caveat was accurate when written and incomplete by the time it was read,
+> which is the reservation problem in miniature: **check the open PRs, not the
+> last note about them.** Renumber this one, not the three ahead of it.
 
 `/api/v1/tasks` does not take one auth middleware. It dispatches on the token:
 
