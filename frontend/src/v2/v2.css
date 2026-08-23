@@ -1568,34 +1568,23 @@
   gap: 0;
 }
 
-/* Conversation measure — third revision of craft rule 2, ruled by Sam
-   2026-08-23 ("message still halved after right sidebar closed").
-   History matters here: v1 centered ONLY the messages ("a floating island"
-   — a disaster, because the composer and header kept a different edge);
-   v2 capped text at 76ch left-anchored, which reads correctly at narrow
-   widths and as a half-empty page once the inspector closes (~420px of
-   dead space at 1092px). v3 centers the WHOLE conversation: messages,
-   typing indicator, delivery hint, starter prompts, and the composer's
-   inner content all share one measure and one centerline — the coherence
-   v1 lacked. Header stays full-bleed; it is chrome, not conversation.
-   The measure = 76ch of text + the 50px avatar column. */
-.v2-root {
-  --v2-conv-measure: calc(76ch + 50px);
-}
-
+/* Conversation width — FIFTH revision of craft rule 2, ruled by Sam
+   2026-08-23: FULL-WIDTH, the Slack/Discord model. The measure cap died
+   with its last corner: v1 centered messages alone (island), v2/v4
+   left-anchored the cap (dead space on the right once the inspector
+   closes), v3 centered the whole column (rejected outright). With a line
+   cap, leftover space must pool somewhere — so the cap goes. Rows and
+   text span the pane and wrap at its edge; lines run long on wide
+   windows, the familiar chat tradeoff. What survives every revision:
+   one shared left edge for every conversation row, and margin-inline
+   stays an EXPLICIT 0 so a stray auto cannot re-center a subset. */
 .v2-chat__messages > * {
   width: 100%;
-  max-width: var(--v2-conv-measure);
-  margin-inline: auto;
+  margin-inline: 0;
 }
 
 .v2-chat__composer > * {
-  max-width: var(--v2-conv-measure);
-  margin-inline: auto;
-}
-
-.v2-msg__body {
-  max-width: 76ch;
+  margin-inline: 0;
 }
 
 /* Sender-only teaching cue shown once per pod/session when a message reaches
@@ -1869,13 +1858,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  /* Part of the conversation column (see --v2-conv-measure): siblings of
-     the messages list must share its centerline or they read as a second
-     edge — the v1-island lesson applied to every conversation element.
-     min(…, 100%) keeps the mobile-shrink property the 390px pane needs. */
+  /* Part of the conversation column: siblings of the messages list share
+     its full pane width and left edge (rule 2 v5, full-width) — a second
+     edge here recreates the v1 island. max-width keeps the mobile-shrink
+     property the 390px pane needs. */
   width: 100%;
-  max-width: min(var(--v2-conv-measure), 100%);
-  margin-inline: auto;
+  max-width: 100%;
+  margin-inline: 0;
   padding: 10px 24px 0;
   background: var(--v2-surface);
   flex-shrink: 0;
@@ -2694,7 +2683,17 @@
   background: var(--v2-accent-soft);
   border-radius: var(--v2-radius-sm);
   padding: 8px 10px 8px 10px;
-  margin-left: -12px;
+}
+
+/* The wash bleeds one padding past the row on BOTH sides so the mention
+   TEXT sits exactly on the shared grid like every other row (Sam,
+   2026-08-23 — mentions sat off-grid while messages aligned; the old
+   bleed was -12px against 10px padding, 2px off). The bleed lands inside
+   the pane's 24px gutter. 0-2-0 beats the `> *` width rule regardless of
+   source order. */
+.v2-chat__messages > .v2-msg--mention {
+  width: calc(100% + 20px);
+  margin-inline: -10px;
 }
 
 .v2-msg__content ul,
@@ -7198,6 +7197,15 @@
    card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px
    secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
    dropping to 24px at 390; layout transition 300ms. */
+
+/* Card + rail travel as ONE column row. As loose siblings their margin
+   shorthands beat the column's `> *` centering on source order, so threads
+   sat left-anchored while messages centered (Sam, 2026-08-23). The bottom
+   margin is the rail's terminator: without it the rail's last pixel abuts
+   the next outer message and reads as connected to it. */
+.v2-thread-block {
+  margin-bottom: 14px;
+}
 
 .v2-thread-card {
   display: flex;

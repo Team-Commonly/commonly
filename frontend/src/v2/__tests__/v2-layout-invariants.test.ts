@@ -105,20 +105,32 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
-  test('the conversation column centers as a WHOLE — messages and composer share one measure (rule 2, v3)', () => {
-    // Third mechanism, ruled by Sam 2026-08-23 ("message still halved after
-    // right sidebar closed"). v1 centered messages alone (the island — a
-    // disaster); v2 capped 76ch left-anchored, which reads as a half-empty
-    // page at wide widths. v3's load-bearing property is COHERENCE: the
-    // messages' children AND the composer's children must share the same
-    // measure token — centering one without the other recreates the island.
-    expect(v2).toContain('--v2-conv-measure:');
-    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('max-width: var(--v2-conv-measure)');
-    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: auto');
-    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('max-width: var(--v2-conv-measure)');
-    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('margin-inline: auto');
-    // Text measure inside the column stays readable.
-    expect(v2).toContain('max-width: 76ch');
+  test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
+    // Fifth mechanism, ruled by Sam 2026-08-23: the Slack model. With a
+    // line cap, leftover space must pool somewhere — center was rejected,
+    // and left-anchor pools it all on the right — so the cap itself goes.
+    // No revision may reintroduce a conversation measure token: that is
+    // the corner-of-the-triangle debate re-opening by accident.
+    expect(v2).not.toContain('--v2-conv-measure');
+    // What survives every revision is COHERENCE: messages' and composer's
+    // children share the pane's full width and one explicit left edge.
+    // margin-inline stays an explicit 0 — a stray auto re-centers a subset
+    // of rows and recreates the v1 island.
+    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
+    expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: 0');
+    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('margin-inline: 0');
+    // Nothing in the column may escape the shared edge (Sam, 2026-08-23:
+    // mentions and threads sat off-grid while messages aligned).
+    // Mentions: the wash bleed must equal the padding (the old -12px against
+    // 10px padding put mention TEXT 2px off-grid), widening the wash by one
+    // padding per side into the pane gutter.
+    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
+      .toContain('margin-inline: -10px');
+    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
+      .toContain('width: calc(100% + 20px)');
+    // Threads: card + rail travel inside one block-level child, whose
+    // bottom margin terminates the rail before the next outer message.
+    expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-bottom');
   });
 
   test('motion timing is tokenized and all three existing V2 animations consume it', () => {
@@ -345,9 +357,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const row = ruleBody(v2, '.v2-chat__starter-prompts');
     const chip = ruleBody(v2, '.v2-root button.v2-chat__starter-prompt');
     expect(row).toContain('flex-wrap: wrap');
-    // min(measure, 100%): shares the conversation column's centerline at
-    // desktop widths while keeping the 390px shrink this pin exists for.
-    expect(row).toContain('max-width: min(var(--v2-conv-measure), 100%)');
+    // Full pane width (rule 2 v5) while keeping the 390px shrink this pin
+    // exists for.
+    expect(row).toContain('max-width: 100%');
     expect(chip).toContain('max-width: 100%');
     expect(chip).toContain('white-space: normal');
   });
