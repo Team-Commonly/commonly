@@ -242,4 +242,60 @@ describe('V2PodChat composer send button', () => {
       );
     });
   });
+
+  // ── TASK-049 items 1 and 4: the image path is a second send site ──────────
+  const mockUpload = () => {
+    const axios = require('axios');
+    axios.post.mockImplementation((url: string) => (
+      String(url).includes('/api/uploads')
+        ? Promise.resolve({ data: { kind: 'image', url: 'https://cdn/x.png' } })
+        : Promise.resolve({ data: {} })
+    ));
+  };
+  const upload = (container: HTMLElement) => {
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
+  };
+
+  test('an image upload carries the REPLY edge when aimed at a person', async () => {
+    // @ux-lead 57473. #1150 wired the thread root on this line and left the
+    // reply edge hardcoded undefined, so the chip read "Replying to {name}"
+    // and the picture posted unrouted. The other half of the same line.
+    mockUpload();
+    const detail = makeDetail({ messages: threadMessages() });
+    const { container } = renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    upload(container);
+
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith(
+        'https://cdn/x.png', 'image', 'm2', undefined,
+      );
+    });
+  });
+
+  test('a successful image send consumes the target, so it cannot leak to the next send', async () => {
+    // The ruling says a send consumes the target on EVERY path. The image path
+    // did not, so an aim survived a completed send and silently applied again.
+    mockUpload();
+    const detail = makeDetail({ messages: threadMessages() });
+    const { container } = renderChat(detail);
+
+    fireEvent.click(screen.getByRole('button', { name: /reply in thread/i }));
+    upload(container);
+    await waitFor(() => expect(detail.sendMessage).toHaveBeenCalledTimes(1));
+
+    // The chip is gone, and a following text send carries no target at all.
+    await waitFor(() => {
+      expect(screen.queryByText(/replying in thread/i)).not.toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'unaimed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenLastCalledWith('unaimed', 'text', undefined, undefined);
+    });
+  });
 });
