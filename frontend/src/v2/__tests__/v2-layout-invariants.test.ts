@@ -498,6 +498,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(addressed).toContain('var(--v2-accent)');
   });
 
+  test('thread entry actions retain 44px targets and become visible on touch layouts', () => {
+    // TASK-052: Thread has to be reachable from an unthreaded message, while
+    // Reply preserves its existing addressing meaning. Desktop may reveal the
+    // row on hover; a 390px touch surface cannot depend on hover.
+    const messageAction = ruleBody(v2, '.v2-root button.v2-msg__reply-btn,\n.v2-root button.v2-msg__thread-btn');
+    expect(messageAction).toContain('min-height: 44px');
+    const cardAction = ruleBody(v2, '.v2-root button.v2-thread-card__reply');
+    expect(cardAction).toContain('min-height: 44px');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__reply-btn,[\s\S]*?\.v2-root button\.v2-msg__thread-btn[\s\S]*?opacity: 1/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);
+  });
+
   test('reduced motion actually reaches the thread transitions', () => {
     // The 300ms layout transition is a brief requirement AND a reduced-motion
     // hazard. Easy to add the transition and forget the opt-out; nothing in a

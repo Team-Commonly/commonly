@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
@@ -101,6 +102,10 @@ interface V2MessageBubbleProps {
   // Sets this message as the composer's reply target (reply threading —
   // backend replyToMessageId; agents already use it, this is the human side).
   onReply?: (message: V2Message) => void;
+  // Starts or joins the message's thread without creating a reply edge. The
+  // parent resolves an already-threaded message to its existing root before
+  // aiming the composer, so this control never asks the server for nesting.
+  onThread?: (message: V2Message) => void;
   // Consecutive-author grouping (craft audit finding 7): when the previous
   // message is the same author within the grouping window, the header row
   // (avatar / name / time) is suppressed and the row tightens. The avatar
@@ -304,8 +309,9 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
 // columns in mobile shells.
 const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
 
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, grouped, insideThreadRoot }) => {
+const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const api = useV2Api();
   // Picker state per message. Open via "+ react"; close on first click
@@ -437,15 +443,29 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
         />
       )}
       <div className="v2-msg__body">
-        {grouped && onReply && (
-          <button
-            type="button"
-            className="v2-msg__reply-float"
-            aria-label={`Reply to ${author}`}
-            onClick={() => onReply(message)}
-          >
-            Reply
-          </button>
+        {grouped && (onReply || onThread) && (
+          <div className="v2-msg__thread-actions v2-msg__thread-actions--float">
+            {onReply && (
+              <button
+                type="button"
+                className="v2-msg__reply-float"
+                aria-label={`Reply to ${author}`}
+                onClick={() => onReply(message)}
+              >
+                Reply
+              </button>
+            )}
+            {onThread && (
+              <button
+                type="button"
+                className="v2-msg__thread-float"
+                aria-label={`${t('podChat.thread.startThread')} from ${author}`}
+                onClick={() => onThread(message)}
+              >
+                {t('podChat.thread.startThread')}
+              </button>
+            )}
+          </div>
         )}
         {!grouped && (
         <div className="v2-msg__head">
@@ -458,15 +478,29 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           )}
           {isLead && <span className="v2-msg__lead-badge">Lead</span>}
           {time && <span className="v2-msg__time">{time}</span>}
-          {onReply && (
-            <button
-              type="button"
-              className="v2-msg__reply-btn"
-              aria-label={`Reply to ${author}`}
-              onClick={() => onReply(message)}
-            >
-              Reply
-            </button>
+          {(onReply || onThread) && (
+            <div className="v2-msg__thread-actions">
+              {onReply && (
+                <button
+                  type="button"
+                  className="v2-msg__reply-btn"
+                  aria-label={`Reply to ${author}`}
+                  onClick={() => onReply(message)}
+                >
+                  Reply
+                </button>
+              )}
+              {onThread && (
+                <button
+                  type="button"
+                  className="v2-msg__thread-btn"
+                  aria-label={`${t('podChat.thread.startThread')} from ${author}`}
+                  onClick={() => onThread(message)}
+                >
+                  {t('podChat.thread.startThread')}
+                </button>
+              )}
+            </div>
           )}
         </div>
         )}

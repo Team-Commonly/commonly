@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { shortTimeSince } from '../utils/shortTime';
 
@@ -37,6 +38,8 @@ interface V2ThreadCardProps {
   addressed?: boolean;
   onToggleCollapsed: () => void;
   onToggleFollowing: () => void;
+  /** Aim the composer at this card's root without first opening the rail. */
+  onReplyInThread?: () => void;
   /** Injected in tests so the stamp is about boundaries, not about the clock. */
   now?: Date;
 }
@@ -64,8 +67,10 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
   addressed = false,
   onToggleCollapsed,
   onToggleFollowing,
+  onReplyInThread,
   now,
 }) => {
+  const { t } = useTranslation();
   const shown = participants.slice(0, MAX_AVATARS);
   const stamp = shortTimeSince(lastActivityAt, now);
   const countLabel = `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`;
@@ -105,6 +110,16 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
         {stamp && <span className="v2-thread-card__time">{stamp}</span>}
         {!collapsed && <span className="v2-thread-card__chevron" aria-hidden="true">⌄</span>}
       </button>
+
+      {onReplyInThread && (
+        <button
+          type="button"
+          className="v2-thread-card__reply"
+          onClick={onReplyInThread}
+        >
+          {t('podChat.thread.replyInThread')}
+        </button>
+      )}
 
       {/* Follow lives outside the expand button: nesting a control inside a
           control is invalid, and a mis-hit that silently muted a thread is the
