@@ -278,6 +278,14 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     setReplyTarget(m);
   }, []);
 
+  // Memoized: it was called in the render body, so every keystroke in the
+  // composer re-folded the whole message list. @sprint-review on #1150.
+  // Recomputes only when the messages or the thread state actually change.
+  const threadView = useMemo(
+    () => buildThreadView(messages, threadState.byRoot),
+    [messages, threadState.byRoot],
+  );
+
   // @-mention dropdown state. mentionStart is the index of the `@` in the
   // textarea so we know the slice to replace on select.
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -839,7 +847,13 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     try {
       // reply_to and thread_root are mutually exclusive by construction here:
       // aimAtThread/aimAtMessage each clear the other, so at most one is set.
-      // The resolver 400s a message carrying both rather than choosing.
+      //
+      // The reason is SEMANTIC, not that the backend would refuse the pair.
+      // It would not: resolveThreadRoot 400s only when the two DISAGREE
+      // (thread_root_mismatch) and accepts them when they agree. An in-thread
+      // post must carry no addressing edge because a reply edge pings the
+      // root's author (@ux-lead 56879) — that is the rule this enforces, and
+      // it is the client's to keep.
       const created = await sendMessage(
         text,
         'text',
@@ -934,7 +948,12 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       if (uploaded.kind === 'image' && uploaded.url) {
-        await sendMessage(uploaded.url, 'image');
+        // Carries the thread target too. Without it, uploading an image while
+        // aimed at a thread posted it to the channel instead — the composer
+        // showed "Replying in thread" and the picture landed somewhere else.
+        // @sprint-review caught it on #1150; the text path had it and this one
+        // was simply missed.
+        await sendMessage(uploaded.url, 'image', undefined, threadTarget?.id || undefined);
         return;
       }
       if (uploaded.fileName) {
@@ -1197,7 +1216,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   )}
                 </div>
               )}
-              {buildThreadView(messages, threadState.byRoot).map((item, i, view) => {
+              {threadView.map((item, i, view) => {
                 if (item.kind === 'message') {
                   const m = item.message;
                   const prev = view[i - 1];

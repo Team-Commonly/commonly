@@ -42,6 +42,11 @@ export const buildThreadView = (
   messages: V2Message[],
   byRoot: Map<string, V2ThreadState>,
 ): ThreadViewItem[] => {
+  // Ids up front. This used to be `messages.some(...)` inside the loop below,
+  // which is O(n²) on a pod's whole scrollback — fine at 20 messages and not
+  // at 2,000. @sprint-review on #1150.
+  const presentIds = new Set(messages.map(idOf));
+
   const repliesByRoot = new Map<string, V2Message[]>();
   for (const m of messages) {
     const root = rootOf(m);
@@ -49,7 +54,7 @@ export const buildThreadView = (
     // A message whose root is not in this list (paged out, or deleted) is NOT
     // hidden. It renders flat rather than vanishing — losing a message is the
     // one outcome worse than showing it in the wrong place.
-    if (!messages.some((x) => idOf(x) === root)) continue;
+    if (!presentIds.has(root)) continue;
     const bucket = repliesByRoot.get(root);
     if (bucket) bucket.push(m);
     else repliesByRoot.set(root, [m]);
