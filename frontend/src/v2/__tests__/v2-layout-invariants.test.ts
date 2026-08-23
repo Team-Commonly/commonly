@@ -254,7 +254,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).toContain('display: flex');
     expect(rule).not.toContain('grid-template-columns');
     expect(rule).toContain('overflow: visible');
-    expect(ruleBody(v2, '.v2-pods__filter')).toContain('white-space: nowrap');
+    // The `.v2-root button.` prefix is load-bearing: the global button reset
+    // (0-1-1) zeroes padding on a bare-class rule (0-1-0), which shipped as
+    // 25px chips hugging bare text — the third hit of this exact trap.
+    const chip = ruleBody(v2, '.v2-root button.v2-pods__filter');
+    expect(chip).toContain('white-space: nowrap');
+    expect(chip).toContain('padding: 0 9px');
   });
 
   test('accent treatment is a wash, never a message rail', () => {
