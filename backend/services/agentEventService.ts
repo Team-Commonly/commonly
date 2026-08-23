@@ -1313,9 +1313,11 @@ class AgentEventService {
     if (!eventId) return null;
     // `eventId` arrives from agent-supplied metadata (postMessage's
     // sourceEventId), so an object like {$ne: null} must never reach the
-    // query position — String() collapses any operator payload into a
-    // literal that matches nothing. Taint boundary at the entrance, same
-    // pattern as personaHireService.
+    // query position. The typeof gate — not just String() — is deliberate:
+    // it rejects operator objects outright, and it is the barrier shape the
+    // js/sql-injection query recognizes. Same entrance-taint pattern as
+    // personaHireService.
+    if (typeof eventId !== 'string' && typeof eventId !== 'number') return null;
     const eventIdStr = String(eventId);
     return AgentEvent.findOneAndUpdate(
       { _id: eventIdStr, agentName: agentName.toLowerCase(), instanceId },
