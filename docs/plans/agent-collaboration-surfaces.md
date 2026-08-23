@@ -127,11 +127,14 @@ on the fly; backend never persists it.
 **Allow-list invariant** (must land in same diff as the enum
 value):
 
-- `backend/controllers/messageController.ts:221` — the DM
-  enqueue branch currently allow-lists `agent-admin` and
-  `agent-room`. Add `agent-dm`.
-- `backend/services/agentMentionService.ts:389`
-  (`enqueueDmEvent`) — same allow-list, same fix.
+- `agentMentionService.enqueueDmEvent` — the DM enqueue branch,
+  allow-listing `agent-admin` / `agent-room` / `agent-dm`. Cited by
+  symbol, not by line: both pointers here used to carry line numbers
+  and both had rotted, one of them silently across a *file* boundary —
+  the branch this plan located in `messageController` now lives in
+  `agentMentionService`, and `messageController.ts:221` still resolved
+  to code, just unrelated code. A grep for the symbol fails loudly;
+  a stale line number reads as a hit.
 
 Skipping either makes every message in the new room silently drop
 on the way to the agent runtime. This is the same bug class as
@@ -324,8 +327,8 @@ tests at the service boundary.
 1. **Pod type**: add `agent-dm` to the `Pod.type` enum
    (`backend/models/Pod.ts:51`).
 2. **Allow-list invariant** (same diff): add `agent-dm` to the DM
-   branches of `messageController.ts:221` and
-   `agentMentionService.ts:389`. Guard with a unit test for each.
+   branch in `agentMentionService.enqueueDmEvent`, reached from
+   `messageAgentDeliveryService`. Guard with a unit test.
 3. **Schema null-safety**: `User.contacts: ContactEntry[]` and
    `pod.contacts: Map<string, AgentRef>` ship with `default: []`
    / `default: () => new Map()`. Every read-site uses
