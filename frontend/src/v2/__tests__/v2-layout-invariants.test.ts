@@ -128,8 +128,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('margin-inline: -10px');
     expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
       .toContain('width: calc(100% + 20px)');
-    // Threads: card + rail travel inside one block-level child, whose
-    // bottom margin terminates the rail before the next outer message.
+    // Threads: card + rail travel inside one block-level child, indented
+    // to the message TEXT column like an attachment (38px avatar + 12px
+    // gap), whose bottom margin terminates the rail before the next
+    // outer message.
+    expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-left: 50px');
     expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-bottom');
   });
 
@@ -494,13 +497,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // correct rail from a missing one — the card and replies still appear,
     // just unindented and with no rule. This pins the three numbers that a
     // reader would otherwise have to take from a comment.
-    // REV 2 (@ux-lead, thread-reply-row-alignment rev 2, TASK-049 item 3).
-    // These numbers are inverted from rev 1 and the ruling authorises it:
-    // the root avatar is .v2-avatar--md = 30px inside a 38px column, so its
-    // centre is x = 15, not 19. margin-left 14 + the 2px border puts the rule
-    // through that centre. rev 1 measured the column and not the avatar.
+    // REV 3 (Sam, 2026-08-23): the whole thread block is indented to the
+    // message TEXT column like an attachment (margin-left 50px, pinned in
+    // the column test above), so the rail sits AT the block edge — margin 0
+    // — and card, rail, and message text share one line. Rev 2's
+    // avatar-centre axis (margin 14 → x = 15) is superseded: the block no
+    // longer starts at the avatar edge, so there is no avatar to aim at.
     const rail = ruleBody(v2, '.v2-thread-replies');
-    expect(rail).toContain('margin-left: 14px');
+    expect(rail).toContain('margin-left: 0');
     expect(rail).toContain('padding-left: 12px');
     expect(rail).toContain('border-left: 2px solid #eef0f6');
 
@@ -511,9 +515,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(railRow).toContain('grid-template-columns: 24px minmax(0, 1fr)');
     expect(railRow).toContain('gap: 8px');
 
-    // 390: the AXIS does not move (no channel-row override at this
-    // breakpoint), only the inner padding tightens to give x = 56.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 14px[\s\S]*?padding-left: 8px/);
+    // 390 (rev 3): the block's 50px attachment indent tightens to 24px,
+    // the rail stays on the block edge, and the inner padding tightens.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block\s*\{[\s\S]*?margin-left: 24px/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 0[\s\S]*?padding-left: 8px/);
   });
 
   test('the thread card has no shadow and no accent at rest', () => {
