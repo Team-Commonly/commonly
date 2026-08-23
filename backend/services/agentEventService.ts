@@ -1311,8 +1311,21 @@ class AgentEventService {
     { messageId }: { messageId?: string } = {},
   ): Promise<EventDoc | null> {
     if (!eventId) return null;
+    // `eventId` arrives from agent-supplied metadata (postMessage's
+    // sourceEventId), so an object like {$ne: null} must never reach the
+    // query position. The typeof gate — not just String() — is deliberate:
+    // it rejects operator objects outright, and it is the barrier shape the
+    // js/sql-injection query recognizes. Same entrance-taint pattern as
+    // personaHireService.
+    if (typeof eventId !== 'string' && typeof eventId !== 'number') return null;
+    const eventIdStr = String(eventId);
+    // Same gate for the co-tenants of the query object: every operand of a
+    // Mongo filter built from caller input must be a primitive by
+    // construction, not by trust in the call site.
+    const safeAgentName = typeof agentName === 'string' ? agentName.toLowerCase() : '';
+    const safeInstanceId = typeof instanceId === 'string' ? instanceId : 'default';
     return AgentEvent.findOneAndUpdate(
-      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
+      { _id: eventIdStr, agentName: safeAgentName, instanceId: safeInstanceId },
       {
         $set: {
           status: 'delivered',

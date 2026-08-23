@@ -113,6 +113,10 @@ interface PostMessageOptions {
   instanceId?: string;
   displayName?: string;
   replyToMessageId?: string | null;
+  // Explicit thread membership without addressing (constraint 5). Resolved
+  // and validated by threadRootResolver before the INSERT, same as the
+  // human composer path.
+  threadRootId?: string | null;
   installationConfig?: unknown;
 }
 
@@ -127,6 +131,7 @@ interface PostTargetOptions {
   agentUser: AgentUserDoc;
   displayName?: string;
   replyToMessageId?: string | null;
+  threadRootId?: string | null;
   skipDeliveryUpdate?: boolean;
   skipSummaryPersistence?: boolean;
 }
@@ -176,6 +181,9 @@ interface MessageNormalized {
   // it is present on every PG-created row. Snake case because the frontend's
   // threadView reads `m.thread_root_id` verbatim off both fetch and socket.
   thread_root_id?: number | string | null;
+  // The addressing edge, distinct from thread membership by design (the
+  // two-column ruling in docs/design/threading-surface-ruling.md).
+  reply_to_message_id?: number | string | null;
 }
 
 interface StructuredSummary {
@@ -910,6 +918,7 @@ class AgentMessageService {
       instanceId = 'default',
       displayName,
       replyToMessageId = null,
+      threadRootId = null,
       installationConfig = null,
     } = options;
 
@@ -1405,6 +1414,7 @@ class AgentMessageService {
       agentUser,
       displayName,
       replyToMessageId,
+      threadRootId,
     });
 
     return {
@@ -1461,7 +1471,7 @@ class AgentMessageService {
   static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
     const {
       agentName, instanceId = 'default', podId, content, messageType = 'text',
-      metadata = {}, payload = null, agentUser, displayName, replyToMessageId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
+      metadata = {}, payload = null, agentUser, displayName, replyToMessageId = null, threadRootId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1469,6 +1479,25 @@ class AgentMessageService {
     // sibling pod's label cannot leak into this room through the shared User.
     const senderDisplayName = displayName || agentUser?.botMetadata?.displayName || agentUser?.username;
     let message: MessageNormalized | null = null;
+
+    // Resolve the explicit thread target BEFORE the PG try, and let a
+    // ThreadRootError propagate: inside the try it would be swallowed into
+    // the Mongo fallback and the post would land silently un-threaded —
+    // the exact data loss the resolver exists to prevent. Same five
+    // rejections as the human composer path (messageController). And a
+    // thread-scoped post cannot be honored without PG at all, so refuse
+    // loudly there too (mirror of the getRecentMessages read refusal).
+    let resolvedThreadRootId: number | null = null;
+    if (threadRootId != null && threadRootId !== '') {
+      if (!PGMessage || !process.env.PG_HOST) {
+        throw new Error('threadRootId posts require the PostgreSQL message store');
+      }
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { resolveThreadRoot } = require('./threadRootResolver');
+      resolvedThreadRootId = await resolveThreadRoot({
+        podId: String(podId), replyToMessageId, threadRootId,
+      });
+    }
 
     if (PGMessage && process.env.PG_HOST) {
       try {
@@ -1496,7 +1525,7 @@ class AgentMessageService {
           console.warn('[agent-msg] PG pod backfill skipped:', (syncErr as Error).message);
         }
         const newMessage = await (PGMessage as {
-          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null, payload?: unknown): Promise<Record<string, unknown>>;
+          create(podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null, payload?: unknown, resolvedThreadRootId?: number | null): Promise<Record<string, unknown>>;
         }).create(
           String(podId),
           String(agentUser._id),
@@ -1504,6 +1533,7 @@ class AgentMessageService {
           messageType,
           replyToMessageId,
           payload,
+          resolvedThreadRootId,
         );
 
         // The raw INSERT row carries no reply JOIN, so a replying agent's
@@ -1547,6 +1577,13 @@ class AgentMessageService {
       } catch (pgError) {
         console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
       }
+    }
+
+    if (!message && resolvedThreadRootId != null) {
+      // PG accepted the resolve but the INSERT failed. Falling to Mongo here
+      // would strand an explicitly-threaded post as an unthreaded row —
+      // fail the post instead; the caller can retry.
+      throw new Error('thread-scoped post failed at the PostgreSQL store');
     }
 
     if (!message) {
@@ -1850,6 +1887,11 @@ class AgentMessageService {
     limit = 20,
     selfUserId?: unknown,
     beforeMs?: number,
+    // PG-only thread scoping. On the Mongo fallback (no threading columns)
+    // this filter cannot be honored, so rather than silently returning the
+    // whole pod as if it were the thread, the fallback throws — an agent
+    // that asked for a thread must never mistake the pod for it.
+    threadRootId?: string,
   ): Promise<MessageNormalized[]> {
     if (!podId) {
       throw new Error('podId is required');
@@ -1873,9 +1915,15 @@ class AgentMessageService {
           findByPodId(
             id: string,
             limit: number,
-            before?: string,
+            before?: string | null,
+            threadRootId?: string | null,
           ): Promise<Array<Record<string, unknown>>>;
-        }).findByPodId(String(podId), limit, before?.toISOString());
+        }).findByPodId(
+          String(podId),
+          limit,
+          before?.toISOString() ?? null,
+          threadRootId ?? null,
+        );
 
         return messages.map((msg) => {
           const username = (msg.username as string) || 'Unknown';
@@ -1899,11 +1947,27 @@ class AgentMessageService {
             isBot,
             ...withSelf(msg.user_id),
             createdAt: msg.created_at as Date,
+            // Threading structure for agent readers (TASK-052's read half):
+            // the SELECT has carried these since #1106; this mapper was the
+            // last literal dropping them, which is why the cue teaching
+            // "continue in a thread" was held — a peer agent reading context
+            // could not see that a thread existed. Explicit null = "not in a
+            // thread"; the Mongo fallback below omits the keys entirely =
+            // "this server cannot say" (same convention as the frontend).
+            reply_to_message_id: (msg.reply_to_message_id as string | number | null) ?? null,
+            thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
+            replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
           };
         });
       } catch (pgError) {
         console.error('PostgreSQL message fetch failed, falling back to MongoDB:', pgError);
       }
+    }
+
+    if (threadRootId) {
+      // See the parameter comment: honoring this on Mongo is impossible and
+      // faking it (returning the pod) is worse than failing.
+      throw new Error('threadRootId reads require the PostgreSQL message store');
     }
 
     let messageQuery = Message.find({ podId: { $eq: podId } });

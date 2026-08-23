@@ -166,6 +166,11 @@ class Message {
     podId: string,
     limit = 50,
     before: string | null = null,
+    // Scope the read to one thread: rows whose thread_root_id matches, PLUS
+    // the root row itself (a root carries NULL, not its own id — see the
+    // derivation in create()). This is what makes agent-side thread reads
+    // cheaper than paging the whole pod (TASK-052's cue depends on it).
+    threadRootId: string | null = null,
   ): Promise<FormattedMessage[]> {
     // Defense-in-depth clamp at the data layer: callers should pass a bounded
     // limit, but a stray unbounded value must never turn into a million-row
@@ -194,6 +199,11 @@ class Message {
       if (before) {
         query += ' AND m.created_at < $2';
         queryParams.push(before);
+      }
+      if (threadRootId) {
+        const p = queryParams.length + 1;
+        query += ` AND (m.thread_root_id = $${p}::int OR m.id = $${p}::int)`;
+        queryParams.push(threadRootId);
       }
       query += ` ORDER BY m.created_at DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);

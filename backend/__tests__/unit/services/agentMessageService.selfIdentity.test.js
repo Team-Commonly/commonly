@@ -77,7 +77,9 @@ describe('getRecentMessages — PG path', () => {
     await AgentMessageService.getRecentMessages(POD, 10, SELF, beforeMs);
 
     expect(PGMessage.findByPodId).toHaveBeenCalledWith(
-      POD, 10, new Date(beforeMs).toISOString(),
+      // Fourth argument is the thread scope (TASK-052) — null when the
+      // caller asked for the pod, which is this case.
+      POD, 10, new Date(beforeMs).toISOString(), null,
     );
   });
 

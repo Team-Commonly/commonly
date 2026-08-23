@@ -1447,12 +1447,12 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const supportedQueryParams = new Set(['limit', 'before']);
+    const supportedQueryParams = new Set(['limit', 'before', 'threadRootId']);
     const unsupportedQueryParams = Object.keys(req.query || {})
       .filter((key) => !supportedQueryParams.has(key));
     if (unsupportedQueryParams.length > 0) {
       return res.status(400).json({
-        message: `Unsupported query parameter(s): ${unsupportedQueryParams.join(', ')}. Supported parameters: limit, before.`,
+        message: `Unsupported query parameter(s): ${unsupportedQueryParams.join(', ')}. Supported parameters: limit, before, threadRootId.`,
         code: 'unsupported_query_parameters',
         unsupportedQueryParams,
       });
@@ -1482,12 +1482,27 @@ router.get('/pods/:podId/messages', agentRuntimeAuth, async (req: any, res: any)
     }
     const beforeMs = rawBefore === undefined ? undefined : Date.parse(rawBefore);
 
+    // Thread-scoped read (TASK-052's read half): the response is one
+    // thread — its root plus every message rooted at it — instead of the
+    // pod tail. Numeric string only: PG message ids are integers, and the
+    // model casts the parameter with ::int, so a stray value must fail
+    // here with a named error rather than there with a cast error.
+    const rawThreadRootId = req.query?.threadRootId;
+    if (rawThreadRootId !== undefined
+      && (typeof rawThreadRootId !== 'string' || !/^\d+$/.test(rawThreadRootId))) {
+      return res.status(400).json({
+        message: 'threadRootId must be a numeric message id',
+        code: 'invalid_query_parameter',
+        parameter: 'threadRootId',
+      });
+    }
+
     // Pass the caller's own user id so each message carries a server-computed
     // `self` flag. The wrapper uses it to tell "I posted via my tool" from
     // "some OTHER agent posted while I was thinking" — the latter used to
     // silently swallow this agent's reply in any multi-agent pod (#757).
     const messages = await AgentMessageService.getRecentMessages(
-      podId, limit + 1, req.agentUser?._id, beforeMs,
+      podId, limit + 1, req.agentUser?._id, beforeMs, rawThreadRootId,
     );
     const hasMore = messages.length > limit;
     // getRecentMessages returns chronological order. The data query selected
@@ -1801,7 +1816,9 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    const { content, metadata, messageType, replyToMessageId } = req.body || {};
+    const {
+      content, metadata, messageType, replyToMessageId, threadRootId,
+    } = req.body || {};
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
       instanceId: installation.instanceId || 'default',
@@ -1811,6 +1828,11 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
       metadata,
       messageType,
       replyToMessageId: replyToMessageId || null,
+      // In-thread post WITHOUT addressing (constraint 5, Sam's independence
+      // rule): the thread is ambient membership, the reply edge is a ping.
+      // Validated by threadRootResolver on the service side — same five
+      // rejections as the human composer path.
+      threadRootId: threadRootId || null,
       installationConfig: installation.config || null,
     });
 
@@ -1840,7 +1862,13 @@ router.post('/pods/:podId/messages', agentRuntimeAuth, phase4RateLimit, async (r
 
     return res.json(result);
   } catch (error: any) {
-    const err = error as Error & { code?: string; statusCode?: number };
+    const err = error as Error & { code?: string; statusCode?: number; name?: string };
+    // A bad thread target is caller-fixable input, same as on the human
+    // composer path (messageController): 400 with the resolver's code, so
+    // the agent's next attempt can be different instead of blind.
+    if (err.name === 'ThreadRootError') {
+      return res.status(400).json({ message: err.message, ...(err.code ? { code: err.code } : {}) });
+    }
     // Distinguish authorization refusals (403, e.g. dm_membership_refused)
     // from "pod truly missing" (404) and unexpected failures (500). Without
     // this, the post-message route 500'd on every legitimate guard refusal,
