@@ -1281,7 +1281,10 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                 // collapsed card around them — absence is not "collapsed".
                 const collapsed = st ? st.collapsed : false;
                 return (
-                  <React.Fragment key={`thread-${item.rootId}`}>
+                  // One block, not loose siblings: the conversation column
+                  // centers direct children, and a bare card + rail escaped
+                  // it (measured left-anchored at 24px vs the column's 186px).
+                  <div className="v2-thread-block" key={`thread-${item.rootId}`}>
                     <V2ThreadCard
                       replyCount={item.replyCount}
                       participants={item.participants}
@@ -1329,7 +1332,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                         )}
                       </div>
                     )}
-                  </React.Fragment>
+                  </div>
                 );
               })}
               <div ref={messagesEndRef} />
