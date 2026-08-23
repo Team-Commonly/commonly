@@ -121,8 +121,17 @@ describe('the three terms', () => {
 });
 
 describe('narrowToThread only ever narrows', () => {
-  const inst = (name, uid) => ({ agentName: name, installedBy: uid });
-  const identify = (t) => t.installedBy || null;
+  const inst = (name, uid) => ({ agentName: name, botUserId: uid });
+  // NOT `installedBy`. Production keys on the bot's User row id, resolved from
+  // botMetadata — `installedBy` is the HUMAN installer on half the write paths,
+  // which is the bug #1120 fixed. A local stand-in that still says installedBy
+  // makes this suite's algebra correct against a keying nothing uses.
+  //
+  // Kept as an opaque per-target id here, because this file is about the SET
+  // ARITHMETIC and should not care what the key means. Whether the key matches
+  // what the writer stored is a different question, and it now has its own
+  // reader: threadScopingSeam.test.js (@sprint-review 57122).
+  const identify = (t) => t.botUserId || null;
 
   test('an unthreaded message is untouched', async () => {
     const targets = [inst('a', 'u1'), inst('b', 'u2')];
