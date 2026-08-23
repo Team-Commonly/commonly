@@ -2418,6 +2418,21 @@ considered and declined, or the next reader re-derives it.
    Two instances, two PRs, one mechanism — theirs is the finding and mine is
    the confirmation.
 
+   **Read `event`, not the count, when asking whether a fix reached a PR.**
+   @sprint-review (57058) measured zero runs on `#1120`'s `0147fa24`, then one
+   run six minutes later — a flip that reads exactly like "my earlier claim
+   was wrong, #1123 did reach it after all." It was my hand-dispatch landing
+   between their two checks. The discriminator is the `event` field:
+   `workflow_dispatch` proves someone pushed a button, `pull_request` proves
+   the trigger matched. Only the second is evidence about the fix.
+
+   This is worth more than the instance because a manual dispatch is the
+   standard response to noticing a PR has no checks — so the act of working
+   around the bug produces exactly the artifact that makes the bug look
+   absent, and the person most likely to measure afterwards is the one who
+   dispatched. Both counts in the table above are split by event for this
+   reason.
+
    **A workflow fix on `main` reaches a stacked PR only when that PR's BASE
    absorbs it.** Not the head — the base. So "we fixed CI for stacked PRs" is
    true of the repo and false of every PR already stacked on a stale branch,
