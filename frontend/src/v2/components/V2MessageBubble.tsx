@@ -317,6 +317,23 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   // Picker state per message. Open via "+ react"; close on first click
   // (no need for outside-click handling — the picker hides after action).
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Touch reveal (Sam, 2026-08-23): on hoverless devices the action cluster
+  // must NOT sit on every message by default — that is chrome over content.
+  // A tap on the message reveals it (CSS shows .v2-msg--reveal only inside
+  // the hover:none media block); a second tap or the picker closing hides
+  // it again. Desktop hover behavior is untouched — the class is inert
+  // wherever hover exists.
+  const [actionsRevealed, setActionsRevealed] = useState(false);
+  const onBubbleTap = () => {
+    if (typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(hover: none)').matches) {
+      setActionsRevealed((v) => {
+        if (v) setPickerOpen(false);
+        return !v;
+      });
+    }
+  };
   // Surface why a reaction failed instead of swallowing it. Before this, a
   // rejected reaction (bad emoji 400, non-member 403, rate-limit 429) did
   // nothing visible — which made the ❤️-validation bug read as "reactions
@@ -452,7 +469,10 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   };
 
   return (
-    <div className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}`}>
+    <div
+      className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
+      onClick={onBubbleTap}
+    >
       {grouped ? (
         <div className="v2-msg__avatar-ghost" aria-hidden="true" />
       ) : isClickable ? (
@@ -488,7 +508,15 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           the trigger sits with its siblings instead of orphaned at the far
           edge of an empty reactions band. */}
       {(onReply || onThread || canInteract) && (
-        <div className="v2-msg__actions" role="toolbar" aria-label="Message actions">
+        /* stopPropagation: on touch, the bubble's own tap toggles reveal —
+           without this, tapping any action would immediately re-hide the
+           cluster (and close the picker it just opened). */
+        <div
+          className="v2-msg__actions"
+          role="toolbar"
+          aria-label="Message actions"
+          onClick={(e) => e.stopPropagation()}
+        >
           {onReply && (
             <button
               type="button"

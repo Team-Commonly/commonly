@@ -839,7 +839,10 @@
   overflow: visible;
 }
 
-.v2-pods__filter {
+/* `.v2-root button.` prefix is REQUIRED: the global button reset (0-1-1)
+   zeroes padding on any bare-class button rule (0-1-0). Third documented
+   hit of this trap — measured live as 25px chips hugging bare text. */
+.v2-root button.v2-pods__filter {
   height: 32px;
   padding: 0 9px;
   font-size: 12px;
@@ -6409,11 +6412,14 @@
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
-  /* No hover on touch: the cluster stays in its absolute top-right slot
-     but is always visible, and its targets grow to the 44px floor (craft
-     baseline rule 9). Keeping it absolute preserves the .v2-msg grid —
-     a static third child would break the avatar|body columns. */
-  .v2-msg__actions {
+  /* No hover on touch — but always-on clusters over every message are
+     chrome over content (Sam, 2026-08-23). A tap on the message toggles
+     .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
+     devices); only then does the cluster appear, at the 44px floor (craft
+     baseline rule 9). Absolute positioning preserved — a static third
+     child would break the avatar|body grid. */
+  .v2-msg--reveal .v2-msg__actions,
+  .v2-msg__actions:focus-within {
     opacity: 1;
     pointer-events: auto;
   }
@@ -7347,16 +7353,17 @@
 }
 
 @media (max-width: 640px) {
-  /* Touch has no hover: the action cluster (Reply/Thread/React) is always
-     visible at its top-right anchor with 44px targets — see the
-     hover:none/pointer:coarse block by the cluster rules. The old inline
-     head buttons this block used to force visible were retired 2026-08-23. */
+  /* Touch has no hover: the action cluster appears on TAP-REVEAL
+     (.v2-msg--reveal, set by the bubble's tap handler) with 44px targets —
+     never by default; always-on clusters over every message are chrome
+     over content. The old inline head buttons this block used to force
+     visible were retired 2026-08-23. */
   .v2-msg__head {
     height: auto;
     flex-wrap: wrap;
   }
 
-  .v2-msg__actions {
+  .v2-msg--reveal .v2-msg__actions {
     opacity: 1;
     pointer-events: auto;
   }
