@@ -319,3 +319,57 @@ describe('unknown resolves to expand, never to collapse', () => {
 // The reasoning it carried survives where it is still true: in
 // docs/design/threading-surface-ruling.md, and in the three-state cutoff
 // comments on readThreadingCutoff and effectiveStateForPod.
+
+describe('a read failure degrades toward EXPAND, never toward collapse', () => {
+  // CONVERTED from a source regex. @sprint-review (57150) on that block: every
+  // test in it was `expect(CONTROLLER_SRC).toMatch(...)`, reading the
+  // controller's text rather than running it — and their clearest proof was
+  // that one went red on the catch block's FORMATTING while the behaviour was
+  // intact. The old assertion here matched the literal shape of the catch, so
+  // a reformat broke it and a behavioural regression could slip past.
+  //
+  // Nothing executed a read failure anywhere, so this was the one property in
+  // that block with no behavioural coverage at all — and it is the safety
+  // direction: collapsed hides history invisibly, expanded is noisy and one
+  // click from fixed.
+  const readWith = async (queryImpl) => {
+    const original = mockPool.query.bind(mockPool);
+    mockPool.query = queryImpl(original);
+    try {
+      return await read();
+    } finally {
+      mockPool.query = original;
+    }
+  };
+  const failLedger = (orig) => (sql, params) => (
+    String(sql).includes('migration_records')
+      ? Promise.reject(new Error('connection reset'))
+      : orig(sql, params)
+  );
+
+  beforeEach(async () => {
+    await mockPool.query('DELETE FROM migration_records');
+    await seedPastCutoff();
+  });
+
+  test('the ledger query throwing renders every root EXPANDED', async () => {
+    const p = await readWith(failLedger);
+
+    expect(p.threads.length).toBeGreaterThan(0);
+    expect(p.threads.every((t) => t.collapsed === false)).toBe(true);
+  });
+
+  test('CONTROL: the same ledger row without a failure collapses them', async () => {
+    // Without this, the test above passes from any state that happens to
+    // expand — including a read so broken it returns nothing meaningful.
+    const p = await read();
+
+    expect(p.threads.length).toBeGreaterThan(0);
+    expect(p.threads.every((t) => t.collapsed === true)).toBe(true);
+  });
+
+  test('the failure does not surface as an error to the caller', async () => {
+    const p = await readWith(failLedger);
+    expect(p.podId).toBe(POD);
+  });
+});

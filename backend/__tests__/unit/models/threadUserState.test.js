@@ -204,18 +204,25 @@ describe('the pre-cutoff expanded default reaches the client', () => {
   // fail if the code were wrong rather than merely reworded.
 
 
-  it('a read failure degrades toward EXPAND, not toward collapse', () => {
-    // Not just "does not throw": the direction matters. Collapsed hides
-    // history invisibly; expanded is noisy and recoverable by one click.
-    expect(CONTROLLER_SRC).toMatch(/} catch \{[\s\S]{0,400}return \{ cutoff: null, cutoffUnknown: true \};/);
-  });
+  // MOVED to execution, @sprint-review (57150). Two source regexes lived here:
+  // "a read failure degrades toward EXPAND" matched the literal shape of the
+  // catch block, so a reformat broke it while the behaviour was intact — their
+  // example of why this whole block was reading text instead of running code.
+  // And "a missing row is UNKNOWN and unknown expands" asserted that two
+  // strings appear in the file, which the executing suite already proves by
+  // rendering the payload.
+  //
+  // Both now live in threadStateReadContract.test.js, which runs the handler:
+  // the read-failure case forces the ledger query to reject and asserts every
+  // root comes back expanded, with a control that the same ledger row without
+  // a failure collapses them. That control matters — an "expanded" assertion
+  // passes from any sufficiently broken read.
 
-  it('a missing row is UNKNOWN and unknown expands', () => {
-    // Two earlier shapes of mine were wrong in the same direction. The merged
-    // ruling settles it: absence of a ledger row never licenses collapse.
-    expect(CONTROLLER_SRC).toMatch(/cutoffUnknown/);
-    expect(CONTROLLER_SRC).toMatch(/EXPAND EVERYTHING/);
-    // and the retired probe is really gone, not just unused
+  it('the retired backfillPending probe is gone from the source, not merely unused', () => {
+    // This one stays textual ON PURPOSE and is the exception that shows the
+    // rule. It asserts the ABSENCE of code, which no execution can demonstrate:
+    // a dead branch that never runs is invisible to a behavioural test and
+    // still there for the next reader to revive.
     expect(CONTROLLER_SRC).not.toMatch(/backfillPending/);
   });
 });
