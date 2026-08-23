@@ -174,7 +174,8 @@ class ThreadUserState {
 
   /**
    * Everything the render path needs for one pod, with `collapsed` ALREADY
-   * RESOLVED for every root in the pod — @ux-lead's ruling (56996).
+   * RESOLVED for every root in the pod — docs/design/threading-surface-ruling.md,
+   * § "One state record, two booleans" (@ux-lead, pod 56996).
    *
    * The sparse version below returns only rows that exist, which pushes two
    * jobs onto the client: notice absence, and know the threading cutoff to
@@ -191,7 +192,8 @@ class ThreadUserState {
    * exercisable at the unit tier instead of only against a real server.
    *
    * The three-state cutoff is resolved here rather than at the wire, and the
-   * ORDER of the CASE arms is the whole #1115 ruling:
+   * ORDER of the CASE arms is the whole ruling in
+   * docs/design/threading-surface-ruling.md § "Pre-threading reply chains":
    *   cutoffUnknown          -> false. Never collapse on an unknown.
    *   cutoff NULL, known     -> true. The backfill ran and rooted nothing, so
    *                             there is no pre-cutoff history to protect.

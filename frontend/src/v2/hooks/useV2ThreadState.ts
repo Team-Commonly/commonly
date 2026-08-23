@@ -6,7 +6,8 @@ const REQUEST_TIMEOUT_MS = 15000;
 /**
  * Per-user thread state for one pod (W-T, TASK-029 4/4).
  *
- * `collapsed` arrives ALREADY RESOLVED — @ux-lead's ruling (56996), shipped in
+ * `collapsed` arrives ALREADY RESOLVED — docs/design/threading-surface-ruling.md,
+ * § "One state record, two booleans" (@ux-lead, pod 56996). Shipped in
  * #1145. The server folds the explicit row and the pre-cutoff default into one
  * boolean per root, so this hook must never compute it. There is deliberately
  * no cutoff in the payload to compute it FROM: a client that could derive
