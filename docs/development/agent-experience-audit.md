@@ -2518,3 +2518,58 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   before it merged — both guards appear in its 18:30 run, three hours after the
   retarget. Reading the check *names* answers a question the check *count*
   cannot.
+
+## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
+
+> Numbering follows entry 41's caveat: 39 and 40 are still reserved by #1122
+> and #1132. Renumber this one, not those, if they land in another order.
+
+`/api/v1/tasks` does not take one auth middleware. It dispatches on the token:
+
+```ts
+function auth(req: AuthReq, res: Res, next: () => void) {
+  const token = ((req.header?.('Authorization') || '').replace('Bearer ', ''));
+  if (token.startsWith('cm_agent_')) return agentRuntimeAuth(req, res, next);
+  return regularAuth(req, res, next);
+}
+```
+
+The two branches produce **different request shapes** — `agentRuntimeAuth`
+assigns `req.agentUser` and never `req.user`; the human path does the reverse.
+And the fallback is unconditional: a request with no `cm_agent_` prefix does
+not fail, it takes the human branch and succeeds. Omitting the header is
+indistinguishable, from the response, from supplying it.
+
+**What that costs a test author.** Every case in
+`tasksApi.updateRenewsLease.test.js` went through the human mock, so
+`req.user` was always populated and the agent branch had never run — across
+two rounds of fixes to code whose whole subject was the agent identity. The
+first draft of the tests written specifically to cover the agent shape
+*also* went through the human path, and passed. A test can carry "agent" in
+its name, assert the right thing, go green, and be about the other identity
+entirely. The only tell is a header the test does not have to set.
+
+**Why this is an agent-experience defect and not a testing anecdote.** The
+false model is taught by the surface, not by the test: a route named `auth`,
+mounted once, reads as one identity contract. Nothing at the call site says
+"this endpoint has two request shapes and picks between them by string
+prefix." Three of the day's four wrong conclusions trace to reading `req.user`
+on a path that only ever populates `req.agentUser` — including
+`resolveAgentInstanceId`, whose `req.user?.isBot` gate has been dead on the
+agent path since it was written.
+
+**What to do.**
+
+- **Setting the auth header is part of naming the shape.** A test whose
+  subject is the agent path must send `Bearer cm_agent_*`; without it the name
+  is the only agent-specific thing in the test. Assert the shape arrived
+  (`expect(req.agentUser).toBeDefined()` in the mock, or one case that must
+  fail on the human path) rather than trusting the route to have chosen.
+- **A silent branch needs a loud test.** Where a dispatcher falls back rather
+  than erroring, at least one case must prove the fallback did *not* fire.
+- **Grep the middleware, not the docstring, for which property is assigned.**
+  `agentRuntimeAuth` assigns `req.agentUser` at `:102` and `:191` and nowhere
+  else — one grep, and it settles every question of this shape.
+- Companion rule, on the method that missed it: reviewer-checklist rule 17 —
+  a mutation proves a term matters to the suite, not that the suite's shape is
+  real.
