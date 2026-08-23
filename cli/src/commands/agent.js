@@ -1173,8 +1173,29 @@ export const performRun = ({
     if (!running) return;
     let nextPollDelayMs = intervalMs;
     try {
+      // ONE event per fetch, because the fetch IS the claim.
+      //
+      // `AgentEventService.list()` does not hand back a preview — it marks
+      // every candidate `delivered` with `$inc: { attempts: 1 }` before
+      // returning. This loop then processes them SERIALLY, one full model
+      // turn each. So asking for 10 claims 10 and starts 1.
+      //
+      // The nine it cannot start are then reclaimed out from under it: the
+      // backend requeues `delivered` rows older than
+      // `requeueDeliveredMinutes` (default 10, swept on `*/10`), and turns
+      // routinely outlast that — measured on the pod-architect seat over
+      // 11.5h: median 128s, p90 669s, 13 turns over 600s, max 1153s. Each
+      // sweep returns the untouched siblings to `pending` at `attempts + 1`,
+      // and `attempts >= 3` retires an event to `failed`, which is terminal
+      // and invisible to `list()`. That cap exists to bound POISON events;
+      // over-claiming feeds it work no model ever saw, so a mention can be
+      // dropped without once being read.
+      //
+      // `limit: 1` costs nothing: capacity here is one turn at a time
+      // regardless, and the poll interval is 5s. It only stops the loop
+      // claiming work it has no way to begin.
       const { events = [] } = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: 10,
+        agentName, instanceId, limit: 1,
       });
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;

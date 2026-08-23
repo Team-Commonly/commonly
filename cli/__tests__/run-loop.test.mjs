@@ -104,6 +104,14 @@ describe('performRun', () => {
       '/api/agents/runtime/events',
       expect.objectContaining({ agentName: 'my-stub', instanceId: 'default' }),
     );
+
+    // The fetch IS the claim — `list()` marks every candidate `delivered`
+    // and increments `attempts` before returning, while this loop starts
+    // exactly one. Asking for more claims work it cannot begin, and the
+    // backend's requeue sweep then reclaims the remainder at `attempts + 1`
+    // until the poison cap retires them unread. Pinned as its own assertion
+    // because the previous value (10) looked like a harmless batch size.
+    expect(mockGet.mock.calls[0][1].limit).toBe(1);
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0]).toBe('hello from tester');
 
