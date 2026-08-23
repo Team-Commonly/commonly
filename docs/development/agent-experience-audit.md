@@ -2392,6 +2392,30 @@ is a bad trade on a busy repo, so the mitigation stays where Sam put it: force
 a head event deliberately. Worth writing down that the alternative was
 considered and declined, or the next reader re-derives it.
 
+4. *The base branch predates the workflow fix* → the fix never applies. For a
+   `pull_request` event GitHub reads the workflow definition from the **merge
+   ref**, which is base + head — so the BASE branch's copy of the file decides
+   whether the event matches. `#1123` dropped `branches: [main]` from
+   `tests.yml` on main at 15:20:27Z, and `#1132` still got zero test runs from
+   a head pushed at 18:11:30Z, three hours later, because its base
+   (`docs/ax-two-call-sites`, last touched 06:52) still carries the old
+   filter. Verified by reading `tests.yml` on that branch.
+
+   Its whole check list is one skipped `Release Branch Guard`, and its
+   `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
+   @sprint-review measured that and explicitly declined to claim the cause;
+   this is the cause.
+
+   **A workflow fix on `main` reaches a stacked PR only when that PR's BASE
+   absorbs it.** Not the head — the base. So "we fixed CI for stacked PRs" is
+   true of the repo and false of every PR already stacked on a stale branch,
+   and there is no signal distinguishing the two.
+
+   I got this wrong twice before reading the file. First guess: the head
+   predated the fix (refuted by timestamps — it postdates it by three hours).
+   Second: a paths filter (refuted — `tests.yml` has none). Rule 16's "make
+   the mechanism predict something" is what killed both.
+
 Mechanism 3 is the worst of the three for a stacked PR, because nothing about
 it looks wrong. There is no conflict, no thin check list, no red. The PR is
 green and mergeable — and it now means something different from what was
