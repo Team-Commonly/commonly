@@ -2519,38 +2519,37 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   retarget. Reading the check *names* answers a question the check *count*
   cannot.
 
-### Addendum: the missing checks include the security ones, and they are invisible to the repo
+### Addendum: what the six absent checks mean, and why one of them is unfalsifiable from a checkout
 
-@sprint-review, 2026-08-22. A stacked PR does not merely run a *different*
-check set than a main-based one — it runs a **smaller** one, and the difference
-is weighted toward analysis rather than tests. `#1109` (base `main`) showed 11
-checks; `#1120` (stacked) showed 5. The six absent were the two base-scoped
-merge guards plus **CodeQL: `Analyze (actions)`, `Analyze (javascript-typescript)`,
-`Analyze (python)`**.
+@sprint-review, 2026-08-22. The table above establishes the counts and the
+membership; two consequences of it are worth stating outright rather than
+leaving to be re-derived.
 
-So the retarget is load-bearing for a second reason beyond a green tick being
-about the right tree: until its base is `main`, a stacked PR gets **no static
-analysis at all**. A change can be reviewed, gated, and merged into its parent
-having never been scanned.
+**A stacked PR is not differently checked, it is LESS checked, and the missing
+set is weighted toward analysis.** Three of the six extras are CodeQL's. So
+until its base is `main`, a stacked PR gets **no static analysis at all** — a
+change can be reviewed, gated, and merged into its parent having never been
+scanned. That is a second reason the retarget is load-bearing, alongside the
+auto-close hazard.
 
-**The part that makes this agent-experience rather than trivia:** you cannot
-discover any of it by reading the repository. There is no `codeql.yml` in
-`.github/workflows/` — the scan is GitHub *default setup*, configured through
-the web UI, and `gh api repos/<owner>/<repo>/code-scanning/default-setup`
-is the only place its state and language list exist:
+**The scoping of those three cannot be checked from inside a checkout.** The
+entry above notes there is no `codeql.yml`; the sharper form is that the
+configuration lives *only* behind an API call:
 
-    state: configured
-    languages: actions, javascript, javascript-typescript, python, typescript
+    gh api repos/<owner>/<repo>/code-scanning/default-setup
+      state: configured
+      languages: actions, javascript, javascript-typescript, python, typescript
 
-Every other check in this repo can be traced to a file with a `on:` block a
-reader can inspect. This one cannot, so its trigger scoping is unfalsifiable
-from inside a checkout — and an agent reasoning about "which checks should this
-PR have" from `.github/workflows/` will confidently compute the wrong
-denominator, with the security checks as the omission it cannot see.
+Every other check in this repo traces to a file with an `on:` block a reader
+can inspect and falsify. This one does not — so an agent computing "which
+checks should this PR have?" from `.github/workflows/` will confidently
+produce the wrong denominator, with the *security* jobs as the omission it has
+no way to see. The failure is silent and points the wrong way: the checks that
+are hardest to notice missing are the ones you would most want to notice.
 
-Practical rule, matching the base-scoped-guard tell above: **`Analyze (…)` jobs
-are a second certificate that a run happened against `main`.** Their absence
-means the PR is stacked, and it means nothing has been scanned yet.
+**Practical rule**, the mirror of the base-scoped-guard tell above: `Analyze
+(…)` jobs are a second certificate that a run happened against `main`. Their
+absence means the PR is stacked — and that nothing has scanned it yet.
 
 ## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
