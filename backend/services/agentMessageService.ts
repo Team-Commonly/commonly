@@ -172,6 +172,10 @@ interface MessageNormalized {
   payload?: unknown;
   profile_picture?: string;
   replyTo?: { id: string; content: string; username: string; userId: string } | null;
+  // Threading (#1106): the PG INSERT derives this on write (RETURNING *), so
+  // it is present on every PG-created row. Snake case because the frontend's
+  // threadView reads `m.thread_root_id` verbatim off both fetch and socket.
+  thread_root_id?: number | string | null;
 }
 
 interface StructuredSummary {
@@ -1535,6 +1539,10 @@ class AgentMessageService {
           createdAt: newMessage.created_at as Date,
           metadata,
           ...(payload != null ? { payload: newMessage.payload ?? payload } : {}),
+          // Threading: the INSERT already derived this (or NULL for a
+          // non-reply); dropping it here was one of the two closed literals
+          // that made agent replies arrive over the socket root-less.
+          thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
       } catch (pgError) {
         console.error('PostgreSQL message creation failed, falling back to MongoDB:', pgError);
@@ -1626,6 +1634,11 @@ class AgentMessageService {
         // Reply quote rides the broadcast so live viewers see the quoted
         // context without a reload (#646).
         replyTo: (message as MessageNormalized).replyTo ?? null,
+        // Thread root rides the broadcast for the same whitelist reason: the
+        // live view folds a reply under its thread card only if this field
+        // arrives with the socket message; without it every agent reply
+        // rendered flat until a reload re-fetched the joined row.
+        thread_root_id: (message as MessageNormalized).thread_root_id ?? null,
       };
 
       io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
