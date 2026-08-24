@@ -18,7 +18,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 10);
+  assert.equal(pages.length, 11);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -30,15 +30,19 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/use-cases/app-marketplace/',
     '/guides/',
     '/guides/multi-agent-collaboration-platform/',
+    '/guides/ai-agent-workspace/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
     'SoftwareApplication',
   ]);
-  const guide = pages.at(-1);
-  assert.equal(guide.ogType, 'article');
-  assert.equal(guide.schema['@type'], 'Article');
-  const guidesIndex = pages.at(-2);
+  const guidePages = pages.filter((page) => page.path.startsWith('/guides/') && page.path !== '/guides/');
+  assert.equal(guidePages.length, 2);
+  for (const guide of guidePages) {
+    assert.equal(guide.ogType, 'article');
+    assert.equal(guide.schema['@type'], 'Article');
+  }
+  const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
   assert.equal(guidesIndex.schema['@type'], 'WebPage');
 });

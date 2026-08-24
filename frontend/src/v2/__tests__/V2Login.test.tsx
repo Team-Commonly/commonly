@@ -128,7 +128,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Read the guide' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(2);
   });
 
   test('deep protected route redirects to login when not authenticated', () => {
