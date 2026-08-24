@@ -29,6 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 COMPOSE_FILE="$REPO_ROOT/docker-compose.local.yml"
+ENV_FILE="$REPO_ROOT/.env"
 BACKEND_URL="http://localhost:5000"
 FRONTEND_URL="http://localhost:3000"
 HEALTH_PATH="/api/health"
@@ -61,7 +62,7 @@ trap on_err ERR
 # ── Subcommand: --down ──────────────────────────────────────────────────────
 if [[ "${1:-}" == "--down" ]]; then
   section "Stopping local Commonly stack"
-  docker compose -f "$COMPOSE_FILE" down -v
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v
   ok "Stack stopped and volumes removed."
   exit 0
 fi
@@ -82,6 +83,7 @@ require_cmd docker "https://docs.docker.com/get-docker/"
 require_cmd node   "https://nodejs.org/ — Node 20 or newer"
 require_cmd npm    "ships with Node — see Node install link"
 require_cmd curl   "apt-get install curl  /  brew install curl"
+require_cmd openssl "ships with macOS and most Linux distributions; install openssl if missing"
 
 # Docker Compose v2 ships as a docker plugin. Probe rather than require a
 # separate binary.
@@ -107,10 +109,20 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
 fi
 ok "Compose file: $COMPOSE_FILE"
 
+if [[ ! -f "$ENV_FILE" ]]; then
+  umask 077
+  printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > "$ENV_FILE"
+  ok "Created .env with a generated local JWT secret"
+elif ! grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" \
+  || grep -Eq '^JWT_SECRET=change-me-in-production-use-openssl-rand-hex-32$' "$ENV_FILE"; then
+  err "$ENV_FILE needs a non-default JWT_SECRET. Set one, then run this command again."
+  exit 1
+fi
+
 # ── 2. Bring the stack up ───────────────────────────────────────────────────
 section "Starting local Commonly stack"
-info "docker compose -f docker-compose.local.yml up -d --build"
-docker compose -f "$COMPOSE_FILE" up -d --build
+info "docker compose --env-file .env -f docker-compose.local.yml up -d --build"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 ok "Containers started."
 
 # ── 3. Wait for backend health ──────────────────────────────────────────────

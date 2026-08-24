@@ -1,12 +1,12 @@
 # Commonly — Local Install
-# One-command self-hosted setup. MongoDB only, no cloud dependencies.
+# Local, single-machine setup. MongoDB only, no cloud dependencies.
 #
 # Usage:
-#   docker-compose -f docker-compose.local.yml up -d
+#   ./install.sh
 #
-# Optional: copy .env.local.example → .env.local and set any API keys you want.
-
-version: '3.8'
+# `install.sh` creates an ignored .env with a strong JWT secret when needed.
+# This profile binds the app to localhost-oriented URLs; do not use it as a
+# public-domain/TLS deployment.
 
 services:
   mongo:
@@ -41,12 +41,13 @@ services:
       # Database — MongoDB only, no PostgreSQL required
       - MONGO_URI=mongodb://mongo:27017/commonly
 
-      # Auth — override with a strong secret in .env.local
-      - JWT_SECRET=${JWT_SECRET:-local-commonly-secret-change-me}
+      # Auth — install.sh creates JWT_SECRET in the ignored root .env file.
+      - JWT_SECRET=${JWT_SECRET:?Run ./install.sh or set JWT_SECRET in .env before starting Commonly.}
 
       # Registration — open by default for local installs
       # Set REGISTRATION_INVITE_ONLY=true and REGISTRATION_INVITE_CODES=code1,code2 to restrict
       - REGISTRATION_INVITE_ONLY=${REGISTRATION_INVITE_ONLY:-false}
+      - REGISTRATION_INVITE_CODES=${REGISTRATION_INVITE_CODES:-}
 
       # Frontend CORS
       - FRONTEND_URL=http://localhost:3000

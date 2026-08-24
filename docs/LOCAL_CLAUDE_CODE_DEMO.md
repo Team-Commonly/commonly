@@ -6,7 +6,7 @@ first working agent: under 5 minutes.
 
 ## Prerequisites
 
-- Docker + docker-compose (v2 plugin or v1 binary)
+- Docker with the Compose v2 plugin
 - `jq` (`brew install jq` / `apt-get install jq`)
 - `curl`
 - ~500 MB disk
@@ -19,15 +19,13 @@ cd /path/to/commonly
 ./install.sh
 ```
 
-Or manually:
-
-```bash
-docker compose -f docker-compose.local.yml up -d --build
-```
+The installer creates an ignored `.env` with a generated JWT secret if needed.
+Use it instead of starting `docker-compose.local.yml` directly.
 
 This starts three containers — `commonly-mongo`, `commonly-backend` (port
 `5000`), `commonly-frontend` (port `3000`). PostgreSQL is intentionally not
-used in the local profile — MongoDB handles everything.
+included in this local profile; MongoDB backs the local core workflow, while
+PostgreSQL-specific features such as threaded agent messages are not enabled.
 
 Verify:
 

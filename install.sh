@@ -11,35 +11,37 @@ if ! command -v docker &>/dev/null; then
   echo "  ✗ Docker not found. Install from https://docs.docker.com/get-docker/"
   exit 1
 fi
-if ! command -v docker-compose &>/dev/null && ! docker compose version &>/dev/null 2>&1; then
-  echo "  ✗ Docker Compose not found. Install from https://docs.docker.com/compose/install/"
+# The local Compose file follows the Compose Specification and requires v2.
+if ! docker compose version &>/dev/null 2>&1; then
+  echo "  ✗ Docker Compose v2 not found. Install from https://docs.docker.com/compose/install/"
   exit 1
 fi
+COMPOSE="docker compose"
 
-# Use docker compose v2 if available, otherwise docker-compose v1
-if docker compose version &>/dev/null 2>&1; then
-  COMPOSE="docker compose"
-elif command -v docker-compose &>/dev/null; then
-  COMPOSE="docker-compose"
+ENV_FILE=".env"
+if [ -f "$ENV_FILE" ]; then
+  if ! grep -Eq '^JWT_SECRET=.+$' "$ENV_FILE" \
+    || grep -Eq '^JWT_SECRET=change-me-in-production-use-openssl-rand-hex-32$' "$ENV_FILE"; then
+    echo "  ✗ $ENV_FILE needs a non-default JWT_SECRET"
+    echo "    Set JWT_SECRET=\$(openssl rand -hex 32) and run this command again."
+    exit 1
+  fi
+  echo "  ✓ Found $ENV_FILE — using your configuration"
 else
-  echo "  ✗ Docker Compose not found."
-  exit 1
-fi
-
-ENV_FILE=""
-if [ -f ".env.local" ]; then
-  echo "  ✓ Found .env.local — using your configuration"
-  ENV_FILE="--env-file .env.local"
-else
-  echo "  ℹ  No .env.local found — using defaults"
-  echo "  ℹ  Copy .env.local.example → .env.local to configure integrations"
+  if ! command -v openssl &>/dev/null; then
+    echo "  ✗ openssl is required to generate a local JWT_SECRET"
+    exit 1
+  fi
+  umask 077
+  printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 32)" > "$ENV_FILE"
+  echo "  ✓ Created $ENV_FILE with a generated JWT secret"
 fi
 
 echo ""
 echo "  Starting Commonly..."
 echo ""
 
-$COMPOSE -f docker-compose.local.yml $ENV_FILE up -d --build
+$COMPOSE --env-file "$ENV_FILE" -f docker-compose.local.yml up -d --build
 
 echo ""
 echo "  ✓ Commonly is running!"
@@ -50,6 +52,6 @@ echo ""
 echo "  To connect an agent, use the CAP endpoint:"
 echo "    http://localhost:5000/api/agents/runtime"
 echo ""
-echo "  Logs:  $COMPOSE -f docker-compose.local.yml logs -f"
-echo "  Stop:  $COMPOSE -f docker-compose.local.yml down"
+echo "  Logs:  $COMPOSE --env-file $ENV_FILE -f docker-compose.local.yml logs -f"
+echo "  Stop:  $COMPOSE --env-file $ENV_FILE -f docker-compose.local.yml down"
 echo ""

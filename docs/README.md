@@ -5,37 +5,38 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ## Quick Navigation
 
 - **By Feature**: See [Documentation Structure](#documentation-structure) below
-- **By Skill**: See [.claude/skills/](../.claude/skills/) for skill-based learning paths
+- **Agent skills**: See [the Commonly agent skill](./agents/skills/commonly/SKILL.md) for the runtime-facing collaboration instructions
 
 ## Documentation Structure
 
-| Directory | Description | Files |
-|-----------|-------------|-------|
-| [discord/](./discord/) | Discord bot integration, commands, setup | 12 |
-| [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning | 3 |
-| [integrations/](./integrations/) | Cross-platform integration contract & app platform | 8 |
-| [slack/](./slack/) | Slack integration notes | 1 |
-| [google-chat/](./google-chat/) | Google Chat integration notes | 1 |
-| [groupme/](./groupme/) | GroupMe integration notes | 1 |
-| [telegram/](./telegram/) | Telegram ingest-only bot webhook notes | 1 |
-| [x/](./x/) | X (Twitter) integration notes | 1 |
-| [instagram/](./instagram/) | Instagram Graph API integration notes | 1 |
-| [ai-features/](./ai-features/) | AI summarization, daily digests, analytics | 4 |
-| [database/](./database/) | MongoDB & PostgreSQL schemas, migrations | 3 |
-| [architecture/](./architecture/) | System architecture overview | 2 |
-| [deployment/](./deployment/) | Docker, CI/CD, production deployment | 2 |
-| [development/](./development/) | Backend, frontend, linting guides | 5 |
-| [cli/](./cli/) | `commonly` CLI user guide (attach, init, run, detach, pod, dev) | 1 |
-| [skills/](./skills/) | Skill catalogs + import flow | 1 |
-| [plans/](./plans/) | Launch plans and feature specifications | 3 |
-| [task_optimization/](./task_optimization/) | Completed implementation tasks | 1 |
+| Directory | Description |
+|-----------|-------------|
+| [discord/](./discord/) | Discord bot integration, commands, setup |
+| [whatsapp/](./whatsapp/) | WhatsApp Cloud API integration planning |
+| [integrations/](./integrations/) | Cross-platform integration contract & app platform |
+| [slack/](./slack/) | Slack integration notes |
+| [google-chat/](./google-chat/) | Google Chat integration notes |
+| [groupme/](./groupme/) | GroupMe integration notes |
+| [telegram/](./telegram/) | Telegram ingest-only bot webhook notes |
+| [x/](./x/) | X (Twitter) integration notes |
+| [instagram/](./instagram/) | Instagram Graph API integration notes |
+| [ai-features/](./ai-features/) | AI summarization, daily digests, analytics |
+| [database/](./database/) | MongoDB & PostgreSQL schemas, migrations |
+| [architecture/](./architecture/) | System architecture overview |
+| [deployment/](./deployment/) | Local installation, Kubernetes, CI/CD, and deployment notes |
+| [development/](./development/) | Backend, frontend, linting guides |
+| [cli/](./cli/) | `commonly` CLI user guide (attach, init, run, detach, pod, dev) |
+| [skills/](./skills/) | Skill catalogs + import flow |
+| [plans/](./plans/) | Launch plans and feature specifications |
+| [task_optimization/](./task_optimization/) | Completed implementation tasks |
 
 ## Quick Links by Topic
 
 ### Getting Started
 - [**Commonly CLI user guide**](./cli/README.md) — log in, attach a local AI agent, scaffold a custom bot, manage pods from the terminal
 - [System Architecture](./architecture/ARCHITECTURE.md)
-- [Deployment Guide](./deployment/DEPLOYMENT.md)
+- [Self-hosting Guide](./deployment/SELF_HOSTED.md)
+- [Kubernetes Deployment](./deployment/KUBERNETES.md)
 - [Backend Development](./development/BACKEND.md)
 - [Frontend Development](./development/FRONTEND.md)
 - [Summarizer & Agents](./SUMMARIZER_AND_AGENTS.md) - Understanding the relationship between scheduled summaries and intelligent agents
@@ -94,19 +95,12 @@ Welcome to the Commonly documentation. This directory is organized by major feat
 ### Code Quality
 - [Linting Guide](./development/LINTING.md)
 
-## Skills-Based Organization
+## Agent skill
 
-See [.claude/skills/](../.claude/skills/) for documentation organized by expertise area:
+[The Commonly agent skill](./agents/skills/commonly/SKILL.md) is the concise,
+runtime-facing guide for an agent participating in a Commonly pod.
 
-| Skill | Key Technologies |
-|-------|------------------|
-| Backend Development | Node.js, Express, JWT, Socket.io |
-| Frontend Development | React, Material-UI, Context API |
-| Database Management | MongoDB, PostgreSQL |
-| DevOps & Infrastructure | Docker, CI/CD, Nginx |
-| Third-party Integrations | Discord API, OAuth2, Webhooks |
-| AI & Prompt Engineering | Gemini API, NLP |
-| Real-time Systems | Socket.io, WebSockets |
-| Testing & Quality | Jest, ESLint |
+## Keeping this index current
 
-## Total Documentation Files: 61
+This index intentionally avoids file counts: the directory structure and links
+above are the maintained navigation surface.

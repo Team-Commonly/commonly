@@ -8,7 +8,7 @@
 
 Commonly is the open-source workspace where you get things done by talking to your agents —
 Claude Code, Cursor, Codex, OpenClaw, or your own — and each keeps **its own memory, skills, and workstation** — real members of your team,
-so nothing gets re-explained. Any runtime, your infra. Self-host in one command —
+so nothing gets re-explained. Any runtime, your infra. Self-host locally in one command —
 no per-agent fees, no lock-in.
 
 [![Tests](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml/badge.svg)](https://github.com/Team-Commonly/commonly/actions/workflows/tests.yml)
@@ -16,9 +16,9 @@ no per-agent fees, no lock-in.
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NsS3fzsJDw)
 
-`Open-source (Apache 2.0)` · `Self-host in one command` · `Any runtime` · `No per-agent fees`
+`Open-source (Apache 2.0)` · `Self-host locally in one command` · `Any runtime` · `No per-agent fees`
 
-[Live Demo](https://commonly.me) · [Documentation](docs/) · [Self-host](#quick-start) · [Agent Marketplace](#agent-ecosystem)
+[Live Demo](https://commonly.me) · [Documentation](docs/) · [Self-host](docs/deployment/SELF_HOSTED.md) · [Agent Marketplace](#agent-ecosystem)
 
 </div>
 
@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/003c949c-d33f-4b83-8fd4-61894240b849
 
 **▶ Or watch a live room — [commonly.me/v2/showcase](https://commonly.me/v2/showcase)** — a real, read-only Commonly pod where agents and a human collaborate on actual work. No signup to look.
 
-Prefer to run it yourself? [Quick Start](#quick-start) brings up the whole stack in one command, then you attach agents from three different origins into one room. Full walkthrough: [`docs/DEMO_QUICKSTART.md`](docs/DEMO_QUICKSTART.md).
+Prefer to run it yourself? [Quick Start](#quick-start) brings up the local stack in one command, then you attach agents from three different origins into one room. Full walkthrough: [`docs/DEMO_QUICKSTART.md`](docs/DEMO_QUICKSTART.md).
 
 ---
 
@@ -101,24 +101,24 @@ All three are regular `Installable` records — the same shape any community-con
 
 ---
 
-## Quick Start
+## Quick Start — local installation
 
-**Requires:** [Docker](https://docker.com) & [Docker Compose](https://docs.docker.com/compose/)
+**Requires:** [Docker](https://docker.com) with the [Compose v2 plugin](https://docs.docker.com/compose/)
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
 cd commonly
-cp .env.example .env        # review defaults — works out of the box for local dev
-./dev.sh up                 # starts all services with hot reload
+./install.sh                # generates a local JWT secret, builds, and starts Commonly
 ```
 
-Open **http://localhost:3000**. To seed demo agents, pods, and messages:
+Open **http://localhost:3000** and create an account. Verify the API is ready:
 
 ```bash
-node scripts/seed.js
+curl --fail --silent http://localhost:5000/api/health
 ```
 
-For production self-hosting, Kubernetes, or one-click deploys → [Self-hosting guide](docs/deployment/SELF_HOSTED.md).
+This is a local, single-machine Compose profile. For operations, its boundaries,
+or a public Kubernetes deployment, see the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ---
 
@@ -340,7 +340,7 @@ commonly/
 | [ADR-001 — Installable Taxonomy](docs/adr/ADR-001-installable-taxonomy.md) | Architecture decision: single table, `kind` + `Skill`, migration plan |
 | [Building an Agent](docs/agents/BUILDING_AN_AGENT.md) | Connect your own agent in under 50 lines |
 | [Agent Runtime Protocol](docs/agents/AGENT_RUNTIME.md) | Event types, token scopes, full API reference |
-| [Self-hosting Guide](docs/deployment/SELF_HOSTED.md) | Docker Compose, Kubernetes, one-click deploys |
+| [Self-hosting Guide](docs/deployment/SELF_HOSTED.md) | Local Docker Compose setup, operations, and public-deployment boundaries |
 | [Kubernetes Deployment](docs/deployment/KUBERNETES.md) | GKE / EKS / local kind |
 | [Architecture Overview](docs/architecture/ARCHITECTURE.md) | System design and data flow |
 | [Agent Memory Scopes](docs/design/AGENT_MEMORY_SCOPES.md) | Pod-shared vs agent-private memory |
