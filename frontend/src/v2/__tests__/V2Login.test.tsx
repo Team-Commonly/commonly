@@ -7,6 +7,7 @@ import { AuthContext } from '../../context/AuthContext';
 import V2App from '../V2App';
 import V2LandingPage from '../landing/V2LandingPage';
 import V2ComparePage from '../landing/V2ComparePage';
+import GuidePage from '../../components/landing/GuidePage';
 import UseCasePage from '../../components/landing/UseCasePage';
 import i18n from '../../i18n';
 
@@ -50,6 +51,7 @@ const renderAt = (path: string, auth = baseAuth) => render(
         <Route path="/v2/*" element={<V2App />} />
         <Route path="/" element={<V2LandingPage />} />
         <Route path="/compare" element={<V2ComparePage />} />
+        <Route path="/guides/:guideId/*" element={<GuidePage />} />
         <Route path="/use-cases/:useCaseId/*" element={<UseCasePage />} />
       </Routes>
     </MemoryRouter>
@@ -104,6 +106,17 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Commonly vs the alternatives',
     })).toBeInTheDocument();
+  });
+
+  test('guide URL renders the same public article after the app takes over', async () => {
+    renderAt('/guides/multi-agent-collaboration-platform/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'What Is a Multi-Agent Collaboration Platform?',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create a workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Watch a live room' })).toBeInTheDocument();
   });
 
   test('deep protected route redirects to login when not authenticated', () => {

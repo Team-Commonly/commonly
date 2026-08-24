@@ -734,6 +734,7 @@ const V2LandingPage: React.FC = () => {
             <Link className="v2-landing__footer-link" to="/v2/marketplace">{t('landing.footer.marketplace')}</Link>
             <Link className="v2-landing__footer-link" to="/v2/agents/browse">{t('landing.footer.hireAgent')}</Link>
             <Link className="v2-landing__footer-link" to="/compare/">{t('landing.actions.compare')}</Link>
+            <Link className="v2-landing__footer-link" to="/guides/multi-agent-collaboration-platform/">{t('landing.footer.multiAgentCollaborationGuide')}</Link>
             <a
               className="v2-landing__footer-link"
               href={`${REPO}/issues/new/choose`}

@@ -20,6 +20,7 @@ interface UseCase {
   problems: string[];
   outcomes: string[];
   exampleFlow: string[];
+  relatedGuides?: Array<{ title: string; path: string }>;
 }
 
 const USE_CASES = useCases as Record<string, UseCase>;
@@ -123,6 +124,17 @@ const UseCasePage: React.FC = () => {
             ))}
           </Stack>
         </Box>
+
+        {useCase.relatedGuides && useCase.relatedGuides.length > 0 && (
+          <Box sx={{ p: 3, border: '1px solid rgba(125,211,252,0.28)', borderRadius: 3, background: 'rgba(14,116,144,0.16)', mb: 5 }}>
+            <Typography sx={{ mb: 1.5, fontWeight: 700 }}>Related guides</Typography>
+            <Stack spacing={1} alignItems="flex-start">
+              {useCase.relatedGuides.map((guide) => (
+                <Button key={guide.path} variant="text" onClick={() => navigate(guide.path)}>{guide.title}</Button>
+              ))}
+            </Stack>
+          </Box>
+        )}
 
         <Divider sx={{ borderColor: 'rgba(148,163,184,0.18)', mb: 4 }} />
 

@@ -622,6 +622,7 @@
       "product": "产品",
       "marketplace": "应用市场",
       "hireAgent": "启用智能体",
+      "multiAgentCollaborationGuide": "多智能体协作指南",
       "feedback": "反馈",
       "openSource": "开源",
       "adrs": "架构决策记录",

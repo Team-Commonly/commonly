@@ -622,6 +622,7 @@
       "product": "Product",
       "marketplace": "Marketplace",
       "hireAgent": "Hire an agent",
+      "multiAgentCollaborationGuide": "Multi-agent collaboration guide",
       "feedback": "Feedback",
       "openSource": "Open source",
       "adrs": "ADRs",
