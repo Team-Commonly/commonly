@@ -2,10 +2,10 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
-// Auth, OAuth, and use-case entry stubs remain so hard-loaded external links
-// (and their query strings) still resolve. The former v1 shell and marketing
-// surfaces have been deleted; NavigationHandler redirects their old paths to
-// the v2 shell.
+// Auth and OAuth entry stubs remain so hard-loaded external links (and their
+// query strings) still resolve. The canonical public landing, comparison, and
+// use-case routes stay outside the v2 shell so their static HTML is also the
+// route users see after JavaScript loads.
 import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
@@ -14,10 +14,11 @@ import VerifyEmail from './components/VerifyEmail';
 import DiscordCallback from './components/DiscordCallback';
 import V2ComparePage from './v2/landing/V2ComparePage';
 import { AppProvider } from './context/AppContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { LayoutProvider } from './context/LayoutContext';
 import V2App from './v2/V2App';
+import V2LandingPage from './v2/landing/V2LandingPage';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
 import './App.css';
@@ -180,12 +181,10 @@ const theme = createTheme({
 });
 
 const getV2EquivalentPath = (pathname: string, search: string): string | null => {
-  if (pathname === '/') return '/v2';
   if (pathname === '/login') return '/v2/login';
   if (pathname === '/register' || pathname === '/register/invite-required') return `/v2${pathname}${search}`;
   if (pathname === '/verify-email') return `/v2${pathname}${search}`;
   if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;
-  if (pathname.startsWith('/use-cases/')) return `/v2${pathname}${search}`;
   if (pathname === '/feed') return `/v2/feed${search}`;
   if (pathname.startsWith('/thread/')) return `/v2${pathname}${search}`;
   if (pathname === '/dashboard') return `/v2/dashboard${search}`;
@@ -204,15 +203,22 @@ const getV2EquivalentPath = (pathname: string, search: string): string | null =>
   return null;
 };
 
+const PublicHome: React.FC = () => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading || !isAuthenticated) return <V2LandingPage />;
+  return <Navigate to="/v2" replace />;
+};
+
 // Component to handle navigation events
 function NavigationHandler(): null {
   const location = useLocation();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // v2 is the default UI: redirect any non-/v2 path that has a v2
-    // equivalent into the v2 shell. /v2/* stays directly routable; remaining
-    // unmatched paths fall through to the router's v2 catch-all.
+    // Public marketing routes deliberately stay canonical outside /v2. Legacy
+    // app paths still redirect into the v2 shell, which remains directly
+    // routable for authenticated work.
     if (!location.pathname.startsWith('/v2')) {
       const v2Path = getV2EquivalentPath(location.pathname, location.search);
       if (v2Path) {
@@ -265,13 +271,10 @@ function App(): React.ReactElement {
                   <div className="App">
                     <Routes>
                     <Route path="/v2/*" element={<V2App />} />
-                    <Route path="/" element={<Navigate to="/v2" replace />} />
-                    {/* Public marketing page — no v2 equivalent, renders as-is. */}
+                    <Route path="/" element={<PublicHome />} />
+                    {/* Canonical public routes also have static build output. */}
                     <Route path="/compare" element={<V2ComparePage />} />
-                    {/* v1 auth / OAuth / use-case entry stubs. Kept so hard-loaded
-                        external links resolve with their query strings intact; in-app
-                        navigation to these paths is redirected into the v2 shell by
-                        NavigationHandler. */}
+                    {/* Legacy auth/OAuth entry points preserve their query strings. */}
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />

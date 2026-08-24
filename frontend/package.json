@@ -34,9 +34,9 @@
   },
   "scripts": {
     "start": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/generate-seo-pages.mjs",
     "preview": "vite preview",
-    "test": "jest --watchAll=false --forceExit",
+    "test": "jest --watchAll=false --forceExit && node --test scripts/generate-seo-pages.test.mjs",
     "test:coverage": "jest --coverage --watchAll=false --forceExit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
