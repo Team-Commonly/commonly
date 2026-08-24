@@ -165,6 +165,15 @@ const V2App: React.FC = () => {
     } catch {
       // Ignore browsers that disallow sessionStorage.
     }
+    // Claim the page canvas while v2 is mounted. App.tsx unconditionally
+    // stamps `modern-ui` (the V1 dark gradient) on <body>, and .v2-root only
+    // paints its own box — so the V1 darkness showed through on load flash,
+    // overscroll, and every gap (Sam, 2026-08-24). The class must out-rank
+    // body.modern-ui, not merely follow it in bundle order.
+    document.body.classList.add('v2-canvas');
+    return () => {
+      document.body.classList.remove('v2-canvas');
+    };
   }, []);
 
   return (
