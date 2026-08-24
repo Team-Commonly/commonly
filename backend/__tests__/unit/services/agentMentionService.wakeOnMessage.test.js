@@ -51,6 +51,10 @@ jest.mock('../../../models/AgentEvent', () => ({
   countDocuments: jest.fn(),
 }));
 
+jest.mock('../../../models/pg/Message', () => ({
+  findById: jest.fn(),
+}));
+
 jest.mock('../../../services/welcomeWakeService', () => ({
   maybeFireWelcomeWake: jest.fn(),
 }));
@@ -377,5 +381,107 @@ describe('wake-on-message (ADR-018 D8)', () => {
       expect(specialist).not.toContain('Collaboration: for code-heavy work');
       expect(specialist).toContain('Wake-on-message:');
     });
+  });
+});
+
+// Reply-evidence flag (interim for TASK-058): a bot's reply reaches the
+// replied-to agent as message.posted (the isBot gate keeps the implicit
+// chat.mention path human-only), but the fan-out stamps per-target evidence
+// so the wrapper can treat "replies to MY message" as addressed instead of
+// standing down on the replier's own claim (Sage stood down twice on
+// Anvil's thread replies, observed live 2026-08-24).
+const PGMessage = require('../../../models/pg/Message');
+
+describe('wake-on-message reply evidence (repliesToYourMessage)', () => {
+  const mockBotUserRows = (rows) => {
+    User.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(rows),
+      }),
+    });
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPod('chat');
+    AgentEvent.countDocuments.mockResolvedValue(0);
+    // Bot sender: anvil replies to sage's message.
+    mockBotSender('anvil', 'anvil-seo-engineer');
+    PGMessage.findById.mockResolvedValue({ user_id: 'sage-bot-user-id' });
+    mockBotUserRows([
+      { _id: 'sage-bot-user-id', botMetadata: { agentName: 'sage', instanceId: 'sage-seo-lead' } },
+      { _id: 'quill-bot-user-id', botMetadata: { agentName: 'quill', instanceId: 'quill-seo-writer' } },
+    ]);
+  });
+
+  test('the parent author gets the flag and the inline frame; bystanders get neither', async () => {
+    mockInstallations([
+      install('sage', { optIn: true, instanceId: 'sage-seo-lead' }),
+      install('quill', { optIn: true, instanceId: 'quill-seo-writer' }),
+    ]);
+
+    await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'audit follow-up detail', id: 'm-77' },
+      userId: 'anvil-bot-user-id',
+      username: 'Anvil (SEO engineer)',
+      replyToMessageId: 'm-root-42',
+    });
+
+    const wakes = wakeCalls();
+    const sage = wakes.find((w) => w.agentName === 'sage');
+    const quill = wakes.find((w) => w.agentName === 'quill');
+    expect(sage).toBeDefined();
+    expect(quill).toBeDefined();
+    // The flag is the wrapper's claim-decision input…
+    expect(sage.payload.repliesToYourMessage).toBe(true);
+    expect(quill.payload.repliesToYourMessage).toBeUndefined();
+    // …and the inline frame is what the model actually reads.
+    expect(sage.payload.content).toContain('replies to YOUR earlier message');
+    expect(sage.payload.content).toContain('NO_REPLY');
+    expect(quill.payload.content).not.toContain('replies to YOUR earlier message');
+  });
+
+  test('a parent-author lookup failure degrades to plain ambient wakes, never to silence', async () => {
+    PGMessage.findById.mockRejectedValue(new Error('pg down'));
+    mockInstallations([install('sage', { optIn: true, instanceId: 'sage-seo-lead' })]);
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'still delivered', id: 'm-78' },
+      userId: 'anvil-bot-user-id',
+      username: 'Anvil (SEO engineer)',
+      replyToMessageId: 'm-root-42',
+    });
+
+    expect(res.woken).toEqual(['sage']);
+    const wake = wakeCalls()[0];
+    expect(wake.payload.repliesToYourMessage).toBeUndefined();
+    expect(wake.payload.content).toContain('Wake-on-message');
+  });
+
+  test('a human reply still routes via the implicit mention path, not the flag', async () => {
+    // findById serves TWO lookups here: the sender (human) and the reply
+    // author (sage's bot row, so resolveImplicitReplyTarget can address it).
+    User.findById.mockImplementation((id) => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(id === 'sage-bot-user-id'
+        ? { _id: 'sage-bot-user-id', isBot: true, botMetadata: { agentName: 'sage', instanceId: 'sage-seo-lead' } }
+        : { _id: 'user-1', isBot: false }),
+    }));
+    mockInstallations([install('sage', { optIn: true, instanceId: 'sage-seo-lead' })]);
+
+    await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'what do you think?', id: 'm-79', replyTo: { userId: 'sage-bot-user-id' } },
+      userId: 'user-1',
+      username: 'sam',
+      replyToMessageId: 'm-root-42',
+    });
+
+    // The mention path claimed the target (stronger cue), so the fan-out
+    // excluded it: no double delivery, and the flag never fires for humans.
+    expect(mentionCalls()).toHaveLength(1);
+    expect(wakeCalls()).toHaveLength(0);
   });
 });

@@ -885,6 +885,15 @@ const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
   + 'act, the message must be claimed first (commonly_claim_message) — if the '
   + 'claim is already held by a peer, stand down.]';
 
+// Stronger than the ambient frame, weaker than an @mention: the sender did
+// not name this agent, but they replied to (or threaded on) ITS message —
+// the conversational equivalent of turning toward someone mid-meeting.
+// Interim for TASK-058; the principled ADR-018 amendment supersedes this.
+const REPLIES_TO_YOU_FRAME = '[This message replies to YOUR earlier message — '
+  + 'you are addressed even though nobody typed your @name. Respond when a '
+  + 'response is genuinely useful; if the exchange has concluded, return '
+  + 'NO_REPLY.]';
+
 const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
   (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
     ?.config?.wakeOnMessage?.enabled === true
@@ -1080,6 +1089,7 @@ const followMentionedThreadUsers = async (
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
+  replyToMessageId = null,
 }: {
   podId: string;
   message: EnqueueMentionsOptions['message'];
@@ -1092,6 +1102,7 @@ const enqueueWakeOnMessage = async ({
   excludeKeys: Set<string> | null;
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
   resolvedBotUserIds?: Map<string, string>;
+  replyToMessageId?: string | null;
 }): Promise<string[]> => {
   const woken: string[] = [];
   let targets = (installations || []).filter(wakeOnMessageEnabled);
@@ -1132,10 +1143,15 @@ const enqueueWakeOnMessage = async ({
   // narrowToThread rather than dropped — an unclassifiable target must
   // degrade to today's behaviour, never to silence.
   const threadRootId = resolveThreadRootId(message);
+  // Resolved at most ONCE per fan-out whoever needs it first — the thread
+  // narrowing and the reply-evidence stamp share this (a suite pins the
+  // single User.find).
+  let cachedBotUserIds: Map<string, string> | undefined = resolvedBotUserIds;
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const { narrowToThread } = require('./threadWakeScopeService');
-    const botUserIds = resolvedBotUserIds ?? await resolveBotUserIds(targets);
+    cachedBotUserIds = cachedBotUserIds ?? await resolveBotUserIds(targets);
+    const botUserIds = cachedBotUserIds;
     targets = await narrowToThread(
       threadRootId,
       targets,
@@ -1164,6 +1180,42 @@ const enqueueWakeOnMessage = async ({
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
     : null;
 
+  // Reply-evidence flag (interim for TASK-058). The #703 implicit-reply path
+  // is gated on `sender.isBot === false`, so a BOT's reply to an agent's
+  // message reaches its author as plain ambient activity — and the claim
+  // layer then orders that author to stand down from its own conversation
+  // (observed live: Sage stood down twice on Anvil's thread replies,
+  // 2026-08-24). This does NOT widen ADDRESSED_EVENT_TYPES or add events:
+  // the same message.posted fan-out carries per-target EVIDENCE — "this
+  // message replies to something you wrote" — and the wrapper decides what
+  // that evidence is worth. Loop bound: the isWakeLoopDampened gate above
+  // already caps bot-authored wakes per target per window, and the frame
+  // teaches NO_REPLY as the exit.
+  const parentMessageId = String(
+    replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || threadRootId || '',
+  ) || null;
+  let parentAuthorUserId: string | null = null;
+  if (parentMessageId) {
+    const isReplyParent = parentMessageId !== String(threadRootId || '');
+    parentAuthorUserId = isReplyParent ? normalizeUserId(message?.replyTo?.userId) : null;
+    if (!parentAuthorUserId) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const PGMessage = require('../models/pg/Message') as {
+          findById: (id: string) => Promise<{ user_id?: unknown; userId?: unknown } | null>;
+        };
+        const parentRow = await PGMessage.findById(parentMessageId);
+        parentAuthorUserId = normalizeUserId(parentRow?.user_id || parentRow?.userId);
+      } catch {
+        parentAuthorUserId = null; // evidence is best-effort; ambient behaviour is the floor
+      }
+    }
+  }
+  if (parentAuthorUserId && !cachedBotUserIds) {
+    cachedBotUserIds = await resolveBotUserIds(targets);
+  }
+  const parentBotUserIds = parentAuthorUserId ? (cachedBotUserIds ?? null) : null;
+
   await Promise.all(targets.map(async (inst) => {
     const agentName = String(inst.agentName || '').toLowerCase();
     if (!agentName) return;
@@ -1172,7 +1224,18 @@ const enqueueWakeOnMessage = async ({
     if (key === senderKey) return;
     if (excludeKeys?.has(key)) return;
     if (senderKey && await isWakeLoopDampened({ agentName, instanceId }, podId)) return;
+    const repliesToYou = !!(parentAuthorUserId
+      && parentBotUserIds
+      && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);
     try {
+      const built = buildContentForTarget(
+        podId,
+        rawContent,
+        'message.posted',
+        agentName,
+        collaborativePod,
+        authorFrame,
+      );
       await AgentEventService.enqueue({
         agentName,
         instanceId,
@@ -1180,20 +1243,16 @@ const enqueueWakeOnMessage = async ({
         type: 'message.posted',
         payload: {
           messageId: authorFrame.messageId,
-          content: buildContentForTarget(
-            podId,
-            rawContent,
-            'message.posted',
-            agentName,
-            collaborativePod,
-            authorFrame,
-          ),
+          // Inline cue, not only metadata — the flag below is for the
+          // wrapper's claim decision; the model reads the content.
+          content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,
           userId,
           username,
           source,
           messageType: message?.messageType || message?.message_type || 'text',
           createdAt: message?.createdAt || message?.created_at || new Date(),
           wakeOnMessage: true,
+          ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });
       woken.push(agentName);
@@ -1318,7 +1377,7 @@ const enqueueMentions = async ({
     let woken: string[] = [];
     try {
       woken = await enqueueWakeOnMessage({
-        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: null, authorFrame,
+        podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: null, authorFrame, replyToMessageId,
       });
     } catch (error) {
       // The message is already persisted — a wake failure must never turn a
@@ -1680,7 +1739,7 @@ const enqueueMentions = async ({
   let woken: string[] = [];
   try {
     woken = await enqueueWakeOnMessage({
-      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds,
+      podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds, replyToMessageId,
     });
   } catch (error) {
     console.warn('[wake-on-message] fan-out failed:', (error as Error).message);
