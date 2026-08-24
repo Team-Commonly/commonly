@@ -5,6 +5,9 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 import V2App from '../V2App';
+import V2LandingPage from '../landing/V2LandingPage';
+import V2ComparePage from '../landing/V2ComparePage';
+import UseCasePage from '../../components/landing/UseCasePage';
 import i18n from '../../i18n';
 
 // Mock surface includes `defaults` and `interceptors` so the transitive
@@ -45,6 +48,9 @@ const renderAt = (path: string, auth = baseAuth) => render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/v2/*" element={<V2App />} />
+        <Route path="/" element={<V2LandingPage />} />
+        <Route path="/compare" element={<V2ComparePage />} />
+        <Route path="/use-cases/:useCaseId/*" element={<UseCasePage />} />
       </Routes>
     </MemoryRouter>
   </AuthContext.Provider>,
@@ -68,7 +74,7 @@ describe('V2 routing', () => {
 
   test('index route shows the public landing when not authenticated', async () => {
     renderAt('/v2');
-    // V2Home sends logged-out visitors to /v2/landing (the public front door),
+    // V2Home sends logged-out visitors to the canonical public front door,
     // not the login wall. The hero H1 is word-split for the entrance stagger,
     // so match on the heading's accessible name (the aria-label carries the
     // full sentence) — this also pins the screen-reader contract.
@@ -80,6 +86,24 @@ describe('V2 routing', () => {
       'href',
       'https://github.com/Team-Commonly/commonly/issues/new/choose',
     );
+  });
+
+  test('legacy use-case routes redirect to their canonical public URL', async () => {
+    renderAt('/v2/use-cases/team-chat');
+
+    expect(await screen.findByRole('heading', {
+      level: 2,
+      name: 'Run pod conversations with searchable shared context',
+    })).toBeInTheDocument();
+  });
+
+  test('canonical comparison URL renders after the app takes over', async () => {
+    renderAt('/compare/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'Commonly vs the alternatives',
+    })).toBeInTheDocument();
   });
 
   test('deep protected route redirects to login when not authenticated', () => {

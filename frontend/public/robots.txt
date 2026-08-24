@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://commonly.me/sitemap.xml

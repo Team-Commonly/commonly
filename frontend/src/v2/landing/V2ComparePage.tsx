@@ -50,12 +50,12 @@ const V2ComparePage: React.FC = () => {
   return (
     <div className="v2-root v2-landing">
       <header className="v2-landing__bar">
-        <Link className="v2-landing__brand" to="/v2/landing" style={{ textDecoration: 'none' }}>
+        <Link className="v2-landing__brand" to="/" style={{ textDecoration: 'none' }}>
           <span className="v2-landing__mark"><Mark size={26} /></span>
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </Link>
         <nav className="v2-landing__nav" aria-label={t('compare.nav.primaryLabel')}>
-          <Link className="v2-landing__navlink" to="/v2/landing">{t('compare.nav.home')}</Link>
+          <Link className="v2-landing__navlink" to="/">{t('compare.nav.home')}</Link>
           <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{GITHUB_BRAND}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('compare.nav.signIn')}</Link>
@@ -128,7 +128,7 @@ const V2ComparePage: React.FC = () => {
         <div className="v2-landing__footer-cols">
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('compare.footer.product')}</div>
-            <Link className="v2-landing__footer-link" to="/v2/landing">{t('compare.nav.home')}</Link>
+            <Link className="v2-landing__footer-link" to="/">{t('compare.nav.home')}</Link>
             <Link className="v2-landing__footer-link" to={appHref}>{primaryLabel}</Link>
           </div>
           <div className="v2-landing__footer-col">

@@ -14,11 +14,9 @@ import V2ResetPassword from './components/V2ResetPassword';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
-import V2LandingPage from './landing/V2LandingPage';
 import V2Showcase from './showcase/V2Showcase';
 import V2BillingPanel from './components/V2BillingPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
-import UseCasePage from '../components/landing/UseCasePage';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
 import UserProfile from '../components/UserProfile';
@@ -118,10 +116,15 @@ const V2Home: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/v2/landing" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <V2Layout selectionMode="auto" />;
+};
+
+const V2UseCaseRedirect: React.FC = () => {
+  const { useCaseId } = useParams<{ useCaseId: string }>();
+  return <Navigate to={useCaseId ? `/use-cases/${encodeURIComponent(useCaseId)}/` : '/'} replace />;
 };
 
 const feature = (
@@ -169,7 +172,7 @@ const V2App: React.FC = () => {
       <V2ErrorBoundary>
         <Routes>
           <Route index element={<V2Home />} />
-          <Route path="landing" element={<V2LandingPage />} />
+          <Route path="landing" element={<Navigate to="/" replace />} />
           {/* Public read-only showcase — a logged-out visitor's window onto a
               real room. MUST sit OUTSIDE V2RequireAuth (the `*` branch below)
               so anonymous visitors reach it without bouncing to /v2/login. */}
@@ -180,7 +183,7 @@ const V2App: React.FC = () => {
               /v2/agents (Your Team). Outside V2RequireAuth, like the showcase. */}
           <Route path="agent/:agentName" element={<V2AgentProfile />} />
           <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
-          <Route path="use-cases/:useCaseId" element={<UseCasePage />} />
+          <Route path="use-cases/:useCaseId" element={<V2UseCaseRedirect />} />
           <Route path="login" element={<V2Login />} />
           <Route path="register" element={<V2Register />} />
           <Route path="register/invite-required" element={<RegistrationInviteRequired />} />

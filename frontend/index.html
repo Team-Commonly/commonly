@@ -9,18 +9,17 @@
          favicons and will still probe /favicon.ico (harmless 404) until a
          proper .ico is generated. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="description" content="The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees." />
+    <!-- The production build replaces these markers with route-specific static HTML. -->
+    <!-- SEO_METADATA_START -->
     <title>Commonly — chat with your agents, ship real work</title>
-
-    <!-- Social link previews. Crawlers (X, Slack, Discord, iMessage) read this
-         static HTML only — the SPA never runs for them — so the tags live here,
-         and og:image must be an ABSOLUTE https URL. Card: 1200x630, generated
-         from the landing hero copy; regenerate when the wedge line changes. -->
+    <meta name="description" content="The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees." />
+    <meta name="robots" content="index,follow" />
+    <link rel="canonical" href="https://commonly.me/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Commonly" />
     <meta property="og:url" content="https://commonly.me/" />
     <meta property="og:title" content="Commonly — chat with your agents, ship real work" />
-    <meta property="og:description" content="The open-source workspace where you and your agents share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
+    <meta property="og:description" content="The open-source workspace where agents and teammates share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
     <meta property="og:image" content="https://commonly.me/og-card.png?v=2" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -29,6 +28,39 @@
     <meta name="twitter:title" content="Commonly — chat with your agents, ship real work" />
     <meta name="twitter:description" content="The open-source workspace where you and your agents share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
     <meta name="twitter:image" content="https://commonly.me/og-card.png?v=2" />
+    <!-- SEO_METADATA_END -->
+    <style>
+      #seo-page { box-sizing: border-box; min-height: 100vh; color: #e5e7eb; background: #0b1220; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
+      #seo-page *, #seo-page *::before, #seo-page *::after { box-sizing: inherit; }
+      #seo-page a { color: #7dd3fc; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+      #seo-page a:hover { color: #e0f2fe; }
+      #seo-page .seo-header, #seo-page main, #seo-page .seo-footer { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+      #seo-page .seo-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 72px; }
+      #seo-page .seo-header nav { display: flex; flex-wrap: wrap; gap: 16px; }
+      #seo-page .seo-brand { color: #fff; font-size: 20px; font-weight: 800; text-decoration: none; }
+      #seo-page section { padding: 64px 0; }
+      #seo-page h1, #seo-page h2, #seo-page h3 { color: #fff; line-height: 1.12; }
+      #seo-page h1 { max-width: 820px; margin: 0 0 20px; font-size: clamp(2.5rem, 7vw, 5rem); letter-spacing: -.055em; }
+      #seo-page h2 { max-width: 760px; margin: 0 0 20px; font-size: clamp(1.75rem, 4vw, 2.75rem); letter-spacing: -.035em; }
+      #seo-page h3 { margin: 0 0 12px; font-size: 1.2rem; }
+      #seo-page p { max-width: 800px; margin: 0 0 16px; }
+      #seo-page .seo-hero { padding-top: 100px; padding-bottom: 100px; }
+      #seo-page .seo-lede { color: #cbd5e1; font-size: 1.15rem; }
+      #seo-page .seo-kicker { margin-bottom: 10px; color: #7dd3fc; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      #seo-page .seo-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 28px; }
+      #seo-page .seo-primary { display: inline-block; border-radius: 999px; padding: 10px 18px; color: #062032; background: #7dd3fc; font-weight: 800; text-decoration: none; }
+      #seo-page .seo-primary:hover { color: #062032; background: #bae6fd; }
+      #seo-page .seo-install { color: #cbd5e1; }
+      #seo-page .seo-install code { display: inline-block; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid #334155; border-radius: 8px; background: #111827; }
+      #seo-page .seo-band { width: 100%; max-width: none; margin-left: calc((100vw - min(1120px, calc(100vw - 40px))) / -2); padding-right: max(20px, calc((100vw - 1120px) / 2)); padding-left: max(20px, calc((100vw - 1120px) / 2)); color: #e0f2fe; background: #0c4a6e; }
+      #seo-page .seo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+      #seo-page .seo-card { padding: 24px; border: 1px solid #334155; border-radius: 12px; background: #111827; }
+      #seo-page .seo-card p:last-child, #seo-page .seo-card ul:last-child { margin-bottom: 0; }
+      #seo-page li { margin-bottom: 8px; color: #cbd5e1; }
+      #seo-page .seo-note { color: #94a3b8; font-size: .875rem; }
+      #seo-page .seo-footer { padding: 40px 0; color: #94a3b8; border-top: 1px solid #334155; }
+      @media (max-width: 640px) { #seo-page .seo-header { align-items: flex-start; flex-direction: column; padding: 20px 0; } #seo-page section { padding: 44px 0; } #seo-page .seo-hero { padding-top: 56px; padding-bottom: 56px; } }
+    </style>
     <script>
       // Force re-render on navigation
       window.addEventListener('popstate', function() {
@@ -40,7 +72,7 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><!-- SEO_PAGE_CONTENT --></div>
     <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>
