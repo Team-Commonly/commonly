@@ -115,6 +115,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('body.modern-ui.v2-canvas');
     expect(v2).toMatch(/body\.v2-canvas,\nbody\.modern-ui\.v2-canvas \{[\s\S]*?background: #f8f8fb/);
     expect(v2).toContain('--v2-page-bg: #f8f8fb');
+    // The flash half of the same bug: App.css's BARE body rule painted every
+    // load dark before React could stamp any class. The dark default is
+    // V1-scoped under body.modern-ui; the bare default matches v2's canvas.
+    const appCss = read('../../App.css');
+    // The standalone `body {` rule, not the `html,\nbody {` reset above it —
+    // hence the no-comma-before lookbehind.
+    const bareBody = appCss.match(/(?<!,)\nbody \{([^}]*)\}/)?.[1] ?? '';
+    expect(bareBody).toContain('background-color: #f8f8fb');
+    expect(bareBody).not.toContain('#0b1220');
+    expect(ruleBody(appCss, 'body.modern-ui')).toContain('#0b1220');
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
