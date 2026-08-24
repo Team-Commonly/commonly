@@ -2068,6 +2068,39 @@ describe('performRun — ADR-018 enforcement', () => {
     );
   });
 
+  test('reply evidence: a broadcast wake that replies to THIS seat proceeds peer-aware past a lost claim', async () => {
+    // Interim for TASK-058: the backend stamps repliesToYourMessage when the
+    // woken message replies to (or threads on) a message this seat authored.
+    // Without honoring it, a peer's claim on its own reply ordered the
+    // replied-to author out of its own conversation (Sage stood down twice
+    // on Anvil's thread replies, 2026-08-24). Deliberately NOT a widening of
+    // ADDRESSED_EVENT_TYPES — the flag is per-event evidence.
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: {
+          content: 'a follow-up on your point', messageId: 'msg-1', repliesToYourMessage: true,
+        },
+      })],
+      claimResult: { claimed: false, claimedBy: 'anvil' },
+    });
+    const spawn = jest.fn(async () => ({ text: 'glad you picked that up — one addition' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(del).not.toHaveBeenCalled(); // nothing was held
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/pods/pod-abc/messages',
+      { content: 'glad you picked that up — one addition' },
+    );
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'posted' } },
+    );
+  });
+
   test('fairness: winning a broadcast race handicaps the NEXT race in that pod', async () => {
     const sleeps = [];
     const { post } = makeClient({

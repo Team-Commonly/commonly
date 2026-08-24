@@ -947,10 +947,20 @@ export const performRun = ({
       });
       const claim = await claimKeeper.acquire();
       if (!claim.claimed && !claim.failOpen) {
-        if (ADDRESSED_EVENT_TYPES.has(event.type)) {
+        // Per-event EVIDENCE, deliberately not a widening of
+        // ADDRESSED_EVENT_TYPES (that set is a pricing table): the backend
+        // stamps repliesToYourMessage when the woken message replies to or
+        // threads on a message THIS seat authored. Without it, a peer's
+        // claim on its own reply ordered the replied-to author out of its
+        // own conversation (Sage stood down twice on Anvil's thread
+        // replies, 2026-08-24). Interim for TASK-058.
+        const repliesToThisSeat = event.payload?.repliesToYourMessage === true;
+        if (ADDRESSED_EVENT_TYPES.has(event.type) || repliesToThisSeat) {
           log(
             `[${event.type}] message ${claimMessageId} held by ${claim.holder} — `
-            + 'proceeding peer-aware (this seat was directly addressed)',
+            + (repliesToThisSeat
+              ? 'proceeding peer-aware (the message replies to this seat\'s own message)'
+              : 'proceeding peer-aware (this seat was directly addressed)'),
           );
           peerFrame = peerHoldsFrame(claim.holder, claimMessageId);
           claimKeeper = null; // nothing held: no renewal, no release, no isLost gate
