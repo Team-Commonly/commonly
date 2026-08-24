@@ -140,7 +140,7 @@ case "$1" in
         # Set higher timeout for frontend npm install
         export COMPOSE_HTTP_TIMEOUT=300
         set_compose_args
-        docker-compose "${COMPOSE_ARGS[@]}" up -d
+        docker compose "${COMPOSE_ARGS[@]}" up -d
         echo "✅ Development environment started!"
         echo "🌐 Frontend: http://localhost:3000"
         echo "🔧 Backend: http://localhost:5000"
@@ -152,7 +152,7 @@ case "$1" in
     
     down)
         echo "🛑 Stopping development environment..."
-        docker-compose -f $COMPOSE_FILE down
+        docker compose -f $COMPOSE_FILE down
         echo "✅ Development environment stopped!"
         ;;
     
@@ -160,7 +160,7 @@ case "$1" in
         ensure_local_env_file
         echo "🔄 Restarting development environment..."
         set_compose_args
-        docker-compose "${COMPOSE_ARGS[@]}" restart
+        docker compose "${COMPOSE_ARGS[@]}" restart
         echo "✅ Development environment restarted!"
         print_local_dev_notes
         ;;
@@ -168,30 +168,30 @@ case "$1" in
     logs)
         if [ -n "$2" ]; then
             echo "📋 Showing logs for service: $2"
-            docker-compose -f $COMPOSE_FILE logs -f "$2"
+            docker compose -f $COMPOSE_FILE logs -f "$2"
         else
             echo "📋 Showing logs for all services..."
-            docker-compose -f $COMPOSE_FILE logs -f
+            docker compose -f $COMPOSE_FILE logs -f
         fi
         ;;
     
     build)
         echo "🔨 Building development containers..."
         set_compose_args
-        docker-compose "${COMPOSE_ARGS[@]}" build
+        docker compose "${COMPOSE_ARGS[@]}" build
         echo "✅ Development containers built!"
         ;;
     
     rebuild)
         echo "🔨 Rebuilding development containers (no cache)..."
         set_compose_args
-        docker-compose "${COMPOSE_ARGS[@]}" build --no-cache
+        docker compose "${COMPOSE_ARGS[@]}" build --no-cache
         echo "✅ Development containers rebuilt!"
         ;;
     
     clean)
         echo "🧹 Cleaning up development environment..."
-        docker-compose -f $COMPOSE_FILE down -v --remove-orphans
+        docker compose -f $COMPOSE_FILE down -v --remove-orphans
         docker image prune -f
         echo "✅ Development environment cleaned!"
         ;;
@@ -199,7 +199,7 @@ case "$1" in
     shell)
         if [ -n "$2" ]; then
             echo "🐚 Opening shell in service: $2"
-            docker-compose -f $COMPOSE_FILE exec "$2" /bin/bash
+            docker compose -f $COMPOSE_FILE exec "$2" /bin/bash
         else
             echo "❌ Please specify a service: backend, frontend, mongo, postgres"
         fi
@@ -207,7 +207,7 @@ case "$1" in
     
     test)
         echo "🧪 Running unit tests (in-memory DBs)..."
-        docker-compose -f $COMPOSE_FILE exec backend npm test
+        docker compose -f $COMPOSE_FILE exec backend npm test
         ;;
 
     test:integration)
@@ -351,7 +351,7 @@ case "$1" in
         case "$2" in
             up)
                 echo "🤖 Starting Clawdbot services..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot up -d
+                docker compose -f $COMPOSE_FILE --profile clawdbot up -d
                 echo "✅ Clawdbot services started!"
                 echo "🧠 Clawdbot Gateway: http://localhost:18789"
                 echo "🌉 Clawdbot Bridge: polling Commonly API"
@@ -360,21 +360,21 @@ case "$1" in
                 ;;
             down)
                 echo "🛑 Stopping Clawdbot services..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli
+                docker compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli
                 echo "✅ Clawdbot services stopped!"
                 ;;
             logs)
                 echo "📋 Showing logs for: clawdbot-$3"
-                docker-compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
+                docker compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
                 ;;
             restart)
                 echo "🔄 Restarting Clawdbot services..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli
+                docker compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli
                 echo "✅ Clawdbot services restarted!"
                 ;;
             build)
                 echo "🔨 Building Clawdbot containers..."
-                docker-compose -f $COMPOSE_FILE --profile clawdbot build clawdbot-gateway clawdbot-cli
+                docker compose -f $COMPOSE_FILE --profile clawdbot build clawdbot-gateway clawdbot-cli
                 echo "✅ Clawdbot containers built!"
                 ;;
             *)

@@ -57,8 +57,9 @@ bwrap --version   # Linux only
 
 What it does:
 - Verifies Docker, Node, npm, `curl`, and Compose v2 are present.
-- Runs `docker compose -f docker-compose.local.yml up -d --build` (Mongo +
-  backend on `:5000` + frontend on `:3000`).
+- Creates an ignored `.env` with a generated JWT secret if needed, then runs
+  `docker compose --env-file .env -f docker-compose.local.yml up -d --build`
+  (Mongo + backend on `:5000` + frontend on `:3000`).
 - Polls `http://localhost:5000/api/health` until it responds (or fails
   loudly after 60s).
 - Prints the next manual steps with the exact commands to copy.

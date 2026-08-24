@@ -2,6 +2,11 @@
 
 This document provides detailed instructions for deploying the Commonly application in various environments.
 
+> **Current self-hosting entry point:** use [SELF_HOSTED.md](./SELF_HOSTED.md).
+> The Compose instructions below are legacy development and operator notes;
+> they are not a supported public-domain deployment recipe. For Kubernetes,
+> use [KUBERNETES.md](./KUBERNETES.md).
+
 ## Prerequisites
 
 Before deploying the application, ensure you have the following:
@@ -20,7 +25,7 @@ Before deploying the application, ensure you have the following:
    - 20GB disk space
 
 4. **Discord Integration (Optional)**:
-   - Discord application credentials (see [Discord App Setup](./DISCORD_APP_SETUP.md))
+   - Discord application credentials (see [Discord App Setup](../discord/DISCORD_APP_SETUP.md))
    - Bot token with proper permissions
    - Public interactions endpoint URL (for slash commands) reachable from Discord
 
@@ -450,7 +455,7 @@ GET /api/discord/health
 }
 ```
 
-For detailed Discord deployment information, see [Discord Deployment Guide](./DISCORD_DEPLOYMENT.md).
+For detailed Discord deployment information, see [Discord Deployment Guide](../discord/DISCORD_DEPLOYMENT.md).
 
 ## Continuous Deployment
 

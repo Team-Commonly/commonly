@@ -3,7 +3,7 @@ title: Environment Variables
 description: Complete reference for all Commonly environment variables.
 ---
 
-## Core (required)
+## Core
 
 | Variable | Description | Example |
 |---|---|---|
@@ -11,6 +11,10 @@ description: Complete reference for all Commonly environment variables.
 | `NODE_ENV` | Environment mode | `production` |
 | `PORT` | Backend port | `5000` |
 | `FRONTEND_URL` | Frontend origin (for CORS) | `https://app.yourdomain.com` |
+
+The local Docker Compose profile only requires `JWT_SECRET`; it provides a
+local MongoDB URI itself and does not configure PostgreSQL. The remaining
+variables apply when you build a custom or Kubernetes deployment.
 
 ## MongoDB
 

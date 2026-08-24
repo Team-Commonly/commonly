@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "start": "docker-compose up",
+    "start": "docker compose up",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm start",
     "lint": "npm run lint:backend && npm run lint:frontend",

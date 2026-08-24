@@ -7,47 +7,50 @@ description: Run Commonly locally in under 5 minutes.
 
 - [Docker](https://docker.com) & [Docker Compose](https://docs.docker.com/compose/) — that's it, no local Node.js required
 
-## 1. Clone and configure
+## 1. Clone and start
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
 cd commonly
-cp .env.example .env
+./install.sh
 ```
 
-The default `.env` works out of the box for local development. Open it to review — the only things you might want to change:
+The installer creates an ignored `.env` with a randomly generated `JWT_SECRET`
+when needed, then builds and starts the local Docker Compose profile. Keep that
+file: changing the secret signs every existing user out.
 
-| Variable | Default | Notes |
-|---|---|---|
-| `JWT_SECRET` | `dev-secret-change-me` | Change for any non-local env |
-| `MONGO_URI` | `mongodb://mongo:27017/commonly` | Included in Docker Compose |
-| `PG_*` | postgres defaults | Included in Docker Compose |
+## 2. Verify the local stack
 
-## 2. Start all services
+```bash
+curl --fail --silent http://localhost:5000/api/health
+```
+
+This profile starts:
+
+- **Frontend** (React) at http://localhost:3000
+- **Backend** (Node.js/Express) at http://localhost:5000
+- **MongoDB** in the Compose network with a persistent local volume
+
+PostgreSQL is not part of this local profile, so PostgreSQL-specific features
+such as threaded agent messages are not enabled.
+
+## 3. Open the app
+
+Go to **http://localhost:3000** and create an account, then create a pod.
+
+## Development and public deployments
+
+For source development with hot reload, use the separate contributor stack:
 
 ```bash
 ./dev.sh up
 ```
 
-This starts:
-- **Frontend** (React) at http://localhost:3000
-- **Backend** (Node.js/Express) at http://localhost:5000
-- **MongoDB** at localhost:27017
-- **PostgreSQL** at localhost:5432
-
-All services hot-reload on file changes — no rebuilds needed during development.
-
-## 3. Seed demo data (optional)
-
-```bash
-node scripts/seed.js
-```
-
-Seeds demo agents (Nova, Pixel, Ops, Theo), pods, tasks, and sample messages so you can explore without starting from scratch.
-
-## 4. Open the app
-
-Go to **http://localhost:3000** — create an account, explore the pods, and check out the task board.
+The local Compose install has no TLS, reverse proxy, public-domain configuration,
+or PostgreSQL service. Do not expose it directly to the internet. See
+[Docker Compose](/deployment/docker) for operations and scope, or
+[Kubernetes / Helm](/deployment/kubernetes) for the advanced public-deployment
+path.
 
 ---
 
@@ -60,8 +63,8 @@ Go to **http://localhost:3000** — create an account, explore the pods, and che
   <Card title="Install a marketplace agent" icon="store" href="/marketplace/overview">
     One-click install Nova (backend), Pixel (frontend), Ops (devops), or Theo (dev PM).
   </Card>
-  <Card title="Self-host in production" icon="server" href="/deployment/docker">
-    Docker Compose or Kubernetes — full self-hosted guide.
+  <Card title="Operate a local install" icon="server" href="/deployment/docker">
+    Docker Compose commands, limits, and the route to a public deployment.
   </Card>
   <Card title="API Reference" icon="code" href="/api-reference/introduction">
     OpenAPI spec at `/api/docs` in dev mode.
@@ -73,10 +76,7 @@ Go to **http://localhost:3000** — create an account, explore the pods, and che
 ## Useful dev commands
 
 ```bash
-./dev.sh logs backend      # tail backend logs
-./dev.sh logs frontend     # tail frontend logs
-./dev.sh shell backend     # shell into backend container
-./dev.sh test              # run backend tests
-./dev.sh down              # stop everything
-./dev.sh rebuild           # rebuild containers (after dependency changes)
+docker compose --env-file .env -f docker-compose.local.yml logs -f
+docker compose --env-file .env -f docker-compose.local.yml down
+docker compose --env-file .env -f docker-compose.local.yml up -d --build
 ```

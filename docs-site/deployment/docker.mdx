@@ -1,109 +1,88 @@
 ---
-title: Docker Compose
-description: Self-host Commonly with Docker Compose in 3 commands.
+title: Docker Compose (local)
+description: Run Commonly on one local machine with Docker Compose.
 ---
+
+This is the supported Docker Compose path for trying Commonly locally or on a
+private single machine. It is not a public-domain production deployment.
 
 ## Prerequisites
 
-- [Docker](https://docker.com) Engine 20.10+
-- [Docker Compose](https://docs.docker.com/compose/) 2.0+
-- 2 CPU cores, 4GB RAM, 20GB disk
+- [Docker Engine](https://docs.docker.com/get-docker/) with the Compose v2 plugin
+- Git
+- Ports `3000` and `5000` free on the Docker host
 
-## Quick start
+## Start Commonly
 
 ```bash
 git clone https://github.com/Team-Commonly/commonly.git
 cd commonly
-cp .env.example .env
-./dev.sh up
+./install.sh
 ```
 
-Open **http://localhost:3000**.
+The installer writes an ignored `.env` file containing a generated `JWT_SECRET`
+when one is missing, then builds and starts the services. Keep that file for
+future Compose commands: changing the secret invalidates existing sessions.
 
-## Development vs production
-
-<Tabs>
-  <Tab title="Development (recommended for local)">
-    Uses `./dev.sh` — live file mounting, hot reload, no rebuilds needed.
-
-    ```bash
-    ./dev.sh up          # start all services
-    ./dev.sh logs        # tail all logs
-    ./dev.sh logs backend # tail backend only
-    ./dev.sh test        # run backend tests
-    ./dev.sh down        # stop everything
-    ./dev.sh rebuild     # rebuild after dependency changes
-    ```
-
-    Services start at:
-    - Frontend: http://localhost:3000
-    - Backend API: http://localhost:5000
-    - Swagger docs: http://localhost:5000/api/docs
-  </Tab>
-  <Tab title="Production">
-    Uses `./prod.sh` — optimized nginx build, minified assets.
-
-    ```bash
-    ./prod.sh deploy     # build and start
-    ./prod.sh logs       # view logs
-    ./prod.sh down       # stop
-    ```
-
-    Build the frontend with your domain:
-    ```bash
-    REACT_APP_API_URL=https://api.yourdomain.com ./prod.sh deploy
-    ```
-  </Tab>
-</Tabs>
-
-## Environment variables
-
-Copy `.env.example` and fill in the required values:
+Open **http://localhost:3000** and verify the backend:
 
 ```bash
-cp .env.example .env
+curl --fail --silent http://localhost:5000/api/health
 ```
 
-### Required
+## What this profile includes
 
-| Variable | Description |
-|---|---|
-| `JWT_SECRET` | Random secret for signing JWTs — change this |
-| `MONGO_URI` | MongoDB connection string |
-| `PG_USER`, `PG_PASSWORD`, `PG_HOST`, `PG_PORT`, `PG_DATABASE` | PostgreSQL connection |
-| `FRONTEND_URL` | Frontend URL (for CORS) |
-
-### Optional
-
-| Variable | Description |
-|---|---|
-| `GEMINI_API_KEY` | AI summarization (daily digest, chat summaries) |
-| `DISCORD_BOT_TOKEN` | Discord integration |
-| `SMTP2GO_API_KEY` | Email verification (auto-verifies without this) |
-
-→ [Full environment variable reference →](/deployment/environment-variables)
-
-## Services included
-
-| Service | Port | Description |
-|---|---|---|
-| frontend | 3000 | React app |
+| Service | Port | Notes |
+|---|---:|---|
+| frontend | 3000 | Static React app |
 | backend | 5000 | Node.js API |
-| mongo | 27017 | MongoDB |
-| postgres | 5432 | PostgreSQL |
+| mongo | internal only | Persistent `mongo-data` Docker volume |
 
-## Seed demo data
+The profile deliberately does not include PostgreSQL, TLS, a reverse proxy, or
+public-domain configuration. PostgreSQL-specific features, including threaded
+agent messages, are not enabled. Do not expose these ports directly to the
+internet.
 
-```bash
-node scripts/seed.js
-```
-
-Seeds agents (Nova, Pixel, Ops, Theo), pods, tasks, and sample messages.
-
-## Upgrading
+## Operate and update
 
 ```bash
-git pull origin v1.0.x
-./dev.sh rebuild
-./dev.sh up
+# Status and logs
+docker compose --env-file .env -f docker-compose.local.yml ps
+docker compose --env-file .env -f docker-compose.local.yml logs -f
+
+# Stop containers and retain data
+docker compose --env-file .env -f docker-compose.local.yml down
+
+# Update the checkout and rebuild
+git pull --ff-only
+docker compose --env-file .env -f docker-compose.local.yml up -d --build
 ```
+
+<Warning>
+`docker compose --env-file .env -f docker-compose.local.yml down -v` removes
+the MongoDB volume and its data. Use it only when you intend to reset the local
+installation.
+</Warning>
+
+## Configure a local install
+
+Add optional settings to the ignored root `.env` file, then restart the stack.
+For a shared private machine, you can restrict registration:
+
+```dotenv
+REGISTRATION_INVITE_ONLY=true
+REGISTRATION_INVITE_CODES=replace-with-private-codes
+```
+
+Leave integration credentials unset unless you are using that integration, and
+never commit `.env`.
+
+## Development and public deployment
+
+Use `./dev.sh up` for contributor development with source mounts and hot reload.
+It is a different profile from the local install above.
+
+For a public deployment, configure TLS, ingress or a reverse proxy, a
+non-local frontend API URL, backups, and deployment-specific secrets. Start
+with the [Kubernetes / Helm guide](/deployment/kubernetes); do not promote the
+local Compose profile by exposing its ports.
