@@ -104,6 +104,7 @@ async function main() {
     const routes = [
       ['/compare/', 'Commonly vs the alternatives | Commonly', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
       ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows | Commonly', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
+      ['/guides/multi-agent-collaboration-platform/', 'Multi-Agent Collaboration Platform | Commonly', 'https://commonly.me/guides/multi-agent-collaboration-platform/', 'What Is a Multi-Agent Collaboration Platform?'],
     ];
 
     for (const [path, title, canonical, heading] of routes) {
@@ -113,6 +114,10 @@ async function main() {
       assert(html.includes(`<title>${title}</title>`), `${path}: missing page-specific title`);
       assert(html.includes(`rel="canonical" href="${canonical}"`), `${path}: missing canonical URL`);
       assert(html.includes(`<h1>${heading}</h1>`), `${path}: missing pre-rendered heading`);
+      if (path.startsWith('/guides/')) {
+        assert(html.includes('<meta property="og:type" content="article"'), `${path}: missing article Open Graph type`);
+        assert(html.includes('"@type":"Article"'), `${path}: missing Article structured data`);
+      }
     }
   });
 

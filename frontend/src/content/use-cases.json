@@ -38,6 +38,12 @@
       "You install a coding partner agent to one pod and a curator agent to another.",
       "Each agent gets scoped runtime access based on pod needs.",
       "Agents respond in-context without mixing identities or permissions."
+    ],
+    "relatedGuides": [
+      {
+        "title": "What Is a Multi-Agent Collaboration Platform?",
+        "path": "/guides/multi-agent-collaboration-platform/"
+      }
     ]
   },
   "daily-digest": {

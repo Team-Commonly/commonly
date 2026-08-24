@@ -32,7 +32,7 @@ const replaceMarkedSection = (template, start, end, content) => {
 
 const pageUrl = (path) => `${siteUrl}${path}`;
 
-const renderLanding = (landing, useCases) => {
+const renderLanding = (landing, useCases, guides) => {
   const featureCards = [
     landing.features.pods,
     landing.features.team,
@@ -64,6 +64,13 @@ const renderLanding = (landing, useCases) => {
       <p>${escapeHtml(useCase.summary)}</p>
     </article>`).join('');
 
+  const guideCards = Object.entries(guides).map(([id, guide]) => `
+    <article class="seo-card">
+      <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
+      <h3><a href="/guides/${encodeURIComponent(id)}/">${escapeHtml(guide.title)}</a></h3>
+      <p>${escapeHtml(guide.summary)}</p>
+    </article>`).join('');
+
   return `
     <div id="seo-page">
       <header class="seo-header">
@@ -71,6 +78,7 @@ const renderLanding = (landing, useCases) => {
         <nav aria-label="Primary navigation">
           <a href="#features">Features</a>
           <a href="#use-cases">Use cases</a>
+          <a href="#guides">Guides</a>
           <a href="/compare/">Compare</a>
           <a href="https://github.com/Team-Commonly/commonly">GitHub</a>
         </nav>
@@ -101,6 +109,11 @@ const renderLanding = (landing, useCases) => {
           <p class="seo-kicker">${escapeHtml(landing.useCases.kicker)}</p>
           <h2>${escapeHtml(landing.useCases.title)}</h2>
           <div class="seo-grid">${useCaseCards}</div>
+        </section>
+        <section id="guides">
+          <p class="seo-kicker">Guides</p>
+          <h2>Learn how teams work with agents</h2>
+          <div class="seo-grid">${guideCards}</div>
         </section>
         <section>
           <p class="seo-kicker">${escapeHtml(landing.openSource.kicker)}</p>
@@ -172,11 +185,43 @@ const renderUseCase = (useCase) => `
         </div>
       </section>
       <section><h2>Example flow</h2><ol>${useCase.exampleFlow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section>
+      ${useCase.relatedGuides?.length ? `<section><h2>Related guides</h2><ul>${useCase.relatedGuides.map((guide) => `<li><a href="${escapeHtml(guide.path)}">${escapeHtml(guide.title)}</a></li>`).join('')}</ul></section>` : ''}
     </main>
     <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
   </div>`;
 
-const metadata = ({ title, description, path, schema }) => {
+const renderGuide = (guide) => {
+  const sections = guide.sections.map((section) => `
+    <section>
+      <h2>${escapeHtml(section.title)}</h2>
+      ${(section.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+      ${section.bullets?.length ? list(section.bullets) : ''}
+      ${section.orderedItems?.length ? `<ol>${section.orderedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : ''}
+    </section>`).join('');
+  const faq = guide.faq.map((item) => `
+    <article class="seo-card"><h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p></article>`).join('');
+  const relatedLinks = guide.relatedLinks.map((link) => `<a href="${escapeHtml(link.path)}">${escapeHtml(link.label)}</a>`).join(' · ');
+
+  return `
+  <div id="seo-page">
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+    <main>
+      <section class="seo-hero">
+        <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
+        <h1>${escapeHtml(guide.title)}</h1>
+        <p class="seo-lede">${escapeHtml(guide.description)}</p>
+        ${(guide.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+      </section>
+      ${sections}
+      <section><h2>Frequently asked questions</h2><div class="seo-grid">${faq}</div></section>
+      <section class="seo-band"><h2>${escapeHtml(guide.cta.title)}</h2><p>${escapeHtml(guide.cta.body)}</p><p class="seo-actions"><a class="seo-primary" href="${escapeHtml(guide.cta.primary.path)}">${escapeHtml(guide.cta.primary.label)}</a><a href="${escapeHtml(guide.cta.secondary.path)}">${escapeHtml(guide.cta.secondary.label)}</a></p></section>
+      <p class="seo-note">${relatedLinks}</p>
+    </main>
+    <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+  </div>`;
+};
+
+const metadata = ({ title, description, path, schema, ogType = 'website' }) => {
   const url = pageUrl(path);
   const structuredData = JSON.stringify(schema).replaceAll('<', '\\u003c');
   return `
@@ -184,7 +229,7 @@ const metadata = ({ title, description, path, schema }) => {
     <meta name="description" content="${escapeHtml(description)}" />
     <meta name="robots" content="index,follow" />
     <link rel="canonical" href="${url}" />
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content="${escapeHtml(ogType)}" />
     <meta property="og:site_name" content="Commonly" />
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
@@ -200,7 +245,7 @@ const metadata = ({ title, description, path, schema }) => {
     <script type="application/ld+json">${structuredData}</script>`;
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }) => {
   const organization = {
     '@type': 'Organization',
     name: 'Commonly',
@@ -231,7 +276,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases }) => {
     outputPath: 'index.html',
     title: 'Commonly — chat with your agents, ship real work',
     description: 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
-    content: renderLanding(landing, useCases),
+    content: renderLanding(landing, useCases, guides),
     schema: {
       '@context': 'https://schema.org',
       '@graph': [organization, softwareApplication],
@@ -245,7 +290,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases }) => {
     schema: webPage(compare.title, compare.lede, '/compare/'),
   }];
 
-  return pages.concat(Object.entries(useCases).map(([id, useCase]) => {
+  const useCasePages = Object.entries(useCases).map(([id, useCase]) => {
     const path = `/use-cases/${id}/`;
     return {
       path,
@@ -255,7 +300,30 @@ export const buildPageDefinitions = ({ landing, compare, useCases }) => {
       content: renderUseCase(useCase),
       schema: webPage(useCase.title, useCase.summary, path),
     };
-  }));
+  });
+
+  const guidePages = Object.entries(guides).map(([id, guide]) => {
+    const path = `/guides/${id}/`;
+    return {
+      path,
+      outputPath: `guides/${id}/index.html`,
+      title: guide.titleTag,
+      description: guide.description,
+      content: renderGuide(guide),
+      ogType: 'article',
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: guide.title,
+        description: guide.description,
+        mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl(path) },
+        author: { '@type': 'Organization', name: 'Commonly', url: `${siteUrl}/` },
+        publisher: organization,
+      },
+    };
+  });
+
+  return pages.concat(useCasePages, guidePages);
 };
 
 export const renderStaticPage = (template, page) => {
@@ -267,14 +335,16 @@ export const renderStaticPage = (template, page) => {
 };
 
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
-  const [template, translationText, useCaseText] = await Promise.all([
+  const [template, translationText, useCaseText, guideText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
-  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases });
+  const guides = JSON.parse(guideText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
   await Promise.all(pages.map(async (page) => {
     const outputPath = resolve(outputDir, page.outputPath);

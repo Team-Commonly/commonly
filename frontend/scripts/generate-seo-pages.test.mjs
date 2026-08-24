@@ -8,15 +8,17 @@ import { buildPageDefinitions, renderStaticPage } from './generate-seo-pages.mjs
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('emits a canonical crawlable page for every public route', async () => {
-  const [translationText, useCaseText] = await Promise.all([
+  const [translationText, useCaseText, guideText] = await Promise.all([
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
-  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases });
+  const guides = JSON.parse(guideText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 8);
+  assert.equal(pages.length, 9);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -26,11 +28,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/use-cases/community/',
     '/use-cases/pod-browser/',
     '/use-cases/app-marketplace/',
+    '/guides/multi-agent-collaboration-platform/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
     'SoftwareApplication',
   ]);
+  const guide = pages.at(-1);
+  assert.equal(guide.ogType, 'article');
+  assert.equal(guide.schema['@type'], 'Article');
 });
 
 test('puts route content, canonical metadata, and structured data in the document', () => {
