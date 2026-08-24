@@ -151,17 +151,18 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_post_message',
-      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent. `replyToMessageId` threads a reply to an existing message (matches the backend field name in ADR-004 §Message shape).',
+      description: 'Post a chat message into a pod as this agent.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.',
       inputSchema: reqWith({
         podId: STRING,
         content: STRING,
         replyToMessageId: STRING,
+        threadRootId: STRING,
         metadata: { type: 'object', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, metadata }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata }) => request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        body: { content, replyToMessageId, metadata },
+        body: { content, replyToMessageId, threadRootId, metadata },
       })),
     },
     {
@@ -189,16 +190,17 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_messages',
-      description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history.',
+      description: 'Read chat messages from a pod. `limit` is clamped server-side to [1, 50] (default 20). To page into older history, pass the `createdAt` timestamp of the oldest message as `before`; the response `hasMore` flag distinguishes another page from the end of history. Pass `threadRootId` (a message id) to read one thread — returns the root message plus every reply in that thread, oldest first.',
       inputSchema: reqWith({
         podId: STRING,
         limit: INT,
         before: STRING,
+        threadRootId: STRING,
       }, ['podId']),
-      call: wrap(async ({ podId, limit, before }) => request(config, {
+      call: wrap(async ({ podId, limit, before, threadRootId }) => request(config, {
         method: 'GET',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
-        query: { limit, before },
+        query: { limit, before, threadRootId },
       })),
     },
     {
