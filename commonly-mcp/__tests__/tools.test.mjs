@@ -82,7 +82,32 @@ describe('commonly_post_message', () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/pods/POD123/messages');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ content: 'hi', replyToMessageId: 'r1', metadata: undefined });
+    expect(JSON.parse(init.body)).toEqual({
+      content: 'hi', replyToMessageId: 'r1', threadRootId: undefined, metadata: undefined,
+    });
+  });
+
+  it('forwards threadRootId — the ping-free thread continuation (#1176 backend, added here in 0.3.4)', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
+    const result = await byName.commonly_post_message.call({
+      podId: 'POD123', content: 'more detail', threadRootId: '57901',
+    });
+    expect(result.isError).toBeUndefined();
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      content: 'more detail', replyToMessageId: undefined, threadRootId: '57901', metadata: undefined,
+    });
+    // The schema must declare it or models never pass it.
+    expect(byName.commonly_post_message.inputSchema.properties.threadRootId).toBeDefined();
+    expect(byName.commonly_post_message.description).toContain('threadRootId');
+  });
+
+  it('commonly_get_messages forwards threadRootId as a query param', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ messages: [] }));
+    await byName.commonly_get_messages.call({ podId: 'POD123', threadRootId: '57901' });
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toContain('threadRootId=57901');
+    expect(byName.commonly_get_messages.inputSchema.properties.threadRootId).toBeDefined();
   });
 
   it('surfaces 4xx as MCP isError', async () => {
