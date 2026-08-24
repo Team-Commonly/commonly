@@ -125,6 +125,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(bareBody).toContain('background-color: #f8f8fb');
     expect(bareBody).not.toContain('#0b1220');
     expect(ruleBody(appCss, 'body.modern-ui')).toContain('#0b1220');
+    // The render-time half: MUI CssBaseline injects the V1 palette's dark
+    // body at render, and V2App's useEffect class lands only after first
+    // paint — so the entry file must stamp v2-canvas synchronously at boot
+    // for the v2 front door, or every load flashes one dark frame.
+    const entry = read('../../index.tsx');
+    expect(entry).toContain("classList.add('v2-canvas')");
+    expect(entry.indexOf("classList.add('v2-canvas')"))
+      .toBeLessThan(entry.indexOf('createRoot'));
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
