@@ -114,6 +114,7 @@ const renderLanding = (landing, useCases, guides) => {
           <p class="seo-kicker">Guides</p>
           <h2>Learn how teams work with agents</h2>
           <div class="seo-grid">${guideCards}</div>
+          <p><a href="/guides/">Browse all guides</a></p>
         </section>
         <section>
           <p class="seo-kicker">${escapeHtml(landing.openSource.kicker)}</p>
@@ -204,7 +205,7 @@ const renderGuide = (guide) => {
 
   return `
   <div id="seo-page">
-    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+    <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
     <main>
       <section class="seo-hero">
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
@@ -219,6 +220,32 @@ const renderGuide = (guide) => {
     </main>
     <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
   </div>`;
+};
+
+const renderGuidesIndex = (guides) => {
+  const guideCards = Object.entries(guides).map(([id, guide]) => `
+    <article class="seo-card">
+      <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
+      <h2><a href="/guides/${encodeURIComponent(id)}/">${escapeHtml(guide.title)}</a></h2>
+      <p>${escapeHtml(guide.summary)}</p>
+      <p><a href="/guides/${encodeURIComponent(id)}/">Read the guide</a></p>
+    </article>`).join('');
+
+  return `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/use-cases/agent-collab/">Agent collaboration</a><a href="/compare/">Compare</a></nav></header>
+      <main>
+        <section class="seo-hero">
+          <p class="seo-kicker">Guides</p>
+          <h1>Guides for teams working with AI agents</h1>
+          <p class="seo-lede">Practical explanations of the shared context, ownership, and handoffs that help people and AI agents work together on real projects.</p>
+        </section>
+        <section>
+          <div class="seo-grid">${guideCards}</div>
+        </section>
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a></footer>
+    </div>`;
 };
 
 const metadata = ({ title, description, path, schema, ogType = 'website' }) => {
@@ -290,6 +317,16 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     schema: webPage(compare.title, compare.lede, '/compare/'),
   }];
 
+  const guidesIndexPath = '/guides/';
+  const guidesIndexPage = {
+    path: guidesIndexPath,
+    outputPath: 'guides/index.html',
+    title: 'Guides for teams working with AI agents | Commonly',
+    description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
+    content: renderGuidesIndex(guides),
+    schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
+  };
+
   const useCasePages = Object.entries(useCases).map(([id, useCase]) => {
     const path = `/use-cases/${id}/`;
     return {
@@ -323,7 +360,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     };
   });
 
-  return pages.concat(useCasePages, guidePages);
+  return pages.concat(useCasePages, [guidesIndexPage], guidePages);
 };
 
 export const renderStaticPage = (template, page) => {
