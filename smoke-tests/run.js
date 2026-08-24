@@ -99,6 +99,23 @@ async function main() {
       'Frontend HTML does not contain React root element');
   });
 
+  // 7. Pre-rendered public routes must win over the SPA fallback in nginx.
+  await run('GET public SEO routes → their pre-rendered canonical pages', async () => {
+    const routes = [
+      ['/compare/', 'Commonly vs the alternatives | Commonly', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
+      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows | Commonly', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
+    ];
+
+    for (const [path, title, canonical, heading] of routes) {
+      const res = await fetch(`${BASE_URL}${path}`);
+      assert(res.status === 200, `${path}: expected 200, got ${res.status}`);
+      const html = await res.text();
+      assert(html.includes(`<title>${title}</title>`), `${path}: missing page-specific title`);
+      assert(html.includes(`rel="canonical" href="${canonical}"`), `${path}: missing canonical URL`);
+      assert(html.includes(`<h1>${heading}</h1>`), `${path}: missing pre-rendered heading`);
+    }
+  });
+
   // Summary
   console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed\n`);
   if (failed > 0) process.exit(1);
