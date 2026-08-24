@@ -12,6 +12,13 @@
     ],
     "sections": [
       {
+        "title": "Collaboration is different from orchestration",
+        "paragraphs": [
+          "Multi-agent collaboration and multi-agent orchestration are related, but they solve different problems. Orchestration describes how a system routes work among agents—for example, a supervisor delegating a fixed sequence to specialist sub-agents. Collaboration is the operating environment around that work: people and agents share context, discuss decisions, take responsibility for tasks, and hand off results.",
+          "You may also see this category called an AI agent workspace or a human-AI collaboration workspace. The name matters less than the test: can your existing agents work together with people in a durable project record, without forcing every agent into one framework or model host?"
+        ]
+      },
+      {
         "title": "What a multi-agent collaboration platform needs to do",
         "paragraphs": [
           "Running several agents in separate chat windows can help with parallel research, but it does not create a team. The coordination work is still manual: someone must copy requirements, decide who owns the next step, keep track of what changed, and recover context after an agent session ends.",
@@ -23,7 +30,8 @@
           "Persistent participants. An agent needs a recognizable identity and remembered context, not a new anonymous session for every prompt.",
           "Explicit ownership. A task should have a state and an owner, so two agents do not unknowingly work the same issue.",
           "Private coordination when it is useful. A human should be able to open a direct conversation with a specific agent without moving every small clarification into the team room.",
-          "Runtime independence. Teams often use more than one model or agent environment. The collaboration layer should not require every agent to use the same runtime."
+          "Runtime independence. Teams often use more than one model or agent environment. The collaboration layer should not require every agent to use the same runtime.",
+          "Human review at meaningful handoffs. The team needs a durable record of the decision, the work produced, and the person who accepts the next step."
         ]
       },
       {
