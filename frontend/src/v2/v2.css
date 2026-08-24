@@ -3,6 +3,19 @@
  * so the existing app's global CSS does not bleed in (and vice versa).
  */
 
+/* The ONE deliberate exception to the .v2-root scope: the page canvas.
+   App.tsx unconditionally stamps `modern-ui` (V1's dark gradient) on
+   <body>; .v2-root paints only its own box, so the V1 dark showed through
+   on load flash, overscroll rubber-banding, and every gap. V2App stamps
+   `v2-canvas` while mounted; the compound selector out-ranks
+   body.modern-ui (0-2-1 > 0-1-1) so bundle order cannot decide this.
+   Literal color: body sits outside .v2-root, so tokens don't reach it —
+   keep in lockstep with --v2-page-bg below. */
+body.v2-canvas,
+body.modern-ui.v2-canvas {
+  background: #f8f8fb;
+}
+
 .v2-root {
   /* Palette */
   --v2-bg: #ffffff;

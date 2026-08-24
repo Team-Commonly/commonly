@@ -105,6 +105,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
+  test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
+    // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
+    // .v2-root paints only its own box. Without this override the V1 dark
+    // showed on load flash, overscroll, and gaps (Sam, 2026-08-24). The
+    // compound selector must out-rank body.modern-ui so bundle order can
+    // never decide the canvas color. Keep the literal in lockstep with
+    // --v2-page-bg (tokens don't reach body — it sits outside .v2-root).
+    expect(v2).toContain('body.modern-ui.v2-canvas');
+    expect(v2).toMatch(/body\.v2-canvas,\nbody\.modern-ui\.v2-canvas \{[\s\S]*?background: #f8f8fb/);
+    expect(v2).toContain('--v2-page-bg: #f8f8fb');
+  });
+
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
     // Fifth mechanism, ruled by Sam 2026-08-23: the Slack model. With a
     // line cap, leftover space must pool somewhere — center was rejected,
