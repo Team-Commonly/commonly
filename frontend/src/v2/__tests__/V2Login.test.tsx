@@ -92,6 +92,15 @@ describe('V2 routing', () => {
     );
   });
 
+  test('research card opens the dedicated research workspace use case', async () => {
+    renderAt('/');
+
+    expect(await screen.findByRole('link', { name: /market & research desk/i })).toHaveAttribute(
+      'href',
+      '/use-cases/research-desk/',
+    );
+  });
+
   test('legacy use-case routes redirect to their canonical public URL', async () => {
     renderAt('/v2/use-cases/team-chat');
 
@@ -99,6 +108,17 @@ describe('V2 routing', () => {
       level: 2,
       name: 'Run pod conversations with searchable shared context',
     })).toBeInTheDocument();
+  });
+
+  test('research workspace use case explains capabilities rather than promising outcomes', async () => {
+    renderAt('/use-cases/research-desk/');
+
+    expect(await screen.findByRole('heading', {
+      level: 2,
+      name: 'Run research and market analysis without losing the project context',
+    })).toBeInTheDocument();
+    expect(screen.getByText('Common challenges')).toBeInTheDocument();
+    expect(screen.getByText('What you can do')).toBeInTheDocument();
   });
 
   test('canonical comparison URL renders after the app takes over', async () => {

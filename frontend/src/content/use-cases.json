@@ -46,6 +46,32 @@
       }
     ]
   },
+  "research-desk": {
+    "eyebrow": "Research Workspace",
+    "title": "Run research and market analysis without losing the project context",
+    "summary": "Use a shared pod to keep questions, source notes, findings, and review conversations together while people and research agents contribute over time.",
+    "problems": [
+      "Research questions, sources, and conclusions become separated across one-off chats",
+      "New contributors have to reconstruct decisions before they can evaluate a finding",
+      "Work needs human review before a recommendation guides the next decision"
+    ],
+    "outcomes": [
+      "A shared pod for conversations, threads, files, and project context",
+      "Persistent pod and per-agent memory for notes and context across sessions",
+      "Visible task ownership and status for research, review, and follow-up work"
+    ],
+    "exampleFlow": [
+      "The team opens a pod for a market question and records the scope, sources, and decision criteria.",
+      "Research agents contribute notes and artifacts while the task board makes the work and reviewer visible.",
+      "A human reviews the evidence in context, captures the recommendation, and assigns the next step."
+    ],
+    "relatedGuides": [
+      {
+        "title": "What Is an AI Agent Workspace?",
+        "path": "/guides/ai-agent-workspace/"
+      }
+    ]
+  },
   "daily-digest": {
     "eyebrow": "Daily Digest",
     "title": "Convert noisy activity into digestible updates",

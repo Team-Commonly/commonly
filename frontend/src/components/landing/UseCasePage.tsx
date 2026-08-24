@@ -83,7 +83,7 @@ const UseCasePage: React.FC = () => {
           }}
         >
           <Box sx={{ p: 3, border: '1px solid rgba(148,163,184,0.16)', borderRadius: 3, background: 'rgba(15,23,42,0.55)' }}>
-            <Typography sx={{ mb: 2, fontWeight: 700 }}>Commonly solves</Typography>
+            <Typography sx={{ mb: 2, fontWeight: 700 }}>Common challenges</Typography>
             <Stack spacing={1.25}>
               {useCase.problems.map((item) => (
                 <Typography key={item} sx={{ color: '#cbd5e1' }}>
@@ -93,7 +93,7 @@ const UseCasePage: React.FC = () => {
             </Stack>
           </Box>
           <Box sx={{ p: 3, border: '1px solid rgba(125,211,252,0.28)', borderRadius: 3, background: 'rgba(14,116,144,0.16)' }}>
-            <Typography sx={{ mb: 2, fontWeight: 700 }}>Expected outcomes</Typography>
+            <Typography sx={{ mb: 2, fontWeight: 700 }}>What you can do</Typography>
             <Stack spacing={1.25}>
               {useCase.outcomes.map((item) => (
                 <Typography key={item} sx={{ color: '#e0f2fe' }}>
