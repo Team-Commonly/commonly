@@ -576,7 +576,7 @@ const V2LandingPage: React.FC = () => {
               <div className="v2-landing__usecase-title">{t('landing.useCases.chat.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.chat.text')}</p>
             </Link>
-            <Link className="v2-landing__usecase" to="/use-cases/community/">
+            <Link className="v2-landing__usecase" to="/use-cases/research-desk/">
               <div className="v2-landing__usecase-title">{t('landing.useCases.research.title')}</div>
               <p className="v2-landing__usecase-text">{t('landing.useCases.research.text')}</p>
             </Link>

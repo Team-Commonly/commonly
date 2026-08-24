@@ -181,8 +181,8 @@ const renderUseCase = (useCase) => `
       </section>
       <section>
         <div class="seo-grid">
-          <article class="seo-card"><h2>Commonly solves</h2>${list(useCase.problems)}</article>
-          <article class="seo-card"><h2>Expected outcomes</h2>${list(useCase.outcomes)}</article>
+          <article class="seo-card"><h2>Common challenges</h2>${list(useCase.problems)}</article>
+          <article class="seo-card"><h2>What you can do</h2>${list(useCase.outcomes)}</article>
         </div>
       </section>
       <section><h2>Example flow</h2><ol>${useCase.exampleFlow.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section>

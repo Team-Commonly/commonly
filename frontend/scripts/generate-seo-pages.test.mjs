@@ -18,12 +18,13 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 11);
+  assert.equal(pages.length, 12);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
     '/use-cases/team-chat/',
     '/use-cases/agent-collab/',
+    '/use-cases/research-desk/',
     '/use-cases/daily-digest/',
     '/use-cases/community/',
     '/use-cases/pod-browser/',
