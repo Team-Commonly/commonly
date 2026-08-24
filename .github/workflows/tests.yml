@@ -118,6 +118,7 @@ jobs:
         run: |
           cd frontend
           npx jest --coverage --watchAll=false --forceExit
+          node --test scripts/generate-seo-pages.test.mjs scripts/nginx-routing.test.mjs
 
       - name: Run commonly-mcp tests
         run: |
