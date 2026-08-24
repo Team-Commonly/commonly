@@ -8,6 +8,7 @@ import V2App from '../V2App';
 import V2LandingPage from '../landing/V2LandingPage';
 import V2ComparePage from '../landing/V2ComparePage';
 import GuidePage from '../../components/landing/GuidePage';
+import GuidesIndexPage from '../../components/landing/GuidesIndexPage';
 import UseCasePage from '../../components/landing/UseCasePage';
 import i18n from '../../i18n';
 
@@ -51,6 +52,7 @@ const renderAt = (path: string, auth = baseAuth) => render(
         <Route path="/v2/*" element={<V2App />} />
         <Route path="/" element={<V2LandingPage />} />
         <Route path="/compare" element={<V2ComparePage />} />
+        <Route path="/guides" element={<GuidesIndexPage />} />
         <Route path="/guides/:guideId/*" element={<GuidePage />} />
         <Route path="/use-cases/:useCaseId/*" element={<UseCasePage />} />
       </Routes>
@@ -117,6 +119,16 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a workspace' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Watch a live room' })).toBeInTheDocument();
+  });
+
+  test('guides index renders after the app takes over', async () => {
+    renderAt('/guides/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'Guides for teams working with AI agents',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Read the guide' })).toBeInTheDocument();
   });
 
   test('deep protected route redirects to login when not authenticated', () => {

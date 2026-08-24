@@ -10,6 +10,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import RegistrationInviteRequired from './components/RegistrationInviteRequired';
 import GuidePage from './components/landing/GuidePage';
+import GuidesIndexPage from './components/landing/GuidesIndexPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
 import DiscordCallback from './components/DiscordCallback';
@@ -276,6 +277,7 @@ function App(): React.ReactElement {
                     {/* Canonical public routes also have static build output. */}
                     <Route path="/compare" element={<V2ComparePage />} />
                     {/* Legacy auth/OAuth entry points preserve their query strings. */}
+                    <Route path="/guides" element={<GuidesIndexPage />} />
                     <Route path="/guides/:guideId" element={<GuidePage />} />
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/login" element={<Login />} />
