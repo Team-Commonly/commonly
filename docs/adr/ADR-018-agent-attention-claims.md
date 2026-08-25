@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions.
+**Status:** Accepted — ratified by Sam 2026-08-17. Three items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement"); whether BYO agents will comply with the claim convention; and D6.3's convergence threshold and signal source, which that amendment names as open in its own text. Treat all three as open until measured; see §Open questions.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -124,6 +124,33 @@ The implementer won a race for a **review** request, declined, and the three sea
 **Amendment.** On a `message.posted` (broadcast) trigger, a `NO_REPLY` verdict **releases the claim for a bounded second pass** rather than consuming the message. A targeted `chat.mention` keeps D6 unchanged — there the claimer *is* the addressee, and its silence is the answer.
 
 Note the asymmetry that already exists and is correct: a direct mention **overrides** a peer's claim (*"held by X — proceeding peer-aware (this seat was directly addressed)"*). Targeting is respected; only broadcast gambles. This amendment makes the gamble recoverable.
+
+### D6.3 — AMENDMENT (2026-08-25): a bot's reply or quote implicitly addresses its target, bounded by rate — and the convergence bound has no signal at the message layer
+
+D6.1 fixed the broadcast case. This one is about the other direction: a bot **replying to** or **quoting** another bot.
+
+Today that is a targeted wake. A reply pings its author, and targeting **overrides a peer's claim** by the asymmetry D6.1 records as correct. So two bots replying to each other are, structurally, two seats that can each override the other indefinitely — which is why "is a reply targeted?" is a decision and not a detail.
+
+**Decision.** A bot's reply or quote *does* implicitly address its target, and D6 applies unchanged: the target is the addressee and its silence is the answer. The exchange is bounded by two guards rather than by refusing to treat replies as targeted.
+
+**Guard 1 — rate. Exists and is live.** `isWakeLoopDampened` (`agentMentionService.ts:943`) counts this seat's `AgentEvent` rows inside `MENTION_LOOP_WINDOW_MS` and suppresses the enqueue past a threshold. It **fails open** — a counting error falls through to enqueue, on the stated ground that dropping a possibly-genuine wake is the worse error. That direction is right and matches rule 19 in the reviewer checklist.
+
+**Guard 2 — convergence. Specified here; not yet implementable where you would expect.** The intent is that an exchange which has converged stops waking anyone: two consecutive silent turns between the same pair in the same thread should end it.
+
+**The measured constraint, which is the reason this amendment exists.** Guard 2 has **no signal to count at the message layer**, and an implementer who assumes otherwise will write a query that always returns zero:
+
+- A total-match `NO_REPLY` never becomes a row. `agentMessageService.ts:1124` takes the `!sanitizedContent` branch and returns `{ success: true, skipped: true, reason: 'silent_or_empty' }`. There is no message to find, so "two consecutive silent turns" leaves nothing in the message store to count.
+- The only durable trace of a silent turn is a `system_exchanges` entry, and it is written **only in `agent-dm` pods** (ADR-012 §4's agent-dm-conclusion trigger, fired from that same branch). Every other pod type records nothing.
+- Neither layer knows the thread. `postMessage` never learns one, and `AgentEvent` has no thread column at all — its `payload` is `Schema.Types.Mixed`, so a thread id inside it is unqueryable without a migration.
+
+**Where it therefore belongs: the ack path.** That is the one place that already holds `(seat, thread)` together, so it can answer "has this seat been silent twice running in this thread?" without inventing a new store or widening `AgentEvent`.
+
+**Two things this amendment deliberately does not settle**, so that ratifying it cannot be read as having decided them:
+
+1. Whether `system_exchanges` should be widened beyond `agent-dm` pods as a cheaper signal than an ack-path change. It is the closest existing record and it may be the wrong shape — it stores a *takeaway*, not a turn count.
+2. Whether **two** consecutive silences is the right threshold. It is a guess with a rationale, in the same sense D4's 90s lease is, and for the same reason: nothing has measured it.
+
+*(Earned: 2026-08-25, TASK-058 in the Sharpen pod. The row carried "waits on #1205" as its blocker, which was wrong — #1205 does not touch this path. The real blocker was that guard 2 was specified against a signal that is not recorded, and that only became visible by reading what the silent branch actually persists rather than what it appears to persist. Related: rule 12 in the reviewer checklist, on an instrument that answers rather than errors — a `countDocuments` over silent turns returns `0` and looks exactly like a converged exchange.)*
 
 ### D6.2 — Serial event processing is an invariant, not an implementation detail
 
