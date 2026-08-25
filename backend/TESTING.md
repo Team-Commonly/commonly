@@ -80,19 +80,32 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 
 - **Tier 0 tests don't cross-import `mongoServer` / `pgDb`.** The real-services branch doesn't export them. Use the helpers; if you need direct access, add a narrow helper in `testUtils.js` that works in both tiers.
 - **Real PG needs `pgcrypto` for `gen_random_uuid()`.** `setupPgDb` creates the extension for Tier 1 — don't call `gen_random_uuid()` in a test that only runs under Tier 0 unless you're also registering the pg-mem function.
-- **pg-mem ignores SELF-REFERENTIAL FK actions, and accepts the DDL anyway.** The axis is self-reference, not the action. Measured on pg-mem 2.9.1 and pinned in `__tests__/unit/models/pgMemFkActionFidelity.test.js`:
+- **pg-mem applies SELF-REFERENTIAL FK actions to the primary-key index and not to the row storage, so the answer depends on your query plan.** The DDL is accepted in every case. Measured on pg-mem 2.9.1 and pinned in `__tests__/unit/models/pgMemFkActionFidelity.test.js`:
 
   | constraint | pg-mem |
   |---|---|
   | cross-table `ON DELETE CASCADE` | fires — matches Postgres |
   | cross-table `ON DELETE SET NULL` | fires — matches Postgres |
-  | self-referential `ON DELETE CASCADE` | **ignored** |
-  | self-referential `ON DELETE SET NULL` | **ignored** |
+  | self-referential `ON DELETE CASCADE` | **contradicts itself** — the row is gone via the PK index, still present to a scan |
+  | self-referential `ON DELETE SET NULL` | **contradicts itself** — the FK reads `NULL` via the PK index, unchanged to a scan |
   | `ON DELETE SET DEFAULT` | sets **NULL**, not the column default |
   | insert violating the FK | rejected |
   | delete violating the default `NO ACTION` | rejected |
 
-  `messages` has both shapes. `messages.pod_id → pods(id)` and `thread_user_state.thread_root_id → messages(id)` are cross-table and genuinely covered at Tier 0. `messages.reply_to_message_id` and `messages.thread_root_id` point back at `messages(id)`, so **a Tier 0 test that deletes a message and asserts what became of its descendants is asserting nothing** — it passes because the rows never changed, which is indistinguishable from passing because the action did the right thing. One such test was written, passed, and was deleted rather than kept (`__tests__/unit/models/retentionReRoot.test.js` records it).
+  "Contradicts itself" is literal — one table, one transaction, two answers for the same row. Given `m(id INT PRIMARY KEY, p INT REFERENCES m(id) ON DELETE SET NULL)` seeded `(1,NULL),(2,1),(3,2)` and `DELETE FROM m WHERE id = 1`:
+
+  ```
+  SELECT * FROM m ORDER BY id      → [{id:2,p:1},{id:3,p:2}]   -- action NOT applied
+  SELECT * FROM m WHERE id = 2     → [{id:2,p:null}]           -- action applied
+  SELECT * FROM m WHERE p = 1      → [{id:2,p:1}]              -- matches the stale value
+  SELECT * FROM m WHERE p IS NULL  → []                        -- and not the applied one
+  ```
+
+  Under `CASCADE` the same split deletes row 2 from the PK index while `SELECT *` and `count(*)` still report two rows. A plan served by the PK index sees the action; a plan that scans sees the pre-delete value. `p` carries no index, so predicates on the FK column always read stale.
+
+  **This is worse than the "pg-mem ignores them" reading it replaces** (which is what an earlier version of this rule and the first draft of that suite both said). Ignoring is at least consistent: every read agrees, and a test that passes does so for one knowable reason. Here the *shape of the assertion query* picks the answer — `expect(rows(db, 'SELECT * FROM m'))` and `expect(rows(db, 'SELECT * FROM m WHERE id = 2'))` disagree about whether the constraint fired, and both look like a real result. A green Tier 0 constraint test is therefore not evidence even of pg-mem's own behaviour, let alone Postgres's.
+
+  `messages` has both shapes. `messages.pod_id → pods(id)` and `thread_user_state.thread_root_id → messages(id)` are cross-table and genuinely covered at Tier 0. `messages.reply_to_message_id` and `messages.thread_root_id` point back at `messages(id)`, so **a Tier 0 test that deletes a message and asserts what became of its descendants is asserting nothing** — it reports whichever answer its own `SELECT` happened to reach. One such test was written, passed, and was deleted rather than kept (`__tests__/unit/models/retentionReRoot.test.js` records it).
 
   The general rule: **pg-mem proves SQL *shape*; only Tier 1 proves the database's *behaviour*.** A constraint whose effect you are asserting belongs in `__tests__/service/`. Split it the way `retentionReRoot.test.js` (repair, given a constructed orphaned state) and `__tests__/service/threading.retention.test.js` (that Postgres produces that state at all) do — a claim about our code at Tier 0, a claim about the database at Tier 1.
 

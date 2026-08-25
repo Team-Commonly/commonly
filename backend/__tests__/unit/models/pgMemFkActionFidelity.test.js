@@ -10,19 +10,32 @@
  *
  * The axis is SELF-REFERENCE, not the action. Measured on pg-mem 2.9.1:
  *
- *   cross-table  ON DELETE CASCADE   fires      (matches Postgres)
- *   cross-table  ON DELETE SET NULL  fires      (matches Postgres)
- *   self-ref     ON DELETE CASCADE   IGNORED    (diverges)
- *   self-ref     ON DELETE SET NULL  IGNORED    (diverges)
+ *   cross-table  ON DELETE CASCADE   fires        (matches Postgres)
+ *   cross-table  ON DELETE SET NULL  fires        (matches Postgres)
+ *   self-ref     ON DELETE CASCADE   INCONSISTENT (diverges)
+ *   self-ref     ON DELETE SET NULL  INCONSISTENT (diverges)
+ *
+ * "Inconsistent" and not "ignored": the action IS performed, against the
+ * PRIMARY KEY INDEX and not against the row storage. One table, one
+ * transaction, two answers for the same row — a plan served by the PK index
+ * reports the action as applied, a plan that scans reports the pre-delete
+ * value. The `plan-dependent` describe below pins both readings side by side.
+ *
+ * An earlier draft of this file asserted only the scanning reads and called
+ * the action ignored. That is the more comfortable failure and the wrong one:
+ * ignoring is at least self-consistent, so a green test is green for one
+ * knowable reason. Here the SHAPE OF THE ASSERTION QUERY picks the answer, and
+ * both answers look like a real result.
  *
  * That distinction matters because `messages` has both shapes. `pod_id` and
  * `thread_user_state.thread_root_id` are cross-table and genuinely covered at
  * Tier 0. `reply_to_message_id` and `messages.thread_root_id` point back at
  * `messages(id)`, so a Tier 0 test that deletes a message and asserts what
- * happened to its descendants is asserting nothing.
+ * happened to its descendants is not asserting nothing — it is asserting
+ * whichever answer its own SELECT happened to reach.
  *
  * The DDL is accepted without complaint in every case, which is what makes
- * this dangerous: declared, parsed, silently not applied.
+ * this dangerous: declared, parsed, applied to half the storage.
  */
 
 const { newDb } = require('pg-mem');
@@ -62,32 +75,55 @@ describe('pg-mem honours cross-table FK actions', () => {
   });
 });
 
-describe('pg-mem IGNORES self-referential FK actions', () => {
-  // Both cases below are wrong against Postgres. They are asserted as-is so
-  // the divergence is pinned rather than described.
-  it('does not fire a self-referential ON DELETE SET NULL', () => {
-    const db = fresh(
+describe('pg-mem applies self-referential FK actions plan-dependently', () => {
+  // Every assertion below is wrong against Postgres in at least one of its two
+  // readings. They are asserted as-is so the divergence is pinned rather than
+  // described. The pairs are the point: same db, same transaction, same row.
+  const selfRef = (action) =>
+    fresh(
       `CREATE TABLE m(id INT PRIMARY KEY,
-                      p INT REFERENCES m(id) ON DELETE SET NULL);`,
-      `INSERT INTO m VALUES (1, NULL), (2, 1);`,
+                      p INT REFERENCES m(id) ON DELETE ${action});`,
+      `INSERT INTO m VALUES (1, NULL), (2, 1), (3, 2);`,
     );
+
+  it('reports SET NULL as both applied and not applied, depending on the read', () => {
+    const db = selfRef('SET NULL');
     db.public.none('DELETE FROM m WHERE id = 1;');
-    // Postgres would give p = null here.
-    expect(rows(db, 'SELECT * FROM m')).toEqual([{ id: 2, p: 1 }]);
+
+    // Scanning read: the action did NOT happen. Postgres would give p = null.
+    expect(rows(db, 'SELECT * FROM m ORDER BY id')).toEqual([
+      { id: 2, p: 1 },
+      { id: 3, p: 2 },
+    ]);
+    // PK-index read of the SAME row: the action DID happen.
+    expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([{ id: 2, p: null }]);
   });
 
-  it('does not fire a self-referential ON DELETE CASCADE', () => {
-    const db = fresh(
-      `CREATE TABLE m(id INT PRIMARY KEY,
-                      p INT REFERENCES m(id) ON DELETE CASCADE);`,
-      `INSERT INTO m VALUES (1, NULL), (2, 1);`,
-    );
+  it('reports CASCADE as both applied and not applied, depending on the read', () => {
+    const db = selfRef('CASCADE');
     db.public.none('DELETE FROM m WHERE id = 1;');
-    // Postgres would delete row 2 with its parent.
-    expect(rows(db, 'SELECT * FROM m')).toEqual([{ id: 2, p: 1 }]);
+
+    // Scanning read: row 2 survives. Postgres would have deleted it.
+    expect(rows(db, 'SELECT * FROM m ORDER BY id')).toEqual([
+      { id: 2, p: 1 },
+      { id: 3, p: 2 },
+    ]);
+    // count(*) agrees with the scan, so an aggregate is no safer.
+    expect(rows(db, 'SELECT count(*) AS c FROM m')).toEqual([{ c: 2 }]);
+    // PK-index read: row 2 is gone.
+    expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([]);
   });
 
-  it('leaves the whole chain pointing at a deleted row', () => {
+  it('answers predicates on the FK column from the stale value', () => {
+    // `p` carries no index, so both of these are scans and both read stale —
+    // which is why "just assert the other way round" is not the workaround.
+    const db = selfRef('SET NULL');
+    db.public.none('DELETE FROM m WHERE id = 1;');
+    expect(rows(db, 'SELECT * FROM m WHERE p = 1')).toEqual([{ id: 2, p: 1 }]);
+    expect(rows(db, 'SELECT * FROM m WHERE p IS NULL')).toEqual([]);
+  });
+
+  it('leaves the whole chain pointing at a deleted row, to a scan', () => {
     // The `messages` shape exactly: two self-referential SET NULL columns.
     const db = fresh(
       `CREATE TABLE m(id INT PRIMARY KEY,
@@ -99,6 +135,10 @@ describe('pg-mem IGNORES self-referential FK actions', () => {
     expect(rows(db, 'SELECT * FROM m ORDER BY id')).toEqual([
       { id: 2, reply_to: 1, root: 1 },
       { id: 3, reply_to: 2, root: 1 },
+    ]);
+    // And to a PK-index read, does not — on both columns at once.
+    expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([
+      { id: 2, reply_to: null, root: null },
     ]);
   });
 });
