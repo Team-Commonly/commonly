@@ -53,6 +53,13 @@ describe('task board is independent of GitHub', () => {
     // path would all pass the negative assertion silently. readFileSync
     // throwing covers a MISSING file; it does not cover a present-but-wrong
     // one.
+    //
+    // The precise form matters, and "add a positive control" is too weak a
+    // prescription (@sprint-review): the control must be a needle you know is
+    // present in THAT SAME haystack, asserted from THAT SAME variable. A
+    // passing assertion elsewhere in the file proves nothing about this read
+    // — it can be green while this particular readFileSync returned something
+    // no one intended.
     expect(routeSource).toMatch(/router\.(get|post|patch|put|delete)\(/);
     expect(routeSource.length).toBeGreaterThan(1000);
 
