@@ -101,7 +101,14 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
   SELECT * FROM m WHERE p IS NULL  → []                        -- and not the applied one
   ```
 
-  Under `CASCADE` the same split deletes row 2 from the PK index while `SELECT *` and `count(*)` still report two rows. A plan served by the PK index sees the action; a plan that scans sees the pre-delete value. `p` carries no index, so predicates on the FK column always read stale.
+  Under `CASCADE` the same split deletes row 2 from the PK index while `SELECT *` and `count(*)` still report two rows. A plan served by the PK index sees the action; a plan that scans sees the pre-delete value. In these examples `p` carries no index, so predicates on the FK column read stale — but that is a property of the index, not of the column's role in the FK (@sprint-review). Add `CREATE INDEX m_p_idx ON m(p)` and the same two predicates go fresh:
+
+  ```
+  no index     WHERE p = 1      -> [{id:2, p:1}]      WHERE p IS NULL -> []
+  with index   WHERE p = 1      -> []                 WHERE p IS NULL -> [{id:2, p:null}]
+  ```
+
+  So the FK column is not condemned to staleness; it is simply the column nobody indexes. Which makes the whole divergence sharper and more dangerous than "self-referential FKs are broken": **adding an index changes query results**, so a schema tuning change can silently fix or break a test that never mentioned the index.
 
   The variable is isolated by disabling the index in place — same predicate, same rows, nothing else changed:
 

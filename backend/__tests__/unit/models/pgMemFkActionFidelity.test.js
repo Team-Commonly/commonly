@@ -104,6 +104,25 @@ describe('pg-mem applies self-referential FK actions plan-dependently', () => {
     expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([{ id: 2, p: null }]);
   });
 
+  // @sprint-review's correction: an earlier draft of the doc said predicates on
+  // the FK column "always read stale". They don't. The FK column is simply the
+  // column nobody indexes — index it and the same predicates go fresh. That is
+  // the more alarming version of this bug, because it means adding an index is
+  // a behaviour change, not just a performance change.
+  it('an index on the FK column flips the SAME predicate to fresh', () => {
+    const stale = selfRef('SET NULL');
+    stale.public.none('DELETE FROM m WHERE id = 1;');
+    expect(rows(stale, 'SELECT * FROM m WHERE p = 1')).toEqual([{ id: 2, p: 1 }]);
+    expect(rows(stale, 'SELECT * FROM m WHERE p IS NULL')).toEqual([]);
+
+    const indexed = selfRef('SET NULL');
+    indexed.public.none('CREATE INDEX m_p_idx ON m(p);');
+    indexed.public.none('DELETE FROM m WHERE id = 1;');
+    // Same DDL, same seed, same predicate. Only the index differs.
+    expect(rows(indexed, 'SELECT * FROM m WHERE p = 1')).toEqual([]);
+    expect(rows(indexed, 'SELECT * FROM m WHERE p IS NULL')).toEqual([{ id: 2, p: null }]);
+  });
+
   it('reports CASCADE as both applied and not applied, depending on the read', () => {
     const db = selfRef('CASCADE');
     db.public.none('DELETE FROM m WHERE id = 1;');
@@ -145,9 +164,12 @@ describe('pg-mem applies self-referential FK actions plan-dependently', () => {
     expect(rows(db, 'SELECT * FROM m WHERE id IN (10)')).toEqual([{ id: 10, parent_id: null }]);
   });
 
-  it('answers predicates on the FK column from the stale value', () => {
+  it('answers predicates on an UNINDEXED FK column from the stale value', () => {
     // `p` carries no index, so both of these are scans and both read stale —
     // which is why "just assert the other way round" is not the workaround.
+    // The name says UNINDEXED deliberately: the test above shows an index on
+    // the same column flips both answers, so a name like "predicates on the FK
+    // column" would assert more than this case establishes.
     const db = selfRef('SET NULL');
     db.public.none('DELETE FROM m WHERE id = 1;');
     expect(rows(db, 'SELECT * FROM m WHERE p = 1')).toEqual([{ id: 2, p: 1 }]);
