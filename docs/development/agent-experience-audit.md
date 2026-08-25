@@ -2535,17 +2535,35 @@ scanned. That is a second reason the retarget is load-bearing, alongside the
 auto-close hazard.
 
 **Not every absence is a stacking absence, and E2E is the one that fools you.**
-Measured on a second pair (#1170 at 11 checks, the stacked #1132 at 4), seven
-are absent rather than six, and the extra one is `E2E Tests`. It is tempting to
-add it to the stacking gap; it does not belong there. `playwright.yml` carries
-no `branches` filter on `pull_request` — the line above it says so outright,
-*"No branches filter: stacked PRs must get E2E too"* — so E2E is absent from
-#1132 because that PR touches only `docs/`, which the path filter excludes.
-@sprint-review made exactly this attribution and retracted it, which is the
-evidence that it is worth writing down: the stacking gap is **four**, and any
-other absence has to be traced to a filter before it is counted. Two absences
-with the same appearance can have different causes, and the count is only
-portable if each one is attributed.
+Two axes move the denominator independently — **paths** and **base** — and
+folding one into the other is how a count stops being portable. Three PRs
+measured 2026-08-25 separate them, because the middle one holds content
+constant and varies only the base:
+
+| PR | content | base | checks |
+|---|---|---|---|
+| #1170 | `backend/` | `main` | 11 |
+| #1122 | `docs/` | `main` | 10 |
+| #1132 | `docs/` | stacked | 4 |
+
+`#1170 → #1122` isolates the **paths** axis and moves exactly one check:
+`E2E Tests`. `playwright.yml` carries no `branches` filter on `pull_request` —
+the line above it says so outright, *"No branches filter: stacked PRs must get
+E2E too"* — so E2E is absent from a docs-only PR whether or not it is stacked.
+
+`#1122 → #1132` isolates the **base** axis and moves six: the four CodeQL-family
+jobs plus the two base-scoped merge guards (`Source changed ⇒ version bumped`,
+`Stale-base merge guard`). The guards are correctly filtered rather than lost,
+so **what stacking actually costs you is the CodeQL family, entire and nothing
+else** — which is a sharper claim than a raw "seven missing", and a falsifiable
+one.
+
+@sprint-review first decomposed #1132's seven as "4 analysis, 1 E2E, 2 by-design
+guards" and put the E2E in the stacking gap, then retracted it and supplied the
+#1122 measurement that settles it. Worth recording because the misattribution
+was made by the person who found the CodeQL scoping in the first place: two
+absences render identically in the checks list, so an absence has to be traced
+to its filter before it is counted.
 
 **The scoping of those three cannot be checked from inside a checkout.** The
 entry above notes there is no `codeql.yml`; the sharper form is that the
