@@ -445,7 +445,17 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       setMessages((prev) => {
         if (prev.some((m) => m.id && m.id === normalized.id)) {
           return prev.map((m) => (
-            m.id === normalized.id ? { ...m, replyTo: m.replyTo ?? normalized.replyTo ?? null } : m
+            m.id === normalized.id
+              ? {
+                ...m,
+                replyTo: m.replyTo ?? normalized.replyTo ?? null,
+                // #646's graft, one field over: when the socket copy wins
+                // the race and lacks the thread root (older server), keep
+                // the POST copy's — or the sender's own in-thread reply
+                // renders top-level until refresh (Sam, 2026-08-24).
+                thread_root_id: m.thread_root_id ?? normalized.thread_root_id ?? null,
+              }
+              : m
           ));
         }
         return chronologicalMessages([...prev, normalized]);

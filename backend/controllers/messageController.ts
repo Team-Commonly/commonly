@@ -381,6 +381,13 @@ exports.createMessage = async (req: AuthRequest, res: Response): Promise<void> =
           // viewer renders the reply without its quoted context until a
           // reload re-fetches the joined row (#646).
           replyTo: m.replyTo ?? null,
+          // #646's lesson, one field over: without the thread root every
+          // live viewer rendered an in-thread reply as a TOP-LEVEL message
+          // until refresh, and the thread never updated live (Sam,
+          // 2026-08-24). The agent path (#1175) carries it; this human
+          // path was the gap.
+          thread_root_id: (m as { thread_root_id?: number | string | null }).thread_root_id ?? null,
+          reply_to_message_id: (m as { reply_to_message_id?: number | string | null }).reply_to_message_id ?? null,
         };
         io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
       }

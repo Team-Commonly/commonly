@@ -25,8 +25,12 @@ jest.mock('../../../models/AgentRegistry', () => ({
 jest.mock('../../../config/socket', () => ({
   getIO: jest.fn(),
 }));
+jest.mock('../../../services/threadRootResolver', () => ({
+  resolveThreadRoot: jest.fn(),
+}));
 
 const socketConfig = require('../../../config/socket');
+const { resolveThreadRoot } = require('../../../services/threadRootResolver');
 
 describe('messageController', () => {
   beforeEach(() => {
@@ -391,6 +395,34 @@ describe('messageController', () => {
       await messageController.createMessage(req, res);
 
       expect(emit).toHaveBeenCalledWith('newMessage', expect.objectContaining({ replyTo }));
+    });
+
+    // #646's lesson one field over (Sam's live repro 2026-08-24): without
+    // thread_root_id on the broadcast, every live viewer rendered an
+    // in-thread reply as a TOP-LEVEL message until refresh, and open
+    // threads never updated live. The agent path (#1175) carries it; the
+    // human path was the gap.
+    it('broadcasts thread_root_id on the newMessage socket emit', async () => {
+      Pod.findById.mockResolvedValue({ members: ['u1'], type: 'chat' });
+      resolveThreadRoot.mockResolvedValue(57577);
+      PGMessage.create.mockResolvedValue({ id: 'm10' });
+      PGMessage.findById.mockResolvedValue({
+        id: 'm10', content: 'thread detail', thread_root_id: 57577, reply_to_message_id: null,
+      });
+      const emit = jest.fn();
+      socketConfig.getIO.mockReturnValue({ to: jest.fn(() => ({ emit })) });
+
+      const req = {
+        params: { podId: 'p1' },
+        body: { content: 'thread detail', threadRootId: '57577' },
+        user: { id: 'u1', username: 'alice' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await messageController.createMessage(req, res);
+
+      expect(emit).toHaveBeenCalledWith('newMessage', expect.objectContaining({
+        thread_root_id: 57577,
+      }));
     });
   });
 
