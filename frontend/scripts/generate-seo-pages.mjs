@@ -32,6 +32,48 @@ const replaceMarkedSection = (template, start, end, content) => {
 
 const pageUrl = (path) => `${siteUrl}${path}`;
 
+const formatDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`Guide provenance date must use YYYY-MM-DD: ${value}`);
+  }
+
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Guide provenance date is invalid: ${value}`);
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'long',
+    timeZone: 'UTC',
+  }).format(date);
+};
+
+const guideProvenance = (guide) => {
+  const provenance = guide.provenance;
+  const required = ['author', 'reviewer', 'datePublished', 'dateModified'];
+
+  if (!provenance || required.some((field) => !provenance[field])) {
+    throw new Error(`Guide ${guide.title} is missing required provenance.`);
+  }
+
+  if (provenance.dateModified < provenance.datePublished) {
+    throw new Error(`Guide ${guide.title} has a modified date before its published date.`);
+  }
+
+  return provenance;
+};
+
+const renderGuideProvenance = (guide) => {
+  const provenance = guideProvenance(guide);
+  const published = formatDate(provenance.datePublished);
+  const modified = formatDate(provenance.dateModified);
+  const dates = provenance.datePublished === provenance.dateModified
+    ? `Published and updated <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time>`
+    : `Published <time datetime="${escapeHtml(provenance.datePublished)}">${escapeHtml(published)}</time> · Updated <time datetime="${escapeHtml(provenance.dateModified)}">${escapeHtml(modified)}</time>`;
+
+  return `<p class="seo-byline">By ${escapeHtml(provenance.author)} · Reviewed by ${escapeHtml(provenance.reviewer)}<br>${dates}</p>`;
+};
+
 const renderLanding = (landing, useCases, guides) => {
   const featureCards = [
     landing.features.pods,
@@ -211,6 +253,7 @@ const renderGuide = (guide) => {
         <p class="seo-kicker">${escapeHtml(guide.eyebrow)}</p>
         <h1>${escapeHtml(guide.title)}</h1>
         <p class="seo-lede">${escapeHtml(guide.description)}</p>
+        ${renderGuideProvenance(guide)}
         ${(guide.intro || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       </section>
       ${sections}
@@ -248,9 +291,12 @@ const renderGuidesIndex = (guides) => {
     </div>`;
 };
 
-const metadata = ({ title, description, path, schema, ogType = 'website' }) => {
+const metadata = ({ title, description, path, schema, ogType = 'website', datePublished, dateModified }) => {
   const url = pageUrl(path);
   const structuredData = JSON.stringify(schema).replaceAll('<', '\\u003c');
+  const articleDates = ogType === 'article' && datePublished && dateModified
+    ? `\n    <meta property="article:published_time" content="${escapeHtml(datePublished)}" />\n    <meta property="article:modified_time" content="${escapeHtml(dateModified)}" />`
+    : '';
   return `
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
@@ -264,6 +310,7 @@ const metadata = ({ title, description, path, schema, ogType = 'website' }) => {
     <meta property="og:image" content="${siteUrl}/og-card.png?v=2" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    ${articleDates}
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
@@ -341,6 +388,9 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
 
   const guidePages = Object.entries(guides).map(([id, guide]) => {
     const path = `/guides/${id}/`;
+    const provenance = guideProvenance(guide);
+    const author = { '@type': 'Organization', name: provenance.author, url: `${siteUrl}/` };
+    const reviewer = { '@type': 'Organization', name: provenance.reviewer, url: `${siteUrl}/` };
     return {
       path,
       outputPath: `guides/${id}/index.html`,
@@ -348,14 +398,29 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
       description: guide.description,
       content: renderGuide(guide),
       ogType: 'article',
+      datePublished: provenance.datePublished,
+      dateModified: provenance.dateModified,
       schema: {
         '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: guide.title,
-        description: guide.description,
-        mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl(path) },
-        author: { '@type': 'Organization', name: 'Commonly', url: `${siteUrl}/` },
-        publisher: organization,
+        '@graph': [{
+          '@type': 'Article',
+          '@id': `${pageUrl(path)}#article`,
+          headline: guide.title,
+          description: guide.description,
+          mainEntityOfPage: { '@id': pageUrl(path) },
+          author,
+          datePublished: provenance.datePublished,
+          dateModified: provenance.dateModified,
+          publisher: organization,
+        }, {
+          '@type': 'WebPage',
+          '@id': pageUrl(path),
+          name: guide.title,
+          description: guide.description,
+          url: pageUrl(path),
+          reviewedBy: reviewer,
+          isPartOf: { '@type': 'WebSite', name: 'Commonly', url: `${siteUrl}/` },
+        }],
       },
     };
   });

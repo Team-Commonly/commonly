@@ -30,10 +30,18 @@ interface GuideLink {
   path: string;
 }
 
+interface GuideProvenance {
+  author: string;
+  reviewer: string;
+  datePublished: string;
+  dateModified: string;
+}
+
 interface Guide {
   eyebrow: string;
   title: string;
   description: string;
+  provenance: GuideProvenance;
   intro: string[];
   sections: GuideSection[];
   faq: GuideFaq[];
@@ -47,6 +55,11 @@ interface Guide {
 }
 
 const GUIDES = guides as Record<string, Guide>;
+
+const formatGuideDate = (value: string) => new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'long',
+  timeZone: 'UTC',
+}).format(new Date(`${value}T00:00:00Z`));
 
 const GuidePage: React.FC = () => {
   const { guideId } = useParams<{ guideId: string }>();
@@ -92,6 +105,13 @@ const GuidePage: React.FC = () => {
         </Typography>
         <Typography sx={{ color: '#94a3b8', fontSize: '1.125rem', lineHeight: 1.7, mb: 5 }}>
           {guide.description}
+        </Typography>
+        <Typography sx={{ color: '#94a3b8', fontSize: '0.875rem', lineHeight: 1.7, mb: 5 }}>
+          By {guide.provenance.author} · Reviewed by {guide.provenance.reviewer}
+          <br />
+          {guide.provenance.datePublished === guide.provenance.dateModified
+            ? `Published and updated ${formatGuideDate(guide.provenance.datePublished)}`
+            : `Published ${formatGuideDate(guide.provenance.datePublished)} · Updated ${formatGuideDate(guide.provenance.dateModified)}`}
         </Typography>
 
         <Stack spacing={2} sx={{ color: '#cbd5e1', fontSize: '1.05rem', lineHeight: 1.75, mb: 7 }}>

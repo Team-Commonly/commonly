@@ -18,7 +18,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 12);
+  assert.equal(pages.length, 13);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -32,16 +32,41 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/',
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
+    '/guides/ai-agent-task-management/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
     'SoftwareApplication',
   ]);
   const guidePages = pages.filter((page) => page.path.startsWith('/guides/') && page.path !== '/guides/');
-  assert.equal(guidePages.length, 2);
+  assert.equal(guidePages.length, 3);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
-    assert.equal(guide.schema['@type'], 'Article');
+    const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
+    const webPage = guide.schema['@graph'].find((item) => item['@type'] === 'WebPage');
+    assert.equal(article.author['@type'], 'Organization');
+    assert.equal(webPage.reviewedBy['@type'], 'Organization');
+    assert.match(article.datePublished, /^2026-08-\d{2}$/);
+    assert.match(article.dateModified, /^2026-08-\d{2}$/);
+  }
+  const taskManagementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-management/');
+  assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly');
+  const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
+  assert.equal(taskManagementArticle.datePublished, '2026-08-25');
+  assert.equal(taskManagementArticle.dateModified, '2026-08-25');
+  const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const taskManagementHtml = renderStaticPage(guideTemplate, taskManagementGuide);
+  assert.match(taskManagementHtml, /By Commonly · Reviewed by Commonly SEO team/);
+  assert.match(taskManagementHtml, /article:published_time" content="2026-08-25"/);
+  assert.match(taskManagementHtml, /article:modified_time" content="2026-08-25"/);
+  assert.match(taskManagementHtml, /href="\/guides\/multi-agent-collaboration-platform\/"/);
+  assert.match(taskManagementHtml, /href="\/guides\/ai-agent-workspace\/"/);
+  for (const guidePath of [
+    '/guides/multi-agent-collaboration-platform/',
+    '/guides/ai-agent-workspace/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-task-management\/"/);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
