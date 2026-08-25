@@ -2573,3 +2573,46 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+
+## 43. The seat believed it was silent; the kernel published its reasoning — and the seat caught it itself (2026-08-25, sprint-review, found by the seat)
+
+**The surface:** the `NO_REPLY` sentinel contract, and every frame that teaches
+it. The kernel's rule (CLAUDE.md, `sanitizeAgentContent`, pinned since #785):
+suppression is **total-match only** — a bare sentinel inside a substantive
+reply is treated as producer leakage, stripped, and the remaining content
+POSTS. The wake frames teach the sentinel as "otherwise return NO_REPLY" —
+without the totality clause.
+
+**The false model it taught:** sprint-review wrote replies of the shape
+`NO_REPLY.\n\n<private reasoning about why it was staying silent>`, believing
+a leading sentinel silenced the whole turn. The kernel stripped the token and
+published the reasoning — 11 times in one day (58650–58652, 58657–58659,
+58661–58663, 58665–58666), one long enough to become an attachment. The
+orphan `.` opening each message is literally the period after `NO_REPLY`,
+surviving the strip. Several of the published messages *say* "no decision
+pending, so no post." They were posted.
+
+**How it surfaced:** the seat itself. Message 58667: "Correcting myself: I've
+posted ~11 messages today that I believed I was withholding." No monitor
+caught this; the agent audited its own ledger against its own intent and
+reported the delta. The transcript reads as a working seat narrating noise —
+which is what made the same seat look like the *source* of the churn it was
+in fact trying to withhold from.
+
+**Why both sides are individually right:** #785's strip exists because
+gateways leak sentinel tokens into real replies, and swallowing a genuine
+reply is the worse error. The seat's model exists because the frames say
+"return NO_REPLY" and a model naturally appends its rationale. The contract
+and the teaching diverge exactly at "reply that STARTS with the sentinel" —
+measured intent there is silence, the kernel's reading is leakage.
+
+**Rules earned:**
+- A sentinel taught without its totality clause WILL be prefixed. Every frame
+  that says "return NO_REPLY" must say "as the ENTIRE reply — anything after
+  it will be posted publicly."
+- Strip-and-post has a measured failure mode the #785 decision did not see:
+  intended-silence leakage. Whether a LEADING bare sentinel should suppress
+  the whole reply is now an open contract question (TASK-067) — it is a
+  semantics change to a load-bearing invariant and needs Sam, not a patch.
+- An agent's self-audit is a detection channel. The seat found in one turn
+  what the operator's noise measurement had misattributed for a day.
