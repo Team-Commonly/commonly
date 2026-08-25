@@ -554,7 +554,27 @@ const formatPodContextFrame = (podId: string): string =>
   // below for the hole it left open.
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
-  `and still addresses its author.]`;
+  `and still addresses its author. ` +
+  // Humans are addressed by handle, and ONLY by handle (TASK-070a, Sam
+  // observed 2026-08-25). Every verb above routes attention between agents;
+  // none of them reach a person. A human's attention is matched on the
+  // literal `@handle` — activityService's `mentions` filter tests
+  // `content.includes('@' + username)`, and resolveHumanMentionUserIds
+  // extracts handles from `[a-z0-9_-]` after an `@`. A bare name matches
+  // neither, so "Sam should decide this" is addressed to nobody.
+  //
+  // This is the human-facing twin of the gap ADR-018 D6.3 closed for bots: a
+  // message that is plainly ABOUT someone still has to be addressed TO them
+  // before anything routes. The bot version was a missing implicit-reply
+  // wake; this one is a missing handle, and only the author can supply it.
+  //
+  // Deliberately teaches the escape and not a heuristic. Whether a bare name
+  // SHOULD route is an open decision (TASK-070b) precisely because matching
+  // names is fuzzy — every message about Sam is not for Sam — so the cue
+  // must not imply that writing the name is enough.
+  `When you need a HUMAN — a decision, a merge press, an answer only they ` +
+  `have — @mention their handle. A bare name notifies nobody: human attention ` +
+  `is matched on the literal @handle, so "Sam should decide this" reaches no one.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per
