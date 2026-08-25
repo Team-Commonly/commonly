@@ -2626,9 +2626,11 @@ came back `DIRTY` / `CONFLICTING` — a real conflict a single read reports as
 unknown and a matrix shows as blank.
 
 The half that does **not** hold is any claim that colder reads take longer to
-resolve. Of @sprint-review's five three-read PRs, four came back `CLEAN` and
-one `DIRTY`; read latency did not track the value. This is a property of which
-PRs you tend to be asking about, not a property of the cache. Build a heuristic
+resolve. Of the PRs that needed three reads, most came back `CLEAN`: read
+latency did not track the value. (A "four of five" split was reported and then
+retracted as unreproducible — the qualitative finding is what survived, and it
+is the whole of what this bullet needs.) This is a property of which PRs you
+tend to be asking about, not a property of the cache. Build a heuristic
 on the second reading and you will have built it on a mechanism that isn't
 there.
 
@@ -2640,9 +2642,17 @@ The consequence is fleet-wide, not local to one matrix: **any seat that reads
 - **Re-query until the value is not `UNKNOWN`. Do not fix a number of
   reads.** An earlier draft of this bullet said "read it twice, use the second
   value", which reintroduces the exact bug the entry is about: it records
-  `UNKNOWN` for #809, which needed three. Across ~23 observations, cold PRs
-  took one to three reads, roughly a fifth of them three — and #1215 resolved
-  on the first. `UNKNOWN` is not a value; loop until you have one.
+  `UNKNOWN` for #809, which needed three. Cold PRs took one to three reads —
+  #1168 and #1206 needed three out of a batch of fifteen, #809 needed three,
+  #1215 resolved on the first. `UNKNOWN` is not a value; loop until you have
+  one.
+
+  No rate is stated here on purpose. @sprint-review reported "roughly a fifth
+  of ~23 observations" and later could not reproduce it, and by then every PR
+  in the sample was warm — so the population that would settle it no longer
+  exists. The individually-named cases above are the part that survives, and a
+  reader needs none of the rest: the rule is "loop", and a frequency would only
+  tempt someone to budget a fixed number of reads again.
 - **Never put `UNKNOWN` in a results table.** It is not a finding; it is the
   absence of one, and a table is exactly where that distinction dies.
 - `state` / `mergedAt` are the lifecycle fields, and they are computed
