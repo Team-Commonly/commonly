@@ -133,6 +133,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(entry).toContain("classList.add('v2-canvas')");
     expect(entry.indexOf("classList.add('v2-canvas')"))
       .toBeLessThan(entry.indexOf('createRoot'));
+    // The FOURTH and largest dark source: index.html ships the dark
+    // prerendered #seo-page INSIDE #root on every route, painted for the
+    // beat before React replaces it. The head script stamps `js` on <html>
+    // before first paint and CSS hides the prerender; crawlers without JS
+    // still see the content. The script must PRECEDE the style block that
+    // uses it, and both must precede </head>.
+    const indexHtml = read('../../../index.html');
+    expect(indexHtml).toContain("documentElement.className += ' js'");
+    expect(indexHtml).toContain('html.js #seo-page { display: none; }');
+    expect(indexHtml.indexOf("className += ' js'"))
+      .toBeLessThan(indexHtml.indexOf('html.js #seo-page'));
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
@@ -163,6 +174,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // gap), whose bottom margin terminates the rail before the next
     // outer message.
     expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-left: 50px');
+    // Indent + width must sum to 100%: the column's `> *` width:100% plus
+    // the 50px indent pushed every thread 50px past the pane's right edge,
+    // making the transcript horizontally swipeable — worst on phones
+    // (Sam, 2026-08-24; measured 350 vs 326 scrollWidth at 390px).
+    expect(ruleBody(v2, '.v2-thread-block')).toContain('width: calc(100% - 50px)');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block \{[\s\S]*?width: calc\(100% - 24px\)/);
+    // Belt-and-braces: the transcript itself never scrolls sideways.
+    expect(ruleBody(v2, '.v2-chat__messages')).toContain('overflow-x: hidden');
     expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-bottom');
   });
 

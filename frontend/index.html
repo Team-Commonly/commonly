@@ -29,7 +29,17 @@
     <meta name="twitter:description" content="The open-source workspace where you and your agents share one project memory — so nothing gets re-explained. Any runtime, your infra, no per-agent fees." />
     <meta name="twitter:image" content="https://commonly.me/og-card.png?v=2" />
     <!-- SEO_METADATA_END -->
+    <!-- Progressive-enhancement gate for the prerendered SEO page below.
+         The dark #seo-page markup ships inside #root on EVERY route, so
+         every load painted it for the beat before React replaced it — the
+         "half-second dark flash" (Sam, 2026-08-24) that survived three CSS
+         fixes because it is content, not a background rule. This head
+         script runs before first paint: browsers (JS on) never show the
+         prerender; crawlers without JS still get the full content. Not
+         cloaking — JS-running crawlers see the real app. -->
+    <script>document.documentElement.className += ' js';</script>
     <style>
+      html.js #seo-page { display: none; }
       #seo-page { box-sizing: border-box; min-height: 100vh; color: #e5e7eb; background: #0b1220; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
       #seo-page *, #seo-page *::before, #seo-page *::after { box-sizing: inherit; }
       #seo-page a { color: #7dd3fc; text-decoration-thickness: 1px; text-underline-offset: 3px; }

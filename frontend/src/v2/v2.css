@@ -1575,6 +1575,11 @@ body.modern-ui.v2-canvas {
 .v2-chat__messages {
   flex: 1;
   overflow-y: auto;
+  /* The transcript never scrolls sideways — wide content (code, tables)
+     manages its own overflow-x inside its message. Without this, any
+     mis-sized row makes the whole pane horizontally swipeable (the
+     thread-block did exactly that; Sam's mobile report 2026-08-24). */
+  overflow-x: hidden;
   padding: 0 24px 12px;
   display: flex;
   flex-direction: column;
@@ -7219,6 +7224,12 @@ body.modern-ui.v2-canvas {
    outer message and reads as connected to it. */
 .v2-thread-block {
   margin-left: 50px;
+  /* The column's `> *` rule sets width: 100%; with the 50px indent that
+     put every thread 50px past the pane's right edge — the pane became
+     horizontally swipeable, worst on phones (Sam, 2026-08-24; measured
+     scrollWidth 350 vs clientWidth 326 at 390px). Indent + width must sum
+     to 100%. */
+  width: calc(100% - 50px);
   margin-bottom: 14px;
 }
 
@@ -7417,6 +7428,7 @@ body.modern-ui.v2-canvas {
      inner padding tightens with it. */
   .v2-thread-block {
     margin-left: 24px;
+    width: calc(100% - 24px); /* same indent+width=100% invariant as desktop */
   }
 
   .v2-thread-replies {
