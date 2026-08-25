@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2MessageBubble from '../components/V2MessageBubble';
 
@@ -71,7 +71,7 @@ describe('V2MessageBubble', () => {
   });
 
   it('keeps the reactions row in flow when chips exist', () => {
-    render(
+    const { container } = render(
       <MemoryRouter>
         <V2MessageBubble
           message={{
@@ -91,5 +91,47 @@ describe('V2MessageBubble', () => {
     const row = screen.getByLabelText('Reactions');
     expect(row.className).not.toContain('v2-msg__reactions--bare');
     expect(screen.getByText('👍')).toBeInTheDocument();
+
+    // TASK-053: the chips and the body share a content-column parent. This
+    // is the structural half of "same text axis"; a visual test measures
+    // their actual x positions at desktop and mobile widths.
+    const column = container.querySelector('.v2-msg__content-column');
+    const body = container.querySelector('.v2-msg__body');
+    expect(column).not.toBeNull();
+    expect(body?.parentElement).toBe(column);
+    expect(row.parentElement).toBe(column);
+    expect(body?.contains(row)).toBe(false);
+  });
+
+  it('keeps React with Reply and Thread in the message action row', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <V2MessageBubble
+          message={{
+            id: '44',
+            pod_id: 'pod-1',
+            user_id: 'sender-1',
+            content: 'hello',
+            message_type: 'text',
+            created_at: '2026-08-13T00:00:00.000Z',
+            user: { username: 'sender' },
+            reactions: [{ emoji: '👍', count: 2, mine: true }],
+          }}
+          onReply={jest.fn()}
+          onThread={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const actions = screen.getByRole('toolbar', { name: 'Message actions' });
+    expect(actions.parentElement).toBe(container.querySelector('.v2-msg__content-column'));
+    expect(actions).toContainElement(screen.getByRole('button', { name: 'Reply to sender' }));
+    expect(actions).toContainElement(screen.getByRole('button', { name: /thread from sender/i }));
+    const addReaction = screen.getByRole('button', { name: 'Add reaction' });
+    expect(actions).toContainElement(addReaction);
+    expect(container.querySelector('.v2-msg__reaction--mine')).not.toBeNull();
+
+    fireEvent.click(addReaction);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 });

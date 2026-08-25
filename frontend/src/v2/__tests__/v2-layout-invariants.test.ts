@@ -455,23 +455,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg__reaction-emoji')).toContain('line-height: 22px');
   });
 
-  test('message actions live in ONE hover cluster, and its picker opens downward', () => {
-    // 2026-08-23 (Sam's placement rulings): Reply, Thread, and the reaction
-    // trigger share a floating pill at the row's top-right — no inline head
-    // buttons (layout shift), no orphaned "+" in an empty reactions band
-    // (the 2026-08-13 phantom-band bug cannot recur because a chip-less row
-    // no longer renders at all). The picker anchor override is load-bearing:
-    // the base picker opens UPWARD (bottom: 100%) for the old in-row anchor;
-    // from the cluster at the message's top edge it must open downward or it
-    // clips under the previous message.
-    const cluster = ruleBody(v2, '.v2-msg__actions');
-    expect(cluster).toContain('position: absolute');
+  test('message actions and reactions stay on the body column, never the row corner', () => {
+    // TASK-053 corrects the prior top-right pill: it was grouped with Reply
+    // and Thread but 1000px away from the text it acted on. The action row
+    // now unfolds from the body column; chips are its next sibling, 4px below
+    // the body, so both channel and rail inherit the same x axis.
+    expect(ruleBody(v2, '.v2-msg__content-column')).toContain('flex-direction: column');
+    expect(ruleBody(v2, '.v2-msg__body')).toContain('order: 1');
+    const actions = ruleBody(v2, '.v2-msg__actions');
+    expect(actions).not.toContain('position: absolute');
+    expect(actions).toContain('order: 2');
+    expect(actions).toContain('max-height: 0');
+    expect(actions).toContain('80ms');
     expect(v2).toContain('.v2-msg:hover .v2-msg__actions');
-    const pickerInCluster = ruleBody(v2, '.v2-msg__actions .v2-msg__reaction-picker');
-    expect(pickerInCluster).toContain('top: calc(100% + 6px)');
-    expect(pickerInCluster).toContain('bottom: auto');
-    // Touch keeps the 44px floor with the cluster always visible.
-    expect(v2).toContain('.v2-root button.v2-msg__action');
+    const reactions = v2.slice(v2.lastIndexOf('.v2-msg__reactions {'));
+    expect(reactions).toContain('order: 3');
+    expect(reactions).toContain('margin-top: 4px');
+    // A self reaction needs a distinct accent rim, not only a soft fill.
+    expect(ruleBody(v2, '.v2-root button.v2-msg__reaction--mine')).toContain('border-color: var(--v2-accent)');
   });
 
   test('create-pod panel no longer ships audience options (ADR-016 / #768)', () => {
@@ -572,16 +573,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('message actions retain 44px targets and become visible on touch layouts', () => {
-    // TASK-052 intent, third mechanism: the hover cluster carries
-    // Reply/Thread/React. Desktop reveals it on hover; a 390px touch
-    // surface cannot depend on hover, so both touch blocks (pointer:coarse
-    // and max-width:640px) force it visible with 44px targets.
+    // Reply/Thread/React share one body-anchored row. Desktop reveals it on
+    // hover; a 390px touch surface cannot depend on hover, so tap reveal
+    // keeps the same 44px targets.
     // Tap-reveal, not always-on: the touch blocks must gate visibility on
     // .v2-msg--reveal (set by the bubble's tap handler) — an ungated
     // `.v2-msg__actions { opacity: 1 }` here would put chrome over every
     // message by default (Sam's report, 2026-08-23).
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
+    const action = ruleBody(v2, '.v2-root button.v2-msg__action');
+    expect(action).toContain('width: 44px');
+    expect(action).toContain('height: 44px');
     const cardAction = ruleBody(v2, '.v2-root button.v2-thread-card__reply');
     expect(cardAction).toContain('min-height: 44px');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);

@@ -2532,33 +2532,34 @@ body.modern-ui.v2-canvas {
 .v2-msg--grouped { padding: 2px 0; }
 .v2-msg__avatar-ghost { width: 38px; }
 
-/* The message action cluster (Sam's taste rulings 2026-08-23): Reply,
-   Thread, and the reaction trigger share ONE floating pill at the row's
-   top-right, identical for headed and grouped rows. Absolute + hover means
-   zero layout shift; icon buttons instead of text keep it quiet at rest and
-   compact under the cursor. The reaction picker anchors to the cluster so
-   the trigger sits with its siblings instead of orphaned in an empty band
-   below the message (the old absolute "+"). */
-.v2-msg { position: relative; }
+/* TASK-053: the action row belongs to the message's text column, not the
+   row's far corner. Body, actions, and chips are siblings so their shared
+   x-axis survives both the channel and an indented thread rail. */
+.v2-msg__content-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 .v2-msg__actions {
-  position: absolute;
-  top: -12px;
-  right: 8px;
   display: flex;
   align-items: center;
-  gap: 1px;
-  padding: 2px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(16, 20, 30, 0.08);
+  order: 2;
+  gap: 4px;
+  max-height: 0;
+  margin-top: 0;
+  /* Keep the picker outside the 44px reveal while the collapsed row itself
+     still owns no height. Opacity + pointer-events make its children inert
+     until hover, focus, or tap reveal. */
+  overflow: visible;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.1s ease;
-  z-index: 6;
+  transition: max-height 80ms ease, margin-top 80ms ease, opacity 80ms ease;
 }
 .v2-msg:hover .v2-msg__actions,
-.v2-msg__actions:focus-within {
+.v2-msg__actions:focus-within,
+.v2-msg--reveal .v2-msg__actions {
+  max-height: 44px;
+  margin-top: 4px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -2567,8 +2568,8 @@ body.modern-ui.v2-canvas {
   border: none;
   background: transparent;
   color: var(--v2-text-secondary);
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
@@ -2584,12 +2585,12 @@ body.modern-ui.v2-canvas {
   position: absolute;
   top: calc(100% + 6px);
   bottom: auto;
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 0;
 }
 
 .v2-msg__body {
-  flex: 1;
+  order: 1;
   min-width: 0;
 }
 
@@ -2837,8 +2838,9 @@ body.modern-ui.v2-canvas {
 
 .v2-msg__reactions {
   display: flex;
+  order: 3;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .v2-msg__reaction {
@@ -5786,9 +5788,10 @@ body.modern-ui.v2-canvas {
    tokens populated by the demo seed. */
 .v2-msg__reactions {
   display: flex;
+  order: 3;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .v2-msg__reaction {
   display: inline-flex;
@@ -5854,7 +5857,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-msg__reaction--mine {
   background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
+  border-color: var(--v2-accent);
   color: var(--v2-accent-text);
 }
 .v2-root button.v2-msg__reaction:hover:not(:disabled) {
@@ -5867,11 +5870,9 @@ body.modern-ui.v2-canvas {
 }
 
 /* The standalone "+" trigger, its hover wrap, and the --bare collapsed row
- * were retired 2026-08-23: the reaction trigger lives in the
- * .v2-msg__actions hover cluster (Sam's placement ruling), and a reactions
- * row with no chips simply does not render — the phantom-band problem the
- * --bare machinery solved cannot occur at all now. The picker below is
- * shared by the cluster (which overrides its anchor to open downward). */
+ * were retired: React is part of the message action row, while a reactions
+ * row with no chips simply does not render. That removes the phantom-band
+ * state structurally; the picker is shared by the action row. */
 .v2-msg__reaction-picker {
   left: auto;
   right: 0;
@@ -6431,17 +6432,15 @@ body.modern-ui.v2-canvas {
   }
 }
 
-/* Reply/Thread inline head buttons retired 2026-08-23 (Sam's taste ruling):
-   the actions live in the .v2-msg__actions hover cluster now — one pill,
-   all row variants, zero layout shift. See the cluster block near .v2-msg.
-   Touch layouts keep ≥44px targets via the media block below. */
+/* The message action row follows the text body on every row variant. The
+   content-column wrapper preserves the avatar|body grid while letting Reply,
+   Thread, and React reveal together under the message. Touch layouts keep
+   ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
-  /* No hover on touch — but always-on clusters over every message are
-     chrome over content (Sam, 2026-08-23). A tap on the message toggles
-     .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
-     devices); only then does the cluster appear, at the 44px floor (craft
-     baseline rule 9). Absolute positioning preserved — a static third
-     child would break the avatar|body grid. */
+  /* No hover on touch — but always-on action rows are chrome over content.
+     A tap on the message toggles .v2-msg--reveal
+     (V2MessageBubble.onBubbleTap, gated to hoverless devices); only then
+     does the row appear at the 44px floor (craft baseline rule 9). */
   .v2-msg--reveal .v2-msg__actions,
   .v2-msg__actions:focus-within {
     opacity: 1;

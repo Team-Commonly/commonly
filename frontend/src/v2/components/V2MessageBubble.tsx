@@ -468,6 +468,40 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
     }
   };
 
+  // The reaction row is intentionally a sibling of the message body. Both
+  // channel rows and threaded rails then keep chips on their text column,
+  // rather than treating them as part of the last paragraph or attachment.
+  const reactionRow = (() => {
+    if (renderList.length === 0 && !reactionError) return null;
+
+    const formatReactionTitle = (r: typeof renderList[number]): string => {
+      const live = r as { users?: Array<{ username: string; displayName?: string }> };
+      const users = Array.isArray(live.users) ? live.users : [];
+      if (!users.length) return `${r.count} ${r.emoji}${r.mine ? ' (you)' : ''}`;
+      const names = users.map((u) => u.displayName || u.username);
+      return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
+    };
+
+    return (
+      <div className="v2-msg__reactions" aria-label="Reactions">
+        {renderList.map((r, idx) => (
+          <button
+            key={`${r.emoji}-${idx}`}
+            type="button"
+            className={`v2-msg__reaction${r.mine ? ' v2-msg__reaction--mine' : ''}`}
+            title={formatReactionTitle(r)}
+            onClick={() => toggleReaction(r.emoji, !!r.mine)}
+            disabled={!canInteract}
+          >
+            <span className="v2-msg__reaction-emoji">{r.emoji}</span>
+            <span className="v2-msg__reaction-count">{r.count}</span>
+          </button>
+        ))}
+        {reactionError && <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>}
+      </div>
+    );
+  })();
+
   return (
     <div
       className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
@@ -499,14 +533,11 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           seed={message.user_id || undefined}
         />
       )}
-      {/* One hover cluster for every row variant (Sam's taste rulings
-          2026-08-23): Reply, Thread, and the reaction trigger live together
-          in a floating pill at the message's top-right — visible on hover
-          or keyboard focus, never in the head's text flow (the inline text
-          buttons crowded the head and shifted layout), and identical for
-          headed and grouped rows. The reaction picker anchors here too, so
-          the trigger sits with its siblings instead of orphaned at the far
-          edge of an empty reactions band. */}
+      <div className="v2-msg__content-column">
+      {/* The hover action row follows the body, so Reply, Thread and React
+          stay attached to the message they act on instead of floating in the
+          row's far corner. CSS ordering keeps it after body content for both
+          headed and grouped rows. */}
       {(onReply || onThread || canInteract) && (
         /* stopPropagation: on touch, the bubble's own tap toggles reveal —
            without this, tapping any action would immediately re-hide the
@@ -658,56 +689,8 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
             number={pr.number}
           />
         ))}
-        {(() => {
-          // Sprint B5: real reactions come from message.reactions (server-
-          // aggregated `[{emoji, count, mine}]`); legacy fixtures use the
-          // token-parsed list. Both are hoisted above as `renderList` so the
-          // hover cluster shares the trigger. This row now renders ONLY when
-          // there are chips (or a transient error) to show — the trigger
-          // lives in the cluster, so the empty "bare band" state no longer
-          // exists at all rather than being collapsed by CSS.
-          if (renderList.length === 0 && !reactionError) return null;
-
-          // Google-Chat-style attribution: build a names-line for the
-          // reaction-chip tooltip from the decorated `users` array when
-          // the backend includes it (reactionAttributionService). Falls
-          // back to count-only on older servers / fixtures.
-          const formatReactionTitle = (r: typeof renderList[number]): string => {
-            const live = r as { users?: Array<{ username: string; displayName?: string }> };
-            const users = Array.isArray(live.users) ? live.users : [];
-            if (!users.length) {
-              return `${r.count} ${r.emoji}${r.mine ? ' (you)' : ''}`;
-            }
-            const names = users.map((u) => u.displayName || u.username);
-            // Caller's user ID isn't threaded down here; rather than
-            // guessing which entry in `users` is the caller, append a
-            // single "(you)" suffix to the whole line when r.mine —
-            // matches Google Chat's behavior on its own reaction
-            // tooltips and avoids mis-labelling an arbitrary entry.
-            return `${names.join(', ')} reacted with ${r.emoji}${r.mine ? ' (you)' : ''}`;
-          };
-
-          return (
-            <div className="v2-msg__reactions" aria-label="Reactions">
-              {renderList.map((r, idx) => (
-                <button
-                  key={`${r.emoji}-${idx}`}
-                  type="button"
-                  className={`v2-msg__reaction${r.mine ? ' v2-msg__reaction--mine' : ''}`}
-                  title={formatReactionTitle(r)}
-                  onClick={() => toggleReaction(r.emoji, !!r.mine)}
-                  disabled={!canInteract}
-                >
-                  <span className="v2-msg__reaction-emoji">{r.emoji}</span>
-                  <span className="v2-msg__reaction-count">{r.count}</span>
-                </button>
-              ))}
-              {reactionError && (
-                <span className="v2-msg__reaction-error" role="alert">{reactionError}</span>
-              )}
-            </div>
-          );
-        })()}
+      </div>
+      {reactionRow}
       </div>
     </div>
   );
