@@ -119,6 +119,23 @@ d('the UPDATE and the ledger INSERT commit together or not at all', () => {
   });
 
   it('BACKWARD: an INSERT that throws rolls the UPDATE back', async () => {
+    // Why this case is not redundant with FORWARD, measured rather than argued.
+    // @sprint-review reproduced the gated-INSERT mutant and found all three arms
+    // redden, reading that as BACKWARD earning its place. It doesn't: three arms
+    // failing on ONE mutant is co-sensitivity, not discrimination — FORWARD alone
+    // would have caught it. The question is whether any mutant reddens BACKWARD
+    // and leaves the rest green. Two do, on real pg16:
+    //
+    //   remove `BEGIN`            → FORWARD ✓, BACKWARD ✕ | Tier 0 ✕ (textually)
+    //   UPDATE via `pool.query`   → FORWARD ✓, BACKWARD ✕ | Tier 0 38/38 GREEN
+    //
+    // The second is the one that matters, and it is the likelier refactor of the
+    // two: the transaction still opens, the ledger INSERT still sits inside it,
+    // BEGIN still precedes UPDATE precedes INSERT precedes COMMIT in the source —
+    // so every ordering assertion in threadingCutoffRecord.test.js holds while the
+    // UPDATE autocommits on a second connection and survives the ROLLBACK. A
+    // source scan can see that a transaction is written; only this case can see
+    // that the write is inside it.
     const before = await unrootedCount();
     expect(before).toBeGreaterThan(0);
 
