@@ -20,9 +20,10 @@ export const SPAWN_RETRY_MAX_MS = 15 * 60 * 1000;
 export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 
 // This list is a per-provider allowlist, and it only ever grows after an
-// outage has already been misclassified. Twice now:
+// outage has already been misclassified. Three times now:
 //   2026-08-03  codex  "Your workspace is out of credits."   → `out of credits`
 //   2026-08-18  claude "You've hit your session limit"       → `session limit`
+//   2026-08-25  claude "You've hit your weekly limit"        → the phrase below
 // The second one is the instructive failure: `usage limit` was already here —
 // it is Claude's OTHER exhaustion wording — so the fleet stalled for an hour on
 // a string one word away from a pattern we had. Both times the miss meant
@@ -49,7 +50,25 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // Deliberately NOT loosened to a bare `limit`: QUOTA is tested before
 // RATE_LIMIT, so that would swallow every "rate limit" error into the 15-minute
 // cooldown. Add exact wordings, not looser ones.
-const QUOTA_RE = /(?:quota|usage limit|session limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+//
+// The third miss is why there is now a PHRASE as well as a word list, and it is
+// a different failure from the first two. Measured across the fleet's logs on
+// 2026-08-25: 283 failures reading "You've hit your weekly limit", 55 reading
+// "You've hit your session limit" (matched), and 6 reading "You've reached your
+// Fable 5 limit" (not matched). Three wordings, one sentence shape, and the
+// list had caught exactly one of them. Enumerating per-wording has now failed
+// three times because the variable part is a BILLING PERIOD or a MODEL NAME —
+// both of which keep being added, so the list is structurally always one
+// release behind the provider.
+//
+// `QUOTA_POSSESSIVE_RE` matches that shape and nothing looser: the subject must
+// be the caller's own allowance ("you've hit/reached YOUR ... limit"), which is
+// what distinguishes exhaustion from a server-side throttle. The negative
+// lookahead keeps "you've hit your rate limit" out — QUOTA is tested first, and
+// without it that string would take the 15-minute cooldown instead of the
+// 60-second rate-limit backoff. The length bound stops it spanning sentences.
+const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)[^.\n]{0,40}?limit/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
@@ -68,7 +87,7 @@ export const classifySpawnFailure = (error) => {
   // Provider APIs commonly report an exhausted account quota as HTTP 429.
   // Prefer the more specific body/message over the generic status code so a
   // hard quota failure gets the long cooldown rather than a one-minute probe.
-  if (QUOTA_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
+  if (QUOTA_RE.test(text) || QUOTA_POSSESSIVE_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.RATE_LIMIT;
   }
