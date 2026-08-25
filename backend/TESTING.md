@@ -96,6 +96,47 @@ Frontend testing is documented separately at `frontend/TESTING.md`. Contracts te
 ./dev.sh test:integration       # Tier 1 against Docker Compose services (./dev.sh up required)
 ```
 
+## Node 26 kills any suite whose require graph reaches `buffer-equal-constant-time`
+
+Node 26 removed `SlowBuffer`. `buffer-equal-constant-time/index.js:37` reads
+`SlowBuffer.prototype.equal` at **module scope**, so it throws the moment it is
+required — before any test runs:
+
+```
+TypeError: Cannot read properties of undefined (reading 'prototype')
+    at Object.<anonymous> (backend/node_modules/buffer-equal-constant-time/index.js:37:35)
+```
+
+The line one might expect to be at fault, `Buffer.prototype.equal =
+SlowBuffer.prototype.equal = …` at `:31`, sits inside `bufferEq.install` and
+never runs. The unconditional **read** at `:37` is the one that fires.
+
+**`jsonwebtoken` is the common importer, not the failing package.** The chain is
+`jsonwebtoken` → `jws` → `jwa` → `buffer-equal-constant-time`, and both
+`require('jsonwebtoken')` and `require('buffer-equal-constant-time')` throw at
+the identical frame. So a "will this suite die on 26?" check must ask whether
+that leaf is in the require graph — grepping a suite for the string
+`jsonwebtoken` misses every suite that reaches it transitively, and blames the
+wrong package when it hits.
+
+It fails **loudly**: `Tests: 0 total` and a non-zero exit, never a silent skip.
+A red suite here is an environment artifact and not a defect in the change under
+test — do not "fix" a PR against it.
+
+Fix: run on the version CI uses. `tests.yml` pins **Node 22**.
+
+```bash
+PATH=/opt/homebrew/opt/node@22/bin:$PATH npx jest <suite>
+```
+
+Prefer that over `--moduleNameMapper` stubbing of `jsonwebtoken`: a stub works
+for suites that only import it transitively and silently breaks any suite that
+actually signs or verifies a token, which is most of the runtime-token service
+suites.
+
+Suites with no jwt in their graph are unaffected — `mongoose` and
+`mongodb-memory-server` both load clean on 26.
+
 ## CI
 
 `.github/workflows/tests.yml` defines both tiers:
