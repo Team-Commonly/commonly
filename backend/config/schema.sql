@@ -120,6 +120,28 @@ CREATE TABLE IF NOT EXISTS migration_records (
   details JSONB
 );
 
+-- Retention execution ledger. This is deliberately NOT `migration_records`:
+-- migration records describe one-off changes, while this records every run of
+-- a destructive recurring job. A backend restart discards pod logs, so the
+-- deletion count and the reasons no deletion occurred must live with the data.
+-- A `running` row left behind is evidence of an interrupted run, not success.
+CREATE TABLE IF NOT EXISTS pg_retention_runs (
+  id BIGSERIAL PRIMARY KEY,
+  status VARCHAR(16) NOT NULL DEFAULT 'running'
+    CHECK (status IN ('running', 'completed', 'aborted', 'failed', 'skipped')),
+  configured_retention_days INTEGER,
+  final_retention_days INTEGER,
+  protected_pod_count INTEGER,
+  deleted_message_count BIGINT NOT NULL DEFAULT 0,
+  target_bytes BIGINT,
+  initial_size_bytes BIGINT,
+  final_size_bytes BIGINT,
+  detail TEXT,
+  started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX IF NOT EXISTS idx_pg_retention_runs_started_at ON pg_retention_runs(started_at DESC);
+
 -- Sprint B5: message reactions. One row per (message, user, emoji) — a user
 -- can stack different emojis on the same message but each emoji is binary
 -- (toggle on/off). PG-only; Mongo fallback path doesn't get reactions in v1.
@@ -184,4 +206,4 @@ CREATE INDEX IF NOT EXISTS idx_pod_members_pod_id ON pod_members(pod_id);
 CREATE INDEX IF NOT EXISTS idx_pod_members_user_id ON pod_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_pods_created_by ON pods(created_by);
 CREATE INDEX IF NOT EXISTS idx_pods_type ON pods(type);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username); 
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
