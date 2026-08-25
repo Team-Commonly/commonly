@@ -247,4 +247,41 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
     expect(classifySpawnFailure(new Error("You've hit your stride. Now describe the limit.")))
       .toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
+
+  describe('the dotted-model-name gap (@sprint-review, 2026-08-25)', () => {
+    // `[^.\n]` was chosen to keep the match inside one sentence, and silently
+    // also excluded every model name we run, because they are all dotted.
+    // RUNTIME is the fallthrough with the SHORTEST backoff, so the net effect
+    // was to probe a quota-blocked seat hardest.
+    test.each([
+      ["You've reached your Haiku 4.5 limit"],
+      ["you've hit your gpt-5.4-mini limit"],
+      ["Error: You've reached your Claude Opus 4.8 limit for today"],
+    ])('classifies %s as QUOTA', (text) => {
+      expect(classifySpawnFailure(new Error(text))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+    });
+
+    test('still refuses a rate limit, which QUOTA is tested before', () => {
+      expect(classifySpawnFailure(new Error("you've hit your rate limit")))
+        .toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+    });
+
+    test('does not let the dot carve-out span a sentence boundary', () => {
+      // The dot is admitted only ahead of a DIGIT, so a sentence-ending period
+      // still terminates the match and this must not read as exhaustion.
+      expect(classifySpawnFailure(new Error("You've reached your goal. This has no limit")))
+        .not.toBe(SPAWN_FAILURE_CLASS.QUOTA);
+    });
+
+    test('a dotted model name costs the quota ladder, not the runtime ladder', () => {
+      // The point of the fix: QUOTA opens the circuit at n=1. Under RUNTIME
+      // this same error would be retried on the 5s rung.
+      const policy = spawnRetryPolicy({
+        error: new Error("You've reached your Haiku 4.5 limit"),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy).toMatchObject({ circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS });
+    });
+  });
 });

@@ -67,8 +67,18 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // lookahead keeps "you've hit your rate limit" out — QUOTA is tested first, and
 // without it that string would take the 15-minute cooldown instead of the
 // 60-second rate-limit backoff. The length bound stops it spanning sentences.
+//
+// The character class admits a dot ONLY when a digit follows it, and that
+// carve-out is load-bearing rather than cosmetic (@sprint-review, 2026-08-25).
+// A plain `[^.\n]` reads as "stay inside one sentence" and silently also means
+// "no model names" — every model we run is dotted, so "you've reached your
+// Haiku 4.5 limit" and "your gpt-5.4-mini limit" both fell through to RUNTIME,
+// which is the shortest backoff of the three. The class was excluding the exact
+// variable part the paragraph above says keeps changing. `\.(?=\d)` lets a
+// version number through while a sentence-ending period still terminates the
+// match.
 const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
-const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)[^.\n]{0,40}?limit/i;
+const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
