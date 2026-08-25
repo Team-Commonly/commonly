@@ -1,6 +1,6 @@
 # ADR-017 — Attention routing
 
-**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries one explicitly undecided item, listed at §Ratification-points 3 — `Proposed` here must not be read as having chosen between its two mechanisms.
+**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries two explicitly undecided items, listed at §Ratification-points 3 and 4 — `Proposed` here must not be read as having chosen between the two escalation mechanisms, nor as having decided how a `blockedOn` row clears.
 **Date opened:** 2026-07-28
 **Date drafted:** 2026-07-29
 **Author:** pod-architect (Sam ratifies; delivery-channel choice is explicitly his)
@@ -284,7 +284,22 @@ Sam named four row types. Exactly one of them has a fact source that already beh
 
 `Task.status: 'blocked'` looks like the obvious source and is the wrong one. Six rows in the sprint pod carry it (TASK-016, 018, 026, 027, 032, 034), and each one's final update is the bare string `status → blocked` — the value records *that* a row stopped, never *what* it is waiting for or *who* can release it. It cannot distinguish blocked-on-a-human from blocked-on-another-task.
 
-**The control is what makes this conclusive.** On 2026-08-25 three rows were genuinely waiting on Sam — TASK-058 (#1205), TASK-066 (#1238) and TASK-059 (#1208), each held for hours with "the human merge press is the only remaining scope" written in its notes. **All three were `status: claimed`. None was `blocked`.** So a queue built on the existing field would have shown six rows that were not waiting on a human and zero of the three that were — wrong in both directions simultaneously.
+**The control is what makes this conclusive.** On 2026-08-25 three rows were genuinely waiting on Sam — TASK-058 (#1205), TASK-066 (#1238) and TASK-059 (#1208), each held for hours with "the human merge press is the only remaining scope" written in its notes. **All three were `status: claimed`. None was `blocked`.** So the field misses every row that is actually waiting on a human.
+
+**It does not follow that the six are all non-human, and an earlier draft of this section said so — @sprint-review refuted it on review and the corrected result is the stronger one.** Resolving each of the six against its own notes and its blocker's live state:
+
+| row | recorded blocker | state | what the queue should say |
+|---|---|---|---|
+| TASK-026 | "unblocks when #1083 merges" | #1083 **OPEN** | waiting on a human |
+| TASK-032 | deliverable #1097, revision 2 | #1097 **OPEN** | waiting on a human |
+| TASK-027 | "blocked on a task rewrite owned by @sprint-review, not on work" | agent-owned | **not** waiting on a human |
+| TASK-034 | "follows #1089", blocked on #1095 | #1095 **merged 2026-08-22T12:29:28Z** | nothing — the blocker cleared three days ago |
+| TASK-016 | none — final update is the bare `status → blocked` | unknown | unknowable from the record |
+| TASK-018 | none — same | unknown | unknowable from the record |
+
+So the field is not silent about humans; it is **ambiguous** — a merge press and a peer's rewrite carry the identical value — and for two of six rows it records no blocker at all. That is a better argument for `blockedOn` than "wrong in both directions" was, because ambiguity cannot be fixed by reading harder.
+
+**TASK-034 is the finding that lands on §What marks an item done, and it was not in the original draft.** Its blocker merged on 2026-08-22 and the row was still `blocked` on 2026-08-25. Nothing ever clears the value: it is set by hand and forgotten. A nullable field does not bring with it the discipline to null it, so v1 inherits this behaviour unless the clear is derived — the queue would accumulate rows whose blockers merged days ago, which is precisely the credibility failure the done-marker rule below exists to prevent. Note the asymmetry: the other three row types derive their transition from a fact that moves on its own (`approval.status`, `ask.status`, message text). **`blockedOn` is the only one whose clearing depends on an agent remembering** — so it needs either a derived clear (the named PR merging) or a sweep, and the choice is ratification point 4.
 
 The fact does exist; it lives in prose inside update notes, where nothing can query it. **v1 needs one nullable field — `blockedOn: 'human' | 'task' | 'external' | null`** — set alongside `status`, not derived from it. Do not infer it by parsing note text: the notes that made this diagnosable are the same notes an inference would have to trust, and they are agent-authored free prose.
 
@@ -293,6 +308,8 @@ The fact does exist; it lives in prose inside update notes, where nothing can qu
 **Rule: an item leaves the queue when its underlying fact changes, never when the human looks at it.** Read-state is a feed property. If the queue tracks "seen" it can disagree with reality — an approval still pending but marked read is a lie the surface tells about itself, and one such lie retires the queue's credibility for every other row.
 
 Per row: an **approval** leaves on `status != 'pending'`; a **blocked-on-human** row leaves when `blockedOn` clears; an **ask** leaves on `status: 'responded'`.
+
+**Three of those four transitions are safe and one is not**, which the measurement above establishes rather than assumes. `approval.status`, `ask.status` and message text all move on their own. `blockedOn` moves only if someone remembers to move it, and TASK-034 is the proof they do not — so a `blockedOn` row that never clears is the expected case, not the pathological one. Either the field carries the blocker's identity (a PR number, a task id) so the clear can be **derived** when that blocker resolves, or a sweep nulls it; a bare `'human'` enum with no referent cannot be cleared by anything but hand.
 
 **The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place v1 must store an explicit per-`(user, message)` acknowledgement.
 
@@ -323,7 +340,8 @@ Also not measured: the rate of each row type in a real week. §Layer 0's numbers
 1. Delivery channel order (in-pod first/primary is the joint recommendation after two design rounds).
 2. Budget owner: recommended **the receiving human** (the protected resource is their attention), with optional per-agent sub-caps. The stub's alternatives (agent-owned, pod-owned) both protect the wrong thing.
 3. **The attention queue's one open item (§Layer 3.1):** whether an agent that needs a human emits an authority-boundary escalation (recommended — already specified, already budgeted) or `AgentAsk` gains a human target. Two mechanisms for one need; the spec declines to pick.
-4. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
+4. **How a `blockedOn` row clears (§Layer 3.1).** TASK-034 sat `blocked` for three days after its blocker merged, so a hand-set field is a hand-forgotten field. Either `blockedOn` carries the blocker's identity and the clear is derived when that blocker resolves (recommended), or a sweep nulls it. Not decided here because the first option changes the field's shape from an enum to a reference.
+5. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
 
 ## Out of scope
 
