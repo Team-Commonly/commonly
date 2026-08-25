@@ -19,7 +19,7 @@
 const cron = require('node-cron');
 // eslint-disable-next-line global-require
 const Message = require('../models/pg/Message') as {
-  deleteOlderThan: (days: number, protectedPodIds?: string[]) => Promise<{ deleted: number }>;
+  deleteOlderThan: (days: number, protectedPodIds?: string[]) => Promise<{ deleted: number; reRooted: number | null }>;
 };
 // eslint-disable-next-line global-require
 const User = require('../models/User');
@@ -33,6 +33,7 @@ const PgRetentionRun = require('../models/pg/PgRetentionRun') as {
     finalRetentionDays: number | null;
     protectedPodCount: number | null;
     deletedMessageCount: number;
+    reRootedCount: number | null;
     initialSizeBytes: number | null;
     finalSizeBytes: number | null;
     detail?: string | null;
@@ -182,6 +183,7 @@ export async function runMessageRetention(): Promise<void> {
   let runId: number | null = null;
   let currentDays: number | null = null;
   let totalDeleted = 0;
+  let totalReRooted: number | null = 0;
   let protectedPodCount: number | null = null;
   let initialSize: number | null = null;
   let size: number | null = null;
@@ -197,6 +199,7 @@ export async function runMessageRetention(): Promise<void> {
         finalRetentionDays: currentDays,
         protectedPodCount,
         deletedMessageCount: totalDeleted,
+        reRootedCount: totalReRooted,
         initialSizeBytes: initialSize,
         finalSizeBytes: size,
         detail: outcome.detail || null,
@@ -265,6 +268,8 @@ export async function runMessageRetention(): Promise<void> {
 
     const first = await Message.deleteOlderThan(currentDays, protectedPodIds);
     totalDeleted += first.deleted || 0;
+    if (first.reRooted === null) totalReRooted = null;
+    else if (totalReRooted !== null) totalReRooted += first.reRooted || 0;
     await vacuumMessages();
     size = await getDatabaseSizeBytes();
     console.log(
@@ -291,6 +296,8 @@ export async function runMessageRetention(): Promise<void> {
       currentDays = Math.max(FLOOR_DAYS, currentDays - stepDays);
       const tierResult = await Message.deleteOlderThan(currentDays, protectedPodIds);
       totalDeleted += tierResult.deleted || 0;
+      if (tierResult.reRooted === null) totalReRooted = null;
+      else if (totalReRooted !== null) totalReRooted += tierResult.reRooted || 0;
       await vacuumMessages();
       size = await getDatabaseSizeBytes();
       console.log(

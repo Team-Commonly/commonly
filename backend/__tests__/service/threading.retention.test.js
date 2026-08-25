@@ -97,9 +97,10 @@ d('deleting a thread root, against a real database', () => {
     const { R, C, G } = await chain();
     await pool.query("UPDATE messages SET created_at = NOW() - INTERVAL '400 days' WHERE id = $1", [R]);
 
-    const { deleted } = await PGMessage.deleteOlderThan(30);
+    const { deleted, reRooted } = await PGMessage.deleteOlderThan(30);
 
     expect(deleted).toBeGreaterThanOrEqual(1);
+    expect(reRooted).toBe(1);
     expect(await rootOf(G)).toBe(C);
   });
 

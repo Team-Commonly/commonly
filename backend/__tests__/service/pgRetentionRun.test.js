@@ -54,6 +54,7 @@ d('pg_retention_runs, against a real database', () => {
       finalRetentionDays: 30,
       protectedPodCount: 71,
       deletedMessageCount: 9,
+      reRootedCount: 2,
       initialSizeBytes: 1024,
       finalSizeBytes: 1000,
       detail: TEST_DETAIL,
@@ -62,13 +63,14 @@ d('pg_retention_runs, against a real database', () => {
     const observer = connect();
     try {
       const { rows } = await observer.query(
-        `SELECT status, deleted_message_count, protected_pod_count, finished_at
+        `SELECT status, deleted_message_count, re_rooted_count, protected_pod_count, finished_at
            FROM pg_retention_runs WHERE id = $1`,
         [runId],
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].status).toBe('completed');
       expect(Number(rows[0].deleted_message_count)).toBe(9);
+      expect(Number(rows[0].re_rooted_count)).toBe(2);
       expect(Number(rows[0].protected_pod_count)).toBe(71);
       expect(rows[0].finished_at).toBeTruthy();
     } finally {

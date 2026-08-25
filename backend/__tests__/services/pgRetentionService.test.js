@@ -104,7 +104,7 @@ describe('pgRetentionService.runMessageRetention', () => {
   it('runs single pass and skips tiering when size already under target', async () => {
     // 8 GiB cap, 75% target = 6 GiB. 4 GiB everywhere = under target.
     mockSizeQueries([4, 4, 4]);
-    Message.deleteOlderThan.mockResolvedValue({ deleted: 10 });
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 10, reRooted: 2 });
 
     await runMessageRetention();
 
@@ -117,6 +117,7 @@ describe('pgRetentionService.runMessageRetention', () => {
     expect(PgRetentionRun.finish).toHaveBeenCalledWith(42, expect.objectContaining({
       status: 'completed',
       deletedMessageCount: 10,
+      reRootedCount: 2,
       protectedPodCount: 0,
       finalRetentionDays: 30,
     }));

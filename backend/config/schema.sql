@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS pg_retention_runs (
   final_retention_days INTEGER,
   protected_pod_count INTEGER,
   deleted_message_count BIGINT NOT NULL DEFAULT 0,
+  re_rooted_count BIGINT,
   target_bytes BIGINT,
   initial_size_bytes BIGINT,
   final_size_bytes BIGINT,
@@ -140,6 +141,9 @@ CREATE TABLE IF NOT EXISTS pg_retention_runs (
   started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at TIMESTAMP WITH TIME ZONE
 );
+-- `CREATE TABLE IF NOT EXISTS` does not add fields to an already-created
+-- ledger, so keep this additive form for instances that booted an earlier DDL.
+ALTER TABLE pg_retention_runs ADD COLUMN IF NOT EXISTS re_rooted_count BIGINT;
 CREATE INDEX IF NOT EXISTS idx_pg_retention_runs_started_at ON pg_retention_runs(started_at DESC);
 
 -- Sprint B5: message reactions. One row per (message, user, emoji) — a user

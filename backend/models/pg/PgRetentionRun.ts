@@ -26,6 +26,8 @@ export interface RetentionRunOutcome {
   finalRetentionDays: number | null;
   protectedPodCount: number | null;
   deletedMessageCount: number;
+  // Null means the repair itself failed, so zero would be a false claim.
+  reRootedCount: number | null;
   initialSizeBytes: number | null;
   finalSizeBytes: number | null;
   detail?: string | null;
@@ -59,9 +61,10 @@ class PgRetentionRun {
               final_retention_days = $3,
               protected_pod_count = $4,
               deleted_message_count = $5,
-              initial_size_bytes = $6,
-              final_size_bytes = $7,
-              detail = $8
+              re_rooted_count = $6,
+              initial_size_bytes = $7,
+              final_size_bytes = $8,
+              detail = $9
         WHERE id = $1`,
       [
         runId,
@@ -69,6 +72,7 @@ class PgRetentionRun {
         outcome.finalRetentionDays,
         outcome.protectedPodCount,
         outcome.deletedMessageCount,
+        outcome.reRootedCount,
         outcome.initialSizeBytes,
         outcome.finalSizeBytes,
         outcome.detail || null,

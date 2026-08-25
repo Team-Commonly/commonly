@@ -26,6 +26,7 @@ describe('PgRetentionRun', () => {
       finalRetentionDays: 30,
       protectedPodCount: 71,
       deletedMessageCount: 9,
+      reRootedCount: 2,
       initialSizeBytes: 1024,
       finalSizeBytes: 1000,
     });
@@ -33,7 +34,7 @@ describe('PgRetentionRun', () => {
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toMatch(/UPDATE pg_retention_runs/);
     expect(sql).toMatch(/finished_at = CURRENT_TIMESTAMP/);
-    expect(params).toEqual([7, 'completed', 30, 71, 9, 1024, 1000, null]);
+    expect(params).toEqual([7, 'completed', 30, 71, 9, 2, 1024, 1000, null]);
   });
 
   it('refuses to report an outcome for a run that was not recorded', async () => {
@@ -44,6 +45,7 @@ describe('PgRetentionRun', () => {
       finalRetentionDays: null,
       protectedPodCount: null,
       deletedMessageCount: 0,
+      reRootedCount: null,
       initialSizeBytes: null,
       finalSizeBytes: null,
       detail: 'database down',
