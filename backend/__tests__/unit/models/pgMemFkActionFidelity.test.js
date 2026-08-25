@@ -123,6 +123,36 @@ describe('pg-mem applies self-referential FK actions plan-dependently', () => {
     expect(rows(indexed, 'SELECT * FROM m WHERE p IS NULL')).toEqual([{ id: 2, p: null }]);
   });
 
+  // @sprint-review's extreme case. Under CASCADE, indexing the FK column moves
+  // the LAST remaining predicate across the line: the row is then invisible to
+  // every indexed path and present on every scan. pg-mem never touched the
+  // heap in either run — only which plans can see the change differs.
+  it('CASCADE plus an FK index leaves a row invisible to every indexed path and present to every scan', () => {
+    const db = selfRef('CASCADE');
+    db.public.none('CREATE INDEX m_p_idx ON m(p);');
+    db.public.none('DELETE FROM m WHERE id = 1;');
+
+    // Every indexed path: gone.
+    expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([]);
+    expect(rows(db, 'SELECT * FROM m WHERE p = 1')).toEqual([]);
+    expect(rows(db, 'SELECT * FROM m WHERE p IS NULL')).toEqual([]);
+
+    // Every scanning path: still there. Note the count is 2, not 1 — row 3
+    // survives the scan as well, so this is not one orphan row but the whole
+    // un-cascaded chain.
+    expect(rows(db, 'SELECT * FROM m ORDER BY id')).toEqual([
+      { id: 2, p: 1 },
+      { id: 3, p: 2 },
+    ]);
+    expect(rows(db, 'SELECT count(*)::int AS n FROM m')).toEqual([{ n: 2 }]);
+
+    // Without the index, `WHERE p = 1` is the one predicate that still finds
+    // it — which is what makes "add an index" a verdict change.
+    const noIdx = selfRef('CASCADE');
+    noIdx.public.none('DELETE FROM m WHERE id = 1;');
+    expect(rows(noIdx, 'SELECT * FROM m WHERE p = 1')).toEqual([{ id: 2, p: 1 }]);
+  });
+
   it('reports CASCADE as both applied and not applied, depending on the read', () => {
     const db = selfRef('CASCADE');
     db.public.none('DELETE FROM m WHERE id = 1;');
