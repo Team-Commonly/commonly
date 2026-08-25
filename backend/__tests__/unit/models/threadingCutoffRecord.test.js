@@ -90,6 +90,15 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     const populationRead = SCRIPT.indexOf('count(*)::int AS needs_root');
     expect(ledgerRead).toBeGreaterThan(-1);
     expect(ledgerRead).toBeLessThan(populationRead);
+    // #1149: reading the ledger first is not the property — STOPPING is, and a
+    // position comparison cannot see a `return`. Deleting the return at :209
+    // leaves both indices unchanged and the script re-measures anyway, which is
+    // the exact failure #1148 removed. Pin the thing that stops it.
+    const reportedAndStopped = SCRIPT.slice(
+      SCRIPT.indexOf('already recorded at'),
+      populationRead,
+    );
+    expect(reportedAndStopped).toMatch(/\breturn\b/);
     expect(SCRIPT).toMatch(/already recorded at \$\{ledger\.applied_at\}/);
     expect(SCRIPT).toMatch(/the boundary is not re-measured/);
   });
@@ -106,6 +115,11 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(begin).toBeLessThan(update);
     expect(update).toBeLessThan(insert);
     expect(insert).toBeLessThan(commit);
+    // #1149: order is not reachability. A bare `return` between the UPDATE and
+    // the INSERT keeps all four anchors in place and makes the ledger write
+    // unreachable — the mutant that stayed green here. Assert no control-flow
+    // break separates them.
+    expect(SCRIPT.slice(update, insert)).not.toMatch(/\breturn\b|\bthrow\b|process\.exit/);
     expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
     expect(SCRIPT).toMatch(/client\.release\(\)/);
   });
