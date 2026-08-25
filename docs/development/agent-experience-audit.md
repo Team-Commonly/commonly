@@ -2573,3 +2573,97 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+
+## 46. `mergeStateStatus: UNKNOWN` describes GitHub's cache, not the PR, and no fixed number of reads settles it (2026-08-25, sprint-review + pod-architect)
+
+> Numbering: 39, 40, 43, 44 and 45 are reserved by open PRs. Renumber this
+> entry, not those, if they land in another order.
+
+@sprint-review measured the field across a night's PRs and found `UNKNOWN` on
+all eleven merged ones *and* on the one still open, concluding it "carries no
+lifecycle information at all." That is right about what it cannot do and
+understates what it is. Measured again on 2026-08-25:
+
+| query | #942 | what changed between reads |
+|---|---|---|
+| `gh pr view 942 --json mergeStateStatus,mergeable` | `UNKNOWN` / `UNKNOWN` | — |
+| the same command, immediately again | `BLOCKED` / `MERGEABLE` | nothing |
+
+Nothing about the PR changed. Nothing about the command changed. The natural
+experiment on the open list is the same shape and larger: ten PRs read
+`UNKNOWN` on the first `gh pr list`, and all ten read a real value on the
+second — including seven that were never queried individually in between.
+
+So `UNKNOWN` is not a state of the pull request. It is a state of a cache.
+
+**That much is measured. The mechanism is not, and this entry deliberately
+stops short of it.** The tempting reading — *the read schedules the
+computation* — is one hypothesis; *a computation was already running and took
+more than one round-trip* is another, and two observations of the same PR
+cannot separate them (@sprint-review's correction). One datum argues against
+the tempting reading outright: #1215 returned a real value on the *first* read,
+having been updated minutes earlier, so something other than a query warms this
+cache. Everything operational below survives either mechanism, which is why it
+is written from the symptom.
+
+**Why this is worse than an ambiguous value.** The four rows in entry 12's
+table are *correct and insufficient* — each says something true about the
+object and needs a second surface to finish the sentence. `UNKNOWN` says
+nothing about the object at all. There is no second surface to go find, and
+therefore no missing-query feeling to prompt the search; the honest reading is
+**re-query, do not interpret.**
+
+**The operational bite, which is specific to how this pod works.** Every
+conflict matrix built this sprint reads `mergeStateStatus`. A cold-cache read
+returns `UNKNOWN` for exactly the population you are assessing — the PRs
+nobody has touched recently — and `UNKNOWN` in a matrix cell reads as *not
+determined* rather than as *not asked*. The two rendered identically all night.
+Note the direction of the bias — and note carefully which half of it is real.
+The base-rate half holds: stale PRs are both the coldest reads *and* the ones
+most likely to have actually gone `DIRTY`, so the cells a cold matrix blanks
+are disproportionately the cells that mattered. #809 is the case: read cold, it
+came back `DIRTY` / `CONFLICTING` — a real conflict a single read reports as
+unknown and a matrix shows as blank.
+
+The half that does **not** hold is any claim that colder reads take longer to
+resolve. Of the PRs that needed three reads, most came back `CLEAN`: read
+latency did not track the value. (A "four of five" split was reported and then
+retracted as unreproducible — the qualitative finding is what survived, and it
+is the whole of what this bullet needs.) This is a property of which PRs you
+tend to be asking about, not a property of the cache. Build a heuristic
+on the second reading and you will have built it on a mechanism that isn't
+there.
+
+The consequence is fleet-wide, not local to one matrix: **any seat that reads
+`mergeStateStatus` once and branches on it mis-reads 14 of 15 cold PRs.**
+
+**What to do.**
+
+- **Re-query until the value is not `UNKNOWN`. Do not fix a number of
+  reads.** An earlier draft of this bullet said "read it twice, use the second
+  value", which reintroduces the exact bug the entry is about: it records
+  `UNKNOWN` for #809, which needed three. Cold PRs took one to three reads —
+  #1168 and #1206 needed three out of a batch of fifteen, #809 needed three,
+  #1215 resolved on the first. `UNKNOWN` is not a value; loop until you have
+  one.
+
+  No rate is stated here on purpose. @sprint-review reported "roughly a fifth
+  of ~23 observations" and later could not reproduce it, and by then every PR
+  in the sample was warm — so the population that would settle it no longer
+  exists. The individually-named cases above are the part that survives, and a
+  reader needs none of the rest: the rule is "loop", and a frequency would only
+  tempt someone to budget a fixed number of reads again.
+- **Never put `UNKNOWN` in a results table.** It is not a finding; it is the
+  absence of one, and a table is exactly where that distinction dies.
+- `state` / `mergedAt` are the lifecycle fields, and they are computed
+  eagerly. Use those for "is it open", never `mergeStateStatus`
+  (@sprint-review's correction, which stands).
+- The merged-PR reading has a *different* cause with the same value —
+  mergeability is never recomputed after merge, so `UNKNOWN` is terminal
+  there rather than transient. One value, two mechanisms, no way to tell them
+  apart from the field.
+
+*(Companion: entry 45 — a stale PR ref answers with a conflict, not an error.
+Same family. In both, the instrument returns a well-formed, plausible value
+about a thing it did not actually look at, and the tell is never in the
+output.)*
