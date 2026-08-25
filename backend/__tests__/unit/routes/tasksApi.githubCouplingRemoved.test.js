@@ -78,4 +78,47 @@ describe('task board is independent of GitHub', () => {
       expect(read(home)).toContain(needle);
     }
   });
+
+  // The escape those two needles cannot close (@sprint-review, 58544): an
+  // import alias. `import GH from '../services/githubAppService'` reintroduces
+  // the coupling in full while `GitHubAppService` never appears in the route
+  // source — both needles stay absent, both assertions above stay green.
+  //
+  // A blanket /github/i over the whole file would close it, and would also
+  // redden on a comment explaining the decoupling. That is a false failure
+  // someone eventually hits and then deletes the test over. Assert over the
+  // module SPECIFIERS instead: coupling has to arrive through one, and a
+  // comment is never one.
+  const MODULE_SPECIFIER_RE = /(?:from\s*|require\(\s*|import\(\s*)['"]([^'"]+)['"]/g;
+  const specifiersOf = (src) => [...src.matchAll(MODULE_SPECIFIER_RE)].map((m) => m[1]);
+
+  it('imports no GitHub module under any name, aliased or otherwise', () => {
+    const specifiers = specifiersOf(read('routes/tasksApi.ts'));
+
+    // Same-haystack control as above. An extraction that returned [] would
+    // satisfy the negative assertion perfectly and prove nothing.
+    expect(specifiers).toContain('../models/Task');
+    expect(specifiers).toContain('../services/taskEventService');
+    expect(specifiers.length).toBeGreaterThan(5);
+
+    expect(specifiers.filter((s) => /github/i.test(s))).toEqual([]);
+  });
+
+  it('the specifier extractor still fires on a GitHub import, so the check cannot go blind', () => {
+    // Liveness for the INSTRUMENT, not the symbol. The needle control above
+    // proves a name is still live; this proves the regex still matches. A
+    // control that fails to construct is indistinguishable from an instrument
+    // that cannot detect, so plant the thing being denied and see it caught.
+    const planted = [
+      "import GH from '../services/githubAppService';",
+      "const gh = require('../services/githubAppService');",
+      "const lazy = await import('../services/githubAppService');",
+    ].join('\n');
+
+    expect(specifiersOf(planted).filter((s) => /github/i.test(s))).toEqual([
+      '../services/githubAppService',
+      '../services/githubAppService',
+      '../services/githubAppService',
+    ]);
+  });
 });
