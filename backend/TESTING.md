@@ -80,6 +80,24 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 
 - **Tier 0 tests don't cross-import `mongoServer` / `pgDb`.** The real-services branch doesn't export them. Use the helpers; if you need direct access, add a narrow helper in `testUtils.js` that works in both tiers.
 - **Real PG needs `pgcrypto` for `gen_random_uuid()`.** `setupPgDb` creates the extension for Tier 1 — don't call `gen_random_uuid()` in a test that only runs under Tier 0 unless you're also registering the pg-mem function.
+- **pg-mem ignores SELF-REFERENTIAL FK actions, and accepts the DDL anyway.** The axis is self-reference, not the action. Measured on pg-mem 2.9.1 and pinned in `__tests__/unit/models/pgMemFkActionFidelity.test.js`:
+
+  | constraint | pg-mem |
+  |---|---|
+  | cross-table `ON DELETE CASCADE` | fires — matches Postgres |
+  | cross-table `ON DELETE SET NULL` | fires — matches Postgres |
+  | self-referential `ON DELETE CASCADE` | **ignored** |
+  | self-referential `ON DELETE SET NULL` | **ignored** |
+  | `ON DELETE SET DEFAULT` | sets **NULL**, not the column default |
+  | insert violating the FK | rejected |
+  | delete violating the default `NO ACTION` | rejected |
+
+  `messages` has both shapes. `messages.pod_id → pods(id)` and `thread_user_state.thread_root_id → messages(id)` are cross-table and genuinely covered at Tier 0. `messages.reply_to_message_id` and `messages.thread_root_id` point back at `messages(id)`, so **a Tier 0 test that deletes a message and asserts what became of its descendants is asserting nothing** — it passes because the rows never changed, which is indistinguishable from passing because the action did the right thing. One such test was written, passed, and was deleted rather than kept (`__tests__/unit/models/retentionReRoot.test.js` records it).
+
+  The general rule: **pg-mem proves SQL *shape*; only Tier 1 proves the database's *behaviour*.** A constraint whose effect you are asserting belongs in `__tests__/service/`. Split it the way `retentionReRoot.test.js` (repair, given a constructed orphaned state) and `__tests__/service/threading.retention.test.js` (that Postgres produces that state at all) do — a claim about our code at Tier 0, a claim about the database at Tier 1.
+
+  `pgMemFkActionFidelity.test.js` asserts the *dependency's* current behaviour on purpose. If a pg-mem bump starts honouring these, that suite goes red — the signal to delete it and this rule, not to relax the assertion.
+
 - **FK ordering matters under real PG.** `pod_members.pod_id` and `messages.pod_id` reference `pods(id) ON DELETE CASCADE`. Tests that insert raw rows must insert into `pods` first. `clearPgDb()` uses `TRUNCATE … CASCADE` to sidestep this on teardown.
 - **Timeouts.** Real Mongo operations are slower than in-memory. `jest.setTimeout(30000)` is set globally in `__tests__/setup.js`; avoid hardcoded shorter timeouts in Tier 1 tests.
 - **New test file, which tier?** Put it under `__tests__/service/` if it exercises real query semantics (Mongo index behavior, regex, ObjectId coercion, PG ILIKE, transactions). Put it under `__tests__/unit/` or similar if a mocked DB is sufficient.
