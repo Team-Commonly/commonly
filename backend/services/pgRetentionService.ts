@@ -19,12 +19,26 @@
 const cron = require('node-cron');
 // eslint-disable-next-line global-require
 const Message = require('../models/pg/Message') as {
-  deleteOlderThan: (days: number, protectedPodIds?: string[]) => Promise<{ deleted: number }>;
+  deleteOlderThan: (days: number, protectedPodIds?: string[]) => Promise<{ deleted: number; reRooted: number | null }>;
 };
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const PgRetentionRun = require('../models/pg/PgRetentionRun') as {
+  start: (input: { configuredRetentionDays: number | null; targetBytes: number | null }) => Promise<number>;
+  finish: (runId: number, outcome: {
+    status: 'completed' | 'aborted' | 'failed' | 'skipped';
+    finalRetentionDays: number | null;
+    protectedPodCount: number | null;
+    deletedMessageCount: number;
+    reRootedCount: number | null;
+    initialSizeBytes: number | null;
+    finalSizeBytes: number | null;
+    detail?: string | null;
+  }) => Promise<void>;
+};
 // eslint-disable-next-line global-require
 const { pool } = require('../config/db-pg') as {
   pool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> };
@@ -166,9 +180,45 @@ function formatBytes(bytes: number): string {
 }
 
 export async function runMessageRetention(): Promise<void> {
+  let runId: number | null = null;
+  let currentDays: number | null = null;
+  let totalDeleted = 0;
+  let totalReRooted: number | null = 0;
+  let protectedPodCount: number | null = null;
+  let initialSize: number | null = null;
+  let size: number | null = null;
+
+  const finishRun = async (outcome: {
+    status: 'completed' | 'aborted' | 'failed' | 'skipped';
+    detail?: string | null;
+  }): Promise<void> => {
+    if (runId === null) return;
+    try {
+      await PgRetentionRun.finish(runId, {
+        status: outcome.status,
+        finalRetentionDays: currentDays,
+        protectedPodCount,
+        deletedMessageCount: totalDeleted,
+        reRootedCount: totalReRooted,
+        initialSizeBytes: initialSize,
+        finalSizeBytes: size,
+        detail: outcome.detail || null,
+      });
+    } catch (recordError) {
+      // Do not rewrite a completed run as failed if the *recording* update
+      // flakes. Its surviving `running` row is the honest durable signal.
+      console.error('[pg-retention] could not persist run outcome:', (recordError as Error).message);
+    }
+  };
+
   try {
     const startDays = resolveRetentionDays();
     if (!Number.isFinite(startDays) || startDays <= 0) {
+      // This is still a scheduled run. Persist the configuration failure so a
+      // restart cannot turn "cron fired but safely skipped" into "cron never
+      // fired".
+      runId = await PgRetentionRun.start({ configuredRetentionDays: null, targetBytes: null });
+      await finishRun({ status: 'skipped', detail: 'invalid PG_MESSAGE_RETENTION_DAYS' });
       console.warn(
         '[pg-retention] invalid PG_MESSAGE_RETENTION_DAYS, skipping (value=%s)',
         process.env.PG_MESSAGE_RETENTION_DAYS,
@@ -181,6 +231,13 @@ export async function runMessageRetention(): Promise<void> {
     const stepDays = resolveStepDays();
     const targetBytes = Math.floor(capacity * (targetPct / 100));
 
+    // Start the durable observation BEFORE touching entitlement or messages.
+    // If this fails, the outer catch leaves without deleting invisibly.
+    runId = await PgRetentionRun.start({
+      configuredRetentionDays: Math.trunc(startDays),
+      targetBytes,
+    });
+
     // Resolved ONCE per run and threaded through every tier below, including
     // the step-down. A failure here aborts before a single row is deleted —
     // see resolveProtectedPodIds.
@@ -188,27 +245,33 @@ export async function runMessageRetention(): Promise<void> {
     try {
       protectedPodIds = await resolveProtectedPodIds();
     } catch (err) {
+      await finishRun({
+        status: 'aborted',
+        detail: `could not resolve Pro-protected pods: ${(err as Error).message}`,
+      });
       console.error(
         '[pg-retention] ABORT: could not resolve Pro-protected pods, refusing to delete: %s',
         (err as Error).message,
       );
       return;
     }
+    protectedPodCount = protectedPodIds.length;
 
-    const initialSize = await getDatabaseSizeBytes();
+    initialSize = await getDatabaseSizeBytes();
     console.log(
       `[pg-retention] start: size=${initialSize !== null ? formatBytes(initialSize) : 'unknown'} ` +
       `target=${formatBytes(targetBytes)} (${targetPct}% of ${formatBytes(capacity)}) ` +
       `retention=${startDays}d step=${stepDays}d protectedPods=${protectedPodIds.length}`,
     );
 
-    let totalDeleted = 0;
-    let currentDays = Math.max(FLOOR_DAYS, Math.trunc(startDays));
+    currentDays = Math.max(FLOOR_DAYS, Math.trunc(startDays));
 
     const first = await Message.deleteOlderThan(currentDays, protectedPodIds);
     totalDeleted += first.deleted || 0;
+    if (first.reRooted === null) totalReRooted = null;
+    else if (totalReRooted !== null) totalReRooted += first.reRooted || 0;
     await vacuumMessages();
-    let size = await getDatabaseSizeBytes();
+    size = await getDatabaseSizeBytes();
     console.log(
       `[pg-retention] tier ${currentDays}d: deleted ${first.deleted || 0} ` +
       `size=${size !== null ? formatBytes(size) : 'unknown'}`,
@@ -233,6 +296,8 @@ export async function runMessageRetention(): Promise<void> {
       currentDays = Math.max(FLOOR_DAYS, currentDays - stepDays);
       const tierResult = await Message.deleteOlderThan(currentDays, protectedPodIds);
       totalDeleted += tierResult.deleted || 0;
+      if (tierResult.reRooted === null) totalReRooted = null;
+      else if (totalReRooted !== null) totalReRooted += tierResult.reRooted || 0;
       await vacuumMessages();
       size = await getDatabaseSizeBytes();
       console.log(
@@ -267,7 +332,9 @@ export async function runMessageRetention(): Promise<void> {
       `[pg-retention] done: totalDeleted=${totalDeleted} finalRetention=${currentDays}d ` +
       `size=${size !== null ? formatBytes(size) : 'unknown'}`,
     );
+    await finishRun({ status: 'completed' });
   } catch (err) {
+    await finishRun({ status: 'failed', detail: (err as Error).message });
     // Swallow so cron keeps running — never crash the host process from a
     // retention failure. Next run will retry.
     console.error('[pg-retention] failed:', (err as Error).message);
