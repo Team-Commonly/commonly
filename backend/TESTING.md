@@ -157,12 +157,25 @@ Note the remedy has to intercept the `require`. Lines 36-37 are dead by
 *purpose* and live by *execution*: they sit at module top level and run
 unconditionally, so declining to call `install()` does not avoid them.
 
-The leaf is also the tree's only casualty. Sixteen packages under
-`backend/node_modules` mention `SlowBuffer`; the six that could plausibly touch
-it at runtime — `safe-buffer`, `safer-buffer`, `object-hash`, `iconv-lite`,
-`string_decoder`, `readable-stream` — all `require` clean on 26 (they guard the
-reference). The rest are type declarations, browser bundles, and changelogs.
-One patch covers the whole backend.
+The leaf is also the tree's only casualty — but check that by **where the
+dereference sits, not by whether the module loads** (@sprint-review). Sixteen
+packages under `backend/node_modules` mention `SlowBuffer`; requiring each one
+and watching it survive proves nothing, because a require-time probe is blind
+to every deref behind a function boundary, which is both the commoner shape and
+the worse failure — it throws at call time rather than at boot. The cheap check
+is the grep:
+
+```bash
+grep -rE 'SlowBuffer[[:space:]]*\.' backend/node_modules
+```
+
+Two hits, and reading them is the whole audit. `buffer-equal-constant-time`
+derefs at module top level, so it breaks. `iconv-lite/lib/extend-node.js:37`
+derefs inside `extendNodeEncodings()`, which early-returns at `:19` on
+`!supportsNodeEncodingsExtension` — `false` on any Node with `Buffer.from` —
+and nothing in this repo calls it. Everything else names `SlowBuffer` in prose,
+type declarations, browser bundles, or changelogs. So one patch covers the
+whole backend.
 
 Fix: run on the version CI uses. `tests.yml` pins **Node 22**.
 
