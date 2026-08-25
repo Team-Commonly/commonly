@@ -191,3 +191,91 @@ describe('marketplace publish validates inside the components array', () => {
     expect(Installable.create).toHaveBeenCalledTimes(1);
   });
 });
+
+// Fork is a SECOND writer into the published catalog: it copies
+// `source.components` wholesale into a new `source: 'marketplace'`,
+// `published: true` row. Validating at publish does not cover it, because the
+// source lookup filters on `status: 'active'` and nothing else — no `source`
+// filter, no `published` filter — so `builtin`, `user`, `template` and
+// `remote` rows are all forkable and none of them were written through
+// /publish. (@sprint-review, 58602: "source lookup filtered only on
+// status: 'active'".)
+describe('marketplace fork validates the components it copies', () => {
+  const fork = async (sourceComponents) => {
+    const handler = getRouteHandler('/fork', 'post');
+
+    Installable.findOne
+      .mockResolvedValueOnce({
+        installableId: '@builtin/pod-welcomer',
+        name: 'Pod Welcomer',
+        kind: 'agent',
+        scope: 'pod',
+        version: '1.0.0',
+        // Deliberately NOT source: 'marketplace' — a builtin row, which the
+        // lookup happily returns and /publish never validated.
+        source: 'builtin',
+        components: sourceComponents,
+      })
+      .mockResolvedValueOnce(null);
+
+    const req = {
+      userId: 'user-1',
+      user: { id: 'user-1', username: 'nova' },
+      body: {
+        sourceInstallableId: '@builtin/pod-welcomer',
+        newInstallableId: '@nova/my-fork',
+      },
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(req, res);
+    return res;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // mockReset, not clearAllMocks: validation returns BEFORE the second
+    // findOne (the duplicate-id check), so a rejecting case leaves one queued
+    // `mockResolvedValueOnce` behind — which clearAllMocks does not drain, and
+    // which the next test then receives as its source. That failure renders as
+    // a 404 three tests later, nowhere near its cause.
+    Installable.findOne.mockReset();
+    Installable.create.mockResolvedValue({ installableId: '@nova/my-fork' });
+    AgentRegistry.findOneAndUpdate.mockResolvedValue({ agentName: '@nova/my-fork' });
+  });
+
+  // CONTROL, same role as the one above: a fork of a clean source must reach
+  // persistence, or every rejection below is attributable to the mock chain
+  // rather than to the validator.
+  it('forks a source whose components are clean', async () => {
+    const res = await fork([widget({ widgetUrl: 'https://widgets.example.com/panel' })]);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(Installable.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to launder an unvalidated widgetUrl out of a builtin source', async () => {
+    // eslint-disable-next-line no-script-url
+    const res = await fork([widget({ widgetUrl: 'javascript:alert(1)' })]);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(errorOf(res)).toMatch(/Source manifest cannot be forked:.*widgetUrl must use one of/i);
+    expect(Installable.create).not.toHaveBeenCalled();
+    expect(AgentRegistry.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversized Mixed field in the source', async () => {
+    const res = await fork([widget({ metadata: { blob: 'x'.repeat(20 * 1024) } })]);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(errorOf(res)).toMatch(/Source manifest cannot be forked:.*metadata must be \d+ bytes or fewer/i);
+    expect(Installable.create).not.toHaveBeenCalled();
+  });
+
+  it('says the SOURCE is the problem, so the caller is not told to fix their own request', () => {
+    // The distinction is the whole point of the message prefix: on fork the
+    // caller supplied only two ids, and a bare "components[0].widgetUrl ..."
+    // would send them looking for a field they never sent.
+    expect('Source manifest cannot be forked: components[0].widgetUrl must use one of: http:, https:')
+      .toMatch(/^Source manifest cannot be forked: /);
+  });
+});

@@ -515,6 +515,24 @@ router.post('/fork', auth, async (req: any, res: any) => {
     });
     if (!source) return res.status(404).json({ error: 'Source manifest not found or not active' });
 
+    // Fork copies `source.components` wholesale into a new `source:
+    // 'marketplace'`, `published: true` row, so it is a second writer into the
+    // published catalog and needs the same gate as /publish.
+    //
+    // It is NOT redundant with validating at publish. The lookup above filters
+    // on `status: 'active'` and nothing else — no `source` filter, no
+    // `marketplace.published` filter — so `builtin`, `user`, `template` and
+    // `remote` rows are all forkable, and none of them were written through
+    // /publish. Any row predating this validation is forkable too. Without
+    // this check, fork is the path that launders an unvalidated component into
+    // the published catalog. (@sprint-review, 58602.)
+    const sourceComponentsError = validateComponents(source.components);
+    if (sourceComponentsError) {
+      return res.status(400).json({
+        error: `Source manifest cannot be forked: ${sourceComponentsError}`,
+      });
+    }
+
     const existing = await Installable.findOne({ installableId: newInstallableId.toLowerCase() });
     if (existing) return res.status(409).json({ error: 'installableId already taken' });
 
