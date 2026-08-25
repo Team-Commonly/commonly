@@ -2529,10 +2529,38 @@ leaving to be re-derived.
 set is weighted toward analysis.** Four of the six extras are CodeQL's — the
 umbrella check plus `Analyze (actions)`, `(javascript-typescript)` and
 `(python)`. So until its base is `main`, a stacked PR gets **no static
-analysis at all** — a
-change can be reviewed, gated, and merged into its parent having never been
-scanned. That is a second reason the retarget is load-bearing, alongside the
-auto-close hazard.
+analysis at all**.
+
+**What that costs, measured rather than assumed (2026-08-25).** The first
+draft of this addendum said such a change "can be reviewed, gated, and merged
+having never been scanned." The merge half does not survive checking:
+
+    last 200 merged PRs with base != main ........ 0
+    18 most recent merged, carrying CodeQL ....... 18 / 18
+       incl. #1187 (commonly-mcp only), #1185 (scripts + dev.sh + docs),
+             #1189 (backend + cli)
+    open stacked PRs at time of writing .......... 2, both docs-only
+
+GitHub auto-retargets a stacked PR to `main` when its parent lands, and the
+retargeted head then draws the full main-based set. Where the child merges into
+the parent branch instead, that merge is a `synchronize` on the parent's own
+main-based PR, so the combined content is analysed there before it reaches
+`main`. Nothing in the sampled window reached `main` unanalysed.
+
+So the harm is **not merge safety — it is a review-time verdict hazard**. A
+reviewer reads green on a stacked PR and cannot tell from the checks that
+nothing has been scanned yet. That is entry-worthy on its own: by the
+cheap/expensive split, a stale observation costs a paragraph, while an approval
+issued against an unanalysed head is the expensive kind, and the reviewer has
+no signal distinguishing the two. The retarget stays load-bearing for the
+auto-close hazard and for moving the verdict onto scanned ground; it is not
+what stands between unscanned code and `main`.
+
+Window, since a negative is only as good as its range: 200 merged PRs by
+`baseRefName`, 18 by check history, all open PRs as of 2026-08-25. `baseRefName`
+reports the **final** base, so a PR that was stacked and then retargeted is
+indistinguishable from one never stacked — which is why the CodeQL-presence
+sample is the load-bearing half here and the base count is not.
 
 **Not every absence is a stacking absence, and E2E is the one that fools you.**
 Two axes move the denominator independently — **paths** and **base** — and
@@ -2550,6 +2578,24 @@ constant and varies only the base:
 `E2E Tests`. `playwright.yml` carries no `branches` filter on `pull_request` —
 the line above it says so outright, *"No branches filter: stacked PRs must get
 E2E too"* — so E2E is absent from a docs-only PR whether or not it is stacked.
+
+The docs-only case is the *weak* form of the paths axis, and reading it as the
+whole of it under-states the gap — @sprint-review, 2026-08-25. `playwright.yml`
+is gated on `frontend/** | backend/** | e2e/** | playwright.config.*`, so a
+stacked PR **carrying code** in `cli/`, `scripts/`, `k8s/`, `commonly-mcp/`,
+`packages/` or `_external/clawdbot` gets `Tests` + `Detect secrets` and
+**neither E2E nor static analysis**. That is the case this entry is really
+about. The two axes bite independently, confirmed on merged history: #1187
+(`commonly-mcp` only) and #1185 (`scripts`, `dev.sh`, `install.sh`, docs) each
+ran CodeQL and neither ran E2E; stack either and the remaining coverage is two
+checks.
+
+Worth naming why it is easy to miss: `playwright.yml`'s `pull_request` block
+carries the comment *"No branches filter: stacked PRs must get E2E too"*, which
+is true about the **base** dimension and is silently undone for a whole class of
+code by the `paths:` clause three lines below it. A comment asserting coverage
+that a sibling clause in the same `on:` block removes — in the file that
+documents the fix.
 
 `#1122 → #1132` isolates the **base** axis and moves six: the four CodeQL-family
 jobs plus the two base-scoped merge guards (`Source changed ⇒ version bumped`,
@@ -2580,9 +2626,21 @@ produce the wrong denominator, with the *security* jobs as the omission it has
 no way to see. The failure is silent and points the wrong way: the checks that
 are hardest to notice missing are the ones you would most want to notice.
 
+**One exclusion, stated so nobody "fixes" it later** — @sprint-review,
+2026-08-25. Counting `branches`-scoped `pull_request` workflows in
+`.github/workflows/` returns **three**, not two: `package-version-guard.yml`,
+`pr-base-freshness.yml`, and `release-safety.yml`. The third is
+`branches: [ v1.0.x ]` — a different release line, not a main-PR skip. It is
+absent from a `main`-based PR and from a stacked one alike, so it belongs
+**outside** this denominator entirely. Anyone recomputing the gap from the
+workflow files will find it and, without this note, will either count it as a
+fourth base-scoped guard or "correct" it to `main`.
+
 **Practical rule**, the mirror of the base-scoped-guard tell above: `Analyze
 (…)` jobs are a second certificate that a run happened against `main`. Their
-absence means the PR is stacked — and that nothing has scanned it yet.
+absence means the PR is stacked — and that nothing has scanned it yet. Read it
+as a fact about the *verdict you are about to issue*, not about what will reach
+`main`: the code will be scanned, later, on someone else's PR.
 
 ## 42. A dual-auth route degrades to the other identity silently, so a test can name a shape it never exercises (2026-08-22, sprint-review + pod-architect)
 
