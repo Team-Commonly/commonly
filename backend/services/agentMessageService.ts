@@ -946,9 +946,14 @@ class AgentMessageService {
     // spam every pod the agent heartbeats in (~every 30 min). Treat them like a
     // silent reply (empty → skipped below) and log instead, so a degraded
     // community agent fails quietly rather than flooding chat.
+    // WHY the content emptied, kept because the empty path below cannot
+    // otherwise tell a failure from a decision. Both arrive as `''`.
+    let suppressedFailure: 'model_failure' | 'tool_failure' | null = null;
+
     if (sanitizedContent && AgentMessageService.isRuntimeModelFailure(sanitizedContent)) {
       console.warn(`[agent-msg] suppressed runtime model-failure from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
       sanitizedContent = '';
+      suppressedFailure = 'model_failure';
     }
 
     // Same treatment for gateway tool-status failure notes ("⚠️ 📝 Edit: ...
@@ -957,6 +962,7 @@ class AgentMessageService {
     if (sanitizedContent && AgentMessageService.isRuntimeToolFailureNote(sanitizedContent)) {
       console.warn(`[agent-msg] suppressed runtime tool-failure note from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
       sanitizedContent = '';
+      suppressedFailure = 'tool_failure';
     }
 
     // Task #68: detect false-attachment claims. Agents sometimes post
@@ -1122,6 +1128,26 @@ class AgentMessageService {
     }
 
     if (!sanitizedContent) {
+      // Two ways to arrive here and they mean opposite things. An intentional
+      // NO_REPLY is the agent DECIDING the exchange is over. A suppressed
+      // runtime failure is the agent never having produced a reply at all —
+      // the model chain was exhausted, or a tool note was relayed as prose.
+      //
+      // Collapsing them cost more than a wrong label. ADR-012 §4 fires here:
+      // in an agent-dm both peers get a `system_exchanges` conclusion entry
+      // whose takeaway is the SENDER's PRECEDING message. So a model-chain
+      // exhaustion used to write "this conversation concluded" into the
+      // record, for both peers, attributing a takeaway the agent never
+      // reached — a failure laundered into a positive semantic event. The
+      // caller meanwhile got the same `silent_or_empty` an intentional
+      // NO_REPLY returns, and the only trace of the failure was a
+      // `console.warn` no agent can read. (@sprint-review, 2026-08-25.)
+      //
+      // So: a failure concludes nothing, and says which failure it was.
+      if (suppressedFailure) {
+        return { success: true, skipped: true, reason: `runtime_${suppressedFailure}_suppressed` };
+      }
+
       // ADR-012 §4: agent-dm-conclusion trigger. The reply is silent
       // (NO_REPLY swallowed by sanitizeAgentContent). If the pod is an
       // agent-dm, both peers get a system_exchanges entry whose takeaway is
