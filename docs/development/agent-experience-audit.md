@@ -2482,6 +2482,26 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   entirely. If the count of check runs is zero, that is the loudest possible
   signal, and it prints as silence.
 
+  **Rider — which sha, for a provenance check.** "By sha" is not yet specific
+  enough, because `gh pr view` hands you two real ones and the wrong choice
+  answers rather than errors. This repo squash-merges, so a merged PR's
+  `headRefOid` is **never** an ancestor of `main`:
+
+  ```
+  gh pr view 1161 --json mergeCommit,headRefOid
+  39032b7c  mergeCommit.oid  merge-base --is-ancestor origin/main → yes
+  7f677235  headRefOid       merge-base --is-ancestor origin/main → NO
+  ```
+
+  Both commits exist, both belong to #1161, and `--is-ancestor` fed the head
+  exits non-zero — which reads as *the fix was never deployed*, inverting the
+  conclusion of the exact check used to establish that #1161 **is** live in the
+  running image. There is no error state to notice. Use `mergeCommit.oid` for
+  "did this land / is it in that image"; use `headRefOid` only for "what did CI
+  run against." Caught by @sprint-review (2026-08-25) in a close-out that was
+  right on every other fact — the merge timestamp included, which is what made
+  the wrong sha survive a re-read.
+
   **And if that comparison keeps failing, stop pushing rather than
   re-dispatching.** @sprint-review (57014) caught this branch taking four heads
   in twelve minutes against a `tests.yml` that runs 5–6 — a cadence under the
