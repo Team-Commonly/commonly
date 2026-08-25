@@ -137,9 +137,10 @@ describe('pg-mem applies self-referential FK actions plan-dependently', () => {
     expect(rows(db, 'SELECT * FROM m WHERE p = 1')).toEqual([]);
     expect(rows(db, 'SELECT * FROM m WHERE p IS NULL')).toEqual([]);
 
-    // Every scanning path: still there. Note the count is 2, not 1 — row 3
-    // survives the scan as well, so this is not one orphan row but the whole
-    // un-cascaded chain.
+    // Every scanning path: still there. The count tracks the fixture's chain
+    // length rather than being a constant: this three-row chain leaves 2,
+    // because row 3 is stranded too; a two-row (1,NULL),(2,1) fixture leaves
+    // 1. Quote the number with its fixture or it reads as a disagreement.
     expect(rows(db, 'SELECT * FROM m ORDER BY id')).toEqual([
       { id: 2, p: 1 },
       { id: 3, p: 2 },

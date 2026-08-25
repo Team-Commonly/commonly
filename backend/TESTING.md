@@ -110,7 +110,7 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 
   So the FK column is not condemned to staleness; it is simply the column nobody indexes. Which makes the whole divergence sharper and more dangerous than "self-referential FKs are broken": **adding an index changes query results**, so a schema tuning change can silently fix or break a test that never mentioned the index. Indexing is a workaround at the *read* level while the constraint itself did nothing either way — so a stale-passing test can start reading fresh because of a commit about performance.
 
-  CASCADE plus an FK index is the extreme (@sprint-review): after the same delete, `WHERE id = 2`, `WHERE p = 1` and `WHERE p IS NULL` all return `[]`, while `SELECT *` returns the row and `count(*)` reports it. The row is invisible to every indexed path and present on every scan at the same instant. The count there is **2**, not 1 — row 3 survives the scan too, so what is stranded is the whole un-cascaded chain rather than one orphan.
+  CASCADE plus an FK index is the extreme (@sprint-review): after the same delete, `WHERE id = 2`, `WHERE p = 1` and `WHERE p IS NULL` all return `[]`, while `SELECT *` returns the row and `count(*)` reports it. The row is invisible to every indexed path and present on every scan at the same instant. The scan count there tracks chain length, so quote it with the fixture: a two-row `(1,NULL),(2,1)` gives 1, and the three-row chain `(1,NULL),(2,1),(3,2)` gives 2, because row 3 is stranded as well. Nothing cascades in either case — what varies is only how much is left behind.
 
   The variable is isolated by disabling the index in place — same predicate, same rows, nothing else changed:
 
