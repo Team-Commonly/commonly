@@ -540,16 +540,35 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
  *   fits in one message            → post as-is
  *   splits into ≤ maxChunks        → post the chunks in order ("two short
  *                                    messages beat one wall")
- *   longer than a split answer     → it is a document, not a message: upload
- *                                    the FULL text as a file and post one
- *                                    message — the reply's own opening plus
- *                                    the file card. Nothing is cut; the file
- *                                    holds everything.
+ *   longer than a split answer     → post the FIRST chunk to the channel and
+ *                                    continue the rest in a thread under it.
+ *   one indivisible oversize unit  → it is a genuine document: upload the FULL
+ *                                    text and post one message — the reply's
+ *                                    own opening plus the file card.
  *
- * If the upload fails (older server, network), fall back to posting every
- * chunk: a message flood is a tone violation, silence or truncation is a
- * correctness violation, and the contract itself ranks content above tone
- * ("NEVER hit that by cutting content").
+ * The thread rung is new (Sam 57691) and it replaces attachment as the answer
+ * for PROSE overflow. Before threads existed, a long analysis had nowhere to
+ * go but a file, and that was the right workaround. It is now the wrong one:
+ * an attachment is un-quotable, un-followable, and an all-or-nothing read,
+ * so overflowing into one buries the tail of a reply in a surface nobody can
+ * respond to. A thread keeps every word addressable and scopes the read.
+ *
+ * This is also the layer the rule has to live at. The pod-context cue already
+ * tells agents "prose overflow goes in a thread, not an attachment" (#1176),
+ * and the cue could not have been obeyed: the model does not choose the
+ * delivery mode, THIS FUNCTION does, and it only knew how to attach. A cue
+ * that promises what the wrapper contradicts teaches the agent it is failing
+ * at something it never controlled.
+ *
+ * Attachment is kept for the case it was always right for — a single atomic
+ * unit over `attachThreshold` (a long fence, an unbreakable run). That is a
+ * document by construction, not prose that outgrew a message.
+ *
+ * If threading fails (older server with no threadRootId support, no id in the
+ * response), fall back to attach, then to posting every chunk: a message
+ * flood is a tone violation, silence or truncation is a correctness
+ * violation, and the contract ranks content above tone ("NEVER hit that by
+ * cutting content").
  */
 export const deliverChatReply = async ({
   client,
@@ -580,6 +599,48 @@ export const deliverChatReply = async ({
       await client.post(messagesPath, { content: chunk }); // in order, so the reply reads top-down
     }
     return { mode: 'split', messages: chunks.length };
+  }
+  // PROSE OVERFLOW → THREAD. Only when nothing is indivisibly oversize: a
+  // fence too big to split is a document and belongs in the attach rung below.
+  if (!hasIndivisibleOversize) {
+    // Tracked because the recovery depends on it, and getting this wrong is
+    // silent: the attach rung leads with `chunks[0]` too, so falling through
+    // after a successful headline post duplicates the opening line in the
+    // room. Two of this suite's existing tests caught exactly that.
+    let headlinePosted = false;
+    try {
+      const rootRes = await client.post(messagesPath, { content: chunks[0] });
+      headlinePosted = true;
+      // The runtime route answers `res.json(result)` with the created row on
+      // `result.message`. Accept either id field; refuse to guess if neither
+      // is present, because a continuation posted with a missing root would
+      // silently become another top-level message — the exact flood this rung
+      // exists to prevent.
+      const rootId = rootRes?.message?.id ?? rootRes?.message?._id ?? rootRes?.id ?? rootRes?._id;
+      if (!rootId) throw new Error('no message id in post response — cannot root the thread');
+      for (const chunk of chunks.slice(1)) {
+        // eslint-disable-next-line no-await-in-loop
+        await client.post(messagesPath, { content: chunk, threadRootId: String(rootId) });
+      }
+      return { mode: 'thread', messages: chunks.length, threadRootId: String(rootId) };
+    } catch (err) {
+      if (headlinePosted) {
+        // The opening is already in the room. Post the REMAINDER top-level —
+        // never the whole text again. This is the old flood, minus the
+        // duplicate, and it is still preferable to attaching: content ranks
+        // above tone, and the reader would otherwise see the same paragraph
+        // twice with the rest hidden in a file.
+        log(`thread continuation failed (${err.message}) — posting the remainder top-level`);
+        for (const chunk of chunks.slice(1)) {
+          // eslint-disable-next-line no-await-in-loop
+          await client.post(messagesPath, { content: chunk });
+        }
+        return { mode: 'thread-fallback', messages: chunks.length };
+      }
+      // Nothing reached the room, so the attach rung below is free to lead
+      // with the opening as it always did.
+      log(`thread headline failed (${err.message}) — falling back to attach`);
+    }
   }
   try {
     const uploaded = await client.upload(`/api/agents/runtime/pods/${podId}/uploads`, {
