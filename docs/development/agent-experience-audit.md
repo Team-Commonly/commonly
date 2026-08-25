@@ -2573,3 +2573,72 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+
+## 45. A stale PR ref answers with a conflict, not with an error (2026-08-25, pod-architect + sprint-review)
+
+> Numbering follows entry 41's caveat: 39, 40, 43 and 44 are still reserved by
+> #1122, #1132, #1142 and #1143. Renumber this one, not those.
+
+The standing way to check a queue of stacked PRs for merge conflicts is to
+mirror every pull head locally and merge each pair in memory:
+
+```sh
+git fetch origin main 'refs/pull/*/head:refs/remotes/pr/*'
+git merge-tree --write-tree --messages pr/1122 origin/main
+```
+
+Run against eleven open PRs it reported `#1122` conflicting with `main` and
+with eight of the other ten — one file, `agent-experience-audit.md`, every
+time. That is a coherent story: a long-lived branch on a hot append-only file
+falling behind. It was published to the pod on that reading.
+
+`#1122` conflicts with nothing. Its head is `a1334af6`; the local mirror was
+pinned at `45e3606e`, two days and one rebase behind.
+
+**The mechanism.** `git fetch` refuses non-fast-forward ref updates unless
+given `--force`. A rebase moves a branch non-fast-forward by definition, so
+every rebased PR's local mirror silently stays at its pre-rebase commit. The
+fetch does not fail — it updates the refs it can and leaves the others, and
+the summary line for a skipped ref scrolls past among ten that succeeded.
+
+**Why this is an agent-experience defect.** The stale ref does not produce an
+error, an empty result, or an implausible one. It produces a **real conflict
+between two real commits** — `45e3606e` genuinely does conflict with today's
+`main`. The instrument was working perfectly and answering a question nobody
+asked: *would the branch as it stood on Saturday merge today?* Nothing in
+`git merge-tree`'s output carries the age of its inputs, so the verdict reads
+identically whether the ref is current or abandoned.
+
+This is the harder shape of the failure catalogued in entry 41. There the
+missing artifact was the tell — zero checks is visibly odd. Here the artifact
+is present, well-formed, and specific down to the filename, which is exactly
+what makes it convincing enough to publish.
+
+**What to do.**
+
+- **Force the fetch.** `git fetch --force origin 'refs/pull/*/head:refs/remotes/pr/*'`
+  costs nothing and removes the failure mode entirely. Without `--force` the
+  command is not a mirror, it is a mirror of whatever has not been rebased.
+- **Pin the inputs before trusting the verdict.** A merge check should print
+  the sha it merged and reconcile it against the live head:
+
+  ```sh
+  git rev-parse --short=8 pr/$N
+  gh pr view $N --repo <owner>/<repo> --json headRefOid -q '.headRefOid[0:8]'
+  ```
+
+  A conflict matrix without the shas it was computed from cannot be audited
+  later, and decays the moment anything in the queue is rebased.
+- **A conflict verdict is a measurement of a moment, not a property of two
+  branches.** Re-run it rather than citing an earlier run; three separate runs
+  of this same matrix over three days each gave a different answer, and every
+  one of them was correct when taken.
+- **The `--messages` grep and the resolve check are separate guards.**
+  `git merge-tree` exits `1` both for a genuine conflict and for an
+  unresolvable ref, so an exit-code-only control cannot tell a typo'd branch
+  from a conflicting one. Resolve both refs with
+  `git rev-parse --verify -q '<ref>^{commit}'` first, then grep the output for
+  `^CONFLICT`. That guard was in place here and did not help: the ref resolved
+  fine. It was just old.
+- Companion: entry 41 (a conflicting PR's checks describe a tree that will
+  never exist) and reviewer-checklist rule 12.
