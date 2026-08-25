@@ -68,6 +68,22 @@ function createTableFor(name) {
  * the other way here. Unexported for consistency of the phantom-export rule,
  * not because it was hazardous.
  *
+ * That measurement has a PRECONDITION the first write-up omitted, and omitting
+ * it inverts the result rather than merely weakening it (@sprint-review). Seed
+ * `pods` first — `messages.pod_id REFERENCES pods(id)`. On a genuinely empty
+ * db both arms throw, and a reproducer concludes the asymmetry was imagined:
+ *
+ *   fresh db      retrofitsFor → `relation "messages" does not exist`
+ *                 createTableFor → `relation "pods" does not exist`
+ *   pods seeded   retrofitsFor → `relation "messages" does not exist`
+ *                 createTableFor → DDL ok, `payload` MISSING   ← the finding
+ *
+ * Only `createTableFor` is sensitive to the seed; `retrofitsFor` throws the
+ * same error in both cells. So the confound could only ever make the dangerous
+ * export look safe, which is the direction that costs something. `users` is
+ * NOT required despite the obvious guess — `messages.user_id` is a bare
+ * VARCHAR(24) with no REFERENCES, and `pods` carries no FK of its own.
+ *
  * `createTableFor` alone is not the table. Late columns are added by ALTER, not
  * inside the CREATE — that is the two-declaration rule this repo learned the
  * hard way, and it applies to fixtures too. A suite that only ran the CREATE
