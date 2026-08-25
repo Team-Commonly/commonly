@@ -32,12 +32,43 @@ describe('task board is independent of GitHub', () => {
     expect(task).not.toHaveProperty('githubIssueOwned');
   });
 
-  it('does not give the task route a GitHub write path', () => {
-    const routeSource = fs.readFileSync(
-      path.join(__dirname, '../../../routes/tasksApi.ts'),
-      'utf8',
-    );
+  // The needles, kept in one place so the assertion below and the liveness
+  // control below THAT cannot drift apart. `createGithubIssue` used to be a
+  // third needle here and was removed: it existed nowhere in the tree except
+  // inside this file's own regex, so it could never match and never fail —
+  // a third of the alternation was decorative (@sprint-review, 58470).
+  const COUPLING_NEEDLES = [
+    // [needle, a file that must still contain it]
+    ['GitHubAppService', 'services/githubAppService.ts'],
+    ['githubIssue', 'scripts/remove-task-github-fields.ts'],
+  ];
 
-    expect(routeSource).not.toMatch(/GitHubAppService|githubIssue|createGithubIssue/);
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '../../../', rel), 'utf8');
+
+  it('does not give the task route a GitHub write path', () => {
+    const routeSource = read('routes/tasksApi.ts');
+
+    // POSITIVE CONTROL. Without it, this test proves only that some string
+    // lacks some substrings — an empty read, a truncated file, or the wrong
+    // path would all pass the negative assertion silently. readFileSync
+    // throwing covers a MISSING file; it does not cover a present-but-wrong
+    // one.
+    expect(routeSource).toMatch(/router\.(get|post|patch|put|delete)\(/);
+    expect(routeSource.length).toBeGreaterThan(1000);
+
+    for (const [needle] of COUPLING_NEEDLES) {
+      expect(routeSource).not.toContain(needle);
+    }
+  });
+
+  // The control that makes the assertion above mean something. A negative
+  // match passes for two different reasons — the coupling is gone, or the
+  // needle no longer names anything. Rename GitHubAppService and the route
+  // test goes green forever with the coupling fully present; this one reddens
+  // instead and forces the needle to be updated with the symbol.
+  it('every needle still names a live symbol, so a rename cannot disarm the test', () => {
+    for (const [needle, home] of COUPLING_NEEDLES) {
+      expect(read(home)).toContain(needle);
+    }
   });
 });
