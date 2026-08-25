@@ -103,6 +103,15 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 
   Under `CASCADE` the same split deletes row 2 from the PK index while `SELECT *` and `count(*)` still report two rows. A plan served by the PK index sees the action; a plan that scans sees the pre-delete value. `p` carries no index, so predicates on the FK column always read stale.
 
+  The variable is isolated by disabling the index in place — same predicate, same rows, nothing else changed:
+
+  ```
+  WHERE id = 10      (pk index) -> parent_id = null
+  WHERE id + 0 = 10  (no index) -> parent_id = 1
+  ```
+
+  The line is index *eligibility*, not equality: `>=` and `IN` are index-served too and agree with the first reading.
+
   **This is worse than the "pg-mem ignores them" reading it replaces** (which is what an earlier version of this rule and the first draft of that suite both said). Ignoring is at least consistent: every read agrees, and a test that passes does so for one knowable reason. Here the *shape of the assertion query* picks the answer — `expect(rows(db, 'SELECT * FROM m'))` and `expect(rows(db, 'SELECT * FROM m WHERE id = 2'))` disagree about whether the constraint fired, and both look like a real result. A green Tier 0 constraint test is therefore not evidence even of pg-mem's own behaviour, let alone Postgres's.
 
   `messages` has both shapes. `messages.pod_id → pods(id)` and `thread_user_state.thread_root_id → messages(id)` are cross-table and genuinely covered at Tier 0. `messages.reply_to_message_id` and `messages.thread_root_id` point back at `messages(id)`, so **a Tier 0 test that deletes a message and asserts what became of its descendants is asserting nothing** — it reports whichever answer its own `SELECT` happened to reach. One such test was written, passed, and was deleted rather than kept (`__tests__/unit/models/retentionReRoot.test.js` records it).

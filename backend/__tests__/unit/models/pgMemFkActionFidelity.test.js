@@ -21,6 +21,11 @@
  * reports the action as applied, a plan that scans reports the pre-delete
  * value. The `plan-dependent` describe below pins both readings side by side.
  *
+ * The variable is isolated by `WHERE id + 0 = 10` vs `WHERE id = 10`: same
+ * predicate, same rows, index made ineligible, opposite answers. That control
+ * is @sprint-review's, and it is what rules out the projection or the shape of
+ * the WHERE clause as the thing that decides.
+ *
  * An earlier draft of this file asserted only the scanning reads and called
  * the action ignored. That is the more comfortable failure and the wrong one:
  * ignoring is at least self-consistent, so a green test is green for one
@@ -112,6 +117,32 @@ describe('pg-mem applies self-referential FK actions plan-dependently', () => {
     expect(rows(db, 'SELECT count(*) AS c FROM m')).toEqual([{ c: 2 }]);
     // PK-index read: row 2 is gone.
     expect(rows(db, 'SELECT * FROM m WHERE id = 2')).toEqual([]);
+  });
+
+  it('flips on `+ 0` — the same predicate with the index disabled', () => {
+    // The control that isolates the variable, from @sprint-review. The pairs
+    // above vary the projection AND the predicate together, so they show the
+    // answer is plan-dependent without showing WHICH part of the plan decides.
+    // `id + 0 = 10` is the identical predicate over the identical rows with
+    // the PK index made ineligible, and nothing else changed.
+    const db = fresh(
+      `CREATE TABLE m(id INT PRIMARY KEY,
+                      parent_id INT REFERENCES m(id) ON DELETE SET NULL);`,
+      `INSERT INTO m VALUES (1, NULL), (10, 1);`,
+    );
+    db.public.none('DELETE FROM m WHERE id = 1;');
+
+    expect(rows(db, 'SELECT * FROM m WHERE id = 10')).toEqual([
+      { id: 10, parent_id: null }, // index-served: SET NULL happened
+    ]);
+    expect(rows(db, 'SELECT * FROM m WHERE id + 0 = 10')).toEqual([
+      { id: 10, parent_id: 1 }, // scan: it never did
+    ]);
+
+    // The line is index-ELIGIBILITY, not equality: range and IN predicates are
+    // served by the index too, and agree with it.
+    expect(rows(db, 'SELECT * FROM m WHERE id >= 10')).toEqual([{ id: 10, parent_id: null }]);
+    expect(rows(db, 'SELECT * FROM m WHERE id IN (10)')).toEqual([{ id: 10, parent_id: null }]);
   });
 
   it('answers predicates on the FK column from the stale value', () => {
