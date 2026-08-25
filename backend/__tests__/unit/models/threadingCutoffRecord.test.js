@@ -91,9 +91,16 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(ledgerRead).toBeGreaterThan(-1);
     expect(ledgerRead).toBeLessThan(populationRead);
     // #1149: reading the ledger first is not the property — STOPPING is, and a
-    // position comparison cannot see a `return`. Deleting the return at :209
-    // leaves both indices unchanged and the script re-measures anyway, which is
-    // the exact failure #1148 removed. Pin the thing that stops it.
+    // position comparison cannot see a `return`. Deleting the early return in
+    // the script's `if (ledger)` branch leaves both indices unchanged and the
+    // script re-measures anyway, which is the exact failure #1148 removed. Pin
+    // the thing that stops it.
+    //
+    // Cited by symbol, not by line. This comment said `:209` and the export of
+    // `main` in this same PR moved it to `:221` — a pointer that rotted inside
+    // the branch that wrote it, caught by @sprint-review reproducing the two
+    // mutation rows. A line number in a comment is a claim about a file's
+    // length, which is the one property every commit is entitled to change.
     const reportedAndStopped = SCRIPT.slice(
       SCRIPT.indexOf('already recorded at'),
       populationRead,
