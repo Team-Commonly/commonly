@@ -450,6 +450,29 @@ describe('deliverChatReply', () => {
     expect(post).toHaveBeenCalledWith(messagesPath, { content: 'short answer' });
   });
 
+  test('a normal-return refusal is not recorded as a single-message delivery', async () => {
+    // The runtime route returns HTTP 200 for this policy refusal. The resolved
+    // promise proves only that the server decided, not that it created a row.
+    const post = jest.fn().mockResolvedValue({
+      success: false,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Do not retry this message unchanged.',
+    });
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text: 'short answer' });
+
+    expect(res).toEqual({
+      mode: 'refused',
+      messages: 0,
+      attemptedMessages: 1,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Do not retry this message unchanged.',
+    });
+  });
+
   test('a split-sized reply posts its chunks in order', async () => {
     const post = jest.fn().mockResolvedValue({});
     const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}`;
@@ -457,6 +480,37 @@ describe('deliverChatReply', () => {
     expect(res).toEqual({ mode: 'split', messages: 2 });
     expect(post.mock.calls[0][1].content).toBe('a'.repeat(390));
     expect(post.mock.calls[1][1].content).toBe('b'.repeat(390));
+  });
+
+  test('a split reply stops at a normal-return refusal and reports only delivered chunks', async () => {
+    const refusal = {
+      success: false,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Wait for someone else to speak.',
+    };
+    const post = jest.fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce(refusal);
+    const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}\n\n${'c'.repeat(390)}`;
+
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text });
+
+    expect(res).toEqual({
+      mode: 'refused',
+      messages: 2,
+      attemptedMessages: 3,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Wait for someone else to speak.',
+    });
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls.map(([, body]) => body.content)).toEqual([
+      'a'.repeat(390), 'b'.repeat(390), 'c'.repeat(390),
+    ]);
   });
 
   // Prose overflow is a THREAD now, not an attachment (Sam 57691).
@@ -505,6 +559,54 @@ describe('deliverChatReply', () => {
         .mockResolvedValue({});
       const res = await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
       expect(res.threadRootId).toBe('99');
+    });
+
+    test('a refused thread headline stops without falling through to an attachment', async () => {
+      const refusal = {
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      };
+      const post = jest.fn().mockResolvedValue(refusal);
+      const upload = jest.fn();
+
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+
+      expect(res).toEqual({
+        mode: 'refused',
+        messages: 0,
+        attemptedMessages: splitForChat(prose).length,
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    test('a refused continuation stops without re-posting the remaining thread as top-level messages', async () => {
+      const refusal = {
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      };
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 'root-1' } })
+        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce(refusal);
+      const upload = jest.fn();
+
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+
+      expect(res).toMatchObject({
+        mode: 'refused',
+        messages: 2,
+        attemptedMessages: splitForChat(prose).length,
+        reason: 'consecutive_run_cap',
+      });
+      expect(post).toHaveBeenCalledTimes(3);
+      expect(post.mock.calls.slice(1).every(([, body]) => body.threadRootId === 'root-1')).toBe(true);
+      expect(upload).not.toHaveBeenCalled();
     });
 
     test('never guesses a root, and never re-posts the headline it already sent', async () => {
@@ -559,6 +661,22 @@ describe('deliverChatReply', () => {
     // attach version made about the file buffer.
     expect(post.mock.calls.map((cl) => cl[1].content).join('\n\n')).toBe(text);
     expect(post.mock.calls[0][1].content).toContain('Point 0:'); // opening stays the headline
+  });
+
+  test('an attachment-card refusal does not masquerade as an attachment delivery', async () => {
+    const post = jest.fn().mockResolvedValue({
+      refused: true, reason: 'consecutive_run_cap', guidance: 'Do not retry unchanged.',
+    });
+    const upload = jest.fn().mockResolvedValue({ fileName: 'srv.md', originalName: 'reply.md' });
+    const text = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``;
+
+    const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text });
+
+    expect(res).toMatchObject({
+      mode: 'refused', messages: 0, attemptedMessages: 1, reason: 'consecutive_run_cap',
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledTimes(1);
   });
 
   test('a document-sized single fence attaches — it cannot ride the single-post branch (msg 53018)', async () => {
@@ -666,6 +784,24 @@ describe('deliverChatReply', () => {
     // The resumed chunks go top-level — that is the fallback, not a regression.
     expect(post.mock.calls.slice(4).every((c) => c[1].threadRootId === undefined)).toBe(true);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('posting the remainder top-level'));
+  });
+
+  test('the attachment fallback also stops at a normal-return refusal', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({
+        refused: true, reason: 'consecutive_run_cap', guidance: 'Wait for a reply first.',
+    });
+    const upload = jest.fn().mockRejectedValue(new Error('older server'));
+    const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``;
+    const text = `${'y'.repeat(350)}\n\n${fence}\n\n${'z'.repeat(350)}`;
+
+    const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text });
+
+    expect(res).toMatchObject({
+      mode: 'refused', messages: 1, attemptedMessages: splitForChat(text).length, reason: 'consecutive_run_cap',
+    });
+    expect(post).toHaveBeenCalledTimes(2);
   });
 });
 
