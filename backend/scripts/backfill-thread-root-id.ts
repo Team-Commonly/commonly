@@ -161,15 +161,27 @@ export const CUTOFF_SQL = `
             FROM messages
            WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL) unrooted`;
 
-async function main(): Promise<void> {
-  if (!process.env.PG_HOST) {
+/**
+ * The migration body. Exported ONLY so a test can execute it — the guards on
+ * this script pinned text order (`indexOf` < `indexOf`) and a position
+ * comparison cannot see a `return`, so every mutant that changed reachability
+ * without moving a string shipped green. Exporting is what makes reachability
+ * assertable at all; see __tests__/unit/models/threadingCutoffLedgerFirst.test.js.
+ *
+ * `injectedPool` also skips the env check, the Pool construction and the
+ * `pool.end()` — a caller supplying a pool owns its lifecycle. The
+ * `require.main === module` gate at the bottom is unchanged, so importing this
+ * file still runs nothing.
+ */
+export async function main(injectedPool?: Partial<Pool>): Promise<void> {
+  if (!injectedPool && !process.env.PG_HOST) {
     console.error('PG_HOST is required');
     process.exit(2);
   }
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const fs = require('fs');
   const caPath = process.env.PG_SSL_CA_PATH;
-  const pool = new Pool({
+  const pool = (injectedPool as Pool) || new Pool({
     host: process.env.PG_HOST,
     port: Number(process.env.PG_PORT) || 5432,
     user: process.env.PG_USER,
@@ -440,7 +452,8 @@ async function main(): Promise<void> {
     console.error('backfill failed:', (error as Error).message);
     process.exitCode = 1;
   } finally {
-    await pool.end();
+    // Only a pool this function built is a pool this function may close.
+    if (!injectedPool) await pool.end();
   }
 }
 

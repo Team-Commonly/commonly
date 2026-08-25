@@ -120,6 +120,15 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     // unreachable — the mutant that stayed green here. Assert no control-flow
     // break separates them.
     expect(SCRIPT.slice(update, insert)).not.toMatch(/\breturn\b|\bthrow\b|process\.exit/);
+    // Residue, stated so this is not read as reachability: a token scan over a
+    // source slice catches the mutants that INSERT a control-flow keyword and
+    // is blind to every mutant that removes reachability without one — an
+    // `if (false)` around the block, a condition edited to never hold. It is
+    // also false-red-prone: extract a helper between these two anchors and its
+    // `return` fails this. The ledger-first half is now executed instead
+    // (threadingCutoffLedgerFirst.test.js); this transaction half is not,
+    // because reaching the APPLY path needs the argv flags and a seeded
+    // messages population. Keep the text guard until that exists.
     expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
     expect(SCRIPT).toMatch(/client\.release\(\)/);
   });
