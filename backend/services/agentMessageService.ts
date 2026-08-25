@@ -948,6 +948,17 @@ class AgentMessageService {
     // community agent fails quietly rather than flooding chat.
     // WHY the content emptied, kept because the empty path below cannot
     // otherwise tell a failure from a decision. Both arrive as `''`.
+    //
+    // Read alongside the phantom-upload guard ~160 lines down, which faces the
+    // same question and answers it the other way: it appends a VISIBLE system
+    // note to the message and warns, so the pod and the operator both learn.
+    // This pair warns only. The asymmetry is defensible and is NOT a bug to
+    // "fix" by symmetry — that guard has a message to annotate, and this one
+    // would have to manufacture a post, which is the ~30-minute-per-pod flood
+    // the suppression exists to stop. What was never defensible was the two
+    // guards being written independently in one function with nothing pointing
+    // at each other, so the second author could not see the first had already
+    // decided who hears a failure. (@sprint-review, 2026-08-25.)
     let suppressedFailure: 'model_failure' | 'tool_failure' | null = null;
 
     if (sanitizedContent && AgentMessageService.isRuntimeModelFailure(sanitizedContent)) {
@@ -1116,6 +1127,10 @@ class AgentMessageService {
             if (phantoms.length > 0) {
               const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
               sanitizedContent += `\n\n⚠️ _(system note: this message references ${phantoms.length === 1 ? 'an upload directive' : 'upload directives'} for ${phantomList} but no matching attachment was found in this pod. The agent may have typed the directive without actually calling \`commonly_attach_file\`. Check the agent's workspace.)_`;
+              // Both audiences on purpose: the note tells the pod, the warn
+              // tells the operator. The runtime-failure suppression at the top
+              // of this function deliberately does only the second — see the
+              // note there for why the two differ and why that is not drift.
               console.warn(`[agent-msg] phantom-upload-directive from agent=${agentName} instance=${instanceId} pod=${podId} — names=${JSON.stringify(phantoms)}`);
             }
           }
