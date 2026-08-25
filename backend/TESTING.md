@@ -138,6 +138,32 @@ breaks, so the whole chain resolves onto it even fully upgraded. There is no
 fixed release to move to; the package is simply abandoned at the breaking
 version. Don't spend an afternoon on `npm update`.
 
+**Abandoned is not unfixable, though** (@sprint-review). "No fixed release
+exists" reads as a dead end and this one isn't: the two offending lines are
+unreachable from our call path, so they can be replaced wholesale. `jwa`
+imports the package at `index.js:1` and uses it in exactly one place —
+`index.js:141`, the plain `bufferEqual(a, b)` comparison — and `.install()` /
+`.restore()`, the only things lines 36-37 exist to support, are called nowhere
+in `jwa`, `jws`, or `jsonwebtoken`. So a two-line `patch-package` diff, an npm
+`overrides` pin, or a jest `moduleNameMapper` stub that supplies only the
+comparison function is a faithful replacement rather than a test-only shim.
+Note that is a stub of the *leaf*, not of `jsonwebtoken` — the caution below
+about stubbing `jsonwebtoken` doesn't apply, because real signing and verifying
+still run against a real comparison.
+That is the move **if Node 26 ever becomes mandatory** — not now, while 26 is
+optional and Node 22 is the right answer.
+
+Note the remedy has to intercept the `require`. Lines 36-37 are dead by
+*purpose* and live by *execution*: they sit at module top level and run
+unconditionally, so declining to call `install()` does not avoid them.
+
+The leaf is also the tree's only casualty. Sixteen packages under
+`backend/node_modules` mention `SlowBuffer`; the six that could plausibly touch
+it at runtime — `safe-buffer`, `safer-buffer`, `object-hash`, `iconv-lite`,
+`string_decoder`, `readable-stream` — all `require` clean on 26 (they guard the
+reference). The rest are type declarations, browser bundles, and changelogs.
+One patch covers the whole backend.
+
 Fix: run on the version CI uses. `tests.yml` pins **Node 22**.
 
 ```bash
