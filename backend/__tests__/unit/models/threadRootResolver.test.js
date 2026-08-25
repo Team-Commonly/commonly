@@ -9,7 +9,7 @@
  * what the reconciliation DOES with two possibly-disagreeing inputs.
  */
 const { newDb } = require('pg-mem');
-const { createTableFor, applyTable } = require('../../utils/schemaTable');
+const { applyTable } = require('../../utils/schemaTable');
 
 const mockDb = newDb();
 const mockPool = new (mockDb.adapters.createPg().Pool)();
@@ -30,9 +30,12 @@ const msg = async (id, podId, rootId = null, replyTo = null) => {
 };
 
 beforeAll(async () => {
-  await mockPool.query(createTableFor('pods'));
-  // applyTable, not createTableFor: `payload` and `thread_root_id` are added
-  // by ALTER, so the CREATE alone is not the table this code talks to.
+  // applyTable everywhere. `pods` has no ALTER retrofits TODAY, which is the
+  // only reason the bare CREATE was ever correct here — a property of this
+  // week's schema, not of this table. `payload` and `thread_root_id` are added
+  // to `messages` by ALTER, so the CREATE alone is not the table this code
+  // talks to; the next column added to `pods` makes that true of `pods` too.
+  await applyTable(mockPool, 'pods');
   await applyTable(mockPool, 'users');   // findById LEFT JOINs it
   await applyTable(mockPool, 'messages');
   for (const p of [POD, OTHER]) {

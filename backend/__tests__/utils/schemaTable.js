@@ -11,6 +11,14 @@
  * Using this instead means a constraint dropped from schema.sql breaks the
  * tests that depend on it, which is the only arrangement where the test is
  * evidence about production.
+ *
+ * The rule the whole module exists to enforce: **a fixture built from part of
+ * the schema is a different schema.** It is the same family as pg-mem
+ * accepting a self-referential `ON DELETE CASCADE` and then not performing it
+ * (#1207) — in both cases the suite is green, the green means less than it
+ * looks, and the gap stays invisible until one specific column or constraint
+ * is exercised. Build the whole table, or the test is evidence about a
+ * database nobody ships.
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +30,13 @@ const SCHEMA_PATH = path.join(__dirname, '../../config/schema.sql');
  * Throws if absent — a silently-missing table would show up as a confusing
  * "relation does not exist" much later, which is the failure mode this whole
  * exercise is about.
+ *
+ * NOT EXPORTED, deliberately. A table with retrofits is never correctly built
+ * from this alone, so the pool-taking `applyTable` is the only thing a fixture
+ * can reach. The doc comment below said as much and four suites used it wrong
+ * anyway — @sprint-review's read: that is a signature problem, not a
+ * documentation problem, and a warning you have to obey is weaker than an
+ * export you cannot misuse.
  */
 function createTableFor(name) {
   const sql = fs.readFileSync(SCHEMA_PATH, 'utf8');
@@ -58,8 +73,12 @@ function retrofitsFor(name) {
  * one of them exercised a projection that selects it, which is a long way
  * from the line that would have to change.
  *
- * `createTableFor` stays exported because `retrofitsFor` and the guard tests
- * need to read the two halves separately. It is not the table.
+ * This is now the only way in. An earlier draft of this comment kept
+ * `createTableFor` exported "because `retrofitsFor` and the guard tests need
+ * to read the two halves separately" — both consumers were phantom.
+ * `retrofitsFor` is a sibling in this file and never calls it, and no guard
+ * test imports this module at all (`git grep schemaTable` was the whole
+ * check). Checklist rule 7, inside the PR fixing the class it names.
  */
 async function applyTable(pool, name) {
   await pool.query(createTableFor(name));
@@ -69,4 +88,4 @@ async function applyTable(pool, name) {
   }
 }
 
-module.exports = { createTableFor, retrofitsFor, applyTable, SCHEMA_PATH };
+module.exports = { retrofitsFor, applyTable, SCHEMA_PATH };
