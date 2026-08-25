@@ -223,6 +223,16 @@ describe('the pre-cutoff expanded default reaches the client', () => {
     // rule. It asserts the ABSENCE of code, which no execution can demonstrate:
     // a dead branch that never runs is invisible to a behavioural test and
     // still there for the next reader to revive.
+    //
+    // CONTROL: "matches nothing" has two causes, and only one of them is
+    // already closed here. An empty haystack cannot happen — `read()` is an
+    // unguarded `readFileSync`, so a bad path throws rather than yielding ''.
+    // A wrong needle is not covered by that: a typo'd identifier matches
+    // nothing against a file where the code is sitting in plain sight. So
+    // match a backfill-related identifier that IS present, chosen because it
+    // shares the substring — if this line goes red the probe below is reading
+    // something other than the controller, and its silence means nothing.
+    expect(CONTROLLER_SRC).toMatch(/THREADING_BACKFILL_MIGRATION/);
     expect(CONTROLLER_SRC).not.toMatch(/backfillPending/);
   });
 });
