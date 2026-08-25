@@ -630,6 +630,43 @@ describe('deliverChatReply', () => {
     expect(post.mock.calls.filter((c) => c[1].content === 'y'.repeat(350)).length).toBe(6);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('cannot root the thread'));
   });
+
+  // The two tests above both fail at the ROOT-ID step, before a single
+  // continuation has posted. That is why a boolean `headlinePosted` passed
+  // them: at that instant "something posted" and "one thing posted" are the
+  // same statement. They stop being the same the moment a continuation
+  // succeeds and a later one throws.
+  test('a continuation that fails PART WAY resumes from there — no chunk posted twice', async () => {
+    const chunks = Array.from({ length: 6 }, (_, i) => `${'z'.repeat(340)}${i}`);
+    const text = chunks.join('\n\n');
+    let n = 0;
+    const post = jest.fn().mockImplementation(async () => {
+      n += 1;
+      // 1 = headline, 2 and 3 = continuations that land in the thread,
+      // 4 = the one that dies. Chunks 1 and 2 are already in the room.
+      if (n === 4) throw new Error('upstream 503');
+      return { message: { id: 'root-1' } };
+    });
+    const log = jest.fn();
+    const res = await deliverChatReply({
+      client: { post, upload: jest.fn() }, podId: 'pod-1', text, log,
+    });
+
+    expect(res.mode).toBe('thread-fallback');
+    // The whole reply arrives, and NOTHING arrives twice. With the boolean,
+    // chunks 1 and 2 were re-posted top-level and this count read 9.
+    expect(post).toHaveBeenCalledTimes(chunks.length + 1); // +1 for the throw
+    const delivered = post.mock.calls
+      .map((c) => c[1].content)
+      .filter((_, i) => i !== 3); // the call that threw delivered nothing
+    expect(delivered).toEqual(chunks);
+    for (const chunk of chunks) {
+      expect(delivered.filter((c) => c === chunk)).toHaveLength(1);
+    }
+    // The resumed chunks go top-level — that is the fallback, not a regression.
+    expect(post.mock.calls.slice(4).every((c) => c[1].threadRootId === undefined)).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('posting the remainder top-level'));
+  });
 });
 
 describe('createClaimHandicap', () => {

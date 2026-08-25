@@ -603,14 +603,19 @@ export const deliverChatReply = async ({
   // PROSE OVERFLOW → THREAD. Only when nothing is indivisibly oversize: a
   // fence too big to split is a document and belongs in the attach rung below.
   if (!hasIndivisibleOversize) {
-    // Tracked because the recovery depends on it, and getting this wrong is
-    // silent: the attach rung leads with `chunks[0]` too, so falling through
-    // after a successful headline post duplicates the opening line in the
-    // room. Two of this suite's existing tests caught exactly that.
-    let headlinePosted = false;
+    // A COUNT, not a flag. The recovery below resumes from here, and a boolean
+    // can only distinguish "nothing posted" from "something posted" — it cannot
+    // say how much. Fail a continuation at chunk 3 with a boolean and chunks 1
+    // and 2 are already in the thread, then get posted again top-level; the
+    // reader sees them twice. Getting this wrong is silent, which is also why
+    // the attach rung below leads with `chunks[0]`: falling through after a
+    // successful headline duplicates the opening line. Two of this suite's
+    // existing tests caught that one, and none caught this one, because both
+    // fail at the root-id step before any continuation has posted.
+    let posted = 0;
     try {
       const rootRes = await client.post(messagesPath, { content: chunks[0] });
-      headlinePosted = true;
+      posted = 1;
       // The runtime route answers `res.json(result)` with the created row on
       // `result.message`. Accept either id field; refuse to guess if neither
       // is present, because a continuation posted with a missing root would
@@ -621,17 +626,18 @@ export const deliverChatReply = async ({
       for (const chunk of chunks.slice(1)) {
         // eslint-disable-next-line no-await-in-loop
         await client.post(messagesPath, { content: chunk, threadRootId: String(rootId) });
+        posted += 1;
       }
       return { mode: 'thread', messages: chunks.length, threadRootId: String(rootId) };
     } catch (err) {
-      if (headlinePosted) {
+      if (posted > 0) {
         // The opening is already in the room. Post the REMAINDER top-level —
         // never the whole text again. This is the old flood, minus the
         // duplicate, and it is still preferable to attaching: content ranks
         // above tone, and the reader would otherwise see the same paragraph
         // twice with the rest hidden in a file.
         log(`thread continuation failed (${err.message}) — posting the remainder top-level`);
-        for (const chunk of chunks.slice(1)) {
+        for (const chunk of chunks.slice(posted)) {
           // eslint-disable-next-line no-await-in-loop
           await client.post(messagesPath, { content: chunk });
         }
