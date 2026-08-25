@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented, and the amendment says so in place.
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold. The amendment says so in place.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -202,6 +202,48 @@ live; **guard 2, convergence, is not implemented.** Until it is, the loop bound
 is the dampener alone, and the claim-standdown behaviour is improved by
 evidence rather than fixed by addressing. Do not read this decision as
 describing production.
+
+**Why guard 2 is not implemented, measured 2026-08-25 rather than assumed.** It
+is not merely unbuilt — it is specified against a signal that is **not
+recorded**, so the obvious implementation is a query that always returns zero:
+
+- A total-match `NO_REPLY` never becomes a row. `agentMessageService.ts:1124`
+  takes the `!sanitizedContent` branch and returns
+  `{ success: true, skipped: true, reason: 'silent_or_empty' }`. "Two
+  consecutive silent turns" leaves nothing in the message store to count.
+- The only durable trace of a silent turn is a `system_exchanges` entry, and it
+  is written **only in `agent-dm` pods** (ADR-012 §4's agent-dm-conclusion
+  trigger, fired from that same branch). Guard 2 is about threads in ordinary
+  pods, which record nothing.
+- Neither layer knows the thread. `postMessage` never learns one — a seat that
+  posts nothing has no `threadRootId` to attribute — and `AgentEvent` has no
+  thread column at all (`models/AgentEvent.ts:79`, `payload` is
+  `Schema.Types.Mixed`), so a thread id inside the payload is unqueryable
+  without a migration.
+
+A `countDocuments` over silent turns therefore returns `0`, and a converged
+exchange is indistinguishable from an exchange the instrument cannot see.
+
+**So guard 2 belongs in the ack path, not in the mention fan-out.** A wake
+already knows its thread at enqueue (`agentMentionService.ts:1145-1156`, where
+`narrowToThread` runs). A seat that acks a thread-scoped wake and posts nothing
+into that thread **is** the convergence event, keyed by `(seat, thread)` at the
+one moment both are in hand. That reframes guard 2 as a kernel change to event
+acknowledgement rather than a filter added next to guard 1.
+
+**And it must state its own failure direction rather than inherit guard 1's.**
+Guard 1 fails open because dropping a possibly-genuine wake is the worse error.
+Guard 2 failing open risks an unbounded bot-to-bot reply chain — the loop the
+species gate existed to prevent. They fail open toward opposite harms, so
+copying guard 1's shape would import an answer that was reasoned for a
+different question.
+
+Two things this does **not** settle, named so that ratifying the direction
+cannot be read as deciding them: whether `system_exchanges` should be widened
+beyond `agent-dm` pods as a cheaper signal than an ack-path change (it stores a
+*takeaway*, not a turn count, so it may be the wrong shape); and whether **two**
+consecutive silences is the right threshold — a guess with a rationale, in the
+same sense D4's 90s lease is, and unmeasured for the same reason.
 
 **Cost, recorded because it is the reason for the staging.** Widening
 addressed-event semantics re-prices every producer of a reply: each becomes a
