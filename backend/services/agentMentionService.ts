@@ -1131,7 +1131,8 @@ const enqueueWakeOnMessage = async ({
   // sites in `agentsRuntime`, but the HUMAN installer in `podController`,
   // `authController`, `personaHireService`, `podCurationService`,
   // `agentProfile`, `registry/install`, `registry/admin`, `dmService`
-  // (twice) — and in THIS file, at the auto-install inside
+  // (twice), `approvalActionService` (twice, via `$setOnInsert` of the
+  // stored `ownerUserId`) — and in THIS file, at the auto-install inside
   // `resolveMentionTarget`, which writes `senderUserId`. `AgentRun.ts` calls
   // the field "the hiring user" outright. The schema declares a bare
   // ObjectId with no ref, so nothing at the type level distinguishes them.
@@ -1139,12 +1140,15 @@ const enqueueWakeOnMessage = async ({
   // No line numbers and no total, deliberately, per the rule #1165 earned:
   // cite by symbol, never by a position the next edit rewrites silently. An
   // earlier draft of this comment listed five human-side sites as though
-  // that were the set; there are at least ten, and @sprint-review's recount
-  // (57771) found the gap only because the number had been frozen into
-  // prose. `grep -rn 'installedBy:' backend | grep -v __tests__` is the
+  // that were the set; the enumeration above reaches twelve and is still a
+  // floor, not a census. @sprint-review's recount (57771) found the gap only
+  // because the number had been frozen into prose. `grep -rn 'installedBy:' backend | grep -v __tests__` is the
   // reader that stays correct — note it also returns queries
-  // (`agentMemoryView`, `approvalActionService`) and propagations of an
-  // existing value, which are not writes of an identity.
+  // (`agentMemoryView`, `users`, `registry/install`'s `$ne` filter) and
+  // propagations of an existing value (`registry/provision`,
+  // `stalledConnectService`, `registry/helpers`), neither of which writes an
+  // identity. `approvalActionService` does BOTH, which is why an earlier
+  // draft of this line filed it under queries alone.
   //
   // Keying on it would have read a human-installed agent's thread state off
   // its INSTALLER's row: the human's mute would silence the agent, and the
