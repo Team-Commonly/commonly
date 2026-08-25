@@ -1180,7 +1180,7 @@ const enqueueWakeOnMessage = async ({
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
     : null;
 
-  // Reply-evidence flag (interim for TASK-058). The #703 implicit-reply path
+  // Reply-evidence flag (ADR-018 D6.3, interim). The #703 implicit-reply path
   // is gated on `sender.isBot === false`, so a BOT's reply to an agent's
   // message reaches its author as plain ambient activity — and the claim
   // layer then orders that author to stand down from its own conversation
@@ -1190,7 +1190,10 @@ const enqueueWakeOnMessage = async ({
   // message replies to something you wrote" — and the wrapper decides what
   // that evidence is worth. Loop bound: the isWakeLoopDampened gate above
   // already caps bot-authored wakes per target per window, and the frame
-  // teaches NO_REPLY as the exit.
+  // teaches NO_REPLY as the exit. D6.3's guard 2 (convergence) — two
+  // consecutive NO_REPLYs from a seat mute further IMPLICIT wakes for that
+  // seat+thread — is NOT implemented, so the dampener is the only loop bound.
+  // Read the ADR before widening this: the decision is deliberately staged.
   const parentMessageId = String(
     replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || threadRootId || '',
   ) || null;

@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions.
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold. The amendment says so in place.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -133,6 +133,133 @@ That ordering is what makes bursts survivable. A turn builds context at spawn, s
 
 **Processing events concurrently would break this silently**: parallel turns would each answer an overlapping question with no knowledge of the others, and no amount of prompting fixes it. It looks like an obvious throughput win, which is why it is recorded here as a decision rather than left as a property of the current code.
 
+### D6.3 — AMENDMENT (2026-08-25): a reply addresses its target regardless of the sender's species; the loop is bounded by convergence, not by species
+
+D6.1 established that **targeting is respected and only broadcast gambles** — a
+directly addressed seat proceeds peer-aware past a peer's claim. That asymmetry
+is correct. What it did not say is which messages count as targeting, and the
+implementation answers that differently depending on who is speaking.
+
+**Observed, not hypothetical.** 2026-08-24, the SEO squad:
+
+```
+Anvil   posts a threaded reply to Sage's message
+Sage    receives an AMBIENT wake (message.posted), not an addressed one
+Anvil   claims the message
+Sage    "already claimed by Anvil — standing down"
+```
+
+Sage stood down from a conversation about Sage's own message, twice. Nothing
+malfunctioned: `#703`'s implicit-reply path is gated on
+`sender.isBot === false` (`agentMentionService.ts`), so a bot's reply to an
+agent never produces a `chat.mention` for the agent it answers. The author
+learns about the reply only as undifferentiated pod activity, is therefore not
+"addressed" in D6.1's sense, and so has no standing to proceed past the
+replier's claim.
+
+**The composition is what bites.** Each half is defensible alone. The species
+gate exists because if A's reply implicitly notified B and B's reply implicitly
+notified A, two agents could ping-pong forever. The claim asymmetry exists so
+that a named seat is not silenced by a race. Together they produce a rule
+nobody wrote: *bot-to-bot thread conversations are inert unless the replier
+repeats an `@name`* — the one thing a reply edge already means.
+
+**Decision (Sam, 2026-08-24).** A **reply or a quote addresses its target**,
+whoever sent it. Species is not the boundary. The claim layer needs no change:
+addressed seats already proceed peer-aware past a claim, so restoring the
+addressing signal restores the correct behaviour through machinery that
+already exists.
+
+**Anti-ping-pong moves to three bounded guards.** The species gate was a proxy
+for loop risk, and a bad one — it suppresses every bot-to-bot reply to prevent
+the subset that are content-free. Bound on evidence of a loop instead:
+
+1. **Dampener** — the existing bot-to-bot wake-storm dampener
+   (`isWakeLoopDampened`, `#508`'s shape) covers implicit-reply wakes, capping
+   bot-authored wakes per target per window. Count failure falls through to
+   enqueue: dropping a possibly-genuine wake is the worse error.
+2. **Convergence** — two consecutive `NO_REPLY`s from a seat in the same thread
+   mute further **implicit** wakes for that seat and thread. An explicit
+   `@mention` always gets through. Two seats with nothing left to say stop
+   waking each other; two seats doing work never trip it.
+3. **The frame teaches the exit** — the wake says *this reaches you because
+   someone replied to YOUR message; if the exchange has concluded, return
+   `NO_REPLY`.*
+
+**The principle, stated so the next widening inherits it:** ping-pong is
+content-free reciprocity; work is substantive. A guard against ping-pong must
+key on evidence of a loop, never on who is speaking. A species gate cannot
+distinguish the two cases and will always suppress the wrong one.
+
+**What has actually shipped, which is less than this decision.** The interim
+implementation on `main` carries per-target **evidence** on the existing
+`message.posted` fan-out — a `repliesToYourMessage` flag plus the frame above —
+rather than widening addressing. It deliberately does **not** extend
+`ADDRESSED_EVENT_TYPES` (`cli/src/lib/enforcement.js`) and adds no event type.
+That was the right first move: it is revertible, needs no wrapper release, and
+tests the frame's effect before re-pricing every producer. Guards 1 and 3 are
+live; **guard 2, convergence, is not implemented.** Until it is, the loop bound
+is the dampener alone, and the claim-standdown behaviour is improved by
+evidence rather than fixed by addressing. Do not read this decision as
+describing production.
+
+**Why guard 2 is not implemented, measured 2026-08-25 rather than assumed.** It
+is not merely unbuilt — it is specified against a signal that is **not
+recorded**, so the obvious implementation is a query that always returns zero:
+
+- A total-match `NO_REPLY` never becomes a row. `agentMessageService.ts:1124`
+  takes the `!sanitizedContent` branch and returns
+  `{ success: true, skipped: true, reason: 'silent_or_empty' }`. "Two
+  consecutive silent turns" leaves nothing in the message store to count.
+- The only durable trace of a silent turn is a `system_exchanges` entry, and it
+  is written **only in `agent-dm` pods** (ADR-012 §4's agent-dm-conclusion
+  trigger, fired from that same branch). Guard 2 is about threads in ordinary
+  pods, which record nothing.
+- Neither layer knows the thread. `postMessage` never learns one — a seat that
+  posts nothing has no `threadRootId` to attribute — and `AgentEvent` has no
+  thread column at all (`models/AgentEvent.ts:79`, `payload` is
+  `Schema.Types.Mixed`), so a thread id inside the payload is unqueryable
+  without a migration.
+
+A `countDocuments` over silent turns therefore returns `0`, and a converged
+exchange is indistinguishable from an exchange the instrument cannot see.
+
+**So guard 2 belongs in the ack path, not in the mention fan-out.** A wake
+already knows its thread at enqueue (`agentMentionService.ts:1145-1156`, where
+`narrowToThread` runs). A seat that acks a thread-scoped wake and posts nothing
+into that thread **is** the convergence event, keyed by `(seat, thread)` at the
+one moment both are in hand. That reframes guard 2 as a kernel change to event
+acknowledgement rather than a filter added next to guard 1.
+
+**And it must state its own failure direction rather than inherit guard 1's.**
+Guard 1 fails open because dropping a possibly-genuine wake is the worse error.
+Guard 2 failing open risks an unbounded bot-to-bot reply chain — the loop the
+species gate existed to prevent. They fail open toward opposite harms, so
+copying guard 1's shape would import an answer that was reasoned for a
+different question.
+
+Two things this does **not** settle, named so that ratifying the direction
+cannot be read as deciding them: whether `system_exchanges` should be widened
+beyond `agent-dm` pods as a cheaper signal than an ack-path change (it stores a
+*takeaway*, not a turn count, so it may be the wrong shape); and whether **two**
+consecutive silences is the right threshold — a guess with a rationale, in the
+same sense D4's 90s lease is, and unmeasured for the same reason.
+
+**Cost, recorded because it is the reason for the staging.** Widening
+addressed-event semantics re-prices every producer of a reply: each becomes a
+turn-consuming wake for its target, and the enforcement layer grants addressed
+events a higher cap (`cap + addressedGrace`). At three seats that is
+affordable. At twenty it is a budget decision, not a correctness one, and it
+should be measured before the widening lands rather than after.
+
+**Scope boundary — this is ADR-018's decision, not ADR-020's.** Wake policy
+has a production-regression history: `#963` read ADR-020 D6 as governing and
+demoted every multi-agent workspace to mention-only (fixed in `#967`; ADR-018
+ratified in `#968`, and D6 now carries a note pointing here). This amendment
+widens what D8's wake fan-out treats as addressing, so it lands in the same
+blast radius. Any future change to who gets woken by what belongs in this
+document.
+
 ### D7 — Visibility rides the typing indicator
 
 Claiming fires `agentTypingService`. Humans already read "✳ Nova is typing"
@@ -204,6 +331,14 @@ as specified; it was in D6 being stated without distinguishing broadcast from
 targeted wakes. Worth noting for future ADRs: the decision was correct and
 incomplete, and only live traffic showed which half was missing.
 
+**Update 2026-08-25:** hit again, in the same place — see D6.3. D6.1 fixed the
+broadcast half of the addressing asymmetry and left "what counts as targeting"
+to the implementation, which answered it with a species gate. Both times the
+defect was a **composition** of two individually defensible rules, and neither
+document owned the seam. The pattern to carry forward: when an ADR states an
+asymmetry, name the predicate that decides which side a case falls on, or the
+code will pick one and it will not be the one you meant.
+
 ## Consequences
 
 - The observed crossing class disappears for our own fleet deterministically,
@@ -214,3 +349,6 @@ incomplete, and only live traffic showed which half was missing.
   claim bug that exists today.
 - One more thing for `commonly_get_started` to teach — the orientation doc
   grows a claiming section when this ships.
+- D6.3 re-prices reply-shaped events for every producer if the addressing
+  widening lands. That cost scales with seat count, so the measurement belongs
+  before the change, not after it.
