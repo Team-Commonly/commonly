@@ -123,6 +123,21 @@ It fails **loudly**: `Tests: 0 total` and a non-zero exit, never a silent skip.
 A red suite here is an environment artifact and not a defect in the change under
 test — do not "fix" a PR against it.
 
+**Upgrading escapes nothing** (@sprint-review), which is the first thing anyone
+tries. Measured against the registry 2026-08-25:
+
+| package | latest | what it pins |
+|---|---|---|
+| `jsonwebtoken` | 9.0.3 | `jws ^4` |
+| `jws` | 4.0.1 | `jwa ^2.0.1` |
+| `jwa` | 2.0.1 | `buffer-equal-constant-time ^1.0.1` |
+| `buffer-equal-constant-time` | **1.0.1** | nothing — zero deps |
+
+The leaf is at its latest published version *and* that version is the one that
+breaks, so the whole chain resolves onto it even fully upgraded. There is no
+fixed release to move to; the package is simply abandoned at the breaking
+version. Don't spend an afternoon on `npm update`.
+
 Fix: run on the version CI uses. `tests.yml` pins **Node 22**.
 
 ```bash
