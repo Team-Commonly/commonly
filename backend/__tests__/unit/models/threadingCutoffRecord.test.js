@@ -127,15 +127,26 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     // unreachable — the mutant that stayed green here. Assert no control-flow
     // break separates them.
     expect(SCRIPT.slice(update, insert)).not.toMatch(/\breturn\b|\bthrow\b|process\.exit/);
-    // Residue, and @sprint-review measured it rather than leaving it predicted:
-    // gating the ledger INSERT on a never-true condition leaves every anchor
-    // above in place and this whole file green at 38/38, while the run leaves
-    // every chain rooted and no cutoff recorded — verbatim the harm the
-    // comment at the top of this test names. A token scan catches mutants that
-    // INSERT a control-flow keyword and is blind to every mutant that removes
-    // reachability without one. It is also false-red-prone in the other
-    // direction: extract a helper between these two anchors and its `return`
-    // fails this.
+    // MEASURED, not predicted (@sprint-review, 2026-08-25): this test is blind
+    // to THE defect it was written for. Gate the ledger INSERT on a never-true
+    // condition and every anchor above stays in place, this file reports 38/38
+    // green, and the run leaves every chain rooted with no cutoff recorded —
+    // which is word for word the harm named four lines up. Not "blind to a
+    // class of mutants": blind to the one.
+    //
+    // The class is the generalisation, and it is the weaker sentence, so it
+    // goes second. A token scan catches mutants that INSERT a control-flow
+    // keyword and misses every mutant that removes reachability without one.
+    // It is false-red-prone in the other direction too: extract a helper
+    // between these two anchors and its `return` fails this.
+    //
+    // The anchors themselves are sound and were checked — `UPDATE messages m`
+    // is unique, and `lastIndexOf` is the correct pick for the INSERT because
+    // the zero-eligible-edges branch above contains a second
+    // `INSERT INTO migration_records` that `indexOf` would grab instead. So
+    // this guard is as good as a source scan can be here; the limit is the
+    // instrument, not the anchors, which is exactly why the property moved to
+    // a tier that runs the code.
     //
     // Both halves are now executed elsewhere, and this stays as the cheap
     // structural check only:
