@@ -127,15 +127,22 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     // unreachable — the mutant that stayed green here. Assert no control-flow
     // break separates them.
     expect(SCRIPT.slice(update, insert)).not.toMatch(/\breturn\b|\bthrow\b|process\.exit/);
-    // Residue, stated so this is not read as reachability: a token scan over a
-    // source slice catches the mutants that INSERT a control-flow keyword and
-    // is blind to every mutant that removes reachability without one — an
-    // `if (false)` around the block, a condition edited to never hold. It is
-    // also false-red-prone: extract a helper between these two anchors and its
-    // `return` fails this. The ledger-first half is now executed instead
-    // (threadingCutoffLedgerFirst.test.js); this transaction half is not,
-    // because reaching the APPLY path needs the argv flags and a seeded
-    // messages population. Keep the text guard until that exists.
+    // Residue, and @sprint-review measured it rather than leaving it predicted:
+    // gating the ledger INSERT on a never-true condition leaves every anchor
+    // above in place and this whole file green at 38/38, while the run leaves
+    // every chain rooted and no cutoff recorded — verbatim the harm the
+    // comment at the top of this test names. A token scan catches mutants that
+    // INSERT a control-flow keyword and is blind to every mutant that removes
+    // reachability without one. It is also false-red-prone in the other
+    // direction: extract a helper between these two anchors and its `return`
+    // fails this.
+    //
+    // Both halves are now executed elsewhere, and this stays as the cheap
+    // structural check only:
+    //   ledger-first  -> threadingCutoffLedgerFirst.test.js (Tier 0, pg-mem)
+    //   atomicity     -> service/threading.backfillTransaction.test.js (Tier 1)
+    // Atomicity had to go to Tier 1 because pg-mem cannot parse the backfill's
+    // `WITH RECURSIVE`, which threading.derivation.test.js already records.
     expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
     expect(SCRIPT).toMatch(/client\.release\(\)/);
   });
