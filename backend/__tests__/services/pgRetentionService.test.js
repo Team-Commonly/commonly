@@ -213,6 +213,22 @@ describe('pgRetentionService.runMessageRetention', () => {
       detail: 'db down',
     }));
   });
+
+  it('leaves the run as running when recording a completed outcome fails', async () => {
+    mockSizeQueries([4, 4]);
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 5 });
+    PgRetentionRun.finish.mockRejectedValue(new Error('ledger update lost'));
+
+    await expect(runMessageRetention()).resolves.toBeUndefined();
+
+    // Do not retry with `failed`: the start record remains the honest durable
+    // signal that the run completed but its terminal outcome was not written.
+    expect(PgRetentionRun.finish.mock.calls.map(([, outcome]) => outcome.status)).toEqual(['completed']);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[pg-retention] could not persist run outcome:',
+      'ledger update lost',
+    );
+  });
   /*
    * The Pro tier's headline promise is "Unlimited message history — nothing
    * expires at 30 days". Until this landed, the cron deleted a paying
