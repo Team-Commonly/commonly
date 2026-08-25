@@ -495,7 +495,26 @@ const formatPodContextFrame = (podId: string): string =>
   `continue under your own root with threadRootId; attachments are for genuine artifacts ` +
   `(files, images, documents), never for the rest of your message. ` +
   `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
-  `?threadRootId=<id> to your messages read returns just that thread.]`;
+  `?threadRootId=<id> to your messages read returns just that thread. ` +
+  // The clauses above describe what each verb DOES. Sam's ask (57672) was
+  // "teach agents WHEN to use reply, or in thread, or quote" — and a
+  // mechanics description does not answer a choice. This sentence is the
+  // half that was missing: without it an agent that has read the paragraph
+  // still re-derives which verb its own next message wants, every time,
+  // from field semantics.
+  //
+  // Copy is @ux-lead's (57678), kept close to their phrasing on purpose. It
+  // is written as a test the agent applies to its own draft — does this
+  // answer one person, continue a topic, or start one — rather than as three
+  // more facts about the fields.
+  //
+  // Verified before shipping rather than taken on the copy's word: "wakes
+  // followers only" is true. threadWakeScopeService.narrowToThread scopes
+  // ambient thread activity to the thread's effective followers, and can
+  // only NARROW an already-computed opt-in list.
+  `Rule of thumb: if your message answers one person, reply; if it continues ` +
+  `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
+  `and still addresses its author.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per

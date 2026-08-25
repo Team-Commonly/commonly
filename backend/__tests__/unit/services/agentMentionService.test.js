@@ -705,6 +705,55 @@ describe('AgentMentionService', () => {
       expect(ev.payload.content).toContain('Hi @nova');
     });
 
+    // The three-verb cue has two halves and #1176 shipped only one.
+    //
+    // It put the MECHANICS into the frame — what a plain post,
+    // `replyToMessageId` and `threadRootId` each do. Sam's ask (57672) was
+    // narrower and different: teach agents *when* to use each. A description
+    // of three fields does not answer a choice, so an agent that read the
+    // paragraph still re-derived which verb its own next message wanted,
+    // every time.
+    //
+    // These pin the DECISION RULE, not the paragraph around it. The cue is
+    // delivered as one opaque string, so "the frame mentions threads" is not
+    // evidence the choosing half survived an edit — the mechanics clauses
+    // keep that assertion green by themselves. The third test is the control
+    // that proves these can tell the two halves apart.
+    describe('three-verb cue teaches choosing, not just mechanics', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-verbs-1',
+          message: { content: 'Hi @nova', id: 'msg-verbs-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('carries the decision rule for all three verbs', async () => {
+        const content = await frame();
+        expect(content).toContain('if your message answers one person, reply');
+        expect(content).toContain('if it continues a topic, thread');
+        expect(content).toContain('if it starts one, post');
+      });
+
+      test('says a reply inside a thread still addresses its author', async () => {
+        // Without this the rule reads as three mutually exclusive branches,
+        // and an agent concludes it must choose between quoting and
+        // threading. The two fields are independent.
+        expect(await frame()).toContain('A reply inside a thread is allowed and still addresses its author');
+      });
+
+      test('control: the mechanics half alone does not satisfy the assertions above', () => {
+        const mechanicsOnly = 'a plain post broadcasts to the channel; replyToMessageId quotes '
+          + 'and ADDRESSES a message — its author is pinged; threadRootId continues a thread '
+          + 'WITHOUT pinging anyone — followers see it, the channel stays uncluttered.';
+        expect(mechanicsOnly).not.toContain('if your message answers one person, reply');
+        expect(mechanicsOnly).not.toContain('if it starts one, post');
+      });
+    });
+
     // Author/age frame. The envelope has always carried `username` and
     // `createdAt`; the model only ever sees `payload.content`, so they
     // were invisible to their only reader (four sprint agents spent
