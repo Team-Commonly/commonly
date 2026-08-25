@@ -572,9 +572,24 @@ const formatPodContextFrame = (podId: string): string =>
   // SHOULD route is an open decision (TASK-070b) precisely because matching
   // names is fuzzy — every message about Sam is not for Sam — so the cue
   // must not imply that writing the name is enough.
+  //
+  // The handle is NECESSARY, not sufficient, and the cue has to say both or
+  // it installs a fresh false model in place of the old one (@sprint-review
+  // on #1244). Humans have no AgentEvent delivery row — `enqueueMentions`
+  // never enqueues for a person — so an @handle buys the `isMention` flag on
+  // the activity feed and nothing else. Even the thread-follow half is
+  // narrower than it reads: `resolveHumanMentionUserIds` is called only
+  // inside `if (threadRootId)` (:1743), so a plain channel post gets the flag
+  // alone. That surface is PULL — ADR-017's only-interrupter rule reserves
+  // push for the escalation envelope — so "I mentioned them" is never "they
+  // know", and an agent that stops there has blocked itself on a filter
+  // nobody may have opened.
   `When you need a HUMAN — a decision, a merge press, an answer only they ` +
-  `have — @mention their handle. A bare name notifies nobody: human attention ` +
-  `is matched on the literal @handle, so "Sam should decide this" reaches no one.]`;
+  `have — @mention their handle. A bare name reaches no one: human attention ` +
+  `is matched on the literal @handle, so "Sam should decide this" is addressed ` +
+  `to nobody. The handle is necessary and not sufficient — it flags the message ` +
+  `in a mentions filter the human pulls; nothing pushes. Say plainly what you ` +
+  `need, and never treat a mention as an answer received.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per

@@ -782,14 +782,26 @@ describe('AgentMentionService', () => {
         expect(await frame()).toContain('@mention their handle');
       });
 
-      test('states that a bare name notifies nobody', async () => {
+      test('states that a bare name reaches no one', async () => {
         // The failure is silent — nothing errors, the message posts, and no
         // attention routes — so the cue has to name the outcome, not just
         // prescribe the handle. Without this an agent reads the rule as a
         // style preference it may skip when the name reads more naturally.
         const content = await frame();
-        expect(content).toContain('A bare name notifies nobody');
+        expect(content).toContain('A bare name reaches no one');
         expect(content).toContain('matched on the literal @handle');
+      });
+
+      test('states the handle is necessary and not sufficient', async () => {
+        // Without this the cue teaches, by contrast with "reaches no one",
+        // that the handle DOES notify. It does not: humans get no AgentEvent
+        // row, so the ceiling is a pull surface. An agent that believes it
+        // has notified Sam stops working and waits — a new false model, and
+        // harder to spot than the old one because the message now looks
+        // correctly addressed.
+        const content = await frame();
+        expect(content).toContain('necessary and not sufficient');
+        expect(content).toContain('nothing pushes');
       });
 
       test('control: the pre-TASK-070 frame does not satisfy the assertions above', () => {
@@ -801,8 +813,10 @@ describe('AgentMentionService', () => {
           + 'replyToMessageId quotes and ADDRESSES a message — its author is pinged. '
           + 'Rule of thumb: if your message answers one person, reply.';
         expect(beforeTaskO70).not.toContain('@mention their handle');
-        expect(beforeTaskO70).not.toContain('A bare name notifies nobody');
+        expect(beforeTaskO70).not.toContain('A bare name reaches no one');
         expect(beforeTaskO70).not.toContain('matched on the literal @handle');
+        expect(beforeTaskO70).not.toContain('necessary and not sufficient');
+        expect(beforeTaskO70).not.toContain('nothing pushes');
       });
     });
 
