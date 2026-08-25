@@ -31,9 +31,11 @@ describe('handleMatcher escapes the handle', () => {
     expect(handleMatcher('a_b-c').test('aXbYc')).toBe(false);
   });
 
-  // The four below are unreachable through extractMentions today. Each one
+  // The five below are unreachable through extractMentions today. Each one
   // fails against the raw-interpolation form and passes against the escaped
   // one — they are the regression guard for the next time the class widens.
+  // (Counted, not eyeballed: reverting handleMatcher to the raw form fails
+  // exactly these five and leaves the three reachable-input cases above green.)
   it('treats a dot as a literal, not as any-character', () => {
     expect(handleMatcher('a.c').test('abc')).toBe(false);
     expect(handleMatcher('a.c').test('a.c')).toBe(true);
