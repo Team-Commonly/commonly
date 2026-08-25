@@ -19,18 +19,53 @@ which is, almost exactly, this feature. Nothing else in the taxonomy fits: it is
 not an Agent, a SlashCommand, an EventHandler, a ScheduledJob, a Webhook, or a
 DataSchema.
 
-But `Installable.ts` is explicitly *"pure scaffolding: schema + types + indexes.
-No services, routes, adapters."* There is no widget renderer, no widget route,
-no projection, and no surface that reads `components[].type === 'widget'`. And
-the Installable taxonomy refactor is **paused** under ADR-011, with a stated
-reactivation trigger that this task does not meet.
+`Widget` has no runtime: `widgetLocation` appears exactly twice on `main`
+(`8a674ac3`), both inside its own declaration in `Installable.ts` (`:173`,
+`:397`). There is no widget renderer, no widget route, no projection, and no
+surface that reads `components[].type === 'widget'`.
 
-So the real choice is not *"which component type"*. It is:
+> **Corrected 2026-08-25 by @sprint-review.** An earlier version of this
+> paragraph reached that conclusion from a false premise — it quoted the file's
+> own header, *"pure scaffolding: schema + types + indexes. No services,
+> routes, adapters,"* and inferred that nothing reads the file. Four things do,
+> one of them a live production route: `backend/routes/marketplace-api.ts`
+> (findOne / create / deleteOne), `backend/scripts/seed-native-agents.ts`, and
+> two test suites. **The render side is inert; the storage-and-publish side is
+> live and dual-writing against `AgentRegistry`.** I checked the surface the
+> feature would read from and treated its emptiness as a fact about the file.
+> The conclusion survives the correction; the reasoning did not.
+
+That distinction is load-bearing rather than pedantic, because **the write path
+for this exact feature is already reachable by untrusted input.** Marketplace
+publish destructures `components` straight from `req.body` (`marketplace-api.ts:111`),
+applies one check — `components.length > 50` (`:133`) — and persists it verbatim
+(`:250`). The schema enum-validates `type` (`'widget'` is accepted) and
+`widgetLocation`, but `widgetUrl` is a bare `{ type: String }` (`:401`): no
+scheme check, no origin allowlist, no length bound.
+
+So a publisher can persist `type: 'widget'`, `widgetLocation: 'message-inline'`,
+and an arbitrary `widgetUrl` today. Those rows are inert **only because no
+renderer exists to read them**, which inverts the natural build order: the
+instinct is renderer first and hardening second, but here every `widgetUrl`
+already in the catalog goes live the day a renderer ships. The validation has to
+land first and separately — and it is worth doing even if option B below wins
+and no renderer is ever built.
+
+The Installable taxonomy refactor is **paused** under ADR-011, with a stated
+reactivation trigger that this task does not meet. But that pause covers the
+read path only, so the choice below is not the clean either/or it looks like:
+the persistence layer is not paused, it is shipping, and a one-off still writes
+into the live schema.
 
 1. un-pause enough of ADR-001 to make `Widget` real, with this as its first
    consumer; or
 2. build a one-off pane that does not go through the taxonomy, and accept that
    the second widget will have to be migrated.
+
+**Open, and it decides whether the above is hypothetical or already-accrued:**
+whether any widget-typed component exists in the live catalog now. That needs a
+Mongo read neither @sprint-review nor I can run. Worth one query before Sam
+picks.
 
 (1) is the honest answer if widgets are coming anyway. (2) is defensible only
 if this is a single operator affordance that will never have siblings — and the
