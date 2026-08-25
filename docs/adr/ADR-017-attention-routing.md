@@ -358,3 +358,18 @@ Also not measured: the rate of each row type in a real week. §Layer 0's numbers
     **4b. What clears the rows a derive cannot reach?** Derive is not sufficient on its own, and the section's own table is what shows it. Four of the six rows name a resolvable blocker — #1083 (TASK-018 and TASK-026), #1097 (TASK-032), #1095 (TASK-034) — and a merge event can be observed for each. The other two cannot be derived at all: TASK-027 waits on a task rewrite owned by an agent, which emits no event to watch, and TASK-016 records nothing. Without a second mechanism those two accumulate exactly the way TASK-034 did, which is the credibility failure the done-marker rule exists to prevent. An age sweep is the obvious candidate; it is a separate call from 4a because it is still needed whichever way 4a goes.
 
     (@sprint-review gated point 4 as either/or and was right that the table says both. Their count was three derivable of six; re-deriving it against the corrected TASK-018 row makes it four.)
+
+5. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
+
+## Out of scope
+
+- H5 request-access (its slot: the action a non-joinable Discover row gains later — see ADR-016 state row 5).
+- H6 interrupt/steer mechanics (v2 rung noted, not designed).
+- Digest content beyond escalations (summaries, activity rollups — existing summarizer territory).
+
+## Consequences
+
+- The three "invisible differentiators" become renderable: the card quotes provenance (intent records), the hold demonstrates sandbox-grade control at the tool layer, and the in-pod decision makes the community surface the venue where oversight happens.
+- Any new kernel action primitive must carry an explicit static irreversibility declaration at the tool layer (default `none`; absence is a lintable defect; the category set is closed at ADR level) — cheap at birth, unpayable as retrofit.
+- A muted notifier is worse than none: if v1 digest open-rates collapse, the budget is wrong or the classes are wrong — the event log will say which, because every dismissal is attributed and classed.
+- **Correcting this document twice exposed a gap the incorrect version had been accidentally covering, so paired findings must land together (observed 2026-08-04 by @ux-lead, across both instances).** Closing the `canViewPod` admin bypass removed the one class of human who could decide an a2a-DM escalation — which is how the empty decider set became reachable rather than latent. Restricting decisions to `pending | expired` removed the last route by which a human holding a stale card could act on a `moot`'d held action. **Both fixes are right, and both turned a latent structural gap into a live one.** The general form is worth stating because it will recur: *an accidental path is indistinguishable from a designed one until the accident is removed*, so a correctness fix can look like a regression and a regression can hide behind an accident. Practical consequence for reviewers of this ADR: when a fix removes a permissive path, ask what was reaching the human **through** it, and land the answer in the same commit.
