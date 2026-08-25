@@ -2394,12 +2394,14 @@ considered and declined, or the next reader re-derives it.
 
 4. *The base branch predates the workflow fix* → the fix never applies. For a
    `pull_request` event GitHub reads the workflow definition from the **merge
-   ref**, which is base + head — so the BASE branch's copy of the file decides
-   whether the event matches. `#1123` dropped `branches: [main]` from
-   `tests.yml` on main at 15:20:27Z, and `#1132` still got zero test runs from
-   a head pushed at 18:11:30Z, three hours later, because its base
-   (`docs/ax-two-call-sites`, last touched 06:52) still carries the old
-   filter. Verified by reading `tests.yml` on that branch.
+   ref**, which is base + head — so when the head does not touch that workflow
+   file, the BASE branch's copy of it decides whether the event matches. A head
+   that edits the workflow itself contributes its version to the merge ref and
+   can fix its own triggering; that is not the case below. `#1123` dropped
+   `branches: [main]` from `tests.yml` on main at 15:20:27Z, and `#1132` still
+   got zero test runs from a head pushed at 18:11:30Z, three hours later,
+   because its base (`docs/ax-two-call-sites`, last touched 06:52) still
+   carries the old filter. Verified by reading `tests.yml` on that branch.
 
    Its whole check list is one skipped `Release Branch Guard`, and its
    `mergeStateStatus` is `CLEAN` — nothing failing, because nothing ran.
