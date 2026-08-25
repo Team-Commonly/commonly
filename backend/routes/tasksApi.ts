@@ -420,6 +420,17 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const now = new Date();
+    // Pre-read the current holder to classify this claim AFTER the CAS wins:
+    // a same-holder continuation (renewal, or re-take after the holder's own
+    // lapse) is no news to the room and must not fan out (the redundant wakes
+    // burned a model turn per seat per renewal and filled Sharpen with seats
+    // narrating why they won't act — measured 2026-08-25, 4 wakes in one
+    // session for one task). The read races the CAS by design: worst case is
+    // one wake mis-classified once, which beats a transaction on the hot path.
+    const preClaim = await Task.findOne({
+      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+      taskId,
+    }).select('claimedBy lapsedFrom').lean() as { claimedBy?: string | null; lapsedFrom?: string | null } | null;
     // `rescueDeferrals` and `lapsedFrom` reset on every claim (#1080 part 2/3).
     // The deferral budget is per-lease, not per-task: a seat that renews
     // normally must never inherit a predecessor's spent budget, or the third
@@ -449,7 +460,15 @@ router.post('/:podId/:taskId/claim', rateLimit({
       });
     }
     emitTaskUpdated(podId, task, 'updated');
-    notifyAgents(req, podId, task, 'updated');
+    // Same-holder continuation: the seat that already held (or just lapsed
+    // from) this task re-claimed it. The board UI still updates (socket emit
+    // above); the room is NOT woken — a lease timestamp is not an event.
+    // A fresh claim and a takeover both still fan out.
+    const isSameHolderContinuation = !!preClaim
+      && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
+    if (!isSameHolderContinuation) {
+      notifyAgents(req, podId, task, 'updated');
+    }
     return res.json({ task });
   } catch (err) {
     console.error('POST /tasks/claim error:', err);
