@@ -183,6 +183,13 @@ describe('run-cap guidance sends overflow to a thread, not a file', () => {
       expect(rendered()).toContain('a thread wakes only the people who have posted in it');
     });
 
+    test('does not promise the mention subscribes a peer who muted the thread', () => {
+      // @sprint-review (58348): the mention wakes a muted peer (addressing
+      // outranks a mute) but `followByParticipation` writes only WHERE
+      // following IS NULL, so nothing subscribes them to the remainder.
+      expect(rendered()).toContain('is still woken by the mention but is not subscribed by it');
+    });
+
     test('control: the unqualified refusal fails both assertions above', () => {
       const unqualified = 'continue it in a THREAD under your first message '
         + '(threadRootId = that message id) — not as a file; the cap still binds '

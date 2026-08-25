@@ -1410,6 +1410,8 @@ class AgentMessageService {
               + 'material is substantial, continue it in a THREAD under your first message '
               + '(threadRootId = that message id) — not as a file, and @mention whoever '
               + 'needs it, because a thread wakes only the people who have posted in it; '
+              + 'a peer who muted the thread is still woken by the mention but is not '
+              + 'subscribed by it; '
               + 'the cap still binds '
               + 'inside the thread, which is the point; (b) if it can wait, wait for '
               + 'someone else to speak; (c) if it was not worth saying, drop it. Attach a '
