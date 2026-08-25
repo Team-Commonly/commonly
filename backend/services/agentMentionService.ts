@@ -1190,9 +1190,9 @@ const enqueueWakeOnMessage = async ({
   // message replies to something you wrote" — and the wrapper decides what
   // that evidence is worth. Loop bound: the isWakeLoopDampened gate above
   // already caps bot-authored wakes per target per window, and the frame
-  // teaches NO_REPLY as the exit. D6.3's third guard — two consecutive
-  // NO_REPLYs from a seat mute further IMPLICIT wakes for that seat+thread —
-  // is NOT implemented, so the dampener is currently the only loop bound.
+  // teaches NO_REPLY as the exit. D6.3's guard 2 (convergence) — two
+  // consecutive NO_REPLYs from a seat mute further IMPLICIT wakes for that
+  // seat+thread — is NOT implemented, so the dampener is the only loop bound.
   // Read the ADR before widening this: the decision is deliberately staged.
   const parentMessageId = String(
     replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || threadRootId || '',
