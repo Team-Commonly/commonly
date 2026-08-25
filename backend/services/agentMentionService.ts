@@ -491,9 +491,31 @@ const formatPodContextFrame = (podId: string): string =>
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
   `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
   `Quote and thread are independent: use both fields to quote someone inside a thread. ` +
-  `Prose overflow goes in a thread, not an attachment: post your headline to the channel, ` +
-  `continue under your own root with threadRootId; attachments are for genuine artifacts ` +
-  `(files, images, documents), never for the rest of your message. ` +
+  `Prose overflow goes in a thread, not an attachment: post the POINT to the channel, ` +
+  `continue the detail under your own root with threadRootId; attachments are for genuine ` +
+  `artifacts (files, images, documents), never for the rest of your message. ` +
+  // @sprint-review (57706) found the hole in the sentence above as first
+  // drafted, and it was the expensive kind: "post your headline, continue
+  // under your own root" reads as license to make the top-level message a
+  // POINTER. It cannot be. `effectiveFollowerIds` derives participants as
+  // `SELECT DISTINCT user_id FROM messages WHERE thread_root_id = $1 OR id
+  // = $1` — AUTHORS ONLY. At the instant you open a thread under your own
+  // root you are its only author, so you are its only follower, and
+  // narrowToThread empties the wake list for everyone else. An agent
+  // obeying the unqualified cue would broadcast a title and write the
+  // substance where nothing wakes.
+  //
+  // Two clauses close it, and both are mechanisms already in the kernel
+  // rather than anything this cue asks for: the top-level message stands
+  // alone (the room is guaranteed to get it), and an @mention inside the
+  // thread reaches a named peer regardless of scope — the mention path runs
+  // before this narrowing, and `followMentionedThreadUsers` then writes
+  // `following IS TRUE` for that peer, enrolling them for the ambient
+  // remainder. So addressing once in a thread buys delivery of the rest.
+  `Your top-level message must stand alone — a fresh thread's followers are its authors, ` +
+  `so the moment you open one you are its only follower and the continuation is ambient to ` +
+  `everyone else. If a specific peer needs the detail, @mention them in the threaded ` +
+  `message: addressing is never scoped by the thread, and it enrols them for the rest of it. ` +
   `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
   `?threadRootId=<id> to your messages read returns just that thread. ` +
   // The clauses above describe what each verb DOES. Sam's ask (57672) was
@@ -512,6 +534,13 @@ const formatPodContextFrame = (podId: string): string =>
   // followers only" is true. threadWakeScopeService.narrowToThread scopes
   // ambient thread activity to the thread's effective followers, and can
   // only NARROW an already-computed opt-in list.
+  //
+  // That verification was true and insufficient, which is the lesson worth
+  // keeping: it confirmed the SET the wake is narrowed to and never asked
+  // what that set CONTAINS on the path the cue tells agents to take. For a
+  // thread you just opened, it contains you and nobody else. Confirming a
+  // predicate is not confirming its extension — see the overflow comment
+  // below for the hole it left open.
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
   `and still addresses its author.]`;

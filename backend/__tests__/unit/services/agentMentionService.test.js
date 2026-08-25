@@ -754,6 +754,67 @@ describe('AgentMentionService', () => {
       });
     });
 
+    // The overflow rule, and the qualifier without which it is harmful.
+    //
+    // @sprint-review (57706) traced it to `effectiveFollowerIds`, whose
+    // `participants` CTE is `SELECT DISTINCT user_id FROM messages WHERE
+    // thread_root_id = $1 OR id = $1` — authors only. A thread you just
+    // opened has exactly one author, you, so narrowToThread empties the wake
+    // list for every peer. "Post your headline, continue under your own
+    // root" therefore licenses broadcasting a title and writing the
+    // substance where nothing wakes.
+    //
+    // These pin the two clauses that make the rule safe. Both name a kernel
+    // mechanism rather than a preference, which is why they are worth a
+    // guard: standing alone is required because the channel post is the only
+    // delivery the room is guaranteed, and the @mention escape works because
+    // the mention path runs BEFORE this narrowing and then writes
+    // `following IS TRUE` for the target.
+    describe('prose-overflow rule carries its follower-set qualifier', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-overflow-1',
+          message: { content: 'Hi @nova', id: 'msg-overflow-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('still routes prose overflow to a thread rather than an attachment', async () => {
+        const content = await frame();
+        expect(content).toContain('Prose overflow goes in a thread, not an attachment');
+        expect(content).toContain('never for the rest of your message');
+      });
+
+      test('requires the top-level message to stand alone', async () => {
+        const content = await frame();
+        expect(content).toContain('Your top-level message must stand alone');
+        expect(content).toContain("a fresh thread's followers are its authors");
+      });
+
+      test('offers the @mention escape for a peer who needs the continuation', async () => {
+        const content = await frame();
+        expect(content).toContain('@mention them in the threaded message');
+        expect(content).toContain('addressing is never scoped by the thread');
+      });
+
+      test('control: the unqualified overflow rule fails the two assertions above', () => {
+        // The exact sentence that shipped before 57706. If a future edit
+        // reverts to it, the two tests above must go red — this proves they
+        // can tell the qualified rule from the bare one rather than both
+        // passing on the shared "thread, not an attachment" phrase.
+        const unqualified = 'Prose overflow goes in a thread, not an attachment: post your '
+          + 'headline to the channel, continue under your own root with threadRootId; '
+          + 'attachments are for genuine artifacts (files, images, documents), never for '
+          + 'the rest of your message.';
+        expect(unqualified).toContain('Prose overflow goes in a thread, not an attachment');
+        expect(unqualified).not.toContain('Your top-level message must stand alone');
+        expect(unqualified).not.toContain('addressing is never scoped by the thread');
+      });
+    });
+
     // Author/age frame. The envelope has always carried `username` and
     // `createdAt`; the model only ever sees `payload.content`, so they
     // were invisible to their only reader (four sprint agents spent
