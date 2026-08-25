@@ -23,6 +23,9 @@
 const fs = require('fs');
 const path = require('path');
 
+// Module-private like the two getters. A test that legitimately needs the raw
+// schema text can re-export it at that point, with a consumer to justify it —
+// the standard applied to `createTableFor`, applied to its siblings.
 const SCHEMA_PATH = path.join(__dirname, '../../config/schema.sql');
 
 /**
@@ -48,6 +51,22 @@ function createTableFor(name) {
 
 /**
  * The `ALTER TABLE <name> ADD COLUMN IF NOT EXISTS ...` retrofits for a table.
+ *
+ * NOT EXPORTED, for the same reason as `createTableFor` and on the same
+ * evidence: zero consumers outside this file. @sprint-review caught that the
+ * commit removing one phantom export left two more of identical shape —
+ * `retrofitsFor` and `SCHEMA_PATH` — so the finding was two-thirds undone by
+ * the fix that made it.
+ *
+ * One correction to the reasoning, recorded so the wrong reason does not
+ * become the record: this is the SAFER of the two, not the worse one. Alone it
+ * throws `relation "messages" does not exist` on the first statement —
+ * measured, not assumed. `createTableFor` alone was the dangerous export
+ * precisely because it succeeded and produced a usable table missing the
+ * ALTER-only columns; the damage waited for a projection to touch `payload`.
+ * Loud-on-misuse versus silent-on-misuse is the whole distinction, and it runs
+ * the other way here. Unexported for consistency of the phantom-export rule,
+ * not because it was hazardous.
  *
  * `createTableFor` alone is not the table. Late columns are added by ALTER, not
  * inside the CREATE — that is the two-declaration rule this repo learned the
@@ -88,4 +107,6 @@ async function applyTable(pool, name) {
   }
 }
 
-module.exports = { retrofitsFor, applyTable, SCHEMA_PATH };
+// One export. A fixture can build the whole table or nothing — there is no
+// longer a reachable way to build part of one.
+module.exports = { applyTable };
