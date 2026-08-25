@@ -511,11 +511,17 @@ const formatPodContextFrame = (podId: string): string =>
   // thread reaches a named peer regardless of scope — the mention path runs
   // before this narrowing, and `followMentionedThreadUsers` then writes
   // `following IS TRUE` for that peer, enrolling them for the ambient
-  // remainder. So addressing once in a thread buys delivery of the rest.
+  // remainder — unless they have MUTED it. @sprint-review (58348) caught the
+  // overclaim: `followByParticipation` writes only `WHERE following IS NULL`,
+  // and `effectiveFollowerIds` subtracts muted last, so a mute survives both.
+  // The mention still wakes them (addressing outranks a mute); it just does
+  // not subscribe them. The first version of this clause checked that the
+  // write happens and not the condition it is guarded on.
   `Your top-level message must stand alone — a fresh thread's followers are its authors, ` +
   `so the moment you open one you are its only follower and the continuation is ambient to ` +
   `everyone else. If a specific peer needs the detail, @mention them in the threaded ` +
-  `message: addressing is never scoped by the thread, and it enrols them for the rest of it. ` +
+  `message: addressing is never scoped by the thread, and unless they have muted it that ` +
+  `also enrols them for the rest of it. ` +
   // @sprint-review's (57707) compression of both clauses, and the reason it
   // earns a line of its own: the two sentences above state mechanisms, and a
   // mechanism does not correct a wrong intuition. The wrong intuition is that

@@ -800,6 +800,16 @@ describe('AgentMentionService', () => {
         expect(content).toContain('addressing is never scoped by the thread');
       });
 
+      test('does not promise the @mention enrols a peer who muted the thread', async () => {
+        // @sprint-review (58348). The first draft said addressing "enrols
+        // them for the rest of it" flat. `followByParticipation` writes only
+        // `WHERE following IS NULL` and `effectiveFollowerIds` subtracts
+        // muted last, so a mute survives both — the mention wakes them,
+        // nothing subscribes them. Checking that the write happens is not
+        // checking the condition it is guarded on.
+        expect(await frame()).toContain('unless they have muted it');
+      });
+
       test('names what threading actually does to a message', async () => {
         // The mechanism sentences say what happens; this one corrects the
         // intuition that produces the mistake. Guarded separately because a
