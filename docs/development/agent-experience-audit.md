@@ -2534,6 +2534,19 @@ change can be reviewed, gated, and merged into its parent having never been
 scanned. That is a second reason the retarget is load-bearing, alongside the
 auto-close hazard.
 
+**Not every absence is a stacking absence, and E2E is the one that fools you.**
+Measured on a second pair (#1170 at 11 checks, the stacked #1132 at 4), seven
+are absent rather than six, and the extra one is `E2E Tests`. It is tempting to
+add it to the stacking gap; it does not belong there. `playwright.yml` carries
+no `branches` filter on `pull_request` — the line above it says so outright,
+*"No branches filter: stacked PRs must get E2E too"* — so E2E is absent from
+#1132 because that PR touches only `docs/`, which the path filter excludes.
+@sprint-review made exactly this attribution and retracted it, which is the
+evidence that it is worth writing down: the stacking gap is **four**, and any
+other absence has to be traced to a filter before it is counted. Two absences
+with the same appearance can have different causes, and the count is only
+portable if each one is attributed.
+
 **The scoping of those three cannot be checked from inside a checkout.** The
 entry above notes there is no `codeql.yml`; the sharper form is that the
 configuration lives *only* behind an API call:
