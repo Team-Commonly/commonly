@@ -1017,20 +1017,6 @@ const resolveBotUserIds = async (
 };
 
 /**
- * Resolve explicit @handles that belong to humans, not installed agents.
- *
- * The composer inserts a member's real username, while `extractMentions`
- * normalizes that handle to lowercase for the agent resolver. Usernames are
- * not themselves case-normalized at write time, so the lookup is anchored and
- * case-insensitive rather than assuming a lowercased stored value. Handles
- * are extracted from `[a-z0-9_-]`, but anchoring keeps a prefix such as
- * `@casey` from following `casey-admin` too.
- *
- * This is deliberately best-effort for the same reason as bot resolution:
- * the message is already durable. A Mongo failure must not turn a successful
- * send into a 500; it only leaves this one implicit follow unmaterialized.
- */
-/**
  * Anchored, case-insensitive matcher for one @handle — escaped, not
  * interpolated raw.
  *
@@ -1048,6 +1034,20 @@ const handleMatcher = (username: string): RegExp => new RegExp(
   'i',
 );
 
+/**
+ * Resolve explicit @handles that belong to humans, not installed agents.
+ *
+ * The composer inserts a member's real username, while `extractMentions`
+ * normalizes that handle to lowercase for the agent resolver. Usernames are
+ * not themselves case-normalized at write time, so the lookup is anchored and
+ * case-insensitive rather than assuming a lowercased stored value. Handles
+ * are extracted from `[a-z0-9_-]`, but anchoring keeps a prefix such as
+ * `@casey` from following `casey-admin` too.
+ *
+ * This is deliberately best-effort for the same reason as bot resolution:
+ * the message is already durable. A Mongo failure must not turn a successful
+ * send into a 500; it only leaves this one implicit follow unmaterialized.
+ */
 const resolveHumanMentionUserIds = async (
   mentions: Iterable<string>,
   podMemberIds: Set<string>,
