@@ -800,6 +800,15 @@ describe('AgentMentionService', () => {
         expect(content).toContain('addressing is never scoped by the thread');
       });
 
+      test('names what threading actually does to a message', async () => {
+        // The mechanism sentences say what happens; this one corrects the
+        // intuition that produces the mistake. Guarded separately because a
+        // future trim would read it as a flourish on top of clauses that
+        // already "cover it" — it is the only line that tells an agent
+        // threading REMOVES something rather than moving it.
+        expect(await frame()).toContain('Threading does not relocate your message, it un-addresses it');
+      });
+
       test('control: the unqualified overflow rule fails the two assertions above', () => {
         // The exact sentence that shipped before 57706. If a future edit
         // reverts to it, the two tests above must go red — this proves they

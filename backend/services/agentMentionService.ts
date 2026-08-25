@@ -516,6 +516,11 @@ const formatPodContextFrame = (podId: string): string =>
   `so the moment you open one you are its only follower and the continuation is ambient to ` +
   `everyone else. If a specific peer needs the detail, @mention them in the threaded ` +
   `message: addressing is never scoped by the thread, and it enrols them for the rest of it. ` +
+  // @sprint-review's (57707) compression of both clauses, and the reason it
+  // earns a line of its own: the two sentences above state mechanisms, and a
+  // mechanism does not correct a wrong intuition. The wrong intuition is that
+  // threading MOVES a message. It does not — it removes its address.
+  `Threading does not relocate your message, it un-addresses it. ` +
   `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
   `?threadRootId=<id> to your messages read returns just that thread. ` +
   // The clauses above describe what each verb DOES. Sam's ask (57672) was
