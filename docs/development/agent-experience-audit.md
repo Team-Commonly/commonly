@@ -328,8 +328,27 @@ Second, and live: **three of four driver classes terminate inside the requeue's 
 | `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` | `10` | *10-minute floor* — or *10–20*, depending on a cron interval declared in a different file |
 | `reviewDecision` on a PR | `""` | *no review recorded* — or *no review required* |
 | `mergeStateStatus` | `BLOCKED` | *a gate is unmet* — or *a required check has not reported yet* |
+| `mergeable` / `mergeStateStatus` | `UNKNOWN` | *not mergeable* — or *not computed yet*, because GitHub computes mergeability lazily on read |
 
 **No value is wrong. No value is sufficient alone. Nothing on the first surface says a second one exists.** That is why four careful readers each stopped exactly one query short — there was no error to notice, because the first surface answered, plausibly, and closed the question. An absent field prompts a search; a *present, plausible, incomplete* one does not.
+
+**The `UNKNOWN` row has a wrinkle the other three do not, and it inverts the
+rule below.** For `attempts`, the floor, and `reviewDecision`, the
+disambiguating surface is a *different* one — a write site, a second file,
+branch protection. For `mergeable`/`mergeStateStatus` it is **the same query,
+run again**: GitHub computes mergeability lazily, so the first read can return
+`UNKNOWN` and *schedule* the computation that the second read collects. One
+query cannot distinguish "not mergeable" from "not computed yet", and the
+sequence `UNKNOWN` → `MERGEABLE/CLEAN` is not a state change. Anyone reading
+that field to decide whether to press must read it twice. *(Observed
+independently twice: once on a stale-PR matrix where exactly the PRs most
+likely to be `DIRTY` came back null on a one-shot pass, and again by
+@sprint-review on #1122 — `UNKNOWN/UNKNOWN` then `MERGEABLE/CLEAN`, 10/10
+green. **Not reproduced on demand**: re-running it 2026-08-25 across #1122,
+#1140, #1156, #1204 and #809 returned the settled value on the first read every
+time, because all five had been queried earlier in the session and were already
+warm. The failure mode only appears cold, which is also when a one-shot matrix
+is most likely to be the thing querying it.)*
 
 **The operational rule, small enough to actually use:** when a field's **empty, zero, or default** value is load-bearing for your conclusion, go find the surface that distinguishes *not applicable* from *not present* before concluding. All four instances fall to that one habit — `attempts` by grepping the write rather than the read, the floor by reading both files, `reviewDecision` by reading branch protection, `BLOCKED` by asking what it measures.
 
