@@ -1,6 +1,6 @@
 # ADR-017 — Attention routing
 
-**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub)
+**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries one explicitly undecided item, listed at §Ratification-points 3 — `Proposed` here must not be read as having chosen between its two mechanisms.
 **Date opened:** 2026-07-28
 **Date drafted:** 2026-07-29
 **Author:** pod-architect (Sam ratifies; delivery-channel choice is explicitly his)
@@ -263,11 +263,67 @@ The v1.5 rung is the load-bearing correction from the design round: "holding" do
 
 **Kernel-side.** Every input (intent records, action stream, decisions) is CAP-visible, so the same mechanism serves moltbots, codex wrappers, and webhook agents identically. Wrapper-side judging would see turns pre-landing but for one driver only — the abstraction leak rule 6 exists to prevent. Runs on the cheap-model tier; per-action cost is bounded by the no-transcript-crawl input contract.
 
+## Layer 3.1 — the attention queue (v1 spec, TASK-069)
+
+**What it is:** one surface a human opens to see everything waiting on them. **What it is not:** a feed. The distinguishing property is that **items leave when the thing they represent is handled** — so every row must be derived from a fact whose change is observable, never from a record of whether anyone looked.
+
+That single rule is what forces the section below. A feed can be built on anything; a queue can only be built on facts that can *stop being true*.
+
+### Fact source per row type — measured at `origin/main`, not assumed
+
+Sam named four row types. Exactly one of them has a fact source that already behaves like a queue.
+
+| row type | fact source today | can the fact change? | v1 verdict |
+|---|---|---|---|
+| **approval pending** | `Activity.approval.status` ∈ `pending \| approved \| rejected`; served by `GET /api/activity/approvals` → `ActivityService.getPendingApprovals` | **yes** — status transition | **ready.** Ship on this unchanged |
+| **human @mention** | derived at read time: `activityService.ts:517-521` builds `'@' + lowerUsername` and sets `isMention` from a substring test; `:591` is the `mentions` filter | **no** — the message text never stops containing the handle | needs an explicit ack (below) |
+| **blocked on human** | none. `Task.status` has a `blocked` value, but it records **no blocker identity** | n/a | needs a field |
+| **agent question to a human** | **none.** `AgentAsk` addresses `targetAgent` + `targetInstanceId` (`models/AgentAsk.ts:52-55`). There is no human target | n/a | needs a target widening |
+
+### The measurement that decides the `blocked` row, and it is a negative result
+
+`Task.status: 'blocked'` looks like the obvious source and is the wrong one. Six rows in the sprint pod carry it (TASK-016, 018, 026, 027, 032, 034), and each one's final update is the bare string `status → blocked` — the value records *that* a row stopped, never *what* it is waiting for or *who* can release it. It cannot distinguish blocked-on-a-human from blocked-on-another-task.
+
+**The control is what makes this conclusive.** On 2026-08-25 three rows were genuinely waiting on Sam — TASK-058 (#1205), TASK-066 (#1238) and TASK-059 (#1208), each held for hours with "the human merge press is the only remaining scope" written in its notes. **All three were `status: claimed`. None was `blocked`.** So a queue built on the existing field would have shown six rows that were not waiting on a human and zero of the three that were — wrong in both directions simultaneously.
+
+The fact does exist; it lives in prose inside update notes, where nothing can query it. **v1 needs one nullable field — `blockedOn: 'human' | 'task' | 'external' | null`** — set alongside `status`, not derived from it. Do not infer it by parsing note text: the notes that made this diagnosable are the same notes an inference would have to trust, and they are agent-authored free prose.
+
+### What marks an item done — one rule, and one deliberate exception
+
+**Rule: an item leaves the queue when its underlying fact changes, never when the human looks at it.** Read-state is a feed property. If the queue tracks "seen" it can disagree with reality — an approval still pending but marked read is a lie the surface tells about itself, and one such lie retires the queue's credibility for every other row.
+
+Per row: an **approval** leaves on `status != 'pending'`; a **blocked-on-human** row leaves when `blockedOn` clears; an **ask** leaves on `status: 'responded'`.
+
+**The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place v1 must store an explicit per-`(user, message)` acknowledgement.
+
+Name it for what it is: `acknowledged`, not `read`. A mention the human has seen and not acted on must be able to stay in the queue — the whole failure this queue exists to fix is attention that was technically delivered and never acted on, and a surface that clears on view reproduces it exactly. **Rendering a row is never an acknowledgement.**
+
+### Composition with the only-interrupter rule — the constraint that shapes v1
+
+§Layer 3 states that the escalation envelope is the *only* event class permitted to interrupt a human (push · ping · badge), and that activity and social events are **pull, always**. The queue spans both: approvals and blocked-on-human are escalation-shaped; @mentions are social.
+
+So the queue is a **pull surface that may not badge as a whole.** If a badge is wanted, it counts escalation-class rows only. This is not conservatism — §Layer 3's own arithmetic makes it necessary: ISA-18.2 puts alarm flood at >10 per 10 minutes, and a chatty non-escalation class borrowing the push channel reaches flood almost immediately. A queue that badges on mentions is a badge the human learns to ignore, and it takes the approvals down with it.
+
+**Corollary worth stating because it is counter-intuitive:** the most *useful* rows to show are not the ones permitted to interrupt. Mentions are the highest-volume and lowest-authority class; approvals are the rarest and the only ones that block work. The surface should be ordered by what is blocked, not by what is recent.
+
+### Deliberately out of v1 scope
+
+- **Bare-name references.** TASK-070(b) recommends against routing them, and if that is ever revisited they belong in a separate non-blocking list, not in the queue — a discussion reference has nothing to handle, so it cannot leave, so it is not a queue row by construction.
+- **A subscription or interest graph.** §The-channel-is-bidirectional forbids it for the reverse direction on measured grounds; the same argument holds here. Four typed fact sources are the mechanism.
+- **Cross-instance / federated rows.** No fact source exists and none is proposed.
+
+### What this spec does not answer
+
+Whether `AgentAsk` should gain a human target, or whether an agent needing a human should emit an authority-boundary escalation instead (§Layer 1's primary trigger, which already covers *"has this agent reached a boundary it cannot cross"*). Those are the same need reached by two mechanisms, and picking one is a design decision with a real cost either way — widening `AgentAsk` adds a second path to the human; routing through the escalation feed makes every agent question compete for the escalation budget. **Recommend the escalation feed** on the grounds that it is the path already specified and already budgeted, but this is the one item in the spec I would not ship without Sam saying which.
+
+Also not measured: the rate of each row type in a real week. §Layer 0's numbers are for escalation-worthy messages in an unattended pod and do not transfer — the mention rate in particular is unknown, and it is the one that decides whether ordering-by-blocked is sufficient or the queue needs filtering on day one.
+
 ## Ratification points (Sam)
 
 1. Delivery channel order (in-pod first/primary is the joint recommendation after two design rounds).
 2. Budget owner: recommended **the receiving human** (the protected resource is their attention), with optional per-agent sub-caps. The stub's alternatives (agent-owned, pod-owned) both protect the wrong thing.
-3. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
+3. **The attention queue's one open item (§Layer 3.1):** whether an agent that needs a human emits an authority-boundary escalation (recommended — already specified, already budgeted) or `AgentAsk` gains a human target. Two mechanisms for one need; the spec declines to pick.
+4. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
 
 ## Out of scope
 
