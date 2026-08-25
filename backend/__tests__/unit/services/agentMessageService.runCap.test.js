@@ -164,4 +164,32 @@ describe('run-cap guidance sends overflow to a thread, not a file', () => {
     expect(rendered).toContain('you have already sent ');
     expect(source).not.toContain('continue it in a THREAD under your first message (threadRootId');
   });
+
+  // @sprint-review (57706): "continue it in a thread" is only safe with the
+  // follower-set qualifier attached. `effectiveFollowerIds` derives
+  // participants from message AUTHORS, so a thread wakes nobody who has not
+  // already posted in it — the refusal text was sending a capped agent's
+  // remaining material somewhere no peer is woken. The @mention clause is the
+  // escape, and it works because the mention path runs before the thread
+  // narrowing.
+  describe('refusal names who a thread actually wakes', () => {
+    const rendered = () => source.replace(/'\s*\n\s*\+\s*'/g, '');
+
+    test('tells the agent to @mention whoever needs the continuation', () => {
+      expect(rendered()).toContain('@mention whoever needs it');
+    });
+
+    test('says why — a thread wakes only prior posters', () => {
+      expect(rendered()).toContain('a thread wakes only the people who have posted in it');
+    });
+
+    test('control: the unqualified refusal fails both assertions above', () => {
+      const unqualified = 'continue it in a THREAD under your first message '
+        + '(threadRootId = that message id) — not as a file; the cap still binds '
+        + 'inside the thread, which is the point';
+      expect(unqualified).toContain('continue it in a THREAD');
+      expect(unqualified).not.toContain('@mention whoever needs it');
+      expect(unqualified).not.toContain('a thread wakes only the people who have posted in it');
+    });
+  });
 });
