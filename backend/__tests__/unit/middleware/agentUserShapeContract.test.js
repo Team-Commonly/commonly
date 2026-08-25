@@ -25,6 +25,17 @@ const path = require('path');
 const SRC = path.join(__dirname, '../../../middleware/agentRuntimeAuth.ts');
 const source = fs.readFileSync(SRC, 'utf8');
 
+// Comments are stripped before counting, because this file TALKS about
+// `.select()` in prose and would otherwise count its own documentation.
+// Deliberately crude — it is not a parser, and the assertions below are
+// designed so that it does not need to be one.
+const codeOnly = () => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '')
+  .replace(/([^:])\/\/.*$/gm, '$1');
+
+const selectCallCount = () => (codeOnly().match(/\.select\s*\(/g) || []).length;
+
 /** Statement starting at `User.findOne(`, up to the terminating semicolon. */
 const userFindOneStatements = () => {
   const out = [];
@@ -45,8 +56,40 @@ describe('the middleware reads the full User row', () => {
     expect(userFindOneStatements()).toHaveLength(2);
   });
 
-  it('projects neither of them', () => {
-    for (const stmt of userFindOneStatements()) {
+  it('the file contains exactly one projection, and it is the Pod.find', () => {
+    // THE LOAD-BEARING ASSERTION, and it fails CLOSED. @sprint-review found
+    // the statement-scoping below fails OPEN on the most likely edit: it ends
+    // a statement at the first `;` after `User.findOne(`, which is not the end
+    // of the statement whenever a semicolon appears inside it. The comment a
+    // developer writes when adding a projection is exactly that case —
+    //
+    //   const botUser = await User.findOne({
+    //     // legacy path; only the id is needed here
+    //     ...
+    //   }).select('_id');
+    //
+    // — and the pre-fix suite returned 7/7 green against it. Reproduced here
+    // before this rewrite. A semicolon inside a string value does the same.
+    // The guard was strongest against a bare projection and weakest against a
+    // projection someone bothered to explain, inverting the risk ordering.
+    //
+    // So do not ask "does this statement project?", which needs a parser this
+    // is not. Enumerate the protected item instead: ANY new `.select(`
+    // anywhere in the file trips this, and the author re-certifies it
+    // consciously. A guard that must parse correctly to fail is not a guard.
+    expect(selectCallCount()).toBe(1);
+    expect(codeOnly()).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
+  });
+
+  it('projects neither User.findOne', () => {
+    // Kept as the specific statement of the property, but it is no longer
+    // what defends it. Asserts its own population: iterating an empty array
+    // passes, so without this line the test is vacuous whenever the extractor
+    // finds nothing — and it used to borrow its non-vacuity from a DIFFERENT
+    // test, so weakening that one silently gutted this one.
+    const statements = userFindOneStatements();
+    expect(statements).toHaveLength(2);
+    for (const stmt of statements) {
       expect(stmt).not.toMatch(/\.select\s*\(/);
     }
   });
@@ -57,6 +100,17 @@ describe('the middleware reads the full User row', () => {
     const rigged = 'const x = await User.findOne({ a: 1 }).select(\'_id\').lean();';
     const stmt = rigged.slice(rigged.indexOf('User.findOne('), rigged.indexOf(';'));
     expect(stmt).toMatch(/\.select\s*\(/);
+  });
+
+  it('control: the projection count DOES move when a projection is added', () => {
+    // Same rider as the probe control below, applied to the counter: a
+    // `selectCallCount` that silently stopped matching would read exactly
+    // like a middleware that projects once. Also pins the comment-stripper,
+    // which is the one part that could quietly zero the count — this file's
+    // own prose mentions `.select()` three times and must not be counted.
+    const rigged = `${codeOnly()}\nawait User.findOne({ a: 1 }).select('_id');`;
+    expect((rigged.match(/\.select\s*\(/g) || []).length).toBe(selectCallCount() + 1);
+    expect(codeOnly()).not.toMatch(/Adding a `\.select\(\)`/);
   });
 
   it('control: the interleaved Pod.find projection is NOT attributed to a User query', () => {
