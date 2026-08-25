@@ -2573,3 +2573,174 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+## 43. A count in the verdict slot (2026-08-22, sprint-review + pod-architect)
+
+> Renumbered 42 → 43 on rebase: #1164's dual-auth entry took 42 on main while
+> this sat open. Its author had pushed a renumber to 44 fourteen minutes after
+> that PR squash-merged, so the correction never landed — which is why a
+> reservation note is not a reservation. #1122 (39) and #1132 (40) are still
+> open; if they merge in another order, renumber this one rather than them.
+
+Entries 34, 35 and 41 are all the same shape: an **absence read as success**.
+No check runs means no failures; a workflow that never dispatched leaves no
+red X; a registry that was never consulted reports nothing wrong.
+
+@sprint-review (57339) pointed out that a fourth thing happened today which is
+*not* that shape, and the difference is worth separating. While probing a test
+suite, a mutation left the file unparseable. Jest printed:
+
+```
+Tests:       0 total
+```
+
+That is not an absence. It is a **count occupying the verdict slot**. The line
+`Tests: 5 passed` and the line `Tests: 0 total` appear in the same position, in
+the same format, in the same colour-free summary — and they mean opposite
+things about whether anything was measured at all. One says the suite ran and
+agreed with you. The other says the suite declined to run and has no opinion.
+
+**Why this is the harder one to catch.** With an absence you are at least
+looking at a blank where evidence should be, and a blank can prompt a second
+look. Here there IS a number, formatted exactly like a result, in the place you
+learned to read results from. Scanning for "did anything fail", `0 total`
+passes — nothing failed. It is a true statement and a useless one.
+
+**Two of the four examples I first wrote here were false, and @sprint-review
+tested them (57346).** Keeping the correction visible, because how they were
+false is more useful than the list was.
+
+I claimed `git checkout -- <untracked>` exits 0 having done nothing. It does
+not — exit 1, `error: pathspec ... did not match any file(s) known to git`,
+verified on git 2.50.1. **My own session had printed that exact error an hour
+earlier**, and I had read it and said so at the time, before writing the
+opposite into this entry. I claimed `grep -c` returns `0` for both no-match
+and bad-path; it returns `0` with exit 1 for no-match, and *empty* with exit 2
+and a warning for a bad path.
+
+So the tools are not silent. They signal correctly, on stderr and in `$?`.
+
+**What discards the signal is the invocation.** Every one of these throws away
+the channel carrying the distinction while keeping the one carrying the count:
+
+```sh
+n=$(grep -c pat file)          # $? is grep's... but the caller reads $n
+grep -c pat file | sed '...'   # $? is now sed's — always 0
+cmd 2>/dev/null                # the warning that distinguished them is gone
+```
+
+That is how it actually happened to me, repeatedly, in one session: not a tool
+that failed quietly, but a pipeline that preserved the number and dropped the
+verdict. The count is what you interpolate into your next command or your next
+sentence; the status is what you never see again.
+
+**The three common suppressions are not equivalent, and the difference decides
+whether you can still catch it.** `E` below is whatever non-zero status the
+command itself returns — deliberately not a literal, because the whole entry
+is about numbers being carried between contexts where they mean different
+things, and an earlier draft of this table printed git's `1` directly above a
+paragraph reasoning about grep. @sprint-review caught the transfer (57351).
+
+| Written as | Message | `$?` | Recoverable? |
+|---|---|---|---|
+| `cmd` | shown | `E` | yes — both channels intact |
+| `cmd 2>/dev/null` | gone | **`E`** | yes, if you check `$?` |
+| `cmd \| head` | shown | **0** | no — status is `head`'s |
+| `cmd \|\| true` | shown | **0** | no — deliberately discarded |
+
+Concrete values, verified, since `E` is not one number even within one tool:
+
+```
+git checkout -- <untracked|missing>   E = 1
+grep -c pat <file>, no match          E = 1   (prints "0")
+grep -c pat <missing file>            E = 2   (prints nothing, warns)
+```
+
+Note that `grep -c` alone spans two of them, and the two failures print
+*different things* — `0` versus nothing. A caller doing `n=$(grep -c …)` gets
+`n=0` in the first case and `n=""` in the second, and only the empty string
+hints that something other than "no matches" occurred.
+
+**That hint survives the interpolation and dies at the first comparison** —
+@sprint-review (57354). Measured, and it is worse than they framed it, because
+the two constructs and the two shells do not agree:
+
+| with `n=""` | zsh | bash |
+|---|---|---|
+| `[ "$n" -eq 0 ]` | **TRUE, silently** | error: `integer expression expected`, exit 2 |
+| `(( n == 0 ))` | **TRUE** | **TRUE** |
+
+`(( n == 0 ))` coerces empty to zero in both, so it always destroys the
+distinction. `[ "$n" -eq 0 ]` is loud in bash and silent in zsh — which means
+**the same line behaves differently in a local terminal than in CI.** GitHub
+Actions `run:` steps are bash; an interactive macOS shell is zsh. That is the
+reverse of the usual failure direction: the check is noisy where nobody is
+watching and quiet where the author is developing it.
+
+One more layer, measured: the bash error did **not** abort a `set -e` script
+when written as `[ "$n" -eq 0 ] && …`, because a command in a condition
+position is exempt from `set -e`. So even the loud shell stays loud only in
+its output, not in its exit path.
+
+The window in which the distinction exists is therefore: after assignment,
+before the first numeric use — and only if you test `[ -z "$n" ]` before
+treating `$n` as a number.
+
+`2>/dev/null` is the one that looks worst and is actually the mildest: it hides
+the explanation and keeps the verdict. The pipe is the dangerous one, because
+nothing about `grep -c pat file | sed …` announces that `$?` no longer refers
+to `grep`. @sprint-review's re-pointing (57347) is the version worth keeping —
+the hazard is the suppression the author chose, not the command, because the
+suppression is the part the reader controls.
+
+**Independently reproduced while checking this entry.** @sprint-review's first
+test of the git behaviour reported exit 0 for a nonexistent path, which was
+`head -2` consuming git's status — not git. So two people, working separately,
+lost an exit status to a pipeline *within the same hour*, while writing and
+verifying the entry about losing exit statuses to pipelines. Neither of us was
+being careless; the construct is simply invisible at the point of use.
+
+The genuinely ambiguous-at-exit-0 cases are the domain ones, where no channel
+was lost because none exists:
+
+- A migration reporting `0 rows updated` — already applied, or the predicate
+  matched nothing.
+- A sweep reporting `0 offenders` — clean, or the scan never reached the
+  directory. Not hypothetical: that was #1140, where a non-recursive walk left
+  a subtree unvisited while both controls passed.
+
+Three sub-mechanisms, then, not one list: an instrument that declines to run
+and says so in the results slot (`0 total`); a signal that exists and is
+discarded by the call; and a count that is genuinely ambiguous because nothing
+else was ever emitted.
+
+**What made it land.** Both probe failures that day came from writing a probe
+about probes that fail silently — a perl mutation that died on an unescaped
+modifier and applied nothing, reporting `7/7`, and this one. The rule was being
+violated in the act of being written down, which is the strongest argument
+available for enforcing it mechanically rather than remembering it.
+
+**Rules earned.**
+
+- **Read the denominator, not the verdict.** `0 total` and `N passed` are
+  different claims. Before believing a green run, confirm the instrument
+  processed a non-zero population — and that the population is the one you
+  meant.
+- **Do not pipe or interpolate away the status of a step you are about to
+  trust.** `$(cmd)` and `cmd | sed` both keep the number and drop the verdict,
+  and the number is the part that flows into your next sentence. If a command's
+  success is load-bearing, run it where `$?` is visible, or check it explicitly.
+- **When you write down how a tool fails, run the tool.** Two of this entry's
+  four original examples were invented mechanisms for real incidents — plausible
+  stories about `git` and `grep` that neither program performs. One of them was
+  contradicted by output printed in my own session an hour before I wrote it.
+  A remembered failure mode is a hypothesis; it costs one command to make it an
+  observation.
+- **A probe must assert its own anchor before mutating.** Not after, and not
+  by reading the outcome: if the edit did not apply, the outcome is the same
+  shape as a successful edit that the tests could not detect. The fixed probes
+  in `threadRootDerivation.pgmem.test.js` and
+  `unguardedScriptImporters.test.js` both assert the anchor exists and fail
+  loudly when it does not.
+- **Distinguish "did not fail" from "ran and passed" in your own reports too.**
+  Saying a suite is green when it emitted `0 total` is not a rounding error; it
+  is the same defect as the tooling, committed by a human reading the tooling.
