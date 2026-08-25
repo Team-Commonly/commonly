@@ -1,0 +1,86 @@
+/**
+ * `req.agentUser` must carry the whole User row, not a projection.
+ *
+ * THIS IS A SOURCE ASSERTION ON PURPOSE — reviewer-checklist rule 18. The
+ * property is structural, not behavioural: the claim is "no path projects
+ * these queries", and absence of code cannot be demonstrated by execution.
+ * A behavioural test cannot catch the regression either, because every suite
+ * that touches an agent-authenticated route constructs its own `req.agentUser`
+ * (or mocks `agentRuntimeAuth` to a bare `next()`), so a `.select()` added to
+ * the real middleware would empty `username` in production with the whole
+ * suite still green. That is the exact failure #1127 fixed — see rule 17.
+ *
+ * @sprint-review (57620) raised the gap: `agentRuntimeAuth.ts` documents the
+ * downstream contract as `req.agentUser?._id` only, while #1127 shipped a
+ * consumer reading `username`. Nothing enforced the widened contract.
+ *
+ * Positive control included, per rule 18's second rider: a grep that matches
+ * nothing because the pattern is wrong is indistinguishable from one that
+ * matches nothing because the code is gone.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const SRC = path.join(__dirname, '../../../middleware/agentRuntimeAuth.ts');
+const source = fs.readFileSync(SRC, 'utf8');
+
+/** Statement starting at `User.findOne(`, up to the terminating semicolon. */
+const userFindOneStatements = () => {
+  const out = [];
+  let from = 0;
+  for (;;) {
+    const start = source.indexOf('User.findOne(', from);
+    if (start === -1) return out;
+    const end = source.indexOf(';', start);
+    out.push(source.slice(start, end === -1 ? source.length : end));
+    from = start + 1;
+  }
+};
+
+describe('the middleware reads the full User row', () => {
+  it('finds both User.findOne call sites', () => {
+    // Binds the rest of the suite to a known population. If this number
+    // changes, the new call site needs the same check, not a bumped constant.
+    expect(userFindOneStatements()).toHaveLength(2);
+  });
+
+  it('projects neither of them', () => {
+    for (const stmt of userFindOneStatements()) {
+      expect(stmt).not.toMatch(/\.select\s*\(/);
+    }
+  });
+
+  it('control: the probe DOES detect a projection when one is present', () => {
+    // Without this, a `.select(` regex that silently stopped matching would
+    // read exactly like a middleware that never projects.
+    const rigged = 'const x = await User.findOne({ a: 1 }).select(\'_id\').lean();';
+    const stmt = rigged.slice(rigged.indexOf('User.findOne('), rigged.indexOf(';'));
+    expect(stmt).toMatch(/\.select\s*\(/);
+  });
+
+  it('control: the interleaved Pod.find projection is NOT attributed to a User query', () => {
+    // The near-miss this file exists to prevent. `.select('_id')` at :98
+    // belongs to the DM-pod `Pod.find`, thirty-seven lines above the second
+    // `User.findOne`. If the statement-scoping above regressed to a
+    // proximity grep, this assertion is what would catch it.
+    expect(source).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
+    expect(userFindOneStatements().join('\n')).not.toMatch(/Pod\.find/);
+  });
+});
+
+describe('the fields a future .select() author would be dropping', () => {
+  // Not a behavioural assertion — a named inventory, so the reason this file
+  // exists is legible without a git blame. Each entry is grepped for the
+  // actual `agentUser` access in the file that depends on it, so the list
+  // cannot rot into decoration or pass on an unrelated mention of the word.
+  const consumers = [
+    ['username', 'routes/tasksApi.ts', /req\.agentUser\?\.username/],
+    ['username', 'routes/agentsRuntime.ts', /agentUser\?\.username/],
+    ['botMetadata', 'routes/agentsRuntime.ts', /agentUser\?\.botMetadata/],
+  ];
+  it.each(consumers)('%s is read off req.agentUser in %s', (field, rel, pattern) => {
+    const file = path.join(__dirname, '../../../', rel);
+    expect(fs.readFileSync(file, 'utf8')).toMatch(pattern);
+  });
+});
