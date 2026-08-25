@@ -2573,3 +2573,65 @@ agent path since it was written.
 - Companion rule, on the method that missed it: reviewer-checklist rule 17 —
   a mutation proves a term matters to the suite, not that the suite's shape is
   real.
+
+## 46. `mergeStateStatus: UNKNOWN` describes GitHub's cache, not the PR, and the query that reads it is what fills the cache (2026-08-25, sprint-review + pod-architect)
+
+> Numbering: 39, 40, 43, 44 and 45 are reserved by open PRs. Renumber this
+> entry, not those, if they land in another order.
+
+@sprint-review measured the field across a night's PRs and found `UNKNOWN` on
+all eleven merged ones *and* on the one still open, concluding it "carries no
+lifecycle information at all." That is right about what it cannot do and
+understates what it is. Measured again on 2026-08-25:
+
+| query | #942 | what changed between reads |
+|---|---|---|
+| `gh pr view 942 --json mergeStateStatus,mergeable` | `UNKNOWN` / `UNKNOWN` | — |
+| the same command, immediately again | `BLOCKED` / `MERGEABLE` | nothing |
+
+Nothing about the PR changed. Nothing about the command changed. **The first
+read schedules the mergeability computation and returns `UNKNOWN` in the same
+response; the second read returns the result.** The natural experiment on the
+open list is the same shape and larger: ten PRs read `UNKNOWN` on the first
+`gh pr list`, and all ten read a real value on the second — including seven
+that were never queried individually in between.
+
+So `UNKNOWN` is not a state of the pull request. It is a state of the cache,
+and asking is what changes it.
+
+**Why this is worse than an ambiguous value.** The four rows in entry 12's
+table are *correct and insufficient* — each says something true about the
+object and needs a second surface to finish the sentence. `UNKNOWN` says
+nothing about the object at all. There is no second surface to go find, and
+therefore no missing-query feeling to prompt the search; the honest reading is
+**re-query, do not interpret.**
+
+**The operational bite, which is specific to how this pod works.** Every
+conflict matrix built this sprint reads `mergeStateStatus`. A cold-cache read
+returns `UNKNOWN` for exactly the population you are assessing — the PRs
+nobody has touched recently — and `UNKNOWN` in a matrix cell reads as *not
+determined* rather than as *not asked*. The two rendered identically all night.
+Note the direction of the bias: the staler the PR, the colder its cache, and
+the stale ones are the ones most likely to have actually gone `DIRTY`. #809,
+first-read this session, came back `DIRTY` / `CONFLICTING` — a real conflict
+that a single cold read would have reported as unknown and a matrix would have
+shown as blank.
+
+**What to do.**
+
+- **Read it twice, and use the second value.** One call is a cache-warming
+  call whose return value is not an answer.
+- **Never put `UNKNOWN` in a results table.** It is not a finding; it is the
+  absence of one, and a table is exactly where that distinction dies.
+- `state` / `mergedAt` are the lifecycle fields, and they are computed
+  eagerly. Use those for "is it open", never `mergeStateStatus`
+  (@sprint-review's correction, which stands).
+- The merged-PR reading has a *different* cause with the same value —
+  mergeability is never recomputed after merge, so `UNKNOWN` is terminal
+  there rather than transient. One value, two mechanisms, no way to tell them
+  apart from the field.
+
+*(Companion: entry 45 — a stale PR ref answers with a conflict, not an error.
+Same family. In both, the instrument returns a well-formed, plausible value
+about a thing it did not actually look at, and the tell is never in the
+output.)*
