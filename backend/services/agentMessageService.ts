@@ -1857,6 +1857,28 @@ class AgentMessageService {
     // line-wise sanitizer previously flattened their indentation.
     const normalized = cleaned.trim();
 
+    // Observability, not behaviour. `cleaned` can only differ from `trimmed`
+    // by a sentinel this loop removed — protected ranges are copied verbatim,
+    // and the total-match case already returned '' far above — so this fires
+    // exactly when we EDITED an agent's substantive reply rather than
+    // suppressing it. That edit is currently invisible: it leaves no trace in
+    // the stored message (the token is gone) and none in the transcript, so
+    // the only occurrences ever noticed were caught by a reader who happened
+    // to know the original text. The two suppressions at the postMessage call
+    // site already warn like this before zeroing content; those discard
+    // operator diagnostics, while this one rewrites an agent's own words, so
+    // it is the one that least deserved to be silent.
+    //
+    // No identity here on purpose: this is a static text function with no
+    // agent/instance/pod in scope, and plumbing that through would change a
+    // signature with three call files behind it for a diagnostic. The excerpt
+    // is enough to measure the rate, which is the open question.
+    if (cleaned !== trimmed) {
+      console.warn(
+        `[agent-msg] stripped bare sentinel from a substantive reply (edit, not suppression): ${normalized.slice(0, 120)}`,
+      );
+    }
+
     // Apply the artifact floor after protected inline-code ranges have been
     // copied into `cleaned`; a literal mentioned as code is not runtime noise.
     return AgentMessageService.isBareRuntimeArtifact(normalized) ? '' : normalized;

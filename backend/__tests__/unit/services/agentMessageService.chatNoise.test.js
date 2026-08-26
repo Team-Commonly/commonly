@@ -80,3 +80,62 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     }
   });
 });
+
+// The strip that rewrites an agent's substantive reply is the only one of the
+// three suppressions in this path that left no trace anywhere — not in the
+// stored message (the token is gone), not in the transcript, not in the logs.
+// Every occurrence ever noticed was caught by a reader who happened to know
+// the original text, which is why the rate has never been measurable. These
+// pin the warn's PREDICATE, not its wording: it must fire on an edit and stay
+// silent on a suppression, or the count it produces means nothing.
+describe('AgentMessageService.sanitizeAgentContent — strip observability', () => {
+  let warn;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  const stripWarnings = () => warn.mock.calls
+    .map(([first]) => String(first))
+    .filter((line) => line.includes('stripped bare sentinel'));
+
+  it('warns when a bare sentinel is edited out of a substantive reply', () => {
+    const out = AgentMessageService.sanitizeAgentContent(
+      'A reply of NO_REPLY means silence.',
+    );
+    // The defect itself: the sentence is rewritten and still posts.
+    expect(out).toBe('A reply of  means silence.');
+    expect(stripWarnings()).toHaveLength(1);
+  });
+
+  it('warns on a LEADING bare sentinel — the AX-43 leak shape', () => {
+    const out = AgentMessageService.sanitizeAgentContent(
+      'NO_REPLY\nHere is the real answer.',
+    );
+    expect(out).not.toBe('');
+    expect(stripWarnings()).toHaveLength(1);
+  });
+
+  it('stays silent when the sentinel IS the whole reply — suppression, not an edit', () => {
+    // Total-match returns before the strip loop, so a working-as-designed
+    // silence must not inflate the count. If this ever warns, the metric
+    // measures normal traffic and the rate is worthless.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('  NO_REPLY  ')).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY')).toBe('');
+    expect(stripWarnings()).toHaveLength(0);
+  });
+
+  it('stays silent on a backticked sentinel and on ordinary prose', () => {
+    // Controls. A backticked mention is deliberate and is copied verbatim, so
+    // `cleaned === trimmed` and nothing fires. Ordinary prose exercises the
+    // same loop over every character without ever matching.
+    AgentMessageService.sanitizeAgentContent('Backtick it: `NO_REPLY` survives.');
+    AgentMessageService.sanitizeAgentContent('An ordinary reply with no sentinel at all.');
+    expect(stripWarnings()).toHaveLength(0);
+  });
+});
