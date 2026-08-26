@@ -37,7 +37,9 @@
          script runs before first paint: browsers (JS on) never show the
          prerender; crawlers without JS still get the full content. Not
          cloaking — JS-running crawlers see the real app. -->
+    <!-- SEO_GATE_START -->
     <script>document.documentElement.className += ' js';</script>
+    <!-- SEO_GATE_END -->
     <style>
       html.js #seo-page { display: none; }
       #seo-page { box-sizing: border-box; min-height: 100vh; color: #e5e7eb; background: #0b1220; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -72,6 +74,7 @@
       #seo-page .seo-footer { padding: 40px 0; color: #94a3b8; border-top: 1px solid #334155; }
       @media (max-width: 640px) { #seo-page .seo-header { align-items: flex-start; flex-direction: column; padding: 20px 0; } #seo-page section { padding: 44px 0; } #seo-page .seo-hero { padding-top: 56px; padding-bottom: 56px; } }
     </style>
+    <!-- SEO_NAVIGATION_RUNTIME_START -->
     <script>
       // Force re-render on navigation
       window.addEventListener('popstate', function() {
@@ -81,6 +84,7 @@
         }, 0);
       });
     </script>
+    <!-- SEO_NAVIGATION_RUNTIME_END -->
   </head>
   <body>
     <div id="root"><!-- SEO_PAGE_CONTENT --></div>
