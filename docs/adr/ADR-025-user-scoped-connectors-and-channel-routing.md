@@ -48,11 +48,13 @@ failure modes are measured and frequent.
 **D4 — Quote-reply is the primary inbound router.** Replying to a relayed line
 routes to that agent in that pod — exact, zero new UX, already 80% built.
 
-**D5 — Slash commands cover cold starts.** `/pods` lists memberships;
-`/pod <name>` sets the chat's active pod (stored on the integration); a bare
-message goes to the active pod; `/tldr [pod]` returns an on-demand digest.
-Guess to validate: bare-message-to-active-pod may surprise users — measure
-misroutes before hardening.
+**D5 — Slash commands cover cold starts, and routing precedence is explicit.**
+`/pods` lists memberships (the connector reveals its targets); `/pod <name>`
+sets the chat's active pod (stored on the integration); `/tldr [pod]` returns
+an on-demand digest. Bare-message precedence (amended per review, 2026-08-26):
+**quote → inline `/pod` → last-pushed pod within 15 min → active pod → ask** —
+with an ack line on every non-quote route, because the real hazard is a stale
+active pod misrouting silently, not the cold start.
 
 **D6 — Digests are pushed per pod on a schedule**, reusing pod-summarizer,
 each tagged `[PodName]`. Cadence starts daily; a guess until usage data.
@@ -61,11 +63,27 @@ each tagged `[PodName]`. Cadence starts daily; a guess until usage data.
 and no quote is the single case that may invoke an LLM: ask one clarifying
 question or infer. Everything else stays deterministic.
 
-**D8 — Attribution invariants carry over unchanged.** Inbound posts are
-authored as the integration's owner (server-derived, #1290 guard); the
-private-chat gate (#1289) still applies; the user-scoped enable path derives
-`linkedUserId` from the authenticated code-minter exactly as the pod-scoped
-one now does.
+**D8 — Attribution invariants carry over, stated precisely** (corrected per
+review, 2026-08-26 — the first draft overclaimed). Inbound posts are authored
+as the integration's owner, **stamped at the PATCH/enable step from the
+authenticated caller** (#1290 guard), not by the code minter. The #1289
+private-chat gate is **inbound-only**; outbound relay does not check
+`chatType` today and needs its own gate when user-scoped binding lands.
+Connect codes widen from 24 bits to 128 bits — the current size is
+brute-forceable.
+
+**D9 — The Commander persona is the conversational front-end (owner: Sam,
+2026-08-26).** Alongside raw slash commands, a user can simply talk to a
+**Commander** — a named persona (ADR-022), distinct from Scout: Scout does
+discovery/onboarding; Commander does attention routing and delegation. A
+profile-level opt-in ("enable my Commander") auto-joins the Commander to every
+pod the user is a member of, as ordinary per-pod installation projections. The
+user's channel connector may bind to their Commander DM, making the phone chat
+a conversation: "tell the rewire pod I approved it" instead of `/pod rewire`.
+D2 still governs — the Commander phrases, decides, and delegates through the
+same kernel transport; it never carries bytes itself, and every routed message
+lands as an auditable pod post. Slash commands remain as the deterministic
+fallback when the Commander is disabled or down.
 
 ## Consequences
 
