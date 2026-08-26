@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold. The amendment says so in place.
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unmeasurable until the signal is built. The amendment says so in place.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -243,7 +243,27 @@ cannot be read as deciding them: whether `system_exchanges` should be widened
 beyond `agent-dm` pods as a cheaper signal than an ack-path change (it stores a
 *takeaway*, not a turn count, so it may be the wrong shape); and whether **two**
 consecutive silences is the right threshold — a guess with a rationale, in the
-same sense D4's 90s lease is, and unmeasured for the same reason.
+same sense D4's 90s lease is.
+
+**The two are ordered, not parallel, and the order runs the direction that is
+inconvenient.** The threshold cannot be measured before the signal exists. There
+is no dataset of silence runs to fit it to: a total-match `NO_REPLY` in an
+ordinary pod persists nothing, and `recordAgentDmConclusion` — the one writer of
+a durable silent-turn trace — returns early for any pod that is not `agent-dm`
+(`systemExchangeTriggers.ts:180`, with a second `podType !== 'agent-dm'` check at
+`:183`). Its own comment at `:177` gives the reason and, incidentally, the scale:
+*"Heartbeats in team pods regularly emit `NO_REPLY`-only posts; this short-circuit
+keeps that path cheap."* The population is asserted to be frequent in the same
+sentence that explains why none of it is stored.
+
+So this differs from D4's 90s lease in a way worth stating. That number is
+unmeasured; this one is **unmeasurable until the recorder is built**, and the
+recorder is guard 2's own missing signal. Building the ack-path record and
+measuring the threshold are not two tasks to sequence — the first is the
+instrument for the second. Whoever implements this should expect to ship a
+provisional threshold *labelled as such*, and set the real one from data the
+implementation itself produces. Anyone who reads these two open items as
+independent will go looking for a distribution that does not exist.
 
 **Cost, recorded because it is the reason for the staging.** Widening
 addressed-event semantics re-prices every producer of a reply: each becomes a
