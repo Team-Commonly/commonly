@@ -2783,51 +2783,82 @@ revoked, index missing — renders as the quietest and most common one. In #1275
 the guard `err?.status && err.status !== 404` skipped the error branch exactly
 when `err.status` was undefined, which is precisely the transport-failure case.
 
-**What we got wrong, and it is the reason this entry exists.** We swept for the
-shape by enumerating sentinel *literals*. Two rounds of widening the literal set
-(`false`, `null`, `''`, `[]`, `{}`, then `0` and `""`) produced a confident
-inventory: 21 sites at `994a963f`, bare 15 / bound 6. `0` and `""` contributed
-zero sites; only `{}` ever moved the count.
-
-Re-running the census *without* the literal filter found 16 further sites
-returning a non-literal from a catch body — and the two cleanest instances of
-the class in the repo are both there, invisible to every version of the
-literal grep:
+**The specimen, because it needs no call-site read to see.**
+`backend/routes/registry/detect.ts`, twice in one file:
 
 ```
-services/systemExchangeTriggers.ts:354   catch { return 'default' }
-    success path: return inst?.instanceId || 'default'
+:92   if (!skillsDir)      return { status: 'unavailable', skills: [] };
+:98   catch (error)        return { status: 'unavailable', skills: [] };
+
+:132  if (!dockerfilePath) return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+:138  catch (error)        return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
 ```
-Three conditions collapse to one string: the query threw, no active
-installation exists, and `instanceId` is literally `'default'`.
+
+Identical expression, six lines apart, guard and catch. "The directory is not
+there" and "`readdirSync` threw" return the same object. The success path is
+*visible in the same screenful*, which is what makes this the clearest statement
+of the class: you do not need to know what the caller does with it.
+
+**A second instance where the correct value was already on the line above.**
+`backend/services/discordService.ts`:
 
 ```
-services/discordService.ts:501           catch { return 'error' }
-    success path: return integration.status || 'unknown'
+:500  return (this.integration as IntegrationDoc).status || 'unknown';
+:502  catch (error) { return 'error'; }
 ```
+
 `'error'` is a member of the `IntegrationStatus` enum
-(`models/Integration.ts:118`). "The status lookup threw" and "the integration is
-in an error state" return the same value.
+(`backend/models/Integration.ts:118`). `'unknown'` is not. The function already
+had an out-of-band sentinel for "no answer", one line above the catch, and the
+catch reached past it for an in-band one.
 
-**And the reciprocal, which is why the count is not a defect count.** Four sites
-have identical syntax and are correct by design — `avatarService.ts:47`,
-`agentMessageService.ts:474`, `skillsCatalogService.ts:134`, `pods.ts:180` are
-all "normalise this URL; keep the original if it will not parse". There, the
-sentinel being reachable on the success path *is the specification*.
+**A third, collapsing three conditions into one string.**
+`backend/services/systemExchangeTriggers.ts`:
+
+```
+:353  return inst?.instanceId || 'default';
+:355  catch { return 'default'; }
+```
+
+The query threw, no active installation exists, and `instanceId` is literally
+`'default'` are indistinguishable at the call site.
+
+**And the reciprocal, which is why a shape count is not a defect count.** Four
+sites have identical syntax and are correct by design —
+`services/avatarService.ts:47`, `services/agentMessageService.ts:474`,
+`services/skillsCatalogService.ts:134`, `routes/pods.ts:180` are all "normalise
+this URL; keep the original if it will not parse". There, the sentinel being
+reachable on the success path *is the specification*.
+
+**How we found the class, and every proxy that failed on the way.** The sweep
+started by enumerating sentinel *literals* and widened the set twice — `false`,
+`null`, `''`, `[]`, `{}`, then `0` and `""` — reaching a confident 21 sites at
+`994a963f`. `0` and `""` contributed nothing; only `{}` ever moved the count.
+
+- **Literal-only** missed every site above: all four return a non-literal.
+- **Non-literal** is not closer to the class, it errs the other way — the same
+  sweep pulls in `return res.status(400).json({ error: err.message })` from
+  several controllers, which is maximally *loud*.
+- **Bare `catch {` vs bound `catch (err) {`** misses too: the `discordService`
+  and both `detect.ts` sites are bound, with the binding unused.
+- **"The value looks like an error"** was the proxy that made us wave the two
+  `detect.ts` sites through on the first pass. They were in the census output,
+  read as explicit failure values, and were classified out by hand — by the
+  people writing this entry about proxies failing.
 
 **Rules earned:**
-- The discriminator is never the literal. It is whether the returned value is
-  reachable on the success path *without being the documented fallback*. That is
-  checkable per site and it is the only thing that separates a defect from a
-  normaliser.
+- The discriminator is never a property of the returned value. It is a relation:
+  is this value *also* reachable on the success path, without being the
+  documented fallback? That is checkable per site and nothing else separates a
+  defect from a normaliser.
 - A shape count is the number that gets quoted, and it is not a defect count.
   Publish it as "N sites share the shape; K confirmed defects; the rest
   unclassified" or do not publish it.
 - Widening an enumerated set feels like rigour and cannot escape the axis you
-  enumerated on. Two rounds of adding literals never reached a non-literal. When
-  a sweep is defined by a value set, run one census with the value filter removed
-  and classify by hand — that is the only pass that can tell you the axis was
-  wrong.
-- `@typescript-eslint/no-floating-promises` has no analogue here: there is no
-  rule that can see this, because the defect is a relation between two return
-  sites, not a property of either.
+  enumerated on. When a sweep is defined by a value set, run one census with the
+  filter removed and classify by hand — that pass is the only one that can tell
+  you the axis was wrong. Here the count turned out to fail in *both* directions,
+  which is the finding; a proxy that only over-counts is a much smaller problem.
+- No lint rule can see this. `@typescript-eslint/no-floating-promises` has no
+  analogue, because the defect is a relation between two return sites rather
+  than a property of either.
