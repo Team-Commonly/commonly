@@ -936,7 +936,7 @@ class AgentMessageService {
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');
     }
-    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
+    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content, { agentName, instanceId, podId });
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
     // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
@@ -1749,7 +1749,19 @@ class AgentMessageService {
     return BARE_RUNTIME_ARTIFACTS.has(String(content));
   }
 
-  static sanitizeAgentContent(content: unknown): string {
+  /**
+   * `observe` is opt-in and carries the identity for the edit-warning below.
+   * It is deliberately NOT a default: this function is also used as a
+   * read-time predicate (`systemExchangeTriggers.findPreviousNonSilentMessage`
+   * re-sanitizes up to 20 already-stored messages to find the last substantive
+   * one), and a warning there would count historical reads as fresh edits.
+   * Only the posting path — which is the moment an edit actually happens, and
+   * the only place agent/instance/pod are in scope — opts in.
+   */
+  static sanitizeAgentContent(
+    content: unknown,
+    observe?: { agentName?: string; instanceId?: string; podId?: unknown },
+  ): string {
     if (content === null || content === undefined) return '';
     const raw = String(content);
     if (!raw.trim()) return '';
@@ -1869,13 +1881,12 @@ class AgentMessageService {
     // operator diagnostics, while this one rewrites an agent's own words, so
     // it is the one that least deserved to be silent.
     //
-    // No identity here on purpose: this is a static text function with no
-    // agent/instance/pod in scope, and plumbing that through would change a
-    // signature with three call files behind it for a diagnostic. The excerpt
-    // is enough to measure the rate, which is the open question.
-    if (cleaned !== trimmed) {
+    // Identity comes from the caller via `observe`, which is also the opt-in:
+    // the two suppressions at the postMessage call site log agent, instance
+    // and pod, and an anonymous line here would be the weakest of the three.
+    if (observe && cleaned !== trimmed) {
       console.warn(
-        `[agent-msg] stripped bare sentinel from a substantive reply (edit, not suppression): ${normalized.slice(0, 120)}`,
+        `[agent-msg] stripped bare sentinel from a substantive reply (edit, not suppression) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${normalized.slice(0, 120)}`,
       );
     }
 
