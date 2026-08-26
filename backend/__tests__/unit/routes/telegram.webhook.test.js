@@ -152,7 +152,7 @@ describe('Telegram webhook routes', () => {
       _id: 'integration-1',
       type: 'telegram',
       podId: 'pod-1',
-      config: { chatId: '42', liveRelay: true, linkedUserId: 'user-1' },
+      config: { chatId: '42', chatType: 'private', liveRelay: true, linkedUserId: 'user-1' },
     };
 
     const post = () => request(app)

@@ -37,6 +37,7 @@ interface TelegramIntegrationDoc {
   podId: unknown;
   config?: {
     chatId?: string;
+    chatType?: string;
     liveRelay?: boolean;
     linkedUserId?: string;
     leadAgentUsername?: string;
@@ -181,6 +182,30 @@ export const relayTelegramMessageToPod = async (opts: {
   const linkedUserId = integration.config?.linkedUserId;
   if (!linkedUserId) {
     console.warn('[tg-bridge] live relay without linkedUserId — inbound dropped');
+    return { relayed: false };
+  }
+
+  // Attribution gate. Every relayed message is authored as `linkedUserId`, so
+  // relaying is only honest where Telegram itself guarantees the sender IS that
+  // person: a `private` chat is 1:1 between the bot and one user. In a group,
+  // supergroup or channel, any member's message would land in the pod under the
+  // linked user's name — and nothing downstream carries `from.id` to contradict
+  // it, not the pod row, not the socket payload, not the agent wake. The
+  // display prefix built below is cosmetic; the authorship is not.
+  //
+  // Fails closed on an unknown chatType. `/enable` records `chat.type`
+  // (`handleEnableCommand`, routes/webhooks/telegram.ts), but an integration
+  // linked before that field existed carries none, and "unknown" is not
+  // "private". No integration relays today — nothing writes `liveRelay` — so
+  // closed is free now and expensive to retrofit later.
+  //
+  // Widening this needs a real Telegram-sender → Commonly-user mapping, not a
+  // longer list of accepted chat types.
+  const chatType = integration.config?.chatType;
+  if (chatType !== 'private') {
+    console.warn(
+      `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} cannot guarantee the sender is them`,
+    );
     return { relayed: false };
   }
 
