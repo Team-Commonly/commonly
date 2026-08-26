@@ -105,6 +105,30 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
+  test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
+    // Every input under 16px makes iOS Safari zoom on focus and stay zoomed
+    // on blur (Sam, 2026-08-26). The floor lives in the touch media block and
+    // must keep its !important (it has to beat per-component sizes including
+    // a legacy 15px !important).
+    expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
+  });
+
+  test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
+    // Below 1024px the pane used display:none while V2Layout still mounted it
+    // on tap: the avatar-stack button looked broken and members/files were
+    // unreachable on phones (Sam, 2026-08-26). The pane's presence in the DOM
+    // is the open state, so the drawer needs no extra toggle class.
+    // Slice the 1023px block out rather than regex across it — a lazy
+    // [\s\S]*? happily crosses media-block boundaries and matches unrelated
+    // rules pages later.
+    const start = v2.indexOf('@media (max-width: 1023px)');
+    expect(start).toBeGreaterThan(-1);
+    const block = v2.slice(start, v2.indexOf('@media', start + 10));
+    expect(block).toContain('.v2-pane--inspector');
+    expect(block).toContain('position: fixed');
+    expect(block).not.toContain('display: none');
+  });
+
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
