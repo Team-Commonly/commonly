@@ -52,8 +52,13 @@ const AgentEvent = require('../../../models/AgentEvent');
 // @mention, no thread, no wake-on-message opt-in. Deliberately the SMALLEST
 // real frame — a collaborative pod and a wake-on-message seat both add more, so
 // a budget measured here is a floor on what the fleet actually pays.
-const BUDGET_MAX = 3000;
-const BUDGET_MIN = 2600;
+// Raised from 3000/2600 by the three-verbs clause on this branch. The band is
+// kept as tight around the new reference (3,935) as the original was around
+// 2,877 — leaving MIN at 2,600 would let a third of the frame vanish silently,
+// which is the failure the lower bound exists to catch. What the fleet buys for
+// the extra ~1,058 characters is in the PR body.
+const BUDGET_MAX = 4100;
+const BUDGET_MIN = 3550;
 
 const referenceWake = async () => {
   AgentInstallation.find.mockReturnValue({
