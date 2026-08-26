@@ -462,11 +462,22 @@ export interface AppendSystemExchangeArgs {
   peers?: string[];
   takeaway?: string;
   ts?: Date;
+  // Opt-in repeat suppression for kinds whose payload is a CONSTANT. Skip the
+  // append when the newest entry already carries the same
+  // (kind, surfacePodId, takeaway) and is younger than this many ms.
+  //
+  // This exists because `entries` is a fixed-size ring
+  // (SYSTEM_EXCHANGE_ENTRY_CAP = 50) and a repeat writer with an unvarying
+  // payload evicts precisely the entries the ring exists to preserve. Measured
+  // on one live envelope: 50 entries, ~45 of them byte-identical loop-trip
+  // notices, leaving two entries of any other kind. Off by default — a caller
+  // whose takeaway carries real per-event content must keep every append.
+  dedupeWindowMs?: number;
 }
 
 export async function appendSystemExchange(
   args: AppendSystemExchangeArgs,
-): Promise<{ revision: number } | null> {
+): Promise<{ revision: number; deduped?: boolean } | null> {
   const {
     agentName,
     instanceId,
@@ -476,6 +487,7 @@ export async function appendSystemExchange(
     peers = [],
     takeaway = '',
     ts = new Date(),
+    dedupeWindowMs = 0,
   } = args;
 
   if (!agentName || !instanceId) {
@@ -496,6 +508,36 @@ export async function appendSystemExchange(
     peers: Array.isArray(peers) ? peers.filter((p) => typeof p === 'string') : [],
     takeaway: truncateTakeaway(takeaway),
   };
+
+  // Repeat suppression, when the caller opted in. Deliberately a read-then-
+  // decide rather than a filtered update: the update below is an UPSERT, and a
+  // filter that fails to match would insert a second envelope rather than do
+  // nothing. So this races — two simultaneous trips can both see no duplicate
+  // and both append. That is a bounded loss of exactly the property being
+  // bought (2 entries instead of 1) and it is not the failure this guards
+  // against, which is 45 identical entries accumulated one at a time over days.
+  if (dedupeWindowMs > 0) {
+    const existing = await AgentMemory.findOne({ agentName, instanceId })
+      .select({ revision: 1, 'sections.system_exchanges.entries': { $slice: 1 } })
+      .lean<{
+        revision?: number;
+        sections?: { system_exchanges?: { entries?: ISystemExchangeEntry[] } };
+      } | null>();
+    const newest = existing?.sections?.system_exchanges?.entries?.[0];
+    if (newest
+      && newest.kind === entry.kind
+      && String(newest.surfacePodId) === entry.surfacePodId
+      && String(newest.takeaway ?? '') === entry.takeaway) {
+      const newestTs = newest.ts instanceof Date ? newest.ts : new Date(String(newest.ts || ''));
+      const age = entry.ts.getTime() - newestTs.getTime();
+      // `age >= 0` matters: an out-of-order `ts` (a backfill, a clock skew)
+      // yields a negative age, and treating that as "within the window" would
+      // silently drop a genuinely older entry the ring should still receive.
+      if (!Number.isNaN(newestTs.getTime()) && age >= 0 && age < dedupeWindowMs) {
+        return { revision: existing?.revision ?? 1, deduped: true };
+      }
+    }
+  }
 
   // Single atomic op — works whether the doc exists, the `sections` envelope
   // exists, or `sections.system_exchanges` exists. Mongo auto-creates

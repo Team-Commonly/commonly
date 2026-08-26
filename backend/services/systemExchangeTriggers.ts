@@ -285,6 +285,20 @@ export async function recordAgentDmLoopTrip(args: RecordAgentDmLoopTripArgs): Pr
     const surfaceLabel = surfaceLabelFor(podType, podName, podId);
     const takeaway = '8 consecutive bot turns within 30 min — guard tripped';
 
+    // This is the one trigger whose takeaway is a CONSTANT — every trip writes
+    // the same string, so N trips in the same pod are N indistinguishable
+    // entries in a 50-slot ring. Measured on a live envelope before this
+    // landed: 50 entries, ~45 of them this exact notice, and exactly two
+    // entries of any other kind survived. A seat that saves durable state
+    // perfectly still watched it evicted by a writer it does not control.
+    //
+    // Six hours, scoped per (kind, pod): long enough that a pod stuck in a
+    // repeating loop contributes one entry rather than dozens, short enough
+    // that a genuinely separate recurrence on another day is still recorded.
+    // The console.warn in agentMentionService is unaffected — every trip is
+    // still observable there; what is suppressed is only the memory append.
+    const LOOP_TRIP_DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
     const writes = agents.map(async (a) => {
       const peers = agents
         .filter((p) => !(p.agentName === a.agentName && p.instanceId === a.instanceId))
@@ -298,6 +312,7 @@ export async function recordAgentDmLoopTrip(args: RecordAgentDmLoopTripArgs): Pr
         peers,
         takeaway,
         ts,
+        dedupeWindowMs: LOOP_TRIP_DEDUPE_WINDOW_MS,
       });
       if (result === null) {
         console.error(
