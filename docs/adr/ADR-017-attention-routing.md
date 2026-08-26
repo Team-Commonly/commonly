@@ -411,7 +411,16 @@ Only if §Ratification-point 3 goes that way rather than to the escalation feed.
 
 1. **`targetUserId?: ObjectId`**, and `targetAgent` relaxed from `required: true` to required-only-when-`targetUserId`-is-absent (`models/AgentAsk.ts:52`). **The schema is not the only gate** — `agentAskService.ts:111` throws `400 targetAgent_required` independently, so relaxing the model alone leaves human-targeted asks rejected at the service layer. `respondToAsk`'s identity check at `:264` compares `responderAgent !== ask.targetAgent || responderInstance !== ask.targetInstanceId` — it must branch on which target is set, or a human's response matches nothing and the ask stays open while being answered.
 
-2. **`expiresAt` must be *omitted* for human-targeted asks, not extended.** Mongo's TTL monitor deletes a document only when the indexed field holds a past date; a document with **no** `expiresAt` is never swept. So the exemption is "do not set the field", which requires relaxing `required: true` on it (`models/AgentAsk.ts:69`). The one place that reads the value tolerates its absence already — `respondToAsk`'s `ask.expiresAt < new Date()` at `:246` is `false` when the field is undefined, so an omitted `expiresAt` does not false-expire the ask. Extending the window instead only moves the deletion — and §The-cost-of-widening-`AgentAsk` is why that matters: the row leaves *because* it was not handled, leaving no record it existed.
+2. **`expiresAt` must be *omitted* for human-targeted asks, not extended.** Mongo's TTL monitor deletes a document only when the indexed field holds a past date; a document with **no** `expiresAt` is never swept. So the exemption is "do not set the field" — and **that takes two changes to the same schema block, not one** (@sprint-review, gating this section). Relaxing `required: true` (`models/AgentAsk.ts:69`) is necessary and not sufficient: the `default` on the next line (`:70`) fills the path whenever it is undefined, **independent of `required`**, so an ask built against a merely-optional field still carries a 24h TTL and is still deleted at 24h. Measured on mongoose 7.8.6, with the default removed as the control:
+
+```
+required relaxed, default kept:  new M({}).expiresAt  =>  <now +24h>   // and validateSync() passes
+control, default removed:        new M2({}).expiresAt =>  undefined
+```
+
+The default must therefore be **conditioned on the ask being agent-targeted**, or moved out of the schema into `createAsk`. This is point 1's own sentence — *the schema is not the only gate* — one layer further down: point 1 caught the service-layer gate below the model, and the second gate here is *inside* the model.
+
+The one place that reads the value tolerates its absence already — `respondToAsk`'s `ask.expiresAt < new Date()` at `:246` is `false` when the field is undefined, so an omitted `expiresAt` does not false-expire the ask. Extending the window instead only moves the deletion — and §The-cost-of-widening-`AgentAsk` is why that matters: the row leaves *because* it was not handled, leaving no record it existed.
 
 3. **A real `expired` transition needs a sweep**, since today the status is reachable only by the race at `agentAskService.ts:249`.
 
