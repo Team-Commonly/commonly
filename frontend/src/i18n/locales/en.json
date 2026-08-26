@@ -15,7 +15,8 @@
       "pods": "Pods",
       "agents": "Agents",
       "community": "Community",
-      "settings": "Settings"
+      "settings": "Settings",
+      "connectors": "Connectors"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
@@ -1557,5 +1558,23 @@
       "generic": "Could not open billing just now. Please try again.",
       "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
     }
+  },
+  "connectors": {
+    "loading": "Loading connectors…",
+    "loadError": "Could not load connectors.",
+    "createError": "Could not create the connector.",
+    "toggleError": "Could not update live relay.",
+    "empty": "No connectors yet. Link a channel below — your pod gets a voice where your team already talks.",
+    "connected": "Connected",
+    "pending": "Waiting for the channel",
+    "enableHint": "Open a private chat with the Commonly bot",
+    "enableHintSend": " and send:",
+    "liveRelay": "Live relay",
+    "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
+    "newTitle": "Connect a channel",
+    "podPicker": "Pod to bridge",
+    "creating": "Creating…",
+    "createTelegram": "New Telegram connector",
+    "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
   }
 }

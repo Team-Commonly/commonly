@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'pods', label: 'Pods', path: '/v2', icon: <Icon d="M3 7l9-4 9 4-9 4-9-4zM3 12l9 4 9-4M3 17l9 4 9-4" /> },
   { key: 'agents', label: 'Agents', path: '/v2/agents', icon: <Icon d="M12 1v6m0 8v6M5 5l4 4M15 15l4 4M1 12h6m8 0h6M5 19l4-4M15 9l4-4" /> },
   { key: 'community', label: 'Community', path: '/v2/community', icon: <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /> },
+  { key: 'connectors', label: 'Connectors', path: '/v2/connectors', icon: <Icon d="M9 2v6M15 2v6M6 8h12v3a6 6 0 01-6 6 6 6 0 01-6-6V8zM12 17v5" /> },
   // 'Apps' (marketplace) removed from the rail while the marketplace is behind
   // its "coming soon" wall — a nav item that only leads to a coming-soon page
   // is a dead end. Restore this entry when MARKETPLACE_LOCKED is lifted.
