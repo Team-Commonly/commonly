@@ -40,6 +40,18 @@ export const SOURCE_RUNTIME = 'local-cli';
  * a correct round trip. Naming the section is the whole point of the cue.
  */
 export const buildMemoryPreamble = (prompt, memoryLongTerm) => {
+  // `null` is the UNREADABLE signal, and it is deliberately not the same value
+  // as `''`. Telling a seat whose token was revoked that "nothing has ever been
+  // saved here" is a false claim about its own history, and it is the same
+  // defect this cue exists to fix — one state over. When we could not read, say
+  // that, and say nothing about what is stored.
+  if (memoryLongTerm === null) {
+    return `=== Context (your persistent memory) ===\n`
+      + `(unreadable this turn — the memory read failed, so this says NOTHING `
+      + `about what you have saved. Do not treat it as empty and do not re-save `
+      + `state you may already hold.)\n`
+      + `=== Current turn ===\n${prompt}`;
+  }
   if (memoryLongTerm) {
     return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
   }
@@ -57,15 +69,20 @@ export const readLongTerm = async (client, { onError } = {}) => {
     const body = await client.get('/api/agents/runtime/memory');
     return body?.sections?.long_term?.content || '';
   } catch (err) {
-    // A fresh agent has no memory row yet — treat as empty rather than fail
-    // the spawn. The kernel upserts on first write. For anything OTHER than
-    // a 404 (auth revoked, backend down, network out), surface via onError
-    // so the user sees "something's wrong with memory" instead of a silently
-    // context-less agent.
-    if (err?.status && err.status !== 404) {
-      onError?.(err);
-    }
-    return '';
+    // A 404 is the ONLY error that means what '' means: a fresh agent with no
+    // memory row yet. The kernel upserts on first write, so this is genuine
+    // absence and the empty cue is true.
+    if (err?.status === 404) return '';
+    // Everything else — auth revoked, 500, connection refused — is a failure to
+    // READ, which tells us nothing about what is stored. Returning '' here made
+    // the caller assert emptiness on no evidence.
+    //
+    // `err.status` is undefined for a transport failure, so the old guard
+    // (`err?.status && err.status !== 404`) skipped onError precisely when the
+    // backend was unreachable: the loudest condition was the silent one, and
+    // nothing contradicted the false cue.
+    onError?.(err);
+    return null;
   }
 };
 

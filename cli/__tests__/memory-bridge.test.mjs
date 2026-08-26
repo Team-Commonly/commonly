@@ -58,22 +58,39 @@ describe('readLongTerm', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  test('returns empty string BUT surfaces non-404 errors via onError (auth revoked, 500, etc.)', async () => {
+  // '' is a claim about STORAGE (nothing is saved). A read failure is a claim
+  // about the READ. Collapsing the two made the wrapper assert emptiness on no
+  // evidence, and the empty cue then told a seat with a revoked token that it
+  // had never saved anything.
+  test('returns null, not empty string, when the read FAILS (auth revoked, 500)', async () => {
     const err401 = Object.assign(new Error('unauthorized'), { status: 401 });
     const client = {
       get: jest.fn(async () => { throw err401; }),
       post: jest.fn(),
     };
     const onError = jest.fn();
-    expect(await readLongTerm(client, { onError })).toBe('');
+    expect(await readLongTerm(client, { onError })).toBeNull();
     expect(onError).toHaveBeenCalledWith(err401);
   });
 
-  test('network-level errors (no status) are swallowed silently — no onError', async () => {
-    // A fetch-level failure before any response is comparable to "fresh
-    // agent": the spawn should proceed with empty context, no noise.
+  // The old guard was `err?.status && err.status !== 404`, so a transport
+  // failure — which carries no `status` — fell through BOTH the report and the
+  // distinction: silent, and indistinguishable from a fresh agent. The backend
+  // being unreachable is the loudest condition here, not the quietest.
+  test('a transport failure (no status) is unreadable AND reported', async () => {
     const client = {
       get: jest.fn(async () => { throw new Error('ECONNREFUSED'); }),
+      post: jest.fn(),
+    };
+    const onError = jest.fn();
+    expect(await readLongTerm(client, { onError })).toBeNull();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  test('404 alone still means genuine absence — empty string, no onError', async () => {
+    const err404 = Object.assign(new Error('no row'), { status: 404 });
+    const client = {
+      get: jest.fn(async () => { throw err404; }),
       post: jest.fn(),
     };
     const onError = jest.fn();
@@ -161,7 +178,25 @@ describe('buildMemoryPreamble', () => {
     expect(empty).toMatch(/section:\s*'long_term'/);
   });
 
-  it.each([undefined, null, ''])('treats %p as empty', (value) => {
+  it.each([undefined, ''])('treats %p as empty', (value) => {
     expect(buildMemoryPreamble('turn', value)).toContain('(empty');
+  });
+
+  // This case used to be folded in with '' above, which is the conflation the
+  // fix removes: `null` is what readLongTerm returns when it could not read at
+  // all, and the prompt must not then assert anything about what is stored.
+  it('says UNREADABLE for null, and never claims the memory is empty', () => {
+    const out = buildMemoryPreamble('do the thing', null);
+    expect(out).toContain('unreadable');
+    expect(out).not.toContain('(empty');
+    expect(out).not.toContain('nothing has ever been saved');
+    expect(out).toContain('=== Current turn ===\ndo the thing');
+  });
+
+  // The unreadable cue must not carry the write instruction. A seat told to
+  // save right now, on the one turn we could not read, is being invited to
+  // overwrite state it still holds.
+  it('does not prompt a write on the unreadable path', () => {
+    expect(buildMemoryPreamble('turn', null)).not.toContain('commonly_save_my_memory');
   });
 });
