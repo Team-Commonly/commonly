@@ -93,12 +93,13 @@ recorded against `refs/pull/<n>/head`, not the branch, so
 `?branch=<branch-name>` can return zero for a PR that visibly has runs. Query
 by `head_sha` or via the commit's check-suites instead.
 
-## A re-trigger fans out partially, and stragglers arrive minutes later
+## A re-trigger may fan out partially, and stragglers arrive minutes later
 
 Close/reopen re-fires `pull_request` workflows without moving the head, which is
 what makes it the right lever over an empty commit when a run was never created.
-It does work. But it does **not** deliver the whole fan-out at once, so an early
-check tells you almost nothing.
+It does work. But it does **not reliably** deliver the whole fan-out at once —
+sometimes it does and sometimes it does not — so an early check tells you almost
+nothing either way.
 
 Measured on 2026-08-26. PR #1277 reopened at 15:44:40Z: `Secret Scan` and
 `Tests` were created 9 seconds later, and three more workflows —
@@ -114,6 +115,20 @@ you can measure — two of us independently derived confident and incompatible
 numbers from the same four timestamps. What the data supports is a bound and a
 shape: **some runs land in seconds, some take up to ~20 minutes, and a partial
 batch is the normal intermediate state, not evidence of a failure.**
+
+**One pairing is determined, and it gives 10 minutes.** PR #1216 was
+close/reopened at 16:36:37Z with no other trigger in flight — head unchanged
+throughout, no pushes, no reruns. At 16:46:26Z all five workflows were created
+in a single batch, and all five concluded `success`. Two of them, `Tests` and
+`Playwright Tests`, had never been created at that head at all, 95 minutes
+after the push that should have produced them. So this is also the only
+end-to-end confirmation in this document that the lever recovers the
+never-created case rather than merely re-firing what already existed.
+
+Note what made it measurable: exactly one trigger and exactly one batch. The
+delay is not unknowable in general — it is unknowable whenever you have more
+triggers in flight than batches to match them to, which is the situation you
+create by re-firing a second time while waiting.
 
 Practical consequences:
 
