@@ -1,6 +1,6 @@
 # ADR-017 — Attention routing
 
-**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries three explicitly undecided items, listed at §Ratification-points 3, 4a and 4b — `Proposed` here must not be read as having chosen between the two escalation mechanisms, nor as having decided whether `blockedOn` names its blocker, nor what clears the rows no derive can reach.
+**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries three explicitly undecided items, listed at §Ratification-points 3, 4a and 4b — `Proposed` here must not be read as having chosen between the two escalation mechanisms, nor as having decided whether `blockedOn` names its blocker, nor what clears the rows no derive can reach. **Sam ruled on 2026-08-26 that this queue is the shell's home surface rather than a page**, which makes §Layer 3.1's three missing fact sources the critical path; §The-three-missing-sources specifies them at field level, and that specification is deliberately written so those three ratification points stay open rather than being settled by implementation detail.
 **Date opened:** 2026-07-28
 **Date drafted:** 2026-07-29
 **Author:** pod-architect (Sam ratifies; delivery-channel choice is explicitly his)
@@ -361,6 +361,67 @@ Per row: an **approval** leaves on `status != 'pending'`; a **blocked-on-human**
 **The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place v1 must store an explicit per-`(user, message)` acknowledgement.
 
 Name it for what it is: `acknowledged`, not `read`. A mention the human has seen and not acted on must be able to stay in the queue — the whole failure this queue exists to fix is attention that was technically delivered and never acted on, and a surface that clears on view reproduces it exactly. **Rendering a row is never an acknowledgement.**
+
+### The three missing sources, at field level (added 2026-08-26 — Sam ruled this queue is the home surface, so these are the critical path)
+
+The table above returns three "needs a …" verdicts. They are three changes, not one, and this section is what a sprint-impl seat needs in order to build them without re-deriving the measurements. Nothing here decides §Ratification-points 3, 4a or 4b — each design is stated so that the ratification is a smaller call, not a pre-empted one.
+
+**They share one property and it is the reason all three are missing.** Each is a fact that cannot *stop being true for a particular human*: a message keeps containing `@sam` forever, a `blocked` task names nobody who could release it, and an ask has no human target to be answered by. The approval row is the only one of the four that already has a transition, which is exactly why it is the only one that needed no design.
+
+#### 1. The acknowledgement store — shape, and the invariant that makes it safe
+
+§What-marks-an-item-done establishes the mention as the irreducible exception: no derive exists, so v1 must store an explicit per-`(user, message)` acknowledgement. Its shape:
+
+```
+AttentionAck {
+  userId:     ObjectId   // whose queue this left — never a global "handled"
+  sourceType: 'mention'  // v1 ships one member; see below for why it is an enum anyway
+  sourceId:   string     // the Activity._id the mention was derived from
+  ackedAt:    Date
+}
+unique index: (userId, sourceType, sourceId)
+```
+
+Keyed by `(user, item)` rather than a field on the source, for a reason that is not stylistic: **`isMention` is derived at read time and never stored** (`activityService.ts:517-521`), so there is no row to mark; and one message can mention two humans, which makes any scalar `dismissedAt` on the Activity wrong by construction.
+
+**The invariant that keeps this from becoming read-state:** *an ack may only **remove** a row; it must never **create** or **retain** one.* Every failure of the ack store therefore degrades to a re-shown row and never to a hidden one. That is what distinguishes this from the "seen" tracking the opening rule forbids — and it is worth writing down as an invariant rather than as an intention, because the cheap implementation (a read-cursor per user) violates it silently the moment a row arrives out of order.
+
+**Not a cursor.** A timestamp ("mentions read up to T") is smaller and cannot express skip-this-keep-that, which is the entire behaviour separating a queue from a feed.
+
+`sourceType` is an enum on day one despite having one member, because §Ratification-point 4b's un-derivable population is the obvious second consumer — TASK-027 and TASK-016 in the measured six are blocked rows that no merge event can clear. Whether those get an ack or the sweep 4b proposes is 4b's call; the store should not have to change shape to find out.
+
+#### 2. `Task.blockedOn` — the field, and what each variant costs
+
+```
+blockedOn?: {
+  kind:   'human' | 'task' | 'external',
+  userId?: ObjectId,  // kind: 'human'  — who the queue routes this row to
+  taskId?: string,    // kind: 'task'   — what §4a's derive watches
+  note?:   string,    // kind: 'external' — free text; no derive is possible
+}
+```
+
+This is §Ratification-point 4a's "carry the blocker's identity" recommendation made concrete, and the `kind` discriminator is doing work beyond routing: it makes the un-derivable population **countable** instead of assumed. Today the argument for 4b's sweep rests on two of six measured rows being underivable; with `kind` recorded at write time, that ratio becomes a query rather than a hand-count, and 4b can be revisited on data.
+
+Set it where `status` moves to `blocked`. **Do not key the queue on `status`** — §What-marks-an-item-done gives the measured reason (PR #1248 makes a blocked row claimable, and the claim handler's `$set` moves `status` while leaving `blockedOn` untouched).
+
+#### 3. `AgentAsk` widened to a human target — three changes, and the middle one is the one that gets missed
+
+Only if §Ratification-point 3 goes that way rather than to the escalation feed. Costed at `origin/main`:
+
+1. **`targetUserId?: ObjectId`**, and `targetAgent` relaxed from `required: true` to required-only-when-`targetUserId`-is-absent (`models/AgentAsk.ts:52`). **The schema is not the only gate** — `agentAskService.ts:111` throws `400 targetAgent_required` independently, so relaxing the model alone leaves human-targeted asks rejected at the service layer. `respondToAsk`'s identity check at `:264` compares `responderAgent !== ask.targetAgent || responderInstance !== ask.targetInstanceId` — it must branch on which target is set, or a human's response matches nothing and the ask stays open while being answered.
+
+2. **`expiresAt` must be *omitted* for human-targeted asks, not extended.** Mongo's TTL monitor deletes a document only when the indexed field holds a past date; a document with **no** `expiresAt` is never swept. So the exemption is "do not set the field", which requires relaxing `required: true` on it (`models/AgentAsk.ts:69`). The one place that reads the value tolerates its absence already — `respondToAsk`'s `ask.expiresAt < new Date()` at `:246` is `false` when the field is undefined, so an omitted `expiresAt` does not false-expire the ask. Extending the window instead only moves the deletion — and §The-cost-of-widening-`AgentAsk` is why that matters: the row leaves *because* it was not handled, leaving no record it existed.
+
+3. **A real `expired` transition needs a sweep**, since today the status is reachable only by the race at `agentAskService.ts:249`.
+
+**Whichever way point 3 is ratified, the ack store in §1 is still required** — it belongs to the mention row, which neither mechanism touches. Point 3 decides where an agent's question to a human lives; it does not decide anything about §1.
+
+#### What the surface consumes, and one constraint it inherits from CI
+
+The queue's rows are consumed by the work-first shell (TASK-068). One requirement lands back on this spec from that side: a PR-press row must expose **the named base-`main` guard set** — `Stale-base merge guard`, `Source changed ⇒ version bumped`, `CodeQL`, `Analyze` ×3 — as drawn/not-drawn, and must **not** expose a check count.
+
+The reason is measured rather than aesthetic. A check count is not the identity of a check set: on 2026-08-26 four PRs on this repo showed 11, 11, 10 and 5 checks, where the two 11s were *different sets* (a workflow-file PR draws `kind cluster smoke test` and not `E2E Tests`), and the 10 was a docs PR whose missing `E2E Tests` is a correct path filter. Only one of those shapes — the stacked child at 5 — is a hazard, and it is the one a count cannot distinguish. A renderer handed a number cannot recover which guards ran; the join against the base has to happen in the fact source.
 
 ### Composition with the only-interrupter rule — the constraint that shapes v1
 
