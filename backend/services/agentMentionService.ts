@@ -1120,9 +1120,16 @@ const enqueueWakeOnMessage = async ({
   //  - it can only NARROW. A thread follower who never opted into
   //    wake-on-message still gets nothing, because threading is additive and
   //    must not start delivering to seats that opted into nothing.
-  //  - it cannot touch addressing. This branch runs only when `!isRouted`, so
-  //    an @mention or a reply edge has already left via the mention path. A
-  //    mute scopes ambient activity; it never suppresses being addressed.
+  //  - it cannot touch addressing. NOT because this branch is unreachable on
+  //    a routed message — it is reachable, via the second call site at the
+  //    tail of enqueueMentions, which runs unconditionally so a routed
+  //    message's ambient companion is scoped too. It cannot touch addressing
+  //    because the chat.mention has ALREADY been enqueued by the time this
+  //    runs, and the mentioned seat arrives here inside `excludeKeys`. A mute
+  //    scopes ambient activity; it never suppresses being addressed.
+  //    (An earlier version of this comment claimed the branch runs only when
+  //    `!isRouted`, contradicting the call-site comment below it and giving a
+  //    reader the right conclusion from a false mechanism.)
   //
   // Keyed on the BOT's User row id, which is what thread_user_state.user_id
   // holds: the follow/mute routes are dualAuth, so an agent writing its own
