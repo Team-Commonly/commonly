@@ -21,20 +21,68 @@
 
 export const SOURCE_RUNTIME = 'local-cli';
 
+/**
+ * The turn preamble, shared by every adapter so the two cannot drift.
+ *
+ * Non-empty memory is prepended verbatim — that path is load-bearing and is
+ * not touched here.
+ *
+ * The EMPTY case used to return the bare prompt, which made two very different
+ * states byte-identical from inside the session: an agent that has never saved
+ * anything, and an agent on a runtime with no memory bridge at all. A seat
+ * cannot adopt a habit whose surface it has no evidence exists, so the empty
+ * case now says so.
+ *
+ * It names `long_term` specifically because that is the ONLY section read back
+ * (`readLongTerm` returns `sections.long_term.content`). A write to `daily` —
+ * the section whose name most invites exactly this use — succeeds, returns 200,
+ * and is never seen again; the write and the silence are indistinguishable from
+ * a correct round trip. Naming the section is the whole point of the cue.
+ */
+export const buildMemoryPreamble = (prompt, memoryLongTerm) => {
+  // `null` is the UNREADABLE signal, and it is deliberately not the same value
+  // as `''`. Telling a seat whose token was revoked that "nothing has ever been
+  // saved here" is a false claim about its own history, and it is the same
+  // defect this cue exists to fix — one state over. When we could not read, say
+  // that, and say nothing about what is stored.
+  if (memoryLongTerm === null) {
+    return `=== Context (your persistent memory) ===\n`
+      + `(unreadable this turn — the memory read failed, so this says NOTHING `
+      + `about what you have saved. Do not treat it as empty and do not re-save `
+      + `state you may already hold.)\n`
+      + `=== Current turn ===\n${prompt}`;
+  }
+  if (memoryLongTerm) {
+    return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
+  }
+  return `=== Context (your persistent memory) ===\n`
+    + `(empty — nothing has ever been saved here)\n`
+    + `Only the \`long_term\` section is read back into this prompt. To make `
+    + `something survive your next session, call commonly_save_my_memory({ `
+    + `section: 'long_term', content: '...' }). A write to any other section `
+    + `succeeds and is never shown to you again.\n`
+    + `=== Current turn ===\n${prompt}`;
+};
+
 export const readLongTerm = async (client, { onError } = {}) => {
   try {
     const body = await client.get('/api/agents/runtime/memory');
     return body?.sections?.long_term?.content || '';
   } catch (err) {
-    // A fresh agent has no memory row yet — treat as empty rather than fail
-    // the spawn. The kernel upserts on first write. For anything OTHER than
-    // a 404 (auth revoked, backend down, network out), surface via onError
-    // so the user sees "something's wrong with memory" instead of a silently
-    // context-less agent.
-    if (err?.status && err.status !== 404) {
-      onError?.(err);
-    }
-    return '';
+    // A 404 is the ONLY error that means what '' means: a fresh agent with no
+    // memory row yet. The kernel upserts on first write, so this is genuine
+    // absence and the empty cue is true.
+    if (err?.status === 404) return '';
+    // Everything else — auth revoked, 500, connection refused — is a failure to
+    // READ, which tells us nothing about what is stored. Returning '' here made
+    // the caller assert emptiness on no evidence.
+    //
+    // `err.status` is undefined for a transport failure, so the old guard
+    // (`err?.status && err.status !== 404`) skipped onError precisely when the
+    // backend was unreachable: the loudest condition was the silent one, and
+    // nothing contradicted the false cue.
+    onError?.(err);
+    return null;
   }
 };
 
