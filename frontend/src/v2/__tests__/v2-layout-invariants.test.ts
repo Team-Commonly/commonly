@@ -105,6 +105,34 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
+  test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
+    // Every input under 16px makes iOS Safari zoom on focus and stay zoomed
+    // on blur (Sam, 2026-08-26). The floor lives in the touch media block and
+    // must keep its !important (it has to beat per-component sizes including
+    // a legacy 15px !important).
+    expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
+  });
+
+  test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
+    // Below 1024px the pane used display:none while V2Layout still mounted it
+    // on tap: the avatar-stack button looked broken and members/files were
+    // unreachable on phones (Sam, 2026-08-26). The pane's presence in the DOM
+    // is the open state, so the drawer needs no extra toggle class.
+    // Slice the 1023px block out rather than regex across it — a lazy
+    // [\s\S]*? happily crosses media-block boundaries and matches unrelated
+    // rules pages later.
+    const start = v2.indexOf('@media (max-width: 1023px)');
+    expect(start).toBeGreaterThan(-1);
+    const block = v2.slice(start, v2.indexOf('@media', start + 10));
+    expect(block).toContain('.v2-pane--inspector');
+    expect(block).toContain('position: fixed');
+    expect(block).not.toContain('display: none');
+    // The 760px secondary-pane eraser out-specifies the drawer (0-4-0 vs
+    // 0-1-0); the inspector must be in its :not chain or the drawer is a
+    // mounted-but-invisible pane again — the exact live bug, twice.
+    expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
+  });
+
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
@@ -614,4 +642,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.v2-thread-replies[\s\S]*?transition: none/,
     );
   });
+  test('zh-CN: every negative-tracking title is reset under :lang(zh) — CJK never takes negative letter-spacing (TASK-055)', () => {
+    // Every selector in v2.css that declares negative letter-spacing must be
+    // listed in the :lang(zh) reset block. Measured in a real browser: CJK
+    // glyphs have no side bearings, so -0.025em on a 20px title crushes strokes.
+    // The selector list may span lines (`a,\nb,\nc {`) — capture the whole
+    // list, then split on commas, or a multi-line list is checked by its last
+    // line only (sprint-review's gate on #1253: h1–h5 slipped past h6).
+    const negative = [...v2.matchAll(/\n((?:[^\n{}]+,\n)*[^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative.length).toBeGreaterThan(0);
+    const resetStart = v2.indexOf('.v2-root:lang(zh) .v2-rail__brand');
+    expect(resetStart).toBeGreaterThan(-1);
+    const resetBlock = v2.slice(resetStart, v2.indexOf('}', resetStart));
+    expect(resetBlock).toContain('letter-spacing: 0');
+    for (const sel of negative) {
+      const bare = sel.replace(/^\.v2-root /, '');
+      expect(resetBlock).toContain(`.v2-root:lang(zh) ${bare}`);
+    }
+  });
+
+  test('zh-CN: body copy takes line-height 1.6 and a 12px floor under :lang(zh) (TASK-055)', () => {
+    // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55,
+    // the composer hint at 1.45/11px. CJK glyphs fill the em box, so Latin
+    // leading leaves no white between lines and 11px is below legibility.
+    const lhStart = v2.indexOf('.v2-root:lang(zh) .v2-msg__content,');
+    expect(lhStart).toBeGreaterThan(-1);
+    const lhBlock = v2.slice(lhStart, v2.indexOf('}', lhStart));
+    expect(lhBlock).toContain('line-height: 1.6');
+    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint', '.v2-inspector__pod-meta']) {
+      expect(lhBlock).toContain(`.v2-root:lang(zh) ${sel}`);
+    }
+    const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-chat__composer-hint,\n.v2-root:lang(zh) button.v2-inspector__tab');
+    expect(floorStart).toBeGreaterThan(-1);
+    expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
+  });
+
 });

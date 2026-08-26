@@ -975,7 +975,10 @@ const isAutoRoutedDmPod = (type: unknown): boolean => isPersonalPodType(type);
 // so deployed wrappers hear this without a driver change (D5).
 const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
   + 'this pod — nobody named you. Most messages need nothing from you; act '
-  + 'only when you add material value, otherwise return NO_REPLY. If you do '
+  + 'only when you add material value, otherwise return NO_REPLY as your '
+  + 'ENTIRE reply — suppression is total-match, and anything you write after '
+  + 'the token WILL be posted publicly (AX entry 43: 11 leaked private '
+  + 'rationales in one day from a seat that prefixed it). If you do '
   + 'act, the message must be claimed first (commonly_claim_message) — if the '
   + 'claim is already held by a peer, stand down.]';
 
@@ -986,7 +989,8 @@ const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
 const REPLIES_TO_YOU_FRAME = '[This message replies to YOUR earlier message — '
   + 'you are addressed even though nobody typed your @name. Respond when a '
   + 'response is genuinely useful; if the exchange has concluded, return '
-  + 'NO_REPLY.]';
+  + 'NO_REPLY as your ENTIRE reply — anything written after the token WILL '
+  + 'be posted publicly.]';
 
 const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
   (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
@@ -1210,9 +1214,16 @@ const enqueueWakeOnMessage = async ({
   //  - it can only NARROW. A thread follower who never opted into
   //    wake-on-message still gets nothing, because threading is additive and
   //    must not start delivering to seats that opted into nothing.
-  //  - it cannot touch addressing. This branch runs only when `!isRouted`, so
-  //    an @mention or a reply edge has already left via the mention path. A
-  //    mute scopes ambient activity; it never suppresses being addressed.
+  //  - it cannot touch addressing. NOT because this branch is unreachable on
+  //    a routed message — it is reachable, via the second call site at the
+  //    tail of enqueueMentions, which runs unconditionally so a routed
+  //    message's ambient companion is scoped too. It cannot touch addressing
+  //    because the chat.mention has ALREADY been enqueued by the time this
+  //    runs, and the mentioned seat arrives here inside `excludeKeys`. A mute
+  //    scopes ambient activity; it never suppresses being addressed.
+  //    (An earlier version of this comment claimed the branch runs only when
+  //    `!isRouted`, contradicting the call-site comment below it and giving a
+  //    reader the right conclusion from a false mechanism.)
   //
   // Keyed on the BOT's User row id, which is what thread_user_state.user_id
   // holds: the follow/mute routes are dualAuth, so an agent writing its own
@@ -1274,7 +1285,7 @@ const enqueueWakeOnMessage = async ({
     ? `${String(sender.botMetadata?.agentName || '').toLowerCase()}:${String(sender.botMetadata?.instanceId || 'default').toLowerCase()}`
     : null;
 
-  // Reply-evidence flag (interim for TASK-058). The #703 implicit-reply path
+  // Reply-evidence flag (ADR-018 D6.3, interim). The #703 implicit-reply path
   // is gated on `sender.isBot === false`, so a BOT's reply to an agent's
   // message reaches its author as plain ambient activity — and the claim
   // layer then orders that author to stand down from its own conversation
@@ -1284,7 +1295,10 @@ const enqueueWakeOnMessage = async ({
   // message replies to something you wrote" — and the wrapper decides what
   // that evidence is worth. Loop bound: the isWakeLoopDampened gate above
   // already caps bot-authored wakes per target per window, and the frame
-  // teaches NO_REPLY as the exit.
+  // teaches NO_REPLY as the exit. D6.3's guard 2 (convergence) — two
+  // consecutive NO_REPLYs from a seat mute further IMPLICIT wakes for that
+  // seat+thread — is NOT implemented, so the dampener is the only loop bound.
+  // Read the ADR before widening this: the decision is deliberately staged.
   const parentMessageId = String(
     replyToMessageId || (message as { reply_to_message_id?: unknown })?.reply_to_message_id || threadRootId || '',
   ) || null;
@@ -2059,7 +2073,7 @@ const enqueueDmEvent = async ({
     // "@default (DisplayName)", which is meaningless.
     const senderHandle = (senderInstanceLabel || sender?.username || username || 'peer').trim();
     const dmFrame = dmKind === 'agent-agent'
-      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
+      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY (as your ENTIRE reply — anything after the token posts publicly) when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
       : `[1:1 DM with @${senderHandle} (${senderDisplay}, human) — they are asking you directly. Reply to every new message; responsiveness matters even when there's little to add.]`;
     const framedContent = `${dmFrame}\n\n${content}`;
 

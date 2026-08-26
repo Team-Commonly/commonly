@@ -393,9 +393,9 @@ class Message {
   static async deleteOlderThan(
     days: number,
     protectedPodIds: string[] = [],
-  ): Promise<{ deleted: number }> {
+  ): Promise<{ deleted: number; reRooted: number | null }> {
     if (!Number.isFinite(days) || days <= 0) {
-      return { deleted: 0 };
+      return { deleted: 0, reRooted: 0 };
     }
     const fromEnv = String(process.env.PG_RETENTION_EXEMPT_POD_IDS || '')
       .split(',')
@@ -419,9 +419,11 @@ class Message {
     // here rather than in the retention cron means every caller of this method
     // gets it, including a future one written by someone who never read
     // TASK-043.
+    let reRooted: number | null = 0;
     if (deleted > 0) {
       try {
         const repair = await Message.reRootOrphanedChains();
+        reRooted = repair.reRooted;
         if (repair.reRooted > 0) {
           console.log(
             `[pg-retention] re-rooted ${repair.reRooted} orphaned reply row(s) `
@@ -434,9 +436,12 @@ class Message {
         // unknown and renders expanded — noisy and non-destructive. Throwing
         // here would make retention look broken for a cosmetic consequence.
         console.warn('[pg-retention] re-root after delete failed:', (err as Error).message);
+        // The delete happened; retaining a zero here would make the ledger
+        // claim the repair executed and found nothing. Preserve that unknown.
+        reRooted = null;
       }
     }
-    return { deleted };
+    return { deleted, reRooted };
   }
 
   static async findActivityHint(podId: unknown, since: unknown): Promise<ActivityHintResult> {

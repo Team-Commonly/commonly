@@ -4,6 +4,10 @@ jest.mock('../../config/db-pg', () => ({
 jest.mock('../../models/pg/Message', () => ({
   deleteOlderThan: jest.fn(),
 }));
+jest.mock('../../models/pg/PgRetentionRun', () => ({
+  start: jest.fn(),
+  finish: jest.fn(),
+}));
 jest.mock('node-cron', () => ({ schedule: jest.fn(() => ({ start: jest.fn(), stop: jest.fn() })) }));
 
 // `find().select().lean()` — chainable, so the service's real call shape works.
@@ -25,6 +29,7 @@ jest.mock('../../models/Pod', () => ({
 
 const { pool } = require('../../config/db-pg');
 const Message = require('../../models/pg/Message');
+const PgRetentionRun = require('../../models/pg/PgRetentionRun');
 const cron = require('node-cron');
 const { runMessageRetention, initPgRetention } = require('../../services/pgRetentionService');
 
@@ -51,6 +56,10 @@ describe('pgRetentionService.runMessageRetention', () => {
   beforeEach(() => {
     pool.query.mockReset();
     Message.deleteOlderThan.mockReset();
+    PgRetentionRun.start.mockReset();
+    PgRetentionRun.start.mockResolvedValue(42);
+    PgRetentionRun.finish.mockReset();
+    PgRetentionRun.finish.mockResolvedValue(undefined);
     process.env = { ...ORIGINAL_ENV };
     delete process.env.PG_MESSAGE_RETENTION_DAYS;
     delete process.env.PG_CAPACITY_BYTES;
@@ -81,12 +90,21 @@ describe('pgRetentionService.runMessageRetention', () => {
       expect.stringContaining('invalid PG_MESSAGE_RETENTION_DAYS'),
       '0',
     );
+    expect(PgRetentionRun.start).toHaveBeenCalledWith({
+      configuredRetentionDays: null,
+      targetBytes: null,
+    });
+    expect(PgRetentionRun.finish).toHaveBeenCalledWith(42, expect.objectContaining({
+      status: 'skipped',
+      deletedMessageCount: 0,
+      detail: 'invalid PG_MESSAGE_RETENTION_DAYS',
+    }));
   });
 
   it('runs single pass and skips tiering when size already under target', async () => {
     // 8 GiB cap, 75% target = 6 GiB. 4 GiB everywhere = under target.
     mockSizeQueries([4, 4, 4]);
-    Message.deleteOlderThan.mockResolvedValue({ deleted: 10 });
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 10, reRooted: 2 });
 
     await runMessageRetention();
 
@@ -96,6 +114,13 @@ describe('pgRetentionService.runMessageRetention', () => {
     expect(vacuumCalls).toHaveLength(1);
     expect(vacuumCalls[0][0]).toMatch(/VACUUM ANALYZE messages/i);
     expect(warnSpy).not.toHaveBeenCalled();
+    expect(PgRetentionRun.finish).toHaveBeenCalledWith(42, expect.objectContaining({
+      status: 'completed',
+      deletedMessageCount: 10,
+      reRootedCount: 2,
+      protectedPodCount: 0,
+      finalRetentionDays: 30,
+    }));
   });
 
   it('steps down retention when still above target, stops when under', async () => {
@@ -183,6 +208,27 @@ describe('pgRetentionService.runMessageRetention', () => {
 
     await expect(runMessageRetention()).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalledWith('[pg-retention] failed:', 'db down');
+    expect(PgRetentionRun.finish).toHaveBeenCalledWith(42, expect.objectContaining({
+      status: 'failed',
+      deletedMessageCount: 0,
+      detail: 'db down',
+    }));
+  });
+
+  it('leaves the run as running when recording a completed outcome fails', async () => {
+    mockSizeQueries([4, 4]);
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 5 });
+    PgRetentionRun.finish.mockRejectedValue(new Error('ledger update lost'));
+
+    await expect(runMessageRetention()).resolves.toBeUndefined();
+
+    // Do not retry with `failed`: the start record remains the honest durable
+    // signal that the run completed but its terminal outcome was not written.
+    expect(PgRetentionRun.finish.mock.calls.map(([, outcome]) => outcome.status)).toEqual(['completed']);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[pg-retention] could not persist run outcome:',
+      'ledger update lost',
+    );
   });
   /*
    * The Pro tier's headline promise is "Unlimited message history — nothing
@@ -305,6 +351,11 @@ describe('pgRetentionService.runMessageRetention', () => {
         expect.stringContaining('ABORT'),
         expect.stringContaining('mongo unreachable'),
       );
+      expect(PgRetentionRun.finish).toHaveBeenCalledWith(42, expect.objectContaining({
+        status: 'aborted',
+        deletedMessageCount: 0,
+        detail: expect.stringContaining('mongo unreachable'),
+      }));
     });
 
     it('with no Pro users the delete is unchanged', async () => {
@@ -315,6 +366,17 @@ describe('pgRetentionService.runMessageRetention', () => {
       await runMessageRetention();
       expect(Message.deleteOlderThan).toHaveBeenCalledWith(30, []);
     });
+  });
+
+  it('refuses to delete if the durable run record cannot start', async () => {
+    PgRetentionRun.start.mockRejectedValue(new Error('ledger unavailable'));
+    mockSizeQueries([1, 1]);
+    Message.deleteOlderThan.mockResolvedValue({ deleted: 9 });
+
+    await runMessageRetention();
+
+    expect(Message.deleteOlderThan).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith('[pg-retention] failed:', 'ledger unavailable');
   });
 });
 

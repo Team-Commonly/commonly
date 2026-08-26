@@ -10,6 +10,17 @@
       "label": "语言",
       "switchToEnglish": "切换到英文",
       "switchToChinese": "切换到简体中文"
+    },
+    "nav": {
+      "pods": "Pod",
+      "agents": "智能体",
+      "community": "社区",
+      "settings": "设置"
+    },
+    "closePodsList": "关闭 Pod 列表",
+    "communityRedirect": {
+      "title": "正在打开社区",
+      "text": "正在检查你的访问权限…"
     }
   },
   "auth": {
@@ -341,7 +352,8 @@
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
       "replyingInThread": "正在话题中回复："
-    }
+    },
+    "leadBadge": "负责人"
   },
   "landing": {
     "nav": {

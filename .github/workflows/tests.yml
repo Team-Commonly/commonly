@@ -125,6 +125,11 @@ jobs:
           cd commonly-mcp
           npm test
 
+      - name: Run CLI lint
+        run: |
+          cd cli
+          npm run lint
+
       - name: Run CLI tests
         run: |
           cd cli

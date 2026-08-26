@@ -593,7 +593,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           ) : (
             <span className="v2-msg__author">{author}</span>
           )}
-          {isLead && <span className="v2-msg__lead-badge">Lead</span>}
+          {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
           {time && <span className="v2-msg__time">{time}</span>}
         </div>
         )}

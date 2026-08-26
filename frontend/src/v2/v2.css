@@ -5335,8 +5335,23 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
+  /* Below the 3-pane width the inspector becomes a right DRAWER, not a
+     casualty. Hiding the pane outright here made the avatar-stack button a
+     no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
+     pod's members/files/artifacts were unreachable on mobile entirely
+     (Sam, 2026-08-26). The pane only exists in the DOM while open
+     (V2Layout mounts it conditionally), so its presence IS the open state;
+     the existing v2-inspector__close dismisses it. Shadow is allowed here:
+     the design system reserves shadows for floating UI, which this now is. */
   .v2-pane--inspector {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - 48px));
+    z-index: 60;
+    border-left: 1px solid var(--v2-border);
+    box-shadow: -12px 0 32px rgba(17, 24, 39, 0.14);
   }
 }
 
@@ -5369,10 +5384,13 @@ body.modern-ui.v2-canvas {
     align-self: flex-start;
   }
 
-  /* Hide secondary panes (e.g. the inspector) — but NOT the pods sidebar,
-     which becomes a slide-over drawer below. The extra :not() keeps the
-     drawer reachable instead of dead-ending the user in a single pod. */
-  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside) {
+  /* Hide secondary panes — but NOT the pods sidebar OR the inspector, which
+     are both drawers now (pods slide-over below; inspector fixed-right in
+     the 1023px block above). This :not chain out-specifies the drawer rules
+     (0-4-0 vs 0-1-0), so an omission here is an invisible mounted pane: the
+     inspector was exactly that on phones until 2026-08-26 — the header
+     avatar button mounted it, this rule erased it. */
+  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside):not(.v2-pane--inspector) {
     display: none;
   }
 
@@ -6441,6 +6459,21 @@ body.modern-ui.v2-canvas {
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
+  /* iOS Safari auto-zooms on focusing any input under 16px and does not
+     zoom back on blur — the shell's inputs ranged 12–15px, so every tap on
+     the composer or a search field left the page stuck zoomed (Sam,
+     2026-08-26). 16px on touch devices removes the trigger entirely; this
+     is the root fix, NOT the viewport maximum-scale hack, which blocks
+     pinch-zoom on Android and is an accessibility regression. !important is
+     deliberate: it must beat every per-component size including the legacy
+     15px !important, and a device-scoped accessibility floor is the rare
+     case that earns it. */
+  .v2-root input,
+  .v2-root textarea,
+  .v2-root select {
+    font-size: 16px !important;
+  }
+
   /* No hover on touch — but always-on clusters over every message are
      chrome over content (Sam, 2026-08-23). A tap on the message toggles
      .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
@@ -7448,4 +7481,75 @@ body.modern-ui.v2-canvas {
   .v2-thread-replies {
     transition: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: no negative tracking on CJK (TASK-055, rule class 1).
+ * The 12 title selectors above tighten Latin display type with negative
+ * letter-spacing. CJK glyphs are full-width squares with no side bearings to
+ * reclaim, so the same value only crushes strokes together. Measured in the
+ * real browser (.dev/task-055-zh-harness.html): .v2-chat__title -0.5px,
+ * .v2-pods__title -0.32px, .v2-inspector__now-title -0.15px on Chinese text.
+ * `html[lang]` is set by frontend/src/i18n/index.ts, so :lang(zh) matches
+ * zh-CN. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-pods__title,
+.v2-root:lang(zh) .v2-chat__title,
+.v2-root:lang(zh) .v2-first-run__title,
+.v2-root:lang(zh) .v2-chat__new-pod-title,
+.v2-root:lang(zh) button.v2-inspector__tab,
+.v2-root:lang(zh) .v2-inspector__now-title,
+.v2-root:lang(zh) .v2-inspector__detail-name,
+.v2-root:lang(zh) .v2-login__title,
+.v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h2,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h3,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
+.v2-root:lang(zh) .v2-team__title {
+  letter-spacing: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: CJK body line-height 1.6 and a 12px floor (TASK-055, rule class 2).
+ * Latin body copy sits at 1.45–1.55 here; CJK glyphs fill the em box, so the
+ * same leading leaves no white between lines. Measured in the real browser
+ * (.dev/task-055-zh-harness.html): .v2-msg__content 21.7px/14px = 1.55,
+ * .v2-chat__composer-hint 1.45, .v2-inspector__pod-meta 1.45, and the
+ * composer hint (11px) / inspector tab (11.5px) render CJK below the 12px
+ * legibility floor. Single-line nowrap+ellipsis rows are not touched — their
+ * height is not text-driven. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-msg__content,
+.v2-root:lang(zh) .v2-msg__content pre,
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) .v2-chat__delivery-hint,
+.v2-root:lang(zh) .v2-chat__readonly-text,
+.v2-root:lang(zh) .v2-chat__new-pod-text,
+.v2-root:lang(zh) .v2-first-run__lede,
+.v2-root:lang(zh) .v2-first-run__step-body,
+.v2-root:lang(zh) .v2-pods__join-notice,
+.v2-root:lang(zh) .v2-pods__discover-description,
+.v2-root:lang(zh) .v2-pods__community-copy,
+.v2-root:lang(zh) .v2-inspector__pod-meta,
+.v2-root:lang(zh) .v2-inspector__now-meta,
+.v2-root:lang(zh) .v2-inspector__goal-text,
+.v2-root:lang(zh) .v2-inspector__empty,
+.v2-root:lang(zh) .v2-inspector__danger-text,
+.v2-root:lang(zh) .v2-inspector__detail-body,
+.v2-root:lang(zh) .v2-modal__hint,
+.v2-root:lang(zh) .v2-invite-card__description,
+.v2-root:lang(zh) .v2-login__field-hint,
+.v2-root:lang(zh) .v2-billing__note,
+.v2-root:lang(zh) .v2-approval__summary,
+.v2-root:lang(zh) .v2-approval__action {
+  line-height: 1.6;
+}
+
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) button.v2-inspector__tab {
+  font-size: 12px;
 }

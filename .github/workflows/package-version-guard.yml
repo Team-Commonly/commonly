@@ -17,7 +17,11 @@ name: Package Version Guard
 on:
   pull_request:
     branches: [ main ]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` catches base-branch retargeting — see the note in
+    # pr-base-freshness.yml. A stacked PR retargeted to main after its parent
+    # merges enters this guard's population without any event in the list
+    # below ever firing for it.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read

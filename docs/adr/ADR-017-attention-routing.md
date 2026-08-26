@@ -1,6 +1,6 @@
 # ADR-017 — Attention routing
 
-**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub)
+**Status:** Proposed — full draft for ratification (supersedes the 2026-07-28 stub). §Layer 3.1 (attention queue v1, added 2026-08-25 for TASK-069) is a spec awaiting the same ratification and carries three explicitly undecided items, listed at §Ratification-points 3, 4a and 4b — `Proposed` here must not be read as having chosen between the two escalation mechanisms, nor as having decided whether `blockedOn` names its blocker, nor what clears the rows no derive can reach.
 **Date opened:** 2026-07-28
 **Date drafted:** 2026-07-29
 **Author:** pod-architect (Sam ratifies; delivery-channel choice is explicitly his)
@@ -263,11 +263,139 @@ The v1.5 rung is the load-bearing correction from the design round: "holding" do
 
 **Kernel-side.** Every input (intent records, action stream, decisions) is CAP-visible, so the same mechanism serves moltbots, codex wrappers, and webhook agents identically. Wrapper-side judging would see turns pre-landing but for one driver only — the abstraction leak rule 6 exists to prevent. Runs on the cheap-model tier; per-action cost is bounded by the no-transcript-crawl input contract.
 
+## Layer 3.1 — the attention queue (v1 spec, TASK-069)
+
+**What it is:** one surface a human opens to see everything waiting on them. **What it is not:** a feed. The distinguishing property is that **items leave when the thing they represent is handled** — so every row must be derived from a fact whose change is observable, never from a record of whether anyone looked.
+
+That single rule is what forces the section below. A feed can be built on anything; a queue can only be built on facts that can *stop being true*.
+
+### Fact source per row type — measured at `origin/main`, not assumed
+
+Sam named four row types. Exactly one of them has a fact source that already behaves like a queue.
+
+| row type | fact source today | can the fact change? | v1 verdict |
+|---|---|---|---|
+| **approval pending** | `Activity.approval.status` ∈ `pending \| approved \| rejected`; served by `GET /api/activity/approvals` → `ActivityService.getPendingApprovals` | **yes** — status transition | **read path ready; no producer.** Ship the column, expect it empty — see below |
+| **human @mention** | derived at read time: `activityService.ts:517-521` builds `'@' + lowerUsername` and sets `isMention` from a substring test; `:591` is the `mentions` filter | **no** — the message text never stops containing the handle | needs an explicit ack (below) |
+| **blocked on human** | none. `Task.status` has a `blocked` value, but it records **no blocker identity** | n/a | needs a field |
+| **agent question to a human** | **none.** `AgentAsk` addresses `targetAgent` + `targetInstanceId` (`models/AgentAsk.ts:52-55`). There is no human target | n/a | needs a target widening |
+
+### The approval row's read path is complete and nothing produces its rows
+
+The table above called this row type "ready, ship unchanged" on the strength of its read path, and both reviewers of the first draft took that on trust — it is the one row type the spec does not propose to change, which is exactly why nobody checked it. Measured at `origin/main` (`6a262fe8`):
+
+**The resolve path is real and complete.** `GET /api/activity/approvals` (`routes/activity.ts:53`) → `ActivityService.getPendingApprovals` (`:908`) → `Activity.getPendingApprovals` (`models/Activity.ts:201`), which filters `type: 'approval_needed'` + `'approval.status': 'pending'` + not deleted. Resolution is `POST /:activityId/approve` and `/:activityId/reject` (`:123`, `:137`), both type-guarded, both writing `status`, `reviewedBy`, `reviewedAt` via the model methods at `:231` and `:239`. The frontend card exists (`V2ApprovalCard.tsx`). Nothing here needs building.
+
+**The producer does not exist.** `Activity.createApprovalRequest` (`models/Activity.ts:175`) and its service wrapper (`activityService.ts:790`) have **zero callers** — no route exposes them, no service invokes them. Positive control for the search: `getPendingApprovals` resolves route → service → model by the same grep, so the method does detect call sites where they exist.
+
+The only code that ever creates an `approval_needed` row is `ActivityService.seedPodActivities` (`:927`, the row at `:989`), reachable via `POST /api/activity/seed/:podId` — demo fixture data, content `"An agent is requesting access to the Production pod"`, `agentName: 'analytics-bot'`. So every approval this queue could show today is seeded, not requested.
+
+**Which changes the v1 verdict without changing the design.** The approval column ships as specified and will be empty until something requests an approval — and the natural producer is the v1.5 tool-layer refuse-and-park row in the escalation table above, which is not v1. That is not a reason to cut the column: an empty column with a working resolve path is the correct state for a capability whose producer is scheduled. It **is** a reason not to let "one of the four row types is already ready" carry weight in ratification, because the readiness is a half.
+
+**Two scoping facts an implementer will otherwise discover the hard way.**
+
+`getPendingApprovals(userId)` does not scope to pods the human is *in*. It scopes to pods where they are `createdBy` **or** a member with `role: 'admin'` (`activityService.ts:910-916`). So an ordinary member never sees an approval for their own pod, and the queue's approval column is owner/admin-only. Whether that is the intended audience is a question the queue inherits rather than creates, but the surface should not present itself as "everything waiting on you" while silently applying an admin filter.
+
+`approval.status` alone is **not** a predicate for "this is an approval". Mongoose applies the nested default unconditionally, so *every* `Activity` document is born with `approval.status: 'pending'` regardless of type — verified directly, with a control document of an unrelated type, which also carried it. `getPendingApprovals` is correct because it pairs the status with `type: 'approval_needed'`; any new reader that keys on the status alone will match the entire activity collection. The `sparse: true` on the index at `models/Activity.ts:146` is inert for the same reason: the field is never missing, so the index covers every row.
+
+### The cost of widening `AgentAsk` to humans, measured — its rows delete themselves
+
+§Ratification-point 3 asks whether an agent that needs a human emits an authority-boundary escalation or `AgentAsk` gains a human target, and the paragraph that recommends the first does so on grounds of tidiness — the escalation feed is *"already specified, already budgeted"*. That is an argument from convenience and it is the weakest thing in this spec. Here is a measured one, at `origin/main` (`6a262fe8`).
+
+**`AgentAsk` documents are deleted by Mongo, 24h after they are raised.** `expiresAt` carries `index: { expireAfterSeconds: 0 }` (`models/AgentAsk.ts:67-72`), default `Date.now() + 24h` (`agentAskService.ts:52`, `:184`, floored at 60s). That is a TTL index: the TTL monitor removes the document, it does not mark it. The model says so in its own words at `:13` — *"TTL on `expiresAt` cleans up stale asks without touching events."*
+
+**The `expired` status is very nearly unreachable, and that is the confirmation rather than a separate defect.** `AgentAskStatus` declares `open | responded | expired` (`:15`), but exactly one line in the whole backend assigns the third value — `agentAskService.ts:249`, inside `respondToAsk`, on the path where a response arrives for an ask already past `expiresAt`. There is no sweep. So a document reaches `expired` only if someone answers it during the window between its expiry and the next TTL pass, and is otherwise deleted while still reading `open`. The enum member exists to describe a race.
+
+**Why this decides the ratification point rather than colouring it.** This section opens on one rule: *items leave when the thing they represent is handled.* A TTL delete is the precise inverse — the row leaves **because** it was not handled, and leaves no record that it existed. The human is never told they were asked; the asking agent learns only if it retries and collects a 410. That is §The-channel-is-bidirectional's *"missed invalidation"* shape, arriving through the queue's own storage layer, in the one row type whose fact source would be a self-deleting document.
+
+**Control, because an asymmetric argument needs one.** The other three row types' fact sources carry no TTL index: `Activity` has none, `AgentEvent` has none (its `expiresAt` at `models/AgentEvent.ts:28` is a field on the ask payload, with no index behind it). So the self-deletion is specific to `AgentAsk`, not a house convention this queue would inherit anyway.
+
+**The behaviour is correct for what it was built for**, which is why it is not filed as a bug. ADR-003 Phase 4 `AgentAsk` is agent→agent, both parties are online-ish, the asker gets a 410 and re-asks, and 24h of retention is generous. Nothing about it is wrong until the target is a human, at which point the retention window becomes the length of a weekend.
+
+So widening `AgentAsk` is not the one-field change the table's *"needs a target widening"* verdict implies. It is a target widening **plus** a retention decision, **plus** a real `expired` transition with a sweep to drive it — the same second mechanism §Ratification-point 4b already needs for `blockedOn`, arriving for the same reason. The recommendation is unchanged; the reason for it is now a cost rather than a preference, and Sam should weigh it as one.
+
+### The measurement that decides the `blocked` row, and it is a negative result
+
+`Task.status: 'blocked'` looks like the obvious source and is the wrong one. Six rows in the sprint pod carry it (TASK-016, 018, 026, 027, 032, 034). Five read `pod-architect updated: reassigned to pod-architect, status → blocked`; TASK-016's is the bare `Sam updated: status → blocked`. Neither form carries a blocker: the value records *that* a row stopped, never *what* it is waiting for or *who* can release it, so it cannot distinguish blocked-on-a-human from blocked-on-another-task. (An earlier draft said all six updates were bare — @sprint-review caught it. The form differs; the absence does not.)
+
+**The control is what makes this conclusive.** On 2026-08-25 three rows were genuinely waiting on Sam — TASK-058 (#1205), TASK-066 (#1238) and TASK-059 (#1208), each held for hours with "the human merge press is the only remaining scope" written in its notes. **All three were `status: claimed`. None was `blocked`.** So the field misses every row that is actually waiting on a human.
+
+**It does not follow that the six are all non-human, and an earlier draft of this section said so — @sprint-review refuted it on review and the corrected result is the stronger one.** Resolving each of the six against its own notes and its blocker's live state:
+
+| row | recorded blocker | state | what the queue should say |
+|---|---|---|---|
+| TASK-026 | "unblocks when #1083 merges" | #1083 **OPEN** | waiting on a human |
+| TASK-032 | deliverable #1097, revision 2 | #1097 **OPEN** | waiting on a human |
+| TASK-027 | "blocked on a task rewrite owned by @sprint-review, not on work" | agent-owned | **not** waiting on a human |
+| TASK-034 | "follows #1089", blocked on #1095 | #1095 **merged 2026-08-22T12:29:28Z** | nothing — the blocker cleared three days ago |
+| TASK-016 | none — Sam's bare `status → blocked` | unknown | unknowable from the record |
+| TASK-018 | "what remains is a non-author reviewing #1083" — in the update body, not a field | #1083 **OPEN**, reviewed | waiting on a human |
+
+So the field is not silent about humans; it is **ambiguous** — a merge press and a peer's rewrite carry the identical value. That is a better argument for `blockedOn` than "wrong in both directions" was, because ambiguity cannot be fixed by reading harder.
+
+**And the blocker is usually knowable, which sharpens rather than weakens the case.** An earlier draft said two of six rows record no blocker at all; @sprint-review found TASK-018's, and it was there — *"what remains is a non-author reviewing #1083"*, written in the body of an update. Five of six are recoverable that way. Only TASK-016, blocked by Sam with no note, is genuinely unknowable. The problem was never that agents fail to say what they are waiting for; it is that the only place to say it is prose, so a queue cannot read it and a clear cannot fire on it. A field is not needed to make the fact exist. It is needed to make it **queryable**.
+
+**TASK-034 is the finding that lands on §What marks an item done, and it was not in the original draft.** Its blocker merged on 2026-08-22 and the row was still `blocked` on 2026-08-25. Nothing ever clears the value — and the reason is not that agents forget.
+
+**Measured while clearing that very row: `blocked` is terminal from the agent tool surface.** Both task tools an agent would reach for refuse it, and both refuse with a false statement:
+
+- `complete_task` → `409 {"error":"Task is already done","status":"blocked"}` — the message contradicts the status in its own body. `tasksApi.ts:489` CASes on `status: {$in: ['claimed','pending']}`; the fallback at `:493` hardcodes "already done" for every status that does not match.
+- `claim_task` → `409 {"error":"Task already claimed", claimExpiresAt: <three days ago>}`. `claimableConditions` (`:352-360`) has four branches and every one requires `pending` or `claimed` — including the lapsed-lease branch that exists for precisely this case, so it never applies.
+
+Neither filter excluded `blocked` deliberately; they omitted it independently. `PATCH /api/v1/tasks/:podId/:taskId` accepts `status` on any row with no state guard (`:713`) and is the only path that works — no tool exposes it. So the six rows did not sit blocked because someone forgot; they sat blocked because the surface that would have to clear them cannot. A nullable field does not bring with it a way to null it, so v1 inherits this behaviour unless the clear is derived — the queue would accumulate rows whose blockers merged days ago, which is precisely the credibility failure the done-marker rule below exists to prevent. Note the asymmetry: the other three row types derive their transition from a fact that moves on its own (`approval.status`, `ask.status`, message text). **`blockedOn` is the only one whose clearing depends on an agent remembering** — so it needs a derived clear (the named PR merging) and, for the rows no merge event can reach, a sweep as well. Both are open: ratification points 4a and 4b.
+
+The fact does exist; it lives in prose inside update notes, where nothing can query it. **v1 needs one nullable field — `blockedOn: 'human' | 'task' | 'external' | null`** — set alongside `status`, not derived from it. Do not infer it by parsing note text: the notes that made this diagnosable are the same notes an inference would have to trust, and they are agent-authored free prose.
+
+### What marks an item done — one rule, and one deliberate exception
+
+**Rule: an item leaves the queue when its underlying fact changes, never when the human looks at it.** Read-state is a feed property. If the queue tracks "seen" it can disagree with reality — an approval still pending but marked read is a lie the surface tells about itself, and one such lie retires the queue's credibility for every other row.
+
+Per row: an **approval** leaves on `status != 'pending'`; a **blocked-on-human** row leaves when `blockedOn` clears; an **ask** leaves on `status: 'responded'`.
+
+**The queue keys on `blockedOn`, never on `status == 'blocked'`** (@sprint-review, while gating TASK-073). The two look interchangeable and stopped being so on 2026-08-25: PR #1248 makes a `blocked` row claimable, and the claim handler's `$set` (`tasksApi.ts:439`) writes `status, claimedBy, claimedAt, claimExpiresAt, rescueDeferrals, lapsedFrom` and nothing else. So a seat picking up a blocked row flips `status` to `claimed` while `blockedOn` still names an unresolved blocker. A queue reading `status` would drop that row the moment someone touched it — silently, and precisely when a human is still the thing it waits on. Claiming a row is not resolving what blocks it.
+
+**The rule does not depend on #1248 landing** (@sprint-review noted the dependency; it is worth closing here rather than leaving the paragraph hostage to one open PR). #1248 is what made the divergence *observable* — before it, no transition moved `status` off `blocked`, so the two predicates agreed by accident. They were never the same kind of thing: `status` is a lifecycle position that any future transition may change, `blockedOn` is the fact the queue exists to render. A queue keyed on the position inherits every future edit to the lifecycle. Key on the fact.
+
+**Three of those four transitions are safe and one is not**, which the measurement above establishes rather than assumes. `approval.status`, `ask.status` and message text all move on their own. `blockedOn` moves only if someone remembers to move it, and TASK-034 is the proof they do not — so a `blockedOn` row that never clears is the expected case, not the pathological one. Either the field carries the blocker's identity (a PR number, a task id) so the clear can be **derived** when that blocker resolves, or a sweep nulls it; a bare `'human'` enum with no referent cannot be cleared by anything but hand.
+
+**The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place v1 must store an explicit per-`(user, message)` acknowledgement.
+
+Name it for what it is: `acknowledged`, not `read`. A mention the human has seen and not acted on must be able to stay in the queue — the whole failure this queue exists to fix is attention that was technically delivered and never acted on, and a surface that clears on view reproduces it exactly. **Rendering a row is never an acknowledgement.**
+
+### Composition with the only-interrupter rule — the constraint that shapes v1
+
+§Layer 3 states that the escalation envelope is the *only* event class permitted to interrupt a human (push · ping · badge), and that activity and social events are **pull, always**. The queue spans both: approvals and blocked-on-human are escalation-shaped; @mentions are social.
+
+So the queue is a **pull surface that may not badge as a whole.** If a badge is wanted, it counts escalation-class rows only. This is not conservatism — §Layer 3's own arithmetic makes it necessary: ISA-18.2 puts alarm flood at >10 per 10 minutes, and a chatty non-escalation class borrowing the push channel reaches flood almost immediately. A queue that badges on mentions is a badge the human learns to ignore, and it takes the approvals down with it.
+
+**Corollary worth stating because it is counter-intuitive:** the most *useful* rows to show are not the ones permitted to interrupt. Mentions are the highest-volume and lowest-authority class; approvals are the rarest and the only ones that block work. The surface should be ordered by what is blocked, not by what is recent.
+
+### Deliberately out of v1 scope
+
+- **Bare-name references.** TASK-070(b) recommends against routing them, and if that is ever revisited they belong in a separate non-blocking list, not in the queue — a discussion reference has nothing to handle, so it cannot leave, so it is not a queue row by construction.
+- **A subscription or interest graph.** §The-channel-is-bidirectional forbids it for the reverse direction on measured grounds; the same argument holds here. Four typed fact sources are the mechanism.
+- **Cross-instance / federated rows.** No fact source exists and none is proposed.
+
+### What this spec does not answer
+
+Whether `AgentAsk` should gain a human target, or whether an agent needing a human should emit an authority-boundary escalation instead (§Layer 1's primary trigger, which already covers *"has this agent reached a boundary it cannot cross"*). Those are the same need reached by two mechanisms, and picking one is a design decision with a real cost either way — widening `AgentAsk` adds a second path to the human; routing through the escalation feed makes every agent question compete for the escalation budget. **Recommend the escalation feed** on the grounds that it is the path already specified and already budgeted, but this is the one item in the spec I would not ship without Sam saying which.
+
+Also not measured: the rate of each row type in a real week. §Layer 0's numbers are for escalation-worthy messages in an unattended pod and do not transfer — the mention rate in particular is unknown, and it is the one that decides whether ordering-by-blocked is sufficient or the queue needs filtering on day one.
+
 ## Ratification points (Sam)
 
 1. Delivery channel order (in-pod first/primary is the joint recommendation after two design rounds).
 2. Budget owner: recommended **the receiving human** (the protected resource is their attention), with optional per-agent sub-caps. The stub's alternatives (agent-owned, pod-owned) both protect the wrong thing.
-3. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
+3. **The attention queue's one open item (§Layer 3.1):** whether an agent that needs a human emits an authority-boundary escalation (recommended) or `AgentAsk` gains a human target. Two mechanisms for one need; the spec declines to pick. The recommendation rested on the escalation feed being the already-budgeted path — an argument from convenience — until §The-cost-of-widening-`AgentAsk` priced the alternative: `AgentAsk` rows are removed by a Mongo TTL index 24h after they are raised, so an unanswered question to a human is deleted rather than queued, and its `expired` status is reachable only by a race. Widening it is a target change plus a retention decision plus a sweep, not a field. Still Sam's call; it is now a call between two costed options.
+4. **How a `blockedOn` row clears (§Layer 3.1) — two questions, not one.** TASK-034 sat `blocked` for three days after its blocker merged, and the measurement above shows why: no agent tool can move a `blocked` row at all. A hand-cleared field is not merely forgotten, it is unreachable, so a derived clear is the only mechanism that works without a tool change.
+
+    **4a. Does `blockedOn` carry the blocker's identity?** If it does, the clear fires when that blocker resolves. This changes the field's shape from an enum to a reference, which is why it is not decided here. Recommended.
+
+    **4b. What clears the rows a derive cannot reach?** Derive is not sufficient on its own, and the section's own table is what shows it. Four of the six rows name a resolvable blocker — #1083 (TASK-018 and TASK-026), #1097 (TASK-032), #1095 (TASK-034) — and a merge event can be observed for each. The other two cannot be derived at all: TASK-027 waits on a task rewrite owned by an agent, which emits no event to watch, and TASK-016 records nothing. Without a second mechanism those two accumulate exactly the way TASK-034 did, which is the credibility failure the done-marker rule exists to prevent. An age sweep is the obvious candidate; it is a separate call from 4a because it is still needed whichever way 4a goes.
+
+    (@sprint-review gated point 4 as either/or and was right that the table says both. Their count was three derivable of six; re-deriving it against the corrected TASK-018 row makes it four.)
+
+5. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
 
 ## Out of scope
 

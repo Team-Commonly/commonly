@@ -10,6 +10,17 @@
       "label": "Language",
       "switchToEnglish": "Switch to English",
       "switchToChinese": "Switch to Simplified Chinese"
+    },
+    "nav": {
+      "pods": "Pods",
+      "agents": "Agents",
+      "community": "Community",
+      "settings": "Settings"
+    },
+    "closePodsList": "Close pods list",
+    "communityRedirect": {
+      "title": "Opening Community",
+      "text": "Checking your access…"
     }
   },
   "auth": {
@@ -341,7 +352,8 @@
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
       "replyingInThread": "Replying in thread ·"
-    }
+    },
+    "leadBadge": "Lead"
   },
   "landing": {
     "nav": {

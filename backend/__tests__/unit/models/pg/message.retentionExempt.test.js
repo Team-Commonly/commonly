@@ -38,7 +38,7 @@ describe('Message.deleteOlderThan retention exemption', () => {
 
   it('unset env keeps the original unconditional delete', async () => {
     const res = await Message.deleteOlderThan(30);
-    expect(res).toEqual({ deleted: 3 });
+    expect(res).toEqual({ deleted: 3, reRooted: 0 });
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).not.toMatch(/pod_id/);
     expect(params).toEqual(['30 days']);
@@ -73,9 +73,19 @@ describe('Message.deleteOlderThan retention exemption', () => {
 
   it('invalid day counts still refuse to run at all', async () => {
     process.env.PG_RETENTION_EXEMPT_POD_IDS = SHOWCASE;
-    expect(await Message.deleteOlderThan(0)).toEqual({ deleted: 0 });
-    expect(await Message.deleteOlderThan(NaN)).toEqual({ deleted: 0 });
+    expect(await Message.deleteOlderThan(0)).toEqual({ deleted: 0, reRooted: 0 });
+    expect(await Message.deleteOlderThan(NaN)).toEqual({ deleted: 0, reRooted: 0 });
     expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('reports a repair failure as unknown, never as zero re-rooted rows', async () => {
+    const repair = jest.spyOn(Message, 'reRootOrphanedChains')
+      .mockRejectedValue(new Error('repair database unavailable'));
+    try {
+      await expect(Message.deleteOlderThan(30)).resolves.toEqual({ deleted: 3, reRooted: null });
+    } finally {
+      repair.mockRestore();
+    }
   });
 
   /*

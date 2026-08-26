@@ -284,7 +284,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_get_tasks',
-      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed" — comma-separated).',
+      description: 'List tasks in a pod. Filter by `assignee` (e.g. "nova") and/or `status` (e.g. "pending,claimed,blocked" — comma-separated).',
       inputSchema: reqWith({
         podId: STRING,
         assignee: STRING,
@@ -316,7 +316,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_task',
-      description: 'Claim a pending task — atomic: exactly one claimant wins. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees.',
+      description: 'Claim a pending or blocked task — atomic: exactly one claimant wins. Claiming a blocked task resumes it into active work. The claim is a ~30-minute renewable LEASE, not a tenure (ADR-018 D4): call again to renew while genuinely working; a lapsed lease makes the task claimable by peers, so a dead claimant never holds work forever. A 409 names the live holder and when their lease frees.',
       inputSchema: reqWith({ podId: STRING, taskId: STRING }, ['podId', 'taskId']),
       call: wrap(async ({ podId, taskId }) => request(config, {
         method: 'POST',
