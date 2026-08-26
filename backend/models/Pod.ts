@@ -67,6 +67,11 @@ export interface IPod extends Document {
   };
   createdBy: Types.ObjectId;
   members: Types.ObjectId[];
+  // Canonical unordered two-member key for agent-dm pods. The partial unique
+  // index below is the storage-level backstop for concurrent DM creation.
+  // Optional because legacy pods predate the key and are claimed lazily by
+  // DMService rather than being rewritten by a schema migration at startup.
+  agentDmPairKey?: string;
   messages: Types.ObjectId[];
   announcements: Types.ObjectId[];
   externalLinks: Types.ObjectId[];
@@ -136,6 +141,7 @@ const PodSchema = new Schema<IPod>(
     },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     members: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    agentDmPairKey: { type: String, trim: true },
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
     announcements: [{ type: Schema.Types.ObjectId, ref: 'Announcement' }],
     externalLinks: [{ type: Schema.Types.ObjectId, ref: 'ExternalLink' }],
@@ -166,6 +172,22 @@ PodSchema.pre<IPod>('save', function (next) {
   }
   next();
 });
+
+// `members` is a multikey array, so it cannot express uniqueness of an
+// unordered two-member pair. DMService writes the canonical scalar key and
+// this index elects one winner when two callers create the same agent DM at
+// once. Keep the index partial: legacy pods have no key, and an explicit null
+// would otherwise collide under a unique index.
+PodSchema.index(
+  { agentDmPairKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      type: 'agent-dm',
+      agentDmPairKey: { $type: 'string' },
+    },
+  },
+);
 
 export default mongoose.model<IPod>('Pod', PodSchema);
 // CJS compat: let require() return the default export directly

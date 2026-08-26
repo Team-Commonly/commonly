@@ -15,6 +15,13 @@ interface DMOptions {
   instanceId?: string;
 }
 
+interface AgentDmUpsertResult {
+  value: InstanceType<typeof Pod> | null;
+  lastErrorObject?: {
+    updatedExisting?: boolean;
+  };
+}
+
 // Mirror of agentIdentityService.resolveAgentDisplayLabel — duplicated here
 // to avoid a service-to-service import cycle (dmService is required by
 // agentMessageService, which is required by agentIdentityService callers).
@@ -37,6 +44,10 @@ const resolveAgentDisplayLabel = (
 };
 
 class DMService {
+  static agentDmPairKey(a: unknown, b: unknown): string {
+    return [String(a), String(b)].sort().join(':');
+  }
+
   static escapeRegex(value = ''): string {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -482,13 +493,32 @@ class DMService {
       throw new Error('getOrCreateAgentDmRoom requires two distinct user ids');
     }
 
-    // Idempotent on the unordered pair: $all matches regardless of order
-    // and the index path `members` already exists for any pod query.
-    const existing = await Pod.findOne({
+    const pairKey = DMService.agentDmPairKey(aId, bId);
+
+    // Existing rooms created before agentDmPairKey must win over a new
+    // insert. Claim the oldest matching legacy room so the next call uses the
+    // atomic key path; if a concurrent claimant wins, read its winner below.
+    const legacy = await Pod.findOne({
       type: 'agent-dm',
       members: { $all: [aId, bId] },
-    });
-    if (existing) return existing;
+      agentDmPairKey: { $exists: false },
+      $expr: { $eq: [{ $size: '$members' }, 2] },
+    }).sort({ createdAt: 1, _id: 1 });
+    if (legacy) {
+      try {
+        const claimed = await Pod.findOneAndUpdate(
+          { _id: legacy._id, agentDmPairKey: { $exists: false } },
+          { $set: { agentDmPairKey: pairKey } },
+          { new: true },
+        );
+        if (claimed) return claimed;
+      } catch (error) {
+        if ((error as { code?: number })?.code !== 11000) throw error;
+      }
+
+      const winner = await Pod.findOne({ type: 'agent-dm', agentDmPairKey: pairKey });
+      if (winner) return winner;
+    }
 
     // Defense-in-depth: if a caller forgot to populate `displayName` we
     // fall through to the instanceId (identity-bearing) before agentName
@@ -510,15 +540,47 @@ class DMService {
 
     const creatorId = String(options.creatorUserId || aId);
 
-    const dmPod = new Pod({
-      name,
-      description,
-      type: 'agent-dm',
-      joinPolicy: 'invite-only',
-      createdBy: creatorId,
-      members: [aId, bId],
-    });
-    await dmPod.save();
+    let result: AgentDmUpsertResult;
+    try {
+      result = await Pod.findOneAndUpdate(
+        { type: 'agent-dm', agentDmPairKey: pairKey },
+        {
+          $setOnInsert: {
+            name,
+            description,
+            type: 'agent-dm',
+            joinPolicy: 'invite-only',
+            createdBy: creatorId,
+            members: [aId, bId],
+            agentDmPairKey: pairKey,
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          includeResultMetadata: true,
+          setDefaultsOnInsert: true,
+        },
+      ) as unknown as AgentDmUpsertResult;
+    } catch (error) {
+      // The unique index is the race arbiter. A competing upsert may lose
+      // after both callers missed the read; return the inserted room instead
+      // of surfacing a duplicate-key error to the caller.
+      if ((error as { code?: number })?.code !== 11000) throw error;
+      const winner = await Pod.findOne({ type: 'agent-dm', agentDmPairKey: pairKey });
+      if (winner) return winner;
+      throw error;
+    }
+
+    const dmPod = result.value;
+    if (!dmPod) {
+      throw new Error('agent-dm upsert returned no room');
+    }
+
+    // Only the insert winner owns cross-store provisioning. Replaying those
+    // side effects for an existing room would make every DM open attempt a
+    // duplicate PG INSERT and needless AgentInstallation writes.
+    if (result.lastErrorObject?.updatedExisting !== false) return dmPod;
 
     // Sync to PG so chat queries don't 404 on the new room.
     try {
