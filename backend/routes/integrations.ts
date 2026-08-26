@@ -377,7 +377,7 @@ router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
 
 router.get('/user/all', auth, async (req: AuthReq, res: Res) => {
   try {
-    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').populate('platformIntegration').sort({ createdAt: -1 });
+    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').sort({ createdAt: -1 });
     res.json(integrations);
   } catch (error) {
     console.error('Error fetching user integrations:', error);
