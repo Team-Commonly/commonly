@@ -167,8 +167,8 @@ export function mirrorContentFromSections(
 // preserves siblings, so siblings keep their previous stamp.
 //
 // Phase 1 array-section semantics (`daily`, `relationships`) are **whole-array
-// replace**: sending `{ relationships: [...] }` replaces the entire stored
-// array with the one in the payload, and every entry gets `updatedAt = now`.
+// replace**: sending either array replaces the stored array, and every entry
+// gets `updatedAt = now`.
 // This is consistent with the way the per-key dotted-$set merge in the PUT
 // handler stores arrays. A client that wants to add one entry must currently
 // resend all pre-existing entries. Phase 2's POST /memory/sync with explicit
@@ -201,6 +201,7 @@ export function stampSectionsForWrite(
         date: d.date,
         content: d.content ?? '',
         visibility: (d.visibility ?? 'private') as MemoryVisibility,
+        updatedAt: now,
       }));
       continue;
     }
@@ -223,6 +224,49 @@ export function stampSectionsForWrite(
     );
   }
   return out;
+}
+
+export interface LastAgentMemoryWrite {
+  section: AgentWritableSection;
+  updatedAt: Date;
+}
+
+// The envelope timestamp is deliberately NOT an activity signal: automatic
+// system_exchanges writes update it even when the agent has saved no memory.
+// Limit this view to the normal agent-save surface. `cycles` is likewise
+// excluded: it is an agent journal, not one of the durable sections exposed by
+// commonly_save_my_memory. Ties keep AGENT_WRITABLE_SECTIONS declaration
+// order, which deliberately places long_term before bookkeeping sections.
+// Legacy entries without a server stamp are skipped rather than assigned a
+// fabricated time during hydration.
+export function getLastAgentMemoryWrite(
+  sections: IAgentMemorySections | undefined,
+): LastAgentMemoryWrite | null {
+  let latest: LastAgentMemoryWrite | null = null;
+  const consider = (section: AgentWritableSection, value: unknown) => {
+    const updatedAt = value instanceof Date ? value : new Date(String(value || ''));
+    if (Number.isNaN(updatedAt.getTime())) return;
+    if (!latest || updatedAt.getTime() > latest.updatedAt.getTime()) {
+      latest = { section, updatedAt };
+    }
+  };
+
+  for (const section of AGENT_WRITABLE_SECTIONS) {
+    const value = sections?.[section];
+    if (section === 'daily') {
+      for (const entry of (value as IDailySection[] | undefined) || []) {
+        consider(section, entry?.updatedAt);
+      }
+    } else if (section === 'relationships') {
+      for (const entry of (value as IRelationshipNote[] | undefined) || []) {
+        consider(section, entry?.updatedAt);
+      }
+    } else {
+      consider(section, (value as IMemorySection | undefined)?.updatedAt);
+    }
+  }
+
+  return latest;
 }
 
 // GH#632 Tier-1 foundation: provenance + capped version history on section

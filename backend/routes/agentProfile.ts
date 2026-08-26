@@ -20,7 +20,10 @@
 // ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
-import { filterSectionsByVisibility } from '../services/agentMemoryService';
+import {
+  filterSectionsByVisibility,
+  getLastAgentMemoryWrite,
+} from '../services/agentMemoryService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -155,19 +158,22 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
     // Empty requester-pods ⇒ filterSectionsByVisibility returns ONLY public
     // sections. Never read record.content (the unfiltered v1 blob).
     // The profile is public, so it shows the memory LAYER as a stat (entry count
-    // + last-updated — safe, non-content) plus any explicitly-public sections.
+    // + last agent-authored write — safe, non-content) plus any explicitly-public
+    // sections. The envelope's updatedAt is not used: system writers bump it.
     // Entry counts reveal size, never content. Private/pod memory never leaks.
     let publicMemory: unknown = {};
     let hasMemory = false;
-    let memoryUpdatedAt: unknown = null;
+    let lastAgentWrite: ReturnType<typeof getLastAgentMemoryWrite> = null;
     let memoryEntryCount = 0;
     const memRecord = await AgentMemory.findOne({ agentName, instanceId })
-      .select('sections updatedAt')
+      .select('sections')
       .lean();
     if (memRecord) {
       const sections = (memRecord as Record<string, unknown>).sections;
       hasMemory = true;
-      memoryUpdatedAt = (memRecord as Record<string, unknown>).updatedAt || null;
+      lastAgentWrite = getLastAgentMemoryWrite(
+        sections as Parameters<typeof getLastAgentMemoryWrite>[0],
+      );
       // Count entries across sections (size only — never content).
       for (const v of Object.values((sections || {}) as Record<string, unknown>)) {
         if (Array.isArray(v)) memoryEntryCount += v.length;
@@ -217,7 +223,7 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
       memory: {
         has: hasMemory,
         entryCount: memoryEntryCount,
-        updatedAt: memoryUpdatedAt,
+        lastAgentWrite,
         sections: publicMemory,
       },
       activity,

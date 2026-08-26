@@ -10,7 +10,8 @@
  *   - everyone else → 403
  *
  * Returns snippets, never full raw content — "a fraction of memory". Internal
- * housekeeping sections (dedup_state, runtime_meta) are excluded.
+ * housekeeping sections (dedup_state, runtime_meta) are excluded from snippets
+ * but may still be named as the most recent agent-authored write.
  */
 
 // ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
@@ -33,6 +34,7 @@ const Pod = require('../models/Pod');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+const { getLastAgentMemoryWrite } = require('../services/agentMemoryService');
 
 interface AuthReq {
   user?: { id?: string };
@@ -172,7 +174,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
     }
 
     const record = await AgentMemory.findOne({ agentName, instanceId })
-      .select('sections updatedAt')
+      .select('sections')
       .lean();
 
     const sections: Array<{ key: string; label: string; kind: string; notes: unknown[] }> = [];
@@ -211,7 +213,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
       instanceId,
       displayName: agentUser ? resolveAgentDisplayLabel(agentUser, agentUser.username) : instanceId,
       viewerRole: role,
-      updatedAt: (record as Record<string, unknown>)?.updatedAt || null,
+      lastAgentWrite: getLastAgentMemoryWrite((record as Record<string, unknown>)?.sections),
       totalEntries,
       sections,
       pods,

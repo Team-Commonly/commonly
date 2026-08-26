@@ -58,6 +58,24 @@ describe('AgentMemory (ADR-003 v2 schema)', () => {
     expect(doc.schemaVersion).toBe(2);
   });
 
+  it('does not fabricate write times while hydrating legacy section records', async () => {
+    await AgentMemory.collection.insertOne({
+      agentName: 'openclaw',
+      instanceId: 'legacy-no-section-stamps',
+      content: '',
+      sections: {
+        long_term: { content: 'legacy durable state', visibility: 'private', byteSize: 20 },
+        daily: [{ date: '2026-08-01', content: 'legacy journal', visibility: 'private' }],
+        relationships: [{ otherInstanceId: 'nova', notes: 'legacy note', visibility: 'private' }],
+      },
+    });
+
+    const doc = await AgentMemory.findOne({ instanceId: 'legacy-no-section-stamps' });
+    expect(doc.sections?.long_term?.updatedAt).toBeUndefined();
+    expect(doc.sections?.daily?.[0]?.updatedAt).toBeUndefined();
+    expect(doc.sections?.relationships?.[0]?.updatedAt).toBeUndefined();
+  });
+
   it('defaults visibility to "private" on sections', async () => {
     const doc = await AgentMemory.create({
       agentName: 'openclaw',

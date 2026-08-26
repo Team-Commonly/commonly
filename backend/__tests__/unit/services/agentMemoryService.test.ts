@@ -7,6 +7,7 @@ const {
   buildSectionsFromLegacyContent,
   mirrorContentFromSections,
   stampSectionsForWrite,
+  getLastAgentMemoryWrite,
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
@@ -192,7 +193,7 @@ describe('stampSectionsForWrite', () => {
     expect(out.soul).toBeUndefined();
   });
 
-  it('stamps daily entries without byteSize/updatedAt (per ADR shape)', () => {
+  it('server-stamps daily entries without byteSize', () => {
     const out = stampSectionsForWrite({
       daily: [{ date: '2026-04-14', content: 'today', visibility: 'pod' }],
     }, FIXED);
@@ -201,7 +202,7 @@ describe('stampSectionsForWrite', () => {
     expect(out.daily[0].content).toBe('today');
     expect(out.daily[0].visibility).toBe('pod');
     expect(out.daily[0].byteSize).toBeUndefined();
-    expect(out.daily[0].updatedAt).toBeUndefined();
+    expect(out.daily[0].updatedAt).toEqual(FIXED);
   });
 
   it('stamps relationships entries with updatedAt but no byteSize', () => {
@@ -226,6 +227,59 @@ describe('stampSectionsForWrite', () => {
     const a = stampSectionsForWrite(input, FIXED);
     const b = stampSectionsForWrite(a, FIXED);
     expect(b).toEqual(a);
+  });
+});
+
+describe('getLastAgentMemoryWrite', () => {
+  it('uses the newest normal agent-save section, not newer automated entries', () => {
+    const latest = getLastAgentMemoryWrite({
+      long_term: { content: 'durable state', updatedAt: new Date('2026-08-26T08:00:00Z') },
+      relationships: [{
+        otherInstanceId: 'architect',
+        notes: 'reviewer',
+        updatedAt: new Date('2026-08-26T09:00:00Z'),
+      }],
+      daily: [{
+        date: '2026-08-26',
+        content: 'shipped memory observability',
+        updatedAt: new Date('2026-08-26T10:00:00Z'),
+      }],
+      system_exchanges: {
+        entries: [],
+        visibility: 'private',
+        updatedAt: new Date('2026-08-26T11:00:00Z'),
+      },
+      cycles: {
+        entries: [],
+        visibility: 'private',
+        updatedAt: new Date('2026-08-26T12:00:00Z'),
+      },
+    });
+
+    expect(latest).toEqual({
+      section: 'daily',
+      updatedAt: new Date('2026-08-26T10:00:00Z'),
+    });
+  });
+
+  it('returns null when the envelope contains only automated or journal writes', () => {
+    expect(getLastAgentMemoryWrite({
+      system_exchanges: {
+        entries: [], visibility: 'private', updatedAt: new Date('2026-08-26T11:00:00Z'),
+      },
+      cycles: {
+        entries: [], visibility: 'private', updatedAt: new Date('2026-08-26T12:00:00Z'),
+      },
+    })).toBeNull();
+  });
+
+  it('prefers long_term over bookkeeping when one write stamps both equally', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      long_term: { content: 'durable decision', updatedAt },
+      dedup_state: { content: 'message ids', updatedAt },
+      runtime_meta: { content: 'runtime snapshot', updatedAt },
+    })).toEqual({ section: 'long_term', updatedAt });
   });
 });
 

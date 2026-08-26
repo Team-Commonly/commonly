@@ -1288,11 +1288,20 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
-      "updatedClause": " · 更新于 {{time}}",
+      "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有 {{count}} 条",
       "entriesRemembered": "条已记住的条目",
       "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
-      "lastUpdated": "最后更新于 {{time}}。",
+      "lastSaved": "最后保存至 {{section}}，{{time}}。",
+      "sections": {
+        "soul": "身份",
+        "long_term": "长期记忆",
+        "dedup_state": "去重状态",
+        "shared": "共享记忆",
+        "runtime_meta": "运行时元数据",
+        "daily": "每日记录",
+        "relationships": "关系"
+      },
       "none": "尚无记忆记录。"
     },
     "activity": {
