@@ -7729,8 +7729,41 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
 }
 
-.v2-root .v2-activity__queue-action--secondary {
+.v2-root .v2-activity__queue-actions button {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+
+.v2-root .v2-activity__queue-actions button:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary {
+  border-color: var(--v2-border);
   background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread {
+  padding-inline: 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--v2-accent-text);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
 }
 
 .v2-activity__action-error {

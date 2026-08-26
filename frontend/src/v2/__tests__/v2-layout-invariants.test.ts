@@ -449,6 +449,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
   });
 
+  test('Activity queue actions distinguish an action from the thread handoff', () => {
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
+  });
+
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
     const active = ruleBody(v2, '.v2-root button.v2-filter-segment__item--active');
 

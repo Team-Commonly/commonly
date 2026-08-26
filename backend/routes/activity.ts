@@ -1,3 +1,9 @@
+// ESM import so CodeQL recognises the limiter on this database-backed read
+// route; it runs before auth and the recap aggregation.
+import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -22,6 +28,20 @@ interface Res {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// Activity queries and actions fan out to multiple projections. Sixty per
+// minute leaves room for normal use without an unbounded hot loop.
+const activityRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: Request) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
+});
+
+router.use(activityRateLimit);
 
 router.get('/feed', auth, async (req: Req, res: Res) => {
   try {
@@ -115,6 +135,19 @@ router.post('/mark-read', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error marking activity as read:', error);
     return res.status(500).json({ error: 'Failed to mark activity as read' });
+  }
+});
+
+router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
+  try {
+    const { activityId } = req.params || {};
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.acknowledgeMention(userId, String(activityId)) as { success?: boolean; error?: string };
+    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge mention' });
+    return res.json(result);
+  } catch (error) {
+    console.error('Error acknowledging activity mention:', error);
+    return res.status(500).json({ error: 'Failed to acknowledge mention' });
   }
 });
 

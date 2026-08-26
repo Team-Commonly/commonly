@@ -74,6 +74,11 @@
       "working": "正在保存…",
       "actionFailed": "无法更新该审批，请重试。"
     },
+    "mention": {
+      "acknowledge": "确认",
+      "working": "正在保存…",
+      "actionFailed": "无法确认该提及，请重试。"
+    },
     "agents": {
       "eyebrow": "智能体回顾",
       "title": "你的智能体做了什么",

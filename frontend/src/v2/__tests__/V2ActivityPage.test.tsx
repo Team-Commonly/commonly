@@ -85,6 +85,22 @@ describe('V2ActivityPage', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
+  test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
+    mockGet
+      .mockResolvedValueOnce({ data: recap })
+      .mockResolvedValue({ data: { ...recap, needsYou: [] } });
+    mockPost.mockResolvedValue({ data: { success: true } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Acknowledge' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/activity/mention-1/acknowledge',
+      {},
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+    expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
+  });
+
   test('keeps an empty Needs you state honest', async () => {
     mockGet.mockResolvedValue({ data: { ...recap, needsYou: [] } });
     renderPage();

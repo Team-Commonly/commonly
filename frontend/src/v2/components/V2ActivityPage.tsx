@@ -74,6 +74,7 @@ const V2ActivityPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
+  const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -129,6 +130,26 @@ const V2ActivityPage: React.FC = () => {
       setActionError(t('activity.approval.actionFailed'));
     } finally {
       setActingApprovalId(null);
+    }
+  };
+
+  const acknowledgeMention = async (item: NeedsYouItem) => {
+    if (acknowledgingMentionId) return;
+    setAcknowledgingMentionId(item.id);
+    setActionError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post<{ success?: boolean }>(
+        `/api/activity/${item.id}/acknowledge`,
+        {},
+        { headers: { 'x-auth-token': token ?? '' } },
+      );
+      if (!response.data?.success) throw new Error('Mention acknowledgement failed');
+      setReloadKey((value) => value + 1);
+    } catch {
+      setActionError(t('activity.mention.actionFailed'));
+    } finally {
+      setAcknowledgingMentionId(null);
     }
   };
 
@@ -246,7 +267,12 @@ const V2ActivityPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      <button type="button" onClick={() => openPod(item.podId)} disabled={!item.podId}>
+                      {item.kind === 'mention' && (
+                        <button type="button" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
+                          {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
+                        </button>
+                      )}
+                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
                         {t('activity.openThread')}
                       </button>
                     </div>

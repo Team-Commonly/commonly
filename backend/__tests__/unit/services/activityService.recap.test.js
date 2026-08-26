@@ -4,6 +4,7 @@ jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
 const Activity = require('../../../models/Activity');
+const User = require('../../../models/User');
 const ActivityService = require('../../../services/activityService');
 
 const ownerId = 'owner-1';
@@ -24,6 +25,8 @@ const taskQuery = (tasks) => ({
 describe('ActivityService.getRecap', () => {
   let spy;
   let findByIdSpy;
+  let pendingApprovalsSpy;
+  let userFindByIdSpy;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,11 +52,14 @@ describe('ActivityService.getRecap', () => {
         flags: { isAgentAction: true, isMention: true },
       }],
     });
+    pendingApprovalsSpy = jest.spyOn(ActivityService, 'getPendingApprovals').mockResolvedValue([]);
   });
 
   afterEach(() => {
     spy?.mockRestore();
     findByIdSpy?.mockRestore();
+    pendingApprovalsSpy?.mockRestore();
+    userFindByIdSpy?.mockRestore();
   });
 
   test('projects existing agent activity, direct mentions, and board updates without writing new events', async () => {
@@ -133,6 +139,62 @@ describe('ActivityService.getRecap', () => {
     expect(result.needsYou).toEqual([expect.objectContaining({
       id: 'approval-1', kind: 'approval', title: 'Approval requested',
     })]);
+  });
+
+  test('keeps a pending approval older than the recap window and absent from the sampled feed', async () => {
+    spy.mockResolvedValue({ activities: [] });
+    pendingApprovalsSpy.mockResolvedValue([{
+      _id: 'approval-before-feed-page',
+      type: 'approval_needed',
+      actor: { id: 'agent-1', name: 'release-agent', type: 'agent' },
+      action: 'approval_needed',
+      content: 'Approve a decision that has waited longer than seven days.',
+      podId: 'pod-1',
+      approval: { status: 'pending' },
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    }]);
+
+    const result = await ActivityService.getRecap(ownerId, { window: '7d' });
+
+    expect(result.needsYou).toEqual([expect.objectContaining({
+      id: 'approval-before-feed-page', kind: 'approval', podId: 'pod-1',
+    })]);
+  });
+
+  test('removes a mention only after its dedicated acknowledgement is recorded', async () => {
+    spy.mockResolvedValue({
+      acknowledgedMentionIds: ['message-1'],
+      activities: [{
+        id: 'message-1',
+        type: 'message',
+        actor: { id: 'agent-1', name: 'sprint-impl', type: 'agent' },
+        action: 'posted a message',
+        preview: 'Please review this.',
+        timestamp: new Date(),
+        pod: { id: 'pod-1', name: pod.name },
+        flags: { isAgentAction: true, isMention: true },
+      }],
+    });
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.needsYou).toEqual([]);
+  });
+
+  test('stores an acknowledgement separately from activity feed read-state', async () => {
+    const user = {
+      activityQueue: { acknowledgedMentionIds: [] },
+      save: jest.fn().mockResolvedValue(),
+    };
+    userFindByIdSpy = jest.spyOn(User, 'findById').mockReturnValue({
+      select: jest.fn().mockResolvedValue(user),
+    });
+
+    const result = await ActivityService.acknowledgeMention(ownerId, 'message-1');
+
+    expect(result).toEqual({ success: true, acknowledgedMentionIds: ['message-1'] });
+    expect(user.save).toHaveBeenCalledTimes(1);
+    expect(user).not.toHaveProperty('activityFeed');
   });
 
   test('projects only an approval that the existing approve writer accepts', async () => {

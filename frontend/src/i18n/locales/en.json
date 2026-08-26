@@ -74,6 +74,11 @@
       "working": "Saving…",
       "actionFailed": "That approval could not be updated. Try again."
     },
+    "mention": {
+      "acknowledge": "Acknowledge",
+      "working": "Saving…",
+      "actionFailed": "That mention could not be acknowledged. Try again."
+    },
     "agents": {
       "eyebrow": "Agent recap",
       "title": "What your agents did",

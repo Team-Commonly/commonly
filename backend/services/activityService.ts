@@ -69,6 +69,7 @@ interface UserDoc {
   followers?: unknown[];
   followedThreads?: Array<{ postId: unknown; followedAt?: Date }>;
   activityFeed?: { lastViewedAt?: Date | string; readItemIds?: unknown[] };
+  activityQueue?: { acknowledgedMentionIds?: unknown[] };
 }
 
 interface PodDoc {
@@ -140,6 +141,9 @@ class ActivityService {
       return timestamp >= since.getTime()
         && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
     });
+    const acknowledgedMentionIds = new Set(
+      ((feed.acknowledgedMentionIds as unknown[] | undefined) || []).map((id) => String(id)),
+    );
 
     type AgentRecap = {
       id: string;
@@ -205,23 +209,72 @@ class ActivityService {
       })
       .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
 
-    const needsYou = activities
-      .filter((activity) => {
-        const approval = activity.approval as { status?: string } | undefined;
-        // Mongoose materializes approval.status = 'pending' for every
-        // Activity document, including ordinary message rows. The nested
-        // default is only meaningful on the one activity type that carries
-        // an approval request; otherwise every message would become a human
-        // action in the recap's decision queue.
-        const isPendingApproval = activity.type === 'approval_needed'
-          && approval?.status === 'pending';
-        return activity.flags?.isMention || isPendingApproval;
+    // Approvals are a decision queue, not an activity sample: query the
+    // existing authoritative pending-approval reader separately so a busy
+    // pod cannot push an older decision behind getUserFeed's display page.
+    // Mentions remain a bounded recent interrupt list and are removed only by
+    // their explicit acknowledgement, never by feed read-state.
+    const pendingApprovals = await ActivityService.getPendingApprovals(userId) as Array<{
+      _id?: unknown;
+      id?: unknown;
+      type?: string;
+      actor?: ActorInfo;
+      action?: string;
+      content?: string;
+      podId?: unknown;
+      approval?: unknown;
+      agentMetadata?: { agentName?: string };
+      createdAt?: Date | string;
+      updatedAt?: Date | string;
+    }>;
+    const approvalItems: ActivityItem[] = pendingApprovals
+      .filter((approval) => !requestedPodId || scopedPodIds.has(String(approval.podId)))
+      .map((approval) => {
+        const podId = approval.podId ? String(approval.podId) : '';
+        const pod = scopedPods.find((candidate) => String(candidate._id) === podId);
+        return {
+          id: String(approval._id || approval.id || ''),
+          type: approval.type || 'approval_needed',
+          actor: approval.actor || {
+            name: approval.agentMetadata?.agentName || 'An agent', type: 'agent',
+          },
+          action: approval.action || 'approval_needed',
+          content: approval.content,
+          timestamp: approval.createdAt || approval.updatedAt || null,
+          pod: pod ? { id: String(pod._id), name: pod.name } : null,
+          approval: approval.approval,
+          reactions: { likes: 0, liked: false },
+          replyCount: 0,
+          replies: [],
+        };
       })
-      .slice(0, 12)
+      .filter((approval) => Boolean(approval.id));
+
+    const isPendingApproval = (activity: ActivityItem): boolean => {
+      const approval = activity.approval as { status?: string } | undefined;
+      // Mongoose materializes approval.status = 'pending' for every Activity
+      // document. It is meaningful only on the one activity type that carries
+      // an approval request; otherwise every message becomes a human action.
+      return activity.type === 'approval_needed' && approval?.status === 'pending';
+    };
+    const queueCandidates = new Map<string, ActivityItem>();
+    [...activities, ...approvalItems].forEach((activity) => {
+      if (!queueCandidates.has(activity.id)) queueCandidates.set(activity.id, activity);
+    });
+    const newestFirst = (left: ActivityItem, right: ActivityItem) => (
+      new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
+    );
+    const approvalQueue = Array.from(queueCandidates.values())
+      .filter(isPendingApproval)
+      .sort(newestFirst);
+    const mentionQueue = Array.from(queueCandidates.values())
+      .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
+      .sort(newestFirst)
+      .slice(0, Math.max(0, 12 - approvalQueue.length));
+    const needsYou = [...approvalQueue, ...mentionQueue]
+      .sort(newestFirst)
       .map((activity) => {
-        const approval = activity.approval as { status?: string } | undefined;
-        const isApproval = activity.type === 'approval_needed'
-          && approval?.status === 'pending';
+        const isApproval = isPendingApproval(activity);
         return {
           id: activity.id,
           kind: isApproval ? 'approval' : 'mention',
@@ -290,7 +343,7 @@ class ActivityService {
 
     try {
       const user: UserDoc | null = await User.findById(userId)
-        .select('_id username following followers followedThreads')
+        .select('_id username following followers followedThreads activityQueue')
         .lean();
       if (!user) {
         return { activities: [], hasMore: false, quick: null };
@@ -321,6 +374,7 @@ class ActivityService {
         hasMore: withReadState.length === limit,
         quick,
         unreadCount: withReadState.filter((item) => !item.read).length,
+        acknowledgedMentionIds: user.activityQueue?.acknowledgedMentionIds || [],
       };
     } catch (error) {
       console.error('Error in getUserFeed:', error);
@@ -744,6 +798,21 @@ class ActivityService {
       lastViewedAt: user.activityFeed.lastViewedAt,
       readItemIds: user.activityFeed.readItemIds || [],
     };
+  }
+
+  static async acknowledgeMention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
+    const user = await User.findById(userId).select('_id activityQueue');
+    if (!user) return { success: false, error: 'User not found' };
+
+    if (!user.activityQueue) user.activityQueue = { acknowledgedMentionIds: [] };
+    const next = new Set((user.activityQueue.acknowledgedMentionIds || []).map((id: unknown) => String(id)));
+    next.add(String(activityId));
+    // This is per-(user, message) state, rather than a recent-feed cache: an
+    // acknowledged mention must not resurface merely because more messages
+    // arrive later.
+    user.activityQueue.acknowledgedMentionIds = Array.from(next);
+    await user.save();
+    return { success: true, acknowledgedMentionIds: user.activityQueue.acknowledgedMentionIds };
   }
 
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {
