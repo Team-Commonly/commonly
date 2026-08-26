@@ -189,15 +189,18 @@ const ROWS = [
   },
 ];
 
-// Terminal rows: no lease is held, so `unleased` is literally true — and the CAS
-// still refuses them. This pair is the whole reason the field is not named
-// `claimable`.
+// `done` is terminal: no lease is held, so `unleased` is literally true — and
+// the CAS still refuses it. `blocked` is deliberately absent: it is also
+// unleased, but an explicit claim resumes it into active work.
 const TERMINAL = [
   {
     taskId: 'TASK-007', label: 'done', doc: { status: 'done' }, leaseState: 'unleased', strangerWins: false,
   },
+];
+
+const RESUMABLE = [
   {
-    taskId: 'TASK-008', label: 'blocked', doc: { status: 'blocked' }, leaseState: 'unleased', strangerWins: false,
+    taskId: 'TASK-008', label: 'blocked', doc: { status: 'blocked' }, leaseState: 'unleased', strangerWins: true,
   },
 ];
 
@@ -240,10 +243,10 @@ describe('task leaseState', () => {
 
   beforeEach(async () => {
     await Task.deleteMany({});
-    await Task.create([...ROWS, ...TERMINAL].map((r, i) => materialize(r, i + 1)));
+    await Task.create([...ROWS, ...TERMINAL, ...RESUMABLE].map((r, i) => materialize(r, i + 1)));
   });
 
-  it.each([...ROWS, ...TERMINAL])('$label → leaseState $leaseState', async (row) => {
+  it.each([...ROWS, ...TERMINAL, ...RESUMABLE])('$label → leaseState $leaseState', async (row) => {
     const byId = await listed();
     expect(byId.get(row.taskId).leaseState).toBe(row.leaseState);
   });
@@ -285,6 +288,54 @@ describe('task leaseState', () => {
     expect(res.status).toBe(409);
   });
 
+  it('a blocked row resumes through claim and receives a lease', async () => {
+    const res = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-008/claim`)
+      .set('x-test-user', 'stranger')
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.status).toBe('claimed');
+    expect(res.body.task.claimedBy).toBe('stranger');
+    expect(new Date(res.body.task.claimExpiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('teaches a blocked row to claim before completing it', async () => {
+    const res = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-008/complete`)
+      .set('x-test-user', 'stranger')
+      .send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'Task is blocked; claim it first to resume work before completing it',
+      status: 'blocked',
+    });
+    const row = await Task.findOne({ taskId: 'TASK-008' }).lean();
+    expect(row.status).toBe('blocked');
+    expect(row.completedAt).toBeNull();
+  });
+
+  it('reports the actual legacy status when completion cannot transition it', async () => {
+    // Mongoose would reject this enum value, but older direct writes can exist.
+    // The fallback must not label every failed CAS as "already done".
+    await Task.collection.updateOne({ taskId: 'TASK-007' }, { $set: { status: 'archived' } });
+
+    const res = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-007/complete`)
+      .set('x-test-user', 'stranger')
+      .send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: "Task cannot be completed from status 'archived'",
+      status: 'archived',
+    });
+    const row = await Task.findOne({ taskId: 'TASK-007' }).lean();
+    expect(row.status).toBe('archived');
+    expect(row.completedAt).toBeNull();
+  });
+
   // The two-fetch shape theo depends on, pinned. Rescue asks for
   // `{ status: 'claimed' }` and assign asks for `{ status: 'pending' }`, and that
   // split is only correct while a lapsed row is INVISIBLE to the pending fetch —
@@ -309,6 +360,16 @@ describe('task leaseState', () => {
     const lapsed = claimed.body.tasks.find((t) => t.taskId === 'TASK-003');
     expect(lapsed).toBeDefined();
     expect(lapsed.leaseState).toBe('lapsed');
+  });
+
+  it('does not advertise a blocked row through the claimable discovery query', async () => {
+    const res = await request(app)
+      .get(`/api/v1/tasks/${POD_ID}`)
+      .query({ claimable: 'true' })
+      .set('x-test-user', 'stranger');
+
+    expect(res.status).toBe(200);
+    expect(res.body.tasks.map((task) => task.taskId)).not.toContain('TASK-008');
   });
 
   // The branch a per-row field structurally cannot carry. If someone ever reads
