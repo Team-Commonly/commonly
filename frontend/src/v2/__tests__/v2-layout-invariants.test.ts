@@ -168,10 +168,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // still see the content. The script must PRECEDE the style block that
     // uses it, and both must precede </head>.
     const indexHtml = read('../../../index.html');
-    expect(indexHtml).toContain("documentElement.className += ' js'");
-    expect(indexHtml).toContain('html.js #seo-page { display: none; }');
-    expect(indexHtml.indexOf("className += ' js'"))
-      .toBeLessThan(indexHtml.indexOf('html.js #seo-page'));
+    // Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+    // timing window — delayed head-script execution painted the prerender.
+    // Hidden-by-default has none: #seo-page is display:none from the first
+    // byte, and <noscript> reveals it only for text-only crawlers. The
+    // noscript override must carry !important to beat the base rule.
+    expect(indexHtml).toContain('#seo-page { display: none; }');
+    expect(indexHtml).toMatch(/<noscript><style>#seo-page \{ display: block !important; \}<\/style><\/noscript>/);
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
