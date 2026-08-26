@@ -5335,8 +5335,23 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
+  /* Below the 3-pane width the inspector becomes a right DRAWER, not a
+     casualty. Hiding the pane outright here made the avatar-stack button a
+     no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
+     pod's members/files/artifacts were unreachable on mobile entirely
+     (Sam, 2026-08-26). The pane only exists in the DOM while open
+     (V2Layout mounts it conditionally), so its presence IS the open state;
+     the existing v2-inspector__close dismisses it. Shadow is allowed here:
+     the design system reserves shadows for floating UI, which this now is. */
   .v2-pane--inspector {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - 48px));
+    z-index: 60;
+    border-left: 1px solid var(--v2-border);
+    box-shadow: -12px 0 32px rgba(17, 24, 39, 0.14);
   }
 }
 
@@ -6441,6 +6456,21 @@ body.modern-ui.v2-canvas {
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
+  /* iOS Safari auto-zooms on focusing any input under 16px and does not
+     zoom back on blur — the shell's inputs ranged 12–15px, so every tap on
+     the composer or a search field left the page stuck zoomed (Sam,
+     2026-08-26). 16px on touch devices removes the trigger entirely; this
+     is the root fix, NOT the viewport maximum-scale hack, which blocks
+     pinch-zoom on Android and is an accessibility regression. !important is
+     deliberate: it must beat every per-component size including the legacy
+     15px !important, and a device-scoped accessibility floor is the rare
+     case that earns it. */
+  .v2-root input,
+  .v2-root textarea,
+  .v2-root select {
+    font-size: 16px !important;
+  }
+
   /* No hover on touch — but always-on clusters over every message are
      chrome over content (Sam, 2026-08-23). A tap on the message toggles
      .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
