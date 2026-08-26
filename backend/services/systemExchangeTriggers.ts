@@ -139,6 +139,8 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     // sync with the swallow logic in postMessage.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AMS = require('./agentMessageService') as {
+      sanitizeAgentContent?: (s: unknown) => string;
+      isSilentNoReply?: (s: unknown) => boolean;
       AgentMessageService?: {
         sanitizeAgentContent?: (s: unknown) => string;
         isSilentNoReply?: (s: unknown) => boolean;
@@ -149,11 +151,13 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
       };
     };
     const sanitize = (
-      AMS.AgentMessageService?.sanitizeAgentContent
+      AMS.sanitizeAgentContent
+      ?? AMS.AgentMessageService?.sanitizeAgentContent
       ?? AMS.default?.sanitizeAgentContent
     );
     const isSilentNoReply = (
-      AMS.AgentMessageService?.isSilentNoReply
+      AMS.isSilentNoReply
+      ?? AMS.AgentMessageService?.isSilentNoReply
       ?? AMS.default?.isSilentNoReply
     );
     for (const m of result.rows) {
