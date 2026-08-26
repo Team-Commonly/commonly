@@ -1618,8 +1618,9 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
               if (!agent.agentName) return;
               navigate(`/v2/agent/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`);
             }}
+            aria-label={t('yourTeam.card.viewProfileAria', { name })}
           >
-            {t('inspector.members.manage')}
+            {t('yourTeam.card.profile')}
           </button>
         </div>
         {privateError && <div className="v2-chat__error" style={{ marginTop: 8 }}>{privateError}</div>}

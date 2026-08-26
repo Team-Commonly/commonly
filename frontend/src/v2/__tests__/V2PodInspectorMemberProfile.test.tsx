@@ -73,7 +73,8 @@ describe('V2PodInspector member profile action', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'inspector.members.manage' }));
+    expect(screen.getByText('yourTeam.card.profile')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'yourTeam.card.viewProfileAria' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agent/scout%2Fops/blue%20sky');
   });
@@ -91,7 +92,7 @@ describe('V2PodInspector member profile action', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: 'inspector.members.manage' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'yourTeam.card.viewProfileAria' })).toBeDisabled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
