@@ -1613,7 +1613,11 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <button
             type="button"
             className="v2-inspector__btn"
-            onClick={() => navigate(`/v2/agent/${encodeURIComponent(agent.agentName || '')}/${encodeURIComponent(agent.instanceId || 'default')}`)}
+            disabled={!agent.agentName}
+            onClick={() => {
+              if (!agent.agentName) return;
+              navigate(`/v2/agent/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`);
+            }}
           >
             {t('inspector.members.manage')}
           </button>

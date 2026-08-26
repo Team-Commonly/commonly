@@ -52,6 +52,11 @@ const detail = {
   sendMessage: jest.fn(),
 };
 
+const detailWithoutAgentName = {
+  ...detail,
+  agents: [{ ...detail.agents[0], agentName: '' }],
+};
+
 describe('V2PodInspector member profile action', () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -71,5 +76,22 @@ describe('V2PodInspector member profile action', () => {
     fireEvent.click(screen.getByRole('button', { name: 'inspector.members.manage' }));
 
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agent/scout%2Fops/blue%20sky');
+  });
+
+  test('does not construct a route when a malformed registry row lacks an agent name', () => {
+    render(
+      <MemoryRouter>
+        <V2PodInspector
+          detail={detailWithoutAgentName as any}
+          view={{ kind: 'member', agentKey: ':blue sky' }}
+          onOpenMember={jest.fn()}
+          onOpenArtifact={jest.fn()}
+          onBack={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'inspector.members.manage' })).toBeDisabled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
