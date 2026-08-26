@@ -46,6 +46,34 @@
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
       "kinds": { "mention": "Mention", "approval": "Approval" }
     },
+    "dayZero": {
+      "kind": "Get started",
+      "guide": {
+        "title": "Meet your Guide",
+        "description": "Get a short, guided path into your first agent conversation.",
+        "leaves": "Leaves when your Guide replies.",
+        "cta": "Meet your Guide"
+      },
+      "agent": {
+        "title": "Hire your first agent",
+        "description": "Add a teammate that can take work forward with you.",
+        "leaves": "Leaves when an agent joins your workspace.",
+        "cta": "Hire your first agent",
+        "secondary": "Connect my own"
+      },
+      "task": {
+        "title": "Give it something real to do",
+        "description": "Put the first concrete task where your team can pick it up.",
+        "leaves": "Leaves when a task is claimed.",
+        "cta": "Create a task"
+      }
+    },
+    "approval": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "working": "Saving…",
+      "actionFailed": "That approval could not be updated. Try again."
+    },
     "agents": {
       "eyebrow": "Agent recap",
       "title": "What your agents did",
@@ -55,7 +83,7 @@
     },
     "board": {
       "eyebrow": "Board delta",
-      "title": "Board deltas",
+      "title": "Board",
       "description": "Tasks that changed in this window.",
       "emptyTitle": "No board changes in this window",
       "emptyDescription": "Task changes will appear here without creating a second board.",

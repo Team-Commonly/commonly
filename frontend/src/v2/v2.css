@@ -7665,6 +7665,11 @@ body.modern-ui.v2-canvas {
   color: #a85d08;
 }
 
+.v2-activity__queue-row--onboarding .v2-activity__queue-mark {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
 .v2-activity__queue-copy,
 .v2-activity__board-main > div,
 .v2-activity__agent-card,
@@ -7705,6 +7710,14 @@ body.modern-ui.v2-canvas {
   line-height: 1.5;
 }
 
+.v2-activity__queue-actions,
+.v2-activity__queue-row button,
+.v2-activity__board-meta button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .v2-activity__queue-row button,
 .v2-activity__board-meta button {
   min-height: 32px;
@@ -7714,6 +7727,16 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
   font-size: 12px;
   font-weight: 700;
+}
+
+.v2-root .v2-activity__queue-action--secondary {
+  background: var(--v2-surface-hover);
+}
+
+.v2-activity__action-error {
+  margin-top: 10px;
+  color: var(--v2-danger);
+  font-size: 13px;
 }
 
 .v2-activity__queue-row button:disabled,
@@ -7872,7 +7895,10 @@ body.modern-ui.v2-canvas {
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__board-row { grid-template-columns: minmax(0, 1fr); }
 
-  .v2-activity__queue-row > button { grid-column: 2; }
+  .v2-activity__queue-row > button,
+  .v2-activity__queue-actions { grid-column: 2; }
+
+  .v2-activity__queue-actions { flex-wrap: wrap; }
 
   .v2-activity__board-meta {
     grid-column: 1;

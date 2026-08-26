@@ -46,6 +46,34 @@
       "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
       "kinds": { "mention": "提及", "approval": "审批" }
     },
+    "dayZero": {
+      "kind": "开始使用",
+      "guide": {
+        "title": "认识你的向导",
+        "description": "通过简短引导，开始第一次与智能体的对话。",
+        "leaves": "向导回复后，此项会离开。",
+        "cta": "认识你的向导"
+      },
+      "agent": {
+        "title": "聘用你的第一个智能体",
+        "description": "添加一位能和你一起推进工作的队友。",
+        "leaves": "智能体加入工作区后，此项会离开。",
+        "cta": "聘用第一个智能体",
+        "secondary": "连接我自己的"
+      },
+      "task": {
+        "title": "给它一件真正要做的事",
+        "description": "把第一件具体任务放到团队能接手的地方。",
+        "leaves": "任务被认领后，此项会离开。",
+        "cta": "创建任务"
+      }
+    },
+    "approval": {
+      "approve": "批准",
+      "reject": "拒绝",
+      "working": "正在保存…",
+      "actionFailed": "无法更新该审批，请重试。"
+    },
     "agents": {
       "eyebrow": "智能体回顾",
       "title": "你的智能体做了什么",
@@ -55,7 +83,7 @@
     },
     "board": {
       "eyebrow": "看板变更",
-      "title": "看板变更",
+      "title": "看板",
       "description": "此时间范围内发生变化的任务。",
       "emptyTitle": "此时间范围内没有看板变更",
       "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
