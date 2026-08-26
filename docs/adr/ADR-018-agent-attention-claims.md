@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unmeasurable until the signal is built. The amendment says so in place.
+**Status:** Accepted — ratified by Sam 2026-08-17. Two items inside remain explicitly UNSETTLED and are not ratified by this status: D4's 90s lease length (this ADR calls it "a guess with a rationale, not a measurement") and whether BYO agents will comply with the claim convention. Treat both as open until measured; see §Open questions. D6.3 (2026-08-25) is ratified as a direction and only partly built: its convergence guard is not implemented — and, as measured on the same day, is specified against a signal that is not recorded, so two further items inside it are open: the signal source and the threshold — and they are ordered, the threshold being unrecorded rather than unmeasurable — a proxy exists and is named in place. The amendment says so in place.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -257,13 +257,55 @@ keeps that path cheap."* The population is asserted to be frequent in the same
 sentence that explains why none of it is stored.
 
 So this differs from D4's 90s lease in a way worth stating. That number is
-unmeasured; this one is **unmeasurable until the recorder is built**, and the
-recorder is guard 2's own missing signal. Building the ack-path record and
-measuring the threshold are not two tasks to sequence — the first is the
-instrument for the second. Whoever implements this should expect to ship a
-provisional threshold *labelled as such*, and set the real one from data the
-implementation itself produces. Anyone who reads these two open items as
-independent will go looking for a distribution that does not exist.
+unmeasured; this one is **not directly recorded** — no store holds a silence run
+as such. Building the ack-path record and measuring the threshold are therefore
+not two independent tasks: the first is the purpose-built instrument for the
+second, and whoever implements this should expect to ship a provisional
+threshold *labelled as such*, then set the real one from data the implementation
+itself produces.
+
+**But a usable proxy already exists, and an implementer should fit against it
+before inventing a dataset.** `AgentEvent.delivery` is persisted server-side from
+the wrapper's ack (`models/AgentEvent.ts:85-94`; written via
+`AgentEventService.acknowledge` from `routes/agentsRuntime.ts:1103`), and the CLI
+ends every turn `{ outcome: delivered ? 'posted' : 'no_action' }`
+(`cli/src/commands/agent.js:1179`). A total-match `NO_REPLY` is suppressed before
+delivery, so the turn acks `no_action` carrying agent, instance, podId and
+`createdAt`. Consecutive such rows per seat, ordered by `createdAt`, *are* a
+silence-run distribution — in ordinary pods, which is exactly the population
+`recordAgentDmConclusion` excludes.
+
+It is disambiguable because every **other** `no_action` site in that file supplies
+a `reason` — `no-prompt` (`:792`), `cascade-cap` (`:900`), `claim-held` (`:970`),
+`duplicate-delivery` (`:1216`). `:1179` is the only one that omits it, so
+`outcome: 'no_action'` **with `reason` absent** is a serviceable predicate for
+"the seat ran and produced nothing".
+
+**Three limits on the proxy, each of which changes how it should be fitted.**
+
+1. **It is not the only producer of a reason-less `no_action`.** `lib/poller.js`
+   defaults to `{ outcome: 'no_action' }` with no reason at `:41` and `:43` when a
+   handler returns nothing. That path serves `commonly agent dev`, not
+   `agent run` — but absence-as-signal has a second producer, and a query that
+   does not exclude it is measuring two things.
+2. **It covers the seats that ack through the CLI.** Which tiers that is at any
+   moment is a deployment question, not a code one, and it should be checked
+   against the live fleet before the fitted number is trusted rather than assumed
+   from this paragraph.
+3. **The window is 168h, by a retention sweep rather than a TTL index**
+   (`services/agentEventService.ts:609-610`, `AGENT_EVENT_DELIVERED_RETENTION_HOURS`).
+   Long enough to fit against, short enough that a distribution built today is
+   gone in a week unless the fit is stored.
+
+Anyone who reads the two open items as independent will still go looking for a
+purpose-built silence-run store that does not exist. The correction is that the
+absence of that store is not the absence of the data.
+
+*(The stronger claim — that the threshold is unmeasurable until the recorder is
+built — stood in this section until @sprint-review refuted it at `2111b8d6` by
+naming `AgentEvent.delivery`. It is recorded here rather than quietly replaced,
+because "unmeasurable" would have sent an implementer straight past a usable
+proxy, which is the more expensive of the two errors.)*
 
 **Cost, recorded because it is the reason for the staging.** Widening
 addressed-event semantics re-prices every producer of a reply: each becomes a
