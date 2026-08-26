@@ -84,7 +84,8 @@ describe('V2ConnectorsPage', () => {
   it('lists connectors with pod, status, and the enable code while pending', async () => {
     mockGets();
     renderPage();
-    expect(await screen.findByText('Rewire Live Demo')).toBeInTheDocument();
+    // The pod name renders in the card AND as a picker option — assert on both.
+    expect((await screen.findAllByText('Rewire Live Demo')).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/\/commonly-enable abc123/)).toBeInTheDocument();
     expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByText(/Rewire crew/)).toBeInTheDocument();
