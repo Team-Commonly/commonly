@@ -15,8 +15,9 @@ are not the same problem and they do not share a remedy.
 |---|---|---|---|
 | Run never created | check absent from `gh pr checks` | no run at that SHA in `gh run list --branch <b>` | needs a NEW event: push, or close/reopen |
 | `startup_failure` | check absent from `gh pr checks` | run exists, `conclusion=startup_failure`, 0 jobs | close/reopen |
-| Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing | wait — re-triggering adds to the back of the line |
+| Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing, **and no completed successor** | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
+| Superseded but never cancelled | grey/pending, indefinitely | run `status=queued` **and** a later run of the same workflow on the same branch has `completed` | none — it is dead; read the successor |
 | Jobs cancelled at 0 steps | run `failure` | jobs `cancelled`, `steps=0`, and no newer run to have superseded them | `gh run rerun <id>` |
 | Orphaned jobs | check shows **`pending`, forever** | run `completed/failure`, jobs still `queued/null` at `steps=0` | `gh run rerun <id>` — waiting never resolves it |
 
@@ -26,6 +27,36 @@ Two of these mislead in opposite directions. A run-level `failure` reads as
 inherits its **job's** status, and a job orphaned by a terminating run stays
 `queued/null` permanently. `gh pr checks` will show it as pending until the
 head moves.
+
+## A queued run is not evidence of a queue
+
+`status=queued` is the one state this document tells you to wait on, so it is
+worth knowing that most queued runs on this repo are not waiting for anything.
+
+Measured 2026-08-26: `?status=queued` returned `total_count: 11` repo-wide, and
+**all eleven had a later run of the same workflow on the same branch already
+completed.** Live queue depth was zero. Ten sat across four PR branches; the
+eleventh was `Uptime Check` on `main`, queued since 2026-08-19 with 23 completed
+runs after it — seven days, on a cron workflow, invisible from any PR page and
+untouchable by a PR-level remedy.
+
+These are *not* the same thing as the orphaned **jobs** in the table above. That
+state is a terminated run whose jobs never left `queued`; this one is a whole
+run that never started and never got cancelled either, despite the concurrency
+group that should have swept it. Two different leaks, and "orphaned" gets used
+for both — say which layer you mean.
+
+The check is one call, and it is the difference between "the pool is backed up,
+wait" and "this run is dead, read the successor":
+
+```bash
+gh api "repos/<o>/<r>/actions/runs?branch=<branch>&per_page=100" \
+  --jq '[.workflow_runs[] | select(.name=="<workflow>" and .created_at > "<queued_run_created_at>" and .status=="completed")] | length'
+```
+
+Non-zero means the queued run you are watching has already been outlived. A
+repo-wide queue-depth number that has not been through this filter measures
+accumulated debris, not load.
 
 **So the discriminator is the run's `status`, not the check's.** Map check →
 `check_suite` → run, and only `status: in_progress` or `queued` earns waiting.
