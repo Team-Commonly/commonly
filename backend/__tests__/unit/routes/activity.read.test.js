@@ -9,6 +9,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 jest.mock('../../../services/activityService', () => ({
   getUserFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
+  getRecap: jest.fn(async () => ({ needsYou: [], agents: [], board: [] })),
   getPodFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
   getPendingApprovals: jest.fn(async () => []),
   toggleLike: jest.fn(async () => ({ success: true })),
@@ -32,6 +33,16 @@ describe('activity read routes', () => {
   it('GET /api/activity/unread-count calls getUnreadCount', async () => {
     await request(app).get('/api/activity/unread-count').expect(200);
     expect(ActivityService.getUnreadCount).toHaveBeenCalled();
+  });
+
+  it('GET /api/activity/recap validates its small fixed window vocabulary', async () => {
+    await request(app).get('/api/activity/recap?window=7d&podId=pod-1').expect(200);
+    expect(ActivityService.getRecap).toHaveBeenCalledWith('user123', {
+      window: '7d',
+      podId: 'pod-1',
+    });
+
+    await request(app).get('/api/activity/recap?window=month').expect(400);
   });
 
   it('POST /api/activity/mark-read with all:true calls markRead', async () => {

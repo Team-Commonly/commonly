@@ -21,6 +21,7 @@ describe('activity route identity handling', () => {
     });
     jest.doMock('../../../services/activityService', () => ({
       getUserFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
+      getRecap: jest.fn(async () => ({ needsYou: [], agents: [], board: [] })),
       getPodFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
       getPendingApprovals: jest.fn(async () => []),
       toggleLike: jest.fn(async () => ({ success: true })),

@@ -423,6 +423,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(row).toContain('34px minmax(0, 1fr) auto');
   });
 
+  test('Activity cards have shrinkable desktop and mobile layout guards', () => {
+    // The recap is a feature-wide page, but it is still reachable at 390px.
+    // The zero-min grid tracks are the load-bearing no-horizontal-overflow
+    // rule; jsdom cannot observe the scrollbar they prevent.
+    expect(ruleBody(v2, '.v2-activity__agent-grid'))
+      .toContain('repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-activity__queue-row'))
+      .toContain('28px minmax(0, 1fr) auto');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__agent-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
+    // Board rows do not inherit the queue icon column. At 390px that left
+    // only one character of a task title — an overflow-free but unusable
+    // primary identifier, which violates the craft baseline rule.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  });
+
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
     const active = ruleBody(v2, '.v2-root button.v2-filter-segment__item--active');
 

@@ -35,6 +35,30 @@ router.get('/feed', auth, async (req: Req, res: Res) => {
   }
 });
 
+router.get('/recap', auth, async (req: Req, res: Res) => {
+  try {
+    const window = req.query?.window;
+    const podId = req.query?.podId;
+    if (window !== undefined && window !== 'today' && window !== '7d') {
+      return res.status(400).json({ error: 'window must be today or 7d' });
+    }
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.getRecap(userId, {
+      window: window === '7d' ? '7d' : 'today',
+      podId,
+    });
+    return res.json(result);
+  } catch (error) {
+    const e = error as { message?: string };
+    if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+    console.error('Error fetching activity recap:', error);
+    return res.status(500).json({ error: 'Failed to fetch activity recap' });
+  }
+});
+
 router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
   try {
     const { podId } = req.params || {};

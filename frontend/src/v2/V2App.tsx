@@ -31,7 +31,7 @@ import V2AgentBYO from './components/V2AgentBYO';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
-import ActivityFeedPage from '../components/activity/ActivityFeedPage';
+import V2ActivityPage from './components/V2ActivityPage';
 import AnalyticsDashboard from '../components/analytics/AnalyticsDashboard';
 import ChatRoom from '../components/ChatRoom';
 import ApiDevPage from '../components/ApiDevPage';
@@ -309,7 +309,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <ActivityFeedPage />)}
+                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false)}
                 />
                 <Route
                   path="digest"

@@ -8,6 +8,8 @@ const Activity = require('../models/Activity');
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
 const Post = require('../models/Post');
+// eslint-disable-next-line global-require
+const Task = require('../models/Task');
 
 let PGMessage: unknown = null;
 try {
@@ -87,6 +89,11 @@ interface GetFeedOptions {
   mode?: string;
 }
 
+interface GetRecapOptions {
+  window?: 'today' | '7d';
+  podId?: string;
+}
+
 interface ComputeFlagsOptions {
   actor?: ActorInfo;
   type?: string;
@@ -98,6 +105,173 @@ interface ComputeFlagsOptions {
 }
 
 class ActivityService {
+  /**
+   * Read-side projection for the v2 Activity surface. The source events stay
+   * in their owning stores: messages remain in Postgres and board transitions
+   * remain Task updates in Mongo. This endpoint only groups a member's
+   * existing, authorized data; it does not introduce another activity log.
+   */
+  static async getRecap(
+    userId: unknown,
+    options: GetRecapOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const window = options.window === '7d' ? '7d' : 'today';
+    const since = new Date(Date.now() - (window === '7d' ? 7 : 1) * 24 * 60 * 60 * 1000);
+    const pods: PodDoc[] = await Pod.find({
+      $or: [
+        { createdBy: userId },
+        { 'members.userId': userId },
+        { members: userId },
+      ],
+    }).select('_id name type').lean();
+
+    const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
+    const scopedPods = requestedPodId
+      ? pods.filter((pod) => String(pod._id) === requestedPodId)
+      : pods;
+    if (requestedPodId && scopedPods.length === 0) {
+      throw new Error('Access denied');
+    }
+
+    const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
+    const feed = await ActivityService.getUserFeed(userId, { limit: 100 });
+    const activities = ((feed.activities as ActivityItem[] | undefined) || []).filter((activity) => {
+      const timestamp = activity.timestamp ? new Date(activity.timestamp).getTime() : 0;
+      return timestamp >= since.getTime()
+        && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
+    });
+
+    type AgentRecap = {
+      id: string;
+      name: string;
+      profilePicture?: string;
+      lastActiveAt: Date | string | null;
+      messageCount: number;
+      recap: string;
+      updates: Array<{
+        id: string;
+        podId: string | null;
+        podName: string;
+        content: string;
+        timestamp: Date | string | null;
+      }>;
+    };
+    const agents = new Map<string, AgentRecap>();
+
+    activities
+      .filter((activity) => activity.actor?.type === 'agent' || activity.flags?.isAgentAction)
+      .forEach((activity) => {
+        const actorId = String(activity.actor?.id || activity.actor?.name || 'unknown-agent');
+        const name = activity.actor?.name || 'Agent';
+        const existing = agents.get(actorId) || {
+          id: actorId,
+          name,
+          profilePicture: activity.actor?.profilePicture,
+          lastActiveAt: activity.timestamp,
+          messageCount: 0,
+          recap: '',
+          updates: [],
+        };
+        existing.messageCount += 1;
+        if (new Date(activity.timestamp || 0).getTime() > new Date(existing.lastActiveAt || 0).getTime()) {
+          existing.lastActiveAt = activity.timestamp;
+        }
+        const content = String(activity.preview || activity.content || activity.action || '').replace(/\s+/g, ' ').trim();
+        if (content) {
+          existing.updates.push({
+            id: activity.id,
+            podId: activity.pod?.id || null,
+            podName: activity.pod?.name || 'Direct activity',
+            content: content.slice(0, 180),
+            timestamp: activity.timestamp,
+          });
+        }
+        agents.set(actorId, existing);
+      });
+
+    const agentRecaps = Array.from(agents.values())
+      .map((agent) => {
+        const updates = agent.updates
+          .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+          .slice(0, 3);
+        const podNames = Array.from(new Set(updates.map((update) => update.podName)));
+        return {
+          ...agent,
+          updates,
+          recap: agent.messageCount === 1
+            ? `Posted an update${podNames[0] ? ` in ${podNames[0]}` : ''}.`
+            : `Posted ${agent.messageCount} updates${podNames[0] ? ` across ${podNames.slice(0, 2).join(' and ')}` : ''}.`,
+        };
+      })
+      .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
+
+    const needsYou = activities
+      .filter((activity) => {
+        const approval = activity.approval as { status?: string } | undefined;
+        return activity.flags?.isMention || approval?.status === 'pending';
+      })
+      .slice(0, 12)
+      .map((activity) => {
+        const approval = activity.approval as { status?: string } | undefined;
+        const isApproval = approval?.status === 'pending';
+        return {
+          id: activity.id,
+          kind: isApproval ? 'approval' : 'mention',
+          title: isApproval ? 'Approval requested' : `${activity.actor?.name || 'Someone'} mentioned you`,
+          detail: String(activity.preview || activity.content || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+          podId: activity.pod?.id || null,
+          podName: activity.pod?.name || 'Direct activity',
+          timestamp: activity.timestamp,
+        };
+      });
+
+    let board: Array<Record<string, unknown>> = [];
+    if (scopedPods.length > 0) {
+      const taskRows: Array<Record<string, unknown>> = await Task.find({
+        podId: { $in: scopedPods.map((pod) => pod._id) },
+        updatedAt: { $gte: since },
+      })
+        .select('podId taskId title status updatedAt updates')
+        .sort({ updatedAt: -1 })
+        .limit(24)
+        .lean();
+      const podNames = new Map(scopedPods.map((pod) => [String(pod._id), pod.name]));
+      board = taskRows.map((task) => {
+        const updates = Array.isArray(task.updates) ? task.updates as Array<Record<string, unknown>> : [];
+        const lastUpdate = updates
+          .slice()
+          .sort((a, b) => new Date(b.createdAt as string || 0).getTime() - new Date(a.createdAt as string || 0).getTime())[0];
+        return {
+          id: String(task._id),
+          taskId: task.taskId,
+          title: task.title,
+          status: task.status,
+          podId: String(task.podId),
+          podName: podNames.get(String(task.podId)) || 'Pod',
+          updatedAt: task.updatedAt,
+          lastUpdate: lastUpdate
+            ? {
+              text: String(lastUpdate.text || '').slice(0, 180),
+              author: String(lastUpdate.author || ''),
+              createdAt: lastUpdate.createdAt,
+            }
+            : null,
+        };
+      });
+    }
+
+    return {
+      window,
+      since: since.toISOString(),
+      generatedAt: new Date().toISOString(),
+      scope: requestedPodId || 'all',
+      pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      needsYou,
+      agents: agentRecaps,
+      board,
+    };
+  }
+
   static async getUserFeed(
     userId: unknown,
     options: GetFeedOptions = {},
@@ -395,12 +569,12 @@ class ActivityService {
       messages.forEach((msg) => {
         const userId = msg.userId as Record<string, unknown> | undefined;
         const authorName = (msg.username as string) || (userId?.username as string) || 'Unknown';
-        const isAgent = ActivityService.isAgentUsername(authorName);
+        const isAgent = userId?.isBot === true || ActivityService.isAgentUsername(authorName);
 
         if (filter === 'humans' && isAgent) return;
         if (filter === 'agents' && !isAgent) return;
 
-        const pod = podMap.get(String(msg.podId) || String(msg.pod_id));
+        const pod = podMap.get(String(msg.podId || msg.pod_id || ''));
 
         activities.push({
           id: `msg_${msg._id || msg.id}`,
