@@ -127,6 +127,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(block).toContain('.v2-pane--inspector');
     expect(block).toContain('position: fixed');
     expect(block).not.toContain('display: none');
+    // The 760px secondary-pane eraser out-specifies the drawer (0-4-0 vs
+    // 0-1-0); the inspector must be in its :not chain or the drawer is a
+    // mounted-but-invisible pane again — the exact live bug, twice.
+    expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
   });
 
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
