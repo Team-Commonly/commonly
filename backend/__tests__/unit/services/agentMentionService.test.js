@@ -754,6 +754,72 @@ describe('AgentMentionService', () => {
       });
     });
 
+    // Humans are addressed by handle, and only by handle (TASK-070a).
+    //
+    // Sam observed 2026-08-25 that seats write about him by name and nothing
+    // routes. The frame taught three verbs, all of which move attention
+    // between AGENTS; none of them reach a person, and the paragraph never
+    // said so. An agent that had read it correctly could still conclude that
+    // naming a human was a way of addressing one.
+    //
+    // The control matters more than usual here. This frame already contains
+    // the word "human" twice (the token-misattribution clause) and the
+    // literal "@" many times, so a loose assertion stays green on a frame
+    // that has lost the routing rule entirely.
+    describe('human-handle cue', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-human-1',
+          message: { content: 'Hi @nova', id: 'msg-human-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('tells the agent to @mention a handle when it needs a human', async () => {
+        expect(await frame()).toContain('@mention their handle');
+      });
+
+      test('states that a bare name reaches no one', async () => {
+        // The failure is silent — nothing errors, the message posts, and no
+        // attention routes — so the cue has to name the outcome, not just
+        // prescribe the handle. Without this an agent reads the rule as a
+        // style preference it may skip when the name reads more naturally.
+        const content = await frame();
+        expect(content).toContain('A bare name reaches no one');
+        expect(content).toContain('matched on the literal @handle');
+      });
+
+      test('states the handle is necessary and not sufficient', async () => {
+        // Without this the cue teaches, by contrast with "reaches no one",
+        // that the handle DOES notify. It does not: humans get no AgentEvent
+        // row, so the ceiling is a pull surface. An agent that believes it
+        // has notified Sam stops working and waits — a new false model, and
+        // harder to spot than the old one because the message now looks
+        // correctly addressed.
+        const content = await frame();
+        expect(content).toContain('necessary and not sufficient');
+        expect(content).toContain('nothing pushes');
+      });
+
+      test('control: the pre-TASK-070 frame does not satisfy the assertions above', () => {
+        // Verbatim from the clauses that shipped before this change, and they
+        // are the ones most likely to keep a sloppy assertion green: both
+        // mention humans, and the second is entirely about @handles.
+        const beforeTaskO70 = 'Never post through an operator\'s CLI profile (`commonly pod send`) '
+          + 'or a human user\'s token — that misattributes your words to a human. '
+          + 'replyToMessageId quotes and ADDRESSES a message — its author is pinged. '
+          + 'Rule of thumb: if your message answers one person, reply.';
+        expect(beforeTaskO70).not.toContain('@mention their handle');
+        expect(beforeTaskO70).not.toContain('A bare name reaches no one');
+        expect(beforeTaskO70).not.toContain('matched on the literal @handle');
+        expect(beforeTaskO70).not.toContain('necessary and not sufficient');
+        expect(beforeTaskO70).not.toContain('nothing pushes');
+      });
+    });
+
     // The overflow rule, and the qualifier without which it is harmful.
     //
     // @sprint-review (57706) traced it to `effectiveFollowerIds`, whose

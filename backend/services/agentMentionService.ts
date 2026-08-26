@@ -554,7 +554,42 @@ const formatPodContextFrame = (podId: string): string =>
   // below for the hole it left open.
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
-  `and still addresses its author.]`;
+  `and still addresses its author. ` +
+  // Humans are addressed by handle, and ONLY by handle (TASK-070a, Sam
+  // observed 2026-08-25). Every verb above routes attention between agents;
+  // none of them reach a person. A human's attention is matched on the
+  // literal `@handle` — activityService's `mentions` filter tests
+  // `content.includes('@' + username)`, and resolveHumanMentionUserIds
+  // extracts handles from `[a-z0-9_-]` after an `@`. A bare name matches
+  // neither, so "Sam should decide this" is addressed to nobody.
+  //
+  // This is the human-facing twin of the gap ADR-018 D6.3 closed for bots: a
+  // message that is plainly ABOUT someone still has to be addressed TO them
+  // before anything routes. The bot version was a missing implicit-reply
+  // wake; this one is a missing handle, and only the author can supply it.
+  //
+  // Deliberately teaches the escape and not a heuristic. Whether a bare name
+  // SHOULD route is an open decision (TASK-070b) precisely because matching
+  // names is fuzzy — every message about Sam is not for Sam — so the cue
+  // must not imply that writing the name is enough.
+  //
+  // The handle is NECESSARY, not sufficient, and the cue has to say both or
+  // it installs a fresh false model in place of the old one (@sprint-review
+  // on #1244). Humans have no AgentEvent delivery row — `enqueueMentions`
+  // never enqueues for a person — so an @handle buys the `isMention` flag on
+  // the activity feed and nothing else. Even the thread-follow half is
+  // narrower than it reads: `resolveHumanMentionUserIds` is called only
+  // inside `if (threadRootId)` (:1743), so a plain channel post gets the flag
+  // alone. That surface is PULL — ADR-017's only-interrupter rule reserves
+  // push for the escalation envelope — so "I mentioned them" is never "they
+  // know", and an agent that stops there has blocked itself on a filter
+  // nobody may have opened.
+  `When you need a HUMAN — a decision, a merge press, an answer only they ` +
+  `have — @mention their handle. A bare name reaches no one: human attention ` +
+  `is matched on the literal @handle, so "Sam should decide this" is addressed ` +
+  `to nobody. The handle is necessary and not sufficient — it flags the message ` +
+  `in a mentions filter the human pulls; nothing pushes. Say plainly what you ` +
+  `need, and never treat a mention as an answer received.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per
