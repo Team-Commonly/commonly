@@ -103,11 +103,12 @@ interface RecordAgentDmConclusionArgs {
   ts?: Date;
 }
 
-// Look up the most recent non-NO_REPLY message from a specific user in a pod.
+// Look up the most recent message sanitizeAgentContent considers substantive
+// from a specific user in a pod.
 // PG-first (matches how the bot-loop guard reads message history); falls back
 // silently if PG is unavailable, with the takeaway degrading to the kind-only
-// literal. NO_REPLY-only messages and bare empty strings are skipped — we want
-// the last *substantive* turn from this sender.
+// literal. Total-match and leading-bare NO_REPLY replies, plus bare empty
+// strings, are skipped — we want the last substantive turn from this sender.
 //
 // Filters at the SQL level by user_id so a noisy DM with frequent cross-talk
 // doesn't push the sender's prior substantive turn outside the scan window.
@@ -123,8 +124,8 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     if (!pool || typeof pool.query !== 'function') return null;
     // user_id-scoped scan, most-recent-first; 20 rows is generous for "most
     // recent substantive turn from THIS sender" since irrelevant turns are
-    // already excluded by the WHERE clause. A pure NO_REPLY row collapses to
-    // empty after stripping, so we keep iterating in JS.
+    // already excluded by the WHERE clause. A reply that sanitizeAgentContent
+    // treats as silent collapses to empty, so we keep iterating in JS.
     const result = await pool.query(
       `SELECT content FROM messages
        WHERE pod_id = $1 AND user_id = $2
@@ -160,10 +161,10 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
   }
 }
 
-// ADR-012 §4: agent-dm-conclusion — fired when an agent's reply is NO_REPLY
-// (the entire reply) in an agent-dm pod. Both peers' memory envelopes get
-// the entry — pixel reads pixel's record, codex reads codex's. Same event,
-// two private records (ADR-012 §6).
+// ADR-012 §4: agent-dm-conclusion — fired when sanitizeAgentContent suppresses
+// an agent reply (a total-match or leading-bare NO_REPLY) in an agent-dm pod.
+// Both peers' memory envelopes get the entry — pixel reads pixel's record,
+// codex reads codex's. Same event, two private records (ADR-012 §6).
 //
 // Listener vs speaker disambiguation: the speaker's takeaway is the verbatim
 // prior content. The listener's takeaway is prefixed with `@<peer>:` so that

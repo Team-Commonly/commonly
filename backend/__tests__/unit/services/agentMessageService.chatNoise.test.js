@@ -227,3 +227,38 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(line).toContain(input);
   });
 });
+
+describe('AgentMessageService.postMessage — silent agent-DM conclusion hook', () => {
+  let warn;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    jest.restoreAllMocks();
+  });
+
+  it('starts the conclusion-memory flow for a leading bare sentinel', async () => {
+    // TASK-067's ratified suppression is a silence, so ADR-012 §4 records
+    // the existing prior-turn takeaway for both peers in an agent-DM. The
+    // suppressed body itself is intentionally never persisted.
+    const conclusion = jest.spyOn(AgentMessageService, 'maybeRecordAgentDmConclusion')
+      .mockResolvedValue(undefined);
+
+    const result = await AgentMessageService.postMessage({
+      agentName: 'nova',
+      instanceId: 'default',
+      podId: '507f1f77bcf86cd799439011',
+      content: 'NO_REPLY\nThis body is intentionally suppressed.',
+    });
+
+    expect(result).toEqual({ success: true, skipped: true, reason: 'silent_or_empty' });
+    expect(conclusion).toHaveBeenCalledWith({
+      podId: '507f1f77bcf86cd799439011',
+      senderAgentName: 'nova',
+      senderInstanceId: 'default',
+    });
+  });
+});

@@ -1122,11 +1122,12 @@ class AgentMessageService {
     }
 
     if (!sanitizedContent) {
-      // ADR-012 §4: agent-dm-conclusion trigger. The reply is silent
-      // (NO_REPLY swallowed by sanitizeAgentContent). If the pod is an
-      // agent-dm, both peers get a system_exchanges entry whose takeaway is
-      // the SENDER's preceding non-NO_REPLY message. Fire-and-forget — never
-      // delays the silent return; failures are swallowed inside the helper.
+      // ADR-012 §4: agent-dm-conclusion trigger. A total-match NO_REPLY or a
+      // ratified leading-bare NO_REPLY is silent under sanitizeAgentContent.
+      // If the pod is an agent-dm, both peers get a system_exchanges entry
+      // whose takeaway is the SENDER's preceding substantive message. The
+      // suppressed content is intentionally not persisted. Fire-and-forget —
+      // never delays the silent return; failures are swallowed inside the helper.
       void AgentMessageService.maybeRecordAgentDmConclusion({
         podId: String(podId),
         senderAgentName: agentName,

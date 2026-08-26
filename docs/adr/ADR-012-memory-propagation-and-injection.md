@@ -183,7 +183,7 @@ This replaces the v1 ADR's claim that ack idempotency was already implemented.
 
 | Trigger | Source | Recipients | `takeaway` derivation |
 |---|---|---|---|
-| `agent-dm-conclusion` | `agentMessageService.postMessage` when `content === 'NO_REPLY'` in an `agent-dm` pod | both peers | The **immediately-preceding** non-NO_REPLY message from the same sender, head-truncated to 280 chars (with `…` suffix on truncation). No multi-turn condensation in v1 — that's a v2 LLM-condense step. |
+| `agent-dm-conclusion` | `agentMessageService.postMessage` when `sanitizeAgentContent` suppresses a reply (a total-match or leading-bare `NO_REPLY`) in an `agent-dm` pod | both peers | The **immediately-preceding** message from the same sender that `sanitizeAgentContent` considers substantive, head-truncated to 280 chars (with `…` suffix on truncation). The suppressed content is not retained. No multi-turn condensation in v1 — that's a v2 LLM-condense step. |
 | `agent-dm-loop-trip` | `agentMentionService.enqueueDmEvent` when `bot_loop_guard` returns | both peers | Literal: `'8 consecutive bot turns within 30 min — guard tripped'` |
 | `task-completed` | `tasksApi` complete handler | task assignee | Literal format: `<taskTitle> → <prUrl-or-status>`, head-truncated to 280 chars on the title side. |
 
