@@ -13,7 +13,7 @@
 // update + revert — the same call the v1 board makes, so both boards stay
 // behaviorally interchangeable while v1 winds down.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
@@ -94,6 +94,7 @@ const V2PodBoard: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { socket, connected } = useSocket();
 
   const [tasks, setTasks] = useState<BoardTask[]>([]);
@@ -106,6 +107,22 @@ const V2PodBoard: React.FC = () => {
   const [newAssignee, setNewAssignee] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const openCreateTask = useCallback(() => {
+    setCreateError(null);
+    setCreateOpen(true);
+  }, []);
+
+  // Activity's empty-workspace onboarding hands its final step to the real
+  // board dialog. Consuming the intent here keeps task creation in its one
+  // existing surface instead of teaching the recap page to write Task rows.
+  useEffect(() => {
+    if (searchParams.get('createTask') !== '1') return;
+    openCreateTask();
+    const next = new URLSearchParams(searchParams);
+    next.delete('createTask');
+    setSearchParams(next, { replace: true });
+  }, [openCreateTask, searchParams, setSearchParams]);
 
   const load = useCallback(async () => {
     if (!podId) return;
@@ -225,7 +242,7 @@ const V2PodBoard: React.FC = () => {
         <button
           type="button"
           className="v2-board__new"
-          onClick={() => { setCreateError(null); setCreateOpen(true); }}
+          onClick={openCreateTask}
         >
           + {t('board.newTask')}
         </button>

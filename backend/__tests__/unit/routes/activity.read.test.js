@@ -9,8 +9,10 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 jest.mock('../../../services/activityService', () => ({
   getUserFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
+  getRecap: jest.fn(async () => ({ needsYou: [], agents: [], board: [] })),
   getPodFeed: jest.fn(async () => ({ activities: [], hasMore: false })),
   getPendingApprovals: jest.fn(async () => []),
+  acknowledgeMention: jest.fn(async () => ({ success: true })),
   toggleLike: jest.fn(async () => ({ success: true })),
   addReply: jest.fn(async () => ({ success: true })),
   approveActivity: jest.fn(async () => ({ success: true })),
@@ -34,6 +36,16 @@ describe('activity read routes', () => {
     expect(ActivityService.getUnreadCount).toHaveBeenCalled();
   });
 
+  it('GET /api/activity/recap validates its small fixed window vocabulary', async () => {
+    await request(app).get('/api/activity/recap?window=7d&podId=pod-1').expect(200);
+    expect(ActivityService.getRecap).toHaveBeenCalledWith('user123', {
+      window: '7d',
+      podId: 'pod-1',
+    });
+
+    await request(app).get('/api/activity/recap?window=month').expect(400);
+  });
+
   it('POST /api/activity/mark-read with all:true calls markRead', async () => {
     await request(app).post('/api/activity/mark-read').send({ all: true }).expect(200);
     expect(ActivityService.markRead).toHaveBeenCalledWith('user123', expect.objectContaining({ all: true }));
@@ -41,5 +53,10 @@ describe('activity read routes', () => {
 
   it('POST /api/activity/mark-read without args returns 400', async () => {
     await request(app).post('/api/activity/mark-read').send({}).expect(400);
+  });
+
+  it('POST /api/activity/:id/acknowledge uses the dedicated mention acknowledgement', async () => {
+    await request(app).post('/api/activity/mention-1/acknowledge').expect(200);
+    expect(ActivityService.acknowledgeMention).toHaveBeenCalledWith('user123', 'mention-1');
   });
 });

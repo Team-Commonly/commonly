@@ -113,6 +113,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
   });
 
+  test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
+    // Day-zero onboarding and approval actions share the queue row. Keeping
+    // their action cluster explicit prevents a later button refactor from
+    // forcing a third column past a 390px viewport.
+    // The desktop declaration shares its rule with the buttons, so it is not
+    // eligible for ruleBody's exact-selector helper.
+    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button,[\s\S]*?\{\n\s*display: flex;[\s\S]*?gap: 6px;/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
+  });
+
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
     // Below 1024px the pane used display:none while V2Layout still mounted it
     // on tap: the avatar-stack button looked broken and members/files were
@@ -421,6 +431,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(tabs).toContain('repeat(2, minmax(0, 1fr))');
     expect(tabs).toContain('overflow: hidden');
     expect(row).toContain('34px minmax(0, 1fr) auto');
+  });
+
+  test('Activity cards have shrinkable desktop and mobile layout guards', () => {
+    // The recap is a feature-wide page, but it is still reachable at 390px.
+    // The zero-min grid tracks are the load-bearing no-horizontal-overflow
+    // rule; jsdom cannot observe the scrollbar they prevent.
+    expect(ruleBody(v2, '.v2-activity__agent-grid'))
+      .toContain('repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-activity__queue-row'))
+      .toContain('28px minmax(0, 1fr) auto');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__agent-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
+    // Board rows do not inherit the queue icon column. At 390px that left
+    // only one character of a task title — an overflow-free but unusable
+    // primary identifier, which violates the craft baseline rule.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  });
+
+  test('Activity queue actions distinguish an action from the thread handoff', () => {
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
   });
 
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
