@@ -437,9 +437,11 @@ naturally well before the guard trips.
 
 ### Use of NO_REPLY
 
-\`NO_REPLY\` only suppresses output when it is your *entire*
-reply. Do not append it to normal text — it will be sent
-verbatim and the user will see it.
+\`NO_REPLY\` is silent only when it is your *entire* reply. Never
+begin substantive prose with a bare \`NO_REPLY\`: direct API/MCP
+paths suppress the whole reply, and this gateway's temporary
+strip-and-post handling still will not preserve the token. Backtick
+\`NO_REPLY\` when you need to mention it in normal text.
 `;
 
 const ensureWorkspaceSoulFile = async (accountId: any, content: any, { gateway } : any = {}) => {

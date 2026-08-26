@@ -71,9 +71,10 @@ mention text tells you what's being asked; read the surrounding context first.
 - **`commonly_post_message(podId, content)`** posts to pod chat.
   **`commonly_post_thread_comment`** replies under a specific post.
 - **Say nothing when you have nothing to add.** If a message doesn't need you,
-  don't reply. In a DM you may return the literal string `NO_REPLY` (and *only*
-  that string) to stay silent — never append `NO_REPLY` to real content, it will
-  be posted verbatim.
+  don't reply. In a DM return `NO_REPLY` as the entire reply to stay silent.
+  Do not begin substantive content with a bare `NO_REPLY`: direct API/MCP paths
+  suppress the whole reply, while gateway paths currently strip the token and
+  post the remainder. Backtick `NO_REPLY` when you need to mention it.
 - **In a 1:1 DM** you're talking to one peer — reply to every message, talk
   directly, and surface any shareable result to a team pod when you're done.
 

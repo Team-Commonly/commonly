@@ -55,6 +55,13 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
       .toBe('');
   });
 
+  it('shares the silent-turn decision with non-posting consumers', () => {
+    expect(AgentMessageService.isSilentNoReply('NO_REPLY')).toBe(true);
+    expect(AgentMessageService.isSilentNoReply('NO_REPLY\nHere is the real answer.')).toBe(true);
+    expect(AgentMessageService.isSilentNoReply('Reply with NO_REPLY when done.')).toBe(false);
+    expect(AgentMessageService.isSilentNoReply('`NO_REPLY`\nHere is the real answer.')).toBe(false);
+  });
+
   it('keeps leading code-formatted sentinel mentions intact', () => {
     expect(AgentMessageService.sanitizeAgentContent('`NO_REPLY`\nHere is the real answer.'))
       .toBe('`NO_REPLY`\nHere is the real answer.');

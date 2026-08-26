@@ -139,19 +139,36 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     // sync with the swallow logic in postMessage.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AMS = require('./agentMessageService') as {
-      AgentMessageService?: { sanitizeAgentContent?: (s: unknown) => string };
-      default?: { sanitizeAgentContent?: (s: unknown) => string };
+      AgentMessageService?: {
+        sanitizeAgentContent?: (s: unknown) => string;
+        isSilentNoReply?: (s: unknown) => boolean;
+      };
+      default?: {
+        sanitizeAgentContent?: (s: unknown) => string;
+        isSilentNoReply?: (s: unknown) => boolean;
+      };
     };
     const sanitize = (
       AMS.AgentMessageService?.sanitizeAgentContent
       ?? AMS.default?.sanitizeAgentContent
+    );
+    const isSilentNoReply = (
+      AMS.AgentMessageService?.isSilentNoReply
+      ?? AMS.default?.isSilentNoReply
     );
     for (const m of result.rows) {
       const raw = typeof m?.content === 'string' ? (m.content as string) : String(m?.content ?? '');
       const trimmed = raw.trim();
       const cleaned = typeof sanitize === 'function'
         ? sanitize(raw)
-        : (/^(?:NO_REPLY\s*)+$/.test(trimmed) ? '' : trimmed);
+        : (typeof isSilentNoReply === 'function'
+          ? (isSilentNoReply(raw) ? '' : trimmed)
+          // The lazy import can be absent in isolated tests. Keep that
+          // backstop aligned with the live total-match + leading-bare rule.
+          : (/^(?:NO_REPLY\s*)+$/.test(trimmed)
+            || /^NO_REPLY(?:$|[^A-Za-z0-9_])/.test(trimmed)
+            ? ''
+            : trimmed));
       if (cleaned) return cleaned;
     }
     return null;

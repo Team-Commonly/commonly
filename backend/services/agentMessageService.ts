@@ -1751,6 +1751,41 @@ class AgentMessageService {
   }
 
   /**
+   * Whether the first non-whitespace token is a bare NO_REPLY sentinel.
+   * Code-fenced content is an explicit mention, not a silence. Inline code
+   * starts with a backtick, so it never reaches the bare-token match.
+   */
+  static hasLeadingBareNoReply(content: unknown): boolean {
+    if (content === null || content === undefined) return false;
+    const raw = String(content);
+    const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
+    if (outerFence) return false;
+
+    const trimmed = raw.trim();
+    const sentinel = 'NO_REPLY';
+    const nextCharacter = trimmed[sentinel.length];
+    const nextIsWordCharacter = nextCharacter !== undefined
+      && /[A-Za-z0-9_]/.test(nextCharacter);
+    return trimmed.startsWith(sentinel) && !nextIsWordCharacter;
+  }
+
+  /**
+   * The sentinel forms that represent a silent agent reply across consumers.
+   * Keep this separate from sanitizeAgentContent: callers that only need the
+   * turn-policy decision must not rely on the sanitizer's strip-and-post work.
+   */
+  static isSilentNoReply(content: unknown): boolean {
+    if (content === null || content === undefined) return false;
+    const raw = String(content);
+    const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
+    const stripped = outerFence ? outerFence[1] : raw;
+    const trimmed = stripped.trim();
+
+    if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return true;
+    return !outerFence && AgentMessageService.hasLeadingBareNoReply(raw);
+  }
+
+  /**
    * `observe` is opt-in and carries the identity for the edit-warning below.
    * It is deliberately NOT a default: this function is also used as a
    * read-time predicate (`systemExchangeTriggers.findPreviousNonSilentMessage`
@@ -1839,11 +1874,7 @@ class AgentMessageService {
     // Check after the code-format guards above: a leading `NO_REPLY` or fenced
     // mention is deliberate content, while a bare token followed by prose is
     // an intended silence that must not leak the prose into the pod.
-    const startsWithLeadingBareSentinel = (
-      trimmed.startsWith(sentinel)
-      && !isWordCharacter(trimmed[sentinel.length])
-    );
-    if (startsWithLeadingBareSentinel) {
+    if (AgentMessageService.hasLeadingBareNoReply(trimmed)) {
       if (observe) {
         console.warn(
           `[agent-msg] suppressed substantive reply with leading bare sentinel from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,

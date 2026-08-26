@@ -5,6 +5,8 @@ const AgentEventService = require('./agentEventService');
 // eslint-disable-next-line global-require
 const AgentIdentityService = require('./agentIdentityService');
 // eslint-disable-next-line global-require
+const AgentMessageService = require('./agentMessageService');
+// eslint-disable-next-line global-require
 const AgentProfile = require('../models/AgentProfile');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -335,8 +337,7 @@ class AgentEnsembleService {
       return state;
     }
 
-    const normalizedContent = (response.content || '').trim();
-    const isNoReply = normalizedContent === 'NO_REPLY';
+    const isNoReply = AgentMessageService.isSilentNoReply(response.content);
 
     state.stats.lastActivityAt = new Date();
     turnState.waitingForResponse = false;

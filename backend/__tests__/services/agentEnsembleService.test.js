@@ -248,6 +248,26 @@ describe('AgentEnsembleService', () => {
       expect(updated.stats.totalMessages).toBe(initialMessages);
       expect(updated.turnState.turnNumber).toBe(initialTurn + 1);
     });
+
+    it('advances a leading-bare NO_REPLY turn without counting its suppressed body', async () => {
+      const state = await AgentEnsembleService.startDiscussion(testPod._id, {
+        createdBy: testUser._id,
+      });
+
+      const initialTurn = state.turnState.turnNumber;
+      const initialMessages = state.stats.totalMessages;
+
+      await AgentEnsembleService.processAgentResponse(state._id, {
+        agentType: state.turnState.currentAgent.agentType,
+        instanceId: state.turnState.currentAgent.instanceId,
+        content: 'NO_REPLY\nThis body is intentionally suppressed.',
+        messageId: 'm-leading-no-reply',
+      });
+
+      const updated = await AgentEnsembleState.findById(state._id);
+      expect(updated.stats.totalMessages).toBe(initialMessages);
+      expect(updated.turnState.turnNumber).toBe(initialTurn + 1);
+    });
   });
 
   describe('Fix 2: Scheduled discussions', () => {
