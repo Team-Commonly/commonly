@@ -66,6 +66,7 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
+import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -78,10 +79,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = (prompt, memoryLongTerm) => {
-  if (!memoryLongTerm) return prompt;
-  return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
+const buildPrompt = buildMemoryPreamble;
 
 const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 const PUBLIC_DENIED_TOOLS = [

@@ -56,6 +56,7 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
+import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -81,10 +82,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = (prompt, memoryLongTerm) => {
-  if (!memoryLongTerm) return prompt;
-  return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
+const buildPrompt = buildMemoryPreamble;
 
 // ── MCP wiring — codex consumes MCP servers via `-c mcp_servers.*` overrides ─
 //

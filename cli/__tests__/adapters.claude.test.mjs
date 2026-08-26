@@ -107,8 +107,14 @@ describe('claude adapter — spawn()', () => {
     expect(res.newSessionId).toBe('sid-123');
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('claude');
-    expect(calls[0].args).toEqual(
-      ['-p', 'hello world', '--output-format', 'text', '--resume', 'sid-123'],
+    // The prompt slot is asserted by containment, not equality: an empty
+    // `memoryLongTerm` now carries the empty-memory cue, and pinning the exact
+    // string here would make this session-flag test fail on any wording change
+    // to a preamble it is not about.
+    expect(calls[0].args[0]).toBe('-p');
+    expect(calls[0].args[1]).toContain('hello world');
+    expect(calls[0].args.slice(2)).toEqual(
+      ['--output-format', 'text', '--resume', 'sid-123'],
     );
     // Explicit: must NOT use --session-id on resume path — the whole point.
     expect(calls[0].args).not.toContain('--session-id');
@@ -172,10 +178,20 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain('current message');
   });
 
-  test('no preamble when memoryLongTerm is empty — prompt passed verbatim', async () => {
+  // Replaces an assertion that empty memory passed the prompt verbatim. That
+  // made two different states byte-identical from inside the session — an agent
+  // that has never saved anything, and a runtime with no memory bridge at all —
+  // so a seat could not adopt a habit whose surface it had no evidence existed.
+  test('empty memoryLongTerm still emits a cue naming the one readable section', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
     await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: '', _spawnImpl: impl });
-    expect(calls[0].args[1]).toBe('just this');
+    const promptArg = calls[0].args[1];
+    expect(promptArg).not.toBe('just this');
+    expect(promptArg).toContain('just this');
+    // `long_term` is the ONLY section read back, so the cue has to name it: a
+    // write to `daily` succeeds, returns 200, and is never seen again.
+    expect(promptArg).toContain('long_term');
+    expect(promptArg).toContain('commonly_save_my_memory');
   });
 
   test('rejects when claude exits non-zero, surfacing stderr', async () => {
