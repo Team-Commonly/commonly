@@ -85,9 +85,23 @@ publish. Nothing mirrors.
 >   did not fit, the implementation went around it.
 > - **The loop, permission and volume risks D7 defers are now live** on one connector rather than
 >   hypothetical. `shouldEscalate` plus `liveRelay` defaulting to `false` are the whole bound.
+> - **Second amendment, 2026-08-26 — the bound moved in both directions, and the line above was
+>   written between the two moves.** When it was written, `liveRelay` had no named writer anywhere:
+>   the flag defaulted to `false` and nothing in the product could set it, so "the whole bound" was
+>   really "nobody can turn it on". Two merges changed that. **#1290** (`e35d89e6`) ships the
+>   Connectors page whose Live-relay toggle is the first real writer — `V2ConnectorsPage.tsx:117`
+>   PATCHes `{liveRelay}`, and `integrations.ts:406` stamps `linkedUserId` from the authenticated
+>   caller when it flips on — so mode 4 is now reachable by an ordinary user path rather than only
+>   in principle. **#1289** (`f9b97d89`) narrows the inbound half to 1:1 chats:
+>   `telegramBridgeService.ts:213` refuses to relay unless `config.chatType === 'private'`, because
+>   every inbound message is authored as the linked user and only a private chat guarantees the
+>   sender is them. So the loop, permission and volume risks D7 defers are live on a connector a
+>   user can now actually switch on, and the permission one is bounded to the case where sender and
+>   linked user coincide. **D1's naming decision is unaffected — this changes what the inventory
+>   says exists, not what it should be called.**
 >
-> I have not re-derived the ten-call inventory at the top of this finding against current main;
-> the amendment covers what #1282 added and nothing else.
+> I have not re-derived the ten-call inventory at the top of this finding against current main.
+> The amendment covers what #1282, #1289 and #1290 changed, and nothing else.
 
 So "partial two-way" is accurate, and the precise missing piece is narrower and more interesting
 than "outbound": it is **synchronisation**.
@@ -256,7 +270,10 @@ the four chat connectors and no longer holds for telegram.
 So the redesign is not "build outbound" — it is (a) give the four chat providers the verb the two
 social providers already have, and (b) decide whether mirroring is a product commitment at all,
 because mode 4 is a much larger build than modes 1–3 and carries loop, permission, and volume
-questions modes 1–3 never had to answer — questions #1282 now has to answer for telegram, with
-`shouldEscalate` and a `liveRelay` flag defaulting to `false` as the whole bound.
+questions modes 1–3 never had to answer — questions #1282 now has to answer for telegram. The
+bound is `shouldEscalate` plus `liveRelay`, which defaults to `false`; since #1290 a user can turn
+that flag on from the Connectors page, and since #1289 the inbound half refuses any chat that is
+not 1:1. See Finding 1's second amendment — a default is only a bound while nothing can change it,
+and something can now.
 
 D1 is the one I want ratified. The rest follow from the audit.
