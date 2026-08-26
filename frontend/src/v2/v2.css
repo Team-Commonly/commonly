@@ -7470,6 +7470,11 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h2,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h3,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-team__title {
   letter-spacing: 0;

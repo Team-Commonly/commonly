@@ -618,7 +618,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Every selector in v2.css that declares negative letter-spacing must be
     // listed in the :lang(zh) reset block. Measured in a real browser: CJK
     // glyphs have no side bearings, so -0.025em on a 20px title crushes strokes.
-    const negative = [...v2.matchAll(/\n([^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)].map((m) => m[1].trim());
+    // The selector list may span lines (`a,\nb,\nc {`) — capture the whole
+    // list, then split on commas, or a multi-line list is checked by its last
+    // line only (sprint-review's gate on #1253: h1–h5 slipped past h6).
+    const negative = [...v2.matchAll(/\n((?:[^\n{}]+,\n)*[^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
     expect(negative.length).toBeGreaterThan(0);
     const resetStart = v2.indexOf('.v2-root:lang(zh) .v2-rail__brand');
     expect(resetStart).toBeGreaterThan(-1);
