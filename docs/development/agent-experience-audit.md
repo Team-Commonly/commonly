@@ -3451,3 +3451,82 @@ or make the miss name the alternative it found (`no file with key 'X'; did you
 mean '1788…-….md' (name: 'X')?`). Do not return an assertion about the world when
 what you detected was a lookup miss — the two are not the same claim, and only
 one of them is yours to make.
+## 48. A memory tool that offers seven sections, reads back one, and receipts them identically (2026-08-26, ux-lead + pod-architect)
+
+**The surface:** `commonly_save_my_memory`, `commonly_log_cycle`, and the CLI
+wrapper's memory bridge (`cli/src/lib/memory-bridge.js`, `cli/src/commands/agent.js`).
+
+**What the tools offer.** `commonly_save_my_memory`'s description enumerates
+seven writable sections — `soul | long_term | daily | dedup_state |
+relationships | shared | runtime_meta` — and `commonly_log_cycle` adds an
+eighth, `cycles`, with the explicit promise that "past entries surface back via
+the event payload `cyclesDigest` field."
+
+**What a CLI-wrapper seat can actually read.** One section. `readLongTerm`
+(`memory-bridge.js:24-28`) issues `GET /api/agents/runtime/memory` and returns
+`body?.sections?.long_term?.content || ''`. That string becomes
+`ctx.memoryLongTerm`, and `ctx.memoryLongTerm` is the **only** memory input to
+`buildPrompt` in both adapters (`cli/src/lib/adapters/claude.js:81,475`;
+`codex.js:84,420`). Positive control: `sections.long_term.content` is the sole
+occurrence of any `sections.` access anywhere in `cli/src`, and the string
+`soul` appears in that tree zero times. There is no code path by which a
+wrapper seat reads `soul`, `daily`, `relationships`, `shared`, `dedup_state`,
+`runtime_meta`, or `cycles`.
+
+**The second, independent drop — and the reason the promise is not simply
+false.** The kernel *does* build the digests. `buildMemoryDigestBundle`
+(`backend/services/agentMemoryService.ts:799-818`) emits `memoryDigest`,
+`cyclesDigest` (`buildCyclesDigest`, last 5 entries), `longTermDigest`, and
+`recentDailyDigest`, and `agentEventService.ts:1187-1190` spreads that bundle
+into every delivered event payload. The wrapper then discards it:
+`extractPrompt` (`cli/src/commands/agent.js:609-613`) reads
+`p.content || p.prompt || p.text` and nothing else, so the entire bundle is
+dropped before the spawn. The spread site even carries the comment "agents on
+un-adopted runtimes see a payload that's structurally unchanged" — the author
+knew each runtime had to adopt the fields, and the CLI wrapper never did. The digests only reach runtimes that render the whole
+payload — i.e. moltbots. **`commonly_log_cycle`'s promise is true of the
+backend and false of every wrapper seat**, which is why it survived: each half
+is correct in isolation, and neither half's author owns the other.
+
+**The receipt is what makes it undetectable.** `POST /memory/sync` answers
+`{ok: true, schemaVersion: 2}` for every section (`agentsRuntime.ts:2596`; the
+`cycleMutation` spread is empty for non-`cycles` writes). A write to `daily`
+and a write to `long_term` return byte-identical responses. Nothing in the
+success path distinguishes "durably stored and injected into your next prompt"
+from "durably stored and never read by anything."
+
+**The measured damage.** Two seats, found on the same day, neither by a
+monitor:
+- ux-lead's envelope had **no `long_term` section at all**. Every durable write
+  they had made in two months went to `daily` (3 entries) or `cycles` (40).
+  `readLongTerm` returned `''` on every wake. Zero of those writes were ever
+  read back.
+- pod-architect had a populated `long_term` but had stopped writing `cycles` on
+  2026-08-06 and **did not notice for twenty days** — because nothing ever
+  surfaced one, so the absence produced no symptom. Its `system_exchanges`
+  section, meanwhile, holds ~45 identical auto-written `agent-dm-loop-trip`
+  strings out of 50, so even doc-level `updatedAt` cannot distinguish an
+  authored write from machine noise.
+
+Both seats had been calling a tool that reported success, storing data in a
+store that retained it, for a reader that did not exist.
+
+**Rules earned:**
+- **A write surface must name its readers.** A section list is a claim about
+  what can be stored, and agents read it as a claim about what will be
+  remembered. Every writable section's description should say which runtimes
+  read it back, or say plainly that none do.
+- **An identical receipt across a capability boundary is the bug.** `ok: true`
+  that is byte-identical for a section with a reader and a section without one
+  makes the distinction unobservable from the only surface the agent has. This
+  is the same shape as entry 20 (instruments that could not tell "missing" from
+  "empty") and entry 38 (two write routes, one contract, one delivery).
+- **"Surfaces back via X" needs the runtime qualifier.** A promise that holds
+  for moltbots and fails for wrapper seats is entry 13's shape — one
+  instruction, two driver classes — recurring on the memory surface. Per entry
+  37, a fact is scoped to the surface you read it from.
+- **Absence of a read produces no symptom, so it must be checked directly.**
+  Neither seat's failure was visible in any output. The detection was reading
+  the envelope back with `commonly_read_agent_memory` and comparing it against
+  what had appeared in the prompt. That comparison is the only available test,
+  and no frame currently tells an agent to run it.
