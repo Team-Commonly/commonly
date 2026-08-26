@@ -1,7 +1,8 @@
-# ADR-025 — The connector substrate: from request-scoped bridges to a two-way driver
+# ADR-025 — The connector substrate: outbound exists, synchronisation does not
 
-**Status:** **Draft** — audit complete and measured; the decisions below are proposals for Sam.
-Nothing here is ratified, and D1–D6 should not be cited as settled. The landscape section is
+**Status:** **Draft** — audit re-derived after sprint-review falsified the first version's
+headline; the decisions below are proposals for Sam. Nothing here is ratified, and D1–D7 should
+not be cited as settled. The landscape section is
 deliberately unfilled pending cl-strategist's comparison memo (TASK-078); the current-state audit
 and the shape proposal do not depend on it, so they are written now rather than held.
 **Date:** 2026-08-26
@@ -23,101 +24,122 @@ other. They do not overlap and neither supersedes the other. ADR-007 is at Draft
 ## Context
 
 Sam's framing: *"we already support partial two-way."* The audit below is an attempt to say
-precisely which part, because "partial" turned out to name something narrower than it sounds.
+precisely which part.
 
-Everything in this section was read at `origin/main` (`1a29a177`) rather than taken from the
-integration docs, and every claim carries the file and line that produced it.
+**Correction, and it is the reason to trust the rest of this section.** The first version of this
+ADR claimed there was no outbound path at all. That was wrong, caught by sprint-review, and wrong
+for a reason worth recording: I searched for a negative with a grep that required a send-verb and
+an HTTP call on the same source line, which found two outbound calls out of ten — and I never
+opened `backend/integrations/`, where the provider registry, the per-provider manifests, and the
+`packages/integration-sdk` package live. A conjunctive same-line filter is not a search for a
+negative, and a directory you did not open cannot be reported as absent. What follows was
+re-derived by enumerating every outbound HTTP call in the connector code and every method each
+provider actually implements.
 
-### Finding 1 — what exists is request-scoped two-way, not state-synced two-way
+Everything below was read at `origin/main` (`1a29a177`).
 
-Both directions do exist, and this is the distinction that matters for the redesign:
+### Finding 1 — outbound exists in three modes, and none of them is event-driven
 
-- **Inbound** is real. `backend/routes/webhooks/{discord,slack,telegram,groupme}.ts` receive
-  external events, and agents can additionally *pull* external history through
-  `GET`-side handlers in `backend/routes/agentsRuntime.ts`.
-- **Outbound exists only inside an inbound request's own lifetime.** Every outbound write in the
-  backend is a reply to something that just arrived:
-  - `services/telegramService.ts` exports exactly one function, `sendMessage`. It has eleven call
-    sites and all fourteen are inside `routes/webhooks/telegram.ts` — which is also the only
-    file in the backend that references the service at all.
-  - `services/discordService.ts` makes two outbound POSTs, both to Discord *interaction*
-    endpoints (`/webhooks/{applicationId}/{interactionToken}` and
-    `/interactions/{token}/callback`) — i.e. responses valid only within a live interaction token.
-  - `services/slackApi.ts` is 55 lines: `postMessage` and `history`.
+There are ten outbound HTTP calls in the connector code (`services/{discord,slack,telegram,groupme}*`
+plus `integrations/providers/*`). They fall into three distinct trigger modes:
 
-**No Commonly-side event originates an outbound call.** A message posted in a pod, a reaction, a
-task moving on the board — none of these reach any connected platform. There is no fan-out path
-from the message-write path to `Integration`, and grepping the backend for a relay verb
-(`sendToDiscord`, `postTo…`, `relayTo…`, `forwardTo…`) returns nothing.
+1. **Request-scoped replies.** `services/telegramService.ts`'s single `sendMessage` has fourteen
+   call sites, all inside `routes/webhooks/telegram.ts` — the only file in the backend that
+   references it. `services/discordService.ts:1116` and `:1187` are both Discord *interaction*
+   endpoints, valid only within a live interaction token. These are answers to something that
+   just arrived.
+2. **Owner-triggered manual send.** `routes/integrations.ts:347` (`POST /:id/send`, human JWT,
+   and gated to `pod.createdBy` alone) calls `DiscordService.sendMessage`
+   (`services/discordService.ts:401`), which POSTs to a *stored* channel `webhookUrl` — a durable
+   credential, not an interaction token. This is a real outbound path and the first draft of this
+   ADR missed it.
+3. **Agent-originated publish.** `routes/agentsRuntime.ts:3354` resolves a provider from the
+   registry and calls `provider.publishPost(...)`, under a daily cap
+   (`INTEGRATION_PUBLISH_DAILY_LIMIT`) with per-agent attribution written back to
+   `config.lastAgentPublishBy`. Agents can and do originate outbound posts.
 
-*Scope of that claim:* it is a statement about this repository's backend. The openclaw gateway is
-a separate submodule with its own tool surface and I did not read it for this; if it relays
-independently, that changes the picture and should be checked before D1 is ratified.
+**What is uniformly absent is mode 4: a Commonly-side *event* originating an outbound call.** A
+pod message, a reaction, or a task moving on the board reaches nothing. Every path above is
+triggered by an inbound request, a human pressing a button, or an agent explicitly deciding to
+publish. Nothing mirrors.
 
-So "partial two-way" is precise if read as: **the platform can start a conversation with us; we
-cannot start one with the platform.** For an enterprise buyer that is the whole feature — the
-value of a Slack connector is that work happening in Commonly shows up in Slack, and today it
-does not.
+So "partial two-way" is accurate, and the precise missing piece is narrower and more interesting
+than "outbound": it is **synchronisation**.
 
-### Finding 2 — a connector is a schema enum, not an installable
+### Finding 2 — the registry's only outbound verb is `publishPost`, and no chat provider has it
 
-`models/Integration.ts:96-101` types a connector as a closed enum:
+`backend/integrations/` already contains the abstraction ADR-001 would ask for: a provider
+registry (`integrations/index.ts`, backed by `packages/integration-sdk/src/registry.js`), and
+per-provider manifests carrying `requiredConfig`, a generated `configSchema`, and a declared
+`capabilities` list (`integrations/manifests.ts`).
 
-```ts
-type: {
-  type: String,
-  required: true,
-  enum: ['discord', 'telegram', 'slack', 'messenger', 'groupme', 'whatsapp', 'x', 'instagram'],
-  default: 'discord',
-},
-```
+Enumerating what each of the six providers actually implements:
 
-Adding a connector is therefore a schema change plus an edit to every `switch` on that value.
-`routes/agentsRuntime.ts:3193` onward is the representative one — an `if / else if` chain on
-`integration.type`, each arm doing its own credential check and its own `require()` of a
-provider service, terminating in `Integration type ${integration.type} does not support message
-fetching`. This is the shape ADR-001 exists to remove: a connector should be an Installable with
-a component, discovered at install time, not a literal in a union type.
+| provider | validateConfig | ingestEvent | syncRecent | health | publishPost |
+|---|---|---|---|---|---|
+| discord | ✓ | ✓ | ✓ | ✓ | — |
+| slack | ✓ | ✓ | ✓ | ✓ | — |
+| telegram | ✓ | ✓ | ✓ | ✓ | — |
+| groupme | ✓ | ✓ | ✓ | ✓ | — |
+| x | ✓ | ✓ | ✓ | ✓ | **✓** |
+| instagram | ✓ | ✓ | ✓ | ✓ | **✓** |
 
-Note the enum already contains types with no service behind them (`messenger`, `whatsapp`) and
-types served only by a buffer read (`x`, `instagram`). The enum is a wish list and a dispatch key
-at the same time, so nothing distinguishes "declared" from "implemented."
+Four of the five verbs are inbound or health. The one outbound verb, `publishPost`, is implemented
+by exactly the two *social broadcast* providers and by none of the four *chat* providers. The SDK's
+shared types (`packages/integration-sdk/src/types.js`) are `NormalizedMessage` and
+`NormalizedSummaryInput` — both inbound shapes; there is no normalized outbound message at all.
 
-### Finding 3 — `config` is a union of every provider's fields
+**This is the enterprise finding.** Discord's outbound send exists (Finding 1, mode 2) but lives
+*outside* the registry, in a service method reachable from one legacy owner-only route. It never
+became a provider verb, so nothing else in the system can reach it and no other chat provider had
+a shape to copy. Slack's send is literally `return res.json({ success: true, result: 'not-implemented' })`
+at `routes/integrations.ts:360`. The connectors an enterprise actually buys — Slack, Teams-shaped,
+Discord — are the ones with no conversational outbound in the abstraction.
 
-`models/Integration.ts:108-161` is one flat sub-document holding roughly forty keys drawn from
-all eight providers at once: `serverId`, `channelId`, `webhookUrl`, `botToken`, `signingSecret`,
-`groupId`, `chatId`, `chatType`, `accessToken`, `refreshToken`, `oauthScopes`, `igUserId`,
-`followUsernames`, `lastExternalId`, and so on.
+### Finding 3 — the provider enum and the registry disagree about what a connector is
 
-Two consequences. Per-provider validation is impossible — every field is optional for every
-provider, so a misconfigured Slack integration and a correct one are the same document shape,
-and the failure surfaces at call time as a 400 rather than at save time. And every new connector
-widens the record for all existing ones.
+`models/Integration.ts:96-101` types a connector as a closed enum of eight strings, and
+`routes/agentsRuntime.ts:3193` dispatches on it with an `if / else if` chain that does its own
+per-provider credential check and its own `require()`. Meanwhile `integrations/index.ts` resolves
+providers from a registry keyed by the same string.
 
-`config.messageBuffer` is also here: an inline array of up to `maxBufferSize` (default **1000**)
-messages, stored in the configuration document. Configuration and message data share one record
-and one lifecycle.
+Both mechanisms are live, in the same file in at least one case. So a connector is *simultaneously*
+a registry entry and a schema literal, and the enum contains entries (`messenger`, `whatsapp`) with
+no provider registered at all — the enum is a wish list and a dispatch key at once, and nothing
+distinguishes "declared" from "implemented."
 
-### Finding 4 — connector credentials are at rest in plaintext
+The first draft called this "a schema enum, not an installable." That was too strong: the registry
+exists and is good. The accurate defect is the **duplication** — two sources of truth for the same
+question, one of which cannot be extended without a schema migration.
 
-`botToken`, `signingSecret`, `secretToken`, `accessToken`, and `refreshToken` are declared as
-bare `String` (`models/Integration.ts:115-127`), with no getter/setter, no `select: false`, and
-no encryption layer anywhere in the backend — grepping the whole of `backend/` (excluding
-`node_modules` and tests) for `encrypt`/`decrypt`/`createCipher` returns zero files.
+### Finding 4 — `config` is a union of every provider's fields
 
-This is the single largest enterprise blocker in the audit, and it is worth being plain about the
-scope: it is a design gap in how we store third-party credentials, not a known exploit. Any
-enterprise security review reaches it in the first hour, and no amount of connector surface area
-compensates for it.
+`models/Integration.ts:108-161` is one flat sub-document holding roughly forty keys drawn from all
+eight providers at once. Note this coexists with the manifests' per-provider `configSchema`: the
+schema knows Slack needs `botToken`, `signingSecret`, `channelId`, but the storage model accepts
+any of the forty for any provider. The validation exists and the persistence layer does not enforce it.
 
-### Finding 5 — a connector binds to exactly one pod
+`config.messageBuffer` also lives here: an inline array of up to `maxBufferSize` (default **1000**)
+messages inside the configuration document, so config and message data share one record and one
+lifecycle.
 
-`models/Integration.ts:95`: `podId` is required and singular. An organisation that wants one
-Slack workspace reflected across twenty pods needs twenty integration documents, twenty copies of
-the same credential, and twenty things to rotate. ADR-001 already solved this shape for
-Installables — one source-of-truth record projecting out to N runtime rows — and connectors did
-not inherit it.
+### Finding 5 — connector credentials are at rest in plaintext
+
+`botToken`, `signingSecret`, `secretToken`, `accessToken`, and `refreshToken` are declared as bare
+`String` (`models/Integration.ts:115-127`), with no getter/setter, no `select: false`, and no
+encryption layer anywhere — grepping the whole of `backend/` (excluding `node_modules` and tests)
+for `encrypt`/`decrypt`/`createCipher` returns zero files.
+
+This is the largest enterprise blocker in the audit. It is a design gap in how we store third-party
+credentials, not a known exploit, and it is the kind of thing any enterprise security review reaches
+in its first hour.
+
+### Finding 6 — a connector binds to exactly one pod
+
+`models/Integration.ts:95`: `podId` is required and singular. An organisation wanting one Slack
+workspace reflected across twenty pods needs twenty documents and twenty copies of one credential
+to rotate. ADR-001 solved this shape for Installables — one source-of-truth record projecting to N
+runtime rows — and connectors did not inherit it.
 
 ---
 
@@ -135,53 +157,58 @@ to name: a confident claim with no reader behind it.
 
 ## Proposed decisions
 
-These follow from the audit alone. They are the parts that hold regardless of what the landscape
-memo says; anything that depends on it is marked.
+**D1 — Name the gap as synchronisation, not as outbound.** Outbound exists in three trigger modes
+and agents already publish through it. What does not exist is any path from a Commonly-side event
+to a connector. Product surfaces should claim *publishing* and *ingestion*, and should not claim
+two-way *sync* for any connector until mode 4 exists. This is the decision I most want ratified,
+because the first draft of this ADR got it wrong in the other direction and an imprecise headline
+is what produced that error.
 
-**D1 — Name the current state honestly in the product surface.** Until an outbound path exists,
-connectors are *inbound bridges with request-scoped replies*. They should not be described as
-two-way sync in any UI, doc, or listing. This costs nothing and prevents the gap being discovered
-by a customer.
+**D2 — Add a conversational outbound verb to the provider contract.** The registry has exactly one
+outbound verb and it is `publishPost`, a broadcast shape (caption, hashtags, source URL) that four
+of six providers do not implement. Enterprise chat needs `sendMessage(threadRef, content)` as a
+first-class provider method, with `NormalizedOutboundMessage` alongside the SDK's existing
+`NormalizedMessage`. Discord's existing send is the reference implementation to lift into the
+registry — additive, per design rule 2, leaving `POST /:id/send` working while it migrates.
 
-**D2 — A connector becomes an Installable component, not an enum member.** Introduce a
-`Connector` component type under ADR-001 alongside `Agent`, `Webhook`, and the rest. The provider
-enum in `models/Integration.ts` is retired in favour of a manifest-declared provider id, and the
-`if/else` dispatch chains become a registry lookup. Additive per design rule 2: the existing
-`Integration` rows keep working and are read through an adapter until they are migrated.
+**D3 — A provider declares its directions, and the manifest is the place.** `capabilities[]` already
+exists in every manifest and is currently free-form prose (`['webhook', 'gateway', 'summary',
+'commands']`). Make it enumerated and enforced, so `inbound` / `publish` / `converse` / `sync` are
+checkable in CI rather than inferred from which methods happen to be defined. Finding 2's table
+should be generated, not hand-written.
 
-**D3 — A connector declares its directions.** Each connector manifest states which of
-`inbound`, `outbound`, and `sync` it actually implements, and the platform enforces it. Today
-directionality is implicit in which service functions happen to exist, which is why "partial
-two-way" was ambiguous enough to need this audit. A declared direction is checkable in CI.
+**D4 — Retire the enum in favour of the registry.** Finding 3's defect is duplication, not the
+absence of an abstraction. The registry wins; `models/Integration.ts`'s enum becomes a soft
+reference validated against registered providers, and the `if/else` chains become registry lookups.
+This removes the "declared but unimplemented" state the enum currently permits.
 
-**D4 — Outbound needs an event fan-out, and that is the real build.** The missing piece is a
-subscriber on the pod event stream that maps a Commonly-side event to a connector's outbound
-verb. This is where `AgentEvent`'s existing queue shape is the natural prior art — durable,
-retryable, per-target — rather than a synchronous call in the message-write path. Sizing and
-delivery semantics depend on the landscape memo; the existence of the component does not.
+**D5 — Enforce the manifest's `configSchema` at the persistence boundary.** Per-provider validation
+already exists and the storage model ignores it. Validating on write turns a class of call-time
+400s into save-time errors, and costs no new design.
 
-**D5 — Credentials move behind a secret reference before any new connector ships.** The
-`Integration` document stores a reference, not the material. Whether that is ESO-backed, a
-KMS envelope, or an application-level encryption layer is an implementation call I am not making
-here, but shipping a sixth plaintext credential is a decision too, and it should be taken
-deliberately rather than by default.
+**D6 — Credentials move behind a secret reference before any new connector ships.** The
+`Integration` document stores a reference, not the material. Whether that is ESO-backed, a KMS
+envelope, or application-level encryption is an implementation call I am not making here — but
+shipping a seventh plaintext credential is a decision too, and it should be taken deliberately.
 
-**D6 — Connectors scope like Installables.** One connector record, projected to N pods, per
-ADR-001's one-install-fans-out. This is what makes an enterprise install a single administrative
-act instead of twenty.
+**D7 — Connectors scope like Installables.** One connector record projected to N pods, per ADR-001's
+one-install-fans-out, so an enterprise install is one administrative act rather than twenty.
 
 ---
 
 ## What this ADR does not decide
 
-- **The wire format for outbound.** Whether outbound reuses CAP's verbs, the webhook driver's
-  payload shape, or something new is open, and the landscape memo should inform it.
+- **The wire format for D2's conversational verb.** Whether it reuses CAP's shapes, the webhook
+  driver's payload, or something new is open, and the landscape memo should inform it.
 - **Whether federation counts as a connector.** `services/federationService.ts` and
   `routes/federation.ts` exist and may belong to this substrate or may be a separate axis. Not
   investigated; naming it here so its absence is a gap rather than an oversight.
-- **Retention of `config.messageBuffer`.** Finding 3 says it should not live in the config
+- **Retention of `config.messageBuffer`.** Finding 4 says it should not live in the config
   document; it does not say where it goes.
-- **Anything requiring the landscape.** D2's manifest fields, D4's delivery semantics, and the
+- **Whether mode 4 (event-driven mirroring) should exist at all.** D1 says stop claiming it; it
+  does not say build it. Mirroring carries loop, permission, and volume questions none of the
+  current connectors answer, and that is a product decision.
+- **Anything requiring the landscape.** D2's payload shape, D3's capability vocabulary, and the
   enterprise-controls surface (audit log, per-channel permissions, data residency) are all
   under-specified on purpose until TASK-078 lands.
 
@@ -189,10 +216,13 @@ act instead of twenty.
 
 ## Open question for Sam
 
-The audit says the honest headline is *"we have inbound connectors, not two-way sync."* That is a
-more negative starting position than "partial two-way support" implies, and it changes what the
-redesign is: not an extension of something working, but the first build of the outbound half.
+The honest headline is *"we can publish, and we cannot mirror."* Agents already post to X and
+Instagram through a rate-limited, attributed endpoint; no chat connector has a conversational
+outbound verb, and nothing anywhere is driven by a Commonly-side event.
 
-Do you want this ADR to lead with that framing, or is there an outbound path outside this
-backend — in the gateway, or in an integration I have not read — that I have missed? I would
-rather be corrected here than have the enterprise pitch inherit the wrong premise.
+So the redesign is not "build outbound" — it is (a) give the four chat providers the verb the two
+social providers already have, and (b) decide whether mirroring is a product commitment at all,
+because mode 4 is a much larger build than modes 1–3 and carries loop, permission, and volume
+questions the current connectors never had to answer.
+
+D1 is the one I want ratified. The rest follow from the audit.
