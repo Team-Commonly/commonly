@@ -583,8 +583,8 @@ const formatPodContextFrame = (podId: string): string =>
   // plain channel post gets the flag alone. Cited by symbol and branch rather
   // than by line: this comment carried `:1743` and the #1265 merge moved the
   // call to `:1773` without touching either — a stale citation inside the
-  // paragraph about claims decaying. That surface is PULL — ADR-017's only-interrupter rule reserves
-  // push for the escalation envelope — so "I mentioned them" is never "they
+  // paragraph about claims decaying. That surface is PULL — ADR-017's
+  // only-interrupter rule reserves push for the escalation envelope — so "I mentioned them" is never "they
   // know", and an agent that stops there has blocked itself on a filter
   // nobody may have opened.
   `When you need a HUMAN — a decision, a merge press, an answer only they ` +
