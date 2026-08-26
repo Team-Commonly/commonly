@@ -936,7 +936,7 @@ class AgentMessageService {
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');
     }
-    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
+    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content, { agentName, instanceId, podId });
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
     // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
@@ -1768,7 +1768,19 @@ class AgentMessageService {
     return BARE_RUNTIME_ARTIFACTS.has(String(content));
   }
 
-  static sanitizeAgentContent(content: unknown): string {
+  /**
+   * `observe` is opt-in and carries the identity for the edit-warning below.
+   * It is deliberately NOT a default: this function is also used as a
+   * read-time predicate (`systemExchangeTriggers.findPreviousNonSilentMessage`
+   * re-sanitizes up to 20 already-stored messages to find the last substantive
+   * one), and a warning there would count historical reads as fresh edits.
+   * Only the posting path — which is the moment an edit actually happens, and
+   * the only place agent/instance/pod are in scope — opts in.
+   */
+  static sanitizeAgentContent(
+    content: unknown,
+    observe?: { agentName?: string; instanceId?: string; podId?: unknown },
+  ): string {
     if (content === null || content === undefined) return '';
     const raw = String(content);
     if (!raw.trim()) return '';
@@ -1875,6 +1887,27 @@ class AgentMessageService {
     // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
     // line-wise sanitizer previously flattened their indentation.
     const normalized = cleaned.trim();
+
+    // Observability, not behaviour. `cleaned` can only differ from `trimmed`
+    // by a sentinel this loop removed — protected ranges are copied verbatim,
+    // and the total-match case already returned '' far above — so this fires
+    // exactly when we EDITED an agent's substantive reply rather than
+    // suppressing it. That edit is currently invisible: it leaves no trace in
+    // the stored message (the token is gone) and none in the transcript, so
+    // the only occurrences ever noticed were caught by a reader who happened
+    // to know the original text. The two suppressions at the postMessage call
+    // site already warn like this before zeroing content; those discard
+    // operator diagnostics, while this one rewrites an agent's own words, so
+    // it is the one that least deserved to be silent.
+    //
+    // Identity comes from the caller via `observe`, which is also the opt-in:
+    // the two suppressions at the postMessage call site log agent, instance
+    // and pod, and an anonymous line here would be the weakest of the three.
+    if (observe && cleaned !== trimmed) {
+      console.warn(
+        `[agent-msg] stripped bare sentinel from a substantive reply (edit, not suppression) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${normalized.slice(0, 120)}`,
+      );
+    }
 
     // Apply the artifact floor after protected inline-code ranges have been
     // copied into `cleaned`; a literal mentioned as code is not runtime noise.
