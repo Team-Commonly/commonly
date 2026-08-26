@@ -578,9 +578,12 @@ const formatPodContextFrame = (podId: string): string =>
   // on #1244). Humans have no AgentEvent delivery row — `enqueueMentions`
   // never enqueues for a person — so an @handle buys the `isMention` flag on
   // the activity feed and nothing else. Even the thread-follow half is
-  // narrower than it reads: `resolveHumanMentionUserIds` is called only
-  // inside `if (threadRootId)` (:1743), so a plain channel post gets the flag
-  // alone. That surface is PULL — ADR-017's only-interrupter rule reserves
+  // narrower than it reads: `resolveHumanMentionUserIds` has exactly one call
+  // site, inside the `if (threadRootId)` branch of `enqueueMentions`, so a
+  // plain channel post gets the flag alone. Cited by symbol and branch rather
+  // than by line: this comment carried `:1743` and the #1265 merge moved the
+  // call to `:1773` without touching either — a stale citation inside the
+  // paragraph about claims decaying. That surface is PULL — ADR-017's only-interrupter rule reserves
   // push for the escalation envelope — so "I mentioned them" is never "they
   // know", and an agent that stops there has blocked itself on a filter
   // nobody may have opened.
