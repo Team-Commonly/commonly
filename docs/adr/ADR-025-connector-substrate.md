@@ -94,10 +94,13 @@ publish. Nothing mirrors.
 >   caller when it flips on — so mode 4 is now reachable by an ordinary user path rather than only
 >   in principle. **#1289** (`f9b97d89`) narrows the inbound half to 1:1 chats:
 >   `telegramBridgeService.ts:213` refuses to relay unless `config.chatType === 'private'`, because
->   every inbound message is authored as the linked user and only a private chat guarantees the
->   sender is them. So the loop, permission and volume risks D7 defers are live on a connector a
->   user can now actually switch on, and the permission one is bounded to the case where sender and
->   linked user coincide. **D1's naming decision is unaffected — this changes what the inventory
+>   every inbound message is authored as `config.linkedUserId`, and a private chat at least narrows
+>   the sender to a single person. It does not establish that the person is the linked user, and
+>   nothing in the code does: `handleEnableCommand` captures no user identity when the chat is
+>   bound, while `linkedUserId` is stamped by whoever later PATCHes `liveRelay` on. So the loop,
+>   permission and volume risks D7 defers are live on a connector a user can now actually switch
+>   on, and the permission one is NOT bounded — the invariant it would need is a link between the
+>   chat's counterpart and the toggling caller, and that link does not exist. **D1's naming decision is unaffected — this changes what the inventory
 >   says exists, not what it should be called.**
 >
 > I have not re-derived the ten-call inventory at the top of this finding against current main.
