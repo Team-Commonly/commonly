@@ -218,15 +218,39 @@ describe('appendSystemExchange (DB-backed)', () => {
     // so a different pod, a different kind, or a real per-event payload is
     // never suppressed, which is what makes the option safe to leave off by
     // default for every other caller.
-    it('does not suppress a different pod, kind, or takeaway', async () => {
+    //
+    // One term per case, deliberately. Chaining all three variations into a
+    // single four-append test proves nothing about any of them: the comparison
+    // only looks at the NEWEST entry, so each variant is checked against the
+    // previous VARIANT rather than against the base, and they differ on some
+    // other term anyway. Delete the kind term or the takeaway term from the
+    // comparison and that chained test stays green. Two appends per case —
+    // base, then one changed field — is what makes each term load-bearing.
+    it('does not suppress a different pod', async () => {
       const ts = new Date('2026-05-03T00:00:00Z');
       await appendSystemExchange({ ...trip, ts });
       await appendSystemExchange({ ...trip, surfacePodId: '69f7b89aabbccddeeff00022', ts });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    it('does not suppress a different kind', async () => {
+      const ts = new Date('2026-05-03T00:00:00Z');
+      await appendSystemExchange({ ...trip, ts });
       await appendSystemExchange({ ...trip, kind: 'agent-dm-conclusion', ts });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    it('does not suppress a different takeaway', async () => {
+      const ts = new Date('2026-05-03T00:00:00Z');
+      await appendSystemExchange({ ...trip, ts });
       await appendSystemExchange({ ...trip, takeaway: 'something else', ts });
 
       const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
-      expect(doc.sections.system_exchanges.entries).toHaveLength(4);
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
     });
 
     // Dedupe compares against the newest entry only, so an unrelated append in
