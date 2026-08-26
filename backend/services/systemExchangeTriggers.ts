@@ -140,39 +140,15 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AMS = require('./agentMessageService') as {
       sanitizeAgentContent?: (s: unknown) => string;
-      isSilentNoReply?: (s: unknown) => boolean;
-      AgentMessageService?: {
-        sanitizeAgentContent?: (s: unknown) => string;
-        isSilentNoReply?: (s: unknown) => boolean;
-      };
-      default?: {
-        sanitizeAgentContent?: (s: unknown) => string;
-        isSilentNoReply?: (s: unknown) => boolean;
-      };
     };
-    const sanitize = (
-      AMS.sanitizeAgentContent
-      ?? AMS.AgentMessageService?.sanitizeAgentContent
-      ?? AMS.default?.sanitizeAgentContent
-    );
-    const isSilentNoReply = (
-      AMS.isSilentNoReply
-      ?? AMS.AgentMessageService?.isSilentNoReply
-      ?? AMS.default?.isSilentNoReply
-    );
+    const sanitize = AMS.sanitizeAgentContent;
+    // The CommonJS module exports the service class directly. If an isolated
+    // caller replaces it without this predicate, do not invent a third
+    // sentinel matcher and accidentally record a false takeaway.
+    if (typeof sanitize !== 'function') return null;
     for (const m of result.rows) {
       const raw = typeof m?.content === 'string' ? (m.content as string) : String(m?.content ?? '');
-      const trimmed = raw.trim();
-      const cleaned = typeof sanitize === 'function'
-        ? sanitize(raw)
-        : (typeof isSilentNoReply === 'function'
-          ? (isSilentNoReply(raw) ? '' : trimmed)
-          // The lazy import can be absent in isolated tests. Keep that
-          // backstop aligned with the live total-match + leading-bare rule.
-          : (/^(?:NO_REPLY\s*)+$/.test(trimmed)
-            || /^NO_REPLY(?:$|[^A-Za-z0-9_])/.test(trimmed)
-            ? ''
-            : trimmed));
+      const cleaned = sanitize(raw);
       if (cleaned) return cleaned;
     }
     return null;
