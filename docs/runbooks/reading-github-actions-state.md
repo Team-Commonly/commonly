@@ -66,24 +66,36 @@ captured, `gh api repos/<o>/<r>/actions/runs/32985813845` still reported
 `status=queued conclusion=null`. The job records were already terminal. When
 the two disagree, the per-attempt job listing is the one that has run.
 
-## A re-trigger takes ~20 minutes to produce a run
+## A re-trigger fans out partially, and stragglers arrive minutes later
 
-Close/reopen re-fires every `pull_request` workflow without moving the head,
-which is what makes it the right lever over an empty commit when a run was
-never created. But the runs do not appear promptly. Measured on 2026-08-26,
-reopen timestamp → run `created_at`:
+Close/reopen re-fires `pull_request` workflows without moving the head, which is
+what makes it the right lever over an empty commit when a run was never created.
+It does work. But it does **not** deliver the whole fan-out at once, so an early
+check tells you almost nothing.
 
-| PR | reopened | runs created | delay |
-|---|---|---|---|
-| #1277 | 15:44:40Z | 15:57:56Z | 13m |
-| #1275 | 15:57:30Z | 16:19:58Z | 22m |
-| #1275 | 16:11:42Z | 16:30:30Z | 19m |
+Measured on 2026-08-26. PR #1277 reopened at 15:44:40Z: `Secret Scan` and
+`Tests` were created 9 seconds later, and three more workflows —
+`Package Version Guard`, `Playwright Tests`, `PR Base Freshness` — only at
+15:57:56Z, 13 minutes on. Same trigger, same PR, one fan-out split across
+thirteen minutes. PR #1275 had two reopens (15:57:30Z, 16:11:42Z) and two run
+batches (16:19:58Z, 16:30:30Z); depending on how you pair them the delay is
+either 8 and 19 minutes or 22 and 19.
 
-Two of us independently concluded "close/reopen produces no runs" by checking
-at 2 and 17 minutes. **A negative measured inside ~25 minutes is not a
-negative.** The runs that do arrive are fresh ids with `event=pull_request` and
-`run_attempt=1` — they do not reuse the run you were looking at, so watching
-the old run's id will never show you the answer either.
+**That pairing is the trap.** Nothing in the run object names the event that
+created it, so with more than one trigger in flight the delay is not a quantity
+you can measure — two of us independently derived confident and incompatible
+numbers from the same four timestamps. What the data supports is a bound and a
+shape: **some runs land in seconds, some take up to ~20 minutes, and a partial
+batch is the normal intermediate state, not evidence of a failure.**
+
+Practical consequences:
+
+- Do not conclude "the re-trigger did nothing" inside ~25 minutes. Both of us
+  did, at 2 and 17 minutes.
+- Do not conclude it worked because *some* runs appeared. Count the workflows
+  you expect, not whether the list is non-empty.
+- The arriving runs are fresh ids at `run_attempt=1`; they never reuse the run
+  you were watching, so watching that id shows you nothing either way.
 
 ## The rerun refusal is not about the run's conclusion
 
