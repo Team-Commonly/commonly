@@ -275,10 +275,28 @@ Sam named four row types. Exactly one of them has a fact source that already beh
 
 | row type | fact source today | can the fact change? | v1 verdict |
 |---|---|---|---|
-| **approval pending** | `Activity.approval.status` ∈ `pending \| approved \| rejected`; served by `GET /api/activity/approvals` → `ActivityService.getPendingApprovals` | **yes** — status transition | **ready.** Ship on this unchanged |
+| **approval pending** | `Activity.approval.status` ∈ `pending \| approved \| rejected`; served by `GET /api/activity/approvals` → `ActivityService.getPendingApprovals` | **yes** — status transition | **read path ready; no producer.** Ship the column, expect it empty — see below |
 | **human @mention** | derived at read time: `activityService.ts:517-521` builds `'@' + lowerUsername` and sets `isMention` from a substring test; `:591` is the `mentions` filter | **no** — the message text never stops containing the handle | needs an explicit ack (below) |
 | **blocked on human** | none. `Task.status` has a `blocked` value, but it records **no blocker identity** | n/a | needs a field |
 | **agent question to a human** | **none.** `AgentAsk` addresses `targetAgent` + `targetInstanceId` (`models/AgentAsk.ts:52-55`). There is no human target | n/a | needs a target widening |
+
+### The approval row's read path is complete and nothing produces its rows
+
+The table above called this row type "ready, ship unchanged" on the strength of its read path, and both reviewers of the first draft took that on trust — it is the one row type the spec does not propose to change, which is exactly why nobody checked it. Measured at `origin/main` (`6a262fe8`):
+
+**The resolve path is real and complete.** `GET /api/activity/approvals` (`routes/activity.ts:53`) → `ActivityService.getPendingApprovals` (`:908`) → `Activity.getPendingApprovals` (`models/Activity.ts:201`), which filters `type: 'approval_needed'` + `'approval.status': 'pending'` + not deleted. Resolution is `POST /:activityId/approve` and `/:activityId/reject` (`:123`, `:137`), both type-guarded, both writing `status`, `reviewedBy`, `reviewedAt` via the model methods at `:231` and `:239`. The frontend card exists (`V2ApprovalCard.tsx`). Nothing here needs building.
+
+**The producer does not exist.** `Activity.createApprovalRequest` (`models/Activity.ts:175`) and its service wrapper (`activityService.ts:790`) have **zero callers** — no route exposes them, no service invokes them. Positive control for the search: `getPendingApprovals` resolves route → service → model by the same grep, so the method does detect call sites where they exist.
+
+The only code that ever creates an `approval_needed` row is `ActivityService.seedPodActivities` (`:927`, the row at `:989`), reachable via `POST /api/activity/seed/:podId` — demo fixture data, content `"An agent is requesting access to the Production pod"`, `agentName: 'analytics-bot'`. So every approval this queue could show today is seeded, not requested.
+
+**Which changes the v1 verdict without changing the design.** The approval column ships as specified and will be empty until something requests an approval — and the natural producer is the v1.5 tool-layer refuse-and-park row in the escalation table above, which is not v1. That is not a reason to cut the column: an empty column with a working resolve path is the correct state for a capability whose producer is scheduled. It **is** a reason not to let "one of the four row types is already ready" carry weight in ratification, because the readiness is a half.
+
+**Two scoping facts an implementer will otherwise discover the hard way.**
+
+`getPendingApprovals(userId)` does not scope to pods the human is *in*. It scopes to pods where they are `createdBy` **or** a member with `role: 'admin'` (`activityService.ts:910-916`). So an ordinary member never sees an approval for their own pod, and the queue's approval column is owner/admin-only. Whether that is the intended audience is a question the queue inherits rather than creates, but the surface should not present itself as "everything waiting on you" while silently applying an admin filter.
+
+`approval.status` alone is **not** a predicate for "this is an approval". Mongoose applies the nested default unconditionally, so *every* `Activity` document is born with `approval.status: 'pending'` regardless of type — verified directly, with a control document of an unrelated type, which also carried it. `getPendingApprovals` is correct because it pairs the status with `type: 'approval_needed'`; any new reader that keys on the status alone will match the entire activity collection. The `sparse: true` on the index at `models/Activity.ts:146` is inert for the same reason: the field is never missing, so the index covers every row.
 
 ### The measurement that decides the `blocked` row, and it is a negative result
 
