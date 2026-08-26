@@ -2841,31 +2841,47 @@ repo. It is also exactly right. `services/agentMessageService.ts:474`,
 `services/skillsCatalogService.ts:134` and `routes/pods.ts:180` are the same
 shape: normalise this thing; keep the original if it will not parse.
 
-**So the discriminator is not syntactic, not local, and not about the value:**
+**So the discriminator is not syntactic, and not about the value. It is a
+question about the `try`:**
 
-> A collapse is a defect when the collapsed conditions call for **different
-> action by the caller** — not when they merely have different causes.
+> Name the question the code inside the `try` is asking. Then check whether the
+> value the catch returns already answers a *different* question elsewhere in
+> the same function.
 
-In `avatarService` every path means "use `value`", so the conditions really are
-equivalent at the boundary and the collapse *is* the specification. In
-`detect.ts`, "there is no Dockerfile" is a configuration state and "`readFileSync`
-threw" is a fault; a caller wanting to surface or retry the second cannot tell
-it from the first. Same in `getStatus`, which is why the out-of-band `'unknown'`
-one line above the catch was the available right answer.
-
-**Read "call for" normatively, or the rule acquits the two defects that anchor
-this entry.** Both callers today do the same thing either way:
+Where throwing is the only way to ask, the catch is the `else` and the collapse
+is the specification. All four correct sites are the same construct — `new
+URL(...)` at `avatarService.ts:42`, `agentMessageService.ts:474`,
+`skillsCatalogService.ts:125`, `pods.ts:177`. Where the code asked one question
+and the catch answers a different one with the same value, it is a defect:
 
 ```
-telegramBridgeService.ts:131   const integration = await findLiveIntegration(podId);
-                               if (!integration) return;          // no config, or the query threw
-readLongTerm (#1275)           buildPrompt(prompt, ctx.memoryLongTerm || '')   // empty, or the backend was down
+detect.ts:96             readdirSync   — "is it there?" was already answered at :91
+detect.ts:136            readFileSync  — already answered at :131
+discordService.ts:499    initialize()  — 'error' is an IntegrationStatus enum member
+telegramBridgeService    findOne       — null already means "no live integration"
+systemExchangeTriggers   findOne       — 'default' is a real instanceId
 ```
 
-Neither caller branches. That identical handling is the bug, not evidence
-against it — the caller *should* distinguish a transient outage from a steady
-empty state, and cannot, because the information was destroyed at the catch. Ask
-what a caller would need to do, not what this caller does.
+This is why the paired snippets look identical and are not: in `detect.ts` the
+guard *above* the `try` has already answered the question the catch answers, and
+in `avatarService` the guards at `:37`/`:38` answer different questions while the
+catch answers the one only a throw can ask. The difference is one line up, in
+both.
+
+**Not sufficient either, and the entry would be dishonest to close on it.**
+`try { JSON.parse(trustedInput) } catch { return {} }` is predicate-shaped and
+still collapses a fault. Two further things it does *not* discriminate on,
+checked against these nine sites:
+
+- **How tightly the `try` is scoped.** `detect.ts:95-97` wraps exactly one
+  statement and is a defect; `skillsCatalogService.ts:124-134` wraps eleven, ten
+  of which cannot throw, and is correct. Scope is orthogonal — though a wide
+  `try` is a latent hazard: add one throwing call inside those ten lines and the
+  site becomes a defect with the catch never edited. (Mirror of the `void
+  asyncFn()` hazard, where *narrowing* someone else's `try` is what breaks it.)
+- **Whether the caller branches.** See above — no caller here does.
+
+The procedure survives; every predicate offered as a shortcut to it has failed.
 
 **How we found the class, and every proxy that failed on the way.** The sweep
 started by enumerating sentinel *literals* and widened the set twice — `false`,
@@ -2884,14 +2900,18 @@ started by enumerating sentinel *literals* and widened the set twice — `false`
   people writing this entry about proxies failing.
 
 **Rules earned:**
-- The discriminator is never a property of the returned value, nor of the two
-  return sites' syntax. It is the **caller**: do the collapsed conditions call
-  for different action? Read "call for" normatively — every defect here has a
-  caller that currently handles both cases identically.
-- Five proxies were tried and all five failed, the last two invented during this
+- The discriminator is a question about the `try`, not about the value, the
+  syntax, or the caller: name what the code inside it is asking, then check
+  whether the catch's return value already answers a different question in the
+  same function.
+- Do not close a write-up about failed proxies by handing over a new one. Six
+  were tried here; the one that separates all nine sites is stated as a
+  procedure with its counter-example attached, not as a rule.
+- Six proxies were tried and all six failed, three of them invented during this
   write-up: sentinel-literal, non-literal, bare-vs-bound catch, "the value looks
-  like an error", and "guard and catch return the same expression in view of
-  each other". A syntactic tell can be necessary; none was sufficient.
+  like an error", "guard and catch return the same expression in view of each
+  other", and "the caller branches differently". A syntactic tell can be
+  necessary; none was sufficient.
 - A shape count is the number that gets quoted, and it is not a defect count.
   Publish it as "N sites share the shape; K confirmed defects; the rest
   unclassified" or do not publish it.
