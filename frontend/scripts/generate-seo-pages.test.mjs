@@ -54,7 +54,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(taskManagementArticle.datePublished, '2026-08-25');
   assert.equal(taskManagementArticle.dateModified, '2026-08-25');
-  const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const taskManagementHtml = renderStaticPage(guideTemplate, taskManagementGuide);
   assert.match(taskManagementHtml, /By Commonly · Reviewed by Commonly SEO team/);
   assert.match(taskManagementHtml, /article:published_time" content="2026-08-25"/);
@@ -65,6 +65,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.doesNotMatch(taskManagementHtml, /popstate/);
   assert.doesNotMatch(taskManagementHtml, /modulepreload/);
   assert.doesNotMatch(taskManagementHtml, /type="module"/);
+  assert.doesNotMatch(taskManagementHtml, /src="\/assets\/index-/);
   assert.match(taskManagementHtml, /#seo-page \{ color: #fff; \}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
@@ -86,7 +87,7 @@ test('puts route content, canonical metadata, and structured data in the documen
     content: '<main><h1>Example page</h1><a href="/">Home</a></main>',
     schema: { '@context': 'https://schema.org', '@type': 'WebPage', name: 'Example page' },
   };
-  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const rendered = renderStaticPage(template, page);
 
   assert.match(rendered, /<h1>Example page<\/h1>/);
