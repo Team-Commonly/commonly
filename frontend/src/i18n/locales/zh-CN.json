@@ -14,14 +14,87 @@
     "nav": {
       "pods": "Pod",
       "agents": "智能体",
+      "activity": "动态",
       "community": "社区",
-      "settings": "设置"
+      "settings": "设置",
+      "connectors": "连接器"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
       "title": "正在打开社区",
       "text": "正在检查你的访问权限…"
     }
+  },
+  "activity": {
+    "title": "动态",
+    "subtitle": "需要你处理的事项，以及智能体推动的工作。",
+    "controlsAriaLabel": "动态控制项",
+    "windowAriaLabel": "动态时间范围",
+    "windows": { "today": "今天", "7d": "7 天" },
+    "podScopeLabel": "Pod 范围",
+    "allPods": "所有 Pod",
+    "loadFailed": "无法加载动态，请重试。",
+    "openThread": "打开讨论",
+    "lastActive": "{{time}}前活跃",
+    "updatesCount_one": "{{count}} 条更新",
+    "updatesCount_other": "{{count}} 条更新",
+    "needsYou": {
+      "eyebrow": "决策队列",
+      "title": "需要你处理",
+      "description": "这里只显示直接提及和待处理的审批。",
+      "emptyTitle": "没有事项在等待你",
+      "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "kinds": { "mention": "提及", "approval": "审批" }
+    },
+    "dayZero": {
+      "kind": "开始使用",
+      "guide": {
+        "title": "认识你的向导",
+        "description": "通过简短引导，开始第一次与智能体的对话。",
+        "leaves": "向导回复后，此项会离开。",
+        "cta": "认识你的向导"
+      },
+      "agent": {
+        "title": "聘用你的第一个智能体",
+        "description": "添加一位能和你一起推进工作的队友。",
+        "leaves": "智能体加入工作区后，此项会离开。",
+        "cta": "聘用第一个智能体",
+        "secondary": "连接我自己的"
+      },
+      "task": {
+        "title": "给它一件真正要做的事",
+        "description": "把第一件具体任务放到团队能接手的地方。",
+        "leaves": "任务被认领后，此项会离开。",
+        "cta": "创建任务"
+      }
+    },
+    "approval": {
+      "approve": "批准",
+      "reject": "拒绝",
+      "working": "正在保存…",
+      "actionFailed": "无法更新该审批，请重试。"
+    },
+    "mention": {
+      "acknowledge": "确认",
+      "working": "正在保存…",
+      "actionFailed": "无法确认该提及，请重试。"
+    },
+    "agents": {
+      "eyebrow": "智能体回顾",
+      "title": "你的智能体做了什么",
+      "description": "按智能体归类的事实更新回顾。",
+      "emptyTitle": "此时间范围内没有智能体更新",
+      "emptyDescription": "智能体在 Pod 中发布更新后，工作会在这里归类显示。"
+    },
+    "board": {
+      "eyebrow": "看板变更",
+      "title": "看板",
+      "description": "此时间范围内发生变化的任务。",
+      "emptyTitle": "此时间范围内没有看板变更",
+      "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
+      "status": { "pending": "待处理", "claimed": "进行中", "blocked": "已阻塞", "done": "已完成" }
+    },
+    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
   },
   "auth": {
     "fields": {
@@ -1551,5 +1624,23 @@
       "generic": "暂时无法打开付款页面，请稍后再试。",
       "notConfigured": "付款功能尚未开启，请联系我们为你开通。"
     }
+  },
+  "connectors": {
+    "loading": "正在加载连接器…",
+    "loadError": "无法加载连接器。",
+    "createError": "无法创建连接器。",
+    "toggleError": "无法更新实时中继。",
+    "empty": "还没有连接器。在下方绑定一个频道，让你的 Pod 出现在团队已有的聊天工具里。",
+    "connected": "已连接",
+    "pending": "等待频道确认",
+    "enableHint": "打开与 Commonly 机器人的私聊",
+    "enableHintSend": "，然后发送：",
+    "liveRelay": "实时中继",
+    "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
+    "newTitle": "连接频道",
+    "podPicker": "要桥接的 Pod",
+    "creating": "创建中…",
+    "createTelegram": "新建 Telegram 连接器",
+    "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
   }
 }

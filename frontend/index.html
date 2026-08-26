@@ -38,10 +38,16 @@
          prerender; crawlers without JS still get the full content. Not
          cloaking — JS-running crawlers see the real app. -->
     <!-- SEO_GATE_START -->
-    <script>document.documentElement.className += ' js';</script>
+    <!-- Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+         timing dependency — anything that delays head-script execution
+         paints the dark prerender first. Hidden-by-default has NO timing
+         window: JS-capable browsers never paint it, and the <noscript>
+         below reveals it for text-only crawlers. Rendering crawlers
+         (Googlebot) execute JS and index the real app instead. -->
+    <noscript><style>#seo-page { display: block !important; }</style></noscript>
     <!-- SEO_GATE_END -->
     <style>
-      html.js #seo-page { display: none; }
+      #seo-page { display: none; }
       #seo-page { box-sizing: border-box; min-height: 100vh; color: #e5e7eb; background: #0b1220; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
       #seo-page *, #seo-page *::before, #seo-page *::after { box-sizing: inherit; }
       #seo-page a { color: #7dd3fc; text-decoration-thickness: 1px; text-underline-offset: 3px; }
