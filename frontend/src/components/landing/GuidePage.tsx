@@ -18,6 +18,10 @@ interface GuideSection {
   paragraphs?: string[];
   bullets?: string[];
   orderedItems?: string[];
+  codeBlocks?: Array<{
+    language?: string;
+    code: string;
+  }>;
 }
 
 interface GuideFaq {
@@ -137,6 +141,28 @@ const GuidePage: React.FC = () => {
                   {section.orderedItems.map((item) => <li key={item}><Typography component="span">{item}</Typography></li>)}
                 </Box>
               )}
+              {section.codeBlocks?.map((block) => (
+                <Box
+                  component="pre"
+                  key={block.code}
+                  sx={{
+                    overflowX: 'auto',
+                    m: 0,
+                    mt: 2.5,
+                    p: 2,
+                    border: '1px solid rgba(148,163,184,0.22)',
+                    borderRadius: 2,
+                    backgroundColor: '#111827',
+                    color: '#e5e7eb',
+                    fontSize: '0.875rem',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <Box component="code" className={block.language ? `language-${block.language}` : undefined}>
+                    {block.code}
+                  </Box>
+                </Box>
+              ))}
             </Box>
           ))}
         </Stack>

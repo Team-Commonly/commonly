@@ -141,6 +141,16 @@ describe('V2 routing', () => {
     expect(screen.getByRole('button', { name: 'Watch a live room' })).toBeInTheDocument();
   });
 
+  test('shared workspace guide retains its MCP setup commands after the app takes over', async () => {
+    renderAt('/guides/connect-claude-codex-shared-workspace/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'How to Connect Claude Code and Codex to a Shared Workspace',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/codex mcp add commonly/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -148,7 +158,11 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(3);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(4);
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'How to Connect Claude Code and Codex to a Shared Workspace',
+    })).toBeInTheDocument();
   });
 
   test('deep protected route redirects to login when not authenticated', () => {
