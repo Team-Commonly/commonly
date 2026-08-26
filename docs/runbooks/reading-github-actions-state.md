@@ -63,8 +63,19 @@ gh api "repos/<owner>/<repo>/actions/runs/<id>/jobs?filter=all" \
 
 **The run object lags its own jobs.** At the moment the listing above was
 captured, `gh api repos/<o>/<r>/actions/runs/32985813845` still reported
-`status=queued conclusion=null`. The job records were already terminal. When
-the two disagree, the per-attempt job listing is the one that has run.
+`status=queued conclusion=null`. The job records were already terminal.
+
+**And it leads them, too — so neither field is authoritative on its own.** Run
+`32985816249` (#1271's CodeQL, `event: dynamic`) reads `completed/failure` while
+all three of its jobs are still `queued`, `conclusion: null`, `completed_at:
+null`, hours after `started_at`. `gh pr checks` renders those as `pending` with
+duration `0`, which is indistinguishable from a job that is genuinely about to
+run. The sibling run `32984068926` on #1216 has the same shape one step later —
+jobs `completed/cancelled` after 15m4s — and `gh pr checks` renders *those* as
+`fail`. So a `pending` row can belong to a run that has already failed, and a
+`fail` row can be a cancellation rather than a test failure. Read the run
+conclusion and the per-attempt job listing together; when they disagree, the
+disagreement is the finding.
 
 ## Check-suites separate never-dispatched from dispatched-and-stuck
 
@@ -138,15 +149,24 @@ end-to-end confirmation in this document that the lever recovers the
 never-created case rather than merely re-firing what already existed.
 
 PR #1271, same lever under the same conditions, went the other way: reopened
-17:37:06Z, five runs created 17:37:17Z — **eleven seconds**, four of them
+17:37:05Z, five runs created 17:37:17Z — **twelve seconds**, four of them
 already `success` seven minutes later.
 
-So a determined pairing does not buy you a predictable delay; the two
-unambiguous measurements are 10 minutes and 11 seconds. What both share, and
-what the ambiguous cases never showed, is that the fan-out was **complete** —
-five expected workflows, five created, one batch. On this evidence (n=2) the
-partial fan-outs above may be an artefact of pairing runs to the wrong trigger
-rather than a behaviour of the lever. Do not plan around either number.
+So a determined pairing does not buy you a predictable delay; the unambiguous
+measurements are 10 minutes and 12 seconds. An earlier draft of this section
+added a third claim — that they also shared a *single* batch, and that partial
+fan-outs might therefore be an artefact of pairing runs to the wrong trigger.
+**That is false.** #1277's 15:44:40Z reopen is equally determined: two
+`commented` events, then close/reopen, no push and no rerun in between. It
+still split into two batches, 9 seconds and 13 minutes apart. (#1277 does have
+a second close/reopen, at 16:21:43Z/16:21:44Z — it lands *after* both batches
+and so leaves the pairing intact.) Partial fan-out is a behaviour of the lever,
+not a measurement error.
+
+What does survive at n=3 is **completeness**: all three determined pairings
+delivered all five expected workflows eventually — one batch at +12s, one batch
+at +9m49s, two batches at +9s and +13m16s. Delay and batch count are both
+unpredictable; the final count is not. Do not plan around any of the numbers.
 
 Note what made these two measurable: exactly one trigger and exactly one batch.
 The delay is not unknowable in general — it is unknowable whenever you have more
@@ -158,7 +178,20 @@ Practical consequences:
 - Do not conclude "the re-trigger did nothing" inside ~25 minutes. Both of us
   did, at 2 and 17 minutes.
 - Do not conclude it worked because *some* runs appeared. Count the workflows
-  you expect, not whether the list is non-empty.
+  you expect, not whether the list is non-empty. Derive that number rather than
+  reusing this document's five: eight workflow files declare `pull_request`, and
+  for these three PRs `Deploy Docs` (`paths: docs-site/**`) and `Smoke Tests`
+  (`paths: k8s/**`, the two Dockerfiles) did not match the diff while
+  `Release Safety` is `branches: [ v1.0.x ]`, leaving five. A workflow with no
+  `types:` key defaults to `[opened, synchronize, reopened]`, so none of the
+  five is excluded from a reopen — but check, because one that pinned
+  `types: [opened, synchronize]` would legitimately never come back and would
+  read as a missing run forever.
+- **Your expected count is not the whole check list.** CodeQL default setup runs
+  as `path: dynamic/github-code-scanning/codeql`, `event: dynamic`, with no file
+  in `.github/workflows/`. Close/reopen does not re-dispatch it, so its three
+  `Analyze` checks stay on whatever state they were already in while the five
+  workflow runs come back green.
 - The arriving runs are fresh ids at `run_attempt=1`; they never reuse the run
   you were watching, so watching that id shows you nothing either way.
 
