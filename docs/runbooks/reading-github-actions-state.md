@@ -70,8 +70,9 @@ the two disagree, the per-attempt job listing is the one that has run.
 
 This is the sharpest instrument in this document, and it answers the question
 the run list cannot: was the workflow ever dispatched at all? Every dispatched
-workflow allocates a `github-actions` check-suite within seconds, *whether or
-not its run ever starts*. So:
+workflow allocates a `github-actions` check-suite *whether or not its run ever
+starts*, so a suite that exists proves dispatch. **An absent suite proves
+nothing until you have waited — see the timeout below.** So:
 
 ```bash
 gh api "repos/<o>/<r>/commits/<sha>/check-suites?per_page=50" \
@@ -83,6 +84,17 @@ Measured at PR #1216's head on 2026-08-26: three `github-actions` suites created
 and **no suite at all** for `Tests` or `Playwright Tests`. Those two were never
 dispatched. At PR #1277's head, two suites sit at `completed/startup_failure`
 with zero runs, which is the terminal state-1 case wearing the same face.
+
+**The absence of a suite is only evidence after ~25 minutes, and reading it
+sooner is the mistake this instrument invites.** Allocation is usually fast and
+occasionally is not; measured on one PR, one lever, on the same afternoon:
+`+9s`, `+13m16s`, `+21m18s`. A reading taken at +20 minutes and called
+never-dispatched was contradicted 94 seconds later by five green runs. A second
+reading, taken 7 minutes after a push that had produced only CodeQL, called it
+never-created; the other five workflows arrived at +8 minutes untouched. The
+instrument is sound — a suite that exists really does prove dispatch — but the
+*absence* of one is a claim about the future, so give it the same ~25 minutes
+the fan-out section asks for before acting on it.
 
 **Do not key on `latest_check_runs_count`.** A dispatched-but-queued suite
 reports `runs: 0`, identical to an empty one. The suite's *existence at that
