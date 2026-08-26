@@ -66,6 +66,25 @@ captured, `gh api repos/<o>/<r>/actions/runs/32985813845` still reported
 `status=queued conclusion=null`. The job records were already terminal. When
 the two disagree, the per-attempt job listing is the one that has run.
 
+## A re-trigger takes ~20 minutes to produce a run
+
+Close/reopen re-fires every `pull_request` workflow without moving the head,
+which is what makes it the right lever over an empty commit when a run was
+never created. But the runs do not appear promptly. Measured on 2026-08-26,
+reopen timestamp → run `created_at`:
+
+| PR | reopened | runs created | delay |
+|---|---|---|---|
+| #1277 | 15:44:40Z | 15:57:56Z | 13m |
+| #1275 | 15:57:30Z | 16:19:58Z | 22m |
+| #1275 | 16:11:42Z | 16:30:30Z | 19m |
+
+Two of us independently concluded "close/reopen produces no runs" by checking
+at 2 and 17 minutes. **A negative measured inside ~25 minutes is not a
+negative.** The runs that do arrive are fresh ids with `event=pull_request` and
+`run_attempt=1` — they do not reuse the run you were looking at, so watching
+the old run's id will never show you the answer either.
+
 ## The rerun refusal is not about the run's conclusion
 
 `gh run rerun` answering `cannot be rerun; This workflow is already running`
