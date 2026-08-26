@@ -2,7 +2,6 @@
 const express = require('express');
 // eslint-disable-next-line global-require
 const axios = require('axios');
-import crypto from 'crypto';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -27,6 +26,22 @@ const registry = require('../integrations');
 const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
 // eslint-disable-next-line global-require
 const { hash, randomSecret } = require('../utils/secret');
+// eslint-disable-next-line global-require
+const { mintConnectCode } = require('../services/telegramConnectCode');
+// eslint-disable-next-line global-require
+const DMService = require('../services/dmService');
+
+// Bridge attribution + binding fields are server-owned. linkedUserId is the
+// identity every inbound live-relay message is AUTHORED as; chatId/chatType
+// are written only by the /commonly-enable webhook (the code is the proof);
+// connectCode is minted here. Accepting any of them from a client body lets a
+// caller name someone else as the author or bind a chat without a code.
+const SERVER_OWNED_CONFIG_KEYS = ['linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle'];
+const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
+  const next = { ...config };
+  SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  return next;
+};
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -234,8 +249,20 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     const manifest = (manifests as Record<string, unknown>)[type];
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
-    const nextConfig = { ...config };
-    if (type === 'telegram' && !nextConfig.connectCode) nextConfig.connectCode = crypto.randomBytes(3).toString('hex');
+    if ('linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
+      return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
+    }
+    // Membership gate: an integration relays a pod's content outward and
+    // authors content into it. Only members, the pod creator, or admins may
+    // create one. (Plain findById: unit mocks resolve a bare doc.)
+    const targetPod = await Pod.findById(podId) as { type?: string; members?: unknown[]; createdBy?: { toString: () => string } } | null;
+    const isPodCreator = Boolean(targetPod?.createdBy && targetPod.createdBy.toString() === String(req.user?.id));
+    if (!targetPod || !(isPodCreator || await DMService.canViewPod(req.user?.id, targetPod))) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const nextConfig: Record<string, unknown> = stripServerOwnedConfig(config);
+    if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
+    if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
@@ -385,6 +412,27 @@ router.get('/user/all', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
+// Re-mint the one-time enable code (codes expire after 10 minutes). Only
+// while the chat is still unbound — a connected integration has no code.
+router.post('/:id/connect-code', auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { id } = req.params || {};
+    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { chatId?: string } } | null;
+    if (!integration) return res.status(404).json({ message: 'Integration not found' });
+    if (integration.type !== 'telegram') return res.status(400).json({ message: 'Connect codes are telegram-only' });
+    if (!(await canDeleteIntegration(integration, req.user?.id || ''))) return res.status(403).json({ message: 'Access denied' });
+    if (integration.config?.chatId) return res.status(409).json({ message: 'Already linked to a chat' });
+    const minted = mintConnectCode();
+    const updated = await Integration.findByIdAndUpdate(id, {
+      $set: { 'config.connectCode': minted.connectCode, 'config.connectCodeExpiresAt': minted.connectCodeExpiresAt },
+    }, { new: true });
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error minting connect code:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
@@ -402,8 +450,15 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
-    const nextConfig = config ? { ...currentConfig, ...config } : currentConfig;
-    if (config && config.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
+    const nextConfig = config ? { ...currentConfig, ...stripServerOwnedConfig(config) } : currentConfig;
+    if (config && config.liveRelay === true) {
+      // Relay authors inbound as linkedUserId and streams outbound to chatId;
+      // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
+      if (nextConfig.chatId && nextConfig.chatType !== 'private') {
+        return res.status(400).json({ message: 'Live relay requires a private chat with the bot; this connector is bound to a group' });
+      }
+      nextConfig.linkedUserId = req.user?.id;
+    }
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);
     if (missingRequired.length && status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(integration.type || '', nextConfig);

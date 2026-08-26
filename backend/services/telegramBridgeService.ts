@@ -108,6 +108,9 @@ const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationD
       podId,
       'config.liveRelay': true,
       'config.chatId': { $exists: true, $ne: null },
+      // Same gate as inbound: a code redeemed into a group must not stream the
+      // pod's escalations to that group (connector-verify F2, 2026-08-26).
+      'config.chatType': 'private',
     }).lean();
   } catch {
     return null;

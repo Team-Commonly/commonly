@@ -6,6 +6,7 @@ const registry = require('../../integrations');
 const IntegrationSummaryService = require('../../services/integrationSummaryService');
 const AgentEventService = require('../../services/agentEventService');
 const telegramService = require('../../services/telegramService');
+const { isConnectCodeExpired, registerEnableAttempt } = require('../../services/telegramConnectCode');
 
 const router = express.Router({ mergeParams: true });
 
@@ -45,17 +46,28 @@ const handleEnableCommand = async (chat: any, code: any) => {
     return;
   }
 
+  // The code is the only proof of ownership this path has (the redeemer is
+  // unauthenticated), so guessing is rate-limited per chat and codes expire.
+  if (!registerEnableAttempt(chatId)) {
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      '⚠️ Too many attempts. Wait a few minutes and request a fresh code from Commonly.',
+    );
+    return;
+  }
+
   const integration = await Integration.findOne({
     type: 'telegram',
     isActive: true,
     'config.connectCode': code,
   });
 
-  if (!integration) {
+  if (!integration || isConnectCodeExpired(integration.config)) {
     await telegramService.sendMessage(
       botToken,
       chatId,
-      '❌ Invalid code. Please request a fresh code from Commonly.',
+      '❌ Invalid or expired code. Please request a fresh code from Commonly.',
     );
     return;
   }
@@ -88,6 +100,17 @@ const handleEnableCommand = async (chat: any, code: any) => {
   const chatTitle = getChatTitle(chat);
   const chatType = chat?.type || null;
 
+  // Live relay authors inbound as the linked user and streams the pod's
+  // escalations outbound; both are only honest in a private 1:1 chat.
+  if (integration.config?.liveRelay && chatType !== 'private') {
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      '⚠️ Live relay only works from a private chat with this bot. Open a direct chat and send the code there.',
+    );
+    return;
+  }
+
   await Integration.findByIdAndUpdate(integration._id, {
     status: 'connected',
     $set: {
@@ -98,6 +121,7 @@ const handleEnableCommand = async (chat: any, code: any) => {
     },
     $unset: {
       'config.connectCode': '',
+      'config.connectCodeExpiresAt': '',
     },
   });
 

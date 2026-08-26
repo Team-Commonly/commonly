@@ -100,3 +100,19 @@ describe('relayTelegramMessageToPod — who the pod row is attributed to', () =>
     expect(User.findById).not.toHaveBeenCalled();
   });
 });
+
+// Outbound mirror of the inbound gate (connector-verify F2, 2026-08-26): a
+// code redeemed into a group must not receive the pod's escalation stream.
+describe('outbound relay — chatType gate', () => {
+  it('only resolves live integrations bound to a private chat', async () => {
+    // eslint-disable-next-line global-require
+    const Integration = require('../../../models/Integration');
+    // eslint-disable-next-line global-require
+    const { relayAgentMessageToTelegram } = require('../../../services/telegramBridgeService');
+    Integration.findOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+    await relayAgentMessageToTelegram({
+      podId: 'p1', agentUsername: 'theo', displayName: 'Theo', content: '[BLOCKED] x', 
+    });
+    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({ 'config.chatType': 'private' }));
+  });
+});

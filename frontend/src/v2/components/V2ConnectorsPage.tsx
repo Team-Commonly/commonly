@@ -19,6 +19,7 @@ import { V2Pod } from '../hooks/useV2Pods';
 interface ConnectorConfig {
   chatTitle?: string;
   connectCode?: string;
+  connectCodeExpiresAt?: string;
   liveRelay?: boolean;
 }
 
@@ -104,6 +105,28 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
+  // Codes expire after 10 minutes server-side; a pending card past its expiry
+  // (or with a legacy code that never had one) shows a re-mint button.
+  const codeIsLive = (c: Connector) => Boolean(
+    c.config?.connectCode
+    && c.config?.connectCodeExpiresAt
+    && new Date(c.config.connectCodeExpiresAt).getTime() > Date.now(),
+  );
+
+  const regenerateCode = async (c: Connector) => {
+    if (busyId) return;
+    setBusyId(c._id);
+    setError(null);
+    try {
+      await api.post(`/api/integrations/${c._id}/connect-code`, {});
+      await load();
+    } catch {
+      setError(t('connectors.codeError', { defaultValue: 'Could not create a new code.' }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const toggleLiveRelay = async (c: Connector) => {
     if (busyId) return;
     setBusyId(c._id);
@@ -149,12 +172,21 @@ const V2ConnectorsPage: React.FC = () => {
               <span>{podName(c)}</span>
               {c.config?.chatTitle && <span className="v2-connectors__chat">↔ {c.config.chatTitle}</span>}
             </div>
-            {c.status !== 'connected' && c.type === 'telegram' && c.config?.connectCode && (
+            {c.status !== 'connected' && c.type === 'telegram' && codeIsLive(c) && (
               <div className="v2-connectors__enable">
                 {t('connectors.enableHint', { defaultValue: 'Open a private chat with the Commonly bot' })}
                 {BOT_HANDLE ? ` (@${BOT_HANDLE.replace(/^@/, '')})` : ''}
                 {t('connectors.enableHintSend', { defaultValue: ' and send:' })}
-                <code>/commonly-enable {c.config.connectCode}</code>
+                <code>/commonly-enable {c.config?.connectCode}</code>
+              </div>
+            )}
+            {c.status !== 'connected' && c.type === 'telegram' && !codeIsLive(c) && (
+              <div className="v2-connectors__enable">
+                {t('connectors.codeExpired', { defaultValue: 'The enable code expired.' })}
+                {' '}
+                <button type="button" disabled={busyId === c._id} onClick={() => regenerateCode(c)}>
+                  {t('connectors.newCode', { defaultValue: 'New code' })}
+                </button>
               </div>
             )}
             {c.type === 'telegram' && c.status === 'connected' && (
