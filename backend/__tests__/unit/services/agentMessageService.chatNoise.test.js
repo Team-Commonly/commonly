@@ -154,35 +154,16 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(stripWarnings()).toHaveLength(0);
   });
 
-  // Delivery pin, not a behaviour pin — and the distinction is the point.
-  // Mutating the postMessage call site to drop `{ agentName, instanceId, podId }`
-  // left every assertion above green: they exercise the sanitizer directly, so
-  // they pin the predicate and say nothing about whether the posting path ever
-  // opts in. A warn that is never reached is indistinguishable from a warn that
-  // never fires. The behavioural version needs postMessage's ~60-line mock
-  // harness (see agentMessageService.phantom-directive.test.js); this is the
-  // cheap pin that catches the mutation that actually happened.
-  it('is wired at the postMessage call site — the opt-in is what makes it fire', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const src = fs.readFileSync(
-      path.join(__dirname, '../../../services/agentMessageService.ts'),
-      'utf8',
-    );
-    // Comments are stripped before matching. A bare `toContain` on the call
-    // text is satisfied by PROSE: delete the argument from the real call and
-    // leave the old form in a `//` comment above it, and the assertion passes
-    // with the feature entirely off. Not hypothetical in this file — it
-    // discusses `sanitizeAgentContent` in comments at :110 and :1126.
-    const code = src
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-    // Anchored on the assignment, so the match is the statement that feeds
-    // postMessage rather than any mention of the call anywhere in the file.
-    expect(code).toMatch(
-      /let sanitizedContent = AgentMessageService\.sanitizeAgentContent\(\s*content,\s*\{[^}]*agentName[^}]*instanceId[^}]*podId[^}]*\}\s*\)/,
-    );
-  });
+  // The delivery pin that used to live here — a regex over the service's
+  // source text, asserting the `postMessage` call site passes
+  // `{ agentName, instanceId, podId }` — is GONE, replaced rather than
+  // hardened a third time. It was defeated by a `//` comment decoy, then by
+  // `/* */`, and each fix bought one counterexample while leaving the class
+  // open: any assertion over source text passes on any occurrence that does
+  // not execute. Its replacement drives `postMessage` and asserts the warn
+  // actually fires — see agentMessageService.observabilityDelivery.test.js,
+  // which also covers the two sibling suppressions that never had a delivery
+  // pin of any kind.
 
   it('names the agent, instance and pod, like the two suppressions beside it', () => {
     AgentMessageService.sanitizeAgentContent('A reply of NO_REPLY means silence.', OBSERVE);
