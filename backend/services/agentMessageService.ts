@@ -55,11 +55,13 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 
 // A leading bare NO_REPLY suppresses an authored reply before it is stored.
 // Native runtime turns retain their untruncated text in AgentRun before this
-// service is called. MCP and CLI posts have no equivalent durable turn record,
-// so this audit line is their only copy of a suppressed turn. Keep a useful
-// bounded excerpt for that population rather than reusing the 120-character cap
-// for reproducible runtime-failure diagnostics. OpenClaw currently strips the
-// sentinel upstream, so its posts do not reach this branch.
+// service is called. Other HTTP-posting clients (direct API, MCP, CLI wrappers,
+// and cloud-codex) have no equivalent durable turn record, so this audit line
+// is their only copy of a suppressed turn. Keep a useful bounded excerpt for
+// that population rather than reusing the 120-character cap for reproducible
+// runtime-failure diagnostics. OpenClaw currently strips the sentinel upstream,
+// so its posts do not reach this branch; if that gateway adopts this rule, it
+// joins the same no-record population.
 const LEADING_NO_REPLY_LOG_EXCERPT_LIMIT = 4096;
 
 // Runtime artifacts are exact values, not a language heuristic. Short,
