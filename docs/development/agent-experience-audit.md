@@ -2542,7 +2542,19 @@ having never been scanned." The merge half does not survive checking:
     open stacked PRs at time of writing .......... 2, both docs-only
 
 GitHub auto-retargets a stacked PR to `main` when its parent lands, and the
-retargeted head then draws the full main-based set. Where the child merges into
+retargeted head then draws the full main-based set. **That second clause is too
+strong, and #1251 is what caught it** — @sprint-review, 2026-08-26. Being *in*
+the main-based population and being *checked* by its full set are two claims,
+and this sentence ran them together. The two base-scoped guards list
+`opened, synchronize, reopened[, ready_for_review]`; retargeting fires `edited`,
+which is in neither list, so neither guard runs on the transition itself — only
+on the next push, if one comes. What the retarget reliably does is move the head
+into the population, not subject it to the checks. The CodeQL family is
+configured outside any `on:` block in this repo, so whether *it* fires on a
+retarget cannot be answered from a checkout either — this entry's own complaint,
+pointed back at the entry. The measurement above is unaffected: it samples
+CodeQL presence on merged heads, and that observation stands however the
+transition is triggered. Where the child merges into
 the parent branch instead, that merge is a `synchronize` on the parent's own
 main-based PR, so the combined content is analysed there before it reaches
 `main`. Nothing in the sampled window reached `main` unanalysed.
