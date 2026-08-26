@@ -1683,6 +1683,25 @@ class AgentMessageService {
       console.error('Failed to emit agent socket message:', socketError);
     }
 
+    // Telegram live bridge (fire-and-forget): pods with a live-relay telegram
+    // integration surface escalations and lead reports into the linked chat.
+    // The bridge no-ops in O(1 query) for every pod without one, and a bridge
+    // failure never fails the post.
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const bridge = require('./telegramBridgeService');
+      const bridgeUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
+      void bridge.relayAgentMessageToTelegram({
+        podId: String(podId),
+        agentUsername: bridgeUsername,
+        displayName: senderDisplayName || bridgeUsername,
+        content: String((message as MessageNormalized)?.content ?? ''),
+        podMessageId: (message as MessageNormalized)?._id || (message as MessageNormalized)?.id || null,
+      });
+    } catch (bridgeError) {
+      console.warn('[tg-bridge] outbound hook failed:', (bridgeError as Error).message);
+    }
+
     return { message: message as MessageNormalized, summary: persistedSummary };
   }
 

@@ -262,6 +262,19 @@ router.post('/', async (req: any, res: any) => {
 
     if (!integration) return res.sendStatus(200);
 
+    // Live bridge: linked chats with config.liveRelay relay straight into the
+    // pod as real messages (mentions fire, agents wake). Commands above keep
+    // their legacy handling; everything else here short-circuits the buffer.
+    if (integration.config?.liveRelay) {
+      // eslint-disable-next-line global-require
+      const bridge = require('../../services/telegramBridgeService');
+      await bridge.relayTelegramMessageToPod({
+        integration,
+        telegramMessage: message,
+      });
+      return res.sendStatus(200);
+    }
+
     const provider = registry.get('telegram', integration);
     const { events } = provider.getWebhookHandlers();
     return events(req, res);
