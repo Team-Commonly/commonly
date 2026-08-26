@@ -46,11 +46,28 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     expect(AgentMessageService.sanitizeAgentContent('```text\nNO_REPLY\n```')).toBe('');
   });
 
-  it('keeps substantive replies but strips bare producer-leakage tokens', () => {
-    expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
-      .toBe('Shipped the fix.');
+  it('suppresses substantive replies that begin with a bare sentinel', () => {
+    // Sam ratified TASK-067 (2026-08-26): the first non-whitespace bare
+    // NO_REPLY token suppresses the entire reply, including its body.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY\nHere is the real answer.'))
+      .toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('\n\t NO_REPLY.\nHere is the real answer.'))
+      .toBe('');
+  });
+
+  it('keeps leading code-formatted sentinel mentions intact', () => {
+    expect(AgentMessageService.sanitizeAgentContent('`NO_REPLY`\nHere is the real answer.'))
+      .toBe('`NO_REPLY`\nHere is the real answer.');
+    expect(AgentMessageService.sanitizeAgentContent(
+      '```text\nNO_REPLY\n```\nHere is the real answer.',
+    )).toBe('```text\nNO_REPLY\n```\nHere is the real answer.');
+  });
+
+  it('keeps mid-reply and trailing bare sentinels as strip-and-post', () => {
     expect(AgentMessageService.sanitizeAgentContent('Reply with NO_REPLY when done.'))
       .toBe('Reply with  when done.');
+    expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
+      .toBe('Shipped the fix.');
   });
 
   it('preserves code-formatted sentinel mentions', () => {
@@ -103,6 +120,10 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     .map(([first]) => String(first))
     .filter((line) => line.includes('stripped bare sentinel'));
 
+  const leadingSuppressionWarnings = () => warn.mock.calls
+    .map(([first]) => String(first))
+    .filter((line) => line.includes('suppressed substantive reply with leading bare sentinel'));
+
   const OBSERVE = { agentName: 'openclaw', instanceId: 'nova', podId: 'pod123' };
 
   it('warns when a bare sentinel is edited out of a substantive reply', () => {
@@ -115,13 +136,16 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(stripWarnings()).toHaveLength(1);
   });
 
-  it('warns on a LEADING bare sentinel — the AX-43 leak shape', () => {
+  it('does not count a leading-bare suppression as a strip edit', () => {
+    // Sam ratified TASK-067 (2026-08-26). Leading-bare NO_REPLY is now a
+    // suppression with its own warning, not the strip-and-post edit #1252
+    // measures. Keeping the metrics separate prevents false strip rates.
     const out = AgentMessageService.sanitizeAgentContent(
       'NO_REPLY\nHere is the real answer.',
       OBSERVE,
     );
-    expect(out).not.toBe('');
-    expect(stripWarnings()).toHaveLength(1);
+    expect(out).toBe('');
+    expect(stripWarnings()).toHaveLength(0);
   });
 
   it('stays silent when the sentinel IS the whole reply — suppression, not an edit', () => {
@@ -190,5 +214,16 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(line).toContain('agent=openclaw');
     expect(line).toContain('instance=nova');
     expect(line).toContain('pod=pod123');
+  });
+
+  it('logs the identity and original excerpt when suppressing a leading bare sentinel', () => {
+    const input = 'NO_REPLY\nHere is the real answer.';
+    expect(AgentMessageService.sanitizeAgentContent(input, OBSERVE)).toBe('');
+    expect(leadingSuppressionWarnings()).toHaveLength(1);
+    const [line] = leadingSuppressionWarnings();
+    expect(line).toContain('agent=openclaw');
+    expect(line).toContain('instance=nova');
+    expect(line).toContain('pod=pod123');
+    expect(line).toContain(input);
   });
 });

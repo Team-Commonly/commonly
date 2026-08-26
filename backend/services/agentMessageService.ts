@@ -1770,10 +1770,9 @@ class AgentMessageService {
     const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
 
-    // Sentinels are total-match contracts: suppress only when the complete
-    // reply consists of NO_REPLY tokens. Gateways have historically joined
-    // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
-    // whitespace), so retain that compatibility.
+    // A reply made only of NO_REPLY tokens is always silent. Gateways have
+    // historically joined silent blocks into "NO_REPLYNO_REPLY" (or separated
+    // duplicates with whitespace), so retain that compatibility.
     if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
 
     // A substantive fully fenced reply is explicitly code-formatted even
@@ -1834,6 +1833,24 @@ class AgentMessageService {
       )
     );
     const sentinel = 'NO_REPLY';
+
+    // TASK-067 — Sam ratified leading bare NO_REPLY as a full suppression.
+    // Check after the code-format guards above: a leading `NO_REPLY` or fenced
+    // mention is deliberate content, while a bare token followed by prose is
+    // an intended silence that must not leak the prose into the pod.
+    const startsWithLeadingBareSentinel = (
+      trimmed.startsWith(sentinel)
+      && !isWordCharacter(trimmed[sentinel.length])
+    );
+    if (startsWithLeadingBareSentinel) {
+      if (observe) {
+        console.warn(
+          `[agent-msg] suppressed substantive reply with leading bare sentinel from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,
+        );
+      }
+      return '';
+    }
+
     let cleaned = '';
     let cursor = 0;
     let rangeIndex = 0;
