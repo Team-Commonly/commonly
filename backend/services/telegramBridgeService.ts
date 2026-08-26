@@ -245,14 +245,24 @@ export const relayTelegramMessageToPod = async (opts: {
     console.warn('[tg-bridge] post-write read failed:', (readErr as Error).message);
   }
 
-  await deliverMessageToAgents({
-    podId,
-    podType: pod.type,
-    message,
-    userId: String(linkedUserId),
-    requestUser: { username: linkedUser.username },
-    replyToMessageId: null,
-  });
+  // Past this point the pod row exists. A throw here would reach the webhook
+  // route, return non-2xx, and Telegram would redeliver — re-running
+  // PGMessage.create and duplicating both the message and every wake it
+  // triggers, because nothing dedupes on telegramMessage.message_id. Swallow
+  // instead: the record survives and a human can re-poke. Failures BEFORE the
+  // write are left to propagate, where the same redelivery is the repair.
+  try {
+    await deliverMessageToAgents({
+      podId,
+      podType: pod.type,
+      message,
+      userId: String(linkedUserId),
+      requestUser: { username: linkedUser.username },
+      replyToMessageId: null,
+    });
+  } catch (deliverErr) {
+    console.error('[tg-bridge] agent delivery failed after pod write:', (deliverErr as Error).message);
+  }
 
   try {
     const io = socketConfig.getIO();
