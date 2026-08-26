@@ -16,6 +16,11 @@ const mockLogout = jest.fn();
 const mockAxiosGet = axios.get as jest.Mock;
 
 jest.mock('axios');
+jest.mock('../components/V2Avatar', () => {
+  const MockV2Avatar = () => <span data-testid="avatar" />;
+  MockV2Avatar.displayName = 'MockV2Avatar';
+  return MockV2Avatar;
+});
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
     currentUser: { _id: 'user-1', username: 'Sam' },
@@ -78,14 +83,15 @@ describe('Community navigation', () => {
     await i18n.changeLanguage('en');
   });
 
-  test('shows the rail entry only when a community pod is configured', () => {
+  test('always shows Activity in the third rail slot and keeps Community off the rail', () => {
     const { unmount } = renderRail();
-    expect(screen.getByRole('button', { name: 'Community' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Activity' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
     unmount();
 
     delete process.env.REACT_APP_COMMUNITY_POD_ID;
     renderRail();
-    expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Activity' })).toBeInTheDocument();
   });
 
   test('reopens the first-run guide from the feedback menu', async () => {

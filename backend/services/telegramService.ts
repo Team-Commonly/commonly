@@ -3,6 +3,10 @@ import axios from 'axios';
 interface SendResult {
   success: boolean;
   error?: string;
+  // Telegram's message_id for the sent message — the bridge stores it to
+  // route quote-replies back to the agent whose line was quoted. Absent on
+  // failure; existing callers that only read `success` are unaffected.
+  messageId?: number;
 }
 
 async function sendMessage(botToken: string, chatId: string | number, text: string): Promise<SendResult> {
@@ -11,7 +15,7 @@ async function sendMessage(botToken: string, chatId: string | number, text: stri
   }
 
   try {
-    const response = await axios.post<{ ok: boolean }>(
+    const response = await axios.post<{ ok: boolean; result?: { message_id?: number } }>(
       `https://api.telegram.org/bot${botToken}/sendMessage`,
       {
         chat_id: chatId,
@@ -21,7 +25,10 @@ async function sendMessage(botToken: string, chatId: string | number, text: stri
       },
     );
 
-    return { success: response.data?.ok === true };
+    return {
+      success: response.data?.ok === true,
+      messageId: response.data?.result?.message_id,
+    };
   } catch (error) {
     const err = error as { response?: { data: unknown }; message: string };
     console.error(

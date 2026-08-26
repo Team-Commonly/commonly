@@ -20,13 +20,18 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-// Trimmed for YC demo path (2026-04-29): Pods · Agents · Community · Settings.
-// Routes for Feed, Activity, Skills, Digest, Analytics still resolve — they
-// just aren't reachable from the rail. Re-add when the surface earns its slot.
+// Trimmed for the work-first path: Pods · Agents · Activity · Settings.
+// Community remains available via its redirect and sidebar offer; Activity
+// earned this rail slot as the agent-work recap surface (TASK-068).
 const NAV_ITEMS: NavItem[] = [
   { key: 'pods', label: 'Pods', path: '/v2', icon: <Icon d="M3 7l9-4 9 4-9 4-9-4zM3 12l9 4 9-4M3 17l9 4 9-4" /> },
   { key: 'agents', label: 'Agents', path: '/v2/agents', icon: <Icon d="M12 1v6m0 8v6M5 5l4 4M15 15l4 4M1 12h6m8 0h6M5 19l4-4M15 9l4-4" /> },
-  { key: 'community', label: 'Community', path: '/v2/community', icon: <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /> },
+  // Rebase resolution (commander, 2026-08-26): Sam ruled Activity replaces
+  // the THIRD rail slot — Community's. Connectors arrived on main after this
+  // branch cut and keeps its slot; Community's surface remains reachable via
+  // /browse.
+  { key: 'activity', label: 'Activity', path: '/v2/activity', icon: <Icon d="M22 12h-4l-3 9-6-18-3 9H2" /> },
+  { key: 'connectors', label: 'Connectors', path: '/v2/connectors', icon: <Icon d="M9 2v6M15 2v6M6 8h12v3a6 6 0 01-6 6 6 6 0 01-6-6V8zM12 17v5" /> },
   // 'Apps' (marketplace) removed from the rail while the marketplace is behind
   // its "coming soon" wall — a nav item that only leads to a coming-soon page
   // is a dead end. Restore this entry when MARKETPLACE_LOCKED is lifted.
@@ -54,10 +59,6 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   // Labels resolve at render so the rail tooltip (v2.css attr(data-label))
   // follows the active locale — NAV_ITEMS.label is the English fallback.
   const navLabel = (item: NavItem) => t(`common.nav.${item.key}`, { defaultValue: item.label });
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => item.key !== 'community' || Boolean(process.env.REACT_APP_COMMUNITY_POD_ID),
-  );
-
   const isActive = (item: NavItem): boolean => {
     if (item.path === '/v2') {
       return location.pathname === '/v2' || location.pathname.startsWith('/v2/pods');
@@ -89,7 +90,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
         </div>
 
         <nav className="v2-rail__nav" aria-label="v2 navigation">
-          {visibleNavItems.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <React.Fragment key={item.key}>
               <button
                 type="button"

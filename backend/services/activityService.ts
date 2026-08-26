@@ -8,6 +8,8 @@ const Activity = require('../models/Activity');
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
 const Post = require('../models/Post');
+// eslint-disable-next-line global-require
+const Task = require('../models/Task');
 
 let PGMessage: unknown = null;
 try {
@@ -67,6 +69,7 @@ interface UserDoc {
   followers?: unknown[];
   followedThreads?: Array<{ postId: unknown; followedAt?: Date }>;
   activityFeed?: { lastViewedAt?: Date | string; readItemIds?: unknown[] };
+  activityQueue?: { acknowledgedMentionIds?: unknown[] };
 }
 
 interface PodDoc {
@@ -87,6 +90,11 @@ interface GetFeedOptions {
   mode?: string;
 }
 
+interface GetRecapOptions {
+  window?: 'today' | '7d';
+  podId?: string;
+}
+
 interface ComputeFlagsOptions {
   actor?: ActorInfo;
   type?: string;
@@ -98,6 +106,233 @@ interface ComputeFlagsOptions {
 }
 
 class ActivityService {
+  /**
+   * Read-side projection for the v2 Activity surface. The source events stay
+   * in their owning stores: messages remain in Postgres and board transitions
+   * remain Task updates in Mongo. This endpoint only groups a member's
+   * existing, authorized data; it does not introduce another activity log.
+   */
+  static async getRecap(
+    userId: unknown,
+    options: GetRecapOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const window = options.window === '7d' ? '7d' : 'today';
+    const since = new Date(Date.now() - (window === '7d' ? 7 : 1) * 24 * 60 * 60 * 1000);
+    const pods: PodDoc[] = await Pod.find({
+      $or: [
+        { createdBy: userId },
+        { 'members.userId': userId },
+        { members: userId },
+      ],
+    }).select('_id name type').lean();
+
+    const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
+    const scopedPods = requestedPodId
+      ? pods.filter((pod) => String(pod._id) === requestedPodId)
+      : pods;
+    if (requestedPodId && scopedPods.length === 0) {
+      throw new Error('Access denied');
+    }
+
+    const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
+    const feed = await ActivityService.getUserFeed(userId, { limit: 100 });
+    const activities = ((feed.activities as ActivityItem[] | undefined) || []).filter((activity) => {
+      const timestamp = activity.timestamp ? new Date(activity.timestamp).getTime() : 0;
+      return timestamp >= since.getTime()
+        && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
+    });
+    const acknowledgedMentionIds = new Set(
+      ((feed.acknowledgedMentionIds as unknown[] | undefined) || []).map((id) => String(id)),
+    );
+
+    type AgentRecap = {
+      id: string;
+      name: string;
+      profilePicture?: string;
+      lastActiveAt: Date | string | null;
+      messageCount: number;
+      recap: string;
+      updates: Array<{
+        id: string;
+        podId: string | null;
+        podName: string;
+        content: string;
+        timestamp: Date | string | null;
+      }>;
+    };
+    const agents = new Map<string, AgentRecap>();
+
+    activities
+      .filter((activity) => activity.actor?.type === 'agent' || activity.flags?.isAgentAction)
+      .forEach((activity) => {
+        const actorId = String(activity.actor?.id || activity.actor?.name || 'unknown-agent');
+        const name = activity.actor?.name || 'Agent';
+        const existing = agents.get(actorId) || {
+          id: actorId,
+          name,
+          profilePicture: activity.actor?.profilePicture,
+          lastActiveAt: activity.timestamp,
+          messageCount: 0,
+          recap: '',
+          updates: [],
+        };
+        existing.messageCount += 1;
+        if (new Date(activity.timestamp || 0).getTime() > new Date(existing.lastActiveAt || 0).getTime()) {
+          existing.lastActiveAt = activity.timestamp;
+        }
+        const content = String(activity.preview || activity.content || activity.action || '').replace(/\s+/g, ' ').trim();
+        if (content) {
+          existing.updates.push({
+            id: activity.id,
+            podId: activity.pod?.id || null,
+            podName: activity.pod?.name || 'Direct activity',
+            content: content.slice(0, 180),
+            timestamp: activity.timestamp,
+          });
+        }
+        agents.set(actorId, existing);
+      });
+
+    const agentRecaps = Array.from(agents.values())
+      .map((agent) => {
+        const updates = agent.updates
+          .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+          .slice(0, 3);
+        const podNames = Array.from(new Set(updates.map((update) => update.podName)));
+        return {
+          ...agent,
+          updates,
+          recap: agent.messageCount === 1
+            ? `Posted an update${podNames[0] ? ` in ${podNames[0]}` : ''}.`
+            : `Posted ${agent.messageCount} updates${podNames[0] ? ` across ${podNames.slice(0, 2).join(' and ')}` : ''}.`,
+        };
+      })
+      .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
+
+    // Approvals are a decision queue, not an activity sample: query the
+    // existing authoritative pending-approval reader separately so a busy
+    // pod cannot push an older decision behind getUserFeed's display page.
+    // Mentions remain a bounded recent interrupt list and are removed only by
+    // their explicit acknowledgement, never by feed read-state.
+    const pendingApprovals = await ActivityService.getPendingApprovals(userId) as Array<{
+      _id?: unknown;
+      id?: unknown;
+      type?: string;
+      actor?: ActorInfo;
+      action?: string;
+      content?: string;
+      podId?: unknown;
+      approval?: unknown;
+      agentMetadata?: { agentName?: string };
+      createdAt?: Date | string;
+      updatedAt?: Date | string;
+    }>;
+    const approvalItems: ActivityItem[] = pendingApprovals
+      .filter((approval) => !requestedPodId || scopedPodIds.has(String(approval.podId)))
+      .map((approval) => {
+        const podId = approval.podId ? String(approval.podId) : '';
+        const pod = scopedPods.find((candidate) => String(candidate._id) === podId);
+        return {
+          id: String(approval._id || approval.id || ''),
+          type: approval.type || 'approval_needed',
+          actor: approval.actor || {
+            name: approval.agentMetadata?.agentName || 'An agent', type: 'agent',
+          },
+          action: approval.action || 'approval_needed',
+          content: approval.content,
+          timestamp: approval.createdAt || approval.updatedAt || null,
+          pod: pod ? { id: String(pod._id), name: pod.name } : null,
+          approval: approval.approval,
+          reactions: { likes: 0, liked: false },
+          replyCount: 0,
+          replies: [],
+        };
+      })
+      .filter((approval) => Boolean(approval.id));
+
+    const isPendingApproval = (activity: ActivityItem): boolean => {
+      const approval = activity.approval as { status?: string } | undefined;
+      // Mongoose materializes approval.status = 'pending' for every Activity
+      // document. It is meaningful only on the one activity type that carries
+      // an approval request; otherwise every message becomes a human action.
+      return activity.type === 'approval_needed' && approval?.status === 'pending';
+    };
+    const queueCandidates = new Map<string, ActivityItem>();
+    [...activities, ...approvalItems].forEach((activity) => {
+      if (!queueCandidates.has(activity.id)) queueCandidates.set(activity.id, activity);
+    });
+    const newestFirst = (left: ActivityItem, right: ActivityItem) => (
+      new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
+    );
+    const approvalQueue = Array.from(queueCandidates.values())
+      .filter(isPendingApproval)
+      .sort(newestFirst);
+    const mentionQueue = Array.from(queueCandidates.values())
+      .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
+      .sort(newestFirst)
+      .slice(0, Math.max(0, 12 - approvalQueue.length));
+    const needsYou = [...approvalQueue, ...mentionQueue]
+      .sort(newestFirst)
+      .map((activity) => {
+        const isApproval = isPendingApproval(activity);
+        return {
+          id: activity.id,
+          kind: isApproval ? 'approval' : 'mention',
+          title: isApproval ? 'Approval requested' : `${activity.actor?.name || 'Someone'} mentioned you`,
+          detail: String(activity.preview || activity.content || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+          podId: activity.pod?.id || null,
+          podName: activity.pod?.name || 'Direct activity',
+          timestamp: activity.timestamp,
+        };
+      });
+
+    let board: Array<Record<string, unknown>> = [];
+    if (scopedPods.length > 0) {
+      const taskRows: Array<Record<string, unknown>> = await Task.find({
+        podId: { $in: scopedPods.map((pod) => pod._id) },
+        updatedAt: { $gte: since },
+      })
+        .select('podId taskId title status updatedAt updates')
+        .sort({ updatedAt: -1 })
+        .limit(24)
+        .lean();
+      const podNames = new Map(scopedPods.map((pod) => [String(pod._id), pod.name]));
+      board = taskRows.map((task) => {
+        const updates = Array.isArray(task.updates) ? task.updates as Array<Record<string, unknown>> : [];
+        const lastUpdate = updates
+          .slice()
+          .sort((a, b) => new Date(b.createdAt as string || 0).getTime() - new Date(a.createdAt as string || 0).getTime())[0];
+        return {
+          id: String(task._id),
+          taskId: task.taskId,
+          title: task.title,
+          status: task.status,
+          podId: String(task.podId),
+          podName: podNames.get(String(task.podId)) || 'Pod',
+          updatedAt: task.updatedAt,
+          lastUpdate: lastUpdate
+            ? {
+              text: String(lastUpdate.text || '').slice(0, 180),
+              author: String(lastUpdate.author || ''),
+              createdAt: lastUpdate.createdAt,
+            }
+            : null,
+        };
+      });
+    }
+
+    return {
+      window,
+      since: since.toISOString(),
+      generatedAt: new Date().toISOString(),
+      scope: requestedPodId || 'all',
+      pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      needsYou,
+      agents: agentRecaps,
+      board,
+    };
+  }
+
   static async getUserFeed(
     userId: unknown,
     options: GetFeedOptions = {},
@@ -108,7 +343,7 @@ class ActivityService {
 
     try {
       const user: UserDoc | null = await User.findById(userId)
-        .select('_id username following followers followedThreads')
+        .select('_id username following followers followedThreads activityQueue')
         .lean();
       if (!user) {
         return { activities: [], hasMore: false, quick: null };
@@ -139,6 +374,7 @@ class ActivityService {
         hasMore: withReadState.length === limit,
         quick,
         unreadCount: withReadState.filter((item) => !item.read).length,
+        acknowledgedMentionIds: user.activityQueue?.acknowledgedMentionIds || [],
       };
     } catch (error) {
       console.error('Error in getUserFeed:', error);
@@ -395,12 +631,12 @@ class ActivityService {
       messages.forEach((msg) => {
         const userId = msg.userId as Record<string, unknown> | undefined;
         const authorName = (msg.username as string) || (userId?.username as string) || 'Unknown';
-        const isAgent = ActivityService.isAgentUsername(authorName);
+        const isAgent = userId?.isBot === true || ActivityService.isAgentUsername(authorName);
 
         if (filter === 'humans' && isAgent) return;
         if (filter === 'agents' && !isAgent) return;
 
-        const pod = podMap.get(String(msg.podId) || String(msg.pod_id));
+        const pod = podMap.get(String(msg.podId || msg.pod_id || ''));
 
         activities.push({
           id: `msg_${msg._id || msg.id}`,
@@ -562,6 +798,21 @@ class ActivityService {
       lastViewedAt: user.activityFeed.lastViewedAt,
       readItemIds: user.activityFeed.readItemIds || [],
     };
+  }
+
+  static async acknowledgeMention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
+    const user = await User.findById(userId).select('_id activityQueue');
+    if (!user) return { success: false, error: 'User not found' };
+
+    if (!user.activityQueue) user.activityQueue = { acknowledgedMentionIds: [] };
+    const next = new Set((user.activityQueue.acknowledgedMentionIds || []).map((id: unknown) => String(id)));
+    next.add(String(activityId));
+    // This is per-(user, message) state, rather than a recent-feed cache: an
+    // acknowledged mention must not resurface merely because more messages
+    // arrive later.
+    user.activityQueue.acknowledgedMentionIds = Array.from(next);
+    await user.save();
+    return { success: true, acknowledgedMentionIds: user.activityQueue.acknowledgedMentionIds };
   }
 
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {

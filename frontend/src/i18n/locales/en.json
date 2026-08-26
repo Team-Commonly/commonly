@@ -14,14 +14,87 @@
     "nav": {
       "pods": "Pods",
       "agents": "Agents",
+      "activity": "Activity",
       "community": "Community",
-      "settings": "Settings"
+      "settings": "Settings",
+      "connectors": "Connectors"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
       "title": "Opening Community",
       "text": "Checking your access…"
     }
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "What needs your attention and what your agents moved forward.",
+    "controlsAriaLabel": "Activity controls",
+    "windowAriaLabel": "Activity window",
+    "windows": { "today": "Today", "7d": "7 days" },
+    "podScopeLabel": "Pod scope",
+    "allPods": "All pods",
+    "loadFailed": "Activity could not be loaded. Try again.",
+    "openThread": "Open thread",
+    "lastActive": "Active {{time}} ago",
+    "updatesCount_one": "{{count}} update",
+    "updatesCount_other": "{{count}} updates",
+    "needsYou": {
+      "eyebrow": "Decision queue",
+      "title": "Needs you",
+      "description": "Only direct mentions and pending approvals appear here.",
+      "emptyTitle": "Nothing is waiting on you",
+      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "kinds": { "mention": "Mention", "approval": "Approval" }
+    },
+    "dayZero": {
+      "kind": "Get started",
+      "guide": {
+        "title": "Meet your Guide",
+        "description": "Get a short, guided path into your first agent conversation.",
+        "leaves": "Leaves when your Guide replies.",
+        "cta": "Meet your Guide"
+      },
+      "agent": {
+        "title": "Hire your first agent",
+        "description": "Add a teammate that can take work forward with you.",
+        "leaves": "Leaves when an agent joins your workspace.",
+        "cta": "Hire your first agent",
+        "secondary": "Connect my own"
+      },
+      "task": {
+        "title": "Give it something real to do",
+        "description": "Put the first concrete task where your team can pick it up.",
+        "leaves": "Leaves when a task is claimed.",
+        "cta": "Create a task"
+      }
+    },
+    "approval": {
+      "approve": "Approve",
+      "reject": "Reject",
+      "working": "Saving…",
+      "actionFailed": "That approval could not be updated. Try again."
+    },
+    "mention": {
+      "acknowledge": "Acknowledge",
+      "working": "Saving…",
+      "actionFailed": "That mention could not be acknowledged. Try again."
+    },
+    "agents": {
+      "eyebrow": "Agent recap",
+      "title": "What your agents did",
+      "description": "A factual recap of agent-authored updates in this window.",
+      "emptyTitle": "No agent updates in this window",
+      "emptyDescription": "When an agent posts in a pod, its work will be grouped here."
+    },
+    "board": {
+      "eyebrow": "Board delta",
+      "title": "Board",
+      "description": "Tasks that changed in this window.",
+      "emptyTitle": "No board changes in this window",
+      "emptyDescription": "Task changes will appear here without creating a second board.",
+      "status": { "pending": "Pending", "claimed": "In progress", "blocked": "Blocked", "done": "Done" }
+    },
+    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
   },
   "auth": {
     "fields": {
@@ -1557,5 +1630,23 @@
       "generic": "Could not open billing just now. Please try again.",
       "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
     }
+  },
+  "connectors": {
+    "loading": "Loading connectors…",
+    "loadError": "Could not load connectors.",
+    "createError": "Could not create the connector.",
+    "toggleError": "Could not update live relay.",
+    "empty": "No connectors yet. Link a channel below — your pod gets a voice where your team already talks.",
+    "connected": "Connected",
+    "pending": "Waiting for the channel",
+    "enableHint": "Open a private chat with the Commonly bot",
+    "enableHintSend": " and send:",
+    "liveRelay": "Live relay",
+    "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
+    "newTitle": "Connect a channel",
+    "podPicker": "Pod to bridge",
+    "creating": "Creating…",
+    "createTelegram": "New Telegram connector",
+    "footnote": "You get a one-time code to send to the bot. More platforms are on the way."
   }
 }

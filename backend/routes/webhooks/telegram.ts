@@ -262,6 +262,26 @@ router.post('/', async (req: any, res: any) => {
 
     if (!integration) return res.sendStatus(200);
 
+    // Live bridge: linked chats with config.liveRelay relay straight into the
+    // pod as real messages (mentions fire, agents wake). Commands above keep
+    // their legacy handling; everything else here short-circuits the buffer.
+    if (integration.config?.liveRelay) {
+      // Deliberately NOT wrapped: a non-2xx makes Telegram redeliver, and
+      // whether that retry is a repair or a duplicate depends on which side of
+      // the pod write we failed on. relayTelegramMessageToPod swallows its own
+      // post-write failures and resolves, so anything that reaches here threw
+      // before the message was persisted — nothing exists to duplicate, and the
+      // redelivery is the only thing that saves the update. Adding a blanket
+      // catch + sendStatus(200) here silently drops those.
+      // eslint-disable-next-line global-require
+      const bridge = require('../../services/telegramBridgeService');
+      await bridge.relayTelegramMessageToPod({
+        integration,
+        telegramMessage: message,
+      });
+      return res.sendStatus(200);
+    }
+
     const provider = registry.get('telegram', integration);
     const { events } = provider.getWebhookHandlers();
     return events(req, res);

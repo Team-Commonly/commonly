@@ -80,3 +80,115 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     }
   });
 });
+
+// The strip that rewrites an agent's substantive reply is the only one of the
+// three suppressions in this path that left no trace anywhere — not in the
+// stored message (the token is gone), not in the transcript, not in the logs.
+// Every occurrence ever noticed was caught by a reader who happened to know
+// the original text, which is why the rate has never been measurable. These
+// pin the warn's PREDICATE, not its wording: it must fire on an edit and stay
+// silent on a suppression, or the count it produces means nothing.
+describe('AgentMessageService.sanitizeAgentContent — strip observability', () => {
+  let warn;
+
+  beforeEach(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  const stripWarnings = () => warn.mock.calls
+    .map(([first]) => String(first))
+    .filter((line) => line.includes('stripped bare sentinel'));
+
+  const OBSERVE = { agentName: 'openclaw', instanceId: 'nova', podId: 'pod123' };
+
+  it('warns when a bare sentinel is edited out of a substantive reply', () => {
+    const out = AgentMessageService.sanitizeAgentContent(
+      'A reply of NO_REPLY means silence.',
+      OBSERVE,
+    );
+    // The defect itself: the sentence is rewritten and still posts.
+    expect(out).toBe('A reply of  means silence.');
+    expect(stripWarnings()).toHaveLength(1);
+  });
+
+  it('warns on a LEADING bare sentinel — the AX-43 leak shape', () => {
+    const out = AgentMessageService.sanitizeAgentContent(
+      'NO_REPLY\nHere is the real answer.',
+      OBSERVE,
+    );
+    expect(out).not.toBe('');
+    expect(stripWarnings()).toHaveLength(1);
+  });
+
+  it('stays silent when the sentinel IS the whole reply — suppression, not an edit', () => {
+    // Total-match returns before the strip loop, so a working-as-designed
+    // silence must not inflate the count. If this ever warns, the metric
+    // measures normal traffic and the rate is worthless.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY', OBSERVE)).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('  NO_REPLY  ', OBSERVE)).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY', OBSERVE)).toBe('');
+    expect(stripWarnings()).toHaveLength(0);
+  });
+
+  it('stays silent on a backticked sentinel and on ordinary prose', () => {
+    // Controls. A backticked mention is deliberate and is copied verbatim, so
+    // `cleaned === trimmed` and nothing fires. Ordinary prose exercises the
+    // same loop over every character without ever matching.
+    AgentMessageService.sanitizeAgentContent('Backtick it: `NO_REPLY` survives.', OBSERVE);
+    AgentMessageService.sanitizeAgentContent('An ordinary reply with no sentinel at all.', OBSERVE);
+    expect(stripWarnings()).toHaveLength(0);
+  });
+
+  it('stays silent without `observe` — the read-time predicate must not count', () => {
+    // `systemExchangeTriggers.findPreviousNonSilentMessage` re-sanitizes up to
+    // 20 already-stored messages to find the last substantive one. Any of them
+    // stored before the strip shipped still contains a bare sentinel, so an
+    // unconditional warn would fire on every scan and the metric would count
+    // reads of history instead of fresh edits.
+    const out = AgentMessageService.sanitizeAgentContent('A reply of NO_REPLY means silence.');
+    expect(out).toBe('A reply of  means silence.');
+    expect(stripWarnings()).toHaveLength(0);
+  });
+
+  // Delivery pin, not a behaviour pin — and the distinction is the point.
+  // Mutating the postMessage call site to drop `{ agentName, instanceId, podId }`
+  // left every assertion above green: they exercise the sanitizer directly, so
+  // they pin the predicate and say nothing about whether the posting path ever
+  // opts in. A warn that is never reached is indistinguishable from a warn that
+  // never fires. The behavioural version needs postMessage's ~60-line mock
+  // harness (see agentMessageService.phantom-directive.test.js); this is the
+  // cheap pin that catches the mutation that actually happened.
+  it('is wired at the postMessage call site — the opt-in is what makes it fire', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../services/agentMessageService.ts'),
+      'utf8',
+    );
+    // Comments are stripped before matching. A bare `toContain` on the call
+    // text is satisfied by PROSE: delete the argument from the real call and
+    // leave the old form in a `//` comment above it, and the assertion passes
+    // with the feature entirely off. Not hypothetical in this file — it
+    // discusses `sanitizeAgentContent` in comments at :110 and :1126.
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    // Anchored on the assignment, so the match is the statement that feeds
+    // postMessage rather than any mention of the call anywhere in the file.
+    expect(code).toMatch(
+      /let sanitizedContent = AgentMessageService\.sanitizeAgentContent\(\s*content,\s*\{[^}]*agentName[^}]*instanceId[^}]*podId[^}]*\}\s*\)/,
+    );
+  });
+
+  it('names the agent, instance and pod, like the two suppressions beside it', () => {
+    AgentMessageService.sanitizeAgentContent('A reply of NO_REPLY means silence.', OBSERVE);
+    const [line] = stripWarnings();
+    expect(line).toContain('agent=openclaw');
+    expect(line).toContain('instance=nova');
+    expect(line).toContain('pod=pod123');
+  });
+});

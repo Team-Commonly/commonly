@@ -394,7 +394,16 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     const canUpdate = await canDeleteIntegration(integration, req.user?.id || '');
     if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
     const currentConfig = integration.config?.toObject ? integration.config.toObject() : (integration.config || {}) as Record<string, unknown>;
+    // Bridge attribution guard: config.linkedUserId is the identity every
+    // inbound live-relay message is AUTHORED as (pod row, socket payload,
+    // agent wake). It is derived from the authenticated caller when liveRelay
+    // flips on — never accepted from the body, where it would let any caller
+    // who passes canDeleteIntegration name someone else as the bridge author.
+    if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
+      return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
+    }
     const nextConfig = config ? { ...currentConfig, ...config } : currentConfig;
+    if (config && config.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);
     if (missingRequired.length && status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(integration.type || '', nextConfig);
