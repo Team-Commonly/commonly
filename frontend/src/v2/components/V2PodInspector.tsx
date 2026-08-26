@@ -12,6 +12,7 @@ import { useSocket } from '../../context/SocketContext';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import type { InspectorView } from './V2Layout';
+import { agentKeyFor } from '../utils/agentKey';
 
 interface V2PodInspectorProps {
   detail: UseV2PodDetailResult;
@@ -742,7 +743,10 @@ const Icon = ({ d, size = 14 }: { d: string; size?: number }) => (
   </svg>
 );
 
-const agentKeyOf = (agent: V2Agent): string => agent.instanceId || agent.agentName;
+// Shared with V2PodChat's author map — see agentKey.ts for why the key is
+// composite (the 'default'-instanceId collision that sent every member click
+// to one seat's profile).
+const agentKeyOf = (agent: V2Agent): string => agentKeyFor(agent);
 
 // Driver badge for the agent runtime — letterform monogram + label, no emoji.
 // `runtimeType` carries identity (codex / claude-code / openclaw / etc.);
@@ -1609,7 +1613,10 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <button
             type="button"
             className="v2-inspector__btn"
-            onClick={() => navigate(`/v2/agents?podId=${pod._id}&agent=${encodeURIComponent(agentKeyOf(agent))}`)}
+            // AgentsHub reads `agent` as the agentName and `instanceId` as
+            // its own param — passing the composite key (or, before it, the
+            // bare instanceId) here sent 'default' as an agent NAME.
+            onClick={() => navigate(`/v2/agents?podId=${pod._id}&agent=${encodeURIComponent(agent.agentName || '')}&instanceId=${encodeURIComponent(agent.instanceId || 'default')}`)}
           >
             {t('inspector.members.manage')}
           </button>
