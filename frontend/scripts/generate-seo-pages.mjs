@@ -9,6 +9,11 @@ const siteUrl = 'https://commonly.me';
 const metadataStart = '<!-- SEO_METADATA_START -->';
 const metadataEnd = '<!-- SEO_METADATA_END -->';
 const pageContentMarker = '<!-- SEO_PAGE_CONTENT -->';
+const gateRuntimeStart = '<!-- SEO_GATE_START -->';
+const gateRuntimeEnd = '<!-- SEO_GATE_END -->';
+const navigationRuntimeStart = '<!-- SEO_NAVIGATION_RUNTIME_START -->';
+const navigationRuntimeEnd = '<!-- SEO_NAVIGATION_RUNTIME_END -->';
+const viteEntryAssetPrefix = 'src="/assets/index-';
 
 const escapeHtml = (value) => String(value)
   .replaceAll('&', '&amp;')
@@ -28,6 +33,68 @@ const replaceMarkedSection = (template, start, end, content) => {
   }
 
   return `${template.slice(0, startIndex)}${start}\n${content}\n${end}${template.slice(endIndex + end.length)}`;
+};
+
+const removeMarkedSection = (template, start, end) => {
+  const startIndex = template.indexOf(start);
+  const endIndex = template.indexOf(end);
+
+  if (startIndex < 0 || endIndex < 0 || endIndex < startIndex) {
+    throw new Error(`Missing or malformed ${start} marker in the Vite output.`);
+  }
+
+  return `${template.slice(0, startIndex)}${template.slice(endIndex + end.length)}`;
+};
+
+const removeRuntimeEntryScript = (template) => {
+  const entryIndex = template.indexOf(viteEntryAssetPrefix);
+  const tagStart = template.lastIndexOf('<', entryIndex);
+  const tagEnd = template.indexOf('>', entryIndex);
+
+  if (
+    entryIndex < 0
+    || tagStart < 0
+    || tagEnd < entryIndex
+    || !template.startsWith('<script', tagStart)
+  ) {
+    throw new Error('Missing or malformed SEO runtime entry script in the Vite output.');
+  }
+
+  return `${template.slice(0, tagStart)}${template.slice(tagEnd + 1)}`;
+};
+
+const removeModulePreloads = (template) => {
+  let document = template;
+  let preloadIndex = document.indexOf('rel="modulepreload"');
+
+  while (preloadIndex >= 0) {
+    const tagStart = document.lastIndexOf('<', preloadIndex);
+    const tagEnd = document.indexOf('>', preloadIndex);
+
+    if (
+      tagStart < 0
+      || tagEnd < preloadIndex
+      || !document.startsWith('<link', tagStart)
+    ) {
+      throw new Error('Missing or malformed module preload in the Vite output.');
+    }
+
+    document = `${document.slice(0, tagStart)}${document.slice(tagEnd + 1)}`;
+    preloadIndex = document.indexOf('rel="modulepreload"');
+  }
+
+  return document;
+};
+
+const staticDocument = (template) => {
+  const withoutGateRuntime = removeMarkedSection(template, gateRuntimeStart, gateRuntimeEnd);
+  const withoutNavigationRuntime = removeMarkedSection(
+    withoutGateRuntime,
+    navigationRuntimeStart,
+    navigationRuntimeEnd,
+  );
+
+  return removeModulePreloads(removeRuntimeEntryScript(withoutNavigationRuntime));
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
@@ -371,6 +438,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     title: 'Guides for teams working with AI agents | Commonly',
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides),
+    staticOnly: true,
     schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
   };
 
@@ -397,6 +465,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
       title: guide.titleTag,
       description: guide.description,
       content: renderGuide(guide),
+      staticOnly: true,
       ogType: 'article',
       datePublished: provenance.datePublished,
       dateModified: provenance.dateModified,
@@ -429,7 +498,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
 };
 
 export const renderStaticPage = (template, page) => {
-  const withMetadata = replaceMarkedSection(template, metadataStart, metadataEnd, metadata(page));
+  const staticTemplate = page.staticOnly ? staticDocument(template) : template;
+  const withMetadata = replaceMarkedSection(staticTemplate, metadataStart, metadataEnd, metadata(page));
   if (!withMetadata.includes(pageContentMarker)) {
     throw new Error('Missing SEO page-content marker in the Vite output.');
   }
