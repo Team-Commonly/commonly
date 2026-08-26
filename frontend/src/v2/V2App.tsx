@@ -28,6 +28,7 @@ import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
+import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
 import ActivityFeedPage from '../components/activity/ActivityFeedPage';
@@ -288,6 +289,10 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents/byo"
                   element={<V2AgentBYO />}
+                />
+                <Route
+                  path="connectors"
+                  element={feature('Connectors', 'Bridge pods to the channels your team already uses.', <V2ConnectorsPage />, false)}
                 />
                 <Route
                   path="marketplace"
