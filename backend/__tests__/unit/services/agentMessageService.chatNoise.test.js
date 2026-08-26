@@ -53,6 +53,10 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
       .toBe('');
     expect(AgentMessageService.sanitizeAgentContent('\n\t NO_REPLY.\nHere is the real answer.'))
       .toBe('');
+    // Legacy gateways can concatenate duplicate silence blocks. A run is still
+    // a leading sentinel, not an ordinary word that should strip-and-post.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY\nHere is the real answer.'))
+      .toBe('');
   });
 
   it('shares the silent-turn decision with non-posting consumers', () => {
@@ -232,6 +236,17 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(line).toContain('instance=nova');
     expect(line).toContain('pod=pod123');
     expect(line).toContain(input);
+  });
+
+  it('retains a substantial audit excerpt for a suppressed authored turn', () => {
+    // The legacy 120-character cap suits reproducible runtime diagnostics. A
+    // direct API/MCP/CLI post suppressed here has no persisted turn body, so
+    // retain materially more of it for the audit record.
+    const body = 'x'.repeat(2048);
+    const input = `NO_REPLY\n${body}`;
+    expect(AgentMessageService.sanitizeAgentContent(input, OBSERVE)).toBe('');
+    const [line] = leadingSuppressionWarnings();
+    expect(line).toContain(body);
   });
 });
 

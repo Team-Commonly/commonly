@@ -53,6 +53,15 @@ const RECENT_ATTACH_WINDOW_MS = 5 * 60 * 1000;
 // pattern it feeds, which matches at the start of a statement.
 const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 
+// A leading bare NO_REPLY suppresses an authored reply before it is stored.
+// Native runtime turns retain their untruncated text in AgentRun before this
+// service is called, but direct API/MCP/CLI posts without an AgentRun have no
+// equivalent durable turn record. Keep a useful bounded audit excerpt for that
+// latter population rather than reusing the 120-character cap for reproducible
+// runtime-failure diagnostics. OpenClaw currently strips the sentinel upstream,
+// so its posts do not reach this branch.
+const LEADING_NO_REPLY_LOG_EXCERPT_LIMIT = 4096;
+
 // Runtime artifacts are exact values, not a language heuristic. Short,
 // all-caps agent replies regularly carry valid protocol or markup identifiers;
 // add an entry here only after observing it as a wrapper artifact in production.
@@ -1763,10 +1772,14 @@ class AgentMessageService {
 
     const trimmed = raw.trim();
     const sentinel = 'NO_REPLY';
-    const nextCharacter = trimmed[sentinel.length];
+    let sentinelEnd = 0;
+    while (trimmed.startsWith(sentinel, sentinelEnd)) {
+      sentinelEnd += sentinel.length;
+    }
+    const nextCharacter = trimmed[sentinelEnd];
     const nextIsWordCharacter = nextCharacter !== undefined
       && /[A-Za-z0-9_]/.test(nextCharacter);
-    return trimmed.startsWith(sentinel) && !nextIsWordCharacter;
+    return sentinelEnd > 0 && !nextIsWordCharacter;
   }
 
   /**
@@ -1877,7 +1890,7 @@ class AgentMessageService {
     if (AgentMessageService.hasLeadingBareNoReply(trimmed)) {
       if (observe) {
         console.warn(
-          `[agent-msg] suppressed substantive reply with leading bare sentinel from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,
+          `[agent-msg] suppressed substantive reply with leading bare sentinel from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, LEADING_NO_REPLY_LOG_EXCERPT_LIMIT)}`,
         );
       }
       return '';
