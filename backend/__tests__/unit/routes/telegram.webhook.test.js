@@ -8,6 +8,9 @@ jest.mock('../../../services/integrationSummaryService', () => ({ createSummary:
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
+jest.mock('../../../services/telegramBridgeService', () => ({
+  relayTelegramMessageToPod: jest.fn(),
+}));
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
@@ -16,6 +19,7 @@ const IntegrationSummaryService = require('../../../services/integrationSummaryS
 const AgentEventService = require('../../../services/agentEventService');
 const telegramService = require('../../../services/telegramService');
 const registry = require('../../../integrations');
+const bridge = require('../../../services/telegramBridgeService');
 
 const telegramRoutes = require('../../../routes/webhooks/telegram');
 
@@ -142,5 +146,54 @@ describe('Telegram webhook routes', () => {
 
     expect(res.status).toBe(200);
     expect(events).toHaveBeenCalled();
+  });
+  describe('live relay ack', () => {
+    const liveIntegration = {
+      _id: 'integration-1',
+      type: 'telegram',
+      podId: 'pod-1',
+      config: { chatId: '42', liveRelay: true, linkedUserId: 'user-1' },
+    };
+
+    const post = () => request(app)
+      .post('/api/webhooks/telegram')
+      .send({
+        message: {
+          text: 'hello',
+          message_id: 555,
+          chat: { id: 42, title: 'Test Chat', type: 'group' },
+          from: { id: 7, first_name: 'Sam' },
+        },
+      });
+
+    it('relays through the bridge instead of the buffer', async () => {
+      Integration.findOne.mockResolvedValue(liveIntegration);
+      bridge.relayTelegramMessageToPod.mockResolvedValue({ relayed: true });
+      const events = jest.fn((req, res) => res.sendStatus(200));
+      registry.get.mockReturnValue({ getWebhookHandlers: () => ({ events }) });
+
+      const res = await post();
+
+      expect(res.status).toBe(200);
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalled();
+      expect(events).not.toHaveBeenCalled();
+    });
+
+    // Telegram redelivers any update the webhook does not 2xx, and the relay is
+    // not idempotent: the pod row is written before agents are woken, and
+    // nothing dedupes on message_id. A 500 here duplicates both the message and
+    // the wake on retry, so the ack must not depend on the relay succeeding.
+    it('still acks 200 when the relay throws, so Telegram does not redeliver', async () => {
+      Integration.findOne.mockResolvedValue(liveIntegration);
+      bridge.relayTelegramMessageToPod.mockRejectedValue(new Error('delivery blew up'));
+      const events = jest.fn((req, res) => res.sendStatus(200));
+      registry.get.mockReturnValue({ getWebhookHandlers: () => ({ events }) });
+
+      const res = await post();
+
+      expect(res.status).toBe(200);
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalled();
+      expect(events).not.toHaveBeenCalled();
+    });
   });
 });
