@@ -18,10 +18,24 @@ are not the same problem and they do not share a remedy.
 | Queued, pool saturated | grey/pending | run exists, `status=queued`, age climbing | wait — re-triggering adds to the back of the line |
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
 | Jobs cancelled at 0 steps | run `failure` | jobs `cancelled`, `steps=0`, and no newer run to have superseded them | `gh run rerun <id>` |
+| Orphaned jobs | check shows **`pending`, forever** | run `completed/failure`, jobs still `queued/null` at `steps=0` | `gh run rerun <id>` — waiting never resolves it |
 
-The last row is the one that misleads, because a run-level `failure` reads as
-"the tests failed" when nothing ever executed. **Discriminate on job count and
-step count, not on the run's conclusion.**
+Two of these mislead in opposite directions. A run-level `failure` reads as
+"the tests failed" when nothing ever executed. And a check row reporting
+`pending` can belong to a run that terminated over an hour ago: the row
+inherits its **job's** status, and a job orphaned by a terminating run stays
+`queued/null` permanently. `gh pr checks` will show it as pending until the
+head moves.
+
+**So the discriminator is the run's `status`, not the check's.** Map check →
+`check_suite` → run, and only `status: in_progress` or `queued` earns waiting.
+Both states were live on this repo simultaneously on 2026-08-26: PR #1216's
+three guard runs were genuinely `queued` 78 minutes after creation, while PR
+#1277's five pending rows all belonged to runs that had already concluded
+`failure` — one at 15:22, two more three seconds after they were created.
+
+Job count and step count then tell you *what* went wrong; they cannot tell you
+whether it is still going.
 
 ## Three fields that do not mean what their names promise
 
@@ -64,7 +78,9 @@ of run is unrerunnable.
 
 ## Order to work in
 
-1. `gh run list --branch <branch>` — does a run exist at this head SHA at all?
+1. `gh run list --branch <branch>` — or better,
+   `gh api "repos/<o>/<r>/actions/runs?head_sha=<sha>"`. Does a run exist at
+   this head SHA at all?
    `gh pr checks` cannot answer this; a never-created run and a queued run are
    the same empty row there.
 2. If it exists, `gh api .../runs/<id>` for status, and
