@@ -66,6 +66,33 @@ captured, `gh api repos/<o>/<r>/actions/runs/32985813845` still reported
 `status=queued conclusion=null`. The job records were already terminal. When
 the two disagree, the per-attempt job listing is the one that has run.
 
+## Check-suites separate never-dispatched from dispatched-and-stuck
+
+This is the sharpest instrument in this document, and it answers the question
+the run list cannot: was the workflow ever dispatched at all? Every dispatched
+workflow allocates a `github-actions` check-suite within seconds, *whether or
+not its run ever starts*. So:
+
+```bash
+gh api "repos/<o>/<r>/commits/<sha>/check-suites?per_page=50" \
+  -q '.check_suites[] | "\(.created_at) app=\(.app.slug) \(.status)/\(.conclusion) runs=\(.latest_check_runs_count)"'
+```
+
+Measured at PR #1216's head on 2026-08-26: three `github-actions` suites created
+15:08:11, 15:08:13 and 15:09:50, all `queued`, one per stuck guard workflow —
+and **no suite at all** for `Tests` or `Playwright Tests`. Those two were never
+dispatched. At PR #1277's head, two suites sit at `completed/startup_failure`
+with zero runs, which is the terminal state-1 case wearing the same face.
+
+**Do not key on `latest_check_runs_count`.** A dispatched-but-queued suite
+reports `runs: 0`, identical to an empty one. The suite's *existence at that
+sha* is the signal; its count is not.
+
+One collection caveat that cost time here: CodeQL and other app-driven runs are
+recorded against `refs/pull/<n>/head`, not the branch, so
+`?branch=<branch-name>` can return zero for a PR that visibly has runs. Query
+by `head_sha` or via the commit's check-suites instead.
+
 ## A re-trigger fans out partially, and stragglers arrive minutes later
 
 Close/reopen re-fires `pull_request` workflows without moving the head, which is
