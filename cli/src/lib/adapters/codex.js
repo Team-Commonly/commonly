@@ -415,7 +415,13 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
+    // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
+    // `null || ''` is `''` — which routed the unreadable case straight into
+    // the empty-memory branch and made the whole distinction unreachable from
+    // the only two paths that build a real prompt. buildPrompt handles
+    // undefined and '' as absence itself; it does not need a guard, it needs
+    // the value.
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm);
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.

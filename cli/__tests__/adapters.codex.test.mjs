@@ -383,6 +383,21 @@ describe('codex adapter — spawn()', () => {
     expect(promptArg).toContain('commonly_save_my_memory');
   });
 
+  // Same delivery pin as the claude adapter, and pinned on both for the same
+  // reason the empty case is: the coalescing bug was duplicated in both call
+  // sites, so a test on one would have left the other shipping the defect.
+  test('null memoryLongTerm reaches the adapter as UNREADABLE, not as empty', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('just this', { sessionId: null, memoryLongTerm: null, _spawnImpl: impl });
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('unreadable');
+    expect(promptArg).toContain('just this');
+    expect(promptArg).not.toContain('commonly_save_my_memory');
+  });
+
   test('rejects when codex emits a turn.failed event, surfacing the error message', async () => {
     const { impl } = makeSpawnImpl({
       stdoutChunks: [

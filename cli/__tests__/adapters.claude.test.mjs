@@ -194,6 +194,22 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain('commonly_save_my_memory');
   });
 
+  // The delivery pin for the unreadable case. The helper's own tests exercise
+  // buildMemoryPreamble directly, which is exactly why they could not see that
+  // the call site coalesced `null` to `''` before the helper ever ran: the
+  // branch was correct, tested, and unreachable from production. Assert here on
+  // the argv the adapter actually spawns.
+  test('null memoryLongTerm reaches the adapter as UNREADABLE, not as empty', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: null, _spawnImpl: impl });
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('unreadable');
+    expect(promptArg).toContain('just this');
+    // Telling a seat whose read failed to go save its memory would prompt it to
+    // overwrite state it may already hold with whatever it can reconstruct.
+    expect(promptArg).not.toContain('commonly_save_my_memory');
+  });
+
   test('rejects when claude exits non-zero, surfacing stderr', async () => {
     const { impl } = makeSpawnImpl({ stdout: '', stderr: 'auth error', code: 1 });
     await expect(

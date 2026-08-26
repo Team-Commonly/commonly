@@ -470,7 +470,13 @@ export default {
   async spawn(prompt, ctx = {}) {
     const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
+    // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
+    // `null || ''` is `''` — which routed the unreadable case straight into
+    // the empty-memory branch and made the whole distinction unreachable from
+    // the only two paths that build a real prompt. buildPrompt handles
+    // undefined and '' as absence itself; it does not need a guard, it needs
+    // the value.
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm);
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
     // own default — which is how a fleet of ten agents ended up running three
