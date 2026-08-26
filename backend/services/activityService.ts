@@ -208,12 +208,20 @@ class ActivityService {
     const needsYou = activities
       .filter((activity) => {
         const approval = activity.approval as { status?: string } | undefined;
-        return activity.flags?.isMention || approval?.status === 'pending';
+        // Mongoose materializes approval.status = 'pending' for every
+        // Activity document, including ordinary message rows. The nested
+        // default is only meaningful on the one activity type that carries
+        // an approval request; otherwise every message would become a human
+        // action in the recap's decision queue.
+        const isPendingApproval = activity.type === 'approval_needed'
+          && approval?.status === 'pending';
+        return activity.flags?.isMention || isPendingApproval;
       })
       .slice(0, 12)
       .map((activity) => {
         const approval = activity.approval as { status?: string } | undefined;
-        const isApproval = approval?.status === 'pending';
+        const isApproval = activity.type === 'approval_needed'
+          && approval?.status === 'pending';
         return {
           id: activity.id,
           kind: isApproval ? 'approval' : 'mention',

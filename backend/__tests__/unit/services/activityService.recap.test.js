@@ -3,6 +3,7 @@ jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
 
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
+const Activity = require('../../../models/Activity');
 const ActivityService = require('../../../services/activityService');
 
 const ownerId = 'owner-1';
@@ -22,6 +23,7 @@ const taskQuery = (tasks) => ({
 
 describe('ActivityService.getRecap', () => {
   let spy;
+  let findByIdSpy;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,7 +51,10 @@ describe('ActivityService.getRecap', () => {
     });
   });
 
-  afterEach(() => { spy?.mockRestore(); });
+  afterEach(() => {
+    spy?.mockRestore();
+    findByIdSpy?.mockRestore();
+  });
 
   test('projects existing agent activity, direct mentions, and board updates without writing new events', async () => {
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
@@ -76,5 +81,87 @@ describe('ActivityService.getRecap', () => {
   test('rejects a requested pod that is outside the viewer membership', async () => {
     await expect(ActivityService.getRecap(ownerId, { podId: 'not-a-member-pod' }))
       .rejects.toThrow('Access denied');
+  });
+
+  test('does not mistake the approval.status default on an ordinary message for a request', async () => {
+    // Build the stored document with the real schema. Its nested default is
+    // the production condition that caused every ordinary activity to be
+    // projected as an approval; a hand-written missing approval field would
+    // not reproduce it.
+    const storedMessage = new Activity({
+      type: 'message',
+      action: 'posted a message',
+      content: 'An ordinary update.',
+    });
+    expect(storedMessage.approval.status).toBe('pending');
+    spy.mockResolvedValue({
+      activities: [{
+        id: 'message-with-defaulted-approval',
+        type: 'message',
+        actor: { id: 'human-1', name: 'A human', type: 'human' },
+        action: 'posted a message',
+        preview: 'An ordinary update.',
+        timestamp: new Date(),
+        pod: { id: 'pod-1', name: pod.name },
+        approval: storedMessage.approval.toObject(),
+        flags: { isAgentAction: false, isMention: false },
+      }],
+    });
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.needsYou).toEqual([]);
+  });
+
+  test('keeps an actual pending approval in the decision queue', async () => {
+    spy.mockResolvedValue({
+      activities: [{
+        id: 'approval-1',
+        type: 'approval_needed',
+        actor: { id: 'agent-1', name: 'release-agent', type: 'agent' },
+        action: 'approval_needed',
+        preview: 'Approve access to Production.',
+        timestamp: new Date(),
+        pod: { id: 'pod-1', name: pod.name },
+        approval: { status: 'pending' },
+        flags: { isAgentAction: true, isMention: false },
+      }],
+    });
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.needsYou).toEqual([expect.objectContaining({
+      id: 'approval-1', kind: 'approval', title: 'Approval requested',
+    })]);
+  });
+
+  test('projects only an approval that the existing approve writer accepts', async () => {
+    const storedApproval = new Activity({
+      type: 'approval_needed',
+      action: 'approval_needed',
+      content: 'Approve the release.',
+    });
+    const approve = jest.fn().mockResolvedValue();
+    storedApproval.approve = approve;
+    spy.mockResolvedValue({
+      activities: [{
+        id: String(storedApproval._id),
+        type: storedApproval.type,
+        actor: { id: 'agent-1', name: 'release-agent', type: 'agent' },
+        action: storedApproval.action,
+        preview: storedApproval.content,
+        timestamp: new Date(),
+        pod: { id: 'pod-1', name: pod.name },
+        approval: storedApproval.approval.toObject(),
+        flags: { isAgentAction: true, isMention: false },
+      }],
+    });
+    const recap = await ActivityService.getRecap(ownerId, { window: 'today' });
+    findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
+
+    const result = await ActivityService.approveActivity(recap.needsYou[0].id, ownerId, 'Approved in Activity');
+
+    expect(result).toEqual({ success: true, status: 'approved' });
+    expect(approve).toHaveBeenCalledWith(ownerId, 'Approved in Activity');
   });
 });
