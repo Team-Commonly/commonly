@@ -173,3 +173,115 @@ describe('classifies real provider-exhaustion strings (2026-08-03 outage)', () =
       .toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
 });
+
+describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)', () => {
+  // Verbatim from the fleet's own logs, measured 2026-08-25 across every seat
+  // that had failed at all. Three wordings, one sentence shape, and the
+  // allowlist carried exactly one of them:
+  //
+  //   283 × "You've hit your weekly limit"      <- unmatched, RUNTIME ladder
+  //    55 × "You've hit your session limit"     <- matched (the 08-18 fix)
+  //     6 × "You've reached your Fable 5 limit" <- unmatched, RUNTIME ladder
+  //
+  // Enumerating per-wording has now failed three times, because the variable
+  // part is a billing period or a model name — both of which the provider keeps
+  // adding. Hence a phrase for the shape, kept narrow by requiring the caller's
+  // OWN allowance to be the subject.
+  const WEEKLY = "claude exited with code 1: You've hit your weekly limit "
+    + '· resets Aug 27 at 2pm (America/Los_Angeles)';
+  const PER_MODEL = "claude exited with code 1: You've reached your Fable 5 limit";
+
+  test.each([
+    ['weekly, the wording behind 283 of 365 fleet failures', WEEKLY],
+    ['per-model, whose variable part is a model name', PER_MODEL],
+  ])('%s is QUOTA, not RUNTIME', (_label, message) => {
+    expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+  });
+
+  test('so the circuit opens at the full cooldown on the FIRST failure', () => {
+    const { circuitOpen, delayMs } = spawnRetryPolicy({
+      error: new Error(WEEKLY),
+      consecutiveFailures: 1,
+      intervalMs: 5000,
+    });
+    expect(circuitOpen).toBe(true);
+    expect(delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  });
+
+  // This is the specific harm the misclassification caused, and it is not the
+  // latency. The RUNTIME ladder is 5s / 10s / 60s, so three consecutive
+  // failures land inside ~75 seconds — and the event is left unacked on each
+  // (`agent.js`, "the kernel must retain the event for at-least-once
+  // delivery"), which burns all three `requeueMaxAttempts` and retires it to
+  // `status: 'failed'`. Under QUOTA the first failure alone opens a 15-minute
+  // circuit, so the batch is not spent. See TASK-061.
+  test('the RUNTIME ladder would burn all three requeue attempts inside 75s', () => {
+    const runtimeLadder = [1, 2, 3].map((n) => spawnRetryPolicy({
+      error: new Error('claude exited with code 1: something transient'),
+      consecutiveFailures: n,
+      intervalMs: 5000,
+    }).delayMs);
+    expect(runtimeLadder.reduce((a, b) => a + b, 0)).toBeLessThan(90 * 1000);
+
+    // The same three failures, correctly classified, cost 45 minutes.
+    const quotaLadder = [1, 2, 3].map((n) => spawnRetryPolicy({
+      error: new Error(WEEKLY),
+      consecutiveFailures: n,
+      intervalMs: 5000,
+    }).delayMs);
+    expect(quotaLadder.every((ms) => ms === SPAWN_RETRY_MAX_MS)).toBe(true);
+  });
+
+  // Guard on the widening. The phrase requires "your", so a server-side
+  // throttle phrased the same way must not be swallowed into the 15-minute
+  // cooldown — QUOTA is tested before RATE_LIMIT, so this ordering is load-bearing.
+  test.each([
+    "You've hit your rate limit, retry shortly",
+    "You've reached your rate-limit for this model",
+  ])('a possessive RATE-limit string stays RATE_LIMIT: %s', (message) => {
+    expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+  });
+
+  // And the bound stops it spanning sentences into an unrelated word.
+  test('the phrase does not span a sentence boundary', () => {
+    expect(classifySpawnFailure(new Error("You've hit your stride. Now describe the limit.")))
+      .toBe(SPAWN_FAILURE_CLASS.RUNTIME);
+  });
+
+  describe('the dotted-model-name gap (@sprint-review, 2026-08-25)', () => {
+    // `[^.\n]` was chosen to keep the match inside one sentence, and silently
+    // also excluded every model name we run, because they are all dotted.
+    // RUNTIME is the fallthrough with the SHORTEST backoff, so the net effect
+    // was to probe a quota-blocked seat hardest.
+    test.each([
+      ["You've reached your Haiku 4.5 limit"],
+      ["you've hit your gpt-5.4-mini limit"],
+      ["Error: You've reached your Claude Opus 4.8 limit for today"],
+    ])('classifies %s as QUOTA', (text) => {
+      expect(classifySpawnFailure(new Error(text))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
+    });
+
+    test('still refuses a rate limit, which QUOTA is tested before', () => {
+      expect(classifySpawnFailure(new Error("you've hit your rate limit")))
+        .toBe(SPAWN_FAILURE_CLASS.RATE_LIMIT);
+    });
+
+    test('does not let the dot carve-out span a sentence boundary', () => {
+      // The dot is admitted only ahead of a DIGIT, so a sentence-ending period
+      // still terminates the match and this must not read as exhaustion.
+      expect(classifySpawnFailure(new Error("You've reached your goal. This has no limit")))
+        .not.toBe(SPAWN_FAILURE_CLASS.QUOTA);
+    });
+
+    test('a dotted model name costs the quota ladder, not the runtime ladder', () => {
+      // The point of the fix: QUOTA opens the circuit at n=1. Under RUNTIME
+      // this same error would be retried on the 5s rung.
+      const policy = spawnRetryPolicy({
+        error: new Error("You've reached your Haiku 4.5 limit"),
+        consecutiveFailures: 1,
+        intervalMs: 5000,
+      });
+      expect(policy).toMatchObject({ circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS });
+    });
+  });
+});
