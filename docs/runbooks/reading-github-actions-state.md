@@ -58,6 +58,26 @@ Non-zero means the queued run you are watching has already been outlived. A
 repo-wide queue-depth number that has not been through this filter measures
 accumulated debris, not load.
 
+**A sharper tell than age: the successor should have cancelled it, and didn't.**
+All five PR workflows declare `cancel-in-progress: true` on a group keyed by PR
+number, so a successor lands in the same group as its queued predecessor and
+should sweep it to `cancelled`. Every one of the eleven is still `queued`. An
+orphan is not losing the concurrency race — it is absent from the bookkeeping
+that would have cancelled it. This tell resolves in seconds where age needs
+hours, so reach for it first. It does **not** cover the `Uptime Check` case:
+that workflow uses a static group with `cancel-in-progress: false`, so no
+successor was ever going to cancel it and age is the only evidence you have.
+Keep both.
+
+So, discriminating on `status` alone, with job count deliberately left out (it
+is `0` for orphans *and* for a genuine `startup_failure`):
+
+```
+completed                      -> terminal; read the conclusion, ignore age
+queued, successor completed    -> orphaned; it will never run, ignore it
+queued, no successor yet       -> unknown; re-check, or force one via close/reopen
+```
+
 **So the discriminator is the run's `status`, not the check's.** Map check →
 `check_suite` → run, and only `status: in_progress` or `queued` earns waiting.
 Both states were live on this repo simultaneously on 2026-08-26: PR #1216's
@@ -99,7 +119,8 @@ captured, `gh api repos/<o>/<r>/actions/runs/32985813845` still reported
 **And it leads them, too — so neither field is authoritative on its own.** Run
 `32985816249` (#1271's CodeQL, `event: dynamic`) reads `completed/failure` while
 all three of its jobs are still `queued`, `conclusion: null`, `completed_at:
-null`, hours after `started_at`. `gh pr checks` renders those as `pending` with
+null`, hours after the *jobs'* `started_at` (the run's own `started_at` is
+`null` on a `dynamic` run — do not anchor the age to it). `gh pr checks` renders those as `pending` with
 duration `0`, which is indistinguishable from a job that is genuinely about to
 run. The sibling run `32984068926` on #1216 has the same shape one step later —
 jobs `completed/cancelled` after 15m4s — and `gh pr checks` renders *those* as
@@ -209,15 +230,32 @@ Practical consequences:
 - Do not conclude "the re-trigger did nothing" inside ~25 minutes. Both of us
   did, at 2 and 17 minutes.
 - Do not conclude it worked because *some* runs appeared. Count the workflows
-  you expect, not whether the list is non-empty. Derive that number rather than
-  reusing this document's five: eight workflow files declare `pull_request`, and
-  for these three PRs `Deploy Docs` (`paths: docs-site/**`) and `Smoke Tests`
-  (`paths: k8s/**`, the two Dockerfiles) did not match the diff while
-  `Release Safety` is `branches: [ v1.0.x ]`, leaving five. A workflow with no
-  `types:` key defaults to `[opened, synchronize, reopened]`, so none of the
-  five is excluded from a reopen — but check, because one that pinned
-  `types: [opened, synchronize]` would legitimately never come back and would
-  read as a missing run forever.
+  you expect, not whether the list is non-empty — and **derive that number for
+  your own PR**. Do not reuse the five below. Eight workflow files declare
+  `pull_request`, and a workflow is excluded by any of **three** independent
+  axes:
+
+  | Axis | Who declares it | What it costs you if you forget |
+  |---|---|---|
+  | `branches:` | `Package Version Guard`, `PR Base Freshness` (`main`); `Release Safety` (`v1.0.x`) | a **stacked** PR based on another feature branch loses both guards legitimately — #1279 draws 5 checks where a main-based PR draws 11 |
+  | `paths:` | `Deploy Docs`, `Playwright Tests`, `Smoke Tests` | see below — this is the one most often mis-enumerated |
+  | `types:` | `Package Version Guard`, `PR Base Freshness`, `Release Safety` | no key defaults to `[opened, synchronize, reopened]`; one pinning `[opened, synchronize]` would never return from a reopen and would read as permanently missing |
+
+  Read the `paths:` lists from the file, in full, every time. `Playwright Tests`
+  is paths-gated (`frontend/**`, `backend/**`, `e2e/**`, `playwright.config.*`)
+  and is easy to forget because most PRs match it. `Smoke Tests` gates on seven
+  entries, not the three you might skim — `k8s/**`, both Dockerfiles,
+  `_external/clawdbot`, `_external/clawdbot/**`, `dev.sh`, **and
+  `.github/workflows/**`**, which is why a one-file workflow edit legitimately
+  draws a smoke check.
+
+  Worked example, and note that the two answers differ. The three incident PRs
+  each touch `backend/**` on a `main` base: `Deploy Docs` and `Smoke Tests` miss
+  on paths, `Release Safety` misses on base — **five**. *This* document's PR
+  touches only `docs/runbooks/*.md`: `Playwright Tests` and `Smoke Tests` also
+  miss on paths — **four**, and `gh pr checks` on it has no `E2E Tests` row at
+  all. A recipe that named only Deploy Docs and Smoke Tests as paths-gated would
+  score that missing row as a fault on the very PR that carries the recipe.
 - **Your expected count is not the whole check list.** CodeQL default setup runs
   as `path: dynamic/github-code-scanning/codeql`, `event: dynamic`, with no file
   in `.github/workflows/`. Close/reopen does not re-dispatch it, so its three
