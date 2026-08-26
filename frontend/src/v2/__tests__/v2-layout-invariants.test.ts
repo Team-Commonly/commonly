@@ -642,4 +642,25 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.v2-thread-replies[\s\S]*?transition: none/,
     );
   });
+  test('zh-CN: every negative-tracking title is reset under :lang(zh) — CJK never takes negative letter-spacing (TASK-055)', () => {
+    // Every selector in v2.css that declares negative letter-spacing must be
+    // listed in the :lang(zh) reset block. Measured in a real browser: CJK
+    // glyphs have no side bearings, so -0.025em on a 20px title crushes strokes.
+    // The selector list may span lines (`a,\nb,\nc {`) — capture the whole
+    // list, then split on commas, or a multi-line list is checked by its last
+    // line only (sprint-review's gate on #1253: h1–h5 slipped past h6).
+    const negative = [...v2.matchAll(/\n((?:[^\n{}]+,\n)*[^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative.length).toBeGreaterThan(0);
+    const resetStart = v2.indexOf('.v2-root:lang(zh) .v2-rail__brand');
+    expect(resetStart).toBeGreaterThan(-1);
+    const resetBlock = v2.slice(resetStart, v2.indexOf('}', resetStart));
+    expect(resetBlock).toContain('letter-spacing: 0');
+    for (const sel of negative) {
+      const bare = sel.replace(/^\.v2-root /, '');
+      expect(resetBlock).toContain(`.v2-root:lang(zh) ${bare}`);
+    }
+  });
+
 });
