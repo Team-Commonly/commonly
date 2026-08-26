@@ -72,6 +72,6 @@ of run is unrerunnable.
 3. Join on SHA before concluding anything. A run listed on the branch may
    belong to a previous head.
 
-Related: [`docs/development/review-checklist.md`](../development/review-checklist.md)
-rule on joining two measurements over a time-invariant predicate — the same
-failure, one layer up.
+Related: PR #1240 proposes a review-checklist rule that a join across two
+measurements needs a time-invariant predicate — the same failure one layer up.
+Step 3 above is that rule applied to a single PR.
