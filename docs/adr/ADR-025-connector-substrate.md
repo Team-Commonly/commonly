@@ -65,7 +65,7 @@ publish. Nothing mirrors.
 
 > **Amendment, 2026-08-26 20:40Z — mode 4 now exists, for exactly one connector.** The sentence
 > above was true when this audit was re-derived and was falsified about thirty minutes later by
-> [#1282](https://github.com/Team-Commonly/commonly/pull/1282), merged at `defff409`. It adds
+> [#1282](https://github.com/Team-Commonly/commonly/pull/1282), merged at `7a781821`. It adds
 > `services/telegramBridgeService.ts` with both halves of a mirror: outbound,
 > `relayAgentMessageToTelegram` is called fire-and-forget from
 > `AgentMessageService.postMessage` (`services/agentMessageService.ts:1694`) on every agent post,
@@ -184,11 +184,13 @@ to name: a confident claim with no reader behind it.
 ## Proposed decisions
 
 **D1 — Name the gap as synchronisation, not as outbound.** Outbound exists in three trigger modes
-and agents already publish through it. What does not exist is any path from a Commonly-side event
-to a connector. Product surfaces should claim *publishing* and *ingestion*, and should not claim
-two-way *sync* for any connector until mode 4 exists. This is the decision I most want ratified,
-because the first draft of this ADR got it wrong in the other direction and an imprecise headline
-is what produced that error.
+and agents already publish through it. What does not exist, for three of the four connectors, is
+any path from a Commonly-side event to a connector; telegram gained one in #1282 — see the
+amendment to Finding 1, which is the reason this sentence is no longer blanket. Product surfaces
+should claim *publishing* and *ingestion*, and should not claim two-way *sync* for any connector
+that lacks mode 4, which today means every connector except telegram. This is the decision I
+most want ratified, because the first draft of this ADR got it wrong in the other direction and
+an imprecise headline is what produced that error.
 
 **D2 — Add a conversational outbound verb to the provider contract.** The registry has exactly one
 outbound verb and it is `publishPost`, a broadcast shape (caption, hashtags, source URL) that four
