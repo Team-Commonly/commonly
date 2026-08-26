@@ -20,7 +20,9 @@ const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeS
 const integration = {
   _id: 'i1',
   podId: 'pod-1',
-  config: { chatId: '42', liveRelay: true, linkedUserId: 'user-1' },
+  // chatType 'private' is what licenses authoring as linkedUserId — see the
+  // attribution gate in relayTelegramMessageToPod.
+  config: { chatId: '42', chatType: 'private', liveRelay: true, linkedUserId: 'user-1' },
 };
 const telegramMessage = { text: 'ship it', message_id: 555, from: { first_name: 'Sam' } };
 

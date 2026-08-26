@@ -64,6 +64,14 @@ describe('Telegram webhook routes', () => {
       integration._id,
       expect.objectContaining({
         status: 'connected',
+        // The bridge's attribution gate reads config.chatType off the same row
+        // config.chatId names — the "no legacy-shaped rows" argument rests on
+        // these two keys traveling in ONE $set. Pin the co-location, not just
+        // the status flip: splitting or dropping chatType must go red here.
+        $set: expect.objectContaining({
+          'config.chatId': '42',
+          'config.chatType': 'group',
+        }),
       }),
     );
     expect(telegramService.sendMessage).toHaveBeenCalledWith(
@@ -152,7 +160,7 @@ describe('Telegram webhook routes', () => {
       _id: 'integration-1',
       type: 'telegram',
       podId: 'pod-1',
-      config: { chatId: '42', liveRelay: true, linkedUserId: 'user-1' },
+      config: { chatId: '42', chatType: 'private', liveRelay: true, linkedUserId: 'user-1' },
     };
 
     const post = () => request(app)

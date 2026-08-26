@@ -37,6 +37,7 @@ interface TelegramIntegrationDoc {
   podId: unknown;
   config?: {
     chatId?: string;
+    chatType?: string;
     liveRelay?: boolean;
     linkedUserId?: string;
     leadAgentUsername?: string;
@@ -181,6 +182,38 @@ export const relayTelegramMessageToPod = async (opts: {
   const linkedUserId = integration.config?.linkedUserId;
   if (!linkedUserId) {
     console.warn('[tg-bridge] live relay without linkedUserId — inbound dropped');
+    return { relayed: false };
+  }
+
+  // Attribution gate. Every relayed message is authored as `linkedUserId`, so
+  // relaying is only honest where Telegram itself guarantees the sender IS that
+  // person: a `private` chat is 1:1 between the bot and one user. In a group,
+  // supergroup or channel, any member's message would land in the pod under the
+  // linked user's name — and nothing downstream carries `from.id` to contradict
+  // it, not the pod row, not the socket payload, not the agent wake. The
+  // display prefix built below is cosmetic; the authorship is not.
+  //
+  // Fails closed on an unknown chatType, and no existing row needs migrating.
+  // `handleEnableCommand` (routes/webhooks/telegram.ts) is the only writer of
+  // `config.chatId` in the tree, and it `$set`s `config.chatType` in the SAME
+  // update — both keys were introduced by one commit (72c9a1e6, 2026-01-27),
+  // so no document has ever carried a chatId without a chatType. Since
+  // `findLiveIntegration` requires `config.chatId` to exist, every integration
+  // the bridge can reach already answers this question.
+  //
+  // The guard is still not decorative: that writer stores `chat?.type || null`,
+  // so a Telegram update omitting `chat.type` yields an explicit null, and null
+  // is not "private". The invariant is also held by nothing but the co-location
+  // of those two keys in one `$set` — split them and legacy-shaped rows become
+  // reachable again.
+  //
+  // Widening this needs a real Telegram-sender → Commonly-user mapping, not a
+  // longer list of accepted chat types.
+  const chatType = integration.config?.chatType;
+  if (chatType !== 'private') {
+    console.warn(
+      `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} cannot guarantee the sender is them`,
+    );
     return { relayed: false };
   }
 
