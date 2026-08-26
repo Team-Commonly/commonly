@@ -125,6 +125,73 @@ describe('performRun', () => {
     );
   });
 
+  test('a normal-return run-cap refusal is acked as a refusal, not a posted reply', async () => {
+    // The post route deliberately responds 200 with { refused: true }. This
+    // is terminal guidance — retrying the same event would duplicate the two
+    // chunks that did land — so the wrapper must expose it locally and ack the
+    // event as no_action rather than throw into at-least-once redelivery.
+    const guidance = 'Wait for someone else to speak; do not retry unchanged.';
+    let messagePosts = 0;
+    const mockGet = jest.fn().mockResolvedValue({ events: [makeEvent({ _id: 'evt-run-cap' })] });
+    const mockPost = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/pods/pod-abc/messages') {
+        messagePosts += 1;
+        return messagePosts < 3
+          ? { success: true }
+          : {
+            success: false,
+            refused: true,
+            reason: 'consecutive_run_cap',
+            consecutive: 3,
+            guidance,
+          };
+      }
+      return {};
+    });
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const onError = jest.fn();
+    const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}\n\n${'c'.repeat(390)}`;
+    const spawn = jest.fn(async () => ({ text }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      onError,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(mockPost.mock.calls.filter(([route]) => route === '/api/agents/runtime/pods/pod-abc/messages'))
+      .toHaveLength(3);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-run-cap/ack',
+      {
+        result: {
+          outcome: 'no_action',
+          reason: 'consecutive_run_cap',
+          details: {
+            mode: 'refused',
+            postedMessages: 2,
+            attemptedMessages: 3,
+            consecutive: 3,
+            guidance,
+          },
+        },
+      },
+    );
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'agent_delivery_refused',
+      reason: 'consecutive_run_cap',
+      postedMessages: 2,
+      attemptedMessages: 3,
+    }));
+    expect(onError.mock.calls[0][0].message).toContain(guidance);
+  });
+
   test('first_contact event is forwarded to the adapter like a mention', async () => {
     const events = [makeEvent({
       _id: 'evt-first-contact',
