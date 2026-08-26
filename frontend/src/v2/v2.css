@@ -7449,3 +7449,28 @@ body.modern-ui.v2-canvas {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: no negative tracking on CJK (TASK-055, rule class 1).
+ * The 12 title selectors above tighten Latin display type with negative
+ * letter-spacing. CJK glyphs are full-width squares with no side bearings to
+ * reclaim, so the same value only crushes strokes together. Measured in the
+ * real browser (.dev/task-055-zh-harness.html): .v2-chat__title -0.5px,
+ * .v2-pods__title -0.32px, .v2-inspector__now-title -0.15px on Chinese text.
+ * `html[lang]` is set by frontend/src/i18n/index.ts, so :lang(zh) matches
+ * zh-CN. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-pods__title,
+.v2-root:lang(zh) .v2-chat__title,
+.v2-root:lang(zh) .v2-first-run__title,
+.v2-root:lang(zh) .v2-chat__new-pod-title,
+.v2-root:lang(zh) button.v2-inspector__tab,
+.v2-root:lang(zh) .v2-inspector__now-title,
+.v2-root:lang(zh) .v2-inspector__detail-name,
+.v2-root:lang(zh) .v2-login__title,
+.v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
+.v2-root:lang(zh) .v2-team__title {
+  letter-spacing: 0;
+}
