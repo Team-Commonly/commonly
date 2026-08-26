@@ -1069,6 +1069,7 @@ export const performRun = ({
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
     let delivered = agentPostedItself;
+    let deliveryRefusal = null;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
@@ -1154,11 +1155,32 @@ export const performRun = ({
         uploadName: `${agentName}-reply-${event._id}.md`,
         log: (line) => log(`[${event.type}] ${line}`),
       });
-      delivered = true;
-      log(
-        `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
-        + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
-      );
+      if (delivery.refused) {
+        // A run-cap refusal is a successful HTTP request but not a delivery.
+        // Ack it so the kernel does not replay the same text (the server
+        // guidance expressly says not to retry unchanged), while preserving
+        // the refusal and its partial-post count for the seat and event ledger.
+        deliveryRefusal = delivery;
+        const guidance = delivery.guidance || 'The server refused this message; do not retry it unchanged.';
+        const detail = `after ${delivery.messages}/${delivery.attemptedMessages} message${delivery.attemptedMessages === 1 ? '' : 's'}`;
+        log(`[${event.type}] wrapper delivery refused ${detail} (${delivery.reason}): ${guidance}`);
+        onError?.(Object.assign(
+          new Error(`${event.type} wrapper delivery refused ${detail}: ${guidance}`),
+          {
+            code: 'agent_delivery_refused',
+            reason: delivery.reason,
+            eventId: event._id,
+            postedMessages: delivery.messages,
+            attemptedMessages: delivery.attemptedMessages,
+          },
+        ));
+      } else {
+        delivered = true;
+        log(
+          `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
+          + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
+        );
+      }
     }
     if (result.memorySummary) {
       try {
@@ -1176,6 +1198,21 @@ export const performRun = ({
     // streak. Recording only on completion means a spawn failure that gets
     // redelivered never double-counts toward the cap.
     cascadeGovernor.record(eventPodId, trigger);
+    if (deliveryRefusal) {
+      return {
+        outcome: 'no_action',
+        reason: deliveryRefusal.reason,
+        details: {
+          mode: deliveryRefusal.mode,
+          postedMessages: deliveryRefusal.messages,
+          attemptedMessages: deliveryRefusal.attemptedMessages,
+          ...(typeof deliveryRefusal.consecutive === 'number'
+            ? { consecutive: deliveryRefusal.consecutive }
+            : {}),
+          ...(deliveryRefusal.guidance ? { guidance: deliveryRefusal.guidance } : {}),
+        },
+      };
+    }
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
