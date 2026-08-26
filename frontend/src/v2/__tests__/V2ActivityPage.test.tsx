@@ -22,7 +22,10 @@ const CurrentPath = () => {
 };
 
 const recap = {
-  pods: [{ id: 'pod-1', name: 'Launch pod' }],
+  pods: [
+    { id: 'pod-1', name: 'Launch pod', activeInWindow: true, agentMessageCount: 2 },
+    { id: 'pod-2', name: 'Quiet pod', activeInWindow: false, agentMessageCount: 0 },
+  ],
   needsYou: [{
     id: 'mention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
     podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
@@ -85,22 +88,32 @@ describe('V2ActivityPage', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
-  test('defaults the recap to active pods and keeps the scope selector compact', async () => {
+  test('defaults to active pods and groups every selectable pod by current activity', async () => {
     renderPage();
     await screen.findByText('Review requested');
 
-    const scope = screen.getByLabelText('Pod scope');
+    const scope = screen.getByLabelText(/Scope/);
     expect(scope).toHaveValue('active');
-    expect(scope.querySelectorAll('option')).toHaveLength(2);
-    expect(screen.getByRole('option', { name: 'Active pods' })).toBeInTheDocument();
+    expect(scope.querySelectorAll('option')).toHaveLength(4);
+    expect(screen.getByRole('option', { name: 'Active pods (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'All pods (2)' })).toBeInTheDocument();
+    expect(scope.querySelector('optgroup[label="Active this window (1)"]')).toBeInTheDocument();
+    expect(scope.querySelector('optgroup[label="Other pods"]')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Launch pod (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Quiet pod (0)' })).toBeInTheDocument();
 
     fireEvent.change(scope, { target: { value: 'pod-1' } });
     await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/api/activity/recap', expect.objectContaining({
       params: { window: 'today', podId: 'pod-1' },
     })));
+
+    fireEvent.change(scope, { target: { value: 'all' } });
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/api/activity/recap', expect.objectContaining({
+      params: { window: 'today', podId: 'all' },
+    })));
   });
 
-  test('opens the board from a durable press handoff', async () => {
+  test('opens a gated pull request from a press fact', async () => {
     mockGet.mockResolvedValue({
       data: {
         ...recap,
@@ -108,14 +121,34 @@ describe('V2ActivityPage', () => {
           id: 'task:press-1', kind: 'press', taskId: 'TASK-201',
           title: 'Release the Activity recap', detail: 'Waiting for a human press.',
           podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
+          prUrl: 'https://github.com/Team-Commonly/commonly/pull/1274',
         }],
       },
     });
     renderPage();
 
     expect(await screen.findByText('Release the Activity recap')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open board' }));
-    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1/board');
+    expect(screen.getByRole('link', { name: 'Open PR' })).toHaveAttribute(
+      'href', 'https://github.com/Team-Commonly/commonly/pull/1274',
+    );
+  });
+
+  test('opens a DECIDE board row rather than treating it as a PR press', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        ...recap,
+        needsYou: [{
+          id: 'task:decide-1', kind: 'decide', taskId: 'TASK-202',
+          title: 'DECIDE: retain unread activity state', detail: 'Waiting for a decision.',
+          podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
+        }],
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText('DECIDE: retain unread activity state')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1/board?taskId=TASK-202');
   });
 
   test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {

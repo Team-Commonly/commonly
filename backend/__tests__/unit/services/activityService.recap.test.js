@@ -70,7 +70,9 @@ describe('ActivityService.getRecap', () => {
   test('projects existing agent activity, direct mentions, and board updates without writing new events', async () => {
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
 
-    expect(result.pods).toEqual([expect.objectContaining({ id: 'pod-1', name: pod.name })]);
+    expect(result.pods).toEqual([expect.objectContaining({
+      id: 'pod-1', name: pod.name, activeInWindow: true, agentMessageCount: 1,
+    })]);
     expect(result.needsYou).toEqual([expect.objectContaining({
       kind: 'mention', podId: 'pod-1', title: 'sprint-impl mentioned you',
     })]);
@@ -94,6 +96,7 @@ describe('ActivityService.getRecap', () => {
       {
         _id: 'press-1', podId: 'pod-1', taskId: 'TASK-201',
         title: 'Release the Activity recap', status: 'claimed', updatedAt: new Date(),
+        prUrl: 'https://github.com/Team-Commonly/commonly/pull/1274',
         updates: [{ text: 'Gated #1274 — awaiting human press.', author: 'reviewer', createdAt: new Date() }],
       },
       {
@@ -101,16 +104,28 @@ describe('ActivityService.getRecap', () => {
         title: 'DECIDE: retain unread activity state', status: 'blocked', updatedAt: new Date(),
         updates: [{ text: 'A human decision unblocks the implementation.', author: 'architect', createdAt: new Date() }],
       },
+      {
+        _id: 'handoff-1', podId: 'pod-1', taskId: 'TASK-203',
+        title: 'Press the deployment after the smoke test', status: 'blocked', updatedAt: new Date(),
+        updates: [{ text: 'Waiting for a human to press the deployment.', author: 'operator', createdAt: new Date() }],
+      },
     ]));
 
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
 
     expect(result.needsYou).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'press', taskId: 'TASK-201', podId: 'pod-1' }),
-      expect.objectContaining({ kind: 'decision', taskId: 'TASK-202', podId: 'pod-1' }),
+      expect.objectContaining({
+        kind: 'press', taskId: 'TASK-201', podId: 'pod-1',
+        prUrl: 'https://github.com/Team-Commonly/commonly/pull/1274',
+      }),
+      expect.objectContaining({ kind: 'decide', taskId: 'TASK-202', podId: 'pod-1' }),
+      expect.objectContaining({ kind: 'handoff', taskId: 'TASK-203', podId: 'pod-1' }),
       expect.objectContaining({ kind: 'mention', id: 'message-1' }),
     ]));
-    expect(result.needsYou.map((item) => item.kind)).toEqual(['press', 'decision', 'mention']);
+    expect(result.needsYou.map((item) => item.kind)).toEqual(['press', 'decide', 'handoff', 'mention']);
+    expect(Task.find.mock.results[0].value.select).toHaveBeenCalledWith(
+      expect.stringContaining('prUrl'),
+    );
   });
 
   test('excludes system bot noise, ranks real seats by substantive updates, and only exposes active pods in the default scope', async () => {
@@ -145,7 +160,10 @@ describe('ActivityService.getRecap', () => {
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
 
     expect(result.scope).toBe('active');
-    expect(result.pods).toEqual([{ id: 'pod-2', name: activePod.name }]);
+    expect(result.pods).toEqual(expect.arrayContaining([
+      { id: 'pod-1', name: pod.name, activeInWindow: false, agentMessageCount: 0 },
+      { id: 'pod-2', name: activePod.name, activeInWindow: true, agentMessageCount: 3 },
+    ]));
     expect(result.agents.map((agent) => agent.name)).toEqual(['beta', 'alpha']);
     expect(result.agents.map((agent) => agent.name)).not.toContain('commonly-bot');
   });
@@ -155,12 +173,15 @@ describe('ActivityService.getRecap', () => {
     Pod.find.mockReturnValue(podQuery([pod, busyPod]));
     Task.find.mockReturnValue(taskQuery([]));
     spy.mockResolvedValue({ activities: [] });
-    PGMessage.findSubstantiveAgentPodActivity.mockResolvedValue([{ podId: 'pod-busy' }]);
+    PGMessage.findSubstantiveAgentPodActivity.mockResolvedValue([{ podId: 'pod-busy', agentMessageCount: 15 }]);
 
     const result = await ActivityService.getRecap(ownerId, { window: 'today' });
 
     expect(PGMessage.findSubstantiveAgentPodActivity).toHaveBeenCalledWith(['pod-1', 'pod-busy'], expect.any(Date));
-    expect(result.pods).toEqual([{ id: 'pod-busy', name: busyPod.name }]);
+    expect(result.pods).toEqual(expect.arrayContaining([
+      { id: 'pod-1', name: pod.name, activeInWindow: false, agentMessageCount: 0 },
+      { id: 'pod-busy', name: busyPod.name, activeInWindow: true, agentMessageCount: 15 },
+    ]));
   });
 
   test('rejects a requested pod that is outside the viewer membership', async () => {

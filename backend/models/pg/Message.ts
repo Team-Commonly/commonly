@@ -49,6 +49,10 @@ interface PodActivityEntry {
   lastAt: unknown;
 }
 
+interface AgentPodActivityEntry extends PodActivityEntry {
+  agentMessageCount: number;
+}
+
 function formatMessage(msg: MessageRow): FormattedMessage {
   const messageId = msg.id ? msg.id.toString() : '';
   const userId = msg.user_id || '';
@@ -520,13 +524,13 @@ class Message {
   static async findSubstantiveAgentPodActivity(
     podIds: unknown[],
     since: unknown,
-  ): Promise<PodActivityEntry[]> {
+  ): Promise<AgentPodActivityEntry[]> {
     if (!podIds || !podIds.length) return [];
     try {
       const podIdStrs = podIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
       if (!podIdStrs.length) return [];
       const result = await (pool as PgPool).query(
-        `SELECT m.pod_id, MAX(m.created_at) AS last_at
+        `SELECT m.pod_id, COUNT(*) AS message_count, MAX(m.created_at) AS last_at
          FROM messages m
          JOIN users u ON u._id = m.user_id
          WHERE m.pod_id = ANY($1)
@@ -539,8 +543,9 @@ class Message {
          ORDER BY last_at DESC`,
         [podIdStrs, since],
       );
-      return (result.rows as Array<{ pod_id: string; last_at: unknown }>).map((row) => ({
+      return (result.rows as Array<{ pod_id: string; message_count?: string | number; last_at: unknown }>).map((row) => ({
         podId: row.pod_id,
+        agentMessageCount: parseInt(String(row.message_count || 0), 10),
         lastAt: row.last_at,
       }));
     } catch (error) {

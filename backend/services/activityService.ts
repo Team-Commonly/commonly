@@ -95,7 +95,7 @@ interface GetRecapOptions {
   podId?: string;
 }
 
-type NeedsYouKind = 'mention' | 'approval' | 'press' | 'decision';
+type NeedsYouKind = 'mention' | 'approval' | 'press' | 'decide' | 'handoff';
 
 interface RecapTask {
   _id?: unknown;
@@ -103,6 +103,7 @@ interface RecapTask {
   taskId?: string;
   title?: string;
   status?: string;
+  prUrl?: string | null;
   notes?: string | null;
   updatedAt?: Date | string | null;
   updates?: Array<Record<string, unknown>>;
@@ -119,7 +120,8 @@ const isSystemActivity = (activity: ActivityItem): boolean => {
 // system summary may be an activity event, but it is not evidence that an
 // agent made progress and must not outrank the people doing the work.
 const isSubstantiveAgentActivity = (activity: ActivityItem): boolean => (
-  activity.actor?.type === 'agent'
+  activity.type === 'message'
+  && activity.actor?.type === 'agent'
   && !isSystemActivity(activity)
   && Boolean(String(activity.preview || activity.content || '').trim())
 );
@@ -130,21 +132,22 @@ const newestTaskUpdate = (updates: Array<Record<string, unknown>> = []): Record<
   ))[0] || null
 );
 
-const PRESS_HANDOFF = /\b(?:awaiting|waiting\s+(?:on|for)|ready\s+for|safe\s+to|please|needs?)\s+(?:a\s+|the\s+)?(?:human\s+)?(?:to\s+)?(?:press|merge)\b|\bpress[-\s]?gate\b|\b(?:gated|approved|press[-\s]?safe|ready to merge)\b/i;
+const HUMAN_PRESS_HANDOFF = /\b(?:awaiting|waiting\s+(?:on|for)|ready\s+for|safe\s+to|please|needs?)\s+(?:a\s+|the\s+)?(?:human\s+)?(?:to\s+)?(?:press|merge)\b|\bpress[-\s]?gate\b/i;
 const PULL_REQUEST_REFERENCE = /(?:\bpr\b|#\d+)/i;
+const GATED_PULL_REQUEST = /\b(?:gated|approved|press[-\s]?safe|ready to merge)\b/i;
 
 const taskAttentionKind = (task: RecapTask): NeedsYouKind | null => {
-  if (/^\s*DECIDE\b/i.test(String(task.title || ''))) return 'decision';
+  if (/^\s*DECIDE\b/i.test(String(task.title || ''))) return 'decide';
 
   const text = [
     task.title,
     task.notes,
     ...(Array.isArray(task.updates) ? task.updates.map((update) => update.text) : []),
   ].filter((value) => typeof value === 'string').join('\n');
-  const isGatedPullRequest = PULL_REQUEST_REFERENCE.test(text)
-    && /\b(?:gated|approved|press[-\s]?safe|ready to merge)\b/i.test(text);
+  const isGatedPullRequest = PULL_REQUEST_REFERENCE.test(text) && GATED_PULL_REQUEST.test(text);
 
-  return PRESS_HANDOFF.test(text) || isGatedPullRequest ? 'press' : null;
+  if (isGatedPullRequest) return 'press';
+  return HUMAN_PRESS_HANDOFF.test(text) ? 'handoff' : null;
 };
 
 interface ComputeFlagsOptions {
@@ -179,10 +182,11 @@ class ActivityService {
     }).select('_id name type').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
-    const requestedPods = requestedPodId
+    const requestsAllPods = requestedPodId === 'all';
+    const requestedPods = requestedPodId && !requestsAllPods
       ? memberPods.filter((pod) => String(pod._id) === requestedPodId)
       : [];
-    if (requestedPodId && requestedPods.length === 0) {
+    if (requestedPodId && !requestsAllPods && requestedPods.length === 0) {
       throw new Error('Access denied');
     }
     const feed = await ActivityService.getUserFeed(userId, { limit: 100 });
@@ -200,17 +204,43 @@ class ActivityService {
     // "active in this window" into "happened to be in the latest 100 rows":
     // the grouped PG read sees every substantive agent message in each member
     // pod during the requested window. The feed contribution above remains a
-    // fallback for non-message agent events and the Mongo message fallback.
+    // fallback when the grouped message read is unavailable.
+    const agentMessageCounts = new Map<string, number>();
+    const persistedPodIds = new Set<string>();
     if (PGMessage && memberPods.length) {
       const persistedActivity = await (PGMessage as {
-        findSubstantiveAgentPodActivity: (podIds: unknown[], sinceAt: Date) => Promise<Array<{ podId: string }>>;
+        findSubstantiveAgentPodActivity: (podIds: unknown[], sinceAt: Date) => Promise<Array<{
+          podId: string; agentMessageCount?: number;
+        }>>;
       }).findSubstantiveAgentPodActivity(memberPods.map((pod) => pod._id), since);
       persistedActivity.forEach((entry) => activePodIds.add(String(entry.podId)));
+      persistedActivity.forEach((entry) => {
+        const podId = String(entry.podId);
+        persistedPodIds.add(podId);
+        agentMessageCounts.set(podId, Number(entry.agentMessageCount || 0));
+      });
+      windowActivities
+        .filter(isSubstantiveAgentActivity)
+        .forEach((activity) => {
+          if (!activity.pod?.id || persistedPodIds.has(activity.pod.id)) return;
+          agentMessageCounts.set(
+            activity.pod.id,
+            (agentMessageCounts.get(activity.pod.id) || 0) + 1,
+          );
+        });
     }
     const activePods = memberPods.filter((pod) => activePodIds.has(String(pod._id)));
-    const scopedPods = requestedPodId ? requestedPods : activePods;
+    const scopedPods = requestsAllPods ? memberPods : requestedPodId ? requestedPods : activePods;
     const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
+    const recapPods = memberPods.map((pod) => {
+      const id = String(pod._id);
+      const agentMessageCount = agentMessageCounts.get(id) || windowActivities.filter((activity) => (
+        isSubstantiveAgentActivity(activity) && activity.pod?.id === id
+      )).length;
+      return { id, name: pod.name, activeInWindow: activePodIds.has(id), agentMessageCount };
+    });
     const activities = windowActivities.filter((activity) => {
+      if (requestsAllPods) return true;
       if (requestedPodId) return Boolean(activity.pod && scopedPodIds.has(activity.pod.id));
       return !activity.pod || scopedPodIds.has(activity.pod.id);
     });
@@ -379,7 +409,7 @@ class ActivityService {
           { updatedAt: { $gte: since } },
         ],
       })
-        .select('podId taskId title status notes updatedAt updates')
+        .select('podId taskId title status notes prUrl updatedAt updates')
         .sort({ updatedAt: -1 })
         .limit(100)
         .lean() as RecapTask[]
@@ -398,20 +428,24 @@ class ActivityService {
           kind,
           title: String(task.title || taskId),
           detail: kind === 'press'
-            ? `Waiting for a human press.${evidence ? ` ${evidence}` : ''}`
-            : `Waiting for a decision.${evidence ? ` ${evidence}` : ''}`,
+            ? `A gated pull request is ready to press.${evidence ? ` ${evidence}` : ''}`
+            : kind === 'decide'
+              ? `Waiting for a decision.${evidence ? ` ${evidence}` : ''}`
+              : `Waiting for a human handoff.${evidence ? ` ${evidence}` : ''}`,
           podId: task.podId ? String(task.podId) : null,
           podName: podNames.get(String(task.podId)) || 'Pod',
           timestamp: latestUpdate?.createdAt as Date | string | null || task.updatedAt || null,
           taskId,
+          prUrl: task.prUrl || null,
         };
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
     const attentionPriority: Record<NeedsYouKind, number> = {
       press: 0,
-      decision: 1,
-      approval: 2,
-      mention: 3,
+      decide: 1,
+      handoff: 2,
+      approval: 3,
+      mention: 4,
     };
     const needsYou = [...taskAttention, ...activityAttention]
       .sort((left, right) => (
@@ -454,7 +488,7 @@ class ActivityService {
       since: since.toISOString(),
       generatedAt: new Date().toISOString(),
       scope: requestedPodId || 'active',
-      pods: activePods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      pods: recapPods,
       needsYou,
       agents: agentRecaps,
       board,

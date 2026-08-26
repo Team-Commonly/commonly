@@ -7684,9 +7684,14 @@ body.modern-ui.v2-canvas {
   color: #a85d08;
 }
 
-.v2-activity__queue-row--decision .v2-activity__queue-mark {
+.v2-activity__queue-row--decide .v2-activity__queue-mark {
   background: var(--v2-danger-soft);
   color: #b42318;
+}
+
+.v2-activity__queue-row--handoff .v2-activity__queue-mark {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
 }
 
 .v2-activity__queue-row--onboarding .v2-activity__queue-mark {
@@ -7736,6 +7741,7 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__queue-actions,
 .v2-activity__queue-row button,
+.v2-activity__queue-row .v2-activity__queue-action,
 .v2-activity__board-meta button {
   display: flex;
   align-items: center;
@@ -7743,6 +7749,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__queue-row button,
+.v2-activity__queue-row .v2-activity__queue-action,
 .v2-activity__board-meta button {
   min-height: 32px;
   padding: 0 10px;
@@ -7760,7 +7767,20 @@ body.modern-ui.v2-canvas {
   transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
 }
 
+.v2-root .v2-activity__queue-actions .v2-activity__queue-action {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+  text-decoration: none;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+
 .v2-root .v2-activity__queue-actions button:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
+}
+
+.v2-root .v2-activity__queue-actions .v2-activity__queue-action:hover {
   border-color: var(--v2-accent-strong);
   background: var(--v2-accent-strong);
 }
