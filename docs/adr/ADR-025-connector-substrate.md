@@ -63,6 +63,32 @@ pod message, a reaction, or a task moving on the board reaches nothing. Every pa
 triggered by an inbound request, a human pressing a button, or an agent explicitly deciding to
 publish. Nothing mirrors.
 
+> **Amendment, 2026-08-26 20:40Z — mode 4 now exists, for exactly one connector.** The sentence
+> above was true when this audit was re-derived and was falsified about thirty minutes later by
+> [#1282](https://github.com/Team-Commonly/commonly/pull/1282), merged at `defff409`. It adds
+> `services/telegramBridgeService.ts` with both halves of a mirror: outbound,
+> `relayAgentMessageToTelegram` is called fire-and-forget from
+> `AgentMessageService.postMessage` (`services/agentMessageService.ts:1694`) on every agent post,
+> gated at the far end by `shouldEscalate` and by an integration carrying `config.liveRelay`;
+> inbound, `relayTelegramMessageToPod` writes the Telegram message into the pod as a real message
+> so mentions fire and agents wake. A pod message now does reach something.
+>
+> Three consequences for the decisions below, none of which I think reverses one:
+>
+> - **D1's *naming* holds and its *inventory* does not.** "Do not claim two-way sync until mode 4
+>   exists" now resolves differently per connector: telegram has it, the other three do not. The
+>   claim to stop making is still the blanket one.
+> - **It arrived outside the provider registry.** Finding 2's table stays literally true —
+>   telegram still has no `publishPost` — and becomes misleading, because the first event-driven
+>   outbound path in the codebase does not use the registry at all. It is a direct service call.
+>   That is evidence for D2's shape argument rather than against it: when the registry's verb set
+>   did not fit, the implementation went around it.
+> - **The loop, permission and volume risks D7 defers are now live** on one connector rather than
+>   hypothetical. `shouldEscalate` plus `liveRelay` defaulting to `false` are the whole bound.
+>
+> I have not re-derived the ten-call inventory at the top of this finding against current main;
+> the amendment covers what #1282 added and nothing else.
+
 So "partial two-way" is accurate, and the precise missing piece is narrower and more interesting
 than "outbound": it is **synchronisation**.
 
@@ -207,7 +233,10 @@ one-install-fans-out, so an enterprise install is one administrative act rather 
   document; it does not say where it goes.
 - **Whether mode 4 (event-driven mirroring) should exist at all.** D1 says stop claiming it; it
   does not say build it. Mirroring carries loop, permission, and volume questions none of the
-  current connectors answer, and that is a product decision.
+  current connectors answer, and that is a product decision. Note that #1282 has since answered it
+  de facto for telegram, by shipping it — which makes the question sharper, not moot: whether the
+  other three follow, and whether the shape #1282 chose is the one they should copy, is still open
+  and is still a product decision rather than an inference from one merge.
 - **Anything requiring the landscape.** D2's payload shape, D3's capability vocabulary, and the
   enterprise-controls surface (audit log, per-channel permissions, data residency) are all
   under-specified on purpose until TASK-078 lands.
@@ -218,11 +247,14 @@ one-install-fans-out, so an enterprise install is one administrative act rather 
 
 The honest headline is *"we can publish, and we cannot mirror."* Agents already post to X and
 Instagram through a rate-limited, attributed endpoint; no chat connector has a conversational
-outbound verb, and nothing anywhere is driven by a Commonly-side event.
+outbound verb, and — as of the amendment in Finding 1 — exactly one connector is driven by a
+Commonly-side event, through a path that bypasses the registry. The headline holds for three of
+the four chat connectors and no longer holds for telegram.
 
 So the redesign is not "build outbound" — it is (a) give the four chat providers the verb the two
 social providers already have, and (b) decide whether mirroring is a product commitment at all,
 because mode 4 is a much larger build than modes 1–3 and carries loop, permission, and volume
-questions the current connectors never had to answer.
+questions modes 1–3 never had to answer — questions #1282 now has to answer for telegram, with
+`shouldEscalate` and a `liveRelay` flag defaulting to `false` as the whole bound.
 
 D1 is the one I want ratified. The rest follow from the audit.
