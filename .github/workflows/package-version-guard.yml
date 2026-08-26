@@ -84,11 +84,21 @@ jobs:
             base_v=$(git show "$BASE:$pkg/package.json" 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -1)
             head_v=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$pkg/package.json" | head -1)
 
+            # An INCREASE, not merely a difference. A long-lived branch that
+            # bumped while the base moved further ahead leaves head_v BELOW
+            # base_v — different, so an equality test passes it, and merging
+            # then walks the version backwards on the base. Observed on two
+            # open PRs at once (base 0.1.21, heads 0.1.20 and 0.1.19), both
+            # showing this check green.
+            newest=$(printf '%s\n%s\n' "$base_v" "$head_v" | sort -V | tail -1)
             if [ "$base_v" = "$head_v" ]; then
               echo "::error file=$pkg/package.json::$pkg/src changed ($changed file(s)) but version is still $head_v. A published version that maps to two different artifacts defeats the only check available from outside this repo — bump it, or move the change out of $pkg/src."
               fail=1
+            elif [ "$newest" != "$head_v" ]; then
+              echo "::error file=$pkg/package.json::$pkg/src changed ($changed file(s)) and $head_v is BELOW the base's $base_v. Merging would walk the published version backwards. Rebase and bump above $base_v."
+              fail=1
             else
-              echo "✓ $pkg: src changed and version moved $base_v → $head_v"
+              echo "✓ $pkg: src changed and version rose $base_v → $head_v"
             fi
           done
 
