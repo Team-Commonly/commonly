@@ -84,6 +84,24 @@ jobs:
             base_v=$(git show "$BASE:$pkg/package.json" 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -1)
             head_v=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$pkg/package.json" | head -1)
 
+            # `sort -V` is not semver. It orders 1.0.0 BEFORE 1.0.0-beta.1,
+            # reading a prerelease as NEWER than its own release, and it
+            # inverts in both directions: base=1.0.0 head=1.0.0-beta.1 would
+            # PASS — the exact backwards walk this check exists to stop — and
+            # the legitimate promotion 1.0.0-beta.1 → 1.0.0 would FAIL.
+            # No version ever committed to either package carries a
+            # prerelease, so this is latent today. It fails OPEN in the
+            # direction that matters, so the guard refuses to judge rather
+            # than guessing, on the same principle as the merge-base check
+            # above: a guard that cannot compare its inputs must say so.
+            case "$base_v$head_v" in
+              *-*)
+                echo "::error file=$pkg/package.json::$pkg version comparison involves a prerelease ($base_v → $head_v). \`sort -V\` orders a prerelease as NEWER than its release, so this guard reaches the wrong answer in BOTH directions. Teach it semver before landing a prerelease; do not merge on this check alone."
+                fail=1
+                continue
+                ;;
+            esac
+
             # An INCREASE, not merely a difference. A long-lived branch that
             # bumped while the base moved further ahead leaves head_v BELOW
             # base_v — different, so an equality test passes it, and merging
