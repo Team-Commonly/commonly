@@ -15,7 +15,8 @@
       "pods": "Pod",
       "agents": "智能体",
       "community": "社区",
-      "settings": "设置"
+      "settings": "设置",
+      "connectors": "连接器"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
@@ -1551,5 +1552,23 @@
       "generic": "暂时无法打开付款页面，请稍后再试。",
       "notConfigured": "付款功能尚未开启，请联系我们为你开通。"
     }
+  },
+  "connectors": {
+    "loading": "正在加载连接器…",
+    "loadError": "无法加载连接器。",
+    "createError": "无法创建连接器。",
+    "toggleError": "无法更新实时中继。",
+    "empty": "还没有连接器。在下方绑定一个频道，让你的 Pod 出现在团队已有的聊天工具里。",
+    "connected": "已连接",
+    "pending": "等待频道确认",
+    "enableHint": "打开与 Commonly 机器人的私聊",
+    "enableHintSend": "，然后发送：",
+    "liveRelay": "实时中继",
+    "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
+    "newTitle": "连接频道",
+    "podPicker": "要桥接的 Pod",
+    "creating": "创建中…",
+    "createTelegram": "新建 Telegram 连接器",
+    "footnote": "你会获得一个一次性代码，发送给机器人即可。更多平台即将支持。"
   }
 }

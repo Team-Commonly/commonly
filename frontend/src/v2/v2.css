@@ -7625,17 +7625,9 @@ body.modern-ui.v2-canvas {
 .v2-connectors__relay input { margin-top: 2px; accent-color: var(--v2-accent); }
 .v2-connectors__new h2 { font-size: 15px; font-weight: 650; color: var(--v2-text-primary); margin: 0 0 10px; }
 .v2-connectors__new-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.v2-connectors__select {
-  flex: 1;
-  min-width: 200px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--v2-text-primary);
-  background: var(--v2-surface);
-}
+/* Visuals come from .v2-byo__input (same control as the BYO pod picker) —
+   this only carries the row layout. */
+.v2-connectors__select { flex: 1; min-width: 200px; }
 .v2-connectors__create {
   border: none;
   border-radius: var(--v2-radius-sm);

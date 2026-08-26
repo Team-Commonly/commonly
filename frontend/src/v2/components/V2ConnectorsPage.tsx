@@ -14,7 +14,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
-import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 
 interface ConnectorConfig {
@@ -51,7 +50,6 @@ const podName = (c: Connector): string => (
 const V2ConnectorsPage: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
-  const { currentUser } = useAuth();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [newPodId, setNewPodId] = useState('');
@@ -112,13 +110,11 @@ const V2ConnectorsPage: React.FC = () => {
     setError(null);
     const next = !c.config?.liveRelay;
     try {
+      // linkedUserId is deliberately NOT sent: the server derives the bridge's
+      // attribution identity from the authenticated caller when liveRelay flips
+      // on, and rejects any client-supplied value (impersonation guard).
       await api.patch(`/api/integrations/${c._id}`, {
-        config: {
-          liveRelay: next,
-          // Inbound messages post into the pod attributed to this account —
-          // the toggler owns the bridge identity.
-          ...(next ? { linkedUserId: currentUser?._id } : {}),
-        },
+        config: { liveRelay: next },
       });
       await load();
     } catch {
@@ -155,7 +151,7 @@ const V2ConnectorsPage: React.FC = () => {
             </div>
             {c.status !== 'connected' && c.type === 'telegram' && c.config?.connectCode && (
               <div className="v2-connectors__enable">
-                {t('connectors.enableHint', { defaultValue: 'In your Telegram group, add the Commonly bot' })}
+                {t('connectors.enableHint', { defaultValue: 'Open a private chat with the Commonly bot' })}
                 {BOT_HANDLE ? ` (@${BOT_HANDLE.replace(/^@/, '')})` : ''}
                 {t('connectors.enableHintSend', { defaultValue: ' and send:' })}
                 <code>/commonly-enable {c.config.connectCode}</code>
@@ -184,7 +180,7 @@ const V2ConnectorsPage: React.FC = () => {
         <h2>{t('connectors.newTitle', { defaultValue: 'Connect a channel' })}</h2>
         <div className="v2-connectors__new-row">
           <select
-            className="v2-connectors__select"
+            className="v2-byo__input v2-connectors__select"
             value={newPodId}
             onChange={(e) => setNewPodId(e.target.value)}
             aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
@@ -203,7 +199,7 @@ const V2ConnectorsPage: React.FC = () => {
           </button>
         </div>
         <p className="v2-connectors__foot">
-          {t('connectors.footnote', { defaultValue: 'You get a one-time code to send in the group. More platforms are on the way.' })}
+          {t('connectors.footnote', { defaultValue: 'You get a one-time code to send to the bot. More platforms are on the way.' })}
         </p>
       </section>
 

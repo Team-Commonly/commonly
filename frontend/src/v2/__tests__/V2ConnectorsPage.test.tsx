@@ -91,7 +91,7 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText(/Rewire crew/)).toBeInTheDocument();
   });
 
-  it('toggling live relay PATCHes liveRelay with the current user as linkedUserId', async () => {
+  it('toggling live relay PATCHes liveRelay only — linkedUserId is server-derived', async () => {
     mockGets();
     axios.patch.mockResolvedValue({ data: {} });
     renderPage();
@@ -99,7 +99,9 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
       '/api/integrations/i-live',
-      { config: { liveRelay: true, linkedUserId: 'u1' } },
+      // No linkedUserId: the server stamps the authenticated caller and
+      // rejects a client-supplied value (impersonation guard, #1290 review).
+      { config: { liveRelay: true } },
       expect.anything(),
     ));
   });
