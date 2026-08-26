@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2PodChat from './V2PodChat';
@@ -67,6 +68,7 @@ const createdAtTime = (createdAt?: string): number => {
 };
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
+  const { t } = useTranslation();
   const { podId: paramPodId } = useParams<{ podId: string }>();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -193,7 +195,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         <button
           type="button"
           className="v2-mobile-backdrop"
-          aria-label="Close pods list"
+          aria-label={t('common.closePodsList')}
           onClick={closeMobileNav}
         />
       )}

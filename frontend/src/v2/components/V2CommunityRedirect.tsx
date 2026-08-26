@@ -1,9 +1,11 @@
 import React from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const V2CommunityRedirect: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   React.useEffect(() => {
     const communityPodId = process.env.REACT_APP_COMMUNITY_POD_ID || '';
@@ -34,8 +36,8 @@ const V2CommunityRedirect: React.FC = () => {
 
   return (
     <div className="v2-empty" role="status">
-      <div className="v2-empty__title">Opening Community</div>
-      <div className="v2-empty__text">Checking your access…</div>
+      <div className="v2-empty__title">{t('common.communityRedirect.title')}</div>
+      <div className="v2-empty__text">{t('common.communityRedirect.text')}</div>
     </div>
   );
 };

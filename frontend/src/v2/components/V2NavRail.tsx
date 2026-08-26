@@ -4,6 +4,7 @@ import V2Avatar from './V2Avatar';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2LangSwitch from './V2LangSwitch';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 interface NavItem {
   key: string;
@@ -49,6 +50,10 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout } = useAuth();
+  const { t } = useTranslation();
+  // Labels resolve at render so the rail tooltip (v2.css attr(data-label))
+  // follows the active locale — NAV_ITEMS.label is the English fallback.
+  const navLabel = (item: NavItem) => t(`common.nav.${item.key}`, { defaultValue: item.label });
   const visibleNavItems = NAV_ITEMS.filter(
     (item) => item.key !== 'community' || Boolean(process.env.REACT_APP_COMMUNITY_POD_ID),
   );
@@ -90,11 +95,11 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
                 type="button"
                 className={`v2-rail__item${isActive(item) ? ' v2-rail__item--active' : ''}`}
                 onClick={() => handleNavClick(item)}
-                title={item.label}
-                data-label={item.label}
+                title={navLabel(item)}
+                data-label={navLabel(item)}
               >
                 <span className="v2-rail__item-icon">{item.icon}</span>
-                <span className="v2-rail__item-label">{item.label}</span>
+                <span className="v2-rail__item-label">{navLabel(item)}</span>
               </button>
               {item.dividerAfter && <span className="v2-rail__divider" aria-hidden="true" />}
             </React.Fragment>
