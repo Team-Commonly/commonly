@@ -663,4 +663,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
+  test('zh-CN: body copy takes line-height 1.6 and a 12px floor under :lang(zh) (TASK-055)', () => {
+    // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55,
+    // the composer hint at 1.45/11px. CJK glyphs fill the em box, so Latin
+    // leading leaves no white between lines and 11px is below legibility.
+    const lhStart = v2.indexOf('.v2-root:lang(zh) .v2-msg__content,');
+    expect(lhStart).toBeGreaterThan(-1);
+    const lhBlock = v2.slice(lhStart, v2.indexOf('}', lhStart));
+    expect(lhBlock).toContain('line-height: 1.6');
+    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint', '.v2-inspector__pod-meta']) {
+      expect(lhBlock).toContain(`.v2-root:lang(zh) ${sel}`);
+    }
+    const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-chat__composer-hint,\n.v2-root:lang(zh) button.v2-inspector__tab');
+    expect(floorStart).toBeGreaterThan(-1);
+    expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
+  });
+
 });
