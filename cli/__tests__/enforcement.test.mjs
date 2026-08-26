@@ -450,6 +450,29 @@ describe('deliverChatReply', () => {
     expect(post).toHaveBeenCalledWith(messagesPath, { content: 'short answer' });
   });
 
+  test('a normal-return refusal is not recorded as a single-message delivery', async () => {
+    // The runtime route returns HTTP 200 for this policy refusal. The resolved
+    // promise proves only that the server decided, not that it created a row.
+    const post = jest.fn().mockResolvedValue({
+      success: false,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Do not retry this message unchanged.',
+    });
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text: 'short answer' });
+
+    expect(res).toEqual({
+      mode: 'refused',
+      messages: 0,
+      attemptedMessages: 1,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Do not retry this message unchanged.',
+    });
+  });
+
   test('a split-sized reply posts its chunks in order', async () => {
     const post = jest.fn().mockResolvedValue({});
     const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}`;
@@ -459,8 +482,171 @@ describe('deliverChatReply', () => {
     expect(post.mock.calls[1][1].content).toBe('b'.repeat(390));
   });
 
-  test('a document-sized reply uploads whole and posts one lead message with the file card', async () => {
-    const post = jest.fn().mockResolvedValue({});
+  test('a split reply stops at a normal-return refusal and reports only delivered chunks', async () => {
+    const refusal = {
+      success: false,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Wait for someone else to speak.',
+    };
+    const post = jest.fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce(refusal);
+    const text = `${'a'.repeat(390)}\n\n${'b'.repeat(390)}\n\n${'c'.repeat(390)}`;
+
+    const res = await deliverChatReply({ client: { post }, podId: 'pod-1', text });
+
+    expect(res).toEqual({
+      mode: 'refused',
+      messages: 2,
+      attemptedMessages: 3,
+      refused: true,
+      reason: 'consecutive_run_cap',
+      consecutive: 3,
+      guidance: 'Wait for someone else to speak.',
+    });
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls.map(([, body]) => body.content)).toEqual([
+      'a'.repeat(390), 'b'.repeat(390), 'c'.repeat(390),
+    ]);
+  });
+
+  // Prose overflow is a THREAD now, not an attachment (Sam 57691).
+  //
+  // These pin the rung itself, not just its return value. The old behaviour
+  // and the new one both post a first message containing the reply's opening
+  // line, so asserting "posted something that starts with Point 0" stays
+  // green across the regression — the distinguishing evidence is whether the
+  // CONTINUATIONS carry a threadRootId, and whether the full text survives
+  // without an upload at all.
+  describe('prose overflow continues in a thread', () => {
+    const prose = Array.from({ length: 8 }, (_, i) => `Point ${i}: ${'x'.repeat(300)}`).join('\n\n');
+
+    test('posts the headline to the channel and the rest under it', async () => {
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 4242 } })
+        .mockResolvedValue({});
+      const upload = jest.fn();
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+
+      expect(res.mode).toBe('thread');
+      expect(res.threadRootId).toBe('4242');
+      expect(upload).not.toHaveBeenCalled();
+
+      // First call is top-level: no threadRootId at all, not a null one.
+      expect(post.mock.calls[0][1]).toEqual({ content: expect.stringContaining('Point 0:') });
+      // Every continuation is rooted at the headline.
+      for (const call of post.mock.calls.slice(1)) {
+        expect(call[1].threadRootId).toBe('4242');
+      }
+      expect(post.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    test('no word is lost — the chunks reassemble to the original', async () => {
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 7 } })
+        .mockResolvedValue({});
+      await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
+      const posted = post.mock.calls.map((c) => c[1].content).join('\n\n');
+      expect(posted).toBe(prose);
+    });
+
+    test('accepts _id as well as id, since the two shapes are both live', async () => {
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { _id: 99 } })
+        .mockResolvedValue({});
+      const res = await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
+      expect(res.threadRootId).toBe('99');
+    });
+
+    test('a refused thread headline stops without falling through to an attachment', async () => {
+      const refusal = {
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      };
+      const post = jest.fn().mockResolvedValue(refusal);
+      const upload = jest.fn();
+
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+
+      expect(res).toEqual({
+        mode: 'refused',
+        messages: 0,
+        attemptedMessages: splitForChat(prose).length,
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    test('a refused continuation stops without re-posting the remaining thread as top-level messages', async () => {
+      const refusal = {
+        refused: true,
+        reason: 'consecutive_run_cap',
+        guidance: 'Wait for someone else to speak.',
+      };
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 'root-1' } })
+        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce(refusal);
+      const upload = jest.fn();
+
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+
+      expect(res).toMatchObject({
+        mode: 'refused',
+        messages: 2,
+        attemptedMessages: splitForChat(prose).length,
+        reason: 'consecutive_run_cap',
+      });
+      expect(post).toHaveBeenCalledTimes(3);
+      expect(post.mock.calls.slice(1).every(([, body]) => body.threadRootId === 'root-1')).toBe(true);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    test('never guesses a root, and never re-posts the headline it already sent', async () => {
+      // A continuation posted with a missing root becomes another TOP-LEVEL
+      // message, so refusing is the only safe read of an unknown response.
+      // But the headline is already in the room by then — attaching here
+      // would lead with the same opening line a second time. Post the
+      // remainder instead.
+      const post = jest.fn().mockResolvedValue({});
+      const upload = jest.fn();
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: prose });
+      expect(res.mode).toBe('thread-fallback');
+      expect(upload).not.toHaveBeenCalled();
+      const openings = post.mock.calls.filter((c) => c[1].content.startsWith('Point 0:'));
+      expect(openings).toHaveLength(1);
+    });
+
+    test('an indivisible oversize unit still attaches — that one IS a document', async () => {
+      // The control that keeps this change honest: threading prose must not
+      // swallow the case attachment was always correct for.
+      const post = jest.fn().mockResolvedValue({});
+      const upload = jest.fn().mockResolvedValue({
+        fileName: 'srv.md', originalName: 'reply.md', size: 950, kind: 'document',
+      });
+      const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``;
+      const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text: fence });
+      expect(res.mode).toBe('attach');
+      expect(post.mock.calls.every((c) => c[1].threadRootId === undefined)).toBe(true);
+    });
+  });
+
+  // Was 'a document-sized reply uploads whole and posts one lead message with
+  // the file card'. Its fixture is eight paragraphs of prose, which is the
+  // case Sam 57691 reclassified: prose that outgrew a message is not a
+  // document. The test's INTENT — nothing is cut, the whole reply survives —
+  // is preserved verbatim below, now carried by the thread instead of a file.
+  test('a document-sized reply keeps every word, now in a thread rather than a file', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ message: { id: 1234 } })
+      .mockResolvedValue({});
     const upload = jest.fn().mockResolvedValue({
       fileName: 'srv-name.md', originalName: 'reply.md', size: 2000, kind: 'document',
     });
@@ -469,17 +655,28 @@ describe('deliverChatReply', () => {
     const res = await deliverChatReply({
       client: { post, upload }, podId: 'pod-1', text, uploadName: 'reply.md',
     });
-    expect(res).toEqual({ mode: 'attach', messages: 1 });
-    expect(upload).toHaveBeenCalledWith(
-      '/api/agents/runtime/pods/pod-1/uploads',
-      expect.objectContaining({ fileName: 'reply.md', contentType: 'text/markdown' }),
-    );
-    // The uploaded file carries the FULL text — nothing is cut.
-    expect(upload.mock.calls[0][1].fileBuffer.toString('utf8')).toBe(text);
+    expect(res.mode).toBe('thread');
+    expect(upload).not.toHaveBeenCalled();
+    // The thread carries the FULL text — nothing is cut. Same assertion the
+    // attach version made about the file buffer.
+    expect(post.mock.calls.map((cl) => cl[1].content).join('\n\n')).toBe(text);
+    expect(post.mock.calls[0][1].content).toContain('Point 0:'); // opening stays the headline
+  });
+
+  test('an attachment-card refusal does not masquerade as an attachment delivery', async () => {
+    const post = jest.fn().mockResolvedValue({
+      refused: true, reason: 'consecutive_run_cap', guidance: 'Do not retry unchanged.',
+    });
+    const upload = jest.fn().mockResolvedValue({ fileName: 'srv.md', originalName: 'reply.md' });
+    const text = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``;
+
+    const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text });
+
+    expect(res).toMatchObject({
+      mode: 'refused', messages: 0, attemptedMessages: 1, reason: 'consecutive_run_cap',
+    });
     expect(post).toHaveBeenCalledTimes(1);
-    const { content } = post.mock.calls[0][1];
-    expect(content).toContain('Point 0:'); // leads with the reply's own opening
-    expect(content).toContain('[[upload:srv-name.md|reply.md|2000|document]]');
+    expect(upload).toHaveBeenCalledTimes(1);
   });
 
   test('a document-sized single fence attaches — it cannot ride the single-post branch (msg 53018)', async () => {
@@ -531,18 +728,80 @@ describe('deliverChatReply', () => {
     expect(post.mock.calls[0][1].content).toContain('Here is the diff:');
   });
 
-  test('upload failure degrades to posting every chunk — flood beats truncation or silence', async () => {
-    const post = jest.fn().mockResolvedValue({});
-    const upload = jest.fn().mockRejectedValue(new Error('older server'));
+  // Same guarantee as before — flood beats truncation or silence — but this
+  // prose fixture now degrades through the THREAD rung, not the upload rung.
+  // A server that returns no message id cannot root a thread, and the reply
+  // must still arrive whole.
+  test('a rootless server degrades to posting every chunk — flood beats truncation or silence', async () => {
+    const post = jest.fn().mockResolvedValue({}); // no id anywhere in the response
+    const upload = jest.fn();
     const log = jest.fn();
     const text = Array.from({ length: 6 }, () => 'y'.repeat(350)).join('\n\n');
     const res = await deliverChatReply({
       client: { post, upload }, podId: 'pod-1', text, log,
     });
-    expect(res.mode).toBe('split-fallback');
+    expect(res.mode).toBe('thread-fallback');
     expect(post).toHaveBeenCalledTimes(res.messages);
+    // Every word arrives, and the headline is posted exactly once — the
+    // duplicate-opening bug this fallback exists to avoid.
     expect(post.mock.calls.map((c) => c[1].content).join('\n\n')).toBe(text);
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('older server'));
+    expect(post.mock.calls.filter((c) => c[1].content === 'y'.repeat(350)).length).toBe(6);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('cannot root the thread'));
+  });
+
+  // The two tests above both fail at the ROOT-ID step, before a single
+  // continuation has posted. That is why a boolean `headlinePosted` passed
+  // them: at that instant "something posted" and "one thing posted" are the
+  // same statement. They stop being the same the moment a continuation
+  // succeeds and a later one throws.
+  test('a continuation that fails PART WAY resumes from there — no chunk posted twice', async () => {
+    const chunks = Array.from({ length: 6 }, (_, i) => `${'z'.repeat(340)}${i}`);
+    const text = chunks.join('\n\n');
+    let n = 0;
+    const post = jest.fn().mockImplementation(async () => {
+      n += 1;
+      // 1 = headline, 2 and 3 = continuations that land in the thread,
+      // 4 = the one that dies. Chunks 1 and 2 are already in the room.
+      if (n === 4) throw new Error('upstream 503');
+      return { message: { id: 'root-1' } };
+    });
+    const log = jest.fn();
+    const res = await deliverChatReply({
+      client: { post, upload: jest.fn() }, podId: 'pod-1', text, log,
+    });
+
+    expect(res.mode).toBe('thread-fallback');
+    // The whole reply arrives, and NOTHING arrives twice. With the boolean,
+    // chunks 1 and 2 were re-posted top-level and this count read 9.
+    expect(post).toHaveBeenCalledTimes(chunks.length + 1); // +1 for the throw
+    const delivered = post.mock.calls
+      .map((c) => c[1].content)
+      .filter((_, i) => i !== 3); // the call that threw delivered nothing
+    expect(delivered).toEqual(chunks);
+    for (const chunk of chunks) {
+      expect(delivered.filter((c) => c === chunk)).toHaveLength(1);
+    }
+    // The resumed chunks go top-level — that is the fallback, not a regression.
+    expect(post.mock.calls.slice(4).every((c) => c[1].threadRootId === undefined)).toBe(true);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('posting the remainder top-level'));
+  });
+
+  test('the attachment fallback also stops at a normal-return refusal', async () => {
+    const post = jest.fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({
+        refused: true, reason: 'consecutive_run_cap', guidance: 'Wait for a reply first.',
+    });
+    const upload = jest.fn().mockRejectedValue(new Error('older server'));
+    const fence = `\`\`\`js\n${'const x = 1;\n'.repeat(72)}\`\`\``;
+    const text = `${'y'.repeat(350)}\n\n${fence}\n\n${'z'.repeat(350)}`;
+
+    const res = await deliverChatReply({ client: { post, upload }, podId: 'pod-1', text });
+
+    expect(res).toMatchObject({
+      mode: 'refused', messages: 1, attemptedMessages: splitForChat(text).length, reason: 'consecutive_run_cap',
+    });
+    expect(post).toHaveBeenCalledTimes(2);
   });
 });
 
