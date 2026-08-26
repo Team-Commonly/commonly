@@ -2823,12 +2823,49 @@ catch reached past it for an in-band one.
 The query threw, no active installation exists, and `instanceId` is literally
 `'default'` are indistinguishable at the call site.
 
-**And the reciprocal, which is why a shape count is not a defect count.** Four
-sites have identical syntax and are correct by design —
-`services/avatarService.ts:47`, `services/agentMessageService.ts:474`,
-`services/skillsCatalogService.ts:134`, `routes/pods.ts:180` are all "normalise
-this URL; keep the original if it will not parse". There, the sentinel being
-reachable on the success path *is the specification*.
+**And the reciprocal — which fires the same tell harder, and is correct.**
+`backend/services/avatarService.ts` normalises an avatar reference:
+
+```
+:37  if (LEGACY_COLOR_AVATARS.has(value))              return value;
+:38  if (/^data:/i.test(value) || value.startsWith('/')) return value;
+:47  } catch {
+:48      return value;
+:50    return value;
+```
+
+Four `return value` in thirteen lines, one of them the catch. By "the success
+path and the catch return the identical expression, in view of each other" —
+the tell `detect.ts` seems to teach — this is the most flagrant site in the
+repo. It is also exactly right. `services/agentMessageService.ts:474`,
+`services/skillsCatalogService.ts:134` and `routes/pods.ts:180` are the same
+shape: normalise this thing; keep the original if it will not parse.
+
+**So the discriminator is not syntactic, not local, and not about the value:**
+
+> A collapse is a defect when the collapsed conditions call for **different
+> action by the caller** — not when they merely have different causes.
+
+In `avatarService` every path means "use `value`", so the conditions really are
+equivalent at the boundary and the collapse *is* the specification. In
+`detect.ts`, "there is no Dockerfile" is a configuration state and "`readFileSync`
+threw" is a fault; a caller wanting to surface or retry the second cannot tell
+it from the first. Same in `getStatus`, which is why the out-of-band `'unknown'`
+one line above the catch was the available right answer.
+
+**Read "call for" normatively, or the rule acquits the two defects that anchor
+this entry.** Both callers today do the same thing either way:
+
+```
+telegramBridgeService.ts:131   const integration = await findLiveIntegration(podId);
+                               if (!integration) return;          // no config, or the query threw
+readLongTerm (#1275)           buildPrompt(prompt, ctx.memoryLongTerm || '')   // empty, or the backend was down
+```
+
+Neither caller branches. That identical handling is the bug, not evidence
+against it — the caller *should* distinguish a transient outage from a steady
+empty state, and cannot, because the information was destroyed at the catch. Ask
+what a caller would need to do, not what this caller does.
 
 **How we found the class, and every proxy that failed on the way.** The sweep
 started by enumerating sentinel *literals* and widened the set twice — `false`,
@@ -2847,10 +2884,14 @@ started by enumerating sentinel *literals* and widened the set twice — `false`
   people writing this entry about proxies failing.
 
 **Rules earned:**
-- The discriminator is never a property of the returned value. It is a relation:
-  is this value *also* reachable on the success path, without being the
-  documented fallback? That is checkable per site and nothing else separates a
-  defect from a normaliser.
+- The discriminator is never a property of the returned value, nor of the two
+  return sites' syntax. It is the **caller**: do the collapsed conditions call
+  for different action? Read "call for" normatively — every defect here has a
+  caller that currently handles both cases identically.
+- Five proxies were tried and all five failed, the last two invented during this
+  write-up: sentinel-literal, non-literal, bare-vs-bound catch, "the value looks
+  like an error", and "guard and catch return the same expression in view of
+  each other". A syntactic tell can be necessary; none was sufficient.
 - A shape count is the number that gets quoted, and it is not a defect count.
   Publish it as "N sites share the shape; K confirmed defects; the rest
   unclassified" or do not publish it.
@@ -2859,6 +2900,9 @@ started by enumerating sentinel *literals* and widened the set twice — `false`
   filter removed and classify by hand — that pass is the only one that can tell
   you the axis was wrong. Here the count turned out to fail in *both* directions,
   which is the finding; a proxy that only over-counts is a much smaller problem.
+- Publish the correct site next to the defect, not the defect alone. Both
+  `detect.ts` and `avatarService.ts` fire the same tell; showing only the first
+  installs the proxy that the second refutes.
 - No lint rule can see this. `@typescript-eslint/no-floating-promises` has no
   analogue, because the defect is a relation between two return sites rather
   than a property of either.
