@@ -2769,3 +2769,65 @@ declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
 the other seven PRs is what found `#1330`, where both APIs are silent and the
 gate is real anyway.
+## 44. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
+
+**Surface:** `catch { return <sentinel> }` across `backend/`, and the two
+confirmed defects it has already produced — `readLongTerm` returning `''` on a
+transport failure (#1275) and `findLiveIntegration` returning `null` when the
+Integration lookup throws (#1287 item 2).
+
+**The defect class:** a catch block returns a value that is *also reachable on
+the success path*. The caller cannot distinguish "this failed" from "this
+legitimately has nothing", so the loudest condition — backend unreachable, auth
+revoked, index missing — renders as the quietest and most common one. In #1275
+the guard `err?.status && err.status !== 404` skipped the error branch exactly
+when `err.status` was undefined, which is precisely the transport-failure case.
+
+**What we got wrong, and it is the reason this entry exists.** We swept for the
+shape by enumerating sentinel *literals*. Two rounds of widening the literal set
+(`false`, `null`, `''`, `[]`, `{}`, then `0` and `""`) produced a confident
+inventory: 21 sites at `994a963f`, bare 15 / bound 6. `0` and `""` contributed
+zero sites; only `{}` ever moved the count.
+
+Re-running the census *without* the literal filter found 16 further sites
+returning a non-literal from a catch body — and the two cleanest instances of
+the class in the repo are both there, invisible to every version of the
+literal grep:
+
+```
+services/systemExchangeTriggers.ts:354   catch { return 'default' }
+    success path: return inst?.instanceId || 'default'
+```
+Three conditions collapse to one string: the query threw, no active
+installation exists, and `instanceId` is literally `'default'`.
+
+```
+services/discordService.ts:501           catch { return 'error' }
+    success path: return integration.status || 'unknown'
+```
+`'error'` is a member of the `IntegrationStatus` enum
+(`models/Integration.ts:118`). "The status lookup threw" and "the integration is
+in an error state" return the same value.
+
+**And the reciprocal, which is why the count is not a defect count.** Four sites
+have identical syntax and are correct by design — `avatarService.ts:47`,
+`agentMessageService.ts:474`, `skillsCatalogService.ts:134`, `pods.ts:180` are
+all "normalise this URL; keep the original if it will not parse". There, the
+sentinel being reachable on the success path *is the specification*.
+
+**Rules earned:**
+- The discriminator is never the literal. It is whether the returned value is
+  reachable on the success path *without being the documented fallback*. That is
+  checkable per site and it is the only thing that separates a defect from a
+  normaliser.
+- A shape count is the number that gets quoted, and it is not a defect count.
+  Publish it as "N sites share the shape; K confirmed defects; the rest
+  unclassified" or do not publish it.
+- Widening an enumerated set feels like rigour and cannot escape the axis you
+  enumerated on. Two rounds of adding literals never reached a non-literal. When
+  a sweep is defined by a value set, run one census with the value filter removed
+  and classify by hand — that is the only pass that can tell you the axis was
+  wrong.
+- `@typescript-eslint/no-floating-promises` has no analogue here: there is no
+  rule that can see this, because the defect is a relation between two return
+  sites, not a property of either.
