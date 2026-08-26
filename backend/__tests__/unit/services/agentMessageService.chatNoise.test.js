@@ -169,8 +169,18 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
       path.join(__dirname, '../../../services/agentMessageService.ts'),
       'utf8',
     );
-    expect(src).toContain(
-      'sanitizeAgentContent(content, { agentName, instanceId, podId })',
+    // Comments are stripped before matching. A bare `toContain` on the call
+    // text is satisfied by PROSE: delete the argument from the real call and
+    // leave the old form in a `//` comment above it, and the assertion passes
+    // with the feature entirely off. Not hypothetical in this file — it
+    // discusses `sanitizeAgentContent` in comments at :110 and :1126.
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    // Anchored on the assignment, so the match is the statement that feeds
+    // postMessage rather than any mention of the call anywhere in the file.
+    expect(code).toMatch(
+      /let sanitizedContent = AgentMessageService\.sanitizeAgentContent\(\s*content,\s*\{[^}]*agentName[^}]*instanceId[^}]*podId[^}]*\}\s*\)/,
     );
   });
 
