@@ -44,7 +44,9 @@ interface AgentProfile {
   memory: {
     has: boolean;
     entryCount: number;
-    lastAgentWrite?: { section: string; updatedAt: string } | null;
+    // Public profile: coarse kind only. The owner/admin memory index below
+    // carries the exact section.
+    lastAgentWrite?: { kind: 'durable' | 'bookkeeping'; updatedAt: string } | null;
   };
   activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
 }
@@ -240,6 +242,10 @@ const V2AgentProfile: React.FC = () => {
     `agentProfile.memory.sections.${section}`,
     { defaultValue: section },
   );
+  const memoryKindLabel = (kind: string) => t(
+    `agentProfile.memory.kinds.${kind}`,
+    { defaultValue: kind },
+  );
 
   return (
     <div className="v2-root v2-aprofile">
@@ -422,7 +428,7 @@ const V2AgentProfile: React.FC = () => {
                 <p className="v2-aprofile__muted">
                   {t('agentProfile.memory.persistent')}
                   {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSaved', {
-                    section: memorySectionLabel(memory.lastAgentWrite.section),
+                    section: memoryKindLabel(memory.lastAgentWrite.kind),
                     time: timeAgo(memory.lastAgentWrite.updatedAt),
                   })}`}
                 </p>

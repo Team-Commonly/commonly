@@ -1293,6 +1293,10 @@
       "entriesRemembered": "条已记住的条目",
       "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
       "lastSaved": "最后保存至 {{section}}，{{time}}。",
+      "kinds": {
+        "durable": "长期记忆",
+        "bookkeeping": "内部记录"
+      },
       "sections": {
         "soul": "身份",
         "long_term": "长期记忆",

@@ -34,7 +34,7 @@ const Pod = require('../models/Pod');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
-const { getLastAgentMemoryWrite } = require('../services/agentMemoryService');
+const { getLastAgentMemoryWrite, BOOKKEEPING_SECTIONS } = require('../services/agentMemoryService');
 
 interface AuthReq {
   user?: { id?: string };
@@ -53,8 +53,10 @@ const snip = (s: unknown): string => {
   return t.length > SNIPPET ? `${t.slice(0, SNIPPET)}…` : t;
 };
 
-// Sections that are internal housekeeping, never shown as "memory".
-const INTERNAL_SECTIONS = new Set(['dedup_state', 'runtime_meta']);
+// Sections that are internal housekeeping, never shown as "memory". Shared with
+// the service so the public profile's durable/bookkeeping split and this
+// exclusion cannot drift apart.
+const INTERNAL_SECTIONS: ReadonlySet<string> = BOOKKEEPING_SECTIONS;
 
 // Parse a markdown blob into an index of its `#`/`##` headers + the snippet of
 // text that follows each. Falls back to one untitled note if there are no

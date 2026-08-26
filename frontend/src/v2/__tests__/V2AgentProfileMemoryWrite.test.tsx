@@ -30,6 +30,28 @@ const renderProfile = () => render(
   </MemoryRouter>,
 );
 
+// The profile route is unauthenticated, so it reports the KIND of the latest
+// agent-authored write and never the section name. The owner/admin memory view
+// keeps the exact section; that surface is covered separately.
+const profilePayload = (lastAgentWrite: unknown) => ({
+  data: {
+    agent: {
+      agentName: 'claude-code',
+      instanceId: 'observer',
+      displayName: 'Observer',
+      profilePicture: 'default',
+      runtime: null,
+      officialAgent: false,
+      capabilities: [],
+    },
+    skills: [],
+    pods: { count: 0, public: [] },
+    memory: { has: true, entryCount: 2, lastAgentWrite },
+    activity: [],
+  },
+});
+const twoHoursAgo = () => new Date(Date.now() - (2 * 60 * 60 * 1000)).toISOString();
+
 describe('V2AgentProfile memory-write visibility', () => {
   beforeAll(async () => {
     await i18nReady;
@@ -39,35 +61,25 @@ describe('V2AgentProfile memory-write visibility', () => {
   beforeEach(() => {
     window.localStorage.clear();
     jest.clearAllMocks();
-    profileClient.get.mockResolvedValue({
-      data: {
-        agent: {
-          agentName: 'claude-code',
-          instanceId: 'observer',
-          displayName: 'Observer',
-          profilePicture: 'default',
-          runtime: null,
-          officialAgent: false,
-          capabilities: [],
-        },
-        skills: [],
-        pods: { count: 0, public: [] },
-        memory: {
-          has: true,
-          entryCount: 2,
-          lastAgentWrite: {
-            section: 'long_term',
-            updatedAt: new Date(Date.now() - (2 * 60 * 60 * 1000)).toISOString(),
-          },
-        },
-        activity: [],
-      },
-    });
+    profileClient.get.mockResolvedValue(
+      profilePayload({ kind: 'durable', updatedAt: twoHoursAgo() }),
+    );
   });
 
-  it('names the section of the latest agent-authored write', async () => {
+  it('reports the kind of the latest agent-authored write', async () => {
     renderProfile();
 
-    expect(await screen.findByText(/Last saved to Long-term memory \d+h ago\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Last saved to durable memory \d+h ago\./)).toBeInTheDocument();
+  });
+
+  it('reports a housekeeping write without naming the section', async () => {
+    profileClient.get.mockResolvedValue(
+      profilePayload({ kind: 'bookkeeping', updatedAt: twoHoursAgo() }),
+    );
+    renderProfile();
+
+    expect(await screen.findByText(/Last saved to internal bookkeeping \d+h ago\./)).toBeInTheDocument();
+    // No section name reaches this page for any kind.
+    expect(screen.queryByText(/Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
   });
 });

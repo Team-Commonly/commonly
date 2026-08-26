@@ -239,6 +239,40 @@ export interface LastAgentMemoryWrite {
 // order, which deliberately places long_term before bookkeeping sections.
 // Legacy entries without a server stamp are skipped rather than assigned a
 // fabricated time during hydration.
+/**
+ * Sections that are internal housekeeping rather than authored memory. The
+ * memory view already excludes them from snippets; naming them is fine for an
+ * owner/admin, and is operational detail about the runtime on a public page.
+ */
+export const BOOKKEEPING_SECTIONS: ReadonlySet<AgentWritableSection> = new Set<AgentWritableSection>([
+  'dedup_state',
+  'runtime_meta',
+]);
+
+export type AgentWriteKind = 'durable' | 'bookkeeping';
+
+export function classifyAgentWriteSection(section: AgentWritableSection): AgentWriteKind {
+  return BOOKKEEPING_SECTIONS.has(section) ? 'bookkeeping' : 'durable';
+}
+
+export interface LastAgentMemoryWriteKind {
+  kind: AgentWriteKind;
+  updatedAt: Date;
+}
+
+/**
+ * One computation, two shapes. `/api/agents/:name/profile` is mounted WITHOUT
+ * auth, so it gets the coarse kind; the owner/admin memory view keeps the exact
+ * section. Coarsening here rather than at each caller keeps the two surfaces
+ * derived from the same max() rather than from two selection rules.
+ */
+export function coarsenAgentMemoryWrite(
+  write: LastAgentMemoryWrite | null,
+): LastAgentMemoryWriteKind | null {
+  if (!write) return null;
+  return { kind: classifyAgentWriteSection(write.section), updatedAt: write.updatedAt };
+}
+
 export function getLastAgentMemoryWrite(
   sections: IAgentMemorySections | undefined,
 ): LastAgentMemoryWrite | null {

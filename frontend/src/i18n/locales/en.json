@@ -1299,6 +1299,10 @@
       "entriesRemembered": "entries remembered",
       "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
       "lastSaved": "Last saved to {{section}} {{time}}.",
+      "kinds": {
+        "durable": "durable memory",
+        "bookkeeping": "internal bookkeeping"
+      },
       "sections": {
         "soul": "Identity",
         "long_term": "Long-term memory",

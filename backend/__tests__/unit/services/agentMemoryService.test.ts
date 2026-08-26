@@ -8,6 +8,7 @@ const {
   mirrorContentFromSections,
   stampSectionsForWrite,
   getLastAgentMemoryWrite,
+  coarsenAgentMemoryWrite,
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
@@ -280,6 +281,32 @@ describe('getLastAgentMemoryWrite', () => {
       dedup_state: { content: 'message ids', updatedAt },
       runtime_meta: { content: 'runtime snapshot', updatedAt },
     })).toEqual({ section: 'long_term', updatedAt });
+  });
+});
+
+describe('coarsenAgentMemoryWrite', () => {
+  // The profile route is mounted without auth, so it may report THAT an agent
+  // saved and when, never WHICH section. Same max(), two shapes.
+  const updatedAt = new Date('2026-08-26T10:00:00Z');
+
+  it.each(['long_term', 'soul', 'shared', 'daily', 'relationships'])(
+    'reports %s as durable',
+    (section) => {
+      expect(coarsenAgentMemoryWrite({ section, updatedAt })).toEqual({ kind: 'durable', updatedAt });
+    },
+  );
+
+  it.each(['dedup_state', 'runtime_meta'])('reports %s as bookkeeping', (section) => {
+    expect(coarsenAgentMemoryWrite({ section, updatedAt })).toEqual({ kind: 'bookkeeping', updatedAt });
+  });
+
+  it('never carries the section name through', () => {
+    const coarse = coarsenAgentMemoryWrite({ section: 'runtime_meta', updatedAt });
+    expect(Object.keys(coarse).sort()).toEqual(['kind', 'updatedAt']);
+  });
+
+  it('passes a null write straight through', () => {
+    expect(coarsenAgentMemoryWrite(null)).toBeNull();
   });
 });
 
