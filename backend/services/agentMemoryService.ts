@@ -280,7 +280,25 @@ export function getLastAgentMemoryWrite(
   const consider = (section: AgentWritableSection, value: unknown) => {
     const updatedAt = value instanceof Date ? value : new Date(String(value || ''));
     if (Number.isNaN(updatedAt.getTime())) return;
-    if (!latest || updatedAt.getTime() > latest.updatedAt.getTime()) {
+    if (!latest) {
+      latest = { section, updatedAt };
+      return;
+    }
+    if (updatedAt.getTime() > latest.updatedAt.getTime()) {
+      latest = { section, updatedAt };
+      return;
+    }
+    // Exact ties are the common case, not the corner: one /memory/sync stamps
+    // every section it carries with the same `now`. Falling back to array order
+    // there would report `dedup_state` for a write that also saved `long_term`,
+    // which is the misreading this whole selection rule exists to prevent. So a
+    // durable section takes a tie from a bookkeeping one. Among two durables the
+    // winner is still array order and that is arbitrary — nothing may depend on
+    // it: the public surface coarsens both to `durable`, and the owner view is
+    // naming a section that genuinely holds content this recent either way.
+    if (updatedAt.getTime() === latest.updatedAt.getTime()
+      && classifyAgentWriteSection(latest.section) === 'bookkeeping'
+      && classifyAgentWriteSection(section) === 'durable') {
       latest = { section, updatedAt };
     }
   };

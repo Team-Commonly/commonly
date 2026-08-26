@@ -9,6 +9,7 @@ const {
   stampSectionsForWrite,
   getLastAgentMemoryWrite,
   coarsenAgentMemoryWrite,
+  classifyAgentWriteSection,
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
@@ -274,13 +275,39 @@ describe('getLastAgentMemoryWrite', () => {
     })).toBeNull();
   });
 
-  it('prefers long_term over bookkeeping when one write stamps both equally', () => {
+  // A tie is the common case: one /memory/sync stamps every section it carries
+  // with the same `now`. The previous fixture here omitted `soul`, so it read as
+  // pinning a preference for long_term when the code was only doing array order
+  // — `soul` sorts first and would have won. Both facts are now stated.
+  // The fixture has to DISCRIMINATE. `soul` and `long_term` are both durable and
+  // both sort ahead of every bookkeeping section, so any tie including them is
+  // won by array order alone and passes with the rule deleted — verified by
+  // mutation, which left an earlier version of this test green. `dedup_state`
+  // (index 2, bookkeeping) ahead of `shared` (index 3, durable) is the only
+  // shape where the two rules disagree.
+  it('gives a tie to a durable section over a bookkeeping one that sorts ahead of it', () => {
     const updatedAt = new Date('2026-08-26T10:00:00Z');
     expect(getLastAgentMemoryWrite({
-      long_term: { content: 'durable decision', updatedAt },
       dedup_state: { content: 'message ids', updatedAt },
-      runtime_meta: { content: 'runtime snapshot', updatedAt },
-    })).toEqual({ section: 'long_term', updatedAt });
+      shared: { content: 'durable note', updatedAt },
+    })).toEqual({ section: 'shared', updatedAt });
+    expect(classifyAgentWriteSection('shared')).toBe('durable');
+  });
+
+  it('still reports a bookkeeping section when nothing durable is that recent', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      long_term: { content: 'older', updatedAt: new Date('2026-08-25T10:00:00Z') },
+      dedup_state: { content: 'message ids', updatedAt },
+    })).toEqual({ section: 'dedup_state', updatedAt });
+  });
+
+  it('breaks a durable-vs-durable tie by section order, which nothing may depend on', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      soul: { content: 'who I am', updatedAt },
+      long_term: { content: 'durable decision', updatedAt },
+    })).toEqual({ section: 'soul', updatedAt });
   });
 });
 
