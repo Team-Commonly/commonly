@@ -1613,10 +1613,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <button
             type="button"
             className="v2-inspector__btn"
-            // AgentsHub reads `agent` as the agentName and `instanceId` as
-            // its own param — passing the composite key (or, before it, the
-            // bare instanceId) here sent 'default' as an agent NAME.
-            onClick={() => navigate(`/v2/agents?podId=${pod._id}&agent=${encodeURIComponent(agent.agentName || '')}&instanceId=${encodeURIComponent(agent.instanceId || 'default')}`)}
+            onClick={() => navigate(`/v2/agent/${encodeURIComponent(agent.agentName || '')}/${encodeURIComponent(agent.instanceId || 'default')}`)}
           >
             {t('inspector.members.manage')}
           </button>
