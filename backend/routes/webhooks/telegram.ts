@@ -266,21 +266,19 @@ router.post('/', async (req: any, res: any) => {
     // pod as real messages (mentions fire, agents wake). Commands above keep
     // their legacy handling; everything else here short-circuits the buffer.
     if (integration.config?.liveRelay) {
-      // A non-2xx makes Telegram redeliver this update, and the relay is not
-      // idempotent — nothing dedupes on message_id, and the pod row is written
-      // before agents are woken. A throw in delivery would therefore duplicate
-      // both the message and the wake on retry. Ack unconditionally: a dropped
-      // relay is recoverable, a doubled one is not.
-      try {
-        // eslint-disable-next-line global-require
-        const bridge = require('../../services/telegramBridgeService');
-        await bridge.relayTelegramMessageToPod({
-          integration,
-          telegramMessage: message,
-        });
-      } catch (relayErr) {
-        console.error('[tg-bridge] inbound relay failed:', (relayErr as Error).message);
-      }
+      // Deliberately NOT wrapped: a non-2xx makes Telegram redeliver, and
+      // whether that retry is a repair or a duplicate depends on which side of
+      // the pod write we failed on. relayTelegramMessageToPod swallows its own
+      // post-write failures and resolves, so anything that reaches here threw
+      // before the message was persisted — nothing exists to duplicate, and the
+      // redelivery is the only thing that saves the update. Adding a blanket
+      // catch + sendStatus(200) here silently drops those.
+      // eslint-disable-next-line global-require
+      const bridge = require('../../services/telegramBridgeService');
+      await bridge.relayTelegramMessageToPod({
+        integration,
+        telegramMessage: message,
+      });
       return res.sendStatus(200);
     }
 

@@ -179,19 +179,19 @@ describe('Telegram webhook routes', () => {
       expect(events).not.toHaveBeenCalled();
     });
 
-    // Telegram redelivers any update the webhook does not 2xx, and the relay is
-    // not idempotent: the pod row is written before agents are woken, and
-    // nothing dedupes on message_id. A 500 here duplicates both the message and
-    // the wake on retry, so the ack must not depend on the relay succeeding.
-    it('still acks 200 when the relay throws, so Telegram does not redeliver', async () => {
+    // The bridge swallows its own post-write failures, so anything that throws
+    // out of it failed BEFORE the pod row existed. There is nothing to
+    // duplicate and Telegram's redelivery is the only repair — the route must
+    // NOT ack. A blanket catch + sendStatus(200) here drops those silently.
+    it('does not ack when the relay throws, so Telegram redelivers', async () => {
       Integration.findOne.mockResolvedValue(liveIntegration);
-      bridge.relayTelegramMessageToPod.mockRejectedValue(new Error('delivery blew up'));
+      bridge.relayTelegramMessageToPod.mockRejectedValue(new Error('pg down'));
       const events = jest.fn((req, res) => res.sendStatus(200));
       registry.get.mockReturnValue({ getWebhookHandlers: () => ({ events }) });
 
       const res = await post();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(500);
       expect(bridge.relayTelegramMessageToPod).toHaveBeenCalled();
       expect(events).not.toHaveBeenCalled();
     });
