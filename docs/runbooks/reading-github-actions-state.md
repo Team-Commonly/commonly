@@ -128,7 +128,7 @@ numbers from the same four timestamps. What the data supports is a bound and a
 shape: **some runs land in seconds, some take up to ~20 minutes, and a partial
 batch is the normal intermediate state, not evidence of a failure.**
 
-**One pairing is determined, and it gives 10 minutes.** PR #1216 was
+**Two pairings are determined, and they give 10 minutes and 11 seconds.** PR #1216 was
 close/reopened at 16:36:37Z with no other trigger in flight — head unchanged
 throughout, no pushes, no reruns. At 16:46:26Z all five workflows were created
 in a single batch, and all five concluded `success`. Two of them, `Tests` and
@@ -137,8 +137,19 @@ after the push that should have produced them. So this is also the only
 end-to-end confirmation in this document that the lever recovers the
 never-created case rather than merely re-firing what already existed.
 
-Note what made it measurable: exactly one trigger and exactly one batch. The
-delay is not unknowable in general — it is unknowable whenever you have more
+PR #1271, same lever under the same conditions, went the other way: reopened
+17:37:06Z, five runs created 17:37:17Z — **eleven seconds**, four of them
+already `success` seven minutes later.
+
+So a determined pairing does not buy you a predictable delay; the two
+unambiguous measurements are 10 minutes and 11 seconds. What both share, and
+what the ambiguous cases never showed, is that the fan-out was **complete** —
+five expected workflows, five created, one batch. On this evidence (n=2) the
+partial fan-outs above may be an artefact of pairing runs to the wrong trigger
+rather than a behaviour of the lever. Do not plan around either number.
+
+Note what made these two measurable: exactly one trigger and exactly one batch.
+The delay is not unknowable in general — it is unknowable whenever you have more
 triggers in flight than batches to match them to, which is the situation you
 create by re-firing a second time while waiting.
 
