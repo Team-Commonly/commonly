@@ -7512,3 +7512,44 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-team__title {
   letter-spacing: 0;
 }
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: CJK body line-height 1.6 and a 12px floor (TASK-055, rule class 2).
+ * Latin body copy sits at 1.45–1.55 here; CJK glyphs fill the em box, so the
+ * same leading leaves no white between lines. Measured in the real browser
+ * (.dev/task-055-zh-harness.html): .v2-msg__content 21.7px/14px = 1.55,
+ * .v2-chat__composer-hint 1.45, .v2-inspector__pod-meta 1.45, and the
+ * composer hint (11px) / inspector tab (11.5px) render CJK below the 12px
+ * legibility floor. Single-line nowrap+ellipsis rows are not touched — their
+ * height is not text-driven. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-msg__content,
+.v2-root:lang(zh) .v2-msg__content pre,
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) .v2-chat__delivery-hint,
+.v2-root:lang(zh) .v2-chat__readonly-text,
+.v2-root:lang(zh) .v2-chat__new-pod-text,
+.v2-root:lang(zh) .v2-first-run__lede,
+.v2-root:lang(zh) .v2-first-run__step-body,
+.v2-root:lang(zh) .v2-pods__join-notice,
+.v2-root:lang(zh) .v2-pods__discover-description,
+.v2-root:lang(zh) .v2-pods__community-copy,
+.v2-root:lang(zh) .v2-inspector__pod-meta,
+.v2-root:lang(zh) .v2-inspector__now-meta,
+.v2-root:lang(zh) .v2-inspector__goal-text,
+.v2-root:lang(zh) .v2-inspector__empty,
+.v2-root:lang(zh) .v2-inspector__danger-text,
+.v2-root:lang(zh) .v2-inspector__detail-body,
+.v2-root:lang(zh) .v2-modal__hint,
+.v2-root:lang(zh) .v2-invite-card__description,
+.v2-root:lang(zh) .v2-login__field-hint,
+.v2-root:lang(zh) .v2-billing__note,
+.v2-root:lang(zh) .v2-approval__summary,
+.v2-root:lang(zh) .v2-approval__action {
+  line-height: 1.6;
+}
+
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) button.v2-inspector__tab {
+  font-size: 12px;
+}
