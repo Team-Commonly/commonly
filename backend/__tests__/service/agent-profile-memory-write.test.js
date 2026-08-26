@@ -40,7 +40,7 @@ describe('Agent profile memory activity', () => {
     await mongoServer.stop();
   });
 
-  it('reports the latest agent-authored section, not a newer system exchange', async () => {
+  it('reports the latest agent-authored write as a KIND, not a newer system exchange', async () => {
     await User.create({
       username: 'memory-observer',
       email: 'memory-observer@test.com',
@@ -68,10 +68,16 @@ describe('Agent profile memory activity', () => {
     const res = await request(app).get('/api/agent-profile/claude-code/observer');
 
     expect(res.status).toBe(200);
+    // This route is unauthenticated: it reports THAT the seat wrote something
+    // durable, never WHICH section. Selection still has to pick long_term over
+    // the newer system_exchanges bump — that is what a real store exercises
+    // here, on top of the mocked unit cover in
+    // __tests__/unit/routes/agentProfile.memoryWrite.test.js.
     expect(res.body.memory.lastAgentWrite).toEqual({
-      section: 'long_term',
+      kind: 'durable',
       updatedAt: '2026-08-26T09:00:00.000Z',
     });
+    expect(res.body.memory.lastAgentWrite.section).toBeUndefined();
     expect(res.body.memory.updatedAt).toBeUndefined();
   });
 });
