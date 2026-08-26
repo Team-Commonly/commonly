@@ -27,12 +27,13 @@ interface AgentRecap {
 
 interface NeedsYouItem {
   id: string;
-  kind: 'mention' | 'approval';
+  kind: 'mention' | 'approval' | 'press' | 'decision';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
   timestamp: string | null;
+  taskId?: string | null;
 }
 
 interface BoardItem {
@@ -68,7 +69,7 @@ const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [window, setWindow] = useState<ActivityWindow>('today');
-  const [podId, setPodId] = useState('all');
+  const [podId, setPodId] = useState('active');
   const [recap, setRecap] = useState<ActivityRecap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +85,7 @@ const V2ActivityPage: React.FC = () => {
     const token = localStorage.getItem('token');
     axios.get<ActivityRecap>('/api/activity/recap', {
       headers: { 'x-auth-token': token ?? '' },
-      params: { window, ...(podId !== 'all' ? { podId } : {}) },
+      params: { window, ...(podId !== 'active' ? { podId } : {}) },
     })
       .then((response) => {
         if (active) setRecap(response.data);
@@ -102,6 +103,10 @@ const V2ActivityPage: React.FC = () => {
 
   const openPod = (targetPodId: string | null) => {
     if (targetPodId) navigate(`/v2/pods/${targetPodId}`);
+  };
+
+  const openTaskBoard = (item: NeedsYouItem) => {
+    if (item.podId) navigate(`/v2/pods/${item.podId}/board`);
   };
 
   const openFirstBoard = () => {
@@ -153,7 +158,8 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const isDayZero = podId === 'all'
+  const isDayZero = podId === 'active'
+    && recap?.needsYou.length === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
@@ -179,9 +185,9 @@ const V2ActivityPage: React.FC = () => {
             ))}
           </div>
           <label className="v2-activity__scope">
-            <span className="v2-sr-only">{t('activity.podScopeLabel')}</span>
+            <span className="v2-activity__scope-label">{t('activity.podScopeLabel')}</span>
             <select value={podId} onChange={(event) => setPodId(event.target.value)}>
-              <option value="all">{t('activity.allPods')}</option>
+              <option value="active">{t('activity.activePods')}</option>
               {(recap?.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
             </select>
           </label>
@@ -249,7 +255,9 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {recap.needsYou.map((item) => (
                   <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}`}>
-                    <span className="v2-activity__queue-mark" aria-hidden="true">{item.kind === 'mention' ? '@' : '!'}</span>
+                    <span className="v2-activity__queue-mark" aria-hidden="true">
+                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'press' ? '↗' : '?'}
+                    </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>
                       <strong>{item.title}</strong>
@@ -272,9 +280,15 @@ const V2ActivityPage: React.FC = () => {
                           {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
                         </button>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
-                        {t('activity.openThread')}
-                      </button>
+                      {(item.kind === 'press' || item.kind === 'decision') ? (
+                        <button type="button" onClick={() => openTaskBoard(item)} disabled={!item.podId}>
+                          {t('activity.openBoard')}
+                        </button>
+                      ) : (
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
+                          {t('activity.openThread')}
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}

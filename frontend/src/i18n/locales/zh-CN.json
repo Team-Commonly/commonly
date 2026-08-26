@@ -32,19 +32,21 @@
     "windowAriaLabel": "动态时间范围",
     "windows": { "today": "今天", "7d": "7 天" },
     "podScopeLabel": "Pod 范围",
+    "activePods": "活跃 Pod",
     "allPods": "所有 Pod",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
+    "openBoard": "打开看板",
     "lastActive": "{{time}}前活跃",
     "updatesCount_one": "{{count}} 条更新",
     "updatesCount_other": "{{count}} 条更新",
     "needsYou": {
       "eyebrow": "决策队列",
       "title": "需要你处理",
-      "description": "这里只显示直接提及和待处理的审批。",
+      "description": "这里显示需要决策、等待合并、直接提及和待处理的审批。",
       "emptyTitle": "没有事项在等待你",
       "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
-      "kinds": { "mention": "提及", "approval": "审批" }
+      "kinds": { "mention": "提及", "approval": "审批", "press": "等待合并", "decision": "需要决策" }
     },
     "dayZero": {
       "kind": "开始使用",

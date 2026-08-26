@@ -511,6 +511,45 @@ class Message {
     }
   }
 
+  // The Activity recap's default pod scope must describe real agent work in
+  // the selected window, not merely the first page of its mixed activity
+  // feed. This is deliberately a grouped database read: a busy pod can have
+  // more than the feed's display limit before the next active pod's message.
+  // System summaries are bot-authored too, so exclude their two known seats
+  // here as well as in the recap projection.
+  static async findSubstantiveAgentPodActivity(
+    podIds: unknown[],
+    since: unknown,
+  ): Promise<PodActivityEntry[]> {
+    if (!podIds || !podIds.length) return [];
+    try {
+      const podIdStrs = podIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
+      if (!podIdStrs.length) return [];
+      const result = await (pool as PgPool).query(
+        `SELECT m.pod_id, MAX(m.created_at) AS last_at
+         FROM messages m
+         JOIN users u ON u._id = m.user_id
+         WHERE m.pod_id = ANY($1)
+           AND m.created_at >= $2
+           AND m.message_type != 'system'
+           AND m.content <> ''
+           AND u.is_bot = TRUE
+           AND LOWER(COALESCE(u.username, '')) NOT IN ('commonly-bot', 'commonly-ai-agent')
+         GROUP BY m.pod_id
+         ORDER BY last_at DESC`,
+        [podIdStrs, since],
+      );
+      return (result.rows as Array<{ pod_id: string; last_at: unknown }>).map((row) => ({
+        podId: row.pod_id,
+        lastAt: row.last_at,
+      }));
+    } catch (error) {
+      const e = error as { message?: string };
+      console.error('Error in findSubstantiveAgentPodActivity:', e.message);
+      return [];
+    }
+  }
+
   // One row per pod: the given user's most-recent non-system message in each pod.
   // Powers the agent-profile "pods" list (their last message + when, per pod).
   static async findLastMessageByUserPerPod(

@@ -32,19 +32,21 @@
     "windowAriaLabel": "Activity window",
     "windows": { "today": "Today", "7d": "7 days" },
     "podScopeLabel": "Pod scope",
+    "activePods": "Active pods",
     "allPods": "All pods",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "openBoard": "Open board",
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
     "needsYou": {
       "eyebrow": "Decision queue",
       "title": "Needs you",
-      "description": "Only direct mentions and pending approvals appear here.",
+      "description": "Decisions, ready-to-press work, direct mentions, and pending approvals appear here.",
       "emptyTitle": "Nothing is waiting on you",
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
-      "kinds": { "mention": "Mention", "approval": "Approval" }
+      "kinds": { "mention": "Mention", "approval": "Approval", "press": "Ready to press", "decision": "Decision needed" }
     },
     "dayZero": {
       "kind": "Get started",

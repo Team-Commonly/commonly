@@ -85,6 +85,39 @@ describe('V2ActivityPage', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
+  test('defaults the recap to active pods and keeps the scope selector compact', async () => {
+    renderPage();
+    await screen.findByText('Review requested');
+
+    const scope = screen.getByLabelText('Pod scope');
+    expect(scope).toHaveValue('active');
+    expect(scope.querySelectorAll('option')).toHaveLength(2);
+    expect(screen.getByRole('option', { name: 'Active pods' })).toBeInTheDocument();
+
+    fireEvent.change(scope, { target: { value: 'pod-1' } });
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/api/activity/recap', expect.objectContaining({
+      params: { window: 'today', podId: 'pod-1' },
+    })));
+  });
+
+  test('opens the board from a durable press handoff', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        ...recap,
+        needsYou: [{
+          id: 'task:press-1', kind: 'press', taskId: 'TASK-201',
+          title: 'Release the Activity recap', detail: 'Waiting for a human press.',
+          podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
+        }],
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText('Release the Activity recap')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open board' }));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1/board');
+  });
+
   test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
     mockGet
       .mockResolvedValueOnce({ data: recap })

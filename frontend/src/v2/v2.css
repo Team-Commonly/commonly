@@ -7551,6 +7551,20 @@ body.modern-ui.v2-canvas {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
+.v2-activity__scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.v2-activity__scope-label {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .v2-activity__scope select {
   min-height: 36px;
   max-width: 180px;
@@ -7663,6 +7677,16 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row--approval .v2-activity__queue-mark {
   background: var(--v2-warning-soft);
   color: #a85d08;
+}
+
+.v2-activity__queue-row--press .v2-activity__queue-mark {
+  background: var(--v2-warning-soft);
+  color: #a85d08;
+}
+
+.v2-activity__queue-row--decision .v2-activity__queue-mark {
+  background: var(--v2-danger-soft);
+  color: #b42318;
 }
 
 .v2-activity__queue-row--onboarding .v2-activity__queue-mark {
@@ -7916,12 +7940,23 @@ body.modern-ui.v2-canvas {
 
   .v2-activity__controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px;
+    /* The shell rail leaves the content pane narrow at 390px. 120px still
+       fits “Active pods”, while leaving each window button enough room to
+       keep “7 days” on one line. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 120px);
     width: 100%;
   }
   .v2-activity__window { width: 100%; }
   .v2-root button.v2-activity__window-button { flex: 1 1 0; }
-  .v2-activity__scope select { width: 100%; max-width: none; }
+  .v2-activity__scope { width: 100%; }
+  .v2-activity__scope-label { display: none; }
+  .v2-activity__scope select {
+    width: 100%;
+    max-width: none;
+    /* A native select reserves its own arrow space. Tighten only on phones
+       so the complete “Active pods” label remains visible beside the rail. */
+    padding: 0 22px 0 8px;
+  }
   .v2-activity__section-heading > p { text-align: left; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
 
