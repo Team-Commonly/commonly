@@ -130,6 +130,10 @@ export const relayAgentMessageToTelegram = async (opts: {
   try {
     const integration = await findLiveIntegration(podId);
     if (!integration) return;
+    // /mute pauses ALL outbound relay to the chat, escalations included —
+    // mute means mute; /status shows it, and it self-expires.
+    const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
+    if (mutedUntil && new Date(mutedUntil) > new Date()) return;
     if (!shouldEscalate({ content, agentUsername, integration })) return;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
