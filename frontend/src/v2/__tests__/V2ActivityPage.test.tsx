@@ -21,6 +21,26 @@ const CurrentPath = () => {
   return <div data-testid="current-path">{location.pathname}{location.search}</div>;
 };
 
+// The queue now arrives from /decision-queue (TASK-083) — recap.needsYou is
+// only the degrade path when that endpoint fails.
+const decisionQueue = {
+  items: [
+    {
+      id: 'mention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
+      podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
+    },
+    {
+      id: 'task_TASK-059', kind: 'press', title: 'Retention ledger', detail: '#1208 held for the human merge press.',
+      podId: 'pod-1', podName: 'Launch pod', taskId: 'TASK-059', createdAt: '2026-08-26T10:00:00.000Z',
+    },
+    {
+      id: 'task_TASK-024', kind: 'decision', title: 'DECIDE: eslint scope', detail: 'filed',
+      podId: 'pod-1', podName: 'Launch pod', taskId: 'TASK-024', createdAt: '2026-08-26T09:00:00.000Z',
+    },
+  ],
+  count: 3,
+};
+
 const recap = {
   pods: [{ id: 'pod-1', name: 'Launch pod' }],
   needsYou: [{
@@ -53,16 +73,38 @@ describe('V2ActivityPage', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockGet.mockResolvedValue({ data: recap });
+    // Default: the decision-queue endpoint FAILS, exercising the designed
+    // degrade path (fall back to recap.needsYou) — which also keeps the
+    // pre-existing tests' order-based mockResolvedValueOnce chains valid,
+    // since their Once values feed the recap call and this implementation
+    // catches the queue call. The first test overrides with real items.
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.reject(new Error('queue down'));
+      return Promise.resolve({ data: recap });
+    });
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 
   test('projects existing activity, direct interrupts, and board changes without inventing a queue count', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: decisionQueue });
+      return Promise.resolve({ data: recap });
+    });
     renderPage();
 
     expect(await screen.findByRole('heading', { name: 'Activity' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
+    // findBy, not getBy: the header renders unconditionally, so awaiting it
+    // proves nothing about data arrival — and the queue+recap Promise.all
+    // adds a microtask hop the old single-request race happened to win.
+    expect(await screen.findByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
     expect(screen.getByText('Review requested')).toBeInTheDocument();
+    // TASK-083: board facts land in the queue — a human-press handoff and a
+    // DECIDE row, each with an Open board action.
+    expect(screen.getByText('Retention ledger')).toBeInTheDocument();
+    expect(screen.getByText('Ready for your press')).toBeInTheDocument();
+    expect(screen.getByText('DECIDE: eslint scope')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open board' })).toHaveLength(2);
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
     expect(screen.getByRole('heading', { name: 'What your agents did' })).toBeInTheDocument();
     expect(screen.getByText('release-agent')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
@@ -77,11 +119,14 @@ describe('V2ActivityPage', () => {
     await screen.findByText('Review requested');
 
     fireEvent.click(screen.getByRole('button', { name: '7 days' }));
-    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith('/api/activity/recap', expect.objectContaining({
+    // toHaveBeenCalledWith, not Last: the decision-queue request now fires
+    // alongside recap, so "last call" is no longer the recap by construction.
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/activity/recap', expect.objectContaining({
       params: { window: '7d' },
     })));
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open thread' })[0]);
+    // findAll: the window change reloads both requests and the rows remount.
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open thread' }))[0]);
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
 
