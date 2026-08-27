@@ -141,7 +141,11 @@ class ActivityService {
     }
 
     const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
-    const feed = await ActivityService.getUserFeed(userId, { limit: 100 });
+    // filter: 'agents' — the recap is about agent WORK. Without it, the
+    // 100-slot feed budget was consumed entirely by `summary` activities
+    // (30/30 measured live), which are newer and more numerous than any
+    // message, so zero agent messages ever reached the grouping below.
+    const feed = await ActivityService.getUserFeed(userId, { limit: 100, filter: 'agents' });
     const activities = ((feed.activities as ActivityItem[] | undefined) || []).filter((activity) => {
       const timestamp = activity.timestamp ? new Date(activity.timestamp).getTime() : 0;
       return timestamp >= since.getTime()
@@ -812,7 +816,13 @@ class ActivityService {
       messages.forEach((msg) => {
         const userId = msg.userId as Record<string, unknown> | undefined;
         const authorName = (msg.username as string) || (userId?.username as string) || 'Unknown';
-        const isAgent = userId?.isBot === true || ActivityService.isAgentUsername(authorName);
+        // PG rows carry `is_bot` as a COLUMN; only Mongo rows populate the
+        // userId object. Checking only `userId?.isBot` classified every
+        // PG-authored agent message as human, and the agent-only recap
+        // dropped all of them (#1307's live verify: recap empty).
+        const isAgent = msg.is_bot === true
+          || userId?.isBot === true
+          || ActivityService.isAgentUsername(authorName);
 
         // System plumbing is not activity (TASK-083 defect 2).
         if (SYSTEM_BOT_NAMES.has(authorName.toLowerCase())) return;
