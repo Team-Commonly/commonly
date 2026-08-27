@@ -104,7 +104,9 @@ publish. Nothing mirrors.
 >   says exists, not what it should be called.**
 >
 > I have not re-derived the ten-call inventory at the top of this finding against current main.
-> The amendment covers what #1282, #1289 and #1290 changed, and nothing else.
+> The amendment covers what #1282, #1289 and #1290 changed, and nothing else — #1301 moved this
+> same bound again and is recorded in D3's third amendment rather than here, because what it adds
+> is a new *direction* and not a new outbound path.
 
 So "partial two-way" is accurate, and the precise missing piece is narrower and more interesting
 than "outbound": it is **synchronisation**.
@@ -222,6 +224,34 @@ exists in every manifest and is currently free-form prose (`['webhook', 'gateway
 checkable in CI rather than inferred from which methods happen to be defined. Finding 2's table
 should be generated, not hand-written.
 
+> **Third amendment, 2026-08-27 — D3's four-value enum would drop a direction that shipped
+> tonight.** #1301 (`97b6a870`) adds a Telegram *control plane*: `/mode mirror|attention`,
+> `/mute [minutes]`, `/unmute`, `/status`, `/tldr`, `/help`, handled in `routes/webhooks/telegram.ts`.
+> These are not inbound content and not outbound publication — they are commands from the platform
+> that **mutate the connector's own configuration**. `/mode` is the first named writer of
+> `config.relayAllAgentMessages`, and `/mute` introduces `config.relayMutedUntil`; both were among
+> the keys this ADR's audit found unwritten.
+>
+> That is a fifth direction, and the enum proposed above cannot name it. Note that the free-form
+> `capabilities[]` value D3 quotes as the thing to replace — `['webhook', 'gateway', 'summary',
+> 'commands']` — **already carries `commands`**. Enumerating to `inbound / publish / converse / sync`
+> as written would delete a name the codebase already uses for a surface that now has an
+> implementation. D3's decision stands; its vocabulary needs a fifth member (`control`, or whatever
+> it ends up called) before it is ratified, or the enforcement it asks for lands narrower than the
+> product.
+>
+> It is also the **second** instance of Finding 2's pattern, which is why it belongs here rather than
+> in a bug report. The first event-driven outbound path (#1282) went around the provider registry;
+> so does this control plane. Twice now, when the registry's verb set did not fit, the implementation
+> did not extend the registry — it added a route. A capability vocabulary that is enforced in CI is
+> only worth having if the paths that grow capabilities are the ones it governs.
+>
+> One consequence sits outside this ADR and is filed at issue #1287 rather than decided here: the
+> command handlers resolve their integration by `config.chatId` alone, reading neither
+> `message.from.id` nor `config.chatType`, so in a linked group chat any member can flip the relay
+> mode or mute the operator's escalations. D7's enterprise-scoping decision inherits that question —
+> a connector projected to N pods needs to say who may reconfigure it, and today nothing does.
+
 **D4 — Retire the enum in favour of the registry.** Finding 3's defect is duplication, not the
 absence of an abstraction. The registry wins; `models/Integration.ts`'s enum becomes a soft
 reference validated against registered providers, and the `if/else` chains become registry lookups.
@@ -258,7 +288,9 @@ one-install-fans-out, so an enterprise install is one administrative act rather 
   and is still a product decision rather than an inference from one merge.
 - **Anything requiring the landscape.** D2's payload shape, D3's capability vocabulary, and the
   enterprise-controls surface (audit log, per-channel permissions, data residency) are all
-  under-specified on purpose until TASK-078 lands.
+  under-specified on purpose until TASK-078 lands. One gap in D3's vocabulary is now known
+  independently of the landscape and is recorded in its third amendment — the control direction —
+  so that much can be settled without waiting.
 
 ---
 
@@ -277,6 +309,10 @@ questions modes 1–3 never had to answer — questions #1282 now has to answer 
 bound is `shouldEscalate` plus `liveRelay`, which defaults to `false`; since #1290 a user can turn
 that flag on from the Connectors page, and since #1289 the inbound half refuses any chat that is
 not 1:1. See Finding 1's second amendment — a default is only a bound while nothing can change it,
-and something can now.
+and something can now. Since #1301 the bound has a third mutator and it is reachable
+from the platform side: `/mode mirror` sets `config.relayAllAgentMessages`, which is
+`shouldEscalate`'s first branch — so a Telegram command turns the escalation gate off entirely, and
+`/mute` suspends the relay from the same surface. Two of the three levers on this bound are now
+commands typed into the chat, which is the direction D3's third amendment names.
 
 D1 is the one I want ratified. The rest follow from the audit.
