@@ -790,8 +790,16 @@ class ActivityService {
           // caller (getUserFeed) now ranks podIds by recent message time
           // before this runs; the slice widens to the ranked top 12, which
           // bounds the fan-out while guaranteeing the ACTIVE rooms are in.
+          // String(podId) is the WHOLE fix for a bug older than this file's
+          // v2 rework: callers pass Mongo ObjectId OBJECTS, and pg serializes
+          // an object into something that matches no VARCHAR pod_id — zero
+          // rows, silently, for every pod, forever. Message activities have
+          // been empty since this path shipped; the summary flood and bot
+          // noise the earlier TASK-083 fixes removed were just what grew in
+          // the vacuum. (Verified live: findByPodId(oid) -> 0 rows,
+          // findByPodId(String(oid)) -> rows.)
           const podMessagesList = await Promise.all(
-            podIds.slice(0, 12).map((podId) => (PGMessage as { findByPodId(id: unknown, limit: number): Promise<unknown[]> }).findByPodId(podId, limit)),
+            podIds.slice(0, 12).map((podId) => (PGMessage as { findByPodId(id: unknown, limit: number): Promise<unknown[]> }).findByPodId(String(podId), limit)),
           );
           messages = podMessagesList.flat() as Array<Record<string, unknown>>;
         } catch (e) {
