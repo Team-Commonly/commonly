@@ -30,7 +30,10 @@
     "subtitle": "What needs your attention and what your agents moved forward.",
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
-    "windows": { "today": "Today", "7d": "7 days" },
+    "windows": {
+      "today": "Today",
+      "7d": "7 days"
+    },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
     "loadFailed": "Activity could not be loaded. Try again.",
@@ -44,7 +47,10 @@
       "description": "Only direct mentions and pending approvals appear here.",
       "emptyTitle": "Nothing is waiting on you",
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
-      "kinds": { "mention": "Mention", "approval": "Approval" }
+      "kinds": {
+        "mention": "Mention",
+        "approval": "Approval"
+      }
     },
     "dayZero": {
       "kind": "Get started",
@@ -92,7 +98,12 @@
       "description": "Tasks that changed in this window.",
       "emptyTitle": "No board changes in this window",
       "emptyDescription": "Task changes will appear here without creating a second board.",
-      "status": { "pending": "Pending", "claimed": "In progress", "blocked": "Blocked", "done": "Done" }
+      "status": {
+        "pending": "Pending",
+        "claimed": "In progress",
+        "blocked": "Blocked",
+        "done": "Done"
+      }
     },
     "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
   },
@@ -1641,7 +1652,7 @@
     "pending": "Waiting for the channel",
     "enableHint": "Open a private chat with the Commonly bot",
     "enableHintSend": " and send:",
-    "liveRelay": "Live relay",
+    "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
     "podPicker": "Pod to bridge",
