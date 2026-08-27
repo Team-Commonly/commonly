@@ -172,6 +172,8 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     expect(await screen.findByText('Nothing is waiting on you')).toBeInTheDocument();
+    expect(screen.getByText('New mentions, decisions, press-ready pull requests, and human handoffs will appear here.')).toBeInTheDocument();
+    expect(screen.queryByText(/approval requests will appear/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/0 needs you/i)).not.toBeInTheDocument();
   });
 

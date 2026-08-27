@@ -52,7 +52,7 @@
       "title": "需要你处理",
       "description": "这里显示等待合并的 PR、需要决策的事项、等待人工交接、直接提及和待处理的审批。",
       "emptyTitle": "没有事项在等待你",
-      "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "emptyDescription": "新的提及、决策、等待合并的 PR 和等待人工交接会显示在这里。",
       "kinds": { "mention": "提及", "approval": "审批", "press": "等待合并", "decide": "需要决策", "handoff": "等待人工交接" }
     },
     "dayZero": {

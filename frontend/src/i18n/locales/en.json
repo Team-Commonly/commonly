@@ -52,7 +52,7 @@
       "title": "Needs you",
       "description": "Gated pull requests, decisions, human handoffs, direct mentions, and pending approvals appear here.",
       "emptyTitle": "Nothing is waiting on you",
-      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "emptyDescription": "New mentions, decisions, press-ready pull requests, and human handoffs will appear here.",
       "kinds": { "mention": "Mention", "approval": "Approval", "press": "Ready to press", "decide": "Decision needed", "handoff": "Human handoff" }
     },
     "dayZero": {
