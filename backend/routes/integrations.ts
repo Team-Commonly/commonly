@@ -1,5 +1,9 @@
 // eslint-disable-next-line global-require
 const express = require('express');
+// ESM import (not require) so CodeQL's js/missing-rate-limiting query
+// recognizes the limiter (same pattern as routes/messages.ts).
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const axios = require('axios');
 import crypto from 'crypto';
@@ -375,7 +379,26 @@ router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/user/all', auth, async (req: AuthReq, res: Res) => {
+// Read limiter for the connector listing — same token/IP keying as
+// routes/messages.ts so NAT'd users don't share a bucket.
+const listIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: { get?: (h: string) => string | undefined; ip?: string }) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
+  },
+});
+
+router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').sort({ createdAt: -1 });
     res.json(integrations);
