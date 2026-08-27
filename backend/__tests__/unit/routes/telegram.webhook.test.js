@@ -205,3 +205,63 @@ describe('Telegram webhook routes', () => {
     });
   });
 });
+
+describe('bridge command surface (/mode /status /mute /help)', () => {
+  const linked = () => ({
+    _id: 'integration-1',
+    podId: 'pod-1',
+    type: 'telegram',
+    config: { chatId: '42', chatType: 'private', liveRelay: true, relayAllAgentMessages: true },
+  });
+
+  const post = (text) => request(app)
+    .post('/api/webhooks/telegram')
+    .send({ message: { text, message_id: 900, chat: { id: 42, type: 'private' }, from: { id: 7, first_name: 'Sam' } } });
+
+  beforeEach(() => {
+    Integration.findOne = jest.fn().mockResolvedValue(linked());
+    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});
+  });
+
+  it('/mode with no arg reports the current mode without writing', async () => {
+    const res = await post('/mode');
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(telegramService.sendMessage).toHaveBeenCalledWith(
+      'bot-token', '42', expect.stringContaining('mirror'),
+    );
+  });
+
+  it('/mode attention writes relayAllAgentMessages=false', async () => {
+    const res = await post('/mode attention');
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+      'integration-1',
+      { $set: { 'config.relayAllAgentMessages': false } },
+    );
+  });
+
+  it('/mute writes a future relayMutedUntil and caps at 24h', async () => {
+    const res = await post('/mute 99999');
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    const until = new Date(update.$set['config.relayMutedUntil']).getTime();
+    expect(until).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60_000 + 5000);
+    expect(until).toBeGreaterThan(Date.now());
+  });
+
+  it('/help answers without an integration lookup dependency', async () => {
+    Integration.findOne = jest.fn().mockResolvedValue(null);
+    const res = await post('/help');
+    expect(res.status).toBe(200);
+    expect(telegramService.sendMessage).toHaveBeenCalledWith(
+      'bot-token', '42', expect.stringContaining('/mode'),
+    );
+  });
+
+  it('commands never fall through to the live relay', async () => {
+    const bridge = require('../../../services/telegramBridgeService');
+    await post('/status');
+    expect(bridge.relayTelegramMessageToPod).not.toHaveBeenCalled();
+  });
+});
