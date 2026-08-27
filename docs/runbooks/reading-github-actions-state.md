@@ -19,14 +19,49 @@ are not the same problem and they do not share a remedy.
 | Superseded by concurrency | run `cancelled` | a NEWER run exists at a newer SHA in the same group | none needed; read the newer run |
 | Superseded but never cancelled | grey/pending, indefinitely | run `status=queued` **and** a later run of the same workflow on the same branch has `completed` | none — it is dead; read the successor |
 | Jobs cancelled at 0 steps | run `failure` | jobs `cancelled`, `steps=0`, and no newer run to have superseded them | `gh run rerun <id>` |
-| Orphaned jobs | check shows **`pending`, forever** | run `completed/failure`, jobs still `queued/null` at `steps=0` | `gh run rerun <id>` — waiting never resolves it |
+| Orphaned jobs | `pending` forever in `statusCheckRollup` — and possibly **not visible at all** in `gh pr checks` | run `completed/failure`, jobs still `queued/null` at `steps=0` | **a new SHA.** `gh run rerun` and close/reopen both ADD a generation; neither replaces one |
 
 Two of these mislead in opposite directions. A run-level `failure` reads as
 "the tests failed" when nothing ever executed. And a check row reporting
 `pending` can belong to a run that terminated over an hour ago: the row
 inherits its **job's** status, and a job orphaned by a terminating run stays
-`queued/null` permanently. `gh pr checks` will show it as pending until the
-head moves.
+`queued/null` permanently. It will read as pending until the head moves — but
+only in a reader that shows you every row.
+
+## `gh pr checks` collapses by name; the rollup that computes UNSTABLE does not
+
+`gh pr checks` dedupes to the newest row per check name. `statusCheckRollup` —
+the field GitHub itself uses to decide `UNSTABLE` — enumerates the jobs of
+**every** run at that SHA, including the ones a later generation superseded.
+
+Those two disagree exactly when it matters. Measured on PR #1277 at
+`0e485351`: `gh pr checks` reported 7 pass / 3 pending, and **hid two orphaned
+rows entirely**, because a later green run of the same workflow had taken over
+the name. The PR still read `UNSTABLE`, from rows its own check list did not
+show. Five rows were orphaned; the friendlier instrument could see three.
+
+So: **`gh pr checks` is the wrong reader for diagnosing UNSTABLE.** A tool that
+dedupes by name cannot show you a stale generation sitting beside a fresh one,
+and that stale generation is the whole defect. Use
+`gh pr view <n> --json statusCheckRollup`, or the jobs endpoint per run.
+
+## A re-dispatch adds a generation; it never replaces one
+
+The rollup is SHA-scoped and generation-blind, so a second, wholly green
+generation does not retire the first. On #1277 a close/reopen at 16:43Z
+produced a complete green set and the PR stayed `UNSTABLE` regardless — the
+orphans sat beside the green rows and outvoted them. It cleared only when the
+head moved to `489d9847`.
+
+The discriminator for whether a re-dispatch can rescue a PR is **whether the
+stalled run ever materialised check-runs**, not whether it failed:
+
+- run `queued` with **zero** check-runs — invisible to the rollup; a
+  re-dispatch genuinely rescues it (PR #1271).
+- run `completed/failure` with its **jobs** still `queued` — enumerated
+  forever; only a new SHA clears it (PR #1277).
+
+Same symptom, opposite remedy. Enumerate the run set before choosing one.
 
 ## A queued run is not evidence of a queue
 
