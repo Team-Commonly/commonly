@@ -170,6 +170,10 @@ class ActivityService {
 
     activities
       .filter((activity) => activity.actor?.type === 'agent' || activity.flags?.isAgentAction)
+      // Defense at the GROUPING layer too: commonly-bot's task echoes arrive
+      // via stored Activity docs as well as messages, so filtering only the
+      // message source left the recap 100% system bot (#1306's live verify).
+      .filter((activity) => !SYSTEM_BOT_NAMES.has(String(activity.actor?.name || '').toLowerCase()))
       .forEach((activity) => {
         const actorId = String(activity.actor?.id || activity.actor?.name || 'unknown-agent');
         const name = activity.actor?.name || 'Agent';
@@ -406,8 +410,14 @@ class ActivityService {
       };
       if (!pool) return podIds;
       const ids = podIds.map((id) => String(id));
+      // ::text[] is load-bearing: without the cast Postgres cannot infer the
+      // array's type from `= ANY($1)` and rejects the query — which this
+      // function's catch silently degraded to the OLD arbitrary order, so
+      // the ranking shipped as a no-op (caught live on #1306's verify:
+      // recap still commonly-bot-only because the working pods still never
+      // made the fetch window).
       const { rows } = await pool.query(
-        'SELECT pod_id, MAX(created_at) AS latest FROM messages WHERE pod_id = ANY($1) GROUP BY pod_id ORDER BY latest DESC',
+        'SELECT pod_id, MAX(created_at) AS latest FROM messages WHERE pod_id = ANY($1::text[]) GROUP BY pod_id ORDER BY latest DESC',
         [ids],
       );
       const ranked = rows.map((r) => String(r.pod_id));
@@ -530,8 +540,20 @@ class ActivityService {
       console.warn('[decision-queue] board read failed:', (err as Error).message);
     }
 
-    items.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-    return { items, count: items.length };
+    // Attention order, then recency, then a hard cap. Approvals and presses
+    // are actionable in one click; mentions need a reply; standing decisions
+    // (incl. the old blocked backlog) come last — 32 undifferentiated rows
+    // is a wall, not a queue (#1306's live verify). The count still reports
+    // the full total so the cap is visible, not silent.
+    const KIND_PRIORITY: Record<string, number> = {
+      approval: 0, press: 1, mention: 2, decision: 3,
+    };
+    items.sort((a, b) => {
+      const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
+      if (kindDelta !== 0) return kindDelta;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+    return { items: items.slice(0, 12), count: items.length };
   }
 
   static async getPodFeed(
