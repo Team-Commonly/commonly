@@ -16,9 +16,11 @@ const mockAuth = () => jest.doMock('../../../middleware/auth', () => (req, res, 
   next();
 });
 
-const mockPod = (pod) => jest.doMock('../../../models/Pod', () => ({
-  findById: jest.fn(() => ({ select: () => ({ lean: async () => pod }) })),
-}));
+const podFindById = jest.fn();
+const mockPod = (pod) => {
+  podFindById.mockImplementation(() => ({ select: () => ({ lean: async () => pod }) }));
+  jest.doMock('../../../models/Pod', () => ({ findById: podFindById }));
+};
 
 const buildApp = () => {
   const app = express();
@@ -29,6 +31,7 @@ const buildApp = () => {
 
 const setup = (pod) => {
   mockAuth();
+  podFindById.mockReset();
   mockPod(pod);
   const create = jest.fn(async () => ({
     _id: { toString: () => 'act-1' }, type: 'message', action: 'message', content: 'x', createdAt: new Date(),
@@ -52,25 +55,25 @@ describe('POST /api/activity/create — pod membership', () => {
   afterEach(() => { jest.resetModules(); jest.clearAllMocks(); });
 
   it('refuses a non-member and writes nothing', async () => {
-    const { app, create } = setup({ createdBy: OTHER, members: [OTHER] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: OTHER, members: [OTHER] });
     await request(app).post('/api/activity/create').send(body()).expect(403);
     expect(create).not.toHaveBeenCalled();
   });
 
   it('allows a member', async () => {
-    const { app, create } = setup({ createdBy: OTHER, members: [OTHER, CALLER] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: OTHER, members: [OTHER, CALLER] });
     await request(app).post('/api/activity/create').send(body()).expect(200);
     expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('allows the creator, who is not always listed in members', async () => {
-    const { app, create } = setup({ createdBy: CALLER, members: [] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [] });
     await request(app).post('/api/activity/create').send(body()).expect(200);
     expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a member listed as a populated subdocument', async () => {
-    const { app, create } = setup({ createdBy: OTHER, members: [{ _id: CALLER }] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: OTHER, members: [{ _id: CALLER }] });
     await request(app).post('/api/activity/create').send(body()).expect(200);
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -82,6 +85,34 @@ describe('POST /api/activity/create — pod membership', () => {
   });
 });
 
+describe('POST /api/activity/create — the body\'s podId is untrusted input', () => {
+  afterEach(() => { jest.resetModules(); jest.clearAllMocks(); });
+
+  // `podId` arrives as `unknown`. A raw object reaching findById would be read
+  // as Mongo operators rather than as an id.
+  // Asserted on the ARGUMENT rather than the status: what the mocked findById
+  // returns for a malformed id is a property of the mock, but what the route
+  // hands it is the thing under test.
+  it('coerces the body podId to a string before it reaches a query', async () => {
+    const { app } = setup({ _id: 'pod-1', createdBy: CALLER, members: [CALLER] });
+    await request(app).post('/api/activity/create').send(body({ podId: { $ne: null } }));
+    expect(podFindById).toHaveBeenCalledTimes(1);
+    expect(typeof podFindById.mock.calls[0][0]).toBe('string');
+  });
+
+  it('passes the params podId to the seeder lookup as a string too', async () => {
+    const { app } = setup({ _id: 'pod-1', createdBy: CALLER, members: [CALLER] });
+    await request(app).post('/api/activity/seed/pod-1').send({}).expect(200);
+    expect(typeof podFindById.mock.calls[0][0]).toBe('string');
+  });
+
+  it('stores the resolved pod id, not the body\'s copy of it', async () => {
+    const { app, create } = setup({ _id: 'resolved-pod', createdBy: CALLER, members: [CALLER] });
+    await request(app).post('/api/activity/create').send(body()).expect(200);
+    expect(create.mock.calls[0][0].podId).toBe('resolved-pod');
+  });
+});
+
 describe('POST /api/activity/create — the approval_needed kind', () => {
   afterEach(() => { jest.resetModules(); jest.clearAllMocks(); });
 
@@ -89,14 +120,14 @@ describe('POST /api/activity/create — the approval_needed kind', () => {
   // because this is the generic client-facing create and the approval kind is
   // what fills an admin decision queue.
   it('refuses approval_needed even from a member', async () => {
-    const { app, create } = setup({ createdBy: CALLER, members: [CALLER] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [CALLER] });
     await request(app).post('/api/activity/create')
       .send(body({ type: 'approval_needed' })).expect(400);
     expect(create).not.toHaveBeenCalled();
   });
 
   it('positive control — the same member may create an ordinary kind', async () => {
-    const { app, create } = setup({ createdBy: CALLER, members: [CALLER] });
+    const { app, create } = setup({ _id: 'pod-1', createdBy: CALLER, members: [CALLER] });
     await request(app).post('/api/activity/create').send(body()).expect(200);
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -108,13 +139,13 @@ describe('POST /api/activity/seed/:podId — pod membership', () => {
   // The seeder is the DESIGNED producer of approval_needed rows, so an ungated
   // seed route is the same injection by another door.
   it('refuses a non-member and never reaches the seeder', async () => {
-    const { app, seedPodActivities } = setup({ createdBy: OTHER, members: [OTHER] });
+    const { app, seedPodActivities } = setup({ _id: 'pod-1', createdBy: OTHER, members: [OTHER] });
     await request(app).post('/api/activity/seed/pod-1').send({}).expect(403);
     expect(seedPodActivities).not.toHaveBeenCalled();
   });
 
   it('allows a member', async () => {
-    const { app, seedPodActivities } = setup({ createdBy: OTHER, members: [CALLER] });
+    const { app, seedPodActivities } = setup({ _id: 'pod-1', createdBy: OTHER, members: [CALLER] });
     await request(app).post('/api/activity/seed/pod-1').send({}).expect(200);
     expect(seedPodActivities).toHaveBeenCalledTimes(1);
   });
