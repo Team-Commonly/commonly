@@ -97,6 +97,41 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(approval.title).toContain('anvil');
   });
 
+  test('attention order beats recency: approval, press, mention, then standing decisions — capped at 12 with an honest total', async () => {
+    ActivityService.getPendingApprovals.mockResolvedValue([
+      { _id: 'act-1', content: 'approve?', podId: 'pod-1', createdAt: new Date('2026-08-20T00:00:00Z') },
+    ]);
+    ActivityService.getUserFeed.mockResolvedValue({
+      activities: [{
+        id: 'm-1', flags: { isMention: true }, actor: { name: 'anvil' }, preview: 'ping',
+        pod: { id: 'pod-1', name: 'Sprint HQ' }, timestamp: '2026-08-27T00:00:00.000Z',
+      }],
+      acknowledgedMentionIds: [],
+    });
+    const rows = [];
+    for (let i = 0; i < 13; i += 1) {
+      rows.push({
+        taskId: `TASK-${100 + i}`, podId: 'pod-1', status: 'blocked', title: `Old blocked ${i}`,
+        updates: [{ text: 'stuck', createdAt: new Date(`2026-08-2${i % 6}T0${i % 9}:00:00Z`) }],
+      });
+    }
+    rows.push({
+      taskId: 'TASK-059', podId: 'pod-1', status: 'claimed', title: 'Ledger',
+      updates: [{ text: 'held for the human merge press', createdAt: new Date('2026-08-19T00:00:00Z') }],
+    });
+    Task.find.mockReturnValue(taskChain(rows));
+
+    const result = await ActivityService.getDecisionQueue('u1');
+    expect(result.items).toHaveLength(12);
+    expect(result.count).toBe(16); // 1 approval + 1 mention + 13 blocked + 1 press
+    // Kind order wins over raw recency: the OLD approval and press outrank
+    // fresher blocked rows.
+    expect(result.items[0].kind).toBe('approval');
+    expect(result.items[1].kind).toBe('press');
+    expect(result.items[2].kind).toBe('mention');
+    expect(result.items[3].kind).toBe('decision');
+  });
+
   test('one failed source degrades, never blanks the queue', async () => {
     ActivityService.getPendingApprovals.mockRejectedValue(new Error('store down'));
     Task.find.mockReturnValue(taskChain([
