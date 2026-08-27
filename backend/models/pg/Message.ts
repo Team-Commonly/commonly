@@ -49,6 +49,10 @@ interface PodActivityEntry {
   lastAt: unknown;
 }
 
+interface AgentPodActivityEntry extends PodActivityEntry {
+  agentMessageCount: number;
+}
+
 function formatMessage(msg: MessageRow): FormattedMessage {
   const messageId = msg.id ? msg.id.toString() : '';
   const userId = msg.user_id || '';
@@ -507,6 +511,46 @@ class Message {
     } catch (error) {
       const e = error as { message?: string };
       console.error('Error in findMostRecentPodActivity:', e.message);
+      return [];
+    }
+  }
+
+  // The Activity recap's default pod scope must describe real agent work in
+  // the selected window, not merely the first page of its mixed activity
+  // feed. This is deliberately a grouped database read: a busy pod can have
+  // more than the feed's display limit before the next active pod's message.
+  // System summaries are bot-authored too, so exclude their two known seats
+  // here as well as in the recap projection.
+  static async findSubstantiveAgentPodActivity(
+    podIds: unknown[],
+    since: unknown,
+  ): Promise<AgentPodActivityEntry[]> {
+    if (!podIds || !podIds.length) return [];
+    try {
+      const podIdStrs = podIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
+      if (!podIdStrs.length) return [];
+      const result = await (pool as PgPool).query(
+        `SELECT m.pod_id, COUNT(*) AS message_count, MAX(m.created_at) AS last_at
+         FROM messages m
+         JOIN users u ON u._id = m.user_id
+         WHERE m.pod_id = ANY($1)
+           AND m.created_at >= $2
+           AND m.message_type != 'system'
+           AND m.content <> ''
+           AND u.is_bot = TRUE
+           AND LOWER(COALESCE(u.username, '')) NOT IN ('commonly-bot', 'commonly-ai-agent')
+         GROUP BY m.pod_id
+         ORDER BY last_at DESC`,
+        [podIdStrs, since],
+      );
+      return (result.rows as Array<{ pod_id: string; message_count?: string | number; last_at: unknown }>).map((row) => ({
+        podId: row.pod_id,
+        agentMessageCount: parseInt(String(row.message_count || 0), 10),
+        lastAt: row.last_at,
+      }));
+    } catch (error) {
+      const e = error as { message?: string };
+      console.error('Error in findSubstantiveAgentPodActivity:', e.message);
       return [];
     }
   }

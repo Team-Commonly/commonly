@@ -83,6 +83,24 @@ describe('PG Message model', () => {
     );
   });
 
+  it('finds every substantive agent-active pod in the requested window', async () => {
+    const since = new Date('2026-08-26T00:00:00.000Z');
+    pool.query.mockResolvedValueOnce({
+      rows: [{ pod_id: 'busy-pod', message_count: '15', last_at: new Date('2026-08-26T14:00:00.000Z') }],
+    });
+
+    const result = await Message.findSubstantiveAgentPodActivity(['quiet-pod', 'busy-pod'], since);
+
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('u.is_bot = TRUE'),
+      [['quiet-pod', 'busy-pod'], since],
+    );
+    expect(pool.query.mock.calls[0][0]).toContain("NOT IN ('commonly-bot', 'commonly-ai-agent')");
+    expect(result).toEqual([{
+      podId: 'busy-pod', agentMessageCount: 15, lastAt: new Date('2026-08-26T14:00:00.000Z'),
+    }]);
+  });
+
   it('findById returns formatted message', async () => {
     pool.query.mockResolvedValueOnce({
       rows: [

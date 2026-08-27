@@ -95,6 +95,61 @@ interface GetRecapOptions {
   podId?: string;
 }
 
+type NeedsYouKind = 'mention' | 'approval' | 'press' | 'decide' | 'handoff';
+
+interface RecapTask {
+  _id?: unknown;
+  podId?: unknown;
+  taskId?: string;
+  title?: string;
+  status?: string;
+  prUrl?: string | null;
+  notes?: string | null;
+  updatedAt?: Date | string | null;
+  updates?: Array<Record<string, unknown>>;
+}
+
+const SYSTEM_ACTIVITY_ACTORS = new Set(['commonly-bot', 'commonly-ai-agent']);
+
+const isSystemActivity = (activity: ActivityItem): boolean => {
+  const name = String(activity.actor?.name || '').trim().toLowerCase();
+  return activity.actor?.type === 'system' || SYSTEM_ACTIVITY_ACTORS.has(name);
+};
+
+// The recap is useful only when it tells the human what a real seat did. A
+// system summary may be an activity event, but it is not evidence that an
+// agent made progress and must not outrank the people doing the work.
+const isSubstantiveAgentActivity = (activity: ActivityItem): boolean => (
+  activity.type === 'message'
+  && activity.actor?.type === 'agent'
+  && !isSystemActivity(activity)
+  && Boolean(String(activity.preview || activity.content || '').trim())
+);
+
+const newestTaskUpdate = (updates: Array<Record<string, unknown>> = []): Record<string, unknown> | null => (
+  updates.slice().sort((left, right) => (
+    new Date(right.createdAt as string || 0).getTime() - new Date(left.createdAt as string || 0).getTime()
+  ))[0] || null
+);
+
+const HUMAN_PRESS_HANDOFF = /\b(?:awaiting|waiting\s+(?:on|for)|ready\s+for|safe\s+to|please|needs?)\s+(?:a\s+|the\s+)?(?:human\s+)?(?:to\s+)?(?:press|merge)\b|\bpress[-\s]?gate\b/i;
+const PULL_REQUEST_REFERENCE = /(?:\bpr\b|#\d+)/i;
+const GATED_PULL_REQUEST = /\b(?:gated|approved|press[-\s]?safe|ready to merge)\b/i;
+
+const taskAttentionKind = (task: RecapTask): NeedsYouKind | null => {
+  if (/^\s*DECIDE\b/i.test(String(task.title || ''))) return 'decide';
+
+  const text = [
+    task.title,
+    task.notes,
+    ...(Array.isArray(task.updates) ? task.updates.map((update) => update.text) : []),
+  ].filter((value) => typeof value === 'string').join('\n');
+  const isGatedPullRequest = PULL_REQUEST_REFERENCE.test(text) && GATED_PULL_REQUEST.test(text);
+
+  if (isGatedPullRequest) return 'press';
+  return HUMAN_PRESS_HANDOFF.test(text) ? 'handoff' : null;
+};
+
 interface ComputeFlagsOptions {
   actor?: ActorInfo;
   type?: string;
@@ -118,7 +173,7 @@ class ActivityService {
   ): Promise<Record<string, unknown>> {
     const window = options.window === '7d' ? '7d' : 'today';
     const since = new Date(Date.now() - (window === '7d' ? 7 : 1) * 24 * 60 * 60 * 1000);
-    const pods: PodDoc[] = await Pod.find({
+    const memberPods: PodDoc[] = await Pod.find({
       $or: [
         { createdBy: userId },
         { 'members.userId': userId },
@@ -127,19 +182,67 @@ class ActivityService {
     }).select('_id name type').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
-    const scopedPods = requestedPodId
-      ? pods.filter((pod) => String(pod._id) === requestedPodId)
-      : pods;
-    if (requestedPodId && scopedPods.length === 0) {
+    const requestsAllPods = requestedPodId === 'all';
+    const requestedPods = requestedPodId && !requestsAllPods
+      ? memberPods.filter((pod) => String(pod._id) === requestedPodId)
+      : [];
+    if (requestedPodId && !requestsAllPods && requestedPods.length === 0) {
       throw new Error('Access denied');
     }
-
-    const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
     const feed = await ActivityService.getUserFeed(userId, { limit: 100 });
-    const activities = ((feed.activities as ActivityItem[] | undefined) || []).filter((activity) => {
+    const windowActivities = ((feed.activities as ActivityItem[] | undefined) || []).filter((activity) => {
       const timestamp = activity.timestamp ? new Date(activity.timestamp).getTime() : 0;
-      return timestamp >= since.getTime()
-        && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
+      return timestamp >= since.getTime();
+    });
+    const activePodIds = new Set(
+      windowActivities
+        .filter(isSubstantiveAgentActivity)
+        .map((activity) => activity.pod?.id)
+        .filter((podId): podId is string => Boolean(podId)),
+    );
+    // getUserFeed is intentionally a display page. Do not let its limit turn
+    // "active in this window" into "happened to be in the latest 100 rows":
+    // the grouped PG read sees every substantive agent message in each member
+    // pod during the requested window. The feed contribution above remains a
+    // fallback when the grouped message read is unavailable.
+    const agentMessageCounts = new Map<string, number>();
+    const persistedPodIds = new Set<string>();
+    if (PGMessage && memberPods.length) {
+      const persistedActivity = await (PGMessage as {
+        findSubstantiveAgentPodActivity: (podIds: unknown[], sinceAt: Date) => Promise<Array<{
+          podId: string; agentMessageCount?: number;
+        }>>;
+      }).findSubstantiveAgentPodActivity(memberPods.map((pod) => pod._id), since);
+      persistedActivity.forEach((entry) => activePodIds.add(String(entry.podId)));
+      persistedActivity.forEach((entry) => {
+        const podId = String(entry.podId);
+        persistedPodIds.add(podId);
+        agentMessageCounts.set(podId, Number(entry.agentMessageCount || 0));
+      });
+      windowActivities
+        .filter(isSubstantiveAgentActivity)
+        .forEach((activity) => {
+          if (!activity.pod?.id || persistedPodIds.has(activity.pod.id)) return;
+          agentMessageCounts.set(
+            activity.pod.id,
+            (agentMessageCounts.get(activity.pod.id) || 0) + 1,
+          );
+        });
+    }
+    const activePods = memberPods.filter((pod) => activePodIds.has(String(pod._id)));
+    const scopedPods = requestsAllPods ? memberPods : requestedPodId ? requestedPods : activePods;
+    const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
+    const recapPods = memberPods.map((pod) => {
+      const id = String(pod._id);
+      const agentMessageCount = agentMessageCounts.get(id) || windowActivities.filter((activity) => (
+        isSubstantiveAgentActivity(activity) && activity.pod?.id === id
+      )).length;
+      return { id, name: pod.name, activeInWindow: activePodIds.has(id), agentMessageCount };
+    });
+    const activities = windowActivities.filter((activity) => {
+      if (requestsAllPods) return true;
+      if (requestedPodId) return Boolean(activity.pod && scopedPodIds.has(activity.pod.id));
+      return !activity.pod || scopedPodIds.has(activity.pod.id);
     });
     const acknowledgedMentionIds = new Set(
       ((feed.acknowledgedMentionIds as unknown[] | undefined) || []).map((id) => String(id)),
@@ -163,7 +266,7 @@ class ActivityService {
     const agents = new Map<string, AgentRecap>();
 
     activities
-      .filter((activity) => activity.actor?.type === 'agent' || activity.flags?.isAgentAction)
+      .filter(isSubstantiveAgentActivity)
       .forEach((activity) => {
         const actorId = String(activity.actor?.id || activity.actor?.name || 'unknown-agent');
         const name = activity.actor?.name || 'Agent';
@@ -207,13 +310,22 @@ class ActivityService {
             : `Posted ${agent.messageCount} updates${podNames[0] ? ` across ${podNames.slice(0, 2).join(' and ')}` : ''}.`,
         };
       })
-      .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
+      .sort((a, b) => (
+        b.messageCount - a.messageCount
+        || new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime()
+      ));
 
     // Approvals are a decision queue, not an activity sample: query the
     // existing authoritative pending-approval reader separately so a busy
     // pod cannot push an older decision behind getUserFeed's display page.
     // Mentions remain a bounded recent interrupt list and are removed only by
     // their explicit acknowledgement, never by feed read-state.
+    // A pod selector narrows the recap and board. The default is deliberately
+    // quieter (only pods with substantive agent work), but it must not hide a
+    // human decision in another accessible pod: Needs you is the interrupt
+    // surface, not a feed filter.
+    const queuePods = requestedPodId ? scopedPods : memberPods;
+    const queuePodIds = new Set(queuePods.map((pod) => String(pod._id)));
     const pendingApprovals = await ActivityService.getPendingApprovals(userId) as Array<{
       _id?: unknown;
       id?: unknown;
@@ -228,10 +340,10 @@ class ActivityService {
       updatedAt?: Date | string;
     }>;
     const approvalItems: ActivityItem[] = pendingApprovals
-      .filter((approval) => !requestedPodId || scopedPodIds.has(String(approval.podId)))
+      .filter((approval) => queuePodIds.has(String(approval.podId)))
       .map((approval) => {
         const podId = approval.podId ? String(approval.podId) : '';
-        const pod = scopedPods.find((candidate) => String(candidate._id) === podId);
+        const pod = queuePods.find((candidate) => String(candidate._id) === podId);
         return {
           id: String(approval._id || approval.id || ''),
           type: approval.type || 'approval_needed',
@@ -257,8 +369,9 @@ class ActivityService {
       // an approval request; otherwise every message becomes a human action.
       return activity.type === 'approval_needed' && approval?.status === 'pending';
     };
+    const queueActivitySource = requestedPodId ? activities : windowActivities;
     const queueCandidates = new Map<string, ActivityItem>();
-    [...activities, ...approvalItems].forEach((activity) => {
+    [...queueActivitySource, ...approvalItems].forEach((activity) => {
       if (!queueCandidates.has(activity.id)) queueCandidates.set(activity.id, activity);
     });
     const newestFirst = (left: ActivityItem, right: ActivityItem) => (
@@ -269,39 +382,89 @@ class ActivityService {
       .sort(newestFirst);
     const mentionQueue = Array.from(queueCandidates.values())
       .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
-      .sort(newestFirst)
-      .slice(0, Math.max(0, 12 - approvalQueue.length));
-    const needsYou = [...approvalQueue, ...mentionQueue]
-      .sort(newestFirst)
+      .sort(newestFirst);
+    const activityAttention = [...approvalQueue, ...mentionQueue]
       .map((activity) => {
         const isApproval = isPendingApproval(activity);
         return {
           id: activity.id,
-          kind: isApproval ? 'approval' : 'mention',
+          kind: (isApproval ? 'approval' : 'mention') as NeedsYouKind,
           title: isApproval ? 'Approval requested' : `${activity.actor?.name || 'Someone'} mentioned you`,
           detail: String(activity.preview || activity.content || '').replace(/\s+/g, ' ').trim().slice(0, 180),
           podId: activity.pod?.id || null,
           podName: activity.pod?.name || 'Direct activity',
           timestamp: activity.timestamp,
+          taskId: null,
         };
       });
 
-    let board: Array<Record<string, unknown>> = [];
-    if (scopedPods.length > 0) {
-      const taskRows: Array<Record<string, unknown>> = await Task.find({
-        podId: { $in: scopedPods.map((pod) => pod._id) },
-        updatedAt: { $gte: since },
+    // Board facts are durable until the task changes. Query current non-done
+    // rows alongside the window's board delta so an approved PR from yesterday
+    // still reaches the human today instead of disappearing at midnight.
+    const taskRows: RecapTask[] = queuePods.length > 0
+      ? await Task.find({
+        podId: { $in: queuePods.map((pod) => pod._id) },
+        $or: [
+          { status: { $ne: 'done' } },
+          { updatedAt: { $gte: since } },
+        ],
       })
-        .select('podId taskId title status updatedAt updates')
+        .select('podId taskId title status notes prUrl updatedAt updates')
         .sort({ updatedAt: -1 })
-        .limit(24)
-        .lean();
-      const podNames = new Map(scopedPods.map((pod) => [String(pod._id), pod.name]));
-      board = taskRows.map((task) => {
+        .limit(100)
+        .lean() as RecapTask[]
+      : [];
+    const podNames = new Map(memberPods.map((pod) => [String(pod._id), pod.name]));
+    const taskAttention = taskRows
+      .filter((task) => task.status !== 'done')
+      .map((task) => {
+        const kind = taskAttentionKind(task);
+        if (!kind) return null;
+        const latestUpdate = newestTaskUpdate(task.updates);
+        const evidence = String(latestUpdate?.text || task.notes || '').replace(/\s+/g, ' ').trim();
+        const taskId = String(task.taskId || 'Task');
+        return {
+          id: `task:${String(task._id || taskId)}`,
+          kind,
+          title: String(task.title || taskId),
+          detail: kind === 'press'
+            ? `A gated pull request is ready to press.${evidence ? ` ${evidence}` : ''}`
+            : kind === 'decide'
+              ? `Waiting for a decision.${evidence ? ` ${evidence}` : ''}`
+              : `Waiting for a human handoff.${evidence ? ` ${evidence}` : ''}`,
+          podId: task.podId ? String(task.podId) : null,
+          podName: podNames.get(String(task.podId)) || 'Pod',
+          timestamp: latestUpdate?.createdAt as Date | string | null || task.updatedAt || null,
+          taskId,
+          prUrl: task.prUrl || null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const attentionPriority: Record<NeedsYouKind, number> = {
+      press: 0,
+      decide: 1,
+      handoff: 2,
+      approval: 3,
+      mention: 4,
+    };
+    const needsYou = [...taskAttention, ...activityAttention]
+      .sort((left, right) => (
+        attentionPriority[left.kind] - attentionPriority[right.kind]
+        || new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
+      ))
+      .slice(0, 12)
+      .map((activity) => ({
+        ...activity,
+        detail: activity.detail.slice(0, 180),
+      }));
+
+    const board = taskRows
+      .filter((task) => scopedPodIds.has(String(task.podId))
+        && new Date(task.updatedAt || 0).getTime() >= since.getTime())
+      .slice(0, 24)
+      .map((task) => {
         const updates = Array.isArray(task.updates) ? task.updates as Array<Record<string, unknown>> : [];
-        const lastUpdate = updates
-          .slice()
-          .sort((a, b) => new Date(b.createdAt as string || 0).getTime() - new Date(a.createdAt as string || 0).getTime())[0];
+        const lastUpdate = newestTaskUpdate(updates);
         return {
           id: String(task._id),
           taskId: task.taskId,
@@ -319,14 +482,13 @@ class ActivityService {
             : null,
         };
       });
-    }
 
     return {
       window,
       since: since.toISOString(),
       generatedAt: new Date().toISOString(),
-      scope: requestedPodId || 'all',
-      pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      scope: requestedPodId || 'active',
+      pods: recapPods,
       needsYou,
       agents: agentRecaps,
       board,

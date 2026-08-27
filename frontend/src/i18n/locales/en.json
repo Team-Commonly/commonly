@@ -31,20 +31,29 @@
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
     "windows": { "today": "Today", "7d": "7 days" },
-    "podScopeLabel": "Pod scope",
-    "allPods": "All pods",
+    "podScopeLabel": "Scope ·",
+    "activePods": "Active pods ({{count}})",
+    "allPods": "All pods ({{count}})",
+    "podOption": "{{name}} ({{count}})",
+    "scopeGroups": {
+      "active": "Active this window ({{count}})",
+      "other": "Other pods"
+    },
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "openBoard": "Open board",
+    "openPr": "Open PR",
+    "openRow": "Open row",
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
     "needsYou": {
       "eyebrow": "Decision queue",
       "title": "Needs you",
-      "description": "Only direct mentions and pending approvals appear here.",
+      "description": "Gated pull requests, decisions, human handoffs, direct mentions, and pending approvals appear here.",
       "emptyTitle": "Nothing is waiting on you",
-      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
-      "kinds": { "mention": "Mention", "approval": "Approval" }
+      "emptyDescription": "New mentions, decisions, press-ready pull requests, and human handoffs will appear here.",
+      "kinds": { "mention": "Mention", "approval": "Approval", "press": "Ready to press", "decide": "Decision needed", "handoff": "Human handoff" }
     },
     "dayZero": {
       "kind": "Get started",

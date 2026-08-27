@@ -447,6 +447,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // only one character of a task title — an overflow-free but unusable
     // primary identifier, which violates the craft baseline rule.
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    // The filter still needs to be usable at 390px after its label becomes
+    // visually redundant with the selected "Active pods" option. Keeping a
+    // zero-min grid track here is what prevents a long pod name from forcing
+    // the time-window control off screen.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__controls \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) minmax\(0, 120px\)/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__scope-label \{ display: none; \}/);
   });
 
   test('Activity queue actions distinguish an action from the thread handoff', () => {

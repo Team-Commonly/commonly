@@ -27,12 +27,14 @@ interface AgentRecap {
 
 interface NeedsYouItem {
   id: string;
-  kind: 'mention' | 'approval';
+  kind: 'mention' | 'approval' | 'press' | 'decide' | 'handoff';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
   timestamp: string | null;
+  taskId?: string | null;
+  prUrl?: string | null;
 }
 
 interface BoardItem {
@@ -47,7 +49,12 @@ interface BoardItem {
 }
 
 interface ActivityRecap {
-  pods: Array<{ id: string; name: string }>;
+  pods: Array<{
+    id: string;
+    name: string;
+    activeInWindow: boolean;
+    agentMessageCount: number;
+  }>;
   needsYou: NeedsYouItem[];
   agents: AgentRecap[];
   board: BoardItem[];
@@ -68,7 +75,7 @@ const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [window, setWindow] = useState<ActivityWindow>('today');
-  const [podId, setPodId] = useState('all');
+  const [podId, setPodId] = useState('active');
   const [recap, setRecap] = useState<ActivityRecap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +91,7 @@ const V2ActivityPage: React.FC = () => {
     const token = localStorage.getItem('token');
     axios.get<ActivityRecap>('/api/activity/recap', {
       headers: { 'x-auth-token': token ?? '' },
-      params: { window, ...(podId !== 'all' ? { podId } : {}) },
+      params: { window, ...(podId !== 'active' ? { podId } : {}) },
     })
       .then((response) => {
         if (active) setRecap(response.data);
@@ -102,6 +109,13 @@ const V2ActivityPage: React.FC = () => {
 
   const openPod = (targetPodId: string | null) => {
     if (targetPodId) navigate(`/v2/pods/${targetPodId}`);
+  };
+
+  const openTaskBoard = (item: NeedsYouItem) => {
+    if (item.podId) {
+      const taskQuery = item.taskId ? `?taskId=${encodeURIComponent(item.taskId)}` : '';
+      navigate(`/v2/pods/${item.podId}/board${taskQuery}`);
+    }
   };
 
   const openFirstBoard = () => {
@@ -153,9 +167,12 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const isDayZero = podId === 'all'
+  const isDayZero = podId === 'active'
+    && recap?.needsYou.length === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
+  const activePods = (recap?.pods || []).filter((pod) => pod.activeInWindow);
+  const otherPods = (recap?.pods || []).filter((pod) => !pod.activeInWindow);
 
   return (
     <div className="v2-activity" aria-busy={loading}>
@@ -179,10 +196,28 @@ const V2ActivityPage: React.FC = () => {
             ))}
           </div>
           <label className="v2-activity__scope">
-            <span className="v2-sr-only">{t('activity.podScopeLabel')}</span>
+            <span className="v2-activity__scope-label">{t('activity.podScopeLabel')}</span>
             <select value={podId} onChange={(event) => setPodId(event.target.value)}>
-              <option value="all">{t('activity.allPods')}</option>
-              {(recap?.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
+              <option value="active">{t('activity.activePods', { count: activePods.length })}</option>
+              <option value="all">{t('activity.allPods', { count: recap?.pods.length || 0 })}</option>
+              {activePods.length > 0 && (
+                <optgroup label={t('activity.scopeGroups.active', { count: activePods.length })}>
+                  {activePods.map((pod) => (
+                    <option key={pod.id} value={pod.id}>
+                      {t('activity.podOption', { name: pod.name, count: pod.agentMessageCount })}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherPods.length > 0 && (
+                <optgroup label={t('activity.scopeGroups.other')}>
+                  {otherPods.map((pod) => (
+                    <option key={pod.id} value={pod.id}>
+                      {t('activity.podOption', { name: pod.name, count: pod.agentMessageCount })}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
         </div>
@@ -249,7 +284,13 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {recap.needsYou.map((item) => (
                   <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}`}>
-                    <span className="v2-activity__queue-mark" aria-hidden="true">{item.kind === 'mention' ? '@' : '!'}</span>
+                    <span className="v2-activity__queue-mark" aria-hidden="true">
+                      {item.kind === 'mention' ? '@'
+                        : item.kind === 'approval' ? '!'
+                          : item.kind === 'press' ? '▶'
+                            : item.kind === 'decide' ? '?'
+                              : '→'}
+                    </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>
                       <strong>{item.title}</strong>
@@ -272,9 +313,28 @@ const V2ActivityPage: React.FC = () => {
                           {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
                         </button>
                       )}
-                      <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
-                        {t('activity.openThread')}
-                      </button>
+                      {item.kind === 'press' ? (
+                        item.prUrl ? (
+                          <a
+                            className="v2-activity__queue-action"
+                            href={item.prUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t('activity.openPr')}
+                          </a>
+                        ) : (
+                          <button type="button" disabled>{t('activity.openPr')}</button>
+                        )
+                      ) : (item.kind === 'decide' || item.kind === 'handoff') ? (
+                        <button type="button" onClick={() => openTaskBoard(item)} disabled={!item.podId}>
+                          {t('activity.openRow')}
+                        </button>
+                      ) : (
+                        <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
+                          {t('activity.openThread')}
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}
