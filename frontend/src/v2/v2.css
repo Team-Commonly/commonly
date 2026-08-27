@@ -39,6 +39,25 @@ body.modern-ui.v2-canvas {
   --v2-accent-deep: #14306f;
   --v2-focus-ring: 0 0 0 3px rgba(47, 111, 235, 0.18);
 
+  /* Platform brand + tint tokens (connectors) — mirror of --c-platform-* in
+     design-system/tokens.css; the two move together. */
+  --v2-platform-telegram: #2aabee;
+  --v2-platform-telegram-soft: #e4f3fb;
+  --v2-platform-slack: #611f69;
+  --v2-platform-slack-soft: #f3e9f4;
+  --v2-platform-discord: #5865f2;
+  --v2-platform-discord-soft: #eaecfe;
+  --v2-platform-whatsapp: #1fa855;
+  --v2-platform-whatsapp-soft: #e5f6ec;
+  --v2-platform-x: #111827;
+  --v2-platform-x-soft: #eef0f3;
+  --v2-platform-instagram: #d62976;
+  --v2-platform-instagram-soft: #fbe9f1;
+  --v2-platform-messenger: #0084ff;
+  --v2-platform-messenger-soft: #e5f2ff;
+  --v2-platform-groupme: #00aff0;
+  --v2-platform-groupme-soft: #e3f5fd;
+
   --v2-success: #10b981;
   --v2-success-soft: #e3f6ec;
   --v2-success-ring: rgba(16, 185, 129, 0.40);
@@ -8033,78 +8052,199 @@ body.modern-ui.v2-canvas {
 }
 
 /* ── Connectors ─────────────────────────────────────────────────────────── */
-/* Channel bridges (Telegram live relay et al). Cards follow the system:
-   1px border, no shadow, tokens only. */
+/* Channel bridges — Wren's connectors-v2 spec rev 5. Tokens only, 1px
+   borders, no shadows. Platform brand + tint tokens live on .v2-root below
+   and mirror design-system/tokens.css (same-PR rule). */
 .v2-connectors {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   max-width: 720px;
 }
-.v2-connectors__list { display: flex; flex-direction: column; gap: 12px; }
-.v2-connectors__empty {
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: var(--v2-radius);
-  padding: 20px;
-  color: var(--v2-text-tertiary);
-  font-size: 14px;
+.v2-connectors__section {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--v2-text-secondary);
+  margin: 0 0 10px;
 }
-.v2-connectors__card {
+.v2-connectors__loading { color: var(--v2-text-tertiary); font-size: 14px; }
+.v2-connectors__list { display: flex; flex-direction: column; gap: 12px; }
+
+.v2-connector {
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.v2-connectors__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.v2-connectors__type { font-weight: 650; color: var(--v2-text-primary); font-size: 14px; }
-.v2-connectors__status {
-  font-size: 12px;
-  border-radius: var(--v2-radius-pill);
-  padding: 2px 10px;
-  white-space: nowrap;
-}
-.v2-connectors__status--connected { background: var(--v2-success-soft); color: var(--v2-success); }
-.v2-connectors__status--pending { background: var(--v2-warning-soft); color: var(--v2-warning); }
-.v2-connectors__meta {
-  display: flex;
   gap: 10px;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  flex-wrap: wrap;
 }
-.v2-connectors__chat { color: var(--v2-text-tertiary); }
-.v2-connectors__enable {
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border-soft);
+.v2-connector--ghost {
+  border: 1px solid var(--v2-border-strong);
+  background: transparent;
+  gap: 14px;
+}
+.v2-connectors__empty-line { margin: 0; color: var(--v2-text-secondary); font-size: 14px; }
+
+.v2-connector__row { display: flex; align-items: center; gap: 12px; }
+.v2-connector__tile {
+  width: 34px;
+  height: 34px;
   border-radius: var(--v2-radius-sm);
-  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
-.v2-connectors__enable code {
-  display: block;
-  margin-top: 6px;
-  font-family: var(--v2-font-mono);
-  font-size: 13px;
-  color: var(--v2-text-primary);
-  user-select: all;
-}
-.v2-connectors__relay {
+.v2-connector__tile--telegram { background: var(--v2-platform-telegram-soft); color: var(--v2-platform-telegram); }
+.v2-connector__tile--slack { background: var(--v2-platform-slack-soft); color: var(--v2-platform-slack); }
+.v2-connector__tile--discord { background: var(--v2-platform-discord-soft); color: var(--v2-platform-discord); }
+.v2-connector__tile--whatsapp { background: var(--v2-platform-whatsapp-soft); color: var(--v2-platform-whatsapp); }
+.v2-connector__tile--x { background: var(--v2-platform-x-soft); color: var(--v2-platform-x); }
+.v2-connector__tile--instagram { background: var(--v2-platform-instagram-soft); color: var(--v2-platform-instagram); }
+.v2-connector__tile--messenger { background: var(--v2-platform-messenger-soft); color: var(--v2-platform-messenger); }
+.v2-connector__tile--groupme { background: var(--v2-platform-groupme-soft); color: var(--v2-platform-groupme); }
+
+.v2-connector__body { min-width: 0; flex: 1; }
+.v2-connector__title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.v2-connector__title strong { font-size: 14px; font-weight: 650; color: var(--v2-text-primary); }
+.v2-connector__meta { font-size: 13px; color: var(--v2-text-tertiary); }
+.v2-connector__status {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  margin-top: 3px;
+}
+.v2-connector__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.v2-connector__dot--success { background: var(--v2-success); }
+.v2-connector__dot--warning { background: var(--v2-warning); }
+.v2-connector__dot--danger { background: var(--v2-danger); }
+.v2-connector__dot--pulse { animation: v2-connector-pulse 2s ease-out infinite; }
+@keyframes v2-connector-pulse {
+  0% { box-shadow: 0 0 0 0 var(--v2-success-ring); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-connector__dot--pulse { animation: none; }
+}
+
+.v2-connector__manage {
+  border: none;
+  background: none;
+  color: var(--v2-accent-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.v2-connector__manage-panel { border-top: 1px solid var(--v2-border-soft); padding-top: 10px; }
+.v2-connector__danger {
+  border: none;
+  background: none;
+  color: var(--v2-danger);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.v2-connector__controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.v2-connector__relay {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 13px;
   color: var(--v2-text-secondary);
   cursor: pointer;
 }
-.v2-connectors__relay input { margin-top: 2px; accent-color: var(--v2-accent); }
-.v2-connectors__new h2 { font-size: 15px; font-weight: 650; color: var(--v2-text-primary); margin: 0 0 10px; }
+.v2-connector__relay input { accent-color: var(--v2-accent); }
+.v2-connector__mode {
+  display: inline-flex;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-pill);
+  overflow: hidden;
+}
+.v2-connector__mode-opt {
+  border: none;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-connector__mode-opt--on {
+  background: var(--v2-accent);
+  color: #fff;
+  cursor: default;
+}
+.v2-connector__mode-hint { font-size: 12px; color: var(--v2-text-muted); }
+
+.v2-connector__code-step {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.v2-connector__code-hint { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-connector__copy {
+  border: none;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-connector__copy:hover { background: var(--v2-accent-strong); }
+.v2-connector__code {
+  font-family: var(--v2-font-mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--v2-text-primary);
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.v2-connector-add__tiles { display: flex; gap: 14px; flex-wrap: wrap; }
+.v2-connector-add__tile {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 80ms ease;
+}
+.v2-connector-add__tile:hover:not(.v2-connector-add__tile--soon) { border-color: var(--v2-border-strong); }
+.v2-connector-add__tile .v2-connector__tile { width: 48px; height: 48px; }
+.v2-connector-add__tile--soon { opacity: 0.45; cursor: default; }
+.v2-connector-add__soon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--v2-text-muted);
+}
+
 .v2-connectors__new-row { display: flex; gap: 10px; flex-wrap: wrap; }
-/* Visuals come from .v2-byo__input (same control as the BYO pod picker) —
-   this only carries the row layout. */
 .v2-connectors__select { flex: 1; min-width: 200px; }
 .v2-connectors__create {
   border: none;
@@ -8127,4 +8267,8 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-sm);
   padding: 10px 12px;
   font-size: 13px;
+}
+@media (max-width: 760px) {
+  .v2-connector__controls { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .v2-connector__row { flex-wrap: wrap; }
 }
