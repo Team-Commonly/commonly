@@ -27,11 +27,15 @@ interface AgentRecap {
 
 interface NeedsYouItem {
   id: string;
-  kind: 'mention' | 'approval';
+  // decision = a DECIDE-titled or blocked board row; press = an explicit
+  // human-handoff in a task's latest update. Both come from the
+  // /decision-queue endpoint's board facts (TASK-083).
+  kind: 'mention' | 'approval' | 'decision' | 'press';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
+  taskId?: string;
   timestamp: string | null;
 }
 
@@ -77,17 +81,47 @@ const V2ActivityPage: React.FC = () => {
   const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
     const token = localStorage.getItem('token');
-    axios.get<ActivityRecap>('/api/activity/recap', {
-      headers: { 'x-auth-token': token ?? '' },
-      params: { window, ...(podId !== 'all' ? { podId } : {}) },
-    })
-      .then((response) => {
-        if (active) setRecap(response.data);
+    const headers = { 'x-auth-token': token ?? '' };
+    // The recap paints the room; the decision queue is the reason the page
+    // exists (TASK-083). They load together, but a queue failure must not
+    // blank the recap — degrade to recap.needsYou (mentions + approvals).
+    Promise.all([
+      axios.get<ActivityRecap>('/api/activity/recap', {
+        headers,
+        params: { window, ...(podId !== 'all' ? { podId } : {}) },
+      }),
+      axios.get<{ items: Array<NeedsYouItem & { createdAt?: string | null }> }>(
+        '/api/activity/decision-queue',
+        { headers },
+      ).catch(() => null),
+    ])
+      .then(([recapResponse, queueResponse]) => {
+        if (!active) return;
+        setRecap(recapResponse.data);
+        // A well-formed queue response has an items ARRAY. Anything else —
+        // endpoint failed (null), older server, malformed body — degrades to
+        // recap.needsYou (mentions + approvals) rather than an empty queue.
+        const rawItems = queueResponse?.data?.items;
+        if (!Array.isArray(rawItems)) {
+          setQueue(recapResponse.data.needsYou || []);
+          return;
+        }
+        const queueItems = rawItems.map((item) => ({
+          ...item,
+          detail: item.detail || '',
+          podName: item.podName || '',
+          timestamp: item.timestamp ?? item.createdAt ?? null,
+        }));
+        setQueue(podId !== 'all'
+          ? queueItems.filter((item) => item.podId === podId)
+          : queueItems);
       })
       .catch(() => {
         if (active) setError(t('activity.loadFailed'));
@@ -153,7 +187,12 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
+  const openBoard = (item: NeedsYouItem) => {
+    if (item.podId) navigate(`/v2/pods/${item.podId}/board`);
+  };
+
   const isDayZero = podId === 'all'
+    && queue.length === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
@@ -240,16 +279,18 @@ const V2ActivityPage: React.FC = () => {
                   </div>
                 </article>
               </div>
-            ) : recap.needsYou.length === 0 ? (
+            ) : queue.length === 0 ? (
               <div className="v2-activity__empty">
                 <strong>{t('activity.needsYou.emptyTitle')}</strong>
                 <span>{t('activity.needsYou.emptyDescription')}</span>
               </div>
             ) : (
               <div className="v2-activity__queue">
-                {recap.needsYou.map((item) => (
+                {queue.map((item) => (
                   <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}`}>
-                    <span className="v2-activity__queue-mark" aria-hidden="true">{item.kind === 'mention' ? '@' : '!'}</span>
+                    <span className="v2-activity__queue-mark" aria-hidden="true">
+                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'press' ? '▸' : '?'}
+                    </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>
                       <strong>{item.title}</strong>
@@ -270,6 +311,11 @@ const V2ActivityPage: React.FC = () => {
                       {item.kind === 'mention' && (
                         <button type="button" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
                           {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
+                        </button>
+                      )}
+                      {(item.kind === 'decision' || item.kind === 'press') && (
+                        <button type="button" onClick={() => openBoard(item)} disabled={!item.podId}>
+                          {t('activity.openBoard')}
                         </button>
                       )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>

@@ -38,6 +38,7 @@
     "allPods": "All pods",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "openBoard": "Open board",
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
@@ -49,7 +50,9 @@
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
       "kinds": {
         "mention": "Mention",
-        "approval": "Approval"
+        "approval": "Approval",
+        "decision": "Decision needed",
+        "press": "Ready for your press"
       }
     },
     "dayZero": {

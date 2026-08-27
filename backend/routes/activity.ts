@@ -94,6 +94,19 @@ router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
   }
 });
 
+// Everything concretely waiting on this human: approvals + unacked mentions +
+// board decision/handoff rows. TASK-083: the queue reads FACTS that exist,
+// never name-matching heuristics (TASK-070b stays a design decision).
+router.get('/decision-queue', auth, async (req: Req, res: Res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    res.json(await ActivityService.getDecisionQueue(userId));
+  } catch (error) {
+    console.error('Error fetching decision queue:', error);
+    res.status(500).json({ error: 'Failed to fetch decision queue' });
+  }
+});
+
 router.get('/approvals', auth, async (req: Req, res: Res) => {
   try {
     const userId = getAuthenticatedUserId(req);
