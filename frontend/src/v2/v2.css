@@ -8131,7 +8131,7 @@ body.modern-ui.v2-canvas {
   .v2-connector__dot--pulse { animation: none; }
 }
 
-.v2-connector__manage {
+.v2-root button.v2-connector__manage {
   border: none;
   background: none;
   color: var(--v2-accent-text);
@@ -8141,7 +8141,7 @@ body.modern-ui.v2-canvas {
   padding: 4px 6px;
 }
 .v2-connector__manage-panel { border-top: 1px solid var(--v2-border-soft); padding-top: 10px; }
-.v2-connector__danger {
+.v2-root button.v2-connector__danger {
   border: none;
   background: none;
   color: var(--v2-danger);
@@ -8167,7 +8167,7 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-radius-pill);
   overflow: hidden;
 }
-.v2-connector__mode-opt {
+.v2-root button.v2-connector__mode-opt {
   border: none;
   background: var(--v2-surface);
   color: var(--v2-text-secondary);
@@ -8177,7 +8177,7 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
   transition: background 80ms ease;
 }
-.v2-connector__mode-opt--on {
+.v2-root button.v2-connector__mode-opt--on {
   background: var(--v2-accent);
   color: #fff;
   cursor: default;
@@ -8193,7 +8193,7 @@ body.modern-ui.v2-canvas {
   align-items: flex-start;
 }
 .v2-connector__code-hint { font-size: 13px; color: var(--v2-text-secondary); }
-.v2-connector__copy {
+.v2-root button.v2-connector__copy {
   border: none;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
@@ -8204,7 +8204,7 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
   transition: background 80ms ease;
 }
-.v2-connector__copy:hover { background: var(--v2-accent-strong); }
+.v2-root button.v2-connector__copy:hover { background: var(--v2-accent-strong); }
 .v2-connector__code {
   font-family: var(--v2-font-mono);
   font-size: 14px;
@@ -8215,7 +8215,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-connector-add__tiles { display: flex; gap: 14px; flex-wrap: wrap; }
-.v2-connector-add__tile {
+.v2-root button.v2-connector-add__tile,
+.v2-root span.v2-connector-add__tile {
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
@@ -8231,9 +8232,9 @@ body.modern-ui.v2-canvas {
   position: relative;
   transition: border-color 80ms ease;
 }
-.v2-connector-add__tile:hover:not(.v2-connector-add__tile--soon) { border-color: var(--v2-border-strong); }
+.v2-root button.v2-connector-add__tile:hover { border-color: var(--v2-border-strong); }
 .v2-connector-add__tile .v2-connector__tile { width: 48px; height: 48px; }
-.v2-connector-add__tile--soon { opacity: 0.45; cursor: default; }
+.v2-root span.v2-connector-add__tile--soon { opacity: 0.45; cursor: default; }
 .v2-connector-add__soon {
   position: absolute;
   top: 6px;
@@ -8246,7 +8247,7 @@ body.modern-ui.v2-canvas {
 
 .v2-connectors__new-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .v2-connectors__select { flex: 1; min-width: 200px; }
-.v2-connectors__create {
+.v2-root button.v2-connectors__create {
   border: none;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
@@ -8257,8 +8258,8 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
   transition: background 80ms ease;
 }
-.v2-connectors__create:hover:not(:disabled) { background: var(--v2-accent-strong); }
-.v2-connectors__create:disabled { opacity: 0.55; cursor: default; }
+.v2-root button.v2-connectors__create:hover:not(:disabled) { background: var(--v2-accent-strong); }
+.v2-root button.v2-connectors__create:disabled { opacity: 0.55; cursor: default; }
 .v2-connectors__foot { font-size: 12px; color: var(--v2-text-muted); margin: 8px 0 0; }
 .v2-connectors__error {
   border: 1px solid var(--v2-danger);
