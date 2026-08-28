@@ -1356,8 +1356,21 @@ class AgentMessageService {
       //
       // The refusal STEERS rather than silences — also fable's ruling, and the
       // whole failure family this session: a bare refusal converts a monologue
-      // into silence, which reads as a considered decision. Overflow becomes an
-      // attachment, so nothing the agent meant to say is lost.
+      // into silence, which reads as a considered decision.
+      //
+      // What overflow becomes CHANGED (Sam 57691, @ux-lead's copy 57694). It
+      // used to become an attachment, and the paragraph below already records
+      // why that was wrong in a DM. The same objection holds in a shared room
+      // and nobody had drawn the line: a colleague's considered answer arriving
+      // as a file is un-quotable, un-followable and read all-or-nothing. Now it
+      // becomes a THREAD under the agent's own first message.
+      //
+      // The cap keeps binding inside that thread — `countConsecutiveRun` reads
+      // the pod's recent messages with no thread filter, so a threaded run
+      // counts exactly like a top-level one. That is the point rather than a
+      // gap: the cap bounds how long you hold the floor, and threading changes
+      // where the rest of the answer lives, not how much of it you get to say
+      // uninterrupted.
       // NOT in a 1:1. The cap's entire rationale is "do not crowd others out of
       // a shared room", and in a DM there is no room to crowd: the only other
       // participant is the person who asked. Sam caught this within hours of it
@@ -1394,9 +1407,16 @@ class AgentMessageService {
             guidance: `Not posted: you have already sent ${run} messages in a row here `
               + 'with nobody else speaking. That is a monologue whatever its rate, and the '
               + 'room reads it as one wall. Do ONE of these instead: (a) if the remaining '
-              + 'material is substantial, attach it with commonly_attach_file and post a '
-              + 'single line saying what it is; (b) if it can wait, wait for someone else '
-              + 'to speak; (c) if it was not worth saying, drop it. Do not retry this '
+              + 'material is substantial, continue it in a THREAD under your first message '
+              + '(threadRootId = that message id) — not as a file, and @mention whoever '
+              + 'needs it, because a thread wakes only the people who have posted in it; '
+              + 'a peer who muted the thread is still woken by the mention but is not '
+              + 'subscribed by it; '
+              + 'the cap still binds '
+              + 'inside the thread, which is the point; (b) if it can wait, wait for '
+              + 'someone else to speak; (c) if it was not worth saying, drop it. Attach a '
+              + 'file only for a genuine artifact (a diff, an image, a generated doc), '
+              + 'never for the rest of your message. Do not retry this '
               + 'message unchanged — it will be refused again.',
           };
         }

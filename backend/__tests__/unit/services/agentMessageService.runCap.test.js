@@ -117,3 +117,86 @@ describe('isOneToOnePod — the cap must not fire in a 1:1', () => {
     expect(AgentMessageService.isOneToOnePod(null)).toBe(false);
   });
 });
+
+/**
+ * The refusal's guidance is agent-facing instruction, not a log line — it is
+ * the only place an agent learns what to do with the rest of its answer. It
+ * used to say "attach it with commonly_attach_file", which Sam 57691 ruled
+ * against and #1217 removed from the wrapper's own delivery path.
+ *
+ * Pinned as source text because that is where this string lives; reaching it
+ * through a refusal would need the whole post pipeline stood up, and the risk
+ * being guarded is an edit to the literal, not a routing change.
+ */
+describe('run-cap guidance sends overflow to a thread, not a file', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const source = fs.readFileSync(
+    path.join(__dirname, '../../../services/agentMessageService.ts'),
+    'utf8',
+  );
+  // The guidance is assembled from concatenated string literals, so collapse
+  // the JS syntax between them before matching on the rendered sentence.
+  const rendered = source.replace(/'\s*\n\s*\+\s*'/g, '');
+
+  it('offers the thread as option (a)', () => {
+    expect(rendered).toContain('continue it in a THREAD under your first message');
+  });
+
+  it('no longer tells the agent to attach the remainder', () => {
+    // The exact string this replaced. Its return is the regression.
+    expect(rendered).not.toContain('attach it with commonly_attach_file and post a single line');
+  });
+
+  it('still permits attachment, but only for a genuine artifact', () => {
+    expect(rendered).toContain('never for the rest of your message');
+  });
+
+  it('says the cap keeps binding inside the thread', () => {
+    // Without this an agent reads threading as an escape from the cap and
+    // resumes the monologue one level down.
+    expect(rendered).toContain('the cap still binds inside the thread');
+  });
+
+  it('control: the matcher reads the rendered sentence, not the raw literals', () => {
+    // Guards the collapse above. If the replace stopped working, every
+    // assertion here would fail open on a multi-line literal.
+    expect(rendered).toContain('you have already sent ');
+    expect(source).not.toContain('continue it in a THREAD under your first message (threadRootId');
+  });
+
+  // @sprint-review (57706): "continue it in a thread" is only safe with the
+  // follower-set qualifier attached. `effectiveFollowerIds` derives
+  // participants from message AUTHORS, so a thread wakes nobody who has not
+  // already posted in it — the refusal text was sending a capped agent's
+  // remaining material somewhere no peer is woken. The @mention clause is the
+  // escape, and it works because the mention path runs before the thread
+  // narrowing.
+  describe('refusal names who a thread actually wakes', () => {
+    const rendered = () => source.replace(/'\s*\n\s*\+\s*'/g, '');
+
+    test('tells the agent to @mention whoever needs the continuation', () => {
+      expect(rendered()).toContain('@mention whoever needs it');
+    });
+
+    test('says why — a thread wakes only prior posters', () => {
+      expect(rendered()).toContain('a thread wakes only the people who have posted in it');
+    });
+
+    test('does not promise the mention subscribes a peer who muted the thread', () => {
+      // @sprint-review (58348): the mention wakes a muted peer (addressing
+      // outranks a mute) but `followByParticipation` writes only WHERE
+      // following IS NULL, so nothing subscribes them to the remainder.
+      expect(rendered()).toContain('is still woken by the mention but is not subscribed by it');
+    });
+
+    test('control: the unqualified refusal fails both assertions above', () => {
+      const unqualified = 'continue it in a THREAD under your first message '
+        + '(threadRootId = that message id) — not as a file; the cap still binds '
+        + 'inside the thread, which is the point';
+      expect(unqualified).toContain('continue it in a THREAD');
+      expect(unqualified).not.toContain('@mention whoever needs it');
+      expect(unqualified).not.toContain('a thread wakes only the people who have posted in it');
+    });
+  });
+});
