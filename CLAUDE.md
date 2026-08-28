@@ -200,7 +200,7 @@ cd backend && npm test                        # all passing (in-memory DBs)
 ./dev.sh up && ./dev.sh test:integration      # INTEGRATION_TEST=true against real DBs
 ./dev.sh cluster up && ./dev.sh cluster test  # full local k8s via kind
 
-npm run lint                                  # 0 errors
+cd backend && npm run lint:ts                 # backend .ts — 0 errors, gated in CI
 ```
 
 ### 🎯 If Tests Are Failing
@@ -385,9 +385,28 @@ cd frontend && npm run test:coverage
 
 ### Linting
 ```bash
-npm run lint        # both frontend + backend (0 errors expected)
-npm run lint:fix    # auto-fix
+cd backend && npm run lint:ts   # backend .ts — 0 errors, gated in CI + lint-staged
+npm run lint                    # cli + backend .js + frontend — NOT all green, see below
+npm run lint:fix                # auto-fix
 ```
+
+**`npm run lint` is not a green command, and has not been for some time.** Only
+part of it is gated. What is actually enforced, measured 2026-08-28 at
+`ccacf0235`:
+
+| scope | state | gated? |
+|---|---|---|
+| backend `.ts` (310 files) | **0 errors** | CI (`Backend TypeScript lint`) + `lint-staged` |
+| backend `.js` (282 dirty, 277 under `__tests__`) | 2,279 errors | no |
+| cli | 0 errors | CI (`Run CLI lint`) |
+| frontend | see `frontend/TESTING.md` | `lint-staged` |
+
+Backend `.ts` reaches zero because 48 rules that fire on existing code are
+parked in `backend/.eslintrc.js` with their counts — 2,127 errors, 72%
+auto-fixable. Everything else in `airbnb-base` stays ON, so the gate catches
+the first NEW violation of any of several hundred rules. Re-enabling the parked
+48 and fixing the `.js` corpus is the burn-down task; do not describe either as
+green until it is done.
 
 ### MCP Playwright — UI Verification
 
