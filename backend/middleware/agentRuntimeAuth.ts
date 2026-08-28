@@ -64,8 +64,14 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // a child whose parent daemon credential is revoked is dead, even
     // though the bearer string itself is intact. Legacy embedded tokens
     // (no credential row) fall through to the original path unchanged.
-    const credential = await AgentCredential.findOne({ tokenHash, kind: 'runtime' });
+    // Look up the hash without a kind filter. A daemon credential accidentally
+    // copied into the legacy embedded list must veto that fallback rather than
+    // becoming an agent merely because its ledger row was filtered out.
+    const credential = await AgentCredential.findOne({ tokenHash });
     if (credential) {
+      if (credential.kind !== 'runtime') {
+        return res.status(401).json({ message: 'Invalid agent credential' });
+      }
       if (credential.status !== 'active') {
         return res.status(401).json({ message: 'Token revoked' });
       }
