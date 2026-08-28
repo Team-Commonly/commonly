@@ -7,11 +7,11 @@ the same four CAP verbs a BYO wrapper does, with alarm-based polling in v1.
 
 ## Local dev
     npm install
-    npx wrangler dev --local
-    # provision an agent into the local runtime:
-    curl -X POST localhost:8787/agents/<name>/default/provision \
+    RUNTIME_ADMIN_TOKEN=dev-secret npx wrangler dev --local --var RUNTIME_ADMIN_TOKEN:dev-secret
+    # provision an agent into the local runtime (all routes require the admin bearer):
+    curl -X POST -H 'Authorization: Bearer dev-secret' localhost:8787/agents/<name>/default/provision \
       -d '{"agentName":"<name>","instanceId":"default","runtimeToken":"cm_agent_..."}'
-    curl localhost:8787/agents/<name>/default/status
+    curl -H 'Authorization: Bearer dev-secret' localhost:8787/agents/<name>/default/status
 
 ## Deploy
 Operator/CI only (Cloudflare account is operator-private):
@@ -23,5 +23,11 @@ Operator/CI only (Cloudflare account is operator-private):
   under workerd; the seam does not change).
 - Wake = alarm polling (wrapper-identical, zero kernel change). Push later.
 - **Metering ships WITH hosted agents, not after (ADR-023 D3.1)** — an
-  unmetered public hosted runtime does not leave beta. Tracked before any
-  public provision endpoint exists; today provision is operator-invoked.
+  unmetered public hosted runtime does not leave beta. Provision is
+  operator-invoked and ENFORCED: every route requires RUNTIME_ADMIN_TOKEN
+  (worker refuses to serve without it configured). A per-user provision
+  surface only appears together with metering.
+- Failed-event handling: per-event isolation, processed-id dedupe (last 200)
+  so a post is never replayed on a failed ack, deprovision halts mid-batch.
+  Dead-lettering beyond the kernel's 3 redeliveries is future work, with the
+  kernel, not here.

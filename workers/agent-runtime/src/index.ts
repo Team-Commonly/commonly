@@ -7,6 +7,15 @@ export { AgentRuntimeDO };
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    // Otto's blocker 1 (#1318 review): with no auth, a deployed worker's
+    // /provision, /deprovision and /status are world-reachable — anyone can
+    // kill an agent or provision onto the operator's model key. Every route
+    // requires the admin secret; "operator-invoked" is now enforced, not
+    // asserted.
+    const admin = env.RUNTIME_ADMIN_TOKEN;
+    if (!admin) return Response.json({ error: 'runtime not configured (RUNTIME_ADMIN_TOKEN unset)' }, { status: 503 });
+    const bearer = req.headers.get('Authorization');
+    if (bearer !== `Bearer ${admin}`) return Response.json({ error: 'unauthorized' }, { status: 401 });
     const url = new URL(req.url);
     const match = url.pathname.match(/^\/agents\/([a-z0-9-]+)\/([a-z0-9-]+)(\/.*)$/);
     if (!match) return Response.json({ error: 'expected /agents/:agentName/:instanceId/...' }, { status: 404 });

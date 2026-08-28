@@ -14,6 +14,8 @@ import { listEvents, ackEvent, getPodContext, postMessage, CapConfig, CapEvent }
 export interface Env {
   AGENT: DurableObjectNamespace;
   COMMONLY_API_URL: string;
+  // Operator admin secret gating every worker route (wrangler secret).
+  RUNTIME_ADMIN_TOKEN?: string;
   // Model transport for the injected streamFn. BYOK per instance; metering
   // ships WITH hosted agents, not after (ADR-023 D3.1) — see TODO below.
   ANTHROPIC_API_KEY?: string;
@@ -71,22 +73,44 @@ export class AgentRuntimeDO implements DurableObject {
     return Response.json({ error: 'not found' }, { status: 404 });
   }
 
+  // Otto's blockers 2-4 (#1318 review) shape this loop:
+  // - per-event try/catch: one throwing event (a transient model 529) must
+  //   not abort the batch — the others were already claimed by list() and an
+  //   aborted batch strands them for the 10-min requeue, and three strandings
+  //   drop a mention permanently.
+  // - processed-id dedupe: a successful post whose ACK fails would otherwise
+  //   replay the post on redelivery (up to 3 copies in the pod).
+  // - deprovision-vs-inflight: re-check provisioning before each event; DO
+  //   execution interleaves at await points, so a deprovision can land
+  //   mid-batch and must stop further turns.
   async alarm(): Promise<void> {
     const cfg = await this.cfg();
     if (!cfg) return; // deprovisioned — let the alarm chain die
     const pollSeconds = (await this.state.storage.get<number>('pollSeconds')) || POLL_DEFAULT_S;
     try {
       const events = await listEvents(cfg);
+      const processed = (await this.state.storage.get<string[]>('processedEventIds')) || [];
       for (const event of events) {
-        await this.handleEvent(cfg, event);
-        await ackEvent(cfg, event._id);
+        const stillProvisioned = await this.state.storage.get<string>('runtimeToken');
+        if (!stillProvisioned) return;
+        try {
+          if (!processed.includes(event._id)) {
+            await this.handleEvent(cfg, event);
+            processed.push(event._id);
+            await this.state.storage.put('processedEventIds', processed.slice(-200));
+          }
+          await ackEvent(cfg, event._id);
+        } catch (err) {
+          await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
+        }
       }
       await this.state.storage.put('lastPollAt', Date.now());
-      await this.state.storage.delete('lastError');
     } catch (err) {
       await this.state.storage.put('lastError', String((err as Error).message));
     } finally {
-      await this.state.storage.setAlarm(Date.now() + pollSeconds * 1000);
+      if (await this.state.storage.get('runtimeToken')) {
+        await this.state.storage.setAlarm(Date.now() + pollSeconds * 1000);
+      }
     }
   }
 
