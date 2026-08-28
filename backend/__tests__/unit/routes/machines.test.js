@@ -5,16 +5,25 @@ const registerMachine = jest.fn();
 const listMachinesForOwner = jest.fn();
 const recordMachineHeartbeat = jest.fn();
 const removeMachine = jest.fn();
+const findMachine = jest.fn();
 
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.user = { id: '0123456789abcdef01234567' };
   next();
 });
 jest.mock('../../../middleware/daemonAuth', () => ({
-  daemonAuth: () => (req, _res, next) => {
-    req.machine = { _id: '0123456789abcdef01234567', machineId: 'daemon-machine' };
+  __esModule: true,
+  default: () => (req, _res, next) => {
+    req.machine = {
+      machineId: 'daemon-machine',
+      ownerUserId: '0123456789abcdef01234567',
+      scopes: ['machine:heartbeat', 'agents:adopt'],
+    };
     next();
   },
+}));
+jest.mock('../../../models/Machine', () => ({
+  findOne: (...args) => findMachine(...args),
 }));
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }) })),
@@ -34,6 +43,10 @@ app.use('/api/machines', machinesRouter);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  findMachine.mockResolvedValue({
+    _id: '0123456789abcdef01234567',
+    machineId: 'daemon-machine',
+  });
 });
 
 describe('machine lifecycle routes', () => {
@@ -75,9 +88,15 @@ describe('machine lifecycle routes', () => {
     expect(recordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
     }));
+    expect(findMachine).toHaveBeenCalledWith({
+      _id: '0123456789abcdef01234567',
+      machineId: 'daemon-machine',
+      ownerUserId: '0123456789abcdef01234567',
+    });
   });
 
   it('rejects a heartbeat path that is not the authenticated machine', async () => {
+    findMachine.mockResolvedValue(null);
     const res = await request(app).post('/api/machines/abcdefabcdefabcdefabcdef/heartbeat');
 
     expect(res.status).toBe(403);

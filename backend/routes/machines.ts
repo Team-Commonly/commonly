@@ -8,12 +8,14 @@ import {
   registerMachine,
   removeMachine,
 } from '../services/machineService';
-import { daemonAuth, DaemonAuthRequest } from '../middleware/daemonAuth';
+import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Machine = require('../models/Machine');
 
 const router = express.Router();
 
@@ -59,13 +61,20 @@ router.post(
   '/:id/heartbeat',
   machineRateLimit,
   daemonAuth('machine:heartbeat'),
-  async (req: DaemonAuthRequest, res: express.Response) => {
+  async (req: DaemonAuthedRequest, res: express.Response) => {
     try {
       const { id } = req.params;
       if (!Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid machine id' });
-      if (String(req.machine?._id) !== id) return res.status(403).json({ message: 'Access denied' });
-      const machine = await recordMachineHeartbeat(req.machine!);
-      return res.json({ machine });
+      // The shared daemon middleware exposes only credential-derived machine
+      // context. Resolve the actual row through all three identifiers, so a
+      // bearer cannot stamp another machine by swapping the path id.
+      const machine = await Machine.findOne({
+        _id: id,
+        machineId: req.machine?.machineId,
+        ownerUserId: req.machine?.ownerUserId,
+      });
+      if (!machine) return res.status(403).json({ message: 'Access denied' });
+      return res.json({ machine: await recordMachineHeartbeat(machine) });
     } catch (error) {
       console.error('Error recording machine heartbeat:', error);
       return res.status(500).json({ message: 'Server error' });

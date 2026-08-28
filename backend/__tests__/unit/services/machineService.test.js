@@ -46,7 +46,7 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(credential).toEqual(expect.objectContaining({
       kind: 'daemon',
       ownerUserId,
-      scopes: ['machine:heartbeat'],
+      scopes: ['machine:heartbeat', 'agents:adopt'],
     }));
     expect(credential.tokenHash).not.toContain(token);
     expect(credential.expiresAt.getTime()).toBeGreaterThan(Date.now());

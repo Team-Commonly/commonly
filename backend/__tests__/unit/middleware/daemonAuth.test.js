@@ -4,7 +4,6 @@ const { hash } = require('../../../utils/secret');
 
 let mongod;
 let AgentCredential;
-let Machine;
 let daemonAuth;
 let agentRuntimeAuth;
 
@@ -12,13 +11,12 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   AgentCredential = require('../../../models/AgentCredential');
-  Machine = require('../../../models/Machine');
-  daemonAuth = require('../../../middleware/daemonAuth').daemonAuth;
+  daemonAuth = require('../../../middleware/daemonAuth');
   agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 });
 
 afterEach(async () => {
-  await Promise.all([AgentCredential.deleteMany({}), Machine.deleteMany({})]);
+  await AgentCredential.deleteMany({});
 });
 
 afterAll(async () => {
@@ -37,12 +35,6 @@ describe('daemonAuth', () => {
   it('authenticates only a scoped daemon credential and never assigns an agent identity', async () => {
     const token = `cm_daemon_${'a'.repeat(32)}`;
     const ownerUserId = new mongoose.Types.ObjectId();
-    await Machine.create({
-      ownerUserId,
-      machineId: 'machine-1',
-      name: 'Sam’s MacBook',
-      status: 'offline',
-    });
     await AgentCredential.create({
       tokenHash: hash(token),
       kind: 'daemon',
@@ -58,7 +50,6 @@ describe('daemonAuth', () => {
 
     expect(nexted).toBe(true);
     expect(req.machine.machineId).toBe('machine-1');
-    expect(req.daemonCredential).toBeUndefined();
     expect(req.user).toBeUndefined();
     expect(req.agentUser).toBeUndefined();
     expect(req.agentAuthorizedPodIds).toBeUndefined();

@@ -12,12 +12,11 @@ const { hash, randomSecret } = require('../utils/secret') as {
 
 export const DAEMON_SCOPES = [
   'machine:heartbeat',
+  'agents:adopt',
 ] as const;
 
 // D4: forgotten-machine credentials are long lived, not permanent.
 export const DAEMON_CREDENTIAL_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
-
-export type DaemonScope = (typeof DAEMON_SCOPES)[number];
 
 export interface DaemonCredential {
   _id: Types.ObjectId;
@@ -48,31 +47,8 @@ export async function issueDaemonCredential({
   return { credential: credential as DaemonCredential, token };
 }
 
-export async function authenticateDaemonCredential(
-  token: string | undefined,
-  requiredScope: DaemonScope,
-): Promise<DaemonCredential | null> {
-  if (!token || !token.startsWith('cm_daemon_')) return null;
-
-  const credential = await AgentCredential.findOne({
-    tokenHash: hash(token),
-    kind: 'daemon',
-  });
-  if (!credential || credential.status !== 'active' || !credential.machineId) return null;
-  if (credential.expiresAt && credential.expiresAt < new Date()) return null;
-  if (!credential.scopes.includes(requiredScope)) return null;
-
-  AgentCredential.updateOne(
-    { _id: credential._id },
-    { $set: { lastUsedAt: new Date() } },
-  ).catch((err: Error) => console.warn('Failed to update daemon credential usage:', err.message));
-
-  return credential as DaemonCredential;
-}
-
 module.exports = {
   DAEMON_SCOPES,
-  authenticateDaemonCredential,
   issueDaemonCredential,
 };
 Object.assign(module.exports, exports);
