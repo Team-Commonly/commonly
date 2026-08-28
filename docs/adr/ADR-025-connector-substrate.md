@@ -89,8 +89,8 @@ publish. Nothing mirrors.
 >   written between the two moves.** When it was written, `liveRelay` had no named writer anywhere:
 >   the flag defaulted to `false` and nothing in the product could set it, so "the whole bound" was
 >   really "nobody can turn it on". Two merges changed that. **#1290** (`e35d89e6`) ships the
->   Connectors page whose Live-relay toggle is the first real writer — `V2ConnectorsPage.tsx:117`
->   PATCHes `{liveRelay}`, and `integrations.ts:406` stamps `linkedUserId` from the authenticated
+>   Connectors page whose Live-relay toggle is the first real writer — `V2ConnectorsPage.tsx:117` at the time
+>   PATCHes `{liveRelay}` (that file has since been rewritten — see the fourth amendment), and `integrations.ts:406` stamps `linkedUserId` from the authenticated
 >   caller when it flips on — so mode 4 is now reachable by an ordinary user path rather than only
 >   in principle. **#1289** (`f9b97d89`) narrows the inbound half to 1:1 chats:
 >   `telegramBridgeService.ts:213` refuses to relay unless `config.chatType === 'private'`, because
@@ -122,6 +122,17 @@ publish. Nothing mirrors.
 >   on a falsy first operand, which is what a fresh connector used to have. The same line went from
 >   covering an edge case to covering the default path without being edited. Filed at #1297 comment
 >   `5458773871`.
+>
+> - **Fourth amendment, 2026-08-27 — the mode lever came back to the web, and the line reference
+>   above went stale in the same merge.** #1304 (`6ce4bfc8`, "Connectors page redesign") rewrote
+>   `V2ConnectorsPage.tsx` (+358/-154), so the `:117` cited above no longer exists: the Live-relay
+>   PATCH is now `:233`, and the `config: {}` create is still `:131`. The substantive change is a
+>   **second writer of `config.relayAllAgentMessages`** — an Attention/Mirror toggle at `:243` and
+>   `:251` PATCHing the same key the Telegram `/mode` command writes. That key appears nowhere in
+>   the file before #1304. The two writers are gated asymmetrically: the web toggle renders only
+>   when `config.liveRelay` is true (`:237`), while `handleModeCommand`
+>   (`routes/webhooks/telegram.ts:256`) writes it whether or not the relay is on. **D1's naming
+>   decision is unaffected.**
 >
 > I have not re-derived the ten-call inventory at the top of this finding against current main.
 > The amendment covers what #1282, #1289 and #1290 changed, and nothing else — #1301 moved this
@@ -335,7 +346,9 @@ nothing can change it, something can now, and on telegram the default itself has
 other way. Since #1301 the bound has a third mutator and it is reachable
 from the platform side: `/mode mirror` sets `config.relayAllAgentMessages`, which is
 `shouldEscalate`'s first branch — so a Telegram command turns the escalation gate off entirely, and
-`/mute` suspends the relay from the same surface. Two of the three levers on this bound are now
-commands typed into the chat, which is the direction D3's third amendment names.
+`/mute` suspends the relay from the same surface. That direction did not hold. Since #1304 (`6ce4bfc8`) the mode lever has a second writer on the
+web side — an Attention/Mirror toggle in the Connectors page PATCHing the same key — so the
+levers are not migrating into the chat; two surfaces now write one flag, on asymmetric gates.
+See Finding 1's fourth amendment.
 
 D1 is the one I want ratified. The rest follow from the audit.
