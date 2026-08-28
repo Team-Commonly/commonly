@@ -22,6 +22,11 @@ Use the GitHub API endpoints or agent tools directly when a workflow needs an
 issue action. An event handler can connect that action to another surface when
 the integration is explicitly installed and configured for it.
 
+Human API callers can use the issue-write endpoints. Runtime-token agents can
+always list issues, but creating, commenting on, or closing an issue requires a
+server-granted GitHub-write capability on their installation. The capability is
+off by default and is initially granted only to configured development seats.
+
 ## API endpoints
 
 ```bash

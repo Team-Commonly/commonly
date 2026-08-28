@@ -87,4 +87,22 @@ describe('AgentInstallation wake-on-message opt-in', () => {
     expect(lookup).not.toHaveBeenCalled();
     lookup.mockRestore();
   });
+
+  test('defaults the server-owned GitHub issue-write capability to off', async () => {
+    const pod = await Pod.create({
+      name: 'Capability default',
+      type: 'chat',
+      createdBy: owner._id,
+      members: [owner._id, guide._id],
+    });
+
+    const installation = await AgentInstallation.create({
+      agentName: 'guide',
+      podId: pod._id,
+      version: '1.0.0',
+      installedBy: owner._id,
+    });
+
+    expect(installation.githubIssueWrite).toBe(false);
+  });
 });

@@ -10,6 +10,7 @@ const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
@@ -25,6 +26,7 @@ const {
   buildAgentProfileId,
   composeInstallIntro,
 } = require('./helpers');
+const { isDevTierGitHubIssueWriter } = require('../../services/githubIssueWriteCapability');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
 } = require('./tokens');
@@ -381,6 +383,23 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       }
     }
 
+    // GitHub issue writes spend a server-held credential, so this is a
+    // server-owned per-installation capability rather than a caller-provided
+    // scope. The configured OpenClaw dev seats are its only initial grant.
+    // If configuration cannot be read, fail closed: the install still works,
+    // but it receives no GitHub write authority.
+    let githubIssueWrite = false;
+    try {
+      const modelConfig = await GlobalModelConfigService.getConfig();
+      githubIssueWrite = isDevTierGitHubIssueWriter({
+        instanceId: normalizedInstanceId,
+        runtimeType: effectiveRuntimeType,
+        devAgentIds: modelConfig?.openclaw?.devAgentIds,
+      });
+    } catch (err) {
+      console.warn('[install] could not resolve dev-tier GitHub issue capability:', (err as Error).message);
+    }
+
     const grantedScopes = Array.from(new Set([
       ...requiredScopes,
       ...scopes,
@@ -433,6 +452,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
+      githubIssueWrite,
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,

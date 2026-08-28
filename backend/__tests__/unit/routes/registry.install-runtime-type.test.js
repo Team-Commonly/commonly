@@ -10,6 +10,8 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
 }));
 
+jest.mock('../../../middleware/auth', () => (_req, _res, next) => next());
+
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
 }));
@@ -51,6 +53,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
   }),
 }));
 
+jest.mock('../../../services/globalModelConfigService', () => ({
+  getConfig: jest.fn(),
+}));
+
 jest.mock('../../../services/agentMessageService', () => ({
   postMessage: jest.fn().mockResolvedValue(true),
 }));
@@ -66,6 +72,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const AgentTemplate = require('../../../models/AgentTemplate');
 const Activity = require('../../../models/Activity');
 const AgentIdentityService = require('../../../services/agentIdentityService');
+const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 const FirstContactService = require('../../../services/firstContactService');
 const installRouter = require('../../../routes/registry/install');
 
@@ -123,6 +130,7 @@ describe('registry install runtimeType fallback', () => {
     // tests install a 'native' runtime (a cloud runtime) and assert the
     // runtimeType fallback, not the gate.
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'admin' }));
+    GlobalModelConfigService.getConfig.mockResolvedValue({ openclaw: { devAgentIds: ['theo'] } });
 
     AgentProfile.findOneAndUpdate.mockResolvedValue(true);
     AgentTemplate.find.mockReturnValue({
@@ -220,6 +228,67 @@ describe('registry install runtimeType fallback', () => {
       }),
     );
     expect(res.status).not.toHaveBeenCalledWith(500);
+  });
+
+  it('grants GitHub issue writes only to configured OpenClaw dev seats', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'openclaw',
+      displayName: 'OpenClaw',
+      description: 'Cloud runtime',
+      latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await installHandler({
+      body: {
+        agentName: 'openclaw',
+        podId: 'pod-1',
+        version: '1.0.0',
+        instanceId: 'theo',
+        config: { runtime: { runtimeType: 'moltbot' } },
+        scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    }, res);
+
+    expect(AgentInstallation.install).toHaveBeenCalledWith(
+      'openclaw',
+      'pod-1',
+      expect.objectContaining({ githubIssueWrite: true }),
+    );
+  });
+
+  it('keeps GitHub issue writes off for every non-dev seat, ignoring caller intent', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'openclaw',
+      displayName: 'OpenClaw',
+      description: 'Cloud runtime',
+      latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await installHandler({
+      body: {
+        agentName: 'openclaw',
+        podId: 'pod-1',
+        version: '1.0.0',
+        instanceId: 'community-seat',
+        config: { runtime: { runtimeType: 'moltbot' } },
+        scopes: [],
+        githubIssueWrite: true,
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    }, res);
+
+    expect(AgentInstallation.install).toHaveBeenCalledWith(
+      'openclaw',
+      'pod-1',
+      expect.objectContaining({ githubIssueWrite: false }),
+    );
   });
 
   it('keeps install successful when the first-contact trigger fails', async () => {
