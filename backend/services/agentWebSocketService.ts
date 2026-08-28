@@ -304,6 +304,21 @@ class AgentWebSocketService {
     if (token.startsWith('cm_agent_')) {
       try {
         const tokenHash = hash(token);
+        // ADR-026 Phase 0: the credential ledger gates the WS transport with
+        // the same semantics as the HTTP middleware — a revoked credential
+        // (or a child of a revoked issuer) must not connect over WS either
+        // (Vera's bypass finding on #1312).
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const AgentCredential = require('../models/AgentCredential');
+        const credential = await AgentCredential.findOne({ tokenHash, kind: 'runtime' });
+        if (credential) {
+          if (credential.status !== 'active') return null;
+          if (credential.expiresAt && credential.expiresAt < new Date()) return null;
+          if (credential.parentId) {
+            const parent = await AgentCredential.findById(credential.parentId).select('status').lean();
+            if (!parent || parent.status !== 'active') return null;
+          }
+        }
         const agentUser = await User.findOne({
           'agentRuntimeTokens.tokenHash': tokenHash,
           isBot: true,
