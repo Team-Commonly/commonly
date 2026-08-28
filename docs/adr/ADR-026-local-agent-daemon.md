@@ -134,6 +134,23 @@ identity survives).
   → Phase 1 bind + adopt + heartbeat (D3/D5) → Phase 2 supervision with the
   delivery-nonce work (D6). The fleet migration (D7) waits for all three.
 
+## Prior art, and where to buy instead of build
+
+The credential model is not novel: it is HashiCorp Vault's token tree
+(parent-child leases, cascade revocation; OpenBao is the OSS fork), and the
+daemon architecture is SPIFFE/SPIRE's node-agent pattern (a machine agent
+attests and mints per-workload identities). Phase 0 deliberately implements
+the ~200-line version of those semantics inside our stack — one collection,
+one middleware branch — rather than operating a new stateful identity
+service on a credit-funded cluster.
+
+Two places the standard is adopted wholesale rather than reimplemented:
+- **#1296's CLI login becomes the OAuth device-code flow** (the `gh auth
+  login` pattern), not a homegrown browser handshake.
+- **If daemon attestation is ever needed** (proving the daemon runs on the
+  machine it claims), borrow SPIFFE's model rather than extending the
+  ledger.
+
 ## Alternatives rejected
 
 - **Status quo (per-agent commands):** measured cost above; recurs per agent.
