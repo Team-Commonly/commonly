@@ -30,6 +30,16 @@ jest.mock('../../../models/User', () => {
   User.updateOne = (...args) => mockUserUpdateOne(...args);
   return User;
 });
+// ADR-026 Phase 0: the middleware consults AgentCredential before the
+// legacy paths. Default to no credential row — these tests exercise the
+// legacy fallback; the credential paths have their own suite
+// (agentCredential.substrate.test.js on mongodb-memory-server).
+jest.mock('../../../models/AgentCredential', () => ({
+  findOne: jest.fn().mockResolvedValue(null),
+  findById: jest.fn().mockResolvedValue(null),
+  updateOne: jest.fn().mockResolvedValue({}),
+}));
+
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     findOne: (...args) => mockInstallationFindOne(...args),
