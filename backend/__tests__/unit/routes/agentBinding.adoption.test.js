@@ -48,7 +48,7 @@ beforeEach(async () => {
     version: '1.0.0', status: 'active', installedBy: owner._id,
   });
   for (const [tok, mid] of [[DAEMON_A, 'machine-a'], [DAEMON_B, 'machine-b']]) {
-    await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: owner._id, machineId: mid });
+    await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: owner._id, machineId: mid, scopes: ['machine:heartbeat', 'agents:adopt'] });
   }
 });
 
@@ -84,9 +84,20 @@ describe('adoption CAS', () => {
   it('refuses adoption of an agent the daemon owner does not own', async () => {
     const stranger = await User.create({ username: 'str', email: 's@x.com', password: 'x'.repeat(12) });
     const tok = `cm_daemon_${'s'.repeat(32)}`;
-    await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: stranger._id, machineId: 'machine-s' });
+    await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: stranger._id, machineId: 'machine-s', scopes: ['machine:heartbeat', 'agents:adopt'] });
     const res = await adopt(tok);
     expect(res.status).toBe(403);
+  });
+
+  it('a heartbeat-only credential cannot adopt — scopes are enforced, not decorative', async () => {
+    const tok = `cm_daemon_${'h'.repeat(32)}`;
+    await AgentCredential.create({
+      tokenHash: hash(tok), kind: 'daemon', ownerUserId: owner._id, machineId: 'machine-h',
+      scopes: ['machine:heartbeat'],
+    });
+    const res = await adopt(tok);
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/lacks scope/);
   });
 
   it('a revoked daemon credential cannot adopt', async () => {

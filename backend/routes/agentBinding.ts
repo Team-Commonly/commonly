@@ -50,7 +50,7 @@ const ownsAgent = async (ownerUserId: unknown, agentName: string, instanceId: st
   return Boolean(row);
 };
 
-router.post('/adopt', bindingRateLimit, daemonAuth, async (req: DaemonAuthedRequest, res: express.Response) => {
+router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: DaemonAuthedRequest, res: express.Response) => {
   try {
     const agentName = normalize(req.body?.agentName);
     const instanceId = normalize(req.body?.instanceId) || 'default';

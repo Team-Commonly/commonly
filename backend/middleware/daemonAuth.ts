@@ -12,32 +12,43 @@ export interface DaemonAuthedRequest extends Request {
   daemonCredential?: IAgentCredential;
 }
 
-export default async function daemonAuth(
-  req: DaemonAuthedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void | Response> {
-  try {
-    const authHeader = req.header('Authorization');
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
-    if (!token || !token.startsWith('cm_daemon_')) {
-      return res.status(401).json({ message: 'Missing daemon token' });
+// Factory: daemonAuth('agents:adopt') returns middleware that requires the
+// credential to CARRY that scope. Scopes are enforced, not decorative
+// (Vera on #1315: "a scope nobody reads doesn't hold the claim"). There are
+// no legacy daemon credentials to grandfather — a credential without the
+// required scope is a 403, full stop. This is THE daemon middleware; do not
+// grow a second copy (the podWriteAccessService copy-drift rule).
+export default function daemonAuth(requiredScope?: string) {
+  return async function daemonAuthMw(
+    req: DaemonAuthedRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void | Response> {
+    try {
+      const authHeader = req.header('Authorization');
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+      if (!token || !token.startsWith('cm_daemon_')) {
+        return res.status(401).json({ message: 'Missing daemon token' });
+      }
+      const credential = await AgentCredential.findOne({ tokenHash: hash(token), kind: 'daemon' });
+      if (!credential || credential.status !== 'active') {
+        return res.status(401).json({ message: 'Daemon token revoked or unknown' });
+      }
+      if (credential.expiresAt && credential.expiresAt < new Date()) {
+        return res.status(401).json({ message: 'Daemon token expired' });
+      }
+      if (requiredScope && !(credential.scopes || []).includes(requiredScope)) {
+        return res.status(403).json({ message: `Daemon token lacks scope ${requiredScope}` });
+      }
+      AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
+        .catch((err: Error) => console.warn('Failed to stamp daemon credential usage:', err.message));
+      req.daemonCredential = credential;
+      return next();
+    } catch (err) {
+      console.error('daemonAuth error:', err);
+      return res.status(500).json({ message: 'Server error' });
     }
-    const credential = await AgentCredential.findOne({ tokenHash: hash(token), kind: 'daemon' });
-    if (!credential || credential.status !== 'active') {
-      return res.status(401).json({ message: 'Daemon token revoked or unknown' });
-    }
-    if (credential.expiresAt && credential.expiresAt < new Date()) {
-      return res.status(401).json({ message: 'Daemon token expired' });
-    }
-    AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
-      .catch((err: Error) => console.warn('Failed to stamp daemon credential usage:', err.message));
-    req.daemonCredential = credential;
-    return next();
-  } catch (err) {
-    console.error('daemonAuth error:', err);
-    return res.status(500).json({ message: 'Server error' });
-  }
+  };
 }
 // CJS compat
 // eslint-disable-next-line @typescript-eslint/no-require-imports
