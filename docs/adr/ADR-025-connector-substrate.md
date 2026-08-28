@@ -102,6 +102,26 @@ publish. Nothing mirrors.
 >   on, and the permission one is NOT bounded — the invariant it would need is a link between the
 >   chat's counterpart and the toggling caller, and that link does not exist. **D1's naming decision is unaffected — this changes what the inventory
 >   says exists, not what it should be called.**
+> - **Third amendment, 2026-08-27 — the default flipped, so "defaults to `false`" above is no
+>   longer true of telegram.** #1311 (`3eaabfc8`) sets `relayAllAgentMessages: true` and
+>   `liveRelay: true` on a fresh telegram connector when the caller sends neither
+>   (`routes/integrations.ts`, the `type === 'telegram' && nextConfig.relayAllAgentMessages ===
+>   undefined` block). `V2ConnectorsPage.tsx:131` creates with `config: {}`, so this is the primary
+>   product path and not an edge case. Its reason is sound — attention mode with no
+>   `leadAgentUsername` relays nothing, so the bridge's first impression was silence. The
+>   consequence for this Finding is that **both** levers of the bound named above are now ON at
+>   create: `relayAllAgentMessages` is `shouldEscalate`'s first branch
+>   (`telegramBridgeService.ts:71`), so the escalation gate is not merely mutable, it is open by
+>   default. The bound is now the chat binding itself.
+>
+>   That matters because the OUTBOUND half has no chat-type gate — #1289's `chatType !== 'private'`
+>   refusal is at `:216`, inside `relayTelegramMessageToPod`, i.e. inbound only. So on `origin/main`
+>   a connect code pasted into a group mirrors the pod's whole agent stream into that group with
+>   nobody having toggled anything. **#1297 (open) refuses that bind**, and #1311 is what makes its
+>   gate load-bearing: `if (integration.config?.liveRelay && chatType !== 'private')` short-circuits
+>   on a falsy first operand, which is what a fresh connector used to have. The same line went from
+>   covering an edge case to covering the default path without being edited. Filed at #1297 comment
+>   `5458773871`.
 >
 > I have not re-derived the ten-call inventory at the top of this finding against current main.
 > The amendment covers what #1282, #1289 and #1290 changed, and nothing else — #1301 moved this
@@ -306,10 +326,13 @@ So the redesign is not "build outbound" — it is (a) give the four chat provide
 social providers already have, and (b) decide whether mirroring is a product commitment at all,
 because mode 4 is a much larger build than modes 1–3 and carries loop, permission, and volume
 questions modes 1–3 never had to answer — questions #1282 now has to answer for telegram. The
-bound is `shouldEscalate` plus `liveRelay`, which defaults to `false`; since #1290 a user can turn
-that flag on from the Connectors page, and since #1289 the inbound half refuses any chat that is
-not 1:1. See Finding 1's second amendment — a default is only a bound while nothing can change it,
-and something can now. Since #1301 the bound has a third mutator and it is reachable
+bound WAS `shouldEscalate` plus `liveRelay`, and since #1311 (`3eaabfc8`) neither half of it
+defaults to `false` on telegram — a fresh connector is created with `relayAllAgentMessages` and
+`liveRelay` both true, on the path the Connectors page actually uses. Before that: since #1290 a
+user can turn that flag on from the Connectors page, and since #1289 the inbound half refuses any chat that is
+not 1:1. See Finding 1's second and third amendments — a default is only a bound while
+nothing can change it, something can now, and on telegram the default itself has since flipped the
+other way. Since #1301 the bound has a third mutator and it is reachable
 from the platform side: `/mode mirror` sets `config.relayAllAgentMessages`, which is
 `shouldEscalate`'s first branch — so a Telegram command turns the escalation gate off entirely, and
 `/mute` suspends the relay from the same surface. Two of the three levers on this bound are now
