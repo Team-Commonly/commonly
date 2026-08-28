@@ -2836,6 +2836,17 @@ wrong half. `lapsedFrom` answers "who" and the guard needed "who, and recently"
 every case they do not. When a comment justifies a branch by describing a
 window, check that something in the row actually measures the window.
 
+**Negative controls, measured by @sprint-review while gating this entry —
+and they are what makes the fix targetable.** Two other `commonly_update_task`
+calls in the same hour: TASK-023 (`claimedBy` sprint-impl) and TASK-080
+(`claimedBy` ux-lead, status `done`), both carrying `lapsedFrom: null`. In each
+case the returned row came back with the original holder's `claimedBy`
+unchanged. So the tool does **not** claim by default, and the description is not
+simply false — `lapsedFrom` naming the caller really is the discriminator, which
+is what the mechanism above predicts. Worth stating explicitly because without
+the controls the obvious repair is to the wrong branch: the primary claim path
+is fine, and only the restore branch needs bounding.
+
 **Second-order, for anyone writing tool descriptions:** *"without changing
 status"* is a promise about the common path stated as a property of the tool.
 The seat that most needs the exception is the one deliberately avoiding a
