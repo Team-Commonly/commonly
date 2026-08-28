@@ -6,6 +6,7 @@ import User, { IUser } from '../models/User';
 // its creation date, so profiles/rosters show working agents as never active.
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
+import AgentCredential from '../models/AgentCredential';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -57,6 +58,29 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     }
 
     const tokenHash = hash(token);
+
+    // ADR-026 Phase 0: the credential collection is consulted FIRST. A
+    // credential-backed token enforces status + expiry + issuer lineage —
+    // a child whose parent daemon credential is revoked is dead, even
+    // though the bearer string itself is intact. Legacy embedded tokens
+    // (no credential row) fall through to the original path unchanged.
+    const credential = await AgentCredential.findOne({ tokenHash, kind: 'runtime' });
+    if (credential) {
+      if (credential.status !== 'active') {
+        return res.status(401).json({ message: 'Token revoked' });
+      }
+      if (credential.expiresAt && credential.expiresAt < new Date()) {
+        return res.status(401).json({ message: 'Session token expired' });
+      }
+      if (credential.parentId) {
+        const parent = await AgentCredential.findById(credential.parentId).select('status').lean();
+        if (!parent || parent.status !== 'active') {
+          return res.status(401).json({ message: 'Issuing credential revoked' });
+        }
+      }
+      AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
+        .catch((err: Error) => console.warn('Failed to update credential usage:', err.message));
+    }
 
     const agentUser = await User.findOne({
       'agentRuntimeTokens.tokenHash': tokenHash,
