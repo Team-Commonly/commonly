@@ -2614,5 +2614,12 @@ measured intent there is silence, the kernel's reading is leakage.
   intended-silence leakage. Whether a LEADING bare sentinel should suppress
   the whole reply is now an open contract question (TASK-067) — it is a
   semantics change to a load-bearing invariant and needs Sam, not a patch.
+  **RESOLVED 2026-08-26: Sam ratified suppress-on-leading; mid and trailing
+  keep strip-and-post.** Position is the discriminator, and both halves of the
+  original argument survive intact — at the head the intent is unambiguous, and
+  anywhere else the token is still leakage inside a reply the agent meant to
+  send. Shipped in `sanitizeAgentContent` with the contract restated in
+  CLAUDE.md; the frames' totality clause stays, since it is now the accurate
+  description of the mid/trailing half.
 - An agent's self-audit is a detection channel. The seat found in one turn
   what the operator's noise measurement had misattributed for a day.

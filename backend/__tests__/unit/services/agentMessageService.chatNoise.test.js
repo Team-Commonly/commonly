@@ -67,6 +67,60 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     )).toBe('NO_REPLY is discussed here.');
   });
 
+  // TASK-067 (Sam, ratified 2026-08-26). Position is the whole discriminator:
+  // a sentinel that OPENS the reply is intended silence and suppresses it; the
+  // same token anywhere else keeps #785's strip-and-post, because there it is
+  // producer leakage inside a reply the agent meant to send.
+  it('suppresses a reply that OPENS with a bare sentinel — the AX-43 leak shape', () => {
+    // The exact measured shape: the orphan '.' is the period after NO_REPLY,
+    // which is what survived the strip in all 11 leaked messages.
+    expect(AgentMessageService.sanitizeAgentContent(
+      'NO_REPLY.\n\nNo decision pending, so no post.',
+    )).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent(
+      'NO_REPLY\nHere is the real answer.',
+    )).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent(
+      'NO_REPLY — standing down, the claim is held by a peer.',
+    )).toBe('');
+  });
+
+  it('consumes a leading sentinel RUN, like the total-match path', () => {
+    // Gateways join silent blocks without a separator; a run at the head is
+    // the same intent as one token.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLYNO_REPLY\nreasoning')).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY NO_REPLY\nreasoning')).toBe('');
+  });
+
+  it('leaves mid and trailing sentinels on strip-and-post', () => {
+    // The half of the contract TASK-067 did NOT change. If these ever start
+    // returning '', a leaked token silences a genuine reply — the error #785
+    // exists to prevent.
+    expect(AgentMessageService.sanitizeAgentContent('Shipped the fix.\nNO_REPLY'))
+      .toBe('Shipped the fix.');
+    expect(AgentMessageService.sanitizeAgentContent('A reply of NO_REPLY means silence.'))
+      .toBe('A reply of  means silence.');
+  });
+
+  it('does not suppress when the leading sentinel is a deliberate mention', () => {
+    // Backticked and fenced sentinels are mentions, not silence — the
+    // suppression check sits below the fence return and never sees them.
+    expect(AgentMessageService.sanitizeAgentContent('`NO_REPLY` is the sentinel.'))
+      .toBe('`NO_REPLY` is the sentinel.');
+    expect(AgentMessageService.sanitizeAgentContent(
+      '```text\nNO_REPLY\nis discussed here.\n```',
+    )).toBe('NO_REPLY\nis discussed here.');
+  });
+
+  it('respects the word boundary at the head', () => {
+    // Controls: the token must be bare. A word character on either side means
+    // it is ordinary prose, and suppressing there would swallow real replies.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLYING is not the sentinel.'))
+      .toBe('NO_REPLYING is not the sentinel.');
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY_MODE is a config key.'))
+      .toBe('NO_REPLY_MODE is a config key.');
+  });
+
   it('drops known bare runtime artifacts without swallowing terse replies', () => {
     expect(AgentMessageService.sanitizeAgentContent('RGCTX')).toBe('');
 
@@ -115,13 +169,16 @@ describe('AgentMessageService.sanitizeAgentContent — strip observability', () 
     expect(stripWarnings()).toHaveLength(1);
   });
 
-  it('warns on a LEADING bare sentinel — the AX-43 leak shape', () => {
+  it('does NOT count a LEADING bare sentinel as an edit — it is a suppression now', () => {
+    // TASK-067 moved this shape from strip-and-post to suppress. It must not
+    // inflate the edit metric, for the same reason total-match does not: the
+    // count is of replies we REWROTE, and this one we withheld.
     const out = AgentMessageService.sanitizeAgentContent(
       'NO_REPLY\nHere is the real answer.',
       OBSERVE,
     );
-    expect(out).not.toBe('');
-    expect(stripWarnings()).toHaveLength(1);
+    expect(out).toBe('');
+    expect(stripWarnings()).toHaveLength(0);
   });
 
   it('stays silent when the sentinel IS the whole reply — suppression, not an edit', () => {
