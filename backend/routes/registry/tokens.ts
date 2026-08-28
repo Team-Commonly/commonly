@@ -53,7 +53,12 @@ const normalizeContextPolicy = (policy: any) => {
  * @param {Object} installation - Optional installation to also store token on (for backward compat)
  * @returns {Object} - { token, label, existing, createdAt }
  */
-const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null) => {
+// issuer (ADR-026 Phase 0): { ownerUserId, parentId?, machineId? } — when
+// present, the mint dual-writes an AgentCredential row alongside the legacy
+// embedded record, giving the token per-record status, lineage, and
+// revocability. Callers that do not pass it keep minting legacy-only tokens
+// (additive migration; auth falls back for those).
+const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
   // Check if agent already has a runtime token (reuse existing)
   if (agentUser.agentRuntimeTokens?.length > 0) {
     const existingToken = agentUser.agentRuntimeTokens[0];
@@ -78,6 +83,24 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
   agentUser.agentRuntimeTokens = agentUser.agentRuntimeTokens || [];
   agentUser.agentRuntimeTokens.push(tokenRecord);
   await agentUser.save();
+
+  if (issuer?.ownerUserId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentCredential = require('../../models/AgentCredential');
+    try {
+      await AgentCredential.create({
+        tokenHash: tokenRecord.tokenHash,
+        kind: 'runtime',
+        ownerUserId: issuer.ownerUserId,
+        agentUserId: agentUser._id,
+        parentId: issuer.parentId || null,
+        machineId: issuer.machineId || null,
+        label: tokenRecord.label,
+      });
+    } catch (err) {
+      console.warn('AgentCredential dual-write failed (token still valid via legacy path):', (err as Error).message);
+    }
+  }
 
   // Also store on installation for backward compatibility
   if (installation) {

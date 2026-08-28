@@ -211,6 +211,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/v1', contextApiRoutes); // Context API for MCP and external agents
 app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
+app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
