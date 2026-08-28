@@ -55,9 +55,9 @@ router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: 
     const agentName = normalize(req.body?.agentName);
     const instanceId = normalize(req.body?.instanceId) || 'default';
     if (!agentName) return res.status(400).json({ message: 'agentName required' });
-    const cred = req.daemonCredential!;
-    if (!cred.machineId) return res.status(400).json({ message: 'Daemon credential carries no machineId' });
-    if (!(await ownsAgent(cred.ownerUserId, agentName, instanceId))) {
+    const machine = req.machine!;
+    if (!machine.machineId) return res.status(400).json({ message: 'Daemon credential carries no machineId' });
+    if (!(await ownsAgent(machine.ownerUserId, agentName, instanceId))) {
       return res.status(403).json({ message: 'Agent is not owned by this daemon\'s owner' });
     }
     // The CAS: only an UNBOUND identity transitions. matchedCount 0 with an
@@ -69,17 +69,17 @@ router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: 
         'botMetadata.instanceId': instanceId,
         $or: [{ 'botMetadata.machineId': null }, { 'botMetadata.machineId': { $exists: false } }],
       },
-      { $set: { 'botMetadata.machineId': cred.machineId } },
+      { $set: { 'botMetadata.machineId': machine.machineId } },
     );
     if (result.modifiedCount === 1) {
-      return res.json({ adopted: true, agentName, instanceId, machineId: cred.machineId });
+      return res.json({ adopted: true, agentName, instanceId, machineId: machine.machineId });
     }
     const identity = await User.findOne({
       isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
     }).select('botMetadata.machineId').lean();
     if (!identity) return res.status(404).json({ message: 'Agent identity not found' });
-    if (identity.botMetadata?.machineId === cred.machineId) {
-      return res.json({ adopted: true, alreadyBound: true, agentName, instanceId, machineId: cred.machineId });
+    if (identity.botMetadata?.machineId === machine.machineId) {
+      return res.json({ adopted: true, alreadyBound: true, agentName, instanceId, machineId: machine.machineId });
     }
     return res.status(409).json({
       message: 'Agent is bound to another machine — release it first',

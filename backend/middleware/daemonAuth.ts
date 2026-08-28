@@ -3,13 +3,22 @@
 // it deliberately does NOT pass agentRuntimeAuth and cannot act as any agent
 // (Vera's scope ruling on #1312/S1). Sets req.daemonCredential.
 import { Request, Response, NextFunction } from 'express';
-import AgentCredential, { IAgentCredential } from '../models/AgentCredential';
+import AgentCredential from '../models/AgentCredential';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
 
+// The contract (Vera's S1 ruling): routes see req.machine and NOTHING else —
+// a minimal projection, never the credential document. Keeps the ledger's
+// internals (hashes, lineage ids) out of route handlers by construction.
+export interface MachineContext {
+  machineId: string;
+  ownerUserId: string;
+  scopes: string[];
+}
+
 export interface DaemonAuthedRequest extends Request {
-  daemonCredential?: IAgentCredential;
+  machine?: MachineContext;
 }
 
 // Factory: daemonAuth('agents:adopt') returns middleware that requires the
@@ -42,7 +51,11 @@ export default function daemonAuth(requiredScope?: string) {
       }
       AgentCredential.updateOne({ _id: credential._id }, { $set: { lastUsedAt: new Date() } })
         .catch((err: Error) => console.warn('Failed to stamp daemon credential usage:', err.message));
-      req.daemonCredential = credential;
+      req.machine = {
+        machineId: String(credential.machineId || ''),
+        ownerUserId: String(credential.ownerUserId),
+        scopes: credential.scopes || [],
+      };
       return next();
     } catch (err) {
       console.error('daemonAuth error:', err);
