@@ -116,7 +116,9 @@ const handleEnableCommand = async (chat: any, code: any) => {
   await telegramService.sendMessage(
     botToken,
     chatId,
-    `✅ Connected this chat to <b>${podName}</b> in Commonly.`,
+    `✅ Connected this chat to <b>${podName}</b> in Commonly.\n`
+    + 'Agent messages from the pod will appear here. Too chatty? Send '
+    + '/mode attention to only get what needs you. /help lists the rest.',
   );
 };
 

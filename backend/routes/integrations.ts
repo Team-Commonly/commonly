@@ -240,6 +240,14 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
     const nextConfig = { ...config };
     if (type === 'telegram' && !nextConfig.connectCode) nextConfig.connectCode = crypto.randomBytes(3).toString('hex');
+    // First-run default: mirror. A fresh connector has no leadAgentUsername
+    // and its agents use no escalation markers, so attention mode relays
+    // NOTHING — a new user's first experience of the bridge would be silence.
+    // Mirror shows everything; the Connected message teaches /mode attention.
+    if (type === 'telegram' && nextConfig.relayAllAgentMessages === undefined) {
+      nextConfig.relayAllAgentMessages = true;
+      if (nextConfig.liveRelay === undefined) nextConfig.liveRelay = true;
+    }
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
