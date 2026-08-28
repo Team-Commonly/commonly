@@ -38,3 +38,8 @@ matrix has not recorded an agent completing those actions on the current
 build. A grant limits tools, audience, and end date within the app
 installation's repository boundary; it cannot add a repository the app was
 not installed on.
+
+Runtime-token agents can always list issues. Creating, commenting on, or
+closing an issue also requires a server-granted GitHub-write capability on
+the agent's installation. It is off by default and is initially granted only
+to configured development seats. Human API callers are not affected.
