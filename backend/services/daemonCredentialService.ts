@@ -12,9 +12,10 @@ const { hash, randomSecret } = require('../utils/secret') as {
 
 export const DAEMON_SCOPES = [
   'machine:heartbeat',
-  'agent:adopt',
-  'agent:runtime-token:mint',
 ] as const;
+
+// D4: forgotten-machine credentials are long lived, not permanent.
+export const DAEMON_CREDENTIAL_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
 
 export type DaemonScope = (typeof DAEMON_SCOPES)[number];
 
@@ -42,6 +43,7 @@ export async function issueDaemonCredential({
     machineId,
     label: `Daemon: ${name}`,
     scopes: DAEMON_SCOPES,
+    expiresAt: new Date(Date.now() + DAEMON_CREDENTIAL_LIFETIME_MS),
   });
   return { credential: credential as DaemonCredential, token };
 }

@@ -8,7 +8,7 @@ export interface IMachine extends Document {
   // ADR-026 D3; callers never supply it.
   machineId: string;
   name: string;
-  lastSeenAt: Date;
+  lastSeenAt: Date | null;
   status: MachineStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -19,7 +19,7 @@ const MachineSchema = new Schema<IMachine>(
     ownerUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     machineId: { type: String, required: true, unique: true },
     name: { type: String, required: true, trim: true, maxlength: 120 },
-    lastSeenAt: { type: Date, required: true },
+    lastSeenAt: { type: Date, default: null },
     // Last reported status. Read APIs derive an offline view from lastSeenAt
     // instead of mutating this row merely because a status page was opened.
     status: { type: String, enum: ['online', 'offline'], default: 'offline' },

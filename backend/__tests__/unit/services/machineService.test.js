@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 let mongod;
 let Machine;
 let AgentCredential;
+let User;
 let machineService;
 
 beforeAll(async () => {
@@ -11,6 +12,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   Machine = require('../../../models/Machine');
   AgentCredential = require('../../../models/AgentCredential');
+  User = require('../../../models/User');
   machineService = require('../../../services/machineService');
 });
 
@@ -18,6 +20,7 @@ afterEach(async () => {
   await Promise.all([
     Machine.deleteMany({}),
     AgentCredential.deleteMany({}),
+    User.deleteMany({}),
   ]);
 });
 
@@ -36,29 +39,28 @@ describe('ADR-026 machine lifecycle service', () => {
     });
 
     expect(machine.machineId).toMatch(/^[\da-f-]{36}$/i);
-    expect(machine.status).toBe('online');
+    expect(machine.status).toBe('offline');
+    expect(machine.lastSeenAt).toBeNull();
     expect(token).toMatch(/^cm_daemon_/);
     const credential = await AgentCredential.findOne({ machineId: machine.machineId }).lean();
     expect(credential).toEqual(expect.objectContaining({
       kind: 'daemon',
       ownerUserId,
-      scopes: expect.arrayContaining(['machine:heartbeat', 'agent:adopt', 'agent:runtime-token:mint']),
+      scopes: ['machine:heartbeat'],
     }));
     expect(credential.tokenHash).not.toContain(token);
+    expect(credential.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('refuses a daemon heartbeat for another machine', async () => {
+  it('stamps the credential-derived machine on heartbeat', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const first = await machineService.registerMachine({ ownerUserId, name: 'First Mac' });
-    const second = await machineService.registerMachine({ ownerUserId, name: 'Second Mac' });
-    const secondCredential = await AgentCredential.findOne({ machineId: second.machine.machineId }).lean();
+    const persisted = await Machine.findById(first.machine.id);
+    expect(persisted).toBeTruthy();
+    const result = await machineService.recordMachineHeartbeat(persisted);
 
-    const result = await machineService.recordMachineHeartbeat({
-      machineDbId: first.machine.id,
-      credential: secondCredential,
-    });
-
-    expect(result).toEqual({ machine: null, authorized: false });
+    expect(result.status).toBe('online');
+    expect(result.lastSeenAt).toBeInstanceOf(Date);
   });
 
   it('cascade-revokes the daemon’s descendants before removing its row', async () => {
@@ -76,6 +78,18 @@ describe('ADR-026 machine lifecycle service', () => {
     // Cleanup must still find a legacy/incompletely-revoked daemon row: its
     // child can otherwise keep a machine's authority after removal.
     await AgentCredential.updateOne({ _id: daemon._id }, { $set: { status: 'revoked' } });
+    const agent = await User.create({
+      username: `agent-${Date.now()}`,
+      email: `agent-${Date.now()}@example.test`,
+      password: 'x'.repeat(12),
+      isBot: true,
+      botMetadata: {},
+    });
+    await User.updateOne(
+      { _id: agent._id },
+      { $set: { 'botMetadata.machineId': machine.machineId } },
+      { strict: false },
+    );
 
     expect(await machineService.removeMachine({
       machineDbId: machine.id,
@@ -86,5 +100,6 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(await Machine.findById(machine.id)).toBeNull();
     expect((await AgentCredential.findById(daemon._id)).status).toBe('revoked');
     expect((await AgentCredential.findById(child._id)).status).toBe('revoked');
+    expect((await User.findById(agent._id).lean()).botMetadata.machineId).toBeNull();
   });
 });

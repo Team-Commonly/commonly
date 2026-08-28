@@ -4,6 +4,7 @@ const { hash } = require('../../../utils/secret');
 
 let mongod;
 let AgentCredential;
+let Machine;
 let daemonAuth;
 let agentRuntimeAuth;
 
@@ -11,12 +12,13 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   AgentCredential = require('../../../models/AgentCredential');
+  Machine = require('../../../models/Machine');
   daemonAuth = require('../../../middleware/daemonAuth').daemonAuth;
   agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 });
 
 afterEach(async () => {
-  await AgentCredential.deleteMany({});
+  await Promise.all([AgentCredential.deleteMany({}), Machine.deleteMany({})]);
 });
 
 afterAll(async () => {
@@ -35,6 +37,12 @@ describe('daemonAuth', () => {
   it('authenticates only a scoped daemon credential and never assigns an agent identity', async () => {
     const token = `cm_daemon_${'a'.repeat(32)}`;
     const ownerUserId = new mongoose.Types.ObjectId();
+    await Machine.create({
+      ownerUserId,
+      machineId: 'machine-1',
+      name: 'Sam’s MacBook',
+      status: 'offline',
+    });
     await AgentCredential.create({
       tokenHash: hash(token),
       kind: 'daemon',
@@ -49,8 +57,11 @@ describe('daemonAuth', () => {
     await daemonAuth('machine:heartbeat')(req, res, () => { nexted = true; });
 
     expect(nexted).toBe(true);
-    expect(req.daemonCredential.machineId).toBe('machine-1');
+    expect(req.machine.machineId).toBe('machine-1');
+    expect(req.daemonCredential).toBeUndefined();
+    expect(req.user).toBeUndefined();
     expect(req.agentUser).toBeUndefined();
+    expect(req.agentAuthorizedPodIds).toBeUndefined();
 
     const runtimeReq = { header: (name) => (name === 'Authorization' ? `Bearer ${token}` : undefined) };
     const runtimeRes = makeRes();
@@ -65,6 +76,6 @@ describe('daemonAuth', () => {
     await daemonAuth('machine:heartbeat')(req, res, () => {});
 
     expect(res.statusCode).toBe(401);
-    expect(req.daemonCredential).toBeUndefined();
+    expect(req.machine).toBeUndefined();
   });
 });

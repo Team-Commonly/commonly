@@ -1,32 +1,42 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import Machine from '../models/Machine';
+import Machine, { IMachine } from '../models/Machine';
 import AgentCredential from '../models/AgentCredential';
 import User from '../models/User';
-import { DaemonCredential, issueDaemonCredential } from './daemonCredentialService';
+import { issueDaemonCredential } from './daemonCredentialService';
 
 // A daemon reports regularly; read paths derive offline from the last report
 // rather than writing stale state merely because somebody opened the page.
 export const MACHINE_OFFLINE_AFTER_MS = 90_000;
+export const MAX_MACHINES_PER_OWNER = 20;
 
 export interface MachineView {
   id: string;
   machineId: string;
   name: string;
-  lastSeenAt: Date;
+  lastSeenAt: Date | null;
   status: 'online' | 'offline';
+}
+
+export interface MachineListView {
+  machines: MachineView[];
+  offlineAfterMs: number;
 }
 
 const asId = (value: unknown): string => String(value || '');
 
-const serializeMachine = (machine: Record<string, unknown>, now = new Date()): MachineView => ({
-  id: asId(machine._id),
-  machineId: String(machine.machineId),
-  name: String(machine.name),
-  lastSeenAt: new Date(machine.lastSeenAt as string | Date),
-  status: now.getTime() - new Date(machine.lastSeenAt as string | Date).getTime()
-    <= MACHINE_OFFLINE_AFTER_MS ? 'online' : 'offline',
-});
+const serializeMachine = (machine: Record<string, unknown>, now = new Date()): MachineView => {
+  const lastSeenAt = machine.lastSeenAt ? new Date(machine.lastSeenAt as string | Date) : null;
+  return {
+    id: asId(machine._id),
+    machineId: String(machine.machineId),
+    name: String(machine.name),
+    lastSeenAt,
+    status: lastSeenAt && now.getTime() - lastSeenAt.getTime() <= MACHINE_OFFLINE_AFTER_MS
+      ? 'online'
+      : 'offline',
+  };
+};
 
 export async function registerMachine({
   ownerUserId,
@@ -40,13 +50,16 @@ export async function registerMachine({
     throw new Error('Machine name must be between 1 and 120 characters');
   }
 
-  const now = new Date();
+  const count = await Machine.countDocuments({ ownerUserId });
+  if (count >= MAX_MACHINES_PER_OWNER) {
+    throw new Error(`Machine limit of ${MAX_MACHINES_PER_OWNER} reached`);
+  }
+
   const machine = await Machine.create({
     ownerUserId,
     machineId: crypto.randomUUID(),
     name: normalizedName,
-    lastSeenAt: now,
-    status: 'online',
+    status: 'offline',
   });
 
   try {
@@ -55,7 +68,7 @@ export async function registerMachine({
       machineId: machine.machineId,
       name: machine.name,
     });
-    return { machine: serializeMachine(machine.toObject ? machine.toObject() : machine, now), token };
+    return { machine: serializeMachine(machine.toObject ? machine.toObject() : machine), token };
   } catch (error) {
     // Do not return a machine whose daemon credential failed to mint. The
     // cleanup is safe to retry and no bearer value escaped this function.
@@ -64,30 +77,20 @@ export async function registerMachine({
   }
 }
 
-export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string): Promise<MachineView[]> {
+export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string): Promise<MachineListView> {
   const machines = await Machine.find({ ownerUserId }).sort({ lastSeenAt: -1 }).lean();
   const now = new Date();
-  return machines.map((machine: Record<string, unknown>) => serializeMachine(machine, now));
+  return {
+    machines: machines.map((machine: Record<string, unknown>) => serializeMachine(machine, now)),
+    offlineAfterMs: MACHINE_OFFLINE_AFTER_MS,
+  };
 }
 
-export async function recordMachineHeartbeat({
-  machineDbId,
-  credential,
-}: {
-  machineDbId: string;
-  credential: DaemonCredential;
-}): Promise<{ machine: MachineView | null; authorized: boolean }> {
-  const machine = await Machine.findById(machineDbId);
-  if (!machine) return { machine: null, authorized: false };
-  if (String(machine.machineId) !== credential.machineId) return { machine: null, authorized: false };
-
+export async function recordMachineHeartbeat(machine: IMachine): Promise<MachineView> {
   machine.lastSeenAt = new Date();
   machine.status = 'online';
   await machine.save();
-  return {
-    machine: serializeMachine(machine.toObject ? machine.toObject() : machine),
-    authorized: true,
-  };
+  return serializeMachine(machine.toObject ? machine.toObject() : machine);
 }
 
 export async function removeMachine({
@@ -114,11 +117,11 @@ export async function removeMachine({
     await AgentCredential.revokeCascade(credential._id);
   }
 
-  // S2 owns the identity-level machineId CAS. strict:false keeps this cleanup
-  // effective while S1 and S2 are merged independently.
+  // S2 owns the identity-level CAS. Deletion clears the binding but preserves
+  // the agent User row, identity, and memory.
   await User.updateMany(
-    { machineId: machine.machineId },
-    { $unset: { machineId: 1 } },
+    { 'botMetadata.machineId': machine.machineId },
+    { $set: { 'botMetadata.machineId': null } },
     { strict: false },
   );
   await Machine.deleteOne({ _id: machine._id });
@@ -127,6 +130,7 @@ export async function removeMachine({
 
 module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
+  MAX_MACHINES_PER_OWNER,
   listMachinesForOwner,
   recordMachineHeartbeat,
   registerMachine,

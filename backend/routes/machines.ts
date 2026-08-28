@@ -44,10 +44,12 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
     if (!ownerUserId) return res.status(401).json({ message: 'Unauthorized' });
     const { machine, token } = await registerMachine({ ownerUserId, name: req.body?.name });
     // The raw daemon credential is intentionally only ever returned here.
-    return res.status(201).json({ machine, token });
+    return res.status(201).json({ machine, daemonToken: token });
   } catch (error) {
     const message = (error as Error).message;
-    if (message.startsWith('Machine name')) return res.status(400).json({ message });
+    if (message.startsWith('Machine name') || message.startsWith('Machine limit')) {
+      return res.status(400).json({ message });
+    }
     console.error('Error registering machine:', error);
     return res.status(500).json({ message: 'Server error' });
   }
@@ -61,12 +63,9 @@ router.post(
     try {
       const { id } = req.params;
       if (!Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Invalid machine id' });
-      const result = await recordMachineHeartbeat({
-        machineDbId: id,
-        credential: req.daemonCredential!,
-      });
-      if (!result.authorized) return res.status(403).json({ message: 'Access denied' });
-      return res.json({ machine: result.machine });
+      if (String(req.machine?._id) !== id) return res.status(403).json({ message: 'Access denied' });
+      const machine = await recordMachineHeartbeat(req.machine!);
+      return res.json({ machine });
     } catch (error) {
       console.error('Error recording machine heartbeat:', error);
       return res.status(500).json({ message: 'Server error' });

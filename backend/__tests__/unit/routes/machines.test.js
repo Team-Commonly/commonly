@@ -12,7 +12,7 @@ jest.mock('../../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../../middleware/daemonAuth', () => ({
   daemonAuth: () => (req, _res, next) => {
-    req.daemonCredential = { machineId: 'daemon-machine' };
+    req.machine = { _id: '0123456789abcdef01234567', machineId: 'daemon-machine' };
     next();
   },
 }));
@@ -46,31 +46,41 @@ describe('machine lifecycle routes', () => {
     const res = await request(app).post('/api/machines').send({ name: 'Sam’s Mac' });
 
     expect(res.status).toBe(201);
-    expect(res.body).toEqual(expect.objectContaining({ token: 'cm_daemon_once' }));
+    expect(res.body).toEqual(expect.objectContaining({ daemonToken: 'cm_daemon_once' }));
     expect(registerMachine).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sam’s Mac' }));
   });
 
   it('lists only the caller’s machine views', async () => {
-    listMachinesForOwner.mockResolvedValue([{ id: 'm1', name: 'Sam’s Mac', status: 'online' }]);
+    listMachinesForOwner.mockResolvedValue({
+      machines: [{ id: 'm1', name: 'Sam’s Mac', status: 'online' }],
+      offlineAfterMs: 90000,
+    });
 
     const res = await request(app).get('/api/machines');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: 'm1', name: 'Sam’s Mac', status: 'online' }]);
+    expect(res.body).toEqual({
+      machines: [{ id: 'm1', name: 'Sam’s Mac', status: 'online' }],
+      offlineAfterMs: 90000,
+    });
     expect(listMachinesForOwner).toHaveBeenCalledWith('0123456789abcdef01234567');
   });
 
   it('uses the daemon credential only for the matching heartbeat', async () => {
-    recordMachineHeartbeat.mockResolvedValue({
-      authorized: true,
-      machine: { id: '0123456789abcdef01234567', status: 'online' },
-    });
+    recordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
 
     const res = await request(app).post('/api/machines/0123456789abcdef01234567/heartbeat');
 
     expect(res.status).toBe(200);
     expect(recordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
-      credential: { machineId: 'daemon-machine' },
+      machineId: 'daemon-machine',
     }));
+  });
+
+  it('rejects a heartbeat path that is not the authenticated machine', async () => {
+    const res = await request(app).post('/api/machines/abcdefabcdefabcdefabcdef/heartbeat');
+
+    expect(res.status).toBe(403);
+    expect(recordMachineHeartbeat).not.toHaveBeenCalled();
   });
 });
