@@ -2616,3 +2616,70 @@ measured intent there is silence, the kernel's reading is leakage.
   semantics change to a load-bearing invariant and needs Sam, not a patch.
 - An agent's self-audit is a detection channel. The seat found in one turn
   what the operator's noise measurement had misattributed for a day.
+
+## 51. "Has anyone reviewed this head?" has two disjoint answers, and the one an agent reaches for first cannot name a commit (2026-08-29, pod-architect, caught by a peer)
+
+**The surface:** a pull request's review state, read from an agent. GitHub
+keeps two comment collections on a PR and `gh` projects both:
+
+| what you call | what it returns | carries `commit_id`? |
+|---|---|---|
+| `gh pr view N --json comments` · `/issues/:n/comments` | issue comments | **no** |
+| `gh pr view N --json reviews` · `/pulls/:n/reviews` | review events | yes |
+
+They are disjoint sets, not one set and a subset. `gh pr review --comment`
+files a review event that never appears in the comments collection. Verified
+on `#1332`: three reviews and three issue comments, zero overlap.
+
+**The false model it taught.** The comments surface is the obvious one — it is
+the default projection, its name is the English word for the thing, and it is
+what `gh pr view N` prints without flags. So an agent asking "has a reviewer
+looked at the tree that would press?" reads it, sees nothing, and concludes
+nobody has. On 2026-08-29 that produced a published claim on TASK-087: "three
+hours later the PR still carries no comment after mine, so the re-gate has not
+happened … a press today would be pressing a tree nobody re-read." Two review
+events were sitting at that exact head, stamped 07:43:09Z and 07:54:09Z. The
+warning was an argument against pressing a PR that was ready.
+
+**The sharper half, which is not "the comments API is incomplete."** An issue
+comment carries **no `commit_id` at all** — confirmed against the raw payload's
+key set, and against `gh`'s own projection, neither of which has any sha field.
+So that surface cannot answer the question even in the cases where it *does*
+show a gate. It can tell you somebody said something; it can never tell you
+which tree they said it about. A negative from it is not a result, and a
+positive from it is not one either.
+
+**Measured on eight open PRs the same morning, the blind spot cuts three ways:**
+
+- `#1268` — a review at the *current* head. A comments-only read omits a live gate.
+- `#1323` — a review at `2d180528` while the head is `976e2a6f`. A comments-only
+  read cannot see it; a reviews read shows it is **stale**, which is the fact
+  that matters.
+- `#1330` — **zero review events**, and yet correctly gated: the approval lives
+  in an issue comment whose body says "Re-gated at `a1607e89`". The gate is real
+  and current, and the only thing binding it to a tree is that the reviewer
+  *typed the sha into the prose*. Nothing queryable records it.
+
+That third case is the one worth keeping. It is not a gap in the record — it is
+a convention doing the record's job, and it fails silently the first time
+someone omits the sha, or edits the head afterwards.
+
+**What to do.**
+
+- **Read `/pulls/:n/reviews` for anything about gates.** It is the only surface
+  that answers "which tree" — and the question is almost always about a tree,
+  because an approval is a statement about a sha and not about a PR.
+- **Do not treat an empty comments read as evidence of an ungated head.** State
+  which surface you queried, the same way you would name any other instrument
+  before reporting an absence.
+- **When you gate a PR in an issue comment, name the sha in the body** — you are
+  supplying by hand the field that surface does not have. And when you *move* a
+  head after someone gated it, say so where they gated, because their approval
+  is now a claim about a tree that no longer exists.
+- Scope: PRs only. An issue has one comment surface and none of this applies.
+
+**Method note.** The correction came from the peer whose review I had just
+declared missing; verifying it myself rather than accepting it is what turned
+"the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
+the other seven PRs is what found `#1330`, where both APIs are silent and the
+gate is real anyway.
