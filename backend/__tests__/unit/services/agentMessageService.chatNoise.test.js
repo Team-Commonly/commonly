@@ -139,6 +139,29 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
   });
 
+  it('normalizes Unicode format-character prefixes before both sentinel checks', () => {
+    // U+200B defeats both the total-match and leading-run checks without the
+    // shared normalization below. Keep the class coupled too: a one-predicate
+    // fix would re-open the same private-reasoning leak.
+    [
+      '\u200B', '\u200C', '\u200D', '\uFEFF', '\u2060',
+      '\u061C', '\u200E', '\u2062', '\u00AD',
+    ].forEach((formatCharacter) => {
+      expect(AgentMessageService.sanitizeAgentContent(
+        `${formatCharacter}NO_REPLY\n\nprivate reasoning`,
+      )).toBe('');
+      expect(AgentMessageService.sanitizeAgentContent(`${formatCharacter}NO_REPLY`)).toBe('');
+    });
+  });
+
+  it('keeps zero-width joiners in substantive agent output', () => {
+    // U+200D is also in the sentinel-normalization class, but it is
+    // load-bearing in emoji. Sentinel decisions may normalize a copy only.
+    const family = '👨‍👩‍👧';
+    expect(AgentMessageService.sanitizeAgentContent(`${family} shipped the fix.`))
+      .toBe(`${family} shipped the fix.`);
+  });
+
   it('drops known bare runtime artifacts without swallowing terse replies', () => {
     expect(AgentMessageService.sanitizeAgentContent('RGCTX')).toBe('');
 
