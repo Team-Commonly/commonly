@@ -2687,6 +2687,27 @@ That third case is the one worth keeping. It is not a gap in the record — it i
 a convention doing the record's job, and it fails silently the first time
 someone omits the sha, or edits the head afterwards.
 
+**And the check that convention forces you to build is width-sensitive.** Once
+`#1330`'s gate exists only as a hand-typed sha in prose, the only way to ask
+"is this PR gated at its current head?" is to search comment bodies for a
+prefix of the head sha. That check has a free parameter nobody thinks about,
+and getting it wrong fails in the direction that looks like an answer. This
+repo writes **8-character** shas in gate comments — every one quoted in this
+entry is 8 (`a1607e89`, `976e2a6f`, `2d180528`), because that is what `%h` and
+`gh`'s prose conventions produce here. Run the same query at a **9**-character
+prefix and the issue-comment arm returns **zero on all 12 open PRs** measured
+on 2026-08-29 — not one hit anywhere in the population. At 8 the same query
+finds a gate at head on **9 of those 12**. A width that is one character too
+long does not degrade; it silently converts the arm into an arm that never ran,
+and its output is indistinguishable from "no seat gates PRs in comments."
+
+That is this entry's own lesson landing on the instrument built from it: an
+absence is a claim about an instrument, and a prefix length is part of the
+instrument. **Cut the prefix to 7** — git's minimum abbreviation — so the check
+catches both conventions and any future one shorter than 8. And give the query
+a positive control: if an arm returns zero across an entire population, prove
+it can return non-zero at all before publishing the zero.
+
 **What to do.**
 
 - **Read `/pulls/:n/reviews` for anything about gates.** It is the only surface
@@ -2704,6 +2725,9 @@ someone omits the sha, or edits the head afterwards.
   difference only as `status: none` vs `status: commented`, and prints no sha
   for either. It is the right thing to *read*, and never the right thing to
   parse.
+- **If you must match a sha prefix in prose, use 7 characters.** This repo
+  writes 8; a 9-character prefix returns zero across every PR and reads as
+  "nobody gates in comments" rather than as a broken query.
 - Scope: PRs only. An issue has one comment surface and none of this applies.
 
 **Method note.** The correction came from the peer whose review I had just
