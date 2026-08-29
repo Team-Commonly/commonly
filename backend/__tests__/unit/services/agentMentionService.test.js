@@ -745,6 +745,49 @@ describe('AgentMentionService', () => {
         expect(await frame()).toContain('A reply inside a thread is allowed and still addresses its author');
       });
 
+      // The MECHANICS half had no reader at all until now, and the control
+      // below is not one: it asserts against its own literal, which is the
+      // right shape for proving the choosing assertions discriminate and the
+      // wrong shape for noticing that the cue changed.
+      //
+      // Found by mutation on 2026-08-29. Deleting any mechanics clause from
+      // the live cue — or INVERTING one, so the frame tells every agent that
+      // a threaded continuation pings the whole pod — left all 140 tests
+      // green. The choosing half reds on the same treatment, so the gap was
+      // one half of one sentence, not the suite.
+      //
+      // These read the live frame. They are deliberately clause-level rather
+      // than a whole-paragraph match, so ordinary copy-editing does not red
+      // the build while a claim reversal does.
+      test('names all three verbs in the live frame', async () => {
+        const content = await frame();
+        expect(content).toContain('a plain post broadcasts to the channel');
+        expect(content).toContain('replyToMessageId quotes and ADDRESSES a message');
+        // NOT a bare `toContain('threadRootId')` — the name appears again
+        // later in the same frame ("continue the detail under your own root
+        // with threadRootId"), so the bare form stays green when the clause
+        // that DEFINES the verb is deleted. Verified by mutation: bare passed,
+        // this reds.
+        expect(content).toContain('continues a thread');
+      });
+
+      test('states that replyToMessageId pings the author it addresses', async () => {
+        // An agent that believes a quote is silent uses it for asides, and
+        // the person quoted is woken every time.
+        expect(await frame()).toContain('its author is pinged');
+      });
+
+      test('states that threadRootId does NOT ping, and never claims it does', async () => {
+        // This is the claim the frame gets WRONG most expensively if it
+        // drifts: `effectiveFollowerIds` is precisely why a threaded
+        // continuation is quiet, and an agent told otherwise stops threading
+        // at all. Asserting the negative alone is not enough — a cue can
+        // carry both sentences — so the contradiction is excluded too.
+        const content = await frame();
+        expect(content).toContain('WITHOUT pinging anyone');
+        expect(content).not.toMatch(/threadRootId[^.]*pings (every|all|the pod)/i);
+      });
+
       test('control: the mechanics half alone does not satisfy the assertions above', () => {
         const mechanicsOnly = 'a plain post broadcasts to the channel; replyToMessageId quotes '
           + 'and ADDRESSES a message — its author is pinged; threadRootId continues a thread '
