@@ -358,7 +358,7 @@ Per row: an **approval** leaves on `status != 'pending'`; a **blocked-on-human**
 
 **Three of those four transitions are safe and one is not**, which the measurement above establishes rather than assumes. `approval.status`, `ask.status` and message text all move on their own. `blockedOn` moves only if someone remembers to move it, and TASK-034 is the proof they do not — so a `blockedOn` row that never clears is the expected case, not the pathological one. Either the field carries the blocker's identity (a PR number, a task id) so the clear can be **derived** when that blocker resolves, or a sweep nulls it; a bare `'human'` enum with no referent cannot be cleared by anything but hand.
 
-**The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place v1 must store an explicit per-`(user, message)` acknowledgement.
+**The exception is the @mention, and it is irreducible.** The fact — a message containing `@sam` — never stops being true, so no state transition exists to derive from. "Handled" here is a human judgment and nothing else can supply it, which means the mention row is the one place that needs an explicit per-`(user, message)` acknowledgement stored. §1 below specifies it — and corrects an earlier claim that nothing stored it yet.
 
 Name it for what it is: `acknowledged`, not `read`. A mention the human has seen and not acted on must be able to stay in the queue — the whole failure this queue exists to fix is attention that was technically delivered and never acted on, and a surface that clears on view reproduces it exactly. **Rendering a row is never an acknowledgement.**
 
@@ -370,7 +370,13 @@ The table above returns three "needs a …" verdicts. They are three changes, no
 
 #### 1. The acknowledgement store — shape, and the invariant that makes it safe
 
-§What-marks-an-item-done establishes the mention as the irreducible exception: no derive exists, so v1 must store an explicit per-`(user, message)` acknowledgement. Its shape:
+§What-marks-an-item-done establishes the mention as the irreducible exception: no derive exists, so v1 needs an explicit per-`(user, message)` acknowledgement.
+
+**Correction (@sprint-review, 2026-08-29, reproduced at `origin/main`): that store already exists, so this section is a migration and not a build.** `User.activityQueue.acknowledgedMentionIds` (`models/User.ts:342`) is live end to end — written by `ActivityService.acknowledgeMention` (`activityService.ts:1004`), reached by `POST /api/activity/:activityId/acknowledge` (`routes/activity.ts:158`), consumed by #1274's `V2ActivityPage.tsx`, and read at `activityService.ts:285`, where it already filters acked mentions out of the queue. Its own inline comment makes this section's argument: *"per-(user, message) state, rather than a recent-feed cache: an acknowledged mention must not resurface merely because more messages arrive later."* An earlier revision said v1 **must store** the acknowledgement, which reads as *nothing does* — an absence asserted without naming the instrument that failed to find it, which is the error this document spends §Layer-3.1 warning about, committed here against a store one grep away.
+
+**The invariant below is satisfied too, and by construction rather than by discipline.** The reader at `:285` is a `.filter` that *excludes* acked ids — no path lets an ack create or retain a row.
+
+The shape below is therefore the **migration target**, not a greenfield design:
 
 ```
 AttentionAck {
@@ -382,13 +388,15 @@ AttentionAck {
 unique index: (userId, sourceType, sourceId)
 ```
 
-Keyed by `(user, item)` rather than a field on the source, for a reason that is not stylistic: **`isMention` is derived at read time and never stored** (`activityService.ts:517-521`), so there is no row to mark; and one message can mention two humans, which makes any scalar `dismissedAt` on the Activity wrong by construction.
+Keyed by `(user, item)` rather than a field on the source, for a reason that is not stylistic: **`isMention` is derived at read time and never stored** (`activityService.ts:517-521`), so there is no row to mark; and one message can mention two humans, which makes any scalar `dismissedAt` on the Activity wrong by construction. **Main already honours this** — `acknowledgedMentionIds` is an array on the User, keyed per `(user, message)` — so it is a reason the existing store is right, not a reason to replace it.
 
 **The invariant that keeps this from becoming read-state:** *an ack may only **remove** a row; it must never **create** or **retain** one.* Every failure of the ack store therefore degrades to a re-shown row and never to a hidden one. That is what distinguishes this from the "seen" tracking the opening rule forbids — and it is worth writing down as an invariant rather than as an intention, because the cheap implementation (a read-cursor per user) violates it silently the moment a row arrives out of order.
 
 **Not a cursor.** A timestamp ("mentions read up to T") is smaller and cannot express skip-this-keep-that, which is the entire behaviour separating a queue from a feed.
 
-`sourceType` is an enum on day one despite having one member, because §Ratification-point 4b's un-derivable population is the obvious second consumer — TASK-027 and TASK-016 in the measured six are blocked rows that no merge event can clear. Whether those get an ack or the sweep 4b proposes is 4b's call; the store should not have to change shape to find out.
+**Two things a migration buys, and the first is narrower than the field name suggests.** (a) The existing store cannot take a second consumer, and the obstacle is the **read path**, not the name: `:285` conjoins `activity.flags?.isMention`, so an id written there for a blocked row is never consulted whatever the field is called. §Ratification-point 4b's un-derivable population is the obvious second consumer — TASK-027 and TASK-016 in the measured six are blocked rows that no merge event can clear — and reaching it means changing a filter, not just a key. That is why `sourceType` is an enum on day one despite having one member; whether those rows get an ack or the sweep 4b proposes is 4b's call, and the store should not have to change shape to find out. (b) `acknowledgedMentionIds` is `[String]` with no prune, no TTL and no removal path anywhere under `backend/` — the only writers are the initialiser at `:1008` and `Array.from(next)` at `:1014` — so it grows monotonically per user forever and is re-read into a `Set` on every feed build.
+
+Neither is urgent, and both are reasons to **migrate**. Neither is a reason to build, which is what this section previously asked for.
 
 #### 2. `Task.blockedOn` — the field, and what each variant costs
 
@@ -430,7 +438,7 @@ The one place that reads the value tolerates its absence already — `respondToA
 
 3. **A real `expired` transition needs a sweep**, since today the status is reachable only by the race at `agentAskService.ts:249`.
 
-**Whichever way point 3 is ratified, the ack store in §1 is still required** — it belongs to the mention row, which neither mechanism touches. Point 3 decides where an agent's question to a human lives; it does not decide anything about §1.
+**Whichever way point 3 is ratified, the ack store in §1 is still required** — it belongs to the mention row, which neither mechanism touches. (Required, and already built: see the correction at the head of §1.) Point 3 decides where an agent's question to a human lives; it does not decide anything about §1.
 
 #### What the surface consumes, and one constraint it inherits from CI
 
