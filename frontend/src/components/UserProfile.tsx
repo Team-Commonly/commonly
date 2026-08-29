@@ -46,6 +46,7 @@ import { useV2Embedded } from '../v2/hooks/useV2Embedded';
 interface ProfileUser {
     _id: string;
     username: string;
+    displayName?: string;
     email: string;
     role?: string;
     profilePicture?: string;
@@ -384,6 +385,7 @@ const UserProfile = () => {
     );
     const isOwnProfile = !profileId || (currentUser && currentUser._id === user._id);
     const isSelectedAvatarColor = avatarOptions.some((avatar) => avatar.id === selectedAvatar);
+    const profileDisplayName = user.displayName || user.username;
 
     return (
         <Box sx={{ maxWidth: 1000, mx: 'auto', p: { xs: 2, md: 4 }, mt: { xs: 2, md: 6 } }}>
@@ -402,7 +404,7 @@ const UserProfile = () => {
                                         }}
                                         src={getAvatarSrc(user.profilePicture)}
                                     >
-                                        {user.username.charAt(0).toUpperCase()}
+                                        {profileDisplayName.charAt(0).toUpperCase()}
                                     </Avatar>
                                     {isOwnProfile && (
                                         <IconButton
@@ -428,12 +430,12 @@ const UserProfile = () => {
                                         and keep the secondary metadata only. */}
                                     {!v2Embedded && (
                                         <Typography variant="h4" gutterBottom>
-                                            {user.username}
+                                            {profileDisplayName}
                                         </Typography>
                                     )}
                                     {v2Embedded && (
                                         <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                                            {user.username}
+                                            {profileDisplayName}
                                         </Typography>
                                     )}
                                     <Typography variant="body2" color="text.secondary">
@@ -827,7 +829,7 @@ const UserProfile = () => {
                             }}
                             src={avatarPreview || (isSelectedAvatarColor ? undefined : getAvatarSrc(selectedAvatar)) || undefined}
                         >
-                            {user.username.charAt(0).toUpperCase()}
+                            {profileDisplayName.charAt(0).toUpperCase()}
                         </Avatar>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>

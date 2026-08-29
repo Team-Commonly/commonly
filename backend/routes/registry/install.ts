@@ -396,7 +396,10 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // AND AgentProfile.name — and the V2 member list reads AgentProfile FIRST,
     // so users see "Cuz" on every member row even though the underlying
     // identity has the right name. Order: explicit caller intent > existing
-    // identity > registry default.
+    // identity > registry default. Resolve the existing identity through the
+    // same leak guard every display surface uses: historical rows may contain
+    // a runtime-shaped displayName such as "openclaw (nova)", which must not
+    // become a higher-precedence installation or profile label.
     let effectiveDisplayName: string = displayName || '';
     if (!effectiveDisplayName) {
       try {
@@ -404,9 +407,9 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
           'botMetadata.agentName': agent.agentName,
           'botMetadata.instanceId': normalizedInstanceId,
           isBot: true,
-        }).select('botMetadata.displayName').lean();
+        }).select('username botMetadata.displayName botMetadata.agentName botMetadata.instanceId').lean();
         if (existingAgentUser?.botMetadata?.displayName) {
-          effectiveDisplayName = String(existingAgentUser.botMetadata.displayName);
+          effectiveDisplayName = AgentIdentityService.resolveAgentDisplayLabel(existingAgentUser, '');
         }
       } catch (lookupErr) {
         // Non-fatal — fall through to registry default below.
