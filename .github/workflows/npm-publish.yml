@@ -1,0 +1,129 @@
+name: Publish npm packages
+
+# Companion to package-version-guard.yml. That guard makes "source moved but
+# version didn't" go red on the PR; this workflow closes the other half of the
+# loop: "version moved but nobody published". As of 2026-08-29 main carried
+# cli 0.1.22 / mcp 0.3.5 while npm served 0.1.18 / 0.3.4 — four CLI releases
+# that never left the repo, so every `commonly` install and every seat on this
+# laptop ran code the repo had already replaced.
+#
+# Trigger: a push to main that touches a published package. For each package,
+# compare package.json's version with what the registry serves:
+#   equal            → nothing to do (most pushes)
+#   repo > registry  → publish, then read it back from the registry
+#   repo < registry  → fail loudly; the repo walked backwards (see the guard)
+#
+# Needs one secret: NPM_TOKEN — an npm granular access token with
+# read+write on @commonlyai/*, "bypass 2FA" enabled, no IP allowlist.
+# Publishes with --provenance (OIDC; needs id-token: write) so each version on
+# npm links back to the exact commit and run that produced it.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cli/**'
+      - 'commonly-mcp/**'
+      - 'docs/agents/skills/commonly/SKILL.md'   # cli prepublishOnly copies it in
+      - '.github/workflows/npm-publish.yml'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package dir to publish (cli | commonly-mcp | all)'
+        default: 'all'
+        type: choice
+        options: [ all, cli, commonly-mcp ]
+
+permissions:
+  contents: read
+  id-token: write   # npm --provenance
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false   # never abort a publish mid-flight
+
+jobs:
+  publish:
+    name: ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [ cli, commonly-mcp ]
+    # workflow_dispatch can target one package; push publishes whichever moved.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.inputs.package == 'all' ||
+      github.event.inputs.package == matrix.pkg
+    defaults:
+      run:
+        working-directory: ${{ matrix.pkg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Compare repo version with the registry
+        id: cmp
+        shell: bash
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          repo_v=$(node -p "require('./package.json').version")
+          # `npm view` exits non-zero for a never-published package; treat that
+          # as 0.0.0 so the first release goes through the same path.
+          reg_v=$(npm view "$name" version 2>/dev/null || echo "0.0.0")
+          echo "name=$name"    >> "$GITHUB_OUTPUT"
+          echo "repo_v=$repo_v" >> "$GITHUB_OUTPUT"
+          echo "reg_v=$reg_v"   >> "$GITHUB_OUTPUT"
+          case "$repo_v$reg_v" in *-*)
+            echo "::error::$name: prerelease in $reg_v → $repo_v; this workflow does not order prereleases (same limit as package-version-guard). Publish by hand."
+            exit 1;;
+          esac
+          if [ "$repo_v" = "$reg_v" ]; then
+            echo "· $name: registry already at $reg_v"
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+          elif [ "$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)" = "$repo_v" ]; then
+            echo "✓ $name: $reg_v → $repo_v, publishing"
+            echo "action=publish" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::$name: repo $repo_v is BELOW registry $reg_v. main walked the version backwards; fix the repo, do not republish."
+            exit 1
+          fi
+
+      - name: Refuse to publish without a token
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not set. ${{ steps.cmp.outputs.name }}@${{ steps.cmp.outputs.repo_v }} is on main but cannot reach npm — add the secret (Settings → Secrets → Actions) and re-run this workflow."
+            exit 1
+          fi
+
+      - name: Install
+        if: steps.cmp.outputs.action == 'publish'
+        run: npm ci --ignore-scripts
+
+      - name: Publish ${{ steps.cmp.outputs.name }}@${{ steps.cmp.outputs.repo_v }}
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      - name: Read it back from the registry
+        if: steps.cmp.outputs.action == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="${{ steps.cmp.outputs.name }}"; want="${{ steps.cmp.outputs.repo_v }}"
+          for i in 1 2 3 4 5 6; do
+            got=$(npm view "$name@$want" version 2>/dev/null || true)
+            [ "$got" = "$want" ] && { echo "✓ $name@$want is live"; exit 0; }
+            sleep 10
+          done
+          echo "::error::$name@$want not visible on the registry after publish"
+          exit 1
