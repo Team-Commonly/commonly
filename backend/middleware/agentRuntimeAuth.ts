@@ -7,6 +7,8 @@ import User, { IUser } from '../models/User';
 import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isConfiguredDevTierGitHubIssueWriter } = require('../services/githubIssueWriteCapability') as typeof import('../services/githubIssueWriteCapability');
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -48,6 +50,51 @@ const extractToken = (req: Request): string | undefined => {
     return authHeader.replace('Bearer ', '').trim();
   }
   return req.header('x-commonly-agent-token');
+};
+
+/**
+ * #1322 added a default-off capability after the established OpenClaw seats
+ * already had active AgentInstallation rows. New installs receive the grant
+ * in the install route, but the runtime-auth boundary is the one place every
+ * existing seat must cross before it can spend the GitHub credential.
+ *
+ * Reconcile there, before a route sees req.agentInstallations. That turns the
+ * first authenticated request after deploy into a safe, server-derived
+ * backfill for every active installation of a configured dev identity. It
+ * avoids relying on a reinstall/reprovision and avoids trusting the
+ * user-editable installation config. Failed reconciliation leaves the field
+ * false, so the subsequent write gate remains fail-closed.
+ */
+const backfillDevTierGitHubIssueWrite = async <T extends { githubIssueWrite?: boolean }>(
+  agentName: string,
+  instanceId: string,
+  installations: T[],
+): Promise<T[]> => {
+  if (!installations.length || installations.some((installation) => installation?.githubIssueWrite === true)) {
+    return installations;
+  }
+
+  const shouldGrant = await isConfiguredDevTierGitHubIssueWriter({ agentName, instanceId });
+  if (!shouldGrant) return installations;
+
+  try {
+    await AgentInstallation.updateMany(
+      {
+        agentName,
+        instanceId,
+        status: 'active',
+        githubIssueWrite: { $ne: true },
+      },
+      { $set: { githubIssueWrite: true } },
+    );
+    installations.forEach((installation) => {
+      installation.githubIssueWrite = true;
+    });
+  } catch (err) {
+    console.warn('[agent-auth] could not backfill GitHub issue write capability:', (err as Error).message);
+  }
+
+  return installations;
 };
 
 export default async function agentRuntimeAuth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
@@ -113,6 +160,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         instanceId,
         status: 'active',
       }).lean();
+      await backfillDevTierGitHubIssueWrite(agentName, instanceId, installations);
       const installationPodIds = installations
         .map((inst) => inst?.podId?.toString())
         .filter(Boolean) as string[];
@@ -178,6 +226,11 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       instanceId: installation.instanceId || 'default',
       status: 'active',
     });
+    await backfillDevTierGitHubIssueWrite(
+      installation.agentName,
+      installation.instanceId || 'default',
+      allActiveInstallations,
+    );
 
     req.agentInstallation = installation as never;
     req.agentInstallations = allActiveInstallations as never[];
