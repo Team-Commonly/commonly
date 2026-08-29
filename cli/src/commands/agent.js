@@ -351,6 +351,25 @@ export const assertSandboxDeclaredForPublicPod = async ({
   );
 };
 
+// ── wake: toggle ADR-018 ambient wake on an attached agent ──────────────────
+
+/**
+ * Set `config.wakeOnMessage.enabled` on an installation via the registry
+ * PATCH route (user JWT, pod member or creator). Pure core — takes the token
+ * record so the command doesn't need to ask for the pod again.
+ */
+export const setWakeOnMessage = async ({ client, record, enabled }) => {
+  if (!record?.podId || !record?.agentName) {
+    throw new Error('token record is missing podId/agentName — re-attach the agent');
+  }
+  const instanceId = record.instanceId || 'default';
+  await client.patch(
+    `/api/registry/pods/${record.podId}/agents/${record.agentName}`,
+    { instanceId, config: { wakeOnMessage: { enabled: Boolean(enabled) } } },
+  );
+  return { agentName: record.agentName, podId: record.podId, instanceId, enabled: Boolean(enabled) };
+};
+
 // ── attach: register a local-CLI-wrapped agent (ADR-005) ────────────────────
 
 /**
@@ -364,6 +383,7 @@ export const performAttach = async ({
   podId,
   displayName,
   envPath = null,
+  wakeOnMessage = false,
   log = () => {},
 }) => {
   const adapter = getAdapter(adapterName);
@@ -506,6 +526,10 @@ export const performAttach = async ({
         host: 'byo',
       },
       ...(environment ? { environment } : {}),
+      // ADR-018: ambient wake is a per-install opt-in read by
+      // agentMentionService (`config.wakeOnMessage.enabled === true`, default
+      // OFF). Until now the only way to set it for a BYO seat was a DB write.
+      ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
     },
     scopes: ['context:read', 'messages:write', 'memory:read', 'memory:write'],
   });
@@ -1761,6 +1785,7 @@ Docs:
     .option('--env <path>', 'Path to environment.json (ADR-008 — sandbox/skills/MCP)')
     .option('--import-memory [path]', 'Import local memory (CLAUDE.md / MEMORY.md / ~/.claude project memory, or a given file/dir) into the agent after attach')
     .option('--yes', 'Skip the import confirmation prompt')
+    .option('--wake-on-message', 'Wake this agent on every message in the pod, not only @mentions (ADR-018 ambient wake; default off). Change later with: commonly agent wake <name> on|off')
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (adapterName, opts) => {
       const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -1781,6 +1806,7 @@ Docs:
           podId: opts.pod,
           displayName: opts.display,
           envPath: envAbsPath,
+          wakeOnMessage: Boolean(opts.wakeOnMessage),
           log: (line) => console.warn(`[attach] ${line}`),
         });
 
@@ -1802,6 +1828,9 @@ Docs:
         console.log(`✓ Runtime token saved to ${tokenFile(opts.name)}`);
         if (workspace) {
           console.log(`✓ Workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
+        }
+        if (opts.wakeOnMessage) {
+          console.log('✓ Wake-on-message: ON (sees every pod message; answers only when addressed or genuinely useful)');
         }
 
         // Retention plan Phase C: the agent arrives whole. Import failure is
@@ -2205,6 +2234,38 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
           console.log('Following... (Ctrl+C to stop)');
           setInterval(fetchAndPrint, 5000);
         }
+      } catch (err) {
+        console.error(`Failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── wake (ADR-018 ambient wake toggle) ───────────────────────────────────
+  agent
+    .command('wake <name> <on|off>')
+    .description('Turn wake-on-message on/off for an attached agent (off = @mentions and heartbeats only)')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (name, state, opts) => {
+      const enabled = state === 'on';
+      if (!enabled && state !== 'off') {
+        console.error(`Expected "on" or "off", got "${state}"`);
+        process.exit(1);
+      }
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        process.exit(1);
+      }
+      const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
+      const token = getToken(opts.instance || record.instanceUrl);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      const client = createClient({ instance: instanceUrl, token });
+      try {
+        const result = await setWakeOnMessage({ client, record, enabled });
+        console.log(`✓ Wake-on-message ${result.enabled ? 'ON' : 'OFF'} for ${result.agentName} in pod ${result.podId}`);
+        console.log(result.enabled
+          ? '  The agent now sees every message in the pod; its runtime decides whether to answer (NO_REPLY otherwise). No restart needed.'
+          : '  The agent now wakes only on @mentions, replies to it, and heartbeats. No restart needed.');
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);
