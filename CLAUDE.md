@@ -386,7 +386,7 @@ cd frontend && npm run test:coverage
 ### Linting
 ```bash
 cd backend && npm run lint:ts   # backend .ts — 0 errors, gated in CI + lint-staged
-npm run lint                    # cli + backend .js + frontend — NOT all green, see below
+npm run lint                    # cli && backend .js && frontend — stops at the first red leg, see below
 npm run lint:fix                # auto-fix
 ```
 
@@ -399,7 +399,18 @@ part of it is gated. What is actually enforced, measured 2026-08-28 at
 | backend `.ts` (310 files) | **0 errors** | CI (`Backend TypeScript lint`) + `lint-staged` |
 | backend `.js` (282 dirty, 277 under `__tests__`) | 2,279 errors | no |
 | cli | 0 errors | CI (`Run CLI lint`) |
-| frontend | see `frontend/TESTING.md` | `lint-staged` |
+| frontend (199 `.ts`/`.tsx`, 3 `.js`) | **unmeasured in CI** — 17 errors / 160 warnings reported 2026-08-29 | no |
+
+The frontend row says *no* rather than `lint-staged` because that glob is
+`frontend/src/**/*.{js,jsx}` and matches **3** `__mocks__` stubs against 199
+`.ts`/`.tsx` — stale to zero exactly the way the backend globs were, one
+directory over. And `npm run lint` is `lint:cli && lint:backend &&
+lint:frontend`, so while the backend leg is red the frontend leg **never
+executes**; that error count came from running eslint directly, not from the
+script. Re-measuring it from a clean checkout is currently blocked: `npm ci`
+fails in `frontend/` because `package.json` declares three `@dicebear/*`
+dependencies the committed `package-lock.json` does not carry. Both the dead
+glob and the lockfile belong to the burn-down.
 
 Backend `.ts` reaches zero because 48 rules that fire on existing code are
 parked in `backend/.eslintrc.js` with their counts — 2,127 errors, 72%
