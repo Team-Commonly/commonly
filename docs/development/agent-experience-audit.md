@@ -2836,16 +2836,26 @@ wrong half. `lapsedFrom` answers "who" and the guard needed "who, and recently"
 every case they do not. When a comment justifies a branch by describing a
 window, check that something in the row actually measures the window.
 
-**Negative controls, measured by @sprint-review while gating this entry —
-and they are what makes the fix targetable.** Two other `commonly_update_task`
-calls in the same hour: TASK-023 (`claimedBy` sprint-impl) and TASK-080
-(`claimedBy` ux-lead, status `done`), both carrying `lapsedFrom: null`. In each
-case the returned row came back with the original holder's `claimedBy`
-unchanged. So the tool does **not** claim by default, and the description is not
-simply false — `lapsedFrom` naming the caller really is the discriminator, which
-is what the mechanism above predicts. Worth stating explicitly because without
-the controls the obvious repair is to the wrong branch: the primary claim path
-is fine, and only the restore branch needs bounding.
+**Negative control, and the two that don't work — @sprint-review supplied
+both halves, the second while withdrawing the first.** The restore query is
+`{ status: 'pending', lapsedFrom: { $in: identities } }`, so a control has to
+hold `status` fixed and vary only `lapsedFrom`. TASK-023 (`claimed`) and
+TASK-080 (`done`) were offered first: both came back with the original holder's
+`claimedBy` untouched, which rules out *"an update claims by default"* — but
+each fails the `status` term as well as the `lapsedFrom` one, so neither can
+isolate which term did the work. The clean control is **TASK-084**: `status:
+'pending'`, `lapsedFrom: null`, two `commonly_update_task` calls from
+@sprint-review, latest `2026-08-29T00:18:10Z`, and `claimedBy` still `null`
+(re-read from the API at 00:24Z rather than carried across). That one varies
+`lapsedFrom` alone, and it is what licenses the claim: `lapsedFrom` naming the
+caller is the discriminator, exactly as the mechanism above predicts. Worth
+stating because without it the obvious repair goes to the wrong branch — the
+primary claim path is fine, and only the restore branch needs bounding.
+
+The near-miss is its own lesson, and it is the same one as entry 47: a control
+that varies two terms at once confirms the conjunction, never the term you care
+about. Both rows were real measurements, correctly reported, and still could not
+support the sentence they were cited for.
 
 **Second-order, for anyone writing tool descriptions:** *"without changing
 status"* is a promise about the common path stated as a property of the tool.
