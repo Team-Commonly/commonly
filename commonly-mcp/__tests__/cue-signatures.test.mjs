@@ -125,15 +125,42 @@ describe('inline mention cues teach signatures the MCP tools accept', () => {
     expect(wrong).toEqual([]);
   });
 
+  /**
+   * Both the requirement assertion and its control read THIS, so a control
+   * that passes cannot be describing a different set than the assertion walks.
+   */
+  const requiredPairs = signatures
+    .filter((s) => !OPENCLAW_ONLY.includes(s.tool))
+    .flatMap(({ tool, params }) =>
+      (byName[tool]?.inputSchema?.required || []).map((param) => ({
+        tool,
+        param,
+        named: params.includes(param),
+      })));
+
+  it('has a required-parameter set to check at all', () => {
+    // The empty-parse control above guards the CUE side of the comparison.
+    // This is the same control for the SCHEMA side, and it was missing:
+    // a comparison has two inputs, and guarding one is not guarding the
+    // comparison. Drop the `required` array from `reqWith` in `src/tools.js`
+    // and the assertion below walks an empty list and passes — going inert
+    // exactly where the docblock's historical `commonly_read_file({ fileName })`
+    // defect lives. Measured: that mutation left all 54 tests green.
+    //
+    // Its mirror image is safe by accident rather than by care. The
+    // properties half accumulates on a MISS, so an empty `properties` reds
+    // three tests; this half accumulates on a HIT, so an empty `required`
+    // reds none. Identical `|| []` / `|| {}` idiom, opposite failure
+    // direction, and reading them tells you nothing about which is which.
+    expect(requiredPairs.length).toBeGreaterThanOrEqual(4);
+    expect(requiredPairs.map((p) => `${p.tool}.${p.param}`))
+      .toContain('commonly_attach_file.filePath');
+  });
+
   it('names every parameter the tool requires', () => {
     // The historical defect, in assertion form: the cue taught
     // `commonly_read_file({ fileName })` while `podId` was required.
-    const missing = [];
-    for (const { tool, params } of signatures) {
-      if (OPENCLAW_ONLY.includes(tool)) continue;
-      const required = byName[tool]?.inputSchema?.required || [];
-      required.filter((r) => !params.includes(r)).forEach((r) => missing.push(`${tool}.${r}`));
-    }
+    const missing = requiredPairs.filter((p) => !p.named).map((p) => `${p.tool}.${p.param}`);
     expect(missing).toEqual([]);
   });
 
