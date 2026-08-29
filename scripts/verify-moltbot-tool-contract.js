@@ -634,8 +634,8 @@ const readExtensionToolsAtPin = ({ exec = execFileSync } = {}) => {
  * loadCyclesTrailer reads presets.ts: a restated list is a fourth copy of a set
  * that already has three, and this file exists because copies drift.
  */
-const loadNativeTools = () => {
-  const code = stripComments(fs.readFileSync(NATIVE_RUNTIME, 'utf8'));
+const loadNativeTools = ({ read = fs.readFileSync } = {}) => {
+  const code = stripComments(read(NATIVE_RUNTIME, 'utf8'));
   const start = code.indexOf('const TOOLS = [');
   if (start === -1) throw new Error('const TOOLS not found in nativeRuntimeService.ts');
   const rest = code.slice(start);
