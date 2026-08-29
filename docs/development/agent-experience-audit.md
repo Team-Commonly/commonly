@@ -2691,22 +2691,43 @@ someone omits the sha, or edits the head afterwards.
 `#1330`'s gate exists only as a hand-typed sha in prose, the only way to ask
 "is this PR gated at its current head?" is to search comment bodies for a
 prefix of the head sha. That check has a free parameter nobody thinks about,
-and getting it wrong fails in the direction that looks like an answer. This
-repo writes **8-character** shas in gate comments — every one quoted in this
-entry is 8 (`a1607e89`, `976e2a6f`, `2d180528`), because that is what `%h` and
-`gh`'s prose conventions produce here. Run the same query at a **9**-character
-prefix and the issue-comment arm returns **zero on all 12 open PRs** measured
-on 2026-08-29 — not one hit anywhere in the population. At 8 the same query
-finds a gate at head on **9 of those 12**. A width that is one character too
-long does not degrade; it silently converts the arm into an arm that never ran,
-and its output is indistinguishable from "no seat gates PRs in comments."
+and getting it wrong fails in the direction that looks like an answer. Most
+gate comments here write **8**-character shas (`a1607e89`, `976e2a6f`,
+`2d180528`) — that is what `%h` produces — but it is a majority habit and not a
+rule: 9-character gates exist too, on `#1322` and on a `#1325` comment. Run the
+query at a **9**-character prefix and the issue-comment arm returns **zero on
+all 12 open PRs** measured on 2026-08-29 — not one hit anywhere in the
+population. At 8 the same query finds a gate at head on **9 of those 12**. A
+width that is one character too long does not degrade; it silently converts the
+arm into an arm that never ran, and its output is indistinguishable from "no
+seat gates PRs in comments."
 
-That is this entry's own lesson landing on the instrument built from it: an
-absence is a claim about an instrument, and a prefix length is part of the
-instrument. **Cut the prefix to 7** — git's minimum abbreviation — so the check
-catches both conventions and any future one shorter than 8. And give the query
-a positive control: if an arm returns zero across an entire population, prove
-it can return non-zero at all before publishing the zero.
+**Retune nothing — delete the parameter.** The first version of this paragraph
+prescribed cutting the prefix to 7, git's minimum abbreviation, "so the check
+catches both conventions and any future one shorter than 8". That is
+self-refuting, and a reviewer said so: `grep 'a1607e8'` does not match `a1607e`.
+Seven catches conventions of length ≥7 and is defeated by anything shorter, in
+exactly the way 9 was defeated by 8 — it moves the threshold and tells the next
+reader the check is safe. Instead, invert the comparison: extract hex tokens
+from the comment body and ask whether **the head starts with the token**. That
+has no width in it at all. Verified against the same population, it finds
+`a1607e89` on `#1330` and `35e4a1af` on `#1327`, and on `#1325` it catches both
+`1d777174` and `1d7771748` without being told either width exists — and it
+drops `#1330` from three hits to one, because the substring form was
+triple-counting one sha across three comments while the token form counts
+distinct shas.
+
+A minimum token length survives, and it is a different kind of knob: it exists
+only to stop short hex strings colliding with unrelated prose and manufacturing
+a gate. Getting it wrong over-reports, which someone notices; getting a *prefix
+width* wrong under-reports to zero, which reads as an answer. When a parameter
+cannot be removed, move it to the side that fails loudly.
+
+**The load-bearing half is the control, not the width.** An absence is a claim
+about an instrument. Give the query a positive control: if an arm returns zero
+across an entire population, prove it can return non-zero at all before
+publishing the zero. That catches this whole class regardless of which width —
+or which comparison — anyone picks.
 
 **What to do.**
 
@@ -2725,9 +2746,15 @@ it can return non-zero at all before publishing the zero.
   difference only as `status: none` vs `status: commented`, and prints no sha
   for either. It is the right thing to *read*, and never the right thing to
   parse.
-- **If you must match a sha prefix in prose, use 7 characters.** This repo
-  writes 8; a 9-character prefix returns zero across every PR and reads as
-  "nobody gates in comments" rather than as a broken query.
+- **Before publishing an absence, run the positive control.** An arm that
+  returns zero across an entire population has to be shown capable of returning
+  non-zero first. This is the rule; everything below about widths is one
+  instance of it.
+- **Do not match a sha prefix in prose at a fixed width.** Extract the hex
+  token and test whether the head starts with it — the comparison then has no
+  width to get wrong. A 9-character prefix against this repo's mostly-8
+  convention returns zero on every PR and reads as "nobody gates in comments"
+  rather than as a broken query, and cutting to 7 only relocates that failure.
 - Scope: PRs only. An issue has one comment surface and none of this applies.
 
 **Method note.** The correction came from the peer whose review I had just
