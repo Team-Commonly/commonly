@@ -51,6 +51,14 @@ module.exports = {
         sourceType: 'module',
       },
       plugins: ['@typescript-eslint'],
+      // Without this the import plugin cannot resolve a single relative import
+      // in this tree, because its default resolver does not know about .ts.
+      // That is what made the two rules below look unusable.
+      settings: {
+        'import/resolver': {
+          node: { extensions: ['.js', '.ts', '.json'] },
+        },
+      },
       rules: {
         // TypeScript's own checker owns undefined symbols and unused locals,
         // and it runs in CI already (`tsc --noEmit`). The base rules do not
@@ -61,10 +69,27 @@ module.exports = {
           'warn',
           { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
         ],
-        // Resolution is tsconfig's job here; the import plugin has no TS
-        // resolver configured and reports every relative import unresolved.
-        'import/extensions': 'off',
-        'import/no-unresolved': 'off',
+        // These two were 'off' when this PR was first pushed, with a comment
+        // saying resolution is tsconfig's job. That was true only because no
+        // resolver was configured — the cause was this file, not TypeScript.
+        // Switching them off retires two rules that catch real defects: an
+        // import of a path that does not exist, and the extension mistake that
+        // separates a working require from a broken one. The `settings` block
+        // above gives the plugin the extension list it was missing, and both
+        // rules then pass on the whole tree. Measured: exit 0 either way, with
+        // byte-identical warning output — so this costs nothing and restores
+        // two bug-catchers.
+        //
+        // `ts: 'never'` is not decoration. Once the resolver can see .ts, the
+        // default policy DEMANDS an explicit extension on every relative
+        // import, which is the opposite of what this codebase and tsc want.
+        'import/extensions': ['error', 'ignorePackages', {
+          js: 'never',
+          mjs: 'never',
+          jsx: 'never',
+          ts: 'never',
+          tsx: 'never',
+        }],
         // This codebase deliberately uses inline `require()` inside functions
         // to break import cycles between services, and says so in comments at
         // the call sites.
