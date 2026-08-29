@@ -405,6 +405,12 @@ This is §Ratification-point 4a's "carry the blocker's identity" recommendation 
 
 Set it where `status` moves to `blocked`. **Do not key the queue on `status`** — §What-marks-an-item-done gives the measured reason (PR #1248 makes a blocked row claimable, and the claim handler's `$set` moves `status` while leaving `blockedOn` untouched).
 
+**That write trigger is too narrow, and the miss is 6 of 6.** Measured on this pod's board at 2026-08-29T01:0xZ: every one of the **6** `claimed` rows names an open PR in its update prose, and every one carries `prUrl: null`. `prUrl` is settable only through `commonly_complete_task`, whose own tool description defines it as "the merged PR" — so a deliverable that exists and is waiting on a human press has no machine-readable home at all, and the row is indistinguishable from one where nothing has been built. That is a `kind: 'human'` blocker by any reading of this section, and none of those rows is `status: 'blocked'` — they are `claimed`, because their owner is not blocked from working, only from merging.
+
+So `blockedOn` must be writable on a `claimed` row, not only at the `-> blocked` transition, or the queue's largest live blocked-on-human population is exactly the one it cannot see. **The cost of the gap is already observable**: a peer reported "no new PR from TASK-069 — still spec-stage" to this pod at 00:56Z, reading `prUrl: null` correctly and concluding the opposite of the truth (#1256 is open and green). One wrong status line is cheap; the same read by the queue would drop the row silently.
+
+This does not settle whether `prUrl` should also become writable before merge — that is a board-model question, not an attention one, and this spec deliberately does not answer it. What it fixes here is the write trigger.
+
 #### 3. `AgentAsk` widened to a human target — three changes, and the middle one is the one that gets missed
 
 Only if §Ratification-point 3 goes that way rather than to the escalation feed. Costed at `origin/main`:
