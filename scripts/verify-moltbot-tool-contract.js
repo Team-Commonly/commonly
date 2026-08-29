@@ -87,9 +87,8 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const EXTENSION_TOOLS = path.join(
-  REPO_ROOT, '_external', 'clawdbot', 'extensions', 'commonly', 'src', 'tools.ts',
-);
+const EXTENSION_TOOLS_REL = 'extensions/commonly/src/tools.ts';
+const EXTENSION_TOOLS = path.join(REPO_ROOT, '_external', 'clawdbot', EXTENSION_TOOLS_REL);
 
 // Read the trailer from its source of truth rather than restating it, so a
 // future edit that names a different tool is covered without touching this
@@ -576,6 +575,205 @@ const checkPinReachable = ({ exec = execFileSync } = {}) => {
   };
 };
 
+const PRESETS_FILE = path.join(REPO_ROOT, 'backend', 'routes', 'registry', 'presets.ts');
+const NATIVE_RUNTIME = path.join(REPO_ROOT, 'backend', 'services', 'nativeRuntimeService.ts');
+
+/**
+ * The extension's tool declarations AT THE GITLINK PIN.
+ *
+ * Everything else in this file already resolves the pin through `git ls-tree`,
+ * and then the one read that decides the whole tool contract went to
+ * `fs.readFileSync` of the submodule WORKING TREE — a different commit whenever
+ * a developer has the submodule checked out to anything but the pin, which is
+ * the normal state while bumping it. CI never saw it (`submodules: recursive`
+ * checks out the gitlink, so tree and pin coincide there), so the divergence
+ * only ever misled a human, and it misled one on this row: @sprint-review
+ * measured the tool set at `70bd82b8` and reported it as "the pin main
+ * declares", which was `5d88a3f1`.
+ *
+ * What makes that worth a code change rather than a note is HOW it failed. The
+ * two lineages declare byte-identical tool names, so the off-pin read agreed
+ * with the correct one. A wrong-provenance measurement that returns the right
+ * answer is indistinguishable from a right one, and the next person to
+ * reproduce it confirms nothing.
+ */
+const readExtensionToolsAtPin = ({ exec = execFileSync } = {}) => {
+  const pin = readGitlinkSha({ full: true });
+  if (pin === '(unknown)') {
+    return { ok: false, pin, reason: 'could not read the gitlink sha for _external/clawdbot from HEAD' };
+  }
+  try {
+    const text = exec(
+      'git',
+      ['-C', path.join(REPO_ROOT, '_external', 'clawdbot'), 'show', `${pin}:${EXTENSION_TOOLS_REL}`],
+      { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return { ok: true, text, pin };
+  } catch (err) {
+    return {
+      ok: false,
+      pin,
+      reason: `git show ${pin.slice(0, 10)}:${EXTENSION_TOOLS_REL} failed — `
+        + String(err.message || err).split('\n')[0],
+    };
+  }
+};
+
+/**
+ * The `internal` runtime's tool surface — a hardcoded array in this repo, NOT
+ * the MCP package's tool set and NOT a subset of the extension's.
+ *
+ * It is a third namespace that spells shared capabilities differently:
+ * `commonly_read_memory` where MCP has `commonly_read_agent_memory`,
+ * `commonly_read_context` where MCP has `commonly_get_context`. A
+ * capability-level comparison scores those as present on both surfaces; only a
+ * name-level one sees the mismatch, which is the entire reason the preset check
+ * below resolves per-runtime instead of against one merged set.
+ *
+ * Sliced from the declaration rather than restated here, for the same reason
+ * loadCyclesTrailer reads presets.ts: a restated list is a fourth copy of a set
+ * that already has three, and this file exists because copies drift.
+ */
+const loadNativeTools = () => {
+  const code = stripComments(fs.readFileSync(NATIVE_RUNTIME, 'utf8'));
+  const start = code.indexOf('const TOOLS = [');
+  if (start === -1) throw new Error('const TOOLS not found in nativeRuntimeService.ts');
+  const rest = code.slice(start);
+  const end = rest.slice(1).search(/\n(?:const|export|function) /);
+  const body = end === -1 ? rest : rest.slice(0, end + 1);
+  const names = parseDeclaredTools(body);
+  // Control: an empty or near-empty parse would report every preset name as
+  // missing on `internal` — loud, and wrong. Distinguish "the array shrank" from
+  // "the slice or the regex stopped matching" by refusing to proceed.
+  if (names.size < 5) {
+    throw new Error(
+      `parsed ${names.size} tool names from nativeRuntimeService.ts's TOOLS array `
+      + `(${body.length} chars sliced). The declaration shape has changed; fix the slice `
+      + 'before trusting a result.',
+    );
+  }
+  return names;
+};
+
+/**
+ * Names that presets.ts mentions in order to say they are GONE.
+ *
+ * One live site, in the dev-pm preset's prompt: "(The former `commonly_pr_diff`
+ * /`commonly_pr_review` tools were removed — they spent a shared server
+ * credential on a caller-chosen repo.)" That sentence is correct, and a
+ * name-matching check fires on it. Excluding by name is the honest handling;
+ * trying to detect negated prose is not something a regex should be asked to do.
+ *
+ * Self-checked below on the same principle as `namedForOtherDrivers`: an
+ * exemption for a name the file no longer mentions is a hole with no remaining
+ * justification, and it would silently excuse that tool if a preset later
+ * started cueing it for real.
+ */
+const NAMED_AS_REMOVED = ['commonly_pr_diff', 'commonly_pr_review'];
+
+/**
+ * presets.ts split into its preset definitions, each with the runtime it
+ * declares and every `commonly_*` name its text hands an agent.
+ *
+ * Comments are stripped FIRST, and that is load-bearing rather than tidy. Three
+ * of the file's twenty names live only in `//` comments — including
+ * `commonly_save_my_memory`, which appears in call-with-parens shape inside a
+ * comment and nowhere else. So the "names in `name(` position" set is not a
+ * subset of the agent-facing set; it both admits a comment and, more
+ * importantly, drops real instructions. social-amplifier's prompt says "Only
+ * post final conversational content via commonly_post_message" — an instruction
+ * to call a tool, written as a sentence, with no parens. It is also the ONLY
+ * tool named by either `internal` preset, so a call-position check would cover
+ * zero of the presets on the runtime whose namespace actually differs.
+ */
+const parsePresets = (source) => {
+  const code = stripComments(source);
+  const lines = code.split('\n');
+  const starts = [];
+  lines.forEach((line, i) => { if (/^ {4}id: '/.test(line)) starts.push(i); });
+
+  // Control, same shape as the empty-parse guard above: zero or a handful of
+  // blocks means the file's indentation or shape moved, and a check that looks
+  // at almost nothing passes almost everything.
+  if (starts.length < 20) {
+    throw new Error(
+      `parsed ${starts.length} preset definitions from presets.ts (expected 30+). `
+      + 'The block shape has changed; fix parsePresets before trusting a result.',
+    );
+  }
+
+  return starts.map((start, k) => {
+    const end = k + 1 < starts.length ? starts[k + 1] : lines.length;
+    const body = lines.slice(start, end).join('\n');
+    const id = (body.match(/^ {4}id: '([^']+)'/) || [])[1];
+    const runtimes = [...new Set([...body.matchAll(/runtime: '([a-z-]+)'/g)].map((m) => m[1]))];
+    if (!id) throw new Error(`preset block at line ${start + 1} has no parseable id`);
+    if (runtimes.length !== 1) {
+      throw new Error(
+        `preset '${id}' declares ${runtimes.length} distinct runtimes (${runtimes.join(', ') || 'none'}). `
+        + 'This check resolves tool names against exactly one runtime per preset; '
+        + 'a block with none or several needs a deliberate rule, not a guess.',
+      );
+    }
+    return {
+      id,
+      line: start + 1,
+      runtime: runtimes[0],
+      names: [...new Set(body.match(/commonly_[a-z_]+/g) || [])],
+    };
+  });
+};
+
+/**
+ * Does every tool a preset teaches exist on the runtime that preset declares?
+ *
+ * This is the check the row TASK-087 was filed for. presets.ts ships heartbeat
+ * and soul prompts to real seats, naming twenty distinct tools, and nothing read
+ * them at the name level — this script read exactly one symbol out of the file
+ * (CYCLES_REFLECTION_TRAILER) and nothing else.
+ *
+ * Correct today, and correct by placement rather than by anything that checks:
+ * `commonly_create_post` exists on openclaw and on neither other surface, and
+ * all five of its sites happen to sit in `runtime: 'openclaw'` presets. Flip one
+ * preset to `internal` and every woken seat reads a prompt teaching a tool its
+ * driver does not have, with nothing red.
+ *
+ * The blast radius is a wasted turn rather than a bad write — the native
+ * dispatcher's `default` returns `unknown_tool`, so that surface fails closed
+ * and legibly. This check is worth its weight because the failure is silent, not
+ * because it is dangerous.
+ */
+const checkPresetToolNames = ({ presets, sets }) => {
+  const mentioned = new Set(presets.flatMap((p) => p.names));
+  NAMED_AS_REMOVED.forEach((tool) => {
+    if (!mentioned.has(tool)) {
+      throw new Error(
+        `NAMED_AS_REMOVED lists ${tool}, but presets.ts no longer mentions it. Delete the `
+        + 'exemption rather than leaving it to excuse a future use.',
+      );
+    }
+  });
+
+  const exempt = new Set(NAMED_AS_REMOVED);
+  const missing = [];
+  const uncovered = [];
+
+  presets.forEach((preset) => {
+    const names = preset.names.filter((n) => !exempt.has(n));
+    const set = sets[preset.runtime];
+    if (!set) {
+      // `claude-code` and `webhook` presets name no tools today. If one starts
+      // to, that is a decision about which tool surface those runtimes expose —
+      // and this check must say it cannot answer rather than skip quietly.
+      if (names.length) uncovered.push({ preset, names });
+      return;
+    }
+    names.filter((n) => !set.has(n)).forEach((tool) => missing.push({ preset, tool }));
+  });
+
+  return { missing, uncovered, mentioned, presetCount: presets.length };
+};
+
 const main = () => {
   let required;
   try {
@@ -594,17 +792,22 @@ const main = () => {
   }
   const pin = readGitlinkSha();
 
-  if (!fs.existsSync(EXTENSION_TOOLS)) {
+  const extension = readExtensionToolsAtPin();
+  if (!extension.ok) {
     console.error(
-      `[moltbot-tool-contract] CANNOT VERIFY — ${path.relative(REPO_ROOT, EXTENSION_TOOLS)} is absent.\n`
-      + `  The submodule is pinned at ${pin} but not checked out.\n`
-      + '  Run: git submodule update --init --recursive _external/clawdbot\n'
-      + '  Exiting 2 (cannot verify), NOT 0 — an unrun check is not a passing one.',
+      `[moltbot-tool-contract] CANNOT VERIFY — could not read ${EXTENSION_TOOLS_REL} at the pin.\n`
+      + `  ${extension.reason}\n`
+      + `  The submodule is pinned at ${pin}. Check it out with:\n`
+      + '    git submodule update --init --recursive _external/clawdbot\n'
+      + '  Exiting 2 (cannot verify), NOT 0 — an unrun check is not a passing one.\n'
+      + '  Falling back to the working-tree copy is NOT the safe move here: it would answer\n'
+      + '  against whatever commit that tree is on, and the lineages declare identical tool\n'
+      + '  names, so a wrong-provenance read agrees with a correct one and looks like a pass.',
     );
     process.exit(2);
   }
 
-  const declared = parseDeclaredTools(fs.readFileSync(EXTENSION_TOOLS, 'utf8'));
+  const declared = parseDeclaredTools(extension.text);
 
   // Control: a parse that finds nothing would satisfy no assertion below by
   // emptiness, and would report every required tool as missing — a loud but
@@ -613,8 +816,23 @@ const main = () => {
   if (declared.size === 0) {
     console.error(
       '[moltbot-tool-contract] CANNOT VERIFY — parsed 0 tool declarations from a file '
-      + `of ${fs.statSync(EXTENSION_TOOLS).size} bytes.\n`
+      + `of ${extension.text.length} bytes.\n`
       + '  The declaration shape has changed; fix parseDeclaredTools before trusting a result.',
+    );
+    process.exit(2);
+  }
+
+  let presetCheck;
+  try {
+    presetCheck = checkPresetToolNames({
+      presets: parsePresets(fs.readFileSync(PRESETS_FILE, 'utf8')),
+      sets: { openclaw: declared, internal: loadNativeTools() },
+    });
+  } catch (err) {
+    console.error(
+      '[moltbot-tool-contract] CANNOT VERIFY — could not resolve preset tool names.\n'
+      + `  ${err.message}\n`
+      + '  Exiting 2. The check did not run; it did not pass.',
     );
     process.exit(2);
   }
@@ -673,14 +891,47 @@ const main = () => {
     );
   }
 
+  if (presetCheck.missing.length) {
+    console.error(
+      `[moltbot-tool-contract] FAIL — ${presetCheck.missing.length} tool name(s) in presets.ts `
+      + 'do not exist on the runtime the preset declares:\n'
+      + presetCheck.missing
+        .map(({ preset, tool }) => `    ${tool}   (runtime: '${preset.runtime}' — preset '${preset.id}', block opens at presets.ts:${preset.line})`)
+        .join('\n')
+      + '\n\n  These are soul and heartbeat prompts shipped to real seats. A name that does not\n'
+      + '  resolve on the preset\'s own runtime sends every woken agent hunting a tool its\n'
+      + '  driver does not have. The three surfaces spell shared capabilities differently\n'
+      + '  (commonly_read_memory vs commonly_read_agent_memory vs commonly_get_context), so\n'
+      + '  the fix is usually the right SPELLING for that runtime, not a new tool.',
+    );
+  } else {
+    console.log(
+      `[moltbot-tool-contract] OK — presets.ts teaches ${presetCheck.mentioned.size} distinct `
+      + `commonly_* names across ${presetCheck.presetCount} presets, and every one resolves on the `
+      + 'runtime its preset declares.',
+    );
+  }
+
+  if (presetCheck.uncovered.length) {
+    console.error(
+      '[moltbot-tool-contract] CANNOT VERIFY — a preset now cues tools on a runtime this check\n'
+      + '  has no tool set for:\n'
+      + presetCheck.uncovered
+        .map(({ preset, names }) => `    '${preset.id}' (runtime: '${preset.runtime}') names ${names.join(', ')}`)
+        .join('\n')
+      + '\n  Add that runtime to the `sets` map with the surface it actually exposes. Exiting 2:\n'
+      + '  skipping it quietly is how presets.ts went unread at the name level to begin with.',
+    );
+  }
+
   if (reach.state === 'contained') {
     console.log(`[moltbot-tool-contract] OK — ${reach.detail}, the branch .gitmodules declares.`);
   }
 
   // Severity order: a proven violation (1) outranks an unrun check (2) only
   // because a violation is actionable now. Both are non-zero; neither is a pass.
-  if (missing.length || reach.state === 'orphaned') process.exit(1);
-  if (reach.state === 'undetermined') process.exit(2);
+  if (missing.length || presetCheck.missing.length || reach.state === 'orphaned') process.exit(1);
+  if (presetCheck.uncovered.length || reach.state === 'undetermined') process.exit(2);
 };
 
 if (require.main === module) main();
@@ -688,5 +939,7 @@ if (require.main === module) main();
 module.exports = {
   parseDeclaredTools, collectRequiredTools, loadCyclesTrailer, loadMentionCues,
   readDeclaredBranch, checkPinReachable, readGitlinkSha,
+  parsePresets, checkPresetToolNames, loadNativeTools, readExtensionToolsAtPin,
+  NAMED_AS_REMOVED, PRESETS_FILE,
   MENTION_CUES, REQUIRED_TOOL_SOURCES, stripComments,
 };
