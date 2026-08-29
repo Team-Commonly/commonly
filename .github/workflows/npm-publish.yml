@@ -17,6 +17,10 @@ name: Publish npm packages
 # read+write on @commonlyai/*, "bypass 2FA" enabled, no IP allowlist.
 # Publishes with --provenance (OIDC; needs id-token: write) so each version on
 # npm links back to the exact commit and run that produced it.
+#
+# This file is deliberately NOT in its own path filter: merging it must not
+# fire a publish before the secret exists. First release goes through
+# workflow_dispatch once NPM_TOKEN is in place.
 
 on:
   push:
@@ -25,7 +29,6 @@ on:
       - 'cli/**'
       - 'commonly-mcp/**'
       - 'docs/agents/skills/commonly/SKILL.md'   # cli prepublishOnly copies it in
-      - '.github/workflows/npm-publish.yml'
   workflow_dispatch:
     inputs:
       package:
@@ -50,14 +53,16 @@ jobs:
       fail-fast: false
       matrix:
         pkg: [ cli, commonly-mcp ]
-    # workflow_dispatch can target one package; push publishes whichever moved.
-    if: >-
-      github.event_name == 'push' ||
-      github.event.inputs.package == 'all' ||
-      github.event.inputs.package == matrix.pkg
+    # No job-level `if` on matrix: jobs.<id>.if cannot see the matrix context
+    # (only github/needs/vars/inputs), and a workflow that fails validation
+    # never appears in the check set — it is absent, not red. The package
+    # picker is applied in the compare step instead.
     defaults:
       run:
         working-directory: ${{ matrix.pkg }}
+    env:
+      PKG: ${{ matrix.pkg }}
+      PICK: ${{ github.event.inputs.package || 'all' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,20 +78,41 @@ jobs:
           set -euo pipefail
           name=$(node -p "require('./package.json').name")
           repo_v=$(node -p "require('./package.json').version")
-          # `npm view` exits non-zero for a never-published package; treat that
-          # as 0.0.0 so the first release goes through the same path.
-          reg_v=$(npm view "$name" version 2>/dev/null || echo "0.0.0")
-          echo "name=$name"    >> "$GITHUB_OUTPUT"
+          echo "name=$name"     >> "$GITHUB_OUTPUT"
           echo "repo_v=$repo_v" >> "$GITHUB_OUTPUT"
-          echo "reg_v=$reg_v"   >> "$GITHUB_OUTPUT"
-          case "$repo_v$reg_v" in *-*)
-            echo "::error::$name: prerelease in $reg_v → $repo_v; this workflow does not order prereleases (same limit as package-version-guard). Publish by hand."
-            exit 1;;
-          esac
+
+          if [ "$PICK" != "all" ] && [ "$PICK" != "$PKG" ]; then
+            echo "· $name: not selected (package=$PICK)"
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # "Never published" (E404) is the first-release path and maps to
+          # 0.0.0. Anything else — outage, auth, rate limit — must stop the
+          # run: a registry we cannot read is not a registry at 0.0.0.
+          if reg_v=$(npm view "$name" version 2>/tmp/npm-view.err); then
+            :
+          elif grep -q 'E404' /tmp/npm-view.err; then
+            reg_v="0.0.0"
+          else
+            echo "::error::$name: npm view failed for a reason other than E404:"; cat /tmp/npm-view.err
+            exit 1
+          fi
+          echo "reg_v=$reg_v" >> "$GITHUB_OUTPUT"
+
           if [ "$repo_v" = "$reg_v" ]; then
             echo "· $name: registry already at $reg_v"
             echo "action=skip" >> "$GITHUB_OUTPUT"
-          elif [ "$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)" = "$repo_v" ]; then
+            exit 0
+          fi
+          # Prerelease ordering is beyond `sort -V` (same limit the version
+          # guard documents). Checked AFTER equality so a repo and registry
+          # parked on the same prerelease is a no-op, not a failure.
+          case "$repo_v$reg_v" in *-*)
+            echo "::error::$name: prerelease in $reg_v → $repo_v; this workflow does not order prereleases. Publish by hand."
+            exit 1;;
+          esac
+          if [ "$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)" = "$repo_v" ]; then
             echo "✓ $name: $reg_v → $repo_v, publishing"
             echo "action=publish" >> "$GITHUB_OUTPUT"
           else
@@ -98,9 +124,11 @@ jobs:
         if: steps.cmp.outputs.action == 'publish'
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NAME: ${{ steps.cmp.outputs.name }}
+          WANT: ${{ steps.cmp.outputs.repo_v }}
         run: |
           if [ -z "$NPM_TOKEN" ]; then
-            echo "::error::NPM_TOKEN secret is not set. ${{ steps.cmp.outputs.name }}@${{ steps.cmp.outputs.repo_v }} is on main but cannot reach npm — add the secret (Settings → Secrets → Actions) and re-run this workflow."
+            echo "::error::NPM_TOKEN secret is not set. $NAME@$WANT is on main but cannot reach npm — add the secret (Settings → Secrets → Actions) and re-run this workflow."
             exit 1
           fi
 
@@ -108,7 +136,7 @@ jobs:
         if: steps.cmp.outputs.action == 'publish'
         run: npm ci --ignore-scripts
 
-      - name: Publish ${{ steps.cmp.outputs.name }}@${{ steps.cmp.outputs.repo_v }}
+      - name: Publish
         if: steps.cmp.outputs.action == 'publish'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -117,13 +145,15 @@ jobs:
       - name: Read it back from the registry
         if: steps.cmp.outputs.action == 'publish'
         shell: bash
+        env:
+          NAME: ${{ steps.cmp.outputs.name }}
+          WANT: ${{ steps.cmp.outputs.repo_v }}
         run: |
           set -euo pipefail
-          name="${{ steps.cmp.outputs.name }}"; want="${{ steps.cmp.outputs.repo_v }}"
           for i in 1 2 3 4 5 6; do
-            got=$(npm view "$name@$want" version 2>/dev/null || true)
-            [ "$got" = "$want" ] && { echo "✓ $name@$want is live"; exit 0; }
+            got=$(npm view "$NAME@$WANT" version 2>/dev/null || true)
+            [ "$got" = "$WANT" ] && { echo "✓ $NAME@$WANT is live"; exit 0; }
             sleep 10
           done
-          echo "::error::$name@$want not visible on the registry after publish"
+          echo "::error::$NAME@$WANT not visible on the registry after publish"
           exit 1
