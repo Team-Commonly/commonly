@@ -90,6 +90,7 @@ export class AgentRuntimeDO implements DurableObject {
     try {
       const events = await listEvents(cfg);
       const processed = (await this.state.storage.get<string[]>('processedEventIds')) || [];
+      let batchErrors = 0;
       for (const event of events) {
         const stillProvisioned = await this.state.storage.get<string>('runtimeToken');
         if (!stillProvisioned) return;
@@ -101,10 +102,15 @@ export class AgentRuntimeDO implements DurableObject {
           }
           await ackEvent(cfg, event._id);
         } catch (err) {
+          batchErrors += 1;
           await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
         }
       }
       await this.state.storage.put('lastPollAt', Date.now());
+      // Otto (#1318 round 2): a latched lastError makes a runtime that blipped
+      // an hour ago indistinguishable from one broken now — the surface he
+      // watches. A clean batch clears it.
+      if (batchErrors === 0) await this.state.storage.delete('lastError');
     } catch (err) {
       await this.state.storage.put('lastError', String((err as Error).message));
     } finally {
