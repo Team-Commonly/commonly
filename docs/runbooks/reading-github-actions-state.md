@@ -267,7 +267,7 @@ Practical consequences:
 - Do not conclude it worked because *some* runs appeared. Count the workflows
   you expect, not whether the list is non-empty — and **derive that number for
   your own PR**. Do not reuse the five below. Eight workflow files declare
-  `pull_request`, and a workflow is excluded by any of **three** independent
+  `pull_request`, and a workflow is excluded by any of **four** independent
   axes:
 
   | Axis | Who declares it | What it costs you if you forget |
@@ -275,6 +275,7 @@ Practical consequences:
   | `branches:` | `Package Version Guard`, `PR Base Freshness` (`main`); `Release Safety` (`v1.0.x`) | a **stacked** PR based on another feature branch loses both guards legitimately — #1279 draws 5 checks where a main-based PR draws 11 |
   | `paths:` | `Deploy Docs`, `Playwright Tests`, `Smoke Tests` | see below — this is the one most often mis-enumerated |
   | `types:` | `Package Version Guard`, `PR Base Freshness`, `Release Safety` | no key defaults to `[opened, synchronize, reopened]`; one pinning `[opened, synchronize]` would never return from a reopen and would read as permanently missing |
+  | `event:` | `Release Safety` also declares `pull_request_review` | **`branches:` does not filter that event.** Measured on #1338: three `Release Safety` runs at one unmoved head, `event=pull_request_review`, each dispatched by a submitted review and each stopped by the job-level `if` — so they land as `SKIPPED` rollup rows, not absent ones |
 
   Read the `paths:` lists from the file, in full, every time. `Playwright Tests`
   is paths-gated (`frontend/**`, `backend/**`, `e2e/**`, `playwright.config.*`)
@@ -286,11 +287,27 @@ Practical consequences:
 
   Worked example, and note that the two answers differ. The three incident PRs
   each touch `backend/**` on a `main` base: `Deploy Docs` and `Smoke Tests` miss
-  on paths, `Release Safety` misses on base — **five**. *This* document's PR
+  on paths, `Release Safety` misses on base — **five**, *for the `pull_request`
+  event*. *This* document's PR
   touches only `docs/runbooks/*.md`: `Playwright Tests` and `Smoke Tests` also
   miss on paths — **four**, and `gh pr checks` on it has no `E2E Tests` row at
   all. A recipe that named only Deploy Docs and Smoke Tests as paths-gated would
   score that missing row as a fault on the very PR that carries the recipe.
+
+  **And the same trap has a second form, on an axis this table did not have
+  until now: the count is not a function of the diff alone — it also depends on
+  where your reviewer chose to write.** A submitted review dispatches
+  `Release Safety` regardless of base, because `branches:` is not applied to
+  `pull_request_review`; the job's `if: base.ref == 'v1.0.x'` is what stops it,
+  and a stopped job is a `SKIPPED` row rather than no row. So a PR gated three
+  times through the *reviews* surface carries three more rollup rows than an
+  identical PR gated through *issue comments*, at the same head, with the same
+  diff. Measured across two PRs in one window: #1338 (8 review events) reads
+  10 SUCCESS + 3 SKIPPED; this document's PR (11 issue comments, zero review
+  events) reads 10 SUCCESS + 0 SKIPPED. Neither number is wrong. **A rollup row
+  set that grows while the head is frozen is the expected behaviour here, not
+  the orphan defect** — the discriminator is the same one this document already
+  gives: read `run.status`. These are `completed/skipped`, not `queued`.
 - **Your expected count is not the whole check list.** CodeQL default setup runs
   as `path: dynamic/github-code-scanning/codeql`, `event: dynamic`, with no file
   in `.github/workflows/`. Close/reopen does not re-dispatch it, so its three
