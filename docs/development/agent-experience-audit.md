@@ -2620,7 +2620,7 @@ measured intent there is silence, the kernel's reading is leakage.
 ## 51. "Has anyone reviewed this head?" has two disjoint answers, and the one an agent reaches for first cannot name a commit (2026-08-29, pod-architect, caught by a peer)
 
 **The surface:** a pull request's review state, read from an agent. GitHub
-keeps two comment collections on a PR and `gh` projects both:
+has two collections an agent reaches for when asking it, and `gh` projects both:
 
 | what you call | what it returns | carries `commit_id`? |
 |---|---|---|
@@ -2631,9 +2631,32 @@ They are disjoint sets, not one set and a subset. `gh pr review --comment`
 files a review event that never appears in the comments collection. Verified
 on `#1332`: three reviews and three issue comments, zero overlap.
 
-**The false model it taught.** The comments surface is the obvious one — it is
-the default projection, its name is the English word for the thing, and it is
-what `gh pr view N` prints without flags. So an agent asking "has a reviewer
+**A third collection exists, and it does not change the rule.**
+`/pulls/:n/comments` returns *inline* review comments, and those do carry
+`commit_id`. They are not a fourth answer to hunt for: every inline comment
+carries a `pull_request_review_id`, and that id is always a review event
+`/pulls/:n/reviews` already returns — verified on `#1312` (4 inline comments,
+all under review `5046947281`), `#1302` and `#1260`. So reading the reviews
+surface still surfaces them. Two cautions, because this entry is itself about
+getting a surface count wrong: the frame is "two collections that answer the
+gate question, one of which cannot name a tree", not "a PR has two comment
+collections" — it has three. And they are not rare here. The peer who caught
+this measured zero across five of my PRs and reasonably read that as "no seat
+files them"; a repo-wide sweep of `/repos/:o/:r/pulls/comments` returns them on
+`#1312`, `#1302`, `#1297`, `#1274`, `#1260`, `#1176`, `#1094`, `#1022` and
+further back. The five-PR sample was all docs rows; inline comments live on
+code review.
+
+**The false model it taught.** The comments surface is the obvious one: its
+name is the English word for the thing, and `--json comments` is the projection
+an agent reaches for. Worse, `gh`'s human projection actively hides the split.
+`gh pr view N` with no flags prints *neither* collection — verified, it stops at
+the body. `gh pr view N --comments` prints **both, interleaved**, distinguishable
+only by a `status:` line (`none` for an issue comment, `commented` for a review
+event) and carrying no sha on either. So the flag that reads as "show me the
+comments" is the one place the two are unified, and `--json comments` — the form
+an agent would pick to filter them — silently returns half. On `#1338`:
+`--comments` shows 2, `--json comments` returns 1. So an agent asking "has a reviewer
 looked at the tree that would press?" reads it, sees nothing, and concludes
 nobody has. On 2026-08-29 that produced a published claim on TASK-087: "three
 hours later the PR still carries no comment after mine, so the re-gate has not
@@ -2676,6 +2699,11 @@ someone omits the sha, or edits the head afterwards.
   supplying by hand the field that surface does not have. And when you *move* a
   head after someone gated it, say so where they gated, because their approval
   is now a claim about a tree that no longer exists.
+- **Do not build a check on `gh pr view --comments`.** It is the friendliest
+  read and the worst instrument: it merges the two collections, labels the
+  difference only as `status: none` vs `status: commented`, and prints no sha
+  for either. It is the right thing to *read*, and never the right thing to
+  parse.
 - Scope: PRs only. An issue has one comment surface and none of this applies.
 
 **Method note.** The correction came from the peer whose review I had just
