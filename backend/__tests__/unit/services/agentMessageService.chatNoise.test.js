@@ -121,6 +121,24 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
       .toBe('NO_REPLY_MODE is a config key.');
   });
 
+  it('keeps both leading-sentinel checks case-coupled', () => {
+    // The total-match suppression (`/^(?:NO_REPLY\s*)+$/`) and the leading-run
+    // strip (`startsWith`) are twenty lines apart and both case-SENSITIVE.
+    // Adding `i` to only one of them splits them: a lowercase prefix would then
+    // be consumed by one check and not the other, which is exactly how private
+    // reasoning leaks. Lowercase is ordinary prose here — neither suppressed
+    // nor stripped.
+    expect(AgentMessageService.sanitizeAgentContent('no_reply\n\nprivate reasoning'))
+      .toBe('no_reply\n\nprivate reasoning');
+    expect(AgentMessageService.sanitizeAgentContent('no_reply')).toBe('no_reply');
+
+    // Control: the same shapes in canonical case are silenced outright, so the
+    // lowercase assertions above are discriminating and not vacuous.
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY\n\nprivate reasoning'))
+      .toBe('');
+    expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
+  });
+
   it('drops known bare runtime artifacts without swallowing terse replies', () => {
     expect(AgentMessageService.sanitizeAgentContent('RGCTX')).toBe('');
 
