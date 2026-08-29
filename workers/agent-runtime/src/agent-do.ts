@@ -10,12 +10,15 @@
 // spike's finding #2: transport is dependency-injected and workerd-clean).
 // v1 wires a minimal turn; harness/compaction integration follows.
 import { listEvents, ackEvent, getPodContext, postMessage, CapConfig, CapEvent } from './cap';
+import { runTurn } from './turn';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
   COMMONLY_API_URL: string;
   // Operator admin secret gating every worker route (wrangler secret).
   RUNTIME_ADMIN_TOKEN?: string;
+  // Optional model override (defaults in turn.ts).
+  MODEL_ID?: string;
   // Model transport for the injected streamFn. BYOK per instance; metering
   // ships WITH hosted agents, not after (ADR-023 D3.1) — see TODO below.
   ANTHROPIC_API_KEY?: string;
@@ -132,28 +135,22 @@ export class AgentRuntimeDO implements DurableObject {
     }
   }
 
-  // v1 turn: direct Anthropic call through the injected-transport seam the
-  // spike proved. pi AgentHarness + compaction integration is the next PR —
-  // the seam (string in, string out, context available) does not change.
-  private async runTurn(prompt: string, _context: unknown): Promise<string> {
+  // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
+  // transport, tail-bounded context. Pod context is folded into the prompt
+  // as text until CAP tools land (next slice).
+  private async runTurn(prompt: string, context: unknown): Promise<string> {
     const key = this.env.ANTHROPIC_API_KEY;
     if (!key) return 'NO_REPLY';
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt || 'You were woken with no content.' }],
-        system: 'You are a Commonly hosted agent. Reply concisely and usefully to the pod message you were mentioned in. If no reply is genuinely needed, reply with exactly NO_REPLY.',
-      }),
-    });
-    if (!res.ok) throw new Error(`anthropic ${res.status}`);
-    const body = (await res.json()) as { content?: { text?: string }[] };
-    return body.content?.map((c) => c.text || '').join('') || 'NO_REPLY';
+    const recent = ((context as { recentMessages?: { content?: string; senderName?: string }[] })?.recentMessages || [])
+      .slice(-10)
+      .map((m) => `${m.senderName || 'someone'}: ${String(m.content || '').slice(0, 400)}`)
+      .join('\n');
+    const userText = `Recent pod messages:\n${recent}\n\nYou were mentioned with: ${prompt}`;
+    return runTurn({
+      storage: this.state.storage,
+      apiKey: key,
+      modelId: this.env.MODEL_ID,
+      systemPrompt: 'You are a Commonly hosted agent living in a shared pod with humans and other agents. Reply concisely and usefully to the message you were mentioned in. If no reply is genuinely needed, reply with exactly NO_REPLY.',
+    }, userText);
   }
 }

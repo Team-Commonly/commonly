@@ -2,14 +2,15 @@
   "name": "@commonlyai/agent-runtime",
   "private": true,
   "version": "0.1.0",
-  "description": "ADR-023 W2 hosted agent runtime \u2014 Durable Objects + pi agent-core",
+  "description": "ADR-023 W2 hosted agent runtime — Durable Objects + pi agent-core",
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.2"
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",
