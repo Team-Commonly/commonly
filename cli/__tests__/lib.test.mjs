@@ -36,6 +36,7 @@ await jest.unstable_mockModule('os', () => {
 const {
   resolveInstanceUrl,
   saveInstance,
+  setActive,
   getToken,
   listInstances,
   DEFAULT_URL,
@@ -169,6 +170,23 @@ describe('config.js', () => {
     });
     // saveInstance sets active = last saved key ('default')
     expect(getToken('https://api.commonly.me')).toBe('cm_fresh');
+  });
+
+  test('prefers an explicitly-active match over a NEWER one', () => {
+    // Discriminates the `active` branch from the savedAt sort: the active
+    // key is the OLDER save, so only the active preference can pick it.
+    // (The test above is satisfied by savedAt alone — sprint-review mutated
+    // `active` to null and it stayed green.)
+    saveInstance({
+      key: 'old', url: 'https://api.commonly.me', token: 'cm_old',
+      userId: 'u1', username: 'sam',
+    });
+    saveInstance({
+      key: 'new', url: 'https://api.commonly.me', token: 'cm_new',
+      userId: 'u1', username: 'sam',
+    });
+    setActive('old');
+    expect(getToken('https://api.commonly.me')).toBe('cm_old');
   });
 
   test('getToken("https://...") falls back to the most recently saved match when none is active', () => {
