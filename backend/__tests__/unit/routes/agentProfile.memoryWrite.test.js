@@ -16,6 +16,12 @@ jest.mock('../../../models/AgentMemory', () => ({
 jest.mock('../../../models/AgentRun', () => ({ find: jest.fn() }));
 jest.mock('../../../models/PodAsset', () => ({ find: jest.fn() }));
 jest.mock('../../../models/pg/Message', () => ({}));
+// #1336 added AgentProfile + a .sort() on the installation chain; this
+// suite's mocks predate both (main went red on merge — the author updated
+// the sibling suites' mocks but not this one).
+jest.mock('../../../models/AgentProfile', () => ({
+  find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
   AgentRegistry: { findOne: jest.fn(), updateOne: jest.fn() },
@@ -67,7 +73,8 @@ const runProfile = async (sections) => {
     createdAt: new Date('2026-01-01T00:00:00Z'),
   }));
   PodAsset.find.mockReturnValue(selectLean([]));
-  AgentInstallation.find.mockReturnValue(selectLean([]));
+  // Route chain is find().sort().select().lean() since #1336.
+  AgentInstallation.find.mockReturnValue({ sort: () => selectLean([]) });
   Pod.find.mockReturnValue(selectLean([]));
   AgentMemory.findOne.mockReturnValue(selectLean({ sections }));
   AgentRun.find.mockReturnValue({
