@@ -34,6 +34,13 @@ describe('runTurn storage round-trip (the #1339 blocker)', () => {
       .rejects.toThrow(/ANTHROPIC_API_KEY unset/);
   });
 
+  it('a failed turn persists NOTHING — redeliveries must not stack duplicate prompts', async () => {
+    const storage = fakeStorage();
+    const emptyLoop = (async () => [{ role: 'assistant', content: [] }]) as never;
+    await expect(runTurn({ storage, apiKey: 'k', systemPrompt: 's', loop: emptyLoop }, 'hi')).rejects.toThrow();
+    expect(storage.raw.get('transcript')).toBeUndefined();
+  });
+
   it('byteBound keeps the persisted transcript under the DO value ceiling', () => {
     const big = Array.from({ length: 60 }, (_, i) => ({
       role: i % 2 ? 'assistant' : 'user', content: [{ type: 'text', text: 'x'.repeat(50_000) }],

@@ -2,20 +2,20 @@
 // transcript persisted on DO storage and pi's own compaction keeping it
 // bounded. This is the ADR-021/023 engine landing in its production home.
 //
-// v1 scope (deliberate): streamSimple as the transport (pi-ai's Anthropic
-// provider — fetch-based, workerd-clean per the spike), no tools yet. The
-// reply is the final assistant text. Two named next slices, neither of which
-// changes this seam (transcript in, text out): CAP tools (read pod context,
-// attach), and pi's real compaction — which is Session-entry based
-// (prepareCompaction takes Entry[], not AgentMessage[]), so it arrives with
-// the Session layer. Until then the transcript is tail-bounded by pi's own
-// token estimate: honest, bounded, and lossy only at the oldest end.
+// Transport: streamSimple (pi-ai's Anthropic provider — fetch-based,
+// workerd-clean per the spike). Tools: CAP calls built per event (tools.ts).
+// The reply is the final assistant text. Remaining named slice, same seam:
+// pi's real compaction — Session-entry based (prepareCompaction takes
+// Entry[], not AgentMessage[]), so it arrives with the Session layer. Until
+// then the transcript is tail-bounded by pi's token estimate and a byte
+// ceiling: honest, bounded, lossy only at the oldest end.
 import {
   runAgentLoop,
   estimateContextTokens,
   type AgentMessage,
   type AgentContext,
   type AgentLoopConfig,
+  type AgentTool,
 } from '@earendil-works/pi-agent-core';
 import { createModels, hasApi, type Message } from '@earendil-works/pi-ai';
 import { streamSimple } from '@earendil-works/pi-ai/compat';
@@ -30,6 +30,10 @@ export interface TurnDeps {
   // faking pi's event stream (Otto's #1339 gate: the persistence contract
   // is where the blocker lived).
   loop?: typeof runAgentLoop;
+  // CAP tools for this turn (built per event; see tools.ts).
+  tools?: AgentTool<any>[];
+  maxToolCalls?: number;
+  timeoutMs?: number;
 }
 
 const TRANSCRIPT_KEY = 'transcript';
@@ -85,6 +89,37 @@ export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentM
   return out;
 };
 
+// Otto's #1340 blocker: with tools, pi's loop is while(hasMoreToolCalls)
+// with no step cap — a model that keeps calling a tool loops on paid calls
+// forever. Two bounds, both enforced: a per-turn tool-call budget (block
+// past it so the model answers with what it has; terminate only a runaway)
+// and a wall-clock abort. A turn is bounded by construction again.
+export const MAX_TOOL_CALLS_PER_TURN = 4;
+export const TURN_TIMEOUT_MS = 90_000;
+
+// Budget semantics (Otto, #1340 round 2): exhausting the budget must send
+// the model BACK TO ANSWER, never end the turn — a blocked call returns its
+// reason as the tool result and the loop continues, so the model writes its
+// reply with what it has. Only a runaway (still calling tools past the grace
+// window) is terminated, and that surfaces as an error, not as silence.
+export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN, grace = 2) => {
+  let calls = 0;
+  return {
+    beforeToolCall: async () => {
+      calls += 1;
+      if (calls > max + grace) {
+        return { block: true, terminate: true, reason: `tool-call budget (${max}) exhausted and the model kept calling — terminating` };
+      }
+      if (calls > max) {
+        return { block: true, reason: `Tool-call budget (${max}) exhausted for this turn. Answer now with what you already have.` };
+      }
+      return undefined;
+    },
+    count: () => calls,
+    runaway: () => calls > max + grace,
+  };
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
   if (!deps.apiKey) {
     // A misconfigured deploy must surface on /status, not silently ack every
@@ -107,19 +142,40 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
   transcript = tailBound(transcript, Math.floor(contextWindow * 0.6));
 
   const prompt: AgentMessage = { role: 'user', content: [{ type: 'text', text: userText }], timestamp: Date.now() } as AgentMessage;
-  const context: AgentContext = { systemPrompt: deps.systemPrompt, messages: transcript, tools: [] };
+  const context: AgentContext = { systemPrompt: deps.systemPrompt, messages: transcript, tools: deps.tools || [] };
+  const budget = makeToolBudget(deps.maxToolCalls ?? MAX_TOOL_CALLS_PER_TURN);
   const config: AgentLoopConfig = {
     model,
     convertToLlm,
     getApiKey: () => deps.apiKey,
+    beforeToolCall: budget.beforeToolCall,
   };
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(new Error(`turn exceeded ${TURN_TIMEOUT_MS}ms`)), deps.timeoutMs ?? TURN_TIMEOUT_MS);
 
   // runAgentLoop returns ONLY this turn's messages (prompts + replies), never
   // context.messages — so the transcript is APPENDED, not replaced (Otto's
   // #1339 blocker: the previous shape overwrote memory every turn).
   const loop = deps.loop || runAgentLoop;
-  const turnMessages = await loop([prompt], context, config, () => {}, undefined, streamSimple);
+  let turnMessages: AgentMessage[];
+  try {
+    turnMessages = await loop([prompt], context, config, () => {}, abort.signal, streamSimple);
+  } finally {
+    clearTimeout(timer);
+  }
+  const text = lastAssistantText(turnMessages).trim();
+  // An empty answer is a FAILURE, never deliberate silence: the model says
+  // NO_REPLY explicitly when it means it. Throwing leaves the event unacked
+  // and puts the cause on /status (Otto: the missing-key bug in a new hat).
+  // Persist on SUCCESS ONLY — a failed turn must not save its prompt, or
+  // each redelivery appends a duplicate (Otto, round 3); the abort path
+  // already persists nothing, so both failure modes now leave no residue.
+  if (!text) {
+    throw new Error(budget.runaway()
+      ? `turn terminated: model exceeded tool budget (${budget.count()} calls)`
+      : 'turn ended without assistant text');
+  }
   const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
   await deps.storage.put(TRANSCRIPT_KEY, merged);
-  return lastAssistantText(turnMessages).trim() || 'NO_REPLY';
+  return text;
 };
