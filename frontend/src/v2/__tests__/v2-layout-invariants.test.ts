@@ -742,6 +742,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/\{[^\n}]*\{/); // two opens on one line = doubled anchor
   });
 
+  it('featured team card stacks below 640px — the name column never one-chars (spec §5, #568 class)', () => {
+    const mq = v2.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/);
+    expect(mq).not.toBeNull();
+    expect(mq![0]).toContain('.v2-team-feature');
+    expect(mq![0]).toContain('grid-template-columns: 44px minmax(0, 1fr)');
+  });
+
   it('platform tint tokens exist in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
