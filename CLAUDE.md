@@ -200,7 +200,7 @@ cd backend && npm test                        # all passing (in-memory DBs)
 ./dev.sh up && ./dev.sh test:integration      # INTEGRATION_TEST=true against real DBs
 ./dev.sh cluster up && ./dev.sh cluster test  # full local k8s via kind
 
-npm run lint                                  # 0 errors
+cd backend && npm run lint:ts                 # backend .ts — 0 errors, gated in CI
 ```
 
 ### 🎯 If Tests Are Failing
@@ -385,9 +385,39 @@ cd frontend && npm run test:coverage
 
 ### Linting
 ```bash
-npm run lint        # both frontend + backend (0 errors expected)
-npm run lint:fix    # auto-fix
+cd backend && npm run lint:ts   # backend .ts — 0 errors, gated in CI + lint-staged
+npm run lint                    # cli && backend .js && frontend — stops at the first red leg, see below
+npm run lint:fix                # auto-fix
 ```
+
+**`npm run lint` is not a green command, and has not been for some time.** Only
+part of it is gated. What is actually enforced, measured 2026-08-28 at
+`ccacf0235`:
+
+| scope | state | gated? |
+|---|---|---|
+| backend `.ts` (310 files) | **0 errors** | CI (`Backend TypeScript lint`) + `lint-staged` |
+| backend `.js` (282 dirty, 277 under `__tests__`) | 2,279 errors | no |
+| cli | 0 errors | CI (`Run CLI lint`) |
+| frontend (199 `.ts`/`.tsx`, 3 `.js`) | **unmeasured in CI** — 17 errors / 160 warnings reported 2026-08-29 | no |
+
+The frontend row says *no* rather than `lint-staged` because that glob is
+`frontend/src/**/*.{js,jsx}` and matches **3** `__mocks__` stubs against 199
+`.ts`/`.tsx` — stale to zero exactly the way the backend globs were, one
+directory over. And `npm run lint` is `lint:cli && lint:backend &&
+lint:frontend`, so while the backend leg is red the frontend leg **never
+executes**; that error count came from running eslint directly, not from the
+script. Re-measuring it from a clean checkout is currently blocked: `npm ci`
+fails in `frontend/` because `package.json` declares three `@dicebear/*`
+dependencies the committed `package-lock.json` does not carry. Both the dead
+glob and the lockfile belong to the burn-down.
+
+Backend `.ts` reaches zero because 48 rules that fire on existing code are
+parked in `backend/.eslintrc.js` with their counts — 2,127 errors, 72%
+auto-fixable. Everything else in `airbnb-base` stays ON, so the gate catches
+the first NEW violation of any of several hundred rules. Re-enabling the parked
+48 and fixing the `.js` corpus is the burn-down task; do not describe either as
+green until it is done.
 
 ### MCP Playwright — UI Verification
 
