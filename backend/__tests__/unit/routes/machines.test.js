@@ -1,10 +1,10 @@
 const request = require('supertest');
 const express = require('express');
 
-const registerMachine = jest.fn();
-const listMachinesForOwner = jest.fn();
-const recordMachineHeartbeat = jest.fn();
-const removeMachine = jest.fn();
+const mockRegisterMachine = jest.fn();
+const mockListMachinesForOwner = jest.fn();
+const mockRecordMachineHeartbeat = jest.fn();
+const mockRemoveMachine = jest.fn();
 const mockFindMachine = jest.fn();
 
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
@@ -29,10 +29,10 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }) })),
 }));
 jest.mock('../../../services/machineService', () => ({
-  registerMachine: (...args) => registerMachine(...args),
-  listMachinesForOwner: (...args) => listMachinesForOwner(...args),
-  recordMachineHeartbeat: (...args) => recordMachineHeartbeat(...args),
-  removeMachine: (...args) => removeMachine(...args),
+  registerMachine: (...args) => mockRegisterMachine(...args),
+  listMachinesForOwner: (...args) => mockListMachinesForOwner(...args),
+  recordMachineHeartbeat: (...args) => mockRecordMachineHeartbeat(...args),
+  removeMachine: (...args) => mockRemoveMachine(...args),
 }));
 
 const machinesRouter = require('../../../routes/machines');
@@ -51,7 +51,7 @@ beforeEach(() => {
 
 describe('machine lifecycle routes', () => {
   it('returns the daemon bearer on registration only', async () => {
-    registerMachine.mockResolvedValue({
+    mockRegisterMachine.mockResolvedValue({
       machine: { id: 'm1', name: 'Sam’s Mac', machineId: 'daemon-machine', status: 'online' },
       token: 'cm_daemon_once',
     });
@@ -60,11 +60,11 @@ describe('machine lifecycle routes', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual(expect.objectContaining({ daemonToken: 'cm_daemon_once' }));
-    expect(registerMachine).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sam’s Mac' }));
+    expect(mockRegisterMachine).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sam’s Mac' }));
   });
 
   it('lists only the caller’s machine views', async () => {
-    listMachinesForOwner.mockResolvedValue({
+    mockListMachinesForOwner.mockResolvedValue({
       machines: [{ id: 'm1', name: 'Sam’s Mac', status: 'online' }],
       offlineAfterMs: 90000,
     });
@@ -76,16 +76,16 @@ describe('machine lifecycle routes', () => {
       machines: [{ id: 'm1', name: 'Sam’s Mac', status: 'online' }],
       offlineAfterMs: 90000,
     });
-    expect(listMachinesForOwner).toHaveBeenCalledWith('0123456789abcdef01234567');
+    expect(mockListMachinesForOwner).toHaveBeenCalledWith('0123456789abcdef01234567');
   });
 
   it('uses the daemon credential only for the matching heartbeat', async () => {
-    recordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
+    mockRecordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
 
     const res = await request(app).post('/api/machines/0123456789abcdef01234567/heartbeat');
 
     expect(res.status).toBe(200);
-    expect(recordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
     }));
     expect(mockFindMachine).toHaveBeenCalledWith({
@@ -100,6 +100,6 @@ describe('machine lifecycle routes', () => {
     const res = await request(app).post('/api/machines/abcdefabcdefabcdefabcdef/heartbeat');
 
     expect(res.status).toBe(403);
-    expect(recordMachineHeartbeat).not.toHaveBeenCalled();
+    expect(mockRecordMachineHeartbeat).not.toHaveBeenCalled();
   });
 });
