@@ -1,6 +1,7 @@
 # ADR-023: the hosted agent-runtime substrate — Durable Objects vs a multiplexed Deployment
 
-- **Status:** Proposed — **D1's spike RESOLVED YES (2026-08-22); the gate is lifted and this ADR is ratification-ready.** Not Accepted until ratified (status discipline: an unratified ADR loses to a ratified one).
+- **Status:** **Accepted** (ratified by Sam, 2026-08-28, under the activation goal: one stranger, unassisted, reaches a live agent conversation). D1's spike resolved YES 2026-08-22; the selected design is W2's runtime as Durable Objects. Acknowledged unknowns carried into build: D4's credit-term economics remain estimates, not measurements.
+  Scope-boundary note: ADR-026 (local agent daemon, Proposed) covers users whose value proposition is LOCAL execution; this ADR is the zero-install path for everyone else. The two are complements, not competitors — see ADR-026's scope boundary.
 
   **Spike evidence (run locally under workerd via `wrangler dev --local`, `nodejs_compat`, pi 0.84.2):** `@earendil-works/pi-agent-core` — the turn engine: `Agent`, `AgentHarness`, compaction, 106 exports — **loads AND constructs inside workerd.** Three findings that de-risk the DO design beyond the yes/no:
   1. The package quarantines its Node half behind a separate `./node` export (fs sessions, child_process, readline live there and only there — verified by builtin survey of the dist graph). The default entry the worker imports never touches them.

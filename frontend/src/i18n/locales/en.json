@@ -30,11 +30,15 @@
     "subtitle": "What needs your attention and what your agents moved forward.",
     "controlsAriaLabel": "Activity controls",
     "windowAriaLabel": "Activity window",
-    "windows": { "today": "Today", "7d": "7 days" },
+    "windows": {
+      "today": "Today",
+      "7d": "7 days"
+    },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
+    "openBoard": "Open board",
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
@@ -44,7 +48,12 @@
       "description": "Only direct mentions and pending approvals appear here.",
       "emptyTitle": "Nothing is waiting on you",
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
-      "kinds": { "mention": "Mention", "approval": "Approval" }
+      "kinds": {
+        "mention": "Mention",
+        "approval": "Approval",
+        "decision": "Decision needed",
+        "press": "Ready for your press"
+      }
     },
     "dayZero": {
       "kind": "Get started",
@@ -92,7 +101,12 @@
       "description": "Tasks that changed in this window.",
       "emptyTitle": "No board changes in this window",
       "emptyDescription": "Task changes will appear here without creating a second board.",
-      "status": { "pending": "Pending", "claimed": "In progress", "blocked": "Blocked", "done": "Done" }
+      "status": {
+        "pending": "Pending",
+        "claimed": "In progress",
+        "blocked": "Blocked",
+        "done": "Done"
+      }
     },
     "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
   },
@@ -1367,11 +1381,24 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
-      "updatedClause": " · updated {{time}}",
+      "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",
       "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
-      "lastUpdated": "Last updated {{time}}.",
+      "lastSaved": "Last saved to {{section}} {{time}}.",
+      "kinds": {
+        "durable": "durable memory",
+        "bookkeeping": "internal bookkeeping"
+      },
+      "sections": {
+        "soul": "Identity",
+        "long_term": "Long-term memory",
+        "dedup_state": "Deduplication state",
+        "shared": "Shared memory",
+        "runtime_meta": "Runtime metadata",
+        "daily": "Daily journal",
+        "relationships": "Relationships"
+      },
       "none": "No memory recorded yet."
     },
     "activity": {
@@ -1641,7 +1668,7 @@
     "pending": "Waiting for the channel",
     "enableHint": "Open a private chat with the Commonly bot",
     "enableHintSend": " and send:",
-    "liveRelay": "Live relay",
+    "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
     "podPicker": "Pod to bridge",

@@ -30,11 +30,15 @@
     "subtitle": "需要你处理的事项，以及智能体推动的工作。",
     "controlsAriaLabel": "动态控制项",
     "windowAriaLabel": "动态时间范围",
-    "windows": { "today": "今天", "7d": "7 天" },
+    "windows": {
+      "today": "今天",
+      "7d": "7 天"
+    },
     "podScopeLabel": "Pod 范围",
     "allPods": "所有 Pod",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
+    "openBoard": "打开看板",
     "lastActive": "{{time}}前活跃",
     "updatesCount_one": "{{count}} 条更新",
     "updatesCount_other": "{{count}} 条更新",
@@ -44,7 +48,12 @@
       "description": "这里只显示直接提及和待处理的审批。",
       "emptyTitle": "没有事项在等待你",
       "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
-      "kinds": { "mention": "提及", "approval": "审批" }
+      "kinds": {
+        "mention": "提及",
+        "approval": "审批",
+        "decision": "待你决策",
+        "press": "待你合并"
+      }
     },
     "dayZero": {
       "kind": "开始使用",
@@ -92,7 +101,12 @@
       "description": "此时间范围内发生变化的任务。",
       "emptyTitle": "此时间范围内没有看板变更",
       "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
-      "status": { "pending": "待处理", "claimed": "进行中", "blocked": "已阻塞", "done": "已完成" }
+      "status": {
+        "pending": "待处理",
+        "claimed": "进行中",
+        "blocked": "已阻塞",
+        "done": "已完成"
+      }
     },
     "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
   },
@@ -1361,11 +1375,24 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
-      "updatedClause": " · 更新于 {{time}}",
+      "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有 {{count}} 条",
       "entriesRemembered": "条已记住的条目",
       "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
-      "lastUpdated": "最后更新于 {{time}}。",
+      "lastSaved": "最后保存至 {{section}}，{{time}}。",
+      "kinds": {
+        "durable": "长期记忆",
+        "bookkeeping": "内部记录"
+      },
+      "sections": {
+        "soul": "身份",
+        "long_term": "长期记忆",
+        "dedup_state": "去重状态",
+        "shared": "共享记忆",
+        "runtime_meta": "运行时元数据",
+        "daily": "每日记录",
+        "relationships": "关系"
+      },
       "none": "尚无记忆记录。"
     },
     "activity": {
@@ -1635,7 +1662,7 @@
     "pending": "等待频道确认",
     "enableHint": "打开与 Commonly 机器人的私聊",
     "enableHintSend": "，然后发送：",
-    "liveRelay": "实时中继",
+    "liveRelay": "中继",
     "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
     "newTitle": "连接频道",
     "podPicker": "要桥接的 Pod",

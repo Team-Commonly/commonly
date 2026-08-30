@@ -979,9 +979,9 @@ const isAutoRoutedDmPod = (type: unknown): boolean => isPersonalPodType(type);
 const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
   + 'this pod — nobody named you. Most messages need nothing from you; act '
   + 'only when you add material value, otherwise return NO_REPLY as your '
-  + 'ENTIRE reply — suppression is total-match, and anything you write after '
-  + 'the token WILL be posted publicly (AX entry 43: 11 leaked private '
-  + 'rationales in one day from a seat that prefixed it). If you do '
+  + 'ENTIRE reply — the token silences only when it IS the reply or OPENS it; '
+  + 'anywhere else it is stripped and the rest of your message POSTS PUBLICLY '
+  + '(AX entry 43: 11 leaked private rationales in one day). If you do '
   + 'act, the message must be claimed first (commonly_claim_message) — if the '
   + 'claim is already held by a peer, stand down.]';
 
@@ -992,8 +992,9 @@ const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
 const REPLIES_TO_YOU_FRAME = '[This message replies to YOUR earlier message — '
   + 'you are addressed even though nobody typed your @name. Respond when a '
   + 'response is genuinely useful; if the exchange has concluded, return '
-  + 'NO_REPLY as your ENTIRE reply — anything written after the token WILL '
-  + 'be posted publicly.]';
+  + 'NO_REPLY as your ENTIRE reply — the token silences only when it IS the '
+  + 'reply or OPENS it; anywhere else it is stripped and the rest POSTS '
+  + 'PUBLICLY.]';
 
 const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
   (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
@@ -2076,7 +2077,7 @@ const enqueueDmEvent = async ({
     // "@default (DisplayName)", which is meaningless.
     const senderHandle = (senderInstanceLabel || sender?.username || username || 'peer').trim();
     const dmFrame = dmKind === 'agent-agent'
-      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY (as your ENTIRE reply — anything after the token posts publicly) when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
+      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY (as your ENTIRE reply — it silences only when it IS the reply or OPENS it; anywhere else the rest posts publicly) when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
       : `[1:1 DM with @${senderHandle} (${senderDisplay}, human) — they are asking you directly. Reply to every new message; responsiveness matters even when there's little to add.]`;
     const framedContent = `${dmFrame}\n\n${content}`;
 

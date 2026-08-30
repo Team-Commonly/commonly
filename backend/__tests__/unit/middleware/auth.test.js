@@ -126,6 +126,25 @@ describe('Auth Middleware Tests', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it.each(['cm_daemon_machine-bearer', 'cm_agent_runtime-bearer'])(
+    'rejects %s before the user API-token lookup',
+    async (token) => {
+      const req = { header: jest.fn().mockReturnValue(`Bearer ${token}`) };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const next = jest.fn();
+      User.findOne.mockClear();
+
+      await authMiddleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        msg: expect.stringContaining('cannot authenticate user routes'),
+      }));
+      expect(User.findOne).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    },
+  );
+
   it('should return 401 when invalid token is provided', async () => {
     // Mock request, response, and next function
     const req = {

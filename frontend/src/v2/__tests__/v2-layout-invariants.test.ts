@@ -714,4 +714,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
   });
 
+  // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
+  // token files (the same-PR rule), and the tile class must consume them.
+  it('platform tint tokens exist in v2.css and tokens.css together', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
+      expect(v2).toContain(`--v2-platform-${pf}-soft`);
+      expect(ds).toContain(`--c-platform-${pf}-soft`);
+    }
+    expect(v2).toContain('.v2-connector__tile--telegram');
+    expect(v2).toContain('var(--v2-platform-telegram-soft)');
+  });
+
 });

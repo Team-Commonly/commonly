@@ -20,7 +20,11 @@ jest.mock('../../../models/DiscordIntegration', () => function DiscordIntegratio
 });
 jest.mock('../../../services/discordService', () => jest.fn());
 jest.mock('../../../models/Integration', () => {
-  function Integration(data) { Object.assign(this, data); }
+  function Integration(data) {
+    Object.assign(this, data);
+    this._id = this._id || 'integration-new';
+    this.save = jest.fn().mockResolvedValue(this);
+  }
   Integration.findById = jest.fn();
   Integration.findByIdAndUpdate = jest.fn();
   Integration.aggregate = jest.fn().mockResolvedValue([]);
@@ -87,5 +91,36 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.config.liveRelay).toBe(false);
     expect(update.config.linkedUserId).toBeUndefined();
+  });
+});
+
+describe('POST /api/integrations — telegram first-run defaults', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const User = require('../../../models/User');
+    User.findById.mockResolvedValue({ _id: 'user-1', role: 'member' });
+  });
+
+  // A fresh connector must never default into the silence trap: attention
+  // mode with no lead configured relays nothing, so mirror is the first-run
+  // default and the Connected message teaches /mode attention.
+  it('defaults a new telegram connector to liveRelay + mirror', async () => {
+    const Integration = require('../../../models/Integration');
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: {} });
+    expect(res.status).toBe(201);
+    const created = res.body.integration;
+    expect(created.config.relayAllAgentMessages).toBe(true);
+    expect(created.config.liveRelay).toBe(true);
+    expect(created.config.connectCode).toBeTruthy();
+  });
+
+  it('respects an explicit attention-mode choice at create', async () => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: { relayAllAgentMessages: false } });
+    expect(res.status).toBe(201);
+    expect(res.body.integration.config.relayAllAgentMessages).toBe(false);
   });
 });

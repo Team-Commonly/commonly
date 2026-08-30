@@ -1,5 +1,9 @@
 // eslint-disable-next-line global-require
 const express = require('express');
+// ESM import (not require) so CodeQL's js/missing-rate-limiting query
+// recognizes the limiter (same pattern as routes/messages.ts).
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const axios = require('axios');
 import crypto from 'crypto';
@@ -236,6 +240,14 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
     const nextConfig = { ...config };
     if (type === 'telegram' && !nextConfig.connectCode) nextConfig.connectCode = crypto.randomBytes(3).toString('hex');
+    // First-run default: mirror. A fresh connector has no leadAgentUsername
+    // and its agents use no escalation markers, so attention mode relays
+    // NOTHING — a new user's first experience of the bridge would be silence.
+    // Mirror shows everything; the Connected message teaches /mode attention.
+    if (type === 'telegram' && nextConfig.relayAllAgentMessages === undefined) {
+      nextConfig.relayAllAgentMessages = true;
+      if (nextConfig.liveRelay === undefined) nextConfig.liveRelay = true;
+    }
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
@@ -375,9 +387,28 @@ router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/user/all', auth, async (req: AuthReq, res: Res) => {
+// Read limiter for the connector listing — same token/IP keying as
+// routes/messages.ts so NAT'd users don't share a bucket.
+const listIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: { get?: (h: string) => string | undefined; ip?: string }) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
+  },
+});
+
+router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
-    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').populate('platformIntegration').sort({ createdAt: -1 });
+    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').sort({ createdAt: -1 });
     res.json(integrations);
   } catch (error) {
     console.error('Error fetching user integrations:', error);

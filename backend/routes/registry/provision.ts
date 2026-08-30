@@ -184,6 +184,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       agentUser,
       label || `Provisioned ${normalizedInstanceId}`,
       installation,
+      { ownerUserId: req.user?.id || req.user?._id },
     );
 
     if (runtimeIssued.existing && force) {
@@ -192,6 +193,7 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
         agentUser,
         label || `Provisioned ${normalizedInstanceId}`,
         installation,
+        { ownerUserId: req.user?.id || req.user?._id },
       );
       Object.assign(runtimeIssued, freshToken);
     }

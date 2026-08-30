@@ -130,6 +130,10 @@ export const relayAgentMessageToTelegram = async (opts: {
   try {
     const integration = await findLiveIntegration(podId);
     if (!integration) return;
+    // /mute pauses ALL outbound relay to the chat, escalations included —
+    // mute means mute; /status shows it, and it self-expires.
+    const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
+    if (mutedUntil && new Date(mutedUntil) > new Date()) return;
     if (!shouldEscalate({ content, agentUsername, integration })) return;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -185,6 +189,15 @@ export const relayTelegramMessageToPod = async (opts: {
     return { relayed: false };
   }
 
+  // The gate proves the Telegram sender IS the chat's counterpart. It does NOT
+  // prove the counterpart is `linkedUserId` — that half is held one layer out,
+  // by the guard in `routes/integrations.ts` (PATCH /:id), which derives
+  // `config.linkedUserId` from the authenticated caller when `liveRelay` flips
+  // on and rejects any client-supplied value. Relax that guard and this gate
+  // still passes while authoring under an identity the caller chose. No test
+  // joins the two: both bridge suites hand-build `config`, so a mutation to the
+  // route guard turns nothing here red.
+  //
   // Attribution gate. Every relayed message is authored as `linkedUserId`, so
   // relaying is only honest where Telegram itself guarantees the sender IS that
   // person: a `private` chat is 1:1 between the bot and one user. In a group,

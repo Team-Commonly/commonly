@@ -77,7 +77,10 @@ describe('ActivityService.getRecap', () => {
       taskId: 'TASK-068', title: 'Activity tab', status: 'claimed',
       lastUpdate: expect.objectContaining({ text: 'Implementation began.' }),
     })]);
-    expect(spy).toHaveBeenCalledWith(ownerId, { limit: 100 });
+    // filter: 'agents' is load-bearing — without it the 100-slot budget was
+    // consumed entirely by summary activities and no agent message ever
+    // reached the recap grouping (measured live: 30/30 summaries, #1307).
+    expect(spy).toHaveBeenCalledWith(ownerId, { limit: 100, filter: 'agents' });
     expect(Pod.find).toHaveBeenCalledWith(expect.objectContaining({ $or: expect.any(Array) }));
     expect(Task.find).toHaveBeenCalledWith(expect.objectContaining({
       podId: { $in: ['pod-1'] }, updatedAt: { $gte: expect.any(Date) },
