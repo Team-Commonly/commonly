@@ -2769,7 +2769,6 @@ declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
 the other seven PRs is what found `#1330`, where both APIs are silent and the
 gate is real anyway.
-## 44. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
 ## 50. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
 
 **Surface:** `catch { return <sentinel> }` across `backend/`, and the two
