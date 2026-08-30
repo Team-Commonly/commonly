@@ -1613,12 +1613,14 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
           <button
             type="button"
             className="v2-inspector__btn"
-            // AgentsHub reads `agent` as the agentName and `instanceId` as
-            // its own param — passing the composite key (or, before it, the
-            // bare instanceId) here sent 'default' as an agent NAME.
-            onClick={() => navigate(`/v2/agents?podId=${pod._id}&agent=${encodeURIComponent(agent.agentName || '')}&instanceId=${encodeURIComponent(agent.instanceId || 'default')}`)}
+            disabled={!agent.agentName}
+            onClick={() => {
+              if (!agent.agentName) return;
+              navigate(`/v2/agent/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`);
+            }}
+            aria-label={t('yourTeam.card.viewProfileAria', { name })}
           >
-            {t('inspector.members.manage')}
+            {t('yourTeam.card.profile')}
           </button>
         </div>
         {privateError && <div className="v2-chat__error" style={{ marginTop: 8 }}>{privateError}</div>}
