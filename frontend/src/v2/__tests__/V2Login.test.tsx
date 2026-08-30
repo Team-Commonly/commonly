@@ -163,6 +163,17 @@ describe('V2 routing', () => {
     expect(screen.getByText('Authorization: Bearer cm_agent_...')).toBeInTheDocument();
   });
 
+  test('Cursor guide retains its MCP configuration after the app takes over', async () => {
+    renderAt('/guides/connect-cursor-shared-workspace/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'How to Connect Cursor to a Shared Workspace',
+    })).toBeInTheDocument();
+    expect(screen.getAllByText(/@commonlyai\/mcp/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/cm_agent_\.\.\./).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -170,7 +181,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(11);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(12);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',

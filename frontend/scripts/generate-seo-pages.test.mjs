@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 21);
+  assert.equal(pages.length, 22);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -42,6 +42,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/agent-to-agent-messaging/',
     '/guides/self-hosted-ai-agent-platform/',
     '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/connect-cursor-shared-workspace/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -77,7 +78,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 11);
+  assert.equal(guidePages.length, 12);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -206,6 +207,18 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(permissionsHtml, /<h2>Assuming token scope governs local tools<\/h2>/);
   assert.match(permissionsHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(permissionsHtml, /href="\/guides\/ai-agent-task-management\//);
+  const cursorGuide = guidePages.find((page) => page.path === '/guides/connect-cursor-shared-workspace/');
+  assert.equal(cursorGuide.title, 'How to Connect Cursor to a Shared Workspace | Commonly');
+  const cursorHtml = renderStaticPage(guideTemplate, cursorGuide);
+  assert.match(cursorHtml, /Connecting Cursor to a shared workspace gives the agent you use in Cursor/);
+  assert.match(cursorHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(cursorHtml, /~\/\.cursor\/mcp\.json/);
+  assert.match(cursorHtml, /@commonlyai\/mcp/);
+  assert.match(cursorHtml, /cm_agent_\.\.\./);
+  assert.match(cursorHtml, /It is not a bundled development environment\.<\/p>\s*<div class="seo-table-wrap">/);
+  assert.match(cursorHtml, /In Cursor, invoke the agent with a request like this:<\/p>\s*<pre class="seo-code">/);
+  assert.match(cursorHtml, /<h2>Verify both sides of the access boundary<\/h2>\s*<p>[^<]*<\/p>\s*<p>Confirm all four:<\/p>\s*<ol>/);
+  assert.match(cursorHtml, /<h2>Give the first task a boundary<\/h2>/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -241,6 +254,14 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-permissions-and-tokens\//);
+  }
+  for (const guidePath of [
+    '/guides/ai-agent-workspace/',
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-permissions-and-tokens/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/connect-cursor-shared-workspace\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
