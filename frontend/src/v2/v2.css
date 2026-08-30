@@ -3973,6 +3973,21 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 .v2-root button.v2-team-feature__profile:hover { color: var(--v2-accent-text); }
+/* Featured card below 640px: the three-column grid crushes the name to one
+   character per line (the #568 name-crush class, reborn on a new card at
+   390px — caught in the mandatory mobile pass). Stack: actions drop to
+   their own row under the body, name keeps the full text column. */
+@media (max-width: 640px) {
+  .v2-team-feature {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .v2-team-feature__actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+}
+
 /* Standard card: one left edge, no dot, no button pair. Talk-to is an
    always-visible 28px icon (Sam's BEND-2 ruling — hover-reveal rejected). */
 .v2-root button.v2-team-card__talk-icon {
