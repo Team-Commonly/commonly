@@ -105,12 +105,18 @@ export class AgentRuntimeDO implements DurableObject {
             processed.push(event._id);
             await this.state.storage.put('processedEventIds', processed.slice(-200));
           }
-          await ackEvent(cfg, event._id, event.deliveryId);
+          const deliveryId = event.payload?.deliveryId;
+          await ackEvent(
+            cfg,
+            event._id,
+            typeof deliveryId === 'string' && deliveryId ? deliveryId : undefined,
+          );
         } catch (err) {
           if (err instanceof StaleDeliveryError) {
             // Superseded: the kernel handed this event to another runtime
-            // after our claim expired. Not an error to record as ours; drop
-            // the staged reply so nothing posts twice.
+            // after our claim expired. Not an error to record as ours; stop
+            // this runtime's retry path. The processed-id ring is what keeps
+            // a later redelivery from re-running an already handled turn.
             await this.state.storage.delete(stagedKey(event._id));
             continue;
           }

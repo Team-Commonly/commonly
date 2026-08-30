@@ -10,9 +10,6 @@ export interface CapEvent {
   _id: string;
   type: string;
   podId?: string;
-  // ADR-026 D6 (#1347): the claim's delivery nonce. Presented on ack; a
-  // 409 stale_delivery means this runtime was superseded for the event.
-  deliveryId?: string;
   payload?: { content?: string; podId?: string; [k: string]: unknown };
 }
 
