@@ -46,7 +46,7 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(credential).toEqual(expect.objectContaining({
       kind: 'daemon',
       ownerUserId,
-      scopes: ['machine:heartbeat', 'agents:adopt'],
+      scopes: ['machine:heartbeat', 'machine:read', 'agents:adopt'],
     }));
     expect(credential.tokenHash).not.toContain(token);
     expect(credential.expiresAt.getTime()).toBeGreaterThan(Date.now());
@@ -61,6 +61,21 @@ describe('ADR-026 machine lifecycle service', () => {
 
     expect(result.status).toBe('online');
     expect(result.lastSeenAt).toBeInstanceOf(Date);
+  });
+
+  it('returns only the credential-bound machine for daemon status', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const first = await machineService.registerMachine({ ownerUserId, name: 'First Mac' });
+    const second = await machineService.registerMachine({ ownerUserId, name: 'Second Mac' });
+
+    await expect(machineService.getMachineForDaemon({
+      machineId: first.machine.machineId,
+      ownerUserId,
+    })).resolves.toMatchObject({ id: first.machine.id, name: 'First Mac' });
+    await expect(machineService.getMachineForDaemon({
+      machineId: second.machine.machineId,
+      ownerUserId: new mongoose.Types.ObjectId(),
+    })).resolves.toBeNull();
   });
 
   it('cascade-revokes the daemon’s descendants before removing its row', async () => {

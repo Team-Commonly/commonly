@@ -90,6 +90,20 @@ export async function listMachinesForOwner(ownerUserId: Types.ObjectId | string)
   };
 }
 
+// The daemon's status call has no need to enumerate its owner's machines.
+// Match both credential-derived identifiers and return the same derived view
+// the owner list uses, never the credential-bearing document.
+export async function getMachineForDaemon({
+  machineId,
+  ownerUserId,
+}: {
+  machineId: string;
+  ownerUserId: Types.ObjectId | string;
+}): Promise<MachineView | null> {
+  const machine = await Machine.findOne({ machineId, ownerUserId }).lean();
+  return machine ? serializeMachine(machine) : null;
+}
+
 export async function recordMachineHeartbeat(machine: IMachine): Promise<MachineView> {
   machine.lastSeenAt = new Date();
   machine.status = 'online';
@@ -136,6 +150,7 @@ module.exports = {
   MACHINE_OFFLINE_AFTER_MS,
   MAX_MACHINES_PER_OWNER,
   listMachinesForOwner,
+  getMachineForDaemon,
   recordMachineHeartbeat,
   registerMachine,
   removeMachine,

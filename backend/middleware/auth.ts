@@ -36,6 +36,13 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     return res.status(401).json({ msg: 'No token, authorization denied' });
   }
 
+  // Machine and runtime bearers live in AgentCredential, never on User. Make
+  // that boundary explicit instead of relying on their value never colliding
+  // with User.apiToken; those credentials must use daemonAuth/agentRuntimeAuth.
+  if (token.startsWith('cm_daemon_') || token.startsWith('cm_agent_')) {
+    return res.status(401).json({ msg: 'Daemon and agent tokens cannot authenticate user routes' });
+  }
+
   if (token.startsWith('cm_')) {
     try {
       const user = await User.findOne({ apiToken: token }).select(

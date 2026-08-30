@@ -12,6 +12,7 @@ const { hash, randomSecret } = require('../utils/secret') as {
 
 export const DAEMON_SCOPES = [
   'machine:heartbeat',
+  'machine:read',
   'agents:adopt',
 ] as const;
 
