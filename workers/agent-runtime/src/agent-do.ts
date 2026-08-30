@@ -12,6 +12,7 @@
 import { listEvents, ackEvent, postMessage, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
+import { resolveStagedReply, commitStagedReply } from './staging';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
@@ -124,18 +125,27 @@ export class AgentRuntimeDO implements DurableObject {
     }
   }
 
+  // #1344 (Otto): a postMessage failure after a successful turn must not
+  // re-run the model on redelivery. The reply is STAGED on DO storage keyed
+  // by event id before posting; a redelivery of the same event posts the
+  // staged reply and skips the model entirely. Staged entries are cleared
+  // once the post succeeds (and capped so a stuck post cannot grow storage).
   private async handleEvent(cfg: CapConfig, event: CapEvent): Promise<void> {
     const podId = event.podId || event.payload?.podId;
     if (!podId) return;
     if (event.type !== 'chat.mention' && event.type !== 'first_contact') return;
     // No eager context fetch: the mention is the prompt and read_pod_context
-    // earns the read when the model needs it (Otto: two CAP reads per turn
-    // and the same content twice against the byte ceiling otherwise).
-    const reply = await this.runTurn(String(event.payload?.content || ''), buildCapTools(cfg, podId));
+    // earns the read when the model needs it.
+    const { reply } = await resolveStagedReply(
+      this.state.storage,
+      event._id,
+      () => this.runTurn(String(event.payload?.content || ''), buildCapTools(cfg, podId)),
+    );
     // NO_REPLY contract: total-match suppression, same as every runtime.
-    if (reply && reply.trim() !== 'NO_REPLY') {
+    if (reply.trim() !== 'NO_REPLY') {
       await postMessage(cfg, podId, reply);
     }
+    await commitStagedReply(this.state.storage, event._id);
   }
 
   // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
