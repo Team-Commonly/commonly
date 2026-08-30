@@ -9,7 +9,7 @@
 // Turn engine: pi agent-core with an injected fetch-based streamFn (the
 // spike's finding #2: transport is dependency-injected and workerd-clean).
 // v1 wires a minimal turn; harness/compaction integration follows.
-import { listEvents, ackEvent, postMessage, CapConfig, CapEvent } from './cap';
+import { listEvents, ackEvent, postMessage, StaleDeliveryError, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
 import { resolveStagedReply, commitStagedReply } from './staging';
@@ -105,8 +105,15 @@ export class AgentRuntimeDO implements DurableObject {
             processed.push(event._id);
             await this.state.storage.put('processedEventIds', processed.slice(-200));
           }
-          await ackEvent(cfg, event._id);
+          await ackEvent(cfg, event._id, event.deliveryId);
         } catch (err) {
+          if (err instanceof StaleDeliveryError) {
+            // Superseded: the kernel handed this event to another runtime
+            // after our claim expired. Not an error to record as ours; drop
+            // the staged reply so nothing posts twice.
+            await this.state.storage.delete(`staged:${event._id}`);
+            continue;
+          }
           batchErrors += 1;
           await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
         }

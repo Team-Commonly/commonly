@@ -10,7 +10,17 @@ export interface CapEvent {
   _id: string;
   type: string;
   podId?: string;
+  // ADR-026 D6 (#1347): the claim's delivery nonce. Presented on ack; a
+  // 409 stale_delivery means this runtime was superseded for the event.
+  deliveryId?: string;
   payload?: { content?: string; podId?: string; [k: string]: unknown };
+}
+
+export class StaleDeliveryError extends Error {
+  constructor(eventId: string) {
+    super(`stale_delivery: event ${eventId} was redelivered to another runtime`);
+    this.name = 'StaleDeliveryError';
+  }
 }
 
 const headers = (cfg: CapConfig) => ({
@@ -29,11 +39,14 @@ export const listEvents = async (cfg: CapConfig): Promise<CapEvent[]> => {
   return Array.isArray(body) ? body : body.events || [];
 };
 
-export const ackEvent = async (cfg: CapConfig, eventId: string): Promise<void> => {
+export const ackEvent = async (cfg: CapConfig, eventId: string, deliveryId?: string): Promise<void> => {
   const res = await fetch(`${cfg.apiUrl}/api/agents/runtime/events/${eventId}/ack`, {
     method: 'POST',
     headers: headers(cfg),
+    body: JSON.stringify(deliveryId ? { deliveryId } : {}),
   });
+  // 'You were replaced' is not a retryable failure: stop, do not post again.
+  if (res.status === 409) throw new StaleDeliveryError(eventId);
   if (!res.ok) throw new Error(`ackEvent ${res.status}`);
 };
 
