@@ -55,6 +55,10 @@ interface AgentEvent {
   instanceId?: string;
   podId?: unknown;
   payload?: { trigger?: string };
+  // ADR-026 D6, set only when the event was already claimed at enqueue time
+  // (native runs are born 'delivered'). Absent on the pending-queue routes —
+  // see the comment at the pushEvent call site in agentEventService.
+  deliveryId?: string;
 }
 
 interface AgentUserDoc {
@@ -193,11 +197,41 @@ class AgentWebSocketService {
       });
 
       socket.on('ack', async (payload: unknown) => {
-        const { eventId } = payload as { eventId?: string };
+        const { eventId, deliveryId } = payload as { eventId?: string; deliveryId?: string };
         if (!eventId) return;
 
         try {
-          await AgentEventService.acknowledge(eventId, socket.agentName, socket.instanceId);
+          // ADR-026 D6 at the socket boundary. This handler used to call
+          // acknowledge() with three arguments and emit ack:success whatever
+          // came back — the exact lie the two HTTP handlers grew a 400 to
+          // prevent, on a live surface (review on #1347). Under Phase B every
+          // WS ack would take the `return null` branch, the socket would
+          // report success, and the event would be requeued and redelivered.
+          if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+            socket.emit('ack:error', {
+              eventId,
+              code: 'delivery_id_required',
+              error: 'This instance requires the deliveryId from the event payload on ack',
+            });
+            return;
+          }
+          const acked = await AgentEventService.acknowledge(
+            eventId,
+            socket.agentName,
+            socket.instanceId,
+            null,
+            deliveryId || null,
+          );
+          if (!acked && await AgentEventService.isSupersededDelivery(
+            eventId, socket.agentName, socket.instanceId, deliveryId || null,
+          )) {
+            socket.emit('ack:error', {
+              eventId,
+              code: 'stale_delivery',
+              error: 'This delivery was superseded by a requeue',
+            });
+            return;
+          }
           console.log(`[agent-ws] Ack received from ${socket.agentKey} for event ${eventId}`);
           socket.emit('ack:success', { eventId });
         } catch (err) {

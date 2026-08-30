@@ -56,6 +56,12 @@ const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
 // operator reads off the garbageCollect log line below, not a date someone
 // picks. Flipping the flag is a config change that is already tested, not a
 // future PR that may never be written.
+//
+// Read the counter precisely (review on #1347): it counts ack CALLS, not
+// distinct deliveries — a retry against a vanished event still increments —
+// and it is per-process and resets on restart. With multiple replicas,
+// "zero at the consumers" therefore means zero on EVERY replica since its
+// last restart, which is a stronger condition than a single green line.
 const ackNonceStats = { withNonce: 0, withoutNonce: 0 };
 const requireDeliveryNonce = (): boolean => process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE === 'true';
 
@@ -713,7 +719,8 @@ class AgentEventService {
       // the number Phase B is gated on; `without=0` sustained past one requeue
       // window is the signal to set AGENT_EVENT_REQUIRE_DELIVERY_NONCE.
       console.log(
-        `[agent-event] ack deliveryId coverage: with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} required=${requireDeliveryNonce()}`,
+        `[agent-event] ack deliveryId coverage (ack CALLS this process since restart, not distinct deliveries): `
+        + `with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} required=${requireDeliveryNonce()}`,
       );
 
       // Retire events that have exhausted the cap. This pass is what makes the
@@ -1124,6 +1131,13 @@ class AgentEventService {
         type: event.type,
         payload: event.payload,
         createdAt: event.createdAt,
+        // D6: present only for a native event, which is born 'delivered' and
+        // therefore already claimed. For every other route this push fires
+        // while the event is still 'pending' — no claim has happened, so no
+        // nonce exists and none can be invented here. The push is a wake
+        // signal, not a delivery: a WS driver still fetches through list(),
+        // and that claim is what hands it the deliveryId to ack with.
+        ...(event.deliveryNonce ? { deliveryId: event.deliveryNonce } : {}),
       });
     }
 
