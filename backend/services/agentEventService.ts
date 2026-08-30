@@ -46,10 +46,18 @@ const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
 // events by id, delivered to it or not.
 const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
 
-// Phase A measurement for the migration on acknowledge(). The flip to
-// "a nonce is required" is gated on `withoutNonce` reaching zero across the
-// fleet, which is a number someone has to be able to read — not a date.
+// The migration on acknowledge() runs in two phases, and BOTH are in this
+// build so the compatibility mode has an end rather than an intention.
+//
+// Phase A (default): a presented nonce must match; an absent one is accepted
+// and counted. Phase B: set AGENT_EVENT_REQUIRE_DELIVERY_NONCE=true and an
+// absent nonce is refused. The exit condition is `withoutNonce` holding at
+// zero for longer than one requeue window across the fleet — a number an
+// operator reads off the garbageCollect log line below, not a date someone
+// picks. Flipping the flag is a config change that is already tested, not a
+// future PR that may never be written.
 const ackNonceStats = { withNonce: 0, withoutNonce: 0 };
+const requireDeliveryNonce = (): boolean => process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE === 'true';
 
 interface EventDoc {
   _id?: unknown;
@@ -691,6 +699,14 @@ class AgentEventService {
         console.log(`[agent-event] requeued ${requeuedDelivered} stuck 'delivered' events older than ${requeueDeliveredMinutes}min`);
       }
 
+      // D6 rollout coverage, on the pass that already runs on a schedule —
+      // no new surface, and it lands next to the requeue it is about. This is
+      // the number Phase B is gated on; `without=0` sustained past one requeue
+      // window is the signal to set AGENT_EVENT_REQUIRE_DELIVERY_NONCE.
+      console.log(
+        `[agent-event] ack deliveryId coverage: with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} required=${requireDeliveryNonce()}`,
+      );
+
       // Retire events that have exhausted the cap. This pass is what makes the
       // cap a bound rather than a leak: `attempts >= cap` fails the requeue
       // predicate, and a 'delivered' row is invisible to list(), so without a
@@ -1022,6 +1038,12 @@ class AgentEventService {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { runAgent } = require('./nativeRuntimeService');
         const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
+        // D6: the native path claims at creation, so THIS is its delivery
+        // nonce — and the settle handlers below are its ack. Without carrying
+        // it, a native run that outlives the requeue threshold settles
+        // nonce-less and terminates whatever replacement has since claimed the
+        // event: the D6 race, on the one path that never polls.
+        const nativeDeliveryId = event.deliveryNonce || null;
         // Fire-and-forget — callers of enqueue() must never block on the
         // loop. Errors are logged but never rethrown.
         // Settle the event on the run's actual outcome. nativeRuntimeService
@@ -1046,6 +1068,7 @@ class AgentEventService {
             agentName,
             instanceId,
             { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+            nativeDeliveryId,
           ).catch((ackErr: Error) => {
             console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
           }),
@@ -1059,6 +1082,7 @@ class AgentEventService {
               agentName,
               instanceId,
               `native runtime error: ${err?.message || String(err)}`,
+              nativeDeliveryId,
             ).catch(() => undefined);
           },
         );
@@ -1286,6 +1310,7 @@ class AgentEventService {
       console.warn(
         `[agent-event] ack without deliveryId from ${safeAgentName}:${safeInstanceId} — pre-D6 driver`,
       );
+      if (requireDeliveryNonce()) return null;
     }
     const result = await AgentEvent.findOneAndUpdate(
       {
@@ -1469,12 +1494,23 @@ class AgentEventService {
     agentName: string,
     instanceId: string,
     errorMessage: string,
+    deliveryId: unknown = null,
   ): Promise<EventDoc | null> {
+    // D6, same reasoning as acknowledge(): failing is as terminal as acking,
+    // so a stale runner's failure must not retire a delivery that now belongs
+    // to its replacement. Match-if-present for the same migration reason —
+    // callers that pass nothing behave exactly as before.
+    const safeDeliveryId = typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
     const result = await AgentEvent.findOneAndUpdate(
-      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
+      {
+        _id: eventId,
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        ...(safeDeliveryId ? { deliveryNonce: safeDeliveryId } : {}),
+      },
       // No $inc — see acknowledge(). `attempts` is a delivery counter owned by
       // the claim in list(); a terminal transition must not inflate it.
-      { $set: { status: 'failed', error: errorMessage } },
+      { $set: { status: 'failed', error: errorMessage, deliveryNonce: null } },
       { new: true },
     ) as EventDoc | null;
 

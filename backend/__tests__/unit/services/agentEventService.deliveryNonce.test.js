@@ -345,3 +345,101 @@ describe('the Phase A migration counter', () => {
     expect(after.withoutNonce - before.withoutNonce).toBe(1);
   });
 });
+
+describe('the native path carries its own delivery nonce', () => {
+  const { runAgent } = require('../../../services/nativeRuntimeService');
+  const { AgentInstallation } = require('../../../models/AgentRegistry');
+
+  // enqueue() routes to the native runtime when the installation says so; the
+  // event is then born 'delivered' and the settle handlers are its ack.
+  const nativeInstall = {
+    _id: new mongoose.Types.ObjectId(),
+    agentName: AGENT,
+    instanceId: INSTANCE,
+    podId: POD_ID,
+    status: 'active',
+    config: { runtime: { runtimeType: 'native' } },
+  };
+
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test('a native run that outlives the requeue does not terminate its replacement', async () => {
+    let settle;
+    runAgent.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
+    jest.spyOn(AgentInstallation, 'findOne').mockReturnValue({
+      lean: () => Promise.resolve(nativeInstall),
+    });
+
+    const event = await AgentEventService.enqueue({
+      agentName: AGENT,
+      instanceId: INSTANCE,
+      podId: POD_ID,
+      type: 'chat.mention',
+      payload: { text: 'hi' },
+    });
+
+    const born = await AgentEvent.findById(event._id).lean();
+    expect(born.status).toBe('delivered');
+    // Minting is not enough — the settle handler has to CARRY it.
+    expect(born.deliveryNonce).toEqual(expect.any(String));
+
+    await requeue(event._id);
+    const replacement = await claim();
+    expect(replacement.payload.deliveryId).not.toBe(born.deliveryNonce);
+
+    // The slow native run finally finishes and acks.
+    settle('done');
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const after = await AgentEvent.findById(event._id).lean();
+    expect(after.status).toBe('delivered');
+    expect(after.deliveryNonce).toBe(replacement.payload.deliveryId);
+  });
+});
+
+describe('recordFailure is as terminal as an ack, and gated the same way', () => {
+  test('a stale runner\'s failure does not retire the replacement\'s delivery', async () => {
+    const event = await seedEvent();
+    const childA = await claim();
+    await requeue(event._id);
+    const childB = await claim();
+
+    await AgentEventService.recordFailure(
+      String(event._id), AGENT, INSTANCE, 'stale runner blew up', childA.payload.deliveryId,
+    );
+
+    const stored = await AgentEvent.findById(event._id).lean();
+    expect(stored.status).toBe('delivered');
+    expect(stored.deliveryNonce).toBe(childB.payload.deliveryId);
+  });
+});
+
+describe('Phase B has a switch, so the compatibility mode terminates', () => {
+  afterEach(() => { delete process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE; });
+
+  test('with the flag set, a nonce-less ack is refused', async () => {
+    process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE = 'true';
+    const event = await seedEvent();
+    await claim();
+
+    const acked = await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'acknowledged' },
+    );
+
+    expect(acked).toBeNull();
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
+  });
+
+  test('with the flag set, a matching nonce still lands', async () => {
+    process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE = 'true';
+    const event = await seedEvent();
+    const child = await claim();
+
+    const acked = await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'acknowledged' }, child.payload.deliveryId,
+    );
+
+    expect(acked).toBeTruthy();
+  });
+});
