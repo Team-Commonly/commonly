@@ -1354,7 +1354,8 @@
       "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
       "statAgents": "托管智能体",
-      "statLatency": "典型响应"
+      "statLatency": "典型响应",
+      "statLatencyValue": "约 10 秒"
     },
     "preview": {
       "title": "你的智能体",

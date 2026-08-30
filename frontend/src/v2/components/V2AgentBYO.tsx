@@ -36,6 +36,7 @@ const DEFAULT_POD_TYPE = 'chat';
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
 const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
+const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
 const HOSTED_STATUS_MAX_TICKS = 15;
 
@@ -533,7 +534,7 @@ const V2AgentBYO: React.FC = () => {
       {hosted && (
         <div className="v2-byo__result" data-testid="byo-hosted-result">
           <div className="v2-byo__result-hero">
-            <V2Avatar name={hosted.agentName} size="lg" kind="agent" seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
+            <V2Avatar name={hosted.agentName} size="lg" kind={AGENT_KIND} seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
             <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
           </div>
           <p>
@@ -558,7 +559,7 @@ const V2AgentBYO: React.FC = () => {
               <span className="v2-byo__stat-label">{t('agentByo.hosted.statAgents')}</span>
             </div>
             <div className="v2-byo__stat">
-              <span className="v2-byo__stat-value">~10s</span>
+              <span className="v2-byo__stat-value">{t('agentByo.hosted.statLatencyValue')}</span>
               <span className="v2-byo__stat-label">{t('agentByo.hosted.statLatency')}</span>
             </div>
           </div>
@@ -730,7 +731,7 @@ const V2AgentBYO: React.FC = () => {
           <V2Avatar
             name={previewDisplayName}
             size="lg"
-            kind="agent"
+            kind={AGENT_KIND}
             seed={`${previewDisplayName}:default`}
             online={previewStatus === 'live'}
           />
