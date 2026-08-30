@@ -72,7 +72,9 @@ jobs:
           npm ci --include=dev
           cd ../cli
           npm ci --include=dev
-          cd ..
+          cd ../workers/agent-runtime
+          npm ci --include=dev
+          cd ../..
 
       - name: Verify moltbot tool contract
         run: npm run verify:moltbot-tools
@@ -133,6 +135,12 @@ jobs:
       - name: Run CLI tests
         run: |
           cd cli
+          npm test
+
+      - name: Run hosted-runtime tests (ADR-023 W2)
+        run: |
+          cd workers/agent-runtime
+          npm run typecheck
           npm test
 
       - name: Upload coverage report
