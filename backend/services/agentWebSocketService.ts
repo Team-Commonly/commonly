@@ -462,15 +462,23 @@ class AgentWebSocketService {
     if (!this.agentNamespace) return false;
 
     const agentKey = `${event.agentName}:${event.instanceId || 'default'}`;
+    const target = this.connectedAgents.get(agentKey);
 
-    this.agentNamespace.to(`agent:${agentKey}`).emit('event', event);
+    if (!target) return false;
 
-    if (event.podId) {
-      this.agentNamespace.to(`pod:${String(event.podId)}`).emit('event', event);
+    if (event.deliveryId) {
+      // Native events are born claimed. Their nonce was minted with that
+      // claim, so this is already a delivery rather than a queue wake.
+      target.socket.emit('event', event);
+    } else {
+      // A queued event has no delivery nonce until list() atomically claims
+      // it. Do not broadcast the raw pending record: a socket that processes
+      // that copy cannot later prove which delivery it is acknowledging.
+      void this.replayPendingEvents(target.socket);
     }
 
     console.log(
-      `[agent-ws] Event pushed id=${event?._id || 'n/a'} type=${event?.type || 'n/a'} `
+      `[agent-ws] Event delivery requested id=${event?._id || 'n/a'} type=${event?.type || 'n/a'} `
       + `agent=${agentKey} pod=${event?.podId || 'n/a'} trigger=${event?.payload?.trigger || 'n/a'}`,
     );
 

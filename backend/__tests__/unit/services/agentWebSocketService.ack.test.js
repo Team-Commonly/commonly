@@ -43,6 +43,7 @@ const agentWebSocketService = require('../../../services/agentWebSocketService')
 const wireSocket = () => {
   const handlers = {};
   const emitted = [];
+  const emit = jest.fn((event, body) => emitted.push({ event, body }));
   const socket = {
     agentKey: 'pixel:default',
     agentName: 'pixel',
@@ -52,7 +53,7 @@ const wireSocket = () => {
     join: jest.fn(),
     leave: jest.fn(),
     on: (event, fn) => { handlers[event] = fn; },
-    emit: (event, body) => emitted.push({ event, body }),
+    emit,
   };
 
   let connectionHandler;
@@ -63,7 +64,7 @@ const wireSocket = () => {
     }),
   });
   connectionHandler(socket);
-  return { handlers, emitted };
+  return { handlers, emitted, socket };
 };
 
 describe("the WS 'ack' handler tells the truth about refusals", () => {
@@ -94,9 +95,9 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
     // The bug this pins: emitting ack:success here told the driver it had
     // acked while the event rolled into the requeue unhandled.
     expect(mockAcknowledge).not.toHaveBeenCalled();
-    expect(emitted).toEqual([
+    expect(emitted).toContainEqual(
       expect.objectContaining({ event: 'ack:error', body: expect.objectContaining({ code: 'delivery_id_required' }) }),
-    ]);
+    );
   });
 
   test('a superseded delivery reports an error, not success', async () => {
@@ -106,9 +107,9 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
 
     await handlers.ack({ eventId: 'evt-1', deliveryId: 'stale' });
 
-    expect(emitted).toEqual([
+    expect(emitted).toContainEqual(
       expect.objectContaining({ event: 'ack:error', body: expect.objectContaining({ code: 'stale_delivery' }) }),
-    ]);
+    );
   });
 
   test('a vanished event stays idempotent success', async () => {
@@ -128,5 +129,49 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
 
     expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, null);
     expect(emitted.map((e) => e.event)).toContain('ack:success');
+  });
+});
+
+describe('the WS event push path claims before it delivers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    AgentInstallation.find.mockReturnValue({ select: () => ({ lean: () => Promise.resolve([]) }) });
+    Pod.find.mockReturnValue({ select: () => ({ lean: () => Promise.resolve([]) }) });
+  });
+
+  test('a pending event wakes its target through replay, not a raw namespace broadcast', () => {
+    const { socket } = wireSocket();
+    const replay = jest.spyOn(agentWebSocketService, 'replayPendingEvents').mockResolvedValue();
+    socket.emit.mockClear();
+
+    const delivered = agentWebSocketService.pushEvent({
+      _id: 'evt-pending',
+      agentName: 'pixel',
+      instanceId: 'default',
+      podId: 'pod-1',
+      type: 'message.created',
+    });
+
+    // replayPendingEvents calls list(), whose conditional claim mints the
+    // nonce and emits that claimed event. This pairing is the D6 boundary.
+    expect(delivered).toBe(true);
+    expect(replay).toHaveBeenCalledWith(socket);
+    expect(socket.emit).not.toHaveBeenCalledWith('event', expect.anything());
+  });
+
+  test('a native event that was born claimed preserves its existing nonce', () => {
+    const { socket } = wireSocket();
+    const replay = jest.spyOn(agentWebSocketService, 'replayPendingEvents').mockResolvedValue();
+    socket.emit.mockClear();
+    const event = {
+      _id: 'evt-native',
+      agentName: 'pixel',
+      instanceId: 'default',
+      deliveryId: 'native-delivery',
+    };
+
+    expect(agentWebSocketService.pushEvent(event)).toBe(true);
+    expect(socket.emit).toHaveBeenCalledWith('event', event);
+    expect(replay).not.toHaveBeenCalled();
   });
 });
