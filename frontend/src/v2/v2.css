@@ -6032,7 +6032,125 @@ body.modern-ui.v2-canvas {
   color: #1e6b2a;
   font-size: 13px;
 }
-/* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
+/* BYO decision layout (Sam 2026-08-30: "cloud agent vs byoa uiux"). Form on
+   the left, live agent preview on the right — the page shows the teammate
+   being created, not a settings form. Tokens only; borders, not shadows. */
+.v2-byo__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 44px;
+  max-width: 1060px;
+  margin: 0 auto;
+  align-items: start;
+  padding: 8px 24px 40px;
+}
+.v2-byo__main { min-width: 0; }
+.v2-byo__preview {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+}
+.v2-byo__preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v2-text-muted);
+}
+.v2-byo__preview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 20px 22px;
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-surface);
+  text-align: center;
+}
+.v2-byo__preview-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--v2-text-primary);
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.v2-byo__preview-pod {
+  font-size: 12px;
+  color: var(--v2-text-tertiary);
+}
+.v2-byo__preview-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface-hover);
+}
+.v2-byo__preview-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-text-muted);
+}
+.v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-warning); }
+.v2-byo__preview-status--live {
+  color: #0f7a53;
+  background: var(--v2-success-soft);
+}
+.v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-success); }
+.v2-byo__preview-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--v2-text-tertiary);
+  margin: 0;
+}
+@media (max-width: 940px) {
+  .v2-byo__layout { grid-template-columns: minmax(0, 1fr); }
+  .v2-byo__preview { display: none; }
+}
+
+.v2-byo__result-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.v2-byo__result-hero h2 { margin: 0; }
+.v2-byo__stats {
+  display: flex;
+  gap: 12px;
+}
+.v2-byo__stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 10px;
+  background: var(--v2-surface);
+}
+.v2-byo__stat-value {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--v2-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.v2-byo__stat-label {
+  font-size: 11px;
+  color: var(--v2-text-tertiary);
+}
+
+/* ADR-023 W2 — "Run it here" vs BYO choice cards./* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
    the accent border + focus ring marks the pressed card. */
 .v2-byo__modes {
   display: grid;
@@ -6043,15 +6161,27 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 5px;
   text-align: left;
-  padding: 12px 14px;
+  padding: 16px 18px 14px;
   border: 1px solid var(--v2-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--v2-surface, #fff);
   color: var(--v2-text-primary);
   cursor: pointer;
-  transition: border-color 0.08s ease;
+  transition: border-color 0.08s ease, background 0.08s ease;
+}
+.v2-byo__mode-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: var(--v2-accent-text);
+}
+.v2-byo__mode-kicker--quiet { color: var(--v2-text-muted); }
+.v2-byo__mode-meta {
+  font-size: 11px;
+  color: var(--v2-text-muted);
+  margin-top: 3px;
 }
 .v2-root button.v2-byo__mode:hover {
   background: var(--v2-surface-hover);
@@ -6061,8 +6191,9 @@ body.modern-ui.v2-canvas {
   box-shadow: var(--v2-focus-ring);
 }
 .v2-byo__mode-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .v2-root button.v2-byo__submit {
   align-self: flex-start;
@@ -8031,7 +8162,10 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-activity__title,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
-.v2-root:lang(zh) .v2-activity__board-row h3 {
+.v2-root:lang(zh) .v2-activity__board-row h3
+.v2-root:lang(zh) .v2-byo__mode-title,
+.v2-root:lang(zh) .v2-byo__preview-name,
+.v2-root:lang(zh) .v2-byo__stat-value {
   letter-spacing: 0;
 }
 

@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
+import V2Avatar from './V2Avatar';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
@@ -189,6 +190,17 @@ const V2AgentBYO: React.FC = () => {
     })();
     return () => { cancelled = true; };
   }, [api, podId, currentUser?._id]);
+
+  // Live preview rail — you see the agent you are about to create. The
+  // avatar is the same character render the pod will show (seeded by
+  // name:instanceId, so the preview face IS the final face), which is what
+  // turns this page from a form into a decision about a teammate.
+  const previewName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
+  const previewPodName = pods.find((p) => p._id === (hosted?.podId || issued?.podId || podId))?.name || '';
+  const previewStatus: 'draft' | 'starting' | 'live' = hosted
+    ? (hostedState === 'running' ? 'live' : 'starting')
+    : (issued && listenState === 'listening' ? 'live' : 'draft');
+  const previewDisplayName = hosted?.agentName || issued?.agentName || previewName;
 
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
   // answers 403 hosted_cap_reached), then ask the kernel to provision. No
@@ -435,6 +447,8 @@ const V2AgentBYO: React.FC = () => {
       description={t('agentByo.description')}
       showPodsSidebar={false}
     >
+      <div className="v2-byo__layout">
+      <div className="v2-byo__main">
       {!issued && !hosted && (
         <div className="v2-byo__form">
           {hosting?.configured && (
@@ -446,8 +460,10 @@ const V2AgentBYO: React.FC = () => {
                 onClick={() => setMode('hosted')}
                 data-testid="byo-mode-hosted"
               >
+                <span className="v2-byo__mode-kicker">{t('agentByo.mode.recommended')}</span>
                 <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
                 <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
+                <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta')}</span>
               </button>
               <button
                 type="button"
@@ -456,8 +472,10 @@ const V2AgentBYO: React.FC = () => {
                 onClick={() => setMode('byo')}
                 data-testid="byo-mode-byo"
               >
+                <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
                 <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
                 <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
+                <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
               </button>
             </div>
           )}
@@ -514,7 +532,10 @@ const V2AgentBYO: React.FC = () => {
 
       {hosted && (
         <div className="v2-byo__result" data-testid="byo-hosted-result">
-          <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
+          <div className="v2-byo__result-hero">
+            <V2Avatar name={hosted.agentName} size="lg" kind="agent" seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
+            <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
+          </div>
           <p>
             {t('agentByo.hosted.live', {
               name: hosted.agentName,
@@ -527,7 +548,20 @@ const V2AgentBYO: React.FC = () => {
           >
             {t(`agentByo.hosted.${hostedState}`, { name: hosted.agentName })}
           </p>
-          <p className="v2-byo__hint">{t('agentByo.hosted.meter', { turns: hosting?.caps.turnsPerDay ?? 0 })}</p>
+          <div className="v2-byo__stats">
+            <div className="v2-byo__stat">
+              <span className="v2-byo__stat-value">{hosting?.caps.turnsPerDay ?? 0}</span>
+              <span className="v2-byo__stat-label">{t('agentByo.hosted.statTurns')}</span>
+            </div>
+            <div className="v2-byo__stat">
+              <span className="v2-byo__stat-value">{hosting?.caps.agentsPerUser ?? 1}</span>
+              <span className="v2-byo__stat-label">{t('agentByo.hosted.statAgents')}</span>
+            </div>
+            <div className="v2-byo__stat">
+              <span className="v2-byo__stat-value">~10s</span>
+              <span className="v2-byo__stat-label">{t('agentByo.hosted.statLatency')}</span>
+            </div>
+          </div>
           <div className="v2-byo__cta-row">
             <button
               type="button"
@@ -689,6 +723,31 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
+      <aside className="v2-byo__preview" data-testid="byo-preview">
+        <div className="v2-byo__preview-label">{t('agentByo.preview.title')}</div>
+        <div className="v2-byo__preview-card">
+          <V2Avatar
+            name={previewDisplayName}
+            size="lg"
+            kind="agent"
+            seed={`${previewDisplayName}:default`}
+            online={previewStatus === 'live'}
+          />
+          <div className="v2-byo__preview-name">{previewDisplayName}</div>
+          {previewPodName && (
+            <div className="v2-byo__preview-pod">{t('agentByo.preview.inPod', { pod: previewPodName })}</div>
+          )}
+          <div className={`v2-byo__preview-status v2-byo__preview-status--${previewStatus}`}>
+            <span className="v2-byo__preview-dot" />
+            {t(`agentByo.preview.${previewStatus}`)}
+          </div>
+        </div>
+        <p className="v2-byo__preview-note">
+          {mode === 'hosted' ? t('agentByo.preview.noteHosted') : t('agentByo.preview.noteByo')}
+        </p>
+      </aside>
+      </div>
     </V2FeaturePage>
   );
 };

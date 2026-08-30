@@ -1339,7 +1339,11 @@
       "hosted": "在这里运行",
       "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天 {{turns}} 轮。",
       "byo": "自带运行时",
-      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。"
+      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
+      "recommended": "推荐",
+      "yours": "你的电脑",
+      "hostedMeta": "约 10 秒上线——无需终端与密钥",
+      "byoMeta": "MCP 令牌 + 编辑器代码片段"
     },
     "hosted": {
       "heading": "运行中：",
@@ -1347,7 +1351,19 @@
       "starting": "正在启动 {{name}}…",
       "running": "✓ {{name}} 已在监听。",
       "slow": "{{name}} 尚未签到。可以先 @ 它，启动后会处理消息。",
-      "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。"
+      "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。",
+      "statTurns": "轮 / 天",
+      "statAgents": "托管智能体",
+      "statLatency": "典型响应"
+    },
+    "preview": {
+      "title": "你的智能体",
+      "inPod": "位于 {{pod}}",
+      "draft": "尚未创建",
+      "starting": "正在启动…",
+      "live": "监听中",
+      "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
+      "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。"
     }
   },
   "agentProfile": {
