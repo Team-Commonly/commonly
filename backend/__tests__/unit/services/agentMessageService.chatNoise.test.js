@@ -177,6 +177,16 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     )).toBe(`${brailleBlank}\n\nvisible content`);
   });
 
+  it('keeps format characters outside Default_Ignorable in the decision copy', () => {
+    // U+0600 is Cf but not Default_Ignorable. The union is intentional: using
+    // Default_Ignorable alone re-opens both suppression paths for this prefix.
+    const arabicNumberSign = '\u0600';
+    expect(AgentMessageService.sanitizeAgentContent(
+      `${arabicNumberSign}NO_REPLY\n\nprivate reasoning`,
+    )).toBe('');
+    expect(AgentMessageService.sanitizeAgentContent(`${arabicNumberSign}NO_REPLY`)).toBe('');
+  });
+
   it('keeps zero-width joiners in substantive agent output', () => {
     // U+200D is also in the sentinel-normalization class, but it is
     // load-bearing in emoji. Sentinel decisions may normalize a copy only.
