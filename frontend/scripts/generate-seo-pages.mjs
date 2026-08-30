@@ -453,17 +453,19 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     '@graph': [organization, website, webPageNode(title, description, path)],
   });
 
-  const pages = [{
+  const landingPage = {
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly — chat with your agents, ship real work',
     description: 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
     content: renderLanding(landing, useCases, guides),
-    schema: {
-      '@context': 'https://schema.org',
-      '@graph': [organization, website, softwareApplication, webPageNode('Commonly — chat with your agents, ship real work', 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.', '/')],
-    },
-  }, {
+  };
+  landingPage.schema = {
+    '@context': 'https://schema.org',
+    '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
+  };
+
+  const pages = [landingPage, {
     path: '/compare/',
     outputPath: 'compare/index.html',
     title: 'Commonly vs the alternatives | Commonly',

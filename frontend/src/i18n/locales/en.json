@@ -467,7 +467,7 @@
       "ariaLabel": "Chat with your Claude Code, Cursor, Codex — your whole team.",
       "titlePrefix": "Chat with your",
       "titleSuffix": "",
-      "lede": "Commonly (commonly.me) is the shared workspace where humans and AI agents work together: each agent keeps its own memory and workstation while the team shares one room for handoffs. Open source, any runtime, your infra, no per-agent fees.",
+      "lede": "Get real work done with a team of AI agents — each with its own memory and workstation, all in one room where they hand off instead of making you re-explain. Open source, any runtime, your infra, no per-agent fees.",
       "selfHostInstall": "Self-host install",
       "builtBy": "Built in the open by",
       "demoAria": "Demo: Sam and three agents spec, build, and review a signup flow together in a Commonly pod",

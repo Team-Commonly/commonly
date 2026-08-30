@@ -56,12 +56,21 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.equal(website['@id'], 'https://commonly.me/#website');
   assert.deepEqual(website.publisher, { '@id': organization['@id'] });
   assert.deepEqual(softwareApplication.publisher, { '@id': organization['@id'] });
+  const landingWebPage = pages[0].schema['@graph'].find((item) => item['@type'] === 'WebPage');
+  assert.equal(landingWebPage.name, pages[0].title);
+  assert.equal(landingWebPage.description, pages[0].description);
   for (const page of pages) {
     const graph = page.schema['@graph'] || [page.schema];
     const webPage = graph.find((item) => item['@type'] === 'WebPage');
     assert.deepEqual(webPage.isPartOf, { '@id': website['@id'] });
   }
   const guidePages = pages.filter((page) => page.path.startsWith('/guides/') && page.path !== '/guides/');
+  const refreshedGuidePaths = new Set([
+    '/guides/multi-agent-collaboration-platform/',
+    '/guides/ai-agent-workspace/',
+    '/guides/ai-agent-task-management/',
+    '/guides/connect-claude-codex-shared-workspace/',
+  ]);
   assert.equal(guidePages.length, 5);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
@@ -71,22 +80,25 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal(webPage.reviewedBy['@type'], 'Organization');
     assert.match(article.datePublished, /^2026-08-\d{2}$/);
     assert.match(article.dateModified, /^2026-08-\d{2}$/);
+    if (refreshedGuidePaths.has(guide.path)) {
+      assert.equal(article.dateModified, '2026-08-30');
+    }
   }
   const taskManagementGuide = guidePages.find((page) => page.path === '/guides/ai-agent-task-management/');
   assert.equal(taskManagementGuide.title, 'AI Agent Task Management: Humans + Agents | Commonly');
   const taskManagementArticle = taskManagementGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(taskManagementArticle.datePublished, '2026-08-25');
-  assert.equal(taskManagementArticle.dateModified, '2026-08-25');
+  assert.equal(taskManagementArticle.dateModified, '2026-08-30');
   const guideTemplate = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><link rel="modulepreload" href="/assets/chunk.js"><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const sharedWorkspaceGuide = guidePages.find((page) => page.path === '/guides/connect-claude-codex-shared-workspace/');
   assert.equal(sharedWorkspaceGuide.title, 'Connect Claude Code and Codex to a Shared Workspace | Commonly');
   const sharedWorkspaceArticle = sharedWorkspaceGuide.schema['@graph'].find((item) => item['@type'] === 'Article');
   assert.equal(sharedWorkspaceArticle.datePublished, '2026-08-26');
-  assert.equal(sharedWorkspaceArticle.dateModified, '2026-08-26');
+  assert.equal(sharedWorkspaceArticle.dateModified, '2026-08-30');
   const taskManagementHtml = renderStaticPage(guideTemplate, taskManagementGuide);
   assert.match(taskManagementHtml, /By Commonly · Reviewed by Commonly SEO team/);
   assert.match(taskManagementHtml, /article:published_time" content="2026-08-25"/);
-  assert.match(taskManagementHtml, /article:modified_time" content="2026-08-25"/);
+  assert.match(taskManagementHtml, /article:modified_time" content="2026-08-30"/);
   assert.match(taskManagementHtml, /href="\/guides\/multi-agent-collaboration-platform\/"/);
   assert.match(taskManagementHtml, /href="\/guides\/ai-agent-workspace\/"/);
   assert.doesNotMatch(taskManagementHtml, /document\.documentElement/);

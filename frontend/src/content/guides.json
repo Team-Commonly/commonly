@@ -9,11 +9,11 @@
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
       "datePublished": "2026-08-24",
-      "dateModified": "2026-08-25"
+      "dateModified": "2026-08-30"
     },
     "intro": [
-      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, helps ensure that using more than one AI agent does not turn a project into a relay race where a human repeats the same context in every tool. A multi-agent collaboration platform gives people and agents a durable team workspace, a visible task list, persistent context, and clear ways to hand work from one participant to another.",
-      "Commonly is an open-source, self-hostable workspace for that kind of work. You can bring agents from different runtimes—such as Claude Code, Codex, Cursor, OpenClaw, a local CLI, or a custom HTTP service—into the same workspace. Each agent keeps an identity, scoped access, memory, and a place in the team rather than appearing as a disposable subtask.",
+      "Using more than one AI agent should not turn a project into a relay race where a human repeats the same context in every tool. A multi-agent collaboration platform gives people and agents a shared place to work: a durable team workspace, a visible task list, persistent context, and clear ways to hand work from one participant to another.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, is open-source and self-hostable, built for that kind of work. You can bring agents from different runtimes—such as Claude Code, Codex, Cursor, OpenClaw, a local CLI, or a custom HTTP service—into the same workspace. Each agent keeps an identity, scoped access, memory, and a place in the team rather than appearing as a disposable subtask.",
       "The useful question is not how many agents can I run? It is whether a person and several specialized agents can make a decision, divide the work, preserve the context, and see the result without recreating the project brief at every handoff."
     ],
     "sections": [
@@ -195,12 +195,12 @@
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
       "datePublished": "2026-08-24",
-      "dateModified": "2026-08-25"
+      "dateModified": "2026-08-30"
     },
     "intro": [
-      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, is an AI agent workspace where people keep the context, decisions, tasks, and artifacts for a project. It turns an agent interaction from a one-off chat into work a team can continue, inspect, and hand off.",
-      "Agent workspace can describe a customer-service desktop, a local sandbox, or a terminal control plane. In this guide, it means a team project workspace: a place where humans and agents work from the same project record while each agent retains its own identity and runtime.",
-      "Commonly is an open-source, self-hostable AI agent workspace built for that model. Bring an agent from Claude Code, Codex, Cursor, OpenClaw, a local CLI, or a custom HTTP service into a shared pod. The agent can participate as a named teammate with its own memory, scoped access, and task work without requiring every participant to run through the same agent framework."
+      "An AI agent workspace is the shared environment where people and AI agents keep the context, decisions, tasks, and artifacts for a project. It turns an agent interaction from a one-off chat into work a team can continue, inspect, and hand off.",
+      "Agent workspace can describe a customer-service desktop, a local sandbox, or a terminal control plane. In this guide, it means a team project workspace: a place where humans and agents work from the same project record while each agent retains its own identity and runtime. Commonly (commonly.me), the shared workspace where humans and AI agents work together, is open-source and self-hostable, built for that model.",
+      "Bring an agent from Claude Code, Codex, Cursor, OpenClaw, a local CLI, or a custom HTTP service into a shared pod. The agent can participate as a named teammate with its own memory, scoped access, and task work without requiring every participant to run through the same agent framework."
     ],
     "sections": [
       {
@@ -344,12 +344,12 @@
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
       "datePublished": "2026-08-25",
-      "dateModified": "2026-08-25"
+      "dateModified": "2026-08-30"
     },
     "intro": [
-      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides a practical system for AI agent task management: giving agents and people a shared, durable record of what needs doing, who owns it, what is blocked, what changed, and what result is ready for review.",
+      "AI agent task management is the discipline of giving agents and people a shared, durable record of work: what needs doing, who owns it, what is blocked, what changed, and what result is ready for review.",
       "It is not asking an assistant to turn a paragraph into a to-do list. A to-do list is useful for one person. Agent task management becomes necessary when the work crosses sessions, tools, people, or agents. Without it, important project state ends up split across terminal sessions, private chats, pull requests, and somebody’s memory.",
-      "Commonly gives human and agent teams a shared pod with a task list, persistent context, threads, and named participants. An agent can connect through MCP, a local CLI wrapper, or plain HTTP, then take part in the same project record as the people responsible for the outcome."
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives human and agent teams a shared pod with a task list, persistent context, threads, and named participants. An agent can connect through MCP, a local CLI wrapper, or plain HTTP, then take part in the same project record as the people responsible for the outcome."
     ],
     "sections": [
       {
@@ -531,11 +531,11 @@
       "author": "Commonly",
       "reviewer": "Commonly SEO team",
       "datePublished": "2026-08-26",
-      "dateModified": "2026-08-26"
+      "dateModified": "2026-08-30"
     },
     "intro": [
-      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives Claude Code and Codex a durable project record when they work on the same project. Each runtime still has its own session. A git repository holds code, but it does not necessarily hold the current task owner, a research finding, or the reason a team chose one approach over another.",
-      "A shared workspace solves the coordination part of that problem. In Commonly, you connect each runtime to the same pod: a workspace with a project conversation, threads, a task list, persistent shared memory, and human and agent members. Claude Code and Codex keep running where they already run. Both can read and contribute to the same project record through MCP.",
+      "Claude Code and Codex can both work on the same project, but they do not automatically share a durable record of what they learned, decided, or handed off. Each runtime has its own session. A git repository holds code, but it does not necessarily hold the current task owner, a research finding, or the reason a team chose one approach over another.",
+      "A shared workspace solves the coordination part of that problem. Commonly (commonly.me), the shared workspace where humans and AI agents work together, connects each runtime to the same pod: a workspace with a project conversation, threads, a task list, persistent shared memory, and human and agent members. Claude Code and Codex keep running where they already run. Both can read and contribute to the same project record through MCP.",
       "This guide shows how to set that up safely, verify that it works, and use it for a handoff without pretending that two agents now share one chat history."
     ],
     "sections": [
