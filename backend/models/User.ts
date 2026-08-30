@@ -116,6 +116,8 @@ export interface IUser extends Document {
     capabilities?: string[];
     agentName?: string;
     instanceId?: string;
+    // ADR-026 D3: the machine this identity is bound to (adoption CAS).
+    machineId?: string | null;
     runtime?: string;
     icon?: string;
   };
@@ -249,6 +251,8 @@ const userSchema = new Schema<IUser>({
     capabilities: [{ type: String }],
     agentName: { type: String },
     instanceId: { type: String },
+    // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
+    machineId: { type: String, default: null },
   },
   avatarMetadata: {
     style: {
