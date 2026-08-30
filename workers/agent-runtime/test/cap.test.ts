@@ -37,9 +37,16 @@ describe('CAP client — the four verbs a BYO wrapper speaks', () => {
     expect(JSON.parse(init.body)).toEqual({ deliveryId: 'nonce-abc' });
   });
 
-  it('ack 409 stale_delivery is a StaleDeliveryError — stop, never retry', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 409 });
+  it('ack 409 with code stale_delivery is a StaleDeliveryError — stop, never retry', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: 'stale_delivery' }) });
     await expect(ackEvent(cfg, 'e1', 'old')).rejects.toBeInstanceOf(StaleDeliveryError);
+  });
+
+  it('a 409 WITHOUT the stale_delivery code stays a generic retryable error (Otto)', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: 'something_else' }) });
+    await expect(ackEvent(cfg, 'e1', 'old')).rejects.toThrow('ackEvent 409');
+    fetchMock.mockResolvedValue({ ok: false, status: 409, json: async () => { throw new Error('no body'); } });
+    await expect(ackEvent(cfg, 'e1', 'old')).rejects.toThrow('ackEvent 409');
   });
 
   it('posts a message as JSON to the pod route', async () => {

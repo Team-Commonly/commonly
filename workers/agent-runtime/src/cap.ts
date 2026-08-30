@@ -46,7 +46,12 @@ export const ackEvent = async (cfg: CapConfig, eventId: string, deliveryId?: str
     body: JSON.stringify(deliveryId ? { deliveryId } : {}),
   });
   // 'You were replaced' is not a retryable failure: stop, do not post again.
-  if (res.status === 409) throw new StaleDeliveryError(eventId);
+  // Branch on the body's code, not the bare status (Otto): a generic 409 from
+  // anything else must stay a retryable error, not a silent drop.
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { code?: string };
+    if (body.code === 'stale_delivery') throw new StaleDeliveryError(eventId);
+  }
   if (!res.ok) throw new Error(`ackEvent ${res.status}`);
 };
 
