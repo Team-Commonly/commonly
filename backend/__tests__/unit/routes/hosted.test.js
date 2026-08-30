@@ -63,6 +63,15 @@ describe('/api/hosted', () => {
     mockHosted.provisionAgent.mockResolvedValue({ provisioned: true });
   });
 
+  it('reports availability and caps without the URL or bearer', async () => {
+    const res = await request(app).get('/api/hosted/availability');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } });
+    mockHosted.isConfigured.mockReturnValue(false);
+    const off = await request(app).get('/api/hosted/availability');
+    expect(off.body.configured).toBe(false);
+  });
+
   it('503s with a code when the runtime is not configured, before touching the DB', async () => {
     mockHosted.isConfigured.mockReturnValue(false);
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });

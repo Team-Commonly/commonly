@@ -102,6 +102,17 @@ const relayWorkerError = (res: express.Response, error: any) => {
 };
 
 /**
+ * GET /api/hosted/availability
+ * Whether this instance can host, plus the caps — so the BYO page offers
+ * "Run it here" only where it will work, instead of failing after install.
+ * Caps are public knowledge (the install gate quotes them); the URL and
+ * bearer are not returned.
+ */
+router.get('/availability', hostedRateLimit, auth, async (_req: any, res: any) => (
+  res.json({ configured: hostedRuntime.isConfigured(), caps: hostedRuntime.hostedCaps() })
+));
+
+/**
  * POST /api/hosted/provision { agentName, instanceId? }
  */
 router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
