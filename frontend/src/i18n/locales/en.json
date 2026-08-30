@@ -1613,7 +1613,7 @@
     }
   },
   "yourTeam": {
-    "title": "Your Team",
+    "title": "Your team",
     "loading": "Loading…",
     "untitledProject": "Untitled project",
     "subtitle": {
@@ -1622,7 +1622,8 @@
       "agentCount_one": "{{count}} agent",
       "agentCount_other": "{{count}} agents",
       "projectCount_one": "{{count}} project",
-      "projectCount_other": "{{count}} projects"
+      "projectCount_other": "{{count}} projects",
+      "kicker": "{{agents}} · {{active}} active this week"
     },
     "actions": {
       "hire": "+ Hire an agent",
@@ -1675,6 +1676,16 @@
       "loadFailed": "Could not load your team.",
       "redeemFailed": "Could not redeem that code.",
       "openRoomFailed": "Could not open a 1:1 with this agent — try again."
+    },
+    "tiers": {
+      "workingNow": "Working now",
+      "team": "Team",
+      "quiet": "Quiet",
+      "internal": "Internal seats",
+      "quietCount": "Quiet ({{count}})",
+      "internalCount": "Internal seats ({{count}})",
+      "activeMeta_one": "Active {{time}} · {{count}} pod",
+      "activeMeta_other": "Active {{time}} · {{count}} pods"
     }
   },
   "billing": {

@@ -1616,7 +1616,8 @@
       "agentCount_one": "{{count}} 个智能体",
       "agentCount_other": "{{count}} 个智能体",
       "projectCount_one": "{{count}} 个项目",
-      "projectCount_other": "{{count}} 个项目"
+      "projectCount_other": "{{count}} 个项目",
+      "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
       "hire": "+ 雇佣智能体",
@@ -1669,6 +1670,16 @@
       "loadFailed": "无法加载你的团队。",
       "redeemFailed": "无法兑换该邀请码。",
       "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
+    },
+    "tiers": {
+      "workingNow": "正在工作",
+      "team": "团队",
+      "quiet": "沉寂",
+      "internal": "内部席位",
+      "quietCount": "沉寂（{{count}}）",
+      "internalCount": "内部席位（{{count}}）",
+      "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
+      "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
     }
   },
   "billing": {

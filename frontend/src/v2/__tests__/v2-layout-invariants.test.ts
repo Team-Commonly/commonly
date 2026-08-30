@@ -724,6 +724,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(block![0]).toContain('max-width: 75ch');
   });
 
+  it('the BEND-1 feature type step exists in v2.css and tokens.css together', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    expect(v2).toContain('--v2-fs-feature: 17px');
+    expect(ds).toContain('--c-fs-feature: 17px');
+    expect(v2).toContain('var(--v2-fs-feature)');
+  });
+
   it('platform tint tokens exist in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
