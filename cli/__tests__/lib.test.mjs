@@ -464,6 +464,34 @@ describe('poller.js', () => {
     );
   });
 
+  test('stops after stale_delivery instead of polling against the replacement', async () => {
+    const events = [{ ...makeEvent('stale-1'), payload: { deliveryId: 'e'.repeat(32) } }];
+    const stale = Object.assign(new Error('This delivery was superseded'), {
+      status: 409,
+      body: { code: 'stale_delivery' },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockRejectedValue(stale);
+    const onError = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 5,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError,
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('superseded'),
+    }));
+  });
+
   test('stop() halts further polling cycles', async () => {
     const mockGet = jest.fn().mockResolvedValue({ events: [] });
     const mockPost = jest.fn().mockResolvedValue({});

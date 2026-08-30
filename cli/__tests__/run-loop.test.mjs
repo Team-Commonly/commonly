@@ -211,6 +211,38 @@ describe('performRun', () => {
   });
 
   test('a normal-return run-cap refusal is acked as a refusal, not a posted reply', async () => {
+  test('stops the agent run after a stale delivery acknowledgement', async () => {
+    const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'e'.repeat(32) } })];
+    const stale = Object.assign(new Error('This delivery was superseded'), {
+      status: 409,
+      body: { code: 'stale_delivery' },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn((route) => {
+      if (route.endsWith('/ack')) return Promise.reject(stale);
+      return Promise.resolve({});
+    });
+    const onError = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn(async () => ({ text: 'hello back' })) };
+
+    performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      instanceId: 'default',
+      onError,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+
+    expect(mockGet.mock.calls.filter(([route]) => route === '/api/agents/runtime/events')).toHaveLength(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('superseded'),
+    }));
+  });
+
     // The post route deliberately responds 200 with { refused: true }. This
     // is terminal guidance — retrying the same event would duplicate the two
     // chunks that did land — so the wrapper must expose it locally and ack the

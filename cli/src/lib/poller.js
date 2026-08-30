@@ -53,6 +53,14 @@ export const startPoller = ({
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
+          // ADR-026 D6: this runner was superseded after its delivery was
+          // requeued. Stop rather than fetching more work: retrying would let
+          // a stale supervisor keep competing with the replacement.
+          if (ackErr?.status === 409 && ackErr?.body?.code === 'stale_delivery') {
+            running = false;
+            onError?.(new Error(`Delivery ${event._id} was superseded — stopping poller.`));
+            return;
+          }
           // Non-fatal — event will be retried
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
         }

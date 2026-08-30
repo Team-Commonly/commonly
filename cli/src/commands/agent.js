@@ -1670,6 +1670,13 @@ export const performRun = ({
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
+          // ADR-026 D6: this child lost its delivery to a requeue. It must
+          // stand down instead of polling again and racing the replacement.
+          if (ackErr?.status === 409 && ackErr?.body?.code === 'stale_delivery') {
+            running = false;
+            onError?.(new Error(`Delivery ${event._id} was superseded — stopping agent run.`));
+            return;
+          }
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
         }
       }
