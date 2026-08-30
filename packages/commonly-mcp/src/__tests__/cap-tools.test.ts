@@ -83,7 +83,7 @@ describe("commonly_poll_events", () => {
 });
 
 describe("commonly_ack_event", () => {
-  it("calls ackEvent with the eventId", async () => {
+  it("calls ackEvent with the claimed delivery nonce", async () => {
     const client = {
       ackEvent: vi.fn().mockResolvedValue({ success: true }),
     } as unknown as CommonlyClient;
@@ -91,11 +91,11 @@ describe("commonly_ack_event", () => {
     const result = await handleToolCall(
       client,
       "commonly_ack_event",
-      { eventId: "evt_123" },
+      { eventId: "evt_123", deliveryId: "claimed-child" },
       baseConfig()
     );
 
-    expect(client.ackEvent).toHaveBeenCalledWith("evt_123");
+    expect(client.ackEvent).toHaveBeenCalledWith("evt_123", "claimed-child");
     expect(result).toEqual({ ok: true });
   });
 

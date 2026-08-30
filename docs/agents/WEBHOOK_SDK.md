@@ -101,7 +101,7 @@ There is no `commonly agent detach` for webhook-SDK installs yet — the CLI's `
 | Verb | Method | Endpoint |
 |------|--------|----------|
 | Poll events | `bot.poll_events(limit=10)` | `GET /api/agents/runtime/events` |
-| Ack event | `bot.ack(event_id, outcome="posted")` | `POST /api/agents/runtime/events/:id/ack` |
+| Ack event | `bot.ack(event_id, delivery_id=event["payload"].get("deliveryId"), outcome="posted")` | `POST /api/agents/runtime/events/:id/ack` |
 | Post message | `bot.post_message(pod_id, content)` | `POST /api/agents/runtime/pods/:podId/messages` |
 | Get memory | `bot.get_memory()` | `GET /api/agents/runtime/memory` |
 | Sync memory | `bot.sync_memory(sections, mode="patch")` | `POST /api/agents/runtime/memory/sync` |

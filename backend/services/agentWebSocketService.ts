@@ -55,6 +55,10 @@ interface AgentEvent {
   instanceId?: string;
   podId?: unknown;
   payload?: { trigger?: string };
+  // ADR-026 D6, set only when the event was already claimed at enqueue time
+  // (native runs are born 'delivered'). Absent on the pending-queue routes —
+  // see the comment at the pushEvent call site in agentEventService.
+  deliveryId?: string;
 }
 
 interface AgentUserDoc {
@@ -187,17 +191,54 @@ class AgentWebSocketService {
 
       socket.on('pong', () => {
         const data = this.connectedAgents.get(socket.agentKey);
-        if (data) {
+        // A reconnect can replace this socket for the same logical agent
+        // before the old connection finally times out. Do not let the old
+        // socket refresh the replacement's liveness timestamp.
+        if (data?.socket === socket) {
           data.lastPong = Date.now();
         }
       });
 
       socket.on('ack', async (payload: unknown) => {
-        const { eventId } = payload as { eventId?: string };
+        const { eventId, deliveryId } = payload as { eventId?: string; deliveryId?: string };
         if (!eventId) return;
 
         try {
-          await AgentEventService.acknowledge(eventId, socket.agentName, socket.instanceId);
+          // ADR-026 D6 at the socket boundary. This handler used to call
+          // acknowledge() with three arguments and emit ack:success whatever
+          // came back — the exact lie the two HTTP handlers grew a 400 to
+          // prevent, on a live surface (review on #1347). Under Phase B every
+          // WS ack would take the `return null` branch, the socket would
+          // report success, and the event would be requeued and redelivered.
+          // 'ws' is its own consumer key: the socket transport can be flipped
+          // to Phase B independently of any HTTP client (Sam's per-consumer
+          // steer, 2026-08-30).
+          if (!deliveryId && AgentEventService.isDeliveryNonceRequired('ws')) {
+            socket.emit('ack:error', {
+              eventId,
+              code: 'delivery_id_required',
+              error: 'This instance requires the deliveryId from the event payload on ack',
+            });
+            return;
+          }
+          const acked = await AgentEventService.acknowledge(
+            eventId,
+            socket.agentName,
+            socket.instanceId,
+            null,
+            deliveryId || null,
+            'ws',
+          );
+          if (!acked && await AgentEventService.isSupersededDelivery(
+            eventId, socket.agentName, socket.instanceId, deliveryId || null,
+          )) {
+            socket.emit('ack:error', {
+              eventId,
+              code: 'stale_delivery',
+              error: 'This delivery was superseded by a requeue',
+            });
+            return;
+          }
           console.log(`[agent-ws] Ack received from ${socket.agentKey} for event ${eventId}`);
           socket.emit('ack:success', { eventId });
         } catch (err) {
@@ -208,7 +249,13 @@ class AgentWebSocketService {
 
       socket.on('disconnect', (reason: unknown) => {
         console.log(`[agent-ws] Agent disconnected: ${socket.agentKey} (${reason})`);
-        this.connectedAgents.delete(socket.agentKey);
+        // A later connection for this agent may already have replaced this
+        // socket in the map. Only the socket that still owns the entry may
+        // remove it; otherwise an old timeout drops the live connection and
+        // future queue wakes have nowhere to go.
+        if (this.connectedAgents.get(socket.agentKey)?.socket === socket) {
+          this.connectedAgents.delete(socket.agentKey);
+        }
       });
 
       socket.emit('connected', {
@@ -428,15 +475,29 @@ class AgentWebSocketService {
     if (!this.agentNamespace) return false;
 
     const agentKey = `${event.agentName}:${event.instanceId || 'default'}`;
+    const target = this.connectedAgents.get(agentKey);
 
-    this.agentNamespace.to(`agent:${agentKey}`).emit('event', event);
+    if (!target) return false;
 
-    if (event.podId) {
-      this.agentNamespace.to(`pod:${String(event.podId)}`).emit('event', event);
+    if (event.deliveryId) {
+      // Native events are born claimed. Their nonce was minted with that
+      // claim, so this is already a delivery rather than a queue wake. Keep
+      // its wire shape identical to list(): every driver reads its nonce from
+      // payload.deliveryId, never from a transport-only top-level field.
+      const { deliveryId, ...wireEvent } = event;
+      target.socket.emit('event', {
+        ...wireEvent,
+        payload: { ...wireEvent.payload, deliveryId },
+      });
+    } else {
+      // A queued event has no delivery nonce until list() atomically claims
+      // it. Do not broadcast the raw pending record: a socket that processes
+      // that copy cannot later prove which delivery it is acknowledging.
+      void this.replayPendingEvents(target.socket);
     }
 
     console.log(
-      `[agent-ws] Event pushed id=${event?._id || 'n/a'} type=${event?.type || 'n/a'} `
+      `[agent-ws] Event delivery requested id=${event?._id || 'n/a'} type=${event?.type || 'n/a'} `
       + `agent=${agentKey} pod=${event?.podId || 'n/a'} trigger=${event?.payload?.trigger || 'n/a'}`,
     );
 

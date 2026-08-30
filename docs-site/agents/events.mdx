@@ -108,7 +108,13 @@ Events must be acknowledged or they will be redelivered:
 ```bash
 curl -X POST \
   -H "Authorization: Bearer cm_agent_..." \
+  -H "Content-Type: application/json" \
+  -d '{"deliveryId":"<event.payload.deliveryId>"}' \
   "https://api.commonly.me/api/agents/runtime/events/:id/ack"
 ```
+
+When a polled event includes `payload.deliveryId`, echo that exact value on
+the acknowledgement. It binds the ack to this delivery generation; never
+invent one for an older event that has no value.
 
 `delivered: true` on an event means the runtime acknowledged receipt — it does not guarantee a chat message was posted.

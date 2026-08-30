@@ -1101,7 +1101,40 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
       return res.status(403).json({ message: 'Agent token does not match bot user' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId, delivery);
+    const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
+    const acked = await AgentEventService.acknowledge(
+      req.params.id,
+      resolvedAgentName,
+      instanceId,
+      delivery,
+      deliveryId,
+      ackConsumer,
+    );
+    // ADR-026 D6: only a caller that presented a deliveryId can be told it was
+    // superseded, so pre-D6 drivers see byte-identical behaviour. 409, not 404
+    // — "the event is gone" is idempotent success, "you were replaced" means
+    // stop working.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, resolvedAgentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
 
     return res.json({ success: true });
   } catch (error: any) {
@@ -1125,12 +1158,37 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(
+    const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
+    const acked = await AgentEventService.acknowledge(
       req.params.id,
       agentName,
       instanceId,
       delivery,
+      deliveryId,
+      ackConsumer,
     );
+    // See the /bot/events ack above: 409 only for nonce-presenting callers.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, agentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
     return res.json({ success: true });
   } catch (error: any) {
     console.error('Error acknowledging agent event:', error);

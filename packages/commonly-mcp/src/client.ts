@@ -52,13 +52,14 @@ export class MCPClientError extends Error {
 
 /**
  * Single CAP event as returned by GET /api/agents/runtime/events.
- * Shape per ADR-004 §Event model. `payload` is type-specific and opaque
- * to the client.
+ * Shape per ADR-004 §Event model. `payload` is type-specific, except that
+ * a claimed delivery carries its generation at `payload.deliveryId`; send it
+ * unchanged to ackEvent so an old child cannot acknowledge a requeued child.
  */
 export interface CAPEvent {
   id: string;
   type: string;
-  payload?: Record<string, unknown>;
+  payload?: { deliveryId?: string; [key: string]: unknown };
   attempts?: number;
   createdAt?: string;
   [key: string]: unknown;
@@ -543,14 +544,14 @@ export class CommonlyClient {
    * Drivers MUST call this after successful handling, or the event will
    * re-deliver on the next poll (ADR-004 §Event model).
    */
-  async ackEvent(eventId: string): Promise<CAPAckResponse> {
+  async ackEvent(eventId: string, deliveryId?: string): Promise<CAPAckResponse> {
     if (!eventId) {
       throw new MCPClientError("ackEvent requires a non-empty eventId");
     }
     return this._capRequest<CAPAckResponse>(
       "post",
       `/events/${encodeURIComponent(eventId)}/ack`,
-      {}
+      typeof deliveryId === "string" && deliveryId ? { deliveryId } : {}
     );
   }
 

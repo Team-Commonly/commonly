@@ -11,6 +11,8 @@
  *                  agent:messages:read, agent:messages:write
  */
 
+const { ackBodyForEvent } = require('../shared/delivery-nonce');
+
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://backend:5000';
 const userToken = process.env.COMMONLY_USER_TOKEN;
 const agentToken = process.env.COMMONLY_AGENT_TOKEN;
@@ -76,11 +78,14 @@ const fetchRuntimeEvents = async () => {
   return data.events || [];
 };
 
-const ackRuntimeEvent = async (eventId, result = null) => {
-  const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
+const ackRuntimeEvent = async (event, result = null) => {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/events/${event._id}/ack`, {
     method: 'POST',
     headers: runtimeHeaders,
-    body: result ? JSON.stringify({ result }) : undefined,
+    body: JSON.stringify({
+      ...ackBodyForEvent(event),
+      ...(result ? { result } : {}),
+    }),
   });
   if (!res.ok) {
     throw new Error(`Failed to ack event: ${res.status}`);
@@ -216,16 +221,17 @@ const postThreadComment = async (threadId, content, podId = null) => {
 /**
  * Acknowledge event via bot API
  */
-const ackEvent = async (eventId, result = null) => {
+const ackEvent = async (event, result = null) => {
   if (runtimeHeaders) {
-    return ackRuntimeEvent(eventId, result);
+    return ackRuntimeEvent(event, result);
   }
-  const res = await fetch(`${baseUrl}/api/agents/runtime/bot/events/${eventId}/ack`, {
+  const res = await fetch(`${baseUrl}/api/agents/runtime/bot/events/${event._id}/ack`, {
     method: 'POST',
     headers: botHeaders,
     body: JSON.stringify({
       agentName: agentType,
       instanceId,
+      ...ackBodyForEvent(event),
       ...(result ? { result } : {}),
     }),
   });
@@ -512,10 +518,10 @@ const handleMentionEvent = async (event) => {
   const { content, username, messageId } = event.payload || {};
 
   if (!content) {
-    return ackEvent(event._id, { outcome: 'no_action', reason: 'empty_mention_content' });
+    return ackEvent(event, { outcome: 'no_action', reason: 'empty_mention_content' });
   }
   if (processedEvents.has(event._id)) {
-    return ackEvent(event._id, { outcome: 'skipped', reason: 'duplicate_event_id' });
+    return ackEvent(event, { outcome: 'skipped', reason: 'duplicate_event_id' });
   }
   processedEvents.add(event._id);
 
@@ -541,7 +547,7 @@ const handleMentionEvent = async (event) => {
     );
 
     if (!response) {
-      return ackEvent(event._id, { outcome: 'no_action', reason: 'empty_model_response' });
+      return ackEvent(event, { outcome: 'no_action', reason: 'empty_model_response' });
     }
 
     // Post response to pod
@@ -559,7 +565,7 @@ const handleMentionEvent = async (event) => {
     });
 
     console.log(`Responded to @${username} with context-aware message`);
-    return ackEvent(event._id, {
+    return ackEvent(event, {
       outcome: 'posted',
       reason: 'mention_response_posted',
       messageId: posted?.id || posted?._id || null,
@@ -577,7 +583,7 @@ const handleMentionEvent = async (event) => {
           eventId: event._id,
           fallback: true,
         });
-        return ackEvent(event._id, {
+        return ackEvent(event, {
           outcome: 'posted',
           reason: 'mention_fallback_posted',
           messageId: posted?.id || posted?._id || null,
@@ -586,7 +592,7 @@ const handleMentionEvent = async (event) => {
     } catch (fallbackErr) {
       console.error(`Fallback also failed: ${fallbackErr.message}`);
     }
-    return ackEvent(event._id, { outcome: 'error', reason: err.message || 'mention_handler_failed' });
+    return ackEvent(event, { outcome: 'error', reason: err.message || 'mention_handler_failed' });
   }
 };
 
@@ -600,10 +606,10 @@ const handleThreadMentionEvent = async (event) => {
   const threadId = thread.postId || payload.threadId;
 
   if (!threadId || !content) {
-    return ackEvent(event._id, { outcome: 'no_action', reason: 'thread_context_missing' });
+    return ackEvent(event, { outcome: 'no_action', reason: 'thread_context_missing' });
   }
   if (processedEvents.has(event._id)) {
-    return ackEvent(event._id, { outcome: 'skipped', reason: 'duplicate_event_id' });
+    return ackEvent(event, { outcome: 'skipped', reason: 'duplicate_event_id' });
   }
   processedEvents.add(event._id);
 
@@ -632,19 +638,19 @@ const handleThreadMentionEvent = async (event) => {
     );
 
     if (!response) {
-      return ackEvent(event._id, { outcome: 'no_action', reason: 'empty_model_response' });
+      return ackEvent(event, { outcome: 'no_action', reason: 'empty_model_response' });
     }
 
     await postThreadComment(threadId, response, event.podId);
     console.log(`Responded to thread mention from @${username}`);
-    return ackEvent(event._id, {
+    return ackEvent(event, {
       outcome: 'posted',
       reason: 'thread_response_posted',
       messageId: threadId,
     });
   } catch (err) {
     console.error(`Failed to handle thread mention: ${err.message}`);
-    return ackEvent(event._id, { outcome: 'error', reason: err.message || 'thread_handler_failed' });
+    return ackEvent(event, { outcome: 'error', reason: err.message || 'thread_handler_failed' });
   }
 };
 
@@ -654,10 +660,10 @@ const handleThreadMentionEvent = async (event) => {
 const handleSummaryEvent = async (event) => {
   const summaryContent = event.payload?.summary?.content || event.payload?.summary;
   if (!summaryContent) {
-    return ackEvent(event._id, { outcome: 'no_action', reason: 'summary_missing_content' });
+    return ackEvent(event, { outcome: 'no_action', reason: 'summary_missing_content' });
   }
   if (processedEvents.has(event._id)) {
-    return ackEvent(event._id, { outcome: 'skipped', reason: 'duplicate_event_id' });
+    return ackEvent(event, { outcome: 'skipped', reason: 'duplicate_event_id' });
   }
   processedEvents.add(event._id);
 
@@ -670,16 +676,16 @@ const handleSummaryEvent = async (event) => {
         source: agentType,
         eventId: event._id,
       });
-      return ackEvent(event._id, {
+      return ackEvent(event, {
         outcome: 'posted',
         reason: 'summary_response_posted',
         messageId: posted?.id || posted?._id || null,
       });
     }
-    return ackEvent(event._id, { outcome: 'no_action', reason: 'summary_model_empty' });
+    return ackEvent(event, { outcome: 'no_action', reason: 'summary_model_empty' });
   } catch (err) {
     console.error(`Failed to handle summary: ${err.message}`);
-    return ackEvent(event._id, { outcome: 'error', reason: err.message || 'summary_handler_failed' });
+    return ackEvent(event, { outcome: 'error', reason: err.message || 'summary_handler_failed' });
   }
 };
 
@@ -703,7 +709,7 @@ const handleEvent = async (event) => {
 
   // Unknown event type - just ack it
   console.log(`Unknown event type: ${event.type}`);
-  return ackEvent(event._id, { outcome: 'skipped', reason: `unsupported_event_type:${event.type}` });
+  return ackEvent(event, { outcome: 'skipped', reason: `unsupported_event_type:${event.type}` });
 };
 
 // ============================================================================

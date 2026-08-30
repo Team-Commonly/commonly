@@ -47,8 +47,10 @@ export const startPoller = ({
 
         // Acknowledge the event
         try {
+          const deliveryId = event.payload?.deliveryId;
           await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
             result,
+            ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
           // Non-fatal — event will be retried
