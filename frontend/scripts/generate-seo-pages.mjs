@@ -94,7 +94,16 @@ const staticDocument = (template) => {
     navigationRuntimeEnd,
   );
 
-  return removeModulePreloads(removeRuntimeEntryScript(withoutNavigationRuntime));
+  const withoutRuntime = removeModulePreloads(removeRuntimeEntryScript(withoutNavigationRuntime));
+  const headEnd = withoutRuntime.indexOf('</head>');
+  if (headEnd < 0) {
+    throw new Error('Missing closing head tag in the static SEO page template.');
+  }
+
+  // Static-only pages deliberately omit the React bundle. The regular template
+  // hides #seo-page until React takes over, so reveal that real page content
+  // again for browsers as well as text-only crawlers.
+  return `${withoutRuntime.slice(0, headEnd)}<style>#seo-page { display: block !important; }</style>${withoutRuntime.slice(headEnd)}`;
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;

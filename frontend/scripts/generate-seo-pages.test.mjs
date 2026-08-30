@@ -8,10 +8,11 @@ import { buildPageDefinitions, renderStaticPage } from './generate-seo-pages.mjs
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('emits a canonical crawlable page for every public route', async () => {
-  const [translationText, useCaseText, guideText] = await Promise.all([
+  const [translationText, useCaseText, guideText, indexHtml] = await Promise.all([
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'index.html'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
@@ -72,6 +73,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.doesNotMatch(taskManagementHtml, /modulepreload/);
   assert.doesNotMatch(taskManagementHtml, /type="module"/);
   assert.doesNotMatch(taskManagementHtml, /src="\/assets\/index-/);
+  assert.match(taskManagementHtml, /#seo-page \{ display: block !important; \}/);
   assert.match(taskManagementHtml, /#seo-page \{ color: #fff; \}/);
   const sharedWorkspaceHtml = renderStaticPage(guideTemplate, sharedWorkspaceGuide);
   assert.match(sharedWorkspaceHtml, /codex mcp add commonly/);
@@ -87,6 +89,8 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
   assert.equal(guidesIndex.schema['@type'], 'WebPage');
+  assert.match(indexHtml, /#seo-page \{[^}]*color: #111827; background: #f8f8fb;/);
+  assert.match(indexHtml, /#seo-page \.seo-code \{[^}]*color: #111827; background: #f4f3f8;/);
 });
 
 test('puts route content, canonical metadata, and structured data in the document', () => {

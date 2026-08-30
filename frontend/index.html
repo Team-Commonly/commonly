@@ -30,9 +30,9 @@
     <meta name="twitter:image" content="https://commonly.me/og-card.png?v=2" />
     <!-- SEO_METADATA_END -->
     <!-- Progressive-enhancement gate for the prerendered SEO page below.
-         The dark #seo-page markup ships inside #root on EVERY route, so
+         The #seo-page markup ships inside #root on EVERY route, so
          every load painted it for the beat before React replaced it — the
-         "half-second dark flash" (Sam, 2026-08-24) that survived three CSS
+         "half-second flash" (Sam, 2026-08-24) that survived three CSS
          fixes because it is content, not a background rule. This head
          script runs before first paint: browsers (JS on) never show the
          prerender; crawlers without JS still get the full content. Not
@@ -40,7 +40,7 @@
     <!-- SEO_GATE_START -->
     <!-- Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
          timing dependency — anything that delays head-script execution
-         paints the dark prerender first. Hidden-by-default has NO timing
+         paints the prerender first. Hidden-by-default has NO timing
          window: JS-capable browsers never paint it, and the <noscript>
          below reveals it for text-only crawlers. Rendering crawlers
          (Googlebot) execute JS and index the real app instead. -->
@@ -48,38 +48,38 @@
     <!-- SEO_GATE_END -->
     <style>
       #seo-page { display: none; }
-      #seo-page { box-sizing: border-box; min-height: 100vh; color: #e5e7eb; background: #0b1220; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
+      #seo-page { box-sizing: border-box; min-height: 100vh; color: #111827; background: #f8f8fb; font: 16px/1.6 Inter, ui-sans-serif, system-ui, sans-serif; }
       #seo-page *, #seo-page *::before, #seo-page *::after { box-sizing: inherit; }
-      #seo-page a { color: #7dd3fc; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-      #seo-page a:hover { color: #e0f2fe; }
+      #seo-page a { color: #2456c8; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+      #seo-page a:hover { color: #14306f; }
       #seo-page .seo-header, #seo-page main, #seo-page .seo-footer { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
       #seo-page .seo-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 72px; }
       #seo-page .seo-header nav { display: flex; flex-wrap: wrap; gap: 16px; }
-      #seo-page .seo-brand { color: #fff; font-size: 20px; font-weight: 800; text-decoration: none; }
+      #seo-page .seo-brand { color: #111827; font-size: 20px; font-weight: 800; text-decoration: none; }
       #seo-page section { padding: 64px 0; }
-      #seo-page h1, #seo-page h2, #seo-page h3 { color: #fff; line-height: 1.12; }
+      #seo-page h1, #seo-page h2, #seo-page h3 { color: #111827; line-height: 1.12; }
       #seo-page h1 { max-width: 820px; margin: 0 0 20px; font-size: clamp(2.5rem, 7vw, 5rem); letter-spacing: -.055em; }
       #seo-page h2 { max-width: 760px; margin: 0 0 20px; font-size: clamp(1.75rem, 4vw, 2.75rem); letter-spacing: -.035em; }
       #seo-page h3 { margin: 0 0 12px; font-size: 1.2rem; }
       #seo-page p { max-width: 800px; margin: 0 0 16px; }
       #seo-page .seo-hero { padding-top: 100px; padding-bottom: 100px; }
-      #seo-page .seo-lede { color: #cbd5e1; font-size: 1.15rem; }
-      #seo-page .seo-byline { color: #94a3b8; font-size: .875rem; line-height: 1.7; }
-      #seo-page .seo-kicker { margin-bottom: 10px; color: #7dd3fc; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      #seo-page .seo-lede { color: #4b5563; font-size: 1.15rem; }
+      #seo-page .seo-byline { color: #7b8494; font-size: .875rem; line-height: 1.7; }
+      #seo-page .seo-kicker { margin-bottom: 10px; color: #2456c8; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
       #seo-page .seo-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 28px; }
-      #seo-page .seo-primary { display: inline-block; border-radius: 999px; padding: 10px 18px; color: #062032; background: #7dd3fc; font-weight: 800; text-decoration: none; }
-      #seo-page .seo-primary:hover { color: #062032; background: #bae6fd; }
-      #seo-page .seo-install { color: #cbd5e1; }
-      #seo-page .seo-install code { display: inline-block; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid #334155; border-radius: 8px; background: #111827; }
-      #seo-page .seo-band { width: 100%; max-width: none; margin-left: calc((100vw - min(1120px, calc(100vw - 40px))) / -2); padding-right: max(20px, calc((100vw - 1120px) / 2)); padding-left: max(20px, calc((100vw - 1120px) / 2)); color: #e0f2fe; background: #0c4a6e; }
+      #seo-page .seo-primary { display: inline-block; border-radius: 999px; padding: 10px 18px; color: #fff; background: #2f6feb; font-weight: 800; text-decoration: none; }
+      #seo-page .seo-primary:hover { color: #fff; background: #1f55c9; }
+      #seo-page .seo-install { color: #4b5563; }
+      #seo-page .seo-install code { display: inline-block; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid #eef0f6; border-radius: 8px; color: #111827; background: #f4f3f8; }
+      #seo-page .seo-band { width: 100%; max-width: none; margin-left: calc((100vw - min(1120px, calc(100vw - 40px))) / -2); padding-right: max(20px, calc((100vw - 1120px) / 2)); padding-left: max(20px, calc((100vw - 1120px) / 2)); color: #14306f; background: #e8efff; }
       #seo-page .seo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
-      #seo-page .seo-card { padding: 24px; border: 1px solid #334155; border-radius: 12px; background: #111827; }
+      #seo-page .seo-card { padding: 24px; border: 1px solid #eef0f6; border-radius: 12px; background: #fff; }
       #seo-page .seo-card p:last-child, #seo-page .seo-card ul:last-child { margin-bottom: 0; }
-      #seo-page .seo-code { overflow-x: auto; margin: 20px 0; padding: 16px; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; background: #111827; font: .875rem/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      #seo-page .seo-code { overflow-x: auto; margin: 20px 0; padding: 16px; border: 1px solid #eef0f6; border-radius: 8px; color: #111827; background: #f4f3f8; font: .875rem/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
       #seo-page .seo-code code { font: inherit; }
-      #seo-page li { margin-bottom: 8px; color: #cbd5e1; }
-      #seo-page .seo-note { color: #94a3b8; font-size: .875rem; }
-      #seo-page .seo-footer { padding: 40px 0; color: #94a3b8; border-top: 1px solid #334155; }
+      #seo-page li { margin-bottom: 8px; color: #4b5563; }
+      #seo-page .seo-note { color: #7b8494; font-size: .875rem; }
+      #seo-page .seo-footer { padding: 40px 0; color: #7b8494; border-top: 1px solid #e5e7eb; }
       @media (max-width: 640px) { #seo-page .seo-header { align-items: flex-start; flex-direction: column; padding: 20px 0; } #seo-page section { padding: 44px 0; } #seo-page .seo-hero { padding-top: 56px; padding-bottom: 56px; } }
     </style>
     <!-- SEO_NAVIGATION_RUNTIME_START -->

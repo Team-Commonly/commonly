@@ -139,6 +139,7 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a workspace' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Watch a live room' })).toBeInTheDocument();
+    expect(document.body).toHaveClass('guide-canvas');
   });
 
   test('shared workspace guide retains its MCP setup commands after the app takes over', async () => {
