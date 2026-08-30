@@ -391,7 +391,8 @@ export async function handleToolCall(
     case CapAck.definition.name: {
       const eventId = args.eventId as string | undefined;
       if (!eventId) throw new Error("eventId is required");
-      return CapAck.handler(client, { eventId });
+      const deliveryId = args.deliveryId as string | undefined;
+      return CapAck.handler(client, { eventId, deliveryId });
     }
 
     case CapPost.definition.name: {
