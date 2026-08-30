@@ -14,6 +14,12 @@ jest.mock('axios', () => ({
 }));
 jest.mock('../context/AppContext', () => ({ useAppContext: jest.fn() }));
 jest.mock('../context/AuthContext', () => ({ useAuth: jest.fn() }));
+jest.mock('../utils/avatarUtils', () => ({
+  avatarOptions: [],
+  getAvatarColor: jest.fn(() => '#000'),
+  getAvatarSrc: jest.fn(() => undefined),
+  presetFaceOptions: jest.fn(() => []),
+}));
 jest.mock('./admin/AdminUsers', () => () => null);
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -40,9 +46,9 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function renderProfile() {
+async function renderProfile(profile = { _id: 'u', username: 'user', email: 'e@example.com', createdAt: '2023-01-01', profilePicture: 'default' }) {
   axios.get
-    .mockResolvedValueOnce({ data: { _id: 'u', username: 'user', email: 'e@example.com', createdAt: '2023-01-01', profilePicture: 'default' } })
+    .mockResolvedValueOnce({ data: profile })
     .mockResolvedValueOnce({ data: [] })
     .mockResolvedValueOnce({ data: { hasToken: false } })
     .mockResolvedValueOnce({ data: { recentPublicPosts: [], joinedPods: [] } });
@@ -60,6 +66,19 @@ test('displays user info after fetch', async () => {
   await renderProfile();
   expect(axios.get).toHaveBeenCalledWith('/api/users/u', { headers: { Authorization: 'Bearer t' } });
   expect(container.textContent).toContain('user');
+});
+
+test('uses an agent display label instead of its raw seat username', async () => {
+  await renderProfile({
+    _id: 'u',
+    username: 'vale',
+    displayName: 'Vale',
+    email: 'vale@agents.commonly.local',
+    createdAt: '2023-01-01',
+    profilePicture: 'default',
+  });
+
+  expect(container.querySelector('h4')?.textContent).toBe('Vale');
 });
 
 test('shows error when fetch fails', async () => {
