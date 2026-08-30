@@ -214,6 +214,7 @@ app.use('/api/registry', registryRoutes); // Agent Registry (package manager for
 app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
+app.use('/api/hosted', require('./routes/hosted')); // ADR-023 W2: hosted runtime provision surface (metered)
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
 app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration

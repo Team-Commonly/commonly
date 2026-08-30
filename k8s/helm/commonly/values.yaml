@@ -95,6 +95,13 @@ backend:
     # Empty = derive from the request host (fine when the API has one host).
     oauthCallbackBaseUrl: ""
     commonlyApiUrl: ""
+    # ADR-023 W2 hosted runtime (workers/agent-runtime). Empty = surface
+    # reports 503 hosted_runtime_unconfigured. The admin bearer comes from the
+    # `hosted-runtime` secret (ExternalSecret, own object so a missing remote
+    # key never stalls api-keys). Caps are the D3.1 metering floor.
+    hostedRuntimeUrl: ""
+    hostedAgentsPerUser: ""
+    hostedTurnsPerDay: ""
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
     pgHost: "YOUR_PG_HOST"

@@ -13,6 +13,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
+const HostedRuntime = require('../../services/hostedRuntimeService');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const {
   getUserId,
@@ -182,7 +183,10 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       const requestedRuntimeType = String(
         (config && config.runtime && (config.runtime as any).runtimeType) || '',
       ).toLowerCase();
-      if (requestedRuntimeType !== 'webhook') {
+      // Self-serve identities: BYO webhook (ADR-006) and Commonly-hosted
+      // (ADR-023). Both synthesize an ephemeral row; the hosted one is metered
+      // by the cap gate below rather than by entitlement.
+      if (requestedRuntimeType !== 'webhook' && requestedRuntimeType !== HostedRuntime.HOSTED_RUNTIME_TYPE) {
         return res.status(404).json({ error: 'Agent not found in registry' });
       }
       // ADR-006 §invariant 7 — self-serve is pod-scope only. The route
@@ -225,7 +229,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         user: String(userId),
         pod: String(podId),
         agent: synthManifest.name,
-        runtime: 'webhook',
+        runtime: requestedRuntimeType,
       });
     }
 
@@ -377,6 +381,24 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         return res.status(403).json({
           code: 'cloud_agents_not_entitled',
           message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
+        });
+      }
+    }
+
+    // Hosted runtime (ADR-023 D3.1): open to every authenticated user, metered
+    // instead of entitlement-gated. isCloudRuntime() deliberately does not
+    // classify 'hosted' as cloud — the gate above is for operator-run tiers
+    // (moltbot/codex/...), this one is the per-user beta cap. Admins bypass
+    // the cap the same way they bypass the entitlement.
+    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
+      const { agentsPerUser } = HostedRuntime.hostedCaps();
+      const used = await HostedRuntime.countHostedAgentsForUser(userId);
+      if (used >= agentsPerUser) {
+        return res.status(403).json({
+          code: 'hosted_cap_reached',
+          message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
+          used,
+          cap: agentsPerUser,
         });
       }
     }
