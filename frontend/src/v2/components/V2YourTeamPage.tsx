@@ -26,12 +26,33 @@ interface AgentInstallationSummary {
   category?: string | null;
   podId?: string;
   podName?: string;
+  // Derived at dedupe time: how many of the user's pods carry this identity.
+  podCount?: number;
 }
 
 // Runtime labels removed from cards 2026-08-22: ADR-022 D1 (ratified) bans
 // runtime vocabulary on user-facing cards; the craft audit found this surface
 // violating it on every card. Owner-facing runtime detail lives on the agent
 // profile, not the roster.
+
+// BEND-3 (Wren spec §1.1, Sam-approved 2026-08-30): internal ops/smoke/demo
+// seats hide behind a disclosure. A client-side curated list is exactly the
+// drift the taxonomy forbids, accepted for ONE release; the server-side
+// `internal: true` flag replaces this constant (follow-up filed with the
+// spec). Match by exact name or prefix, lowercased.
+const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
+const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
+const isInternalSeat = (a: AgentInstallationSummary): boolean => {
+  const n = (a.name || '').toLowerCase();
+  return INTERNAL_SEAT_EXACT.has(n) || INTERNAL_SEAT_PREFIXES.some((p) => n.startsWith(p));
+};
+
+const AGENT_KIND = 'agent' as const;
+const seedOf = (a: AgentInstallationSummary): string => `${a.name}:${a.instanceId || 'default'}`;
+
+const WORKING_NOW_MS = 60 * 60 * 1000;
+const QUIET_MS = 7 * 24 * 60 * 60 * 1000;
+const FEATURED_MAX = 4;
 
 const formatRelative = (
   iso: string | null | undefined,
@@ -65,8 +86,14 @@ const lastSeenTime = (a: AgentInstallationSummary): number => {
 
 const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSummary[] => {
   const seen = new Map<string, AgentInstallationSummary>();
+  const podCounts = new Map<string, Set<string>>();
   for (const a of agents) {
     const key = `${a.name}:${a.instanceId || 'default'}`;
+    if (a.podId) {
+      const set = podCounts.get(key) || new Set<string>();
+      set.add(a.podId);
+      podCounts.set(key, set);
+    }
     const existing = seen.get(key);
     if (!existing) {
       seen.set(key, a);
@@ -74,7 +101,23 @@ const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSumm
     }
     if (lastSeenTime(a) > lastSeenTime(existing)) seen.set(key, a);
   }
-  return Array.from(seen.values());
+  return Array.from(seen.values()).map((a) => ({
+    ...a,
+    podCount: podCounts.get(`${a.name}:${a.instanceId || 'default'}`)?.size || (a.podId ? 1 : 0),
+  }));
+};
+
+// Wren spec §1.1 (2026-08-30, Sam-ruled): the roster is tiers, not a wall.
+// Derived, never stored. "Working now" is the ONLY tier that renders the
+// liveness dot — a dot that is always green differentiates nothing (audit
+// rule 6); everywhere else the relative time carries the signal.
+type Tier = 'workingNow' | 'team' | 'quiet' | 'internal';
+const tierOf = (a: AgentInstallationSummary, now: number): Tier => {
+  if (isInternalSeat(a)) return 'internal';
+  const seen = lastSeenTime(a);
+  if (!seen || now - seen > QUIET_MS) return 'quiet';
+  if (now - seen < WORKING_NOW_MS) return 'workingNow';
+  return 'team';
 };
 
 const V2YourTeamPage: React.FC = () => {
@@ -99,8 +142,10 @@ const V2YourTeamPage: React.FC = () => {
   // doesn't render empty filters.
   const [filter, setFilter] = useState<string>('all');
   // Key (`name:instanceId`) of the agent whose 1:1 room is currently opening,
-  // so its "Talk to" button can show progress and block a double-submit.
+  // so its "Talk to" control can show progress and block a double-submit.
   const [opening, setOpening] = useState<string | null>(null);
+  const [quietOpen, setQuietOpen] = useState<boolean | null>(null);
+  const [internalOpen, setInternalOpen] = useState(false);
   // Invite-code redemption for BYO-tier users — a valid code flips the
   // hosted-agent entitlement server-side (POST /api/auth/redeem-invitation).
   // `redeemed` overrides isEntitled locally so the CTA updates without a
@@ -203,6 +248,33 @@ const V2YourTeamPage: React.FC = () => {
       : sortedAgents.filter((a) => (a.category || 'Uncategorized') === filter)
   ), [sortedAgents, filter]);
 
+  // Tier derivation (spec §1.1). Featured caps at 4; overflow stays in Team.
+  const tiers = useMemo(() => {
+    const now = Date.now();
+    const workingNow: AgentInstallationSummary[] = [];
+    const team: AgentInstallationSummary[] = [];
+    const quiet: AgentInstallationSummary[] = [];
+    const internal: AgentInstallationSummary[] = [];
+    for (const a of filteredAgents) {
+      const tier = tierOf(a, now);
+      if (tier === 'workingNow' && workingNow.length < FEATURED_MAX) workingNow.push(a);
+      else if (tier === 'workingNow' || tier === 'team') team.push(a);
+      else if (tier === 'quiet') quiet.push(a);
+      else internal.push(a);
+    }
+    return { workingNow, team, quiet, internal };
+  }, [filteredAgents]);
+
+  const activeThisWeek = useMemo(() => {
+    const now = Date.now();
+    return sortedAgents.filter((a) => {
+      const seen = lastSeenTime(a);
+      return seen > 0 && now - seen < QUIET_MS && !isInternalSeat(a);
+    }).length;
+  }, [sortedAgents]);
+
+  const quietExpanded = quietOpen ?? tiers.quiet.length <= 3;
+
   // Open the coached 1:1 (agent-room) for this agent — the same surface the
   // post-install handoff lands on. Without this, "talk to your agent" is only
   // reachable from the project pod (a group), so the 1:1 relationship a user
@@ -230,6 +302,143 @@ const V2YourTeamPage: React.FC = () => {
     }
   };
 
+  const goToProfile = (a: AgentInstallationSummary) => {
+    navigate(`/v2/agent/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`);
+  };
+
+  // Talk-to as an always-visible 28px icon button (Sam's BEND-2 ruling: he
+  // rejected hover-reveal; the fallback is this icon, never the text pair
+  // that caused the name-truncation class).
+  const talkIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+
+  const renderFeaturedCard = (a: AgentInstallationSummary) => {
+    const display = a.displayName || a.name;
+    const cardKey = `${a.name}:${a.instanceId}`;
+    const isOpening = opening === cardKey;
+    const lastSeen = formatRelative(lastSeenIso(a), t);
+    return (
+      <article
+        key={cardKey}
+        className="v2-team-feature"
+        data-testid="team-featured-card"
+        onClick={() => goToProfile(a)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter') goToProfile(a); }}
+      >
+        <V2Avatar
+          name={display}
+          src={a.iconUrl && a.iconUrl.trim() ? a.iconUrl.trim() : undefined}
+          size="lg"
+          kind={AGENT_KIND}
+          seed={seedOf(a)}
+          online
+        />
+        <div className="v2-team-feature__body">
+          <div className="v2-team-feature__name-row">
+            <span className="v2-team-feature__name">{display}</span>
+            <span className="v2-team-feature__dot" data-testid="team-dot" />
+          </div>
+          <div className="v2-team-feature__doing">
+            {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
+          </div>
+          <div className="v2-team-feature__meta">
+            {t('yourTeam.tiers.activeMeta', { time: lastSeen, count: a.podCount || 1 })}
+          </div>
+        </div>
+        <div className="v2-team-feature__actions">
+          <button
+            type="button"
+            className="v2-team__hire-cta v2-team-feature__talk"
+            onClick={(e) => handleTalkTo(a, e)}
+            disabled={isOpening}
+          >
+            {isOpening ? t('yourTeam.card.opening') : t('yourTeam.card.talkTo')}
+          </button>
+          <button
+            type="button"
+            className="v2-team-feature__profile"
+            onClick={(e) => { e.stopPropagation(); goToProfile(a); }}
+          >
+            {t('yourTeam.card.profile')}
+          </button>
+        </div>
+      </article>
+    );
+  };
+
+  const renderStandardCard = (a: AgentInstallationSummary) => {
+    const display = a.displayName || a.name;
+    const cardKey = `${a.name}:${a.instanceId}`;
+    const isOpening = opening === cardKey;
+    const lastSeen = formatRelative(lastSeenIso(a), t);
+    return (
+      <article
+        key={cardKey}
+        className="v2-team-card"
+        onClick={() => goToProfile(a)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter') goToProfile(a); }}
+      >
+        <V2Avatar
+          name={display}
+          src={a.iconUrl && a.iconUrl.trim() ? a.iconUrl.trim() : undefined}
+          size="md"
+          kind={AGENT_KIND}
+          seed={seedOf(a)}
+        />
+        <div className="v2-team-card__body">
+          <div className="v2-team-card__name-row">
+            <span className="v2-team-card__name">{display}</span>
+          </div>
+          <div className="v2-team-card__pod">
+            {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
+            {' · '}
+            {lastSeen}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="v2-team-card__talk-icon"
+          onClick={(e) => handleTalkTo(a, e)}
+          disabled={isOpening}
+          aria-label={t('yourTeam.card.talkToAria', { name: display })}
+          title={t('yourTeam.card.talkTo')}
+        >
+          {talkIcon}
+        </button>
+      </article>
+    );
+  };
+
+  const renderQuietRow = (a: AgentInstallationSummary) => {
+    const display = a.displayName || a.name;
+    return (
+      <div key={`${a.name}:${a.instanceId}`} className="v2-team-quiet__row" data-testid="team-quiet-row">
+        <V2Avatar
+          name={display}
+          size="sm"
+          kind={AGENT_KIND}
+          seed={seedOf(a)}
+        />
+        <span className="v2-team-quiet__name">{display}</span>
+        <span className="v2-team-quiet__seen">{formatRelative(lastSeenIso(a), t)}</span>
+        <button
+          type="button"
+          className="v2-team__redeem-link v2-team-quiet__profile"
+          onClick={() => goToProfile(a)}
+        >
+          {t('yourTeam.card.profile')}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="v2-team">
       <header className="v2-team__header">
@@ -240,9 +449,9 @@ const V2YourTeamPage: React.FC = () => {
               ? t('yourTeam.loading')
               : sortedAgents.length === 0
                 ? t('yourTeam.subtitle.empty')
-                : t('yourTeam.subtitle.summary', {
+                : t('yourTeam.subtitle.kicker', {
                     agents: t('yourTeam.subtitle.agentCount', { count: sortedAgents.length }),
-                    projects: t('yourTeam.subtitle.projectCount', { count: pods.length }),
+                    active: activeThisWeek,
                   })}
           </p>
         </div>
@@ -359,73 +568,62 @@ const V2YourTeamPage: React.FC = () => {
         </div>
       )}
 
-      <div className="v2-team__grid">
-        {filteredAgents.map((a) => {
-          const display = a.displayName || a.name;
-          const podLabel = a.podName || t('yourTeam.untitledProject');
+      {tiers.workingNow.length > 0 && (
+        <section className="v2-team__tier" aria-label={t('yourTeam.tiers.workingNow')}>
+          <h2 className="v2-team__tier-title">{t('yourTeam.tiers.workingNow')}</h2>
+          <div className="v2-team__featured">
+            {tiers.workingNow.map(renderFeaturedCard)}
+          </div>
+        </section>
+      )}
 
-          const lastSeen = formatRelative(lastSeenIso(a), t);
-          const cardKey = `${a.name}:${a.instanceId}`;
-          const isOpening = opening === cardKey;
-          const onCardClick = () => {
-            if (a.podId) navigate(`/v2/pods/${a.podId}`);
-          };
-          return (
-            <article
-              key={cardKey}
-              className="v2-team-card"
-              onClick={onCardClick}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') onCardClick(); }}
-            >
-              <V2Avatar
-                name={display}
-                src={a.iconUrl && a.iconUrl.trim() ? a.iconUrl.trim() : undefined}
-                size="lg"
-                kind="agent"
-                seed={`${a.name}:${a.instanceId || 'default'}`}
-                online={a.status === 'active'}
-              />
-              <div className="v2-team-card__body">
-                <div className="v2-team-card__name-row">
-                  <span className="v2-team-card__name">{display}</span>
-                  {a.category && (
-                    <span className="v2-role-chip" title={t('yourTeam.card.roleTitle', { role: a.category })}>{a.category}</span>
-                  )}
-                </div>
-                <div className="v2-team-card__pod">{t('yourTeam.card.inProject')} <em>{podLabel}</em></div>
-                <div className="v2-team-card__activity">
-                  <span className="v2-team-card__dot" data-active={a.status === 'active'} />
-                  {lastSeen}
-                </div>
-              </div>
-              <div className="v2-team-card__actions">
-                <button
-                  type="button"
-                  className="v2-team-card__profile"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/v2/agent/${encodeURIComponent(a.name)}/${encodeURIComponent(a.instanceId || 'default')}`);
-                  }}
-                  aria-label={t('yourTeam.card.viewProfileAria', { name: display })}
-                >
-                  {t('yourTeam.card.profile')}
-                </button>
-                <button
-                  type="button"
-                  className="v2-team-card__talk"
-                  onClick={(e) => handleTalkTo(a, e)}
-                  disabled={isOpening}
-                  aria-label={t('yourTeam.card.talkToAria', { name: display })}
-                >
-                  {isOpening ? t('yourTeam.card.opening') : t('yourTeam.card.talkTo')}
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+      {tiers.team.length > 0 && (
+        <section className="v2-team__tier" aria-label={t('yourTeam.tiers.team')}>
+          {tiers.workingNow.length > 0 && (
+            <h2 className="v2-team__tier-title">{t('yourTeam.tiers.team')}</h2>
+          )}
+          <div className="v2-team__grid">
+            {tiers.team.map(renderStandardCard)}
+          </div>
+        </section>
+      )}
+
+      {tiers.quiet.length > 0 && (
+        <section className="v2-team__tier" aria-label={t('yourTeam.tiers.quiet')}>
+          <button
+            type="button"
+            className="v2-team__tier-toggle"
+            aria-expanded={quietExpanded}
+            onClick={() => setQuietOpen(!quietExpanded)}
+          >
+            {t('yourTeam.tiers.quietCount', { count: tiers.quiet.length })}
+          </button>
+          {quietExpanded && (
+            <div className="v2-team-quiet">
+              {tiers.quiet.map(renderQuietRow)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {tiers.internal.length > 0 && (
+        <section className="v2-team__tier" aria-label={t('yourTeam.tiers.internal')}>
+          <button
+            type="button"
+            className="v2-team__tier-toggle"
+            aria-expanded={internalOpen}
+            data-testid="team-internal-toggle"
+            onClick={() => setInternalOpen((v) => !v)}
+          >
+            {t('yourTeam.tiers.internalCount', { count: tiers.internal.length })}
+          </button>
+          {internalOpen && (
+            <div className="v2-team-quiet">
+              {tiers.internal.map(renderQuietRow)}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 };
