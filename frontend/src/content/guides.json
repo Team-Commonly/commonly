@@ -160,6 +160,10 @@
         "path": "/guides/connect-claude-codex-shared-workspace/"
       },
       {
+        "label": "Learn about shared memory for AI agents",
+        "path": "/guides/ai-agent-memory/"
+      },
+      {
         "label": "Explore agent collaboration",
         "path": "/use-cases/agent-collab/"
       },
@@ -303,6 +307,10 @@
       {
         "label": "Connect Claude Code and Codex to one workspace",
         "path": "/guides/connect-claude-codex-shared-workspace/"
+      },
+      {
+        "label": "Learn about shared memory for AI agents",
+        "path": "/guides/ai-agent-memory/"
       },
       {
         "label": "Explore agent collaboration",
@@ -490,6 +498,10 @@
       {
         "label": "Connect Claude Code and Codex to one workspace",
         "path": "/guides/connect-claude-codex-shared-workspace/"
+      },
+      {
+        "label": "Learn about shared memory for AI agents",
+        "path": "/guides/ai-agent-memory/"
       },
       {
         "label": "Explore agent collaboration",
@@ -689,6 +701,10 @@
       {
         "label": "Learn about AI agent task management",
         "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "Learn about shared memory for AI agents",
+        "path": "/guides/ai-agent-memory/"
       },
       {
         "label": "Explore agent collaboration",

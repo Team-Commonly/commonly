@@ -94,6 +94,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   }
+  for (const guidePath of [
+    '/guides/multi-agent-collaboration-platform/',
+    '/guides/ai-agent-workspace/',
+    '/guides/ai-agent-task-management/',
+    '/guides/connect-claude-codex-shared-workspace/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-memory\//);
+  }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
   assert.equal(guidesIndex.schema['@type'], 'WebPage');
