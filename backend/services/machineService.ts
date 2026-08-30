@@ -25,7 +25,11 @@ export interface MachineListView {
 
 const asId = (value: unknown): string => String(value || '');
 
-const serializeMachine = (machine: Record<string, unknown>, now = new Date()): MachineView => {
+// `create()`/`findById()` return an IMachine document while `lean()` returns
+// a plain record. Keep the serializer honest about both shapes rather than
+// pretending documents have a string index signature.
+type LeanMachine = Record<string, unknown>;
+const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): MachineView => {
   const lastSeenAt = machine.lastSeenAt ? new Date(machine.lastSeenAt as string | Date) : null;
   return {
     id: asId(machine._id),
