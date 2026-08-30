@@ -78,12 +78,12 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
     mockAcknowledge.mockResolvedValue({ _id: 'evt-1', status: 'acked' });
   });
 
-  test('forwards the deliveryId as the fifth argument', async () => {
+  test('forwards the deliveryId and the ws consumer', async () => {
     const { handlers, emitted } = wireSocket();
 
     await handlers.ack({ eventId: 'evt-1', deliveryId: 'abc123' });
 
-    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, 'abc123');
+    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, 'abc123', 'ws');
     expect(emitted.map((e) => e.event)).toContain('ack:success');
   });
 
@@ -96,6 +96,7 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
     // The bug this pins: emitting ack:success here told the driver it had
     // acked while the event rolled into the requeue unhandled.
     expect(mockAcknowledge).not.toHaveBeenCalled();
+    expect(mockIsRequired).toHaveBeenCalledWith('ws');
     expect(emitted).toContainEqual(
       expect.objectContaining({ event: 'ack:error', body: expect.objectContaining({ code: 'delivery_id_required' }) }),
     );
@@ -128,7 +129,7 @@ describe("the WS 'ack' handler tells the truth about refusals", () => {
 
     await handlers.ack({ eventId: 'evt-1' });
 
-    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, null);
+    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, null, 'ws');
     expect(emitted.map((e) => e.event)).toContain('ack:success');
   });
 });
