@@ -53,6 +53,14 @@ describe('reply staging (#1344 — no model re-run on redelivery)', () => {
     expect(await pruneStaged(s, later + STAGE_TTL_MS + 1)).toBe(1);             // only 'newer' left to prune
   });
 
+  it('a malformed staged entry is treated as absent and dropped, never returned (Otto)', async () => {
+    const s = mem();
+    s.raw.set(stagedKey('e9'), 'bare-string-legacy-shape');
+    const r = await resolveStagedReply(s, 'e9', async () => 'fresh');
+    expect(r).toEqual({ reply: 'fresh', fromStage: false });
+    expect((s.raw.get(stagedKey('e9')) as { reply: string }).reply).toBe('fresh');
+  });
+
   it('a model failure stages nothing, so the redelivery retries the model (not silence)', async () => {
     const s = mem();
     await expect(resolveStagedReply(s, 'e2', async () => { throw new Error('529'); })).rejects.toThrow('529');

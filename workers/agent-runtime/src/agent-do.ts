@@ -12,7 +12,7 @@
 import { listEvents, ackEvent, postMessage, StaleDeliveryError, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
-import { resolveStagedReply, commitStagedReply } from './staging';
+import { resolveStagedReply, commitStagedReply, stagedKey } from './staging';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
@@ -111,7 +111,7 @@ export class AgentRuntimeDO implements DurableObject {
             // Superseded: the kernel handed this event to another runtime
             // after our claim expired. Not an error to record as ours; drop
             // the staged reply so nothing posts twice.
-            await this.state.storage.delete(`staged:${event._id}`);
+            await this.state.storage.delete(stagedKey(event._id));
             continue;
           }
           batchErrors += 1;

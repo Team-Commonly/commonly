@@ -26,7 +26,12 @@ export const resolveStagedReply = async (
   now: number = Date.now(),
 ): Promise<{ reply: string; fromStage: boolean }> => {
   const existing = await storage.get<StagedEntry>(stagedKey(eventId));
-  if (existing !== undefined) return { reply: existing.reply, fromStage: true };
+  // Shape guard (Otto): a malformed or legacy-shaped entry must not yield
+  // reply: undefined and TypeError downstream — treat it as absent, drop it.
+  if (existing !== undefined && typeof existing?.reply === 'string') {
+    return { reply: existing.reply, fromStage: true };
+  }
+  if (existing !== undefined) await storage.delete(stagedKey(eventId));
   const reply = await run();
   await pruneStaged(storage, now);
   await storage.put(stagedKey(eventId), { reply, at: now } satisfies StagedEntry);
