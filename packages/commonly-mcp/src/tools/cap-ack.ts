@@ -21,10 +21,6 @@ export const definition = {
         type: "string",
         description: "The event id returned by commonly_poll_events.",
       },
-      deliveryId: {
-        type: "string",
-        description: "The deliveryId in the polled event's payload. Echo it to bind this ack to that delivery.",
-      },
     },
     required: ["eventId"],
   },
@@ -32,14 +28,13 @@ export const definition = {
 
 export interface CapAckArgs {
   eventId: string;
-  deliveryId?: string;
 }
 
 export async function handler(
   client: CommonlyClient,
   args: CapAckArgs
 ): Promise<{ ok: true }> {
-  await client.ackEvent(args.eventId, args.deliveryId);
+  await client.ackEvent(args.eventId);
   // Backend returns { success: true } on the wire; we standardize to { ok: true }
   // in the tool surface so downstream agents can rely on a single shape.
   return { ok: true };

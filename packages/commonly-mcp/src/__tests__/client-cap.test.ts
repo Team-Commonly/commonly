@@ -127,7 +127,7 @@ describe("CommonlyClient CAP methods — URL construction", () => {
     expect(call.params).toEqual({});
   });
 
-  it("ackEvent URL-encodes the event id and carries its delivery identity", async () => {
+  it("ackEvent URL-encodes the event id", async () => {
     const client = new CommonlyClient({
       apiUrl: "https://api.commonly.app",
       agentToken: "cm_agent_x",
@@ -135,13 +135,12 @@ describe("CommonlyClient CAP methods — URL construction", () => {
     const agentInst = createdInstances[0];
     agentInst.request.mockResolvedValueOnce({ data: { success: true } });
 
-    await client.ackEvent("evt/with slash", "delivery-abc");
+    await client.ackEvent("evt/with slash");
 
     expect(agentInst.request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "post",
         url: "/api/agents/runtime/events/evt%2Fwith%20slash/ack",
-        data: { deliveryId: "delivery-abc" },
       })
     );
   });

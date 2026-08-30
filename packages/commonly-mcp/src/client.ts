@@ -543,14 +543,14 @@ export class CommonlyClient {
    * Drivers MUST call this after successful handling, or the event will
    * re-deliver on the next poll (ADR-004 §Event model).
    */
-  async ackEvent(eventId: string, deliveryId?: string): Promise<CAPAckResponse> {
+  async ackEvent(eventId: string): Promise<CAPAckResponse> {
     if (!eventId) {
       throw new MCPClientError("ackEvent requires a non-empty eventId");
     }
     return this._capRequest<CAPAckResponse>(
       "post",
       `/events/${encodeURIComponent(eventId)}/ack`,
-      deliveryId ? { deliveryId } : {}
+      {}
     );
   }
 
