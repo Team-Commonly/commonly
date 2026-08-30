@@ -139,19 +139,42 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     expect(AgentMessageService.sanitizeAgentContent('NO_REPLY')).toBe('');
   });
 
-  it('normalizes Unicode format-character prefixes before both sentinel checks', () => {
-    // U+200B defeats both the total-match and leading-run checks without the
-    // shared normalization below. Keep the class coupled too: a one-predicate
-    // fix would re-open the same private-reasoning leak.
-    [
+  it('normalizes Unicode ignorable prefixes before both sentinel checks', () => {
+    // U+200B defeated both checks before TASK-085. Keep the decision-copy
+    // normalization shared: fixing only one predicate re-opens the
+    // private-reasoning leak in the other.
+    const formatCharacters = [
       '\u200B', '\u200C', '\u200D', '\uFEFF', '\u2060',
       '\u061C', '\u200E', '\u2062', '\u00AD',
-    ].forEach((formatCharacter) => {
+    ];
+    const nonFormatDefaultIgnorables = [
+      // TASK-089: these do not have Unicode General_Category=Cf, so the
+      // previous format-only class let them defeat both sentinel checks.
+      '\u3164', // HANGUL FILLER
+      '\u115F', // HANGUL CHOSEONG FILLER
+      '\u1160', // HANGUL JUNGSEONG FILLER
+      '\uFFA0', // HALFWIDTH HANGUL FILLER
+      '\u034F', // COMBINING GRAPHEME JOINER
+      '\u17B4', // KHMER VOWEL INHERENT AQ
+      '\u17B5', // KHMER VOWEL INHERENT AA
+    ];
+
+    [...formatCharacters, ...nonFormatDefaultIgnorables].forEach((character) => {
       expect(AgentMessageService.sanitizeAgentContent(
-        `${formatCharacter}NO_REPLY\n\nprivate reasoning`,
+        `${character}NO_REPLY\n\nprivate reasoning`,
       )).toBe('');
-      expect(AgentMessageService.sanitizeAgentContent(`${formatCharacter}NO_REPLY`)).toBe('');
+      expect(AgentMessageService.sanitizeAgentContent(`${character}NO_REPLY`)).toBe('');
     });
+  });
+
+  it('does not treat U+2800 BRAILLE PATTERN BLANK as an ignorable sentinel prefix', () => {
+    // U+2800 looks blank but is a real glyph rather than a Unicode default
+    // ignorable. Keeping it means this remains a substantive reply where the
+    // embedded bare sentinel follows #785's strip-and-post behavior.
+    const brailleBlank = '\u2800';
+    expect(AgentMessageService.sanitizeAgentContent(
+      `${brailleBlank}NO_REPLY\n\nvisible content`,
+    )).toBe(`${brailleBlank}\n\nvisible content`);
   });
 
   it('keeps zero-width joiners in substantive agent output', () => {
