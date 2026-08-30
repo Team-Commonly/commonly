@@ -3,6 +3,7 @@ const express = require('express');
 
 const mockRegisterMachine = jest.fn();
 const mockListMachinesForOwner = jest.fn();
+const mockGetMachineForDaemon = jest.fn();
 const mockRecordMachineHeartbeat = jest.fn();
 const mockRemoveMachine = jest.fn();
 const mockFindMachine = jest.fn();
@@ -17,7 +18,7 @@ jest.mock('../../../middleware/daemonAuth', () => ({
     req.machine = {
       machineId: 'daemon-machine',
       ownerUserId: '0123456789abcdef01234567',
-      scopes: ['machine:heartbeat', 'agents:adopt'],
+      scopes: ['machine:heartbeat', 'machine:read', 'agents:adopt'],
     };
     next();
   },
@@ -31,6 +32,7 @@ jest.mock('../../../models/User', () => ({
 jest.mock('../../../services/machineService', () => ({
   registerMachine: (...args) => mockRegisterMachine(...args),
   listMachinesForOwner: (...args) => mockListMachinesForOwner(...args),
+  getMachineForDaemon: (...args) => mockGetMachineForDaemon(...args),
   recordMachineHeartbeat: (...args) => mockRecordMachineHeartbeat(...args),
   removeMachine: (...args) => mockRemoveMachine(...args),
 }));
@@ -90,6 +92,19 @@ describe('machine lifecycle routes', () => {
     }));
     expect(mockFindMachine).toHaveBeenCalledWith({
       _id: '0123456789abcdef01234567',
+      machineId: 'daemon-machine',
+      ownerUserId: '0123456789abcdef01234567',
+    });
+  });
+
+  it('returns only the credential-bound machine through daemon status', async () => {
+    mockGetMachineForDaemon.mockResolvedValue({ id: 'm1', name: 'Sam’s Mac', status: 'online' });
+
+    const res = await request(app).get('/api/machines/me');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ machine: { id: 'm1', name: 'Sam’s Mac', status: 'online' } });
+    expect(mockGetMachineForDaemon).toHaveBeenCalledWith({
       machineId: 'daemon-machine',
       ownerUserId: '0123456789abcdef01234567',
     });

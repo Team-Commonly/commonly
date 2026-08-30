@@ -4,6 +4,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { Types } from 'mongoose';
 import {
   listMachinesForOwner,
+  getMachineForDaemon,
   recordMachineHeartbeat,
   registerMachine,
   removeMachine,
@@ -89,6 +90,22 @@ router.get('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respon
     return res.json(await listMachinesForOwner(ownerUserId));
   } catch (error) {
     console.error('Error listing machines:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// A daemon can read only its own machine view. This avoids coupling daemon
+// status to a renewable human JWT or exposing the owner's other machines.
+router.get('/me', machineRateLimit, daemonAuth('machine:read'), async (req: DaemonAuthedRequest, res: express.Response) => {
+  try {
+    const machine = await getMachineForDaemon({
+      machineId: req.machine!.machineId,
+      ownerUserId: req.machine!.ownerUserId,
+    });
+    if (!machine) return res.status(404).json({ message: 'Machine not found' });
+    return res.json({ machine });
+  } catch (error) {
+    console.error('Error reading daemon machine:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });

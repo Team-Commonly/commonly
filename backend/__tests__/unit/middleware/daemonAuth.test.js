@@ -69,4 +69,22 @@ describe('daemonAuth', () => {
     expect(res.statusCode).toBe(401);
     expect(req.machine).toBeUndefined();
   });
+
+  it('requires the route scope before exposing a machine identity', async () => {
+    const token = `cm_daemon_${'b'.repeat(32)}`;
+    await AgentCredential.create({
+      tokenHash: hash(token),
+      kind: 'daemon',
+      ownerUserId: new mongoose.Types.ObjectId(),
+      machineId: 'machine-2',
+      scopes: ['machine:heartbeat'],
+    });
+    const req = { header: (name) => (name === 'Authorization' ? `Bearer ${token}` : undefined) };
+    const res = makeRes();
+
+    await daemonAuth('machine:read')(req, res, () => {});
+
+    expect(res.statusCode).toBe(403);
+    expect(req.machine).toBeUndefined();
+  });
 });

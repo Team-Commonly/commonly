@@ -37,15 +37,21 @@ const validateRecord = (record) => {
 
 export const loadDaemonRecord = () => {
   const path = daemonRecordPath();
+  const dir = daemonDir();
   if (!existsSync(path)) return null;
+  if ((statSync(dir).mode & 0o077) !== 0) {
+    throw new Error(`Daemon credential directory permissions are insecure at ${dir}. Set them to 0700 before running the daemon.`);
+  }
   if ((statSync(path).mode & 0o077) !== 0) {
-    throw new Error('Daemon credential file permissions are insecure. Set them to 0600 before running the daemon.');
+    throw new Error(`Daemon credential file permissions are insecure at ${path}. Set them to 0600 before running the daemon.`);
   }
   try {
     return validateRecord(JSON.parse(readFileSync(path, 'utf8')));
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Daemon credential file')) throw error;
-    throw new Error('Daemon credential file is unreadable. Revoke the machine before registering again.');
+    if (error instanceof Error && error.message.startsWith('Daemon credential file')) {
+      throw new Error(`${error.message} (${path})`);
+    }
+    throw new Error(`Daemon credential file is unreadable at ${path}. Revoke the machine before registering again.`);
   }
 };
 

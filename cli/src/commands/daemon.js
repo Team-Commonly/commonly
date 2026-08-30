@@ -75,10 +75,9 @@ export const heartbeatDaemonMachine = async ({ client, record }) => (
   client.post(`/api/machines/${record.machineDbId}/heartbeat`)
 );
 
-export const getDaemonMachineStatus = async ({ client, record }) => {
-  const response = await client.get('/api/machines');
-  const machines = Array.isArray(response) ? response : response?.machines || [];
-  return machines.find((machine) => machine?.id === record.machineDbId) || null;
+export const getDaemonMachineStatus = async ({ client }) => {
+  const response = await client.get('/api/machines/me');
+  return response?.machine || null;
 };
 
 export const registerDaemon = (program) => {
@@ -154,10 +153,8 @@ Examples:
     .action(async () => {
       try {
         const record = requireDaemonRecord();
-        const userToken = requireUserToken(record.instanceUrl);
         const machine = await getDaemonMachineStatus({
-          client: createClient({ instance: record.instanceUrl, token: userToken }),
-          record,
+          client: createClient({ instance: record.instanceUrl, token: record.daemonToken }),
         });
         if (!machine) {
           console.log(`${record.machineName}: no longer registered on the server.`);

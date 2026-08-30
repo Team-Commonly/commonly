@@ -52,7 +52,8 @@ describe('daemon credential storage', () => {
   });
 
   test('rejects a malformed local credential instead of minting another machine', () => {
-    fs.mkdirSync(path.dirname(daemonRecordPath()), { recursive: true });
+    fs.mkdirSync(path.dirname(daemonRecordPath()), { recursive: true, mode: 0o700 });
+    fs.chmodSync(path.dirname(daemonRecordPath()), 0o700);
     fs.writeFileSync(daemonRecordPath(), '{"machineDbId":"missing-token"}', 'utf8');
     fs.chmodSync(daemonRecordPath(), 0o600);
     expect(() => loadDaemonRecord()).toThrow(/credential file is invalid/i);
@@ -62,6 +63,12 @@ describe('daemon credential storage', () => {
     saveDaemonRecord(daemonRecord);
     fs.chmodSync(daemonRecordPath(), 0o644);
     expect(() => loadDaemonRecord()).toThrow(/permissions are insecure/i);
+  });
+
+  test('refuses a writable credential directory even when the file is 0600', () => {
+    saveDaemonRecord(daemonRecord);
+    fs.chmodSync(path.dirname(daemonRecordPath()), 0o755);
+    expect(() => loadDaemonRecord()).toThrow(/directory permissions are insecure/i);
   });
 });
 
@@ -123,13 +130,14 @@ describe('daemon machine calls', () => {
     expect(client.post).toHaveBeenCalledWith(`/api/machines/${daemonRecord.machineDbId}/heartbeat`);
   });
 
-  test('status selects this local machine from the owner-scoped server list', async () => {
+  test('status uses the daemon-scoped self route, not an owner machine listing', async () => {
     const client = {
       get: jest.fn().mockResolvedValue({
-        machines: [{ id: 'other' }, { id: daemonRecord.machineDbId, status: 'online' }],
+        machine: { id: daemonRecord.machineDbId, status: 'online' },
       }),
     };
     await expect(getDaemonMachineStatus({ client, record: daemonRecord }))
       .resolves.toEqual({ id: daemonRecord.machineDbId, status: 'online' });
+    expect(client.get).toHaveBeenCalledWith('/api/machines/me');
   });
 });
