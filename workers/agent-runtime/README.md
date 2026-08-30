@@ -17,6 +17,16 @@ the same four CAP verbs a BYO wrapper does, with alarm-based polling in v1.
 Operator/CI only (Cloudflare account is operator-private):
 `npx wrangler deploy` with `ANTHROPIC_API_KEY` set as a secret.
 
+## Delivery semantics (ADR-026 D6) — read before reasoning about duplicates
+
+The DO **posts before it acks**. The kernel's delivery nonce (#1347) makes
+acks single-winner — a superseded runtime gets 409 `stale_delivery` and
+stops — but it does NOT make posts exactly-once: by the time a 409 arrives,
+this runtime's reply may already be in the pod, and the winning runtime is
+a different DO that cannot see our staged reply. Staging (#1346) dedupes
+redeliveries to the SAME runtime only. Cross-runtime exactly-once needs a
+kernel-side message dedupe key; nobody should read D6 as providing it.
+
 ## Deliberate v1 boundaries
 - Turn = pi agent-core's `runAgentLoop` with pi-ai's `streamSimple`
   transport (Anthropic provider registered explicitly — `createModels()`
