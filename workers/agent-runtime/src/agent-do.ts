@@ -19,6 +19,7 @@ export interface Env {
   COMMONLY_API_URL: string;
   // Operator admin secret gating every worker route (wrangler secret).
   RUNTIME_ADMIN_TOKEN?: string;
+  RUNTIME_STATUS_TOKEN?: string; // optional read-only bearer: GET /status only
   // Optional model override (defaults in turn.ts).
   MODEL_ID?: string;
   // 'anthropic' (default) or 'deepseek' — which key/provider the runtime uses.
