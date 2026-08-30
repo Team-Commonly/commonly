@@ -97,18 +97,26 @@ export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentM
 export const MAX_TOOL_CALLS_PER_TURN = 4;
 export const TURN_TIMEOUT_MS = 90_000;
 
-export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN) => {
+// Budget semantics (Otto, #1340 round 2): exhausting the budget must send
+// the model BACK TO ANSWER, never end the turn — a blocked call returns its
+// reason as the tool result and the loop continues, so the model writes its
+// reply with what it has. Only a runaway (still calling tools past the grace
+// window) is terminated, and that surfaces as an error, not as silence.
+export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN, grace = 2) => {
   let calls = 0;
   return {
     beforeToolCall: async () => {
       calls += 1;
+      if (calls > max + grace) {
+        return { block: true, terminate: true, reason: `tool-call budget (${max}) exhausted and the model kept calling — terminating` };
+      }
       if (calls > max) {
-        return { block: true, terminate: true, reason: `tool-call budget (${max}) exhausted for this turn` };
+        return { block: true, reason: `Tool-call budget (${max}) exhausted for this turn. Answer now with what you already have.` };
       }
       return undefined;
     },
-    shouldStopAfterTurn: async () => calls >= max,
     count: () => calls,
+    runaway: () => calls > max + grace,
   };
 };
 
@@ -141,7 +149,6 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
     convertToLlm,
     getApiKey: () => deps.apiKey,
     beforeToolCall: budget.beforeToolCall,
-    shouldStopAfterTurn: budget.shouldStopAfterTurn,
   };
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(new Error(`turn exceeded ${TURN_TIMEOUT_MS}ms`)), deps.timeoutMs ?? TURN_TIMEOUT_MS);
@@ -158,5 +165,14 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
   }
   const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
   await deps.storage.put(TRANSCRIPT_KEY, merged);
-  return lastAssistantText(turnMessages).trim() || 'NO_REPLY';
+  const text = lastAssistantText(turnMessages).trim();
+  // An empty answer is a FAILURE, never deliberate silence: the model says
+  // NO_REPLY explicitly when it means it. Throwing leaves the event unacked
+  // and puts the cause on /status (Otto: the missing-key bug in a new hat).
+  if (!text) {
+    throw new Error(budget.runaway()
+      ? `turn terminated: model exceeded tool budget (${budget.count()} calls)`
+      : 'turn ended without assistant text');
+  }
+  return text;
 };

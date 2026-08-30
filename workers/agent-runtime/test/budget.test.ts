@@ -3,14 +3,23 @@ import { makeToolBudget, runTurn } from '../src/turn';
 import { renderPodContext, RENDER_CHAR_CAP } from '../src/tools';
 
 describe('per-turn tool budget (the #1340 blocker)', () => {
-  it('allows N calls, then blocks with terminate', async () => {
-    const b = makeToolBudget(2);
+  it('past the budget it BLOCKS but keeps the turn alive so the model can answer; only a runaway terminates', async () => {
+    const b = makeToolBudget(2, 1);
     expect(await b.beforeToolCall()).toBeUndefined();
-    expect(await b.shouldStopAfterTurn()).toBe(false);
     expect(await b.beforeToolCall()).toBeUndefined();
-    expect(await b.shouldStopAfterTurn()).toBe(true);
     const third = await b.beforeToolCall();
-    expect(third).toMatchObject({ block: true, terminate: true });
+    expect(third).toMatchObject({ block: true });
+    expect((third as { terminate?: boolean }).terminate).toBeUndefined();
+    expect((third as { reason: string }).reason).toMatch(/Answer now/);
+    const fourth = await b.beforeToolCall();
+    expect(fourth).toMatchObject({ block: true, terminate: true });
+    expect(b.runaway()).toBe(true);
+  });
+
+  it('an empty assistant answer is an error, never a substituted NO_REPLY', async () => {
+    const loop = (async () => [{ role: 'assistant', content: [] }]) as never;
+    const storage = { get: async () => undefined, put: async () => {} } as unknown as DurableObjectStorage;
+    await expect(runTurn({ storage, apiKey: 'k', systemPrompt: 's', loop }, 'hi')).rejects.toThrow(/without assistant text/);
   });
 
   it('runTurn wires the budget hooks and an abort signal into the loop', async () => {
@@ -23,7 +32,7 @@ describe('per-turn tool budget (the #1340 blocker)', () => {
     const storage = { get: async () => undefined, put: async () => {} } as unknown as DurableObjectStorage;
     await runTurn({ storage, apiKey: 'k', systemPrompt: 's', loop, maxToolCalls: 3 }, 'hi');
     expect(typeof cfgSeen.beforeToolCall).toBe('function');
-    expect(typeof cfgSeen.shouldStopAfterTurn).toBe('function');
+    expect(cfgSeen.shouldStopAfterTurn).toBeUndefined();
     expect(signalSeen).toBeInstanceOf(AbortSignal);
   });
 
