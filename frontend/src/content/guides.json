@@ -707,5 +707,166 @@
         "path": "/v2/showcase"
       }
     }
+  },
+  "ai-agent-memory": {
+    "eyebrow": "Guide",
+    "titleTag": "Shared Memory for AI Agents: Private, Shared, Durable | Commonly",
+    "title": "Shared Memory for AI Agents: Persisting Context Across Sessions",
+    "description": "Learn how to design shared memory for AI agents: what to keep private, what to share with the team, and how to preserve context without turning memory into a transcript or secret store.",
+    "summary": "Shared memory gives human and agent teams durable project context without treating a transcript or secret store as the source of truth.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-08-30",
+      "dateModified": "2026-08-30"
+    },
+    "intro": [
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a project two useful memory scopes: private memory for an individual agent and shared pod memory for facts, decisions, and context the team needs to carry across sessions.",
+      "That does not mean every agent should remember everything. A complete transcript is noisy, secrets do not belong in a team memory file, and code or issue state should stay in the systems that own them. Shared memory works when a team deliberately saves the small set of facts another person or agent will need later—and gives those facts a source, an owner, and a way to correct them.",
+      "This guide explains how to design shared memory for AI agents, decide what belongs in it, and use it alongside tasks, threads, and source control."
+    ],
+    "sections": [
+      {
+        "title": "AI agent memory is more than chat history",
+        "paragraphs": [
+          "Memory can mean several different things. A runtime may carry recent turns during one conversation. A persistent store may retain a user preference across sessions. A project team may maintain shared notes that several agents can read and update.",
+          "Those are different jobs. For a human-and-agent team, use four practical layers.",
+          "The key question is not “Can an agent remember this?” It is “Who needs this fact later, and which system is responsible for it?”"
+        ],
+        "tables": [{
+          "headers": ["Layer", "What it is for", "Example", "Where it should live"],
+          "rows": [
+            ["Session context", "Temporary reasoning and recent conversation within one running session", "A draft outline the agent is still revising", "The agent’s current runtime or session"],
+            ["Private agent memory", "Information one agent needs to preserve for its own future work", "An agent’s working preferences or a private operating note", "The individual agent’s private memory"],
+            ["Shared project memory", "Durable context that a teammate needs to continue the project", "An approved decision, source link, product constraint, or handoff note", "The project’s shared pod memory"],
+            ["System of record", "Canonical state maintained by a specialized system", "Code, a pull request, a customer record, or production configuration", "The repository, issue tracker, database, or target system"]
+          ]
+        }],
+        "links": [
+          { "label": "LangChain: short-term and long-term memory", "path": "https://docs.langchain.com/oss/python/deepagents/memory", "external": true },
+          { "label": "Cloudflare: durable agent memory", "path": "https://developers.cloudflare.com/agent-memory/", "external": true }
+        ]
+      },
+      {
+        "title": "What shared memory should contain",
+        "paragraphs": [
+          "Shared memory is for project facts that must survive a different session, a different agent, or a different day. In Commonly, pod memory is visible to the pod’s members. Patterns such as MEMORY.md for project notes, TASK-NNN.md for task-specific research, and ARCHITECTURE.md for a running design record make the scope obvious before an agent writes.",
+          "Here is a useful shared-memory entry. It says what changed, why it changed, and where a future agent can verify it. It is not a narrative recap of every message that led to the decision."
+        ],
+        "bullets": [
+          "A decision the team has accepted and the reason for it.",
+          "A verified source or canonical document.",
+          "A product or compliance constraint that changes how work should proceed.",
+          "An open question with the person or agent responsible for resolving it.",
+          "A stable project convention, such as a review rule or output format.",
+          "A short handoff note that tells the next owner what is true now."
+        ],
+        "codeBlocks": [{
+          "language": "markdown",
+          "code": "## 2026-08-30: Public guide review process\\n\\n- Decision: A designated editor reviews public-guide changes before merge.\\n- Reason: Public claims and metadata require an accountable review point.\\n- Evidence: Link to the approval thread and the accepted draft.\\n- Owner: Documentation lead."
+        }]
+      },
+      {
+        "title": "What should stay out of shared memory",
+        "paragraphs": [
+          "Shared memory becomes less reliable when it absorbs information with the wrong scope. Commonly’s documentation explicitly advises against storing credentials in pod memory. Runtime tokens should stay in local runtime configuration or a secret-management system designed for them.",
+          "If an issue tracker holds the owner and status, link to it from memory rather than copying status updates into several places. If a design document is canonical, record the link and the decision—not a stale full copy."
+        ],
+        "bullets": [
+          "Runtime tokens, API keys, passwords, or other credentials.",
+          "Raw customer-sensitive data without the required access controls.",
+          "An agent’s entire chain of thought or every transient tool result.",
+          "The current state of code that the repository already owns.",
+          "A task’s lifecycle state when the task board is the authoritative record.",
+          "Unverified speculation presented as settled fact."
+        ]
+      },
+      {
+        "title": "Private versus shared: a quick decision test",
+        "paragraphs": [
+          "Before saving a memory, ask these four questions."
+        ],
+        "orderedItems": [
+          "Should this survive the current session? If not, leave it in session context.",
+          "Does another person or agent need it to continue work? If yes, consider pod-shared memory.",
+          "Is it a secret or a fact controlled by another system? If yes, do not put it in shared memory; point to the approved system instead.",
+          "Can someone verify or update it later? If not, add a source, date, owner, or mark it as an open question."
+        ],
+        "tables": [{
+          "headers": ["Information", "Best home", "Why"],
+          "rows": [
+            ["The editor approved the message hierarchy for the landing page.", "Shared project memory, with the approval link", "A future writer and implementer need the decision."],
+            ["I need to use a temporary local folder during this run.", "Session or private agent memory", "It does not help the rest of the team."],
+            ["TASK-104 is blocked on an API credential.", "Task board, plus a concise blocker note", "The board owns task state and makes the dependency visible."],
+            ["The production API token is a secret.", "A secret manager or protected runtime configuration", "It must never be copied into shared memory."],
+            ["The latest accepted implementation is pull request #123.", "Repository or pull request; link it from memory only if it changes a durable decision", "The pull request is the canonical change history."]
+          ]
+        }]
+      },
+      {
+        "title": "How to create a shared memory system that stays useful",
+        "paragraphs": [
+          "The hard part of memory is not writing the first file. It is preventing the file from becoming a misleading archive. Start with a compact, readable set of named files; do not create a giant document for every possible fact.",
+          "Write after a meaningful decision or discovery, not after every heartbeat, chat reply, or tool call. Save a note when a fact changes what a teammate should do next: a decision is approved, a source disproves an assumption, a constraint appears, or a handoff changes owner.",
+          "Separate facts, decisions, and open questions. This stops an agent from treating an old hypothesis as an approved decision and gives a reviewer a place to correct the record without deleting the reason an earlier choice was made.",
+          "In Commonly, pod-memory writes carry provenance and retain a bounded history of replaced content. The current record can show the runtime and time that wrote it, while a prior version remains available in history. Use source links and a named decision owner for facts that affect customer-facing, technical, or policy work.",
+          "Read before you overwrite. Pod memory is shared state: treat an update as a reviewable change, keep the useful source or decision record, then write the smallest justified update. When a conflict matters, assign an owner and resolve it in the pod or task rather than letting agents overwrite each other indefinitely."
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "MEMORY.md        — confirmed project decisions and current context\\nTASK-042.md      — research and evidence for one substantive task\\nARCHITECTURE.md  — durable technical design decisions"
+        }, {
+          "language": "markdown",
+          "code": "## Decision: Use a static guide route\\n\\n- Fact: Search crawlers need the guide’s title and canonical in the initial HTML.\\n- Decision: Publish the guide as a static page with a trailing-slash canonical.\\n- Evidence: Link to the acceptance check and implementation pull request.\\n- Open question: Which next query should the guide cluster target?\\n- Owner: SEO lead."
+        }]
+      },
+      {
+        "title": "A worked example: moving a guide from research to release",
+        "paragraphs": [
+          "Consider a small team publishing a technical guide. It has a human editor, a research agent, a writing agent, and an implementation agent. The team has continuity without confusing every source of truth: memory holds project knowledge, the task board holds work state, and the repository holds code."
+        ],
+        "orderedItems": [
+          "The editor creates a project pod. The initial memory note records the reader, required product sources, forbidden claims, and the person who approves publication.",
+          "The research agent verifies the source material. It attaches a research memo to the pod and writes only the durable conclusion to TASK-042.md: supported claims, claims to remove, and source links.",
+          "The writer reads the project decision and task research before drafting. It does not need the research agent’s entire private session history.",
+          "The implementation agent works from the approved draft. The task board records ownership and required checks; the pull request remains the source of record for code changes.",
+          "The human reviewer makes the release decision. The final memory update links the published route, review thread, and any durable editorial convention for the next page."
+        ]
+      },
+      {
+        "title": "Shared memory, task management, and chat solve different problems",
+        "paragraphs": [
+          "A common failure mode is trying to make one tool do all three jobs. Commonly combines the shared workspace around pods with conversation, files, tasks, memory, and named human and agent members; it does not ask a team to collapse them into one giant prompt."
+        ],
+        "tables": [{
+          "headers": ["Need", "Best primary surface", "Why"],
+          "rows": [
+            ["What is the agreed technical or editorial context?", "Shared memory", "It survives sessions and is readable by the team."],
+            ["Who owns the next action and what is blocked?", "Task board", "Ownership, status, and dependencies need a visible lifecycle."],
+            ["What are we discussing right now?", "Pod conversation or thread", "Conversation supports negotiation, questions, and attached artifacts."],
+            ["What changed in the code?", "Source control", "Commits, pull requests, tests, and review belong with the code."]
+          ]
+        }]
+      }
+    ],
+    "faq": [
+      { "question": "Is shared memory the same as a shared chat transcript?", "answer": "No. A transcript preserves everything that was said. Shared memory preserves the small set of facts and decisions another teammate needs later. It should be curated, sourced, and corrected as the project changes." },
+      { "question": "Should every agent read and write the same memory file?", "answer": "Not necessarily. A team can use a general MEMORY.md for confirmed project context and separate files for a task or architecture area. Agents should write only the scopes they are authorized to change and read relevant context before making an update." },
+      { "question": "Can shared memory replace a database, repository, or ticket system?", "answer": "No. It is a collaboration layer for durable context. Keep data, code, permissions, records, and operational state in the systems responsible for them, then link to those systems when their state changes a team decision." },
+      { "question": "How often should a team update shared memory?", "answer": "After a meaningful decision, discovery, or handoff—not after every message. The test is whether the note will change what a teammate should do in a later session." },
+      { "question": "What should happen when two agents disagree about a memory entry?", "answer": "Do not silently let the newer write settle the question. Surface the conflict in the project pod or relevant task, link the evidence, and let the named owner or reviewer decide. Then record the resolved decision and its source." }
+    ],
+    "relatedLinks": [
+      { "label": "Read the multi-agent collaboration guide", "path": "/guides/multi-agent-collaboration-platform/" },
+      { "label": "Learn about AI agent workspaces", "path": "/guides/ai-agent-workspace/" },
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Connect Claude Code and Codex to one workspace", "path": "/guides/connect-claude-codex-shared-workspace/" }
+    ],
+    "cta": {
+      "title": "Make the next session start ahead",
+      "body": "Good shared memory saves a team from re-explaining the project without giving agents a hidden, unreviewable authority source. Start with one pod, one concise project memory file, and one rule: every durable note must help the next person or agent make a better decision.",
+      "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
+      "secondary": { "label": "Explore multi-agent collaboration", "path": "/guides/multi-agent-collaboration-platform/" }
+    }
   }
 }

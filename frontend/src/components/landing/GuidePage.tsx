@@ -23,6 +23,11 @@ interface GuideSection {
     language?: string;
     code: string;
   }>;
+  tables?: Array<{
+    headers: string[];
+    rows: string[][];
+  }>;
+  links?: GuideLink[];
 }
 
 interface GuideFaq {
@@ -33,6 +38,7 @@ interface GuideFaq {
 interface GuideLink {
   label: string;
   path: string;
+  external?: boolean;
 }
 
 interface GuideProvenance {
@@ -144,6 +150,16 @@ const GuidePage: React.FC = () => {
                   {section.orderedItems.map((item) => <li key={item}><Typography component="span">{item}</Typography></li>)}
                 </Box>
               )}
+              {section.tables?.map((table) => (
+                <Box key={table.headers.join('|')} sx={{ overflowX: 'auto', mt: 2.5 }}>
+                  <Box component="table" sx={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', color: guidePalette.textSecondary }}>
+                    <Box component="thead" sx={{ backgroundColor: guidePalette.surfaceTint }}>
+                      <Box component="tr">{table.headers.map((header) => <Box component="th" key={header} scope="col" sx={{ p: 1.5, textAlign: 'left', color: guidePalette.textPrimary, border: `1px solid ${guidePalette.borderSoft}` }}>{header}</Box>)}</Box>
+                    </Box>
+                    <Box component="tbody">{table.rows.map((row) => <Box component="tr" key={row.join('|')}>{row.map((cell) => <Box component="td" key={cell} sx={{ p: 1.5, verticalAlign: 'top', border: `1px solid ${guidePalette.borderSoft}` }}>{cell}</Box>)}</Box>)}</Box>
+                  </Box>
+                </Box>
+              ))}
               {section.codeBlocks?.map((block) => (
                 <Box
                   component="pre"
@@ -166,6 +182,11 @@ const GuidePage: React.FC = () => {
                   </Box>
                 </Box>
               ))}
+              {section.links && (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
+                  {section.links.map((link) => <Button key={link.path} component="a" href={link.path} target={link.external ? '_blank' : undefined} rel={link.external ? 'noreferrer' : undefined} sx={{ alignSelf: 'flex-start', color: guidePalette.accentText }}>{link.label}</Button>)}
+                </Stack>
+              )}
             </Box>
           ))}
         </Stack>

@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 14);
+  assert.equal(pages.length, 15);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -35,13 +35,14 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-workspace/',
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-memory/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
     'SoftwareApplication',
   ]);
   const guidePages = pages.filter((page) => page.path.startsWith('/guides/') && page.path !== '/guides/');
-  assert.equal(guidePages.length, 4);
+  assert.equal(guidePages.length, 5);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -78,6 +79,13 @@ test('emits a canonical crawlable page for every public route', async () => {
   const sharedWorkspaceHtml = renderStaticPage(guideTemplate, sharedWorkspaceGuide);
   assert.match(sharedWorkspaceHtml, /codex mcp add commonly/);
   assert.match(sharedWorkspaceHtml, /class="language-bash"/);
+  const memoryGuide = guidePages.find((page) => page.path === '/guides/ai-agent-memory/');
+  assert.equal(memoryGuide.title, 'Shared Memory for AI Agents: Private, Shared, Durable | Commonly');
+  const memoryHtml = renderStaticPage(guideTemplate, memoryGuide);
+  assert.match(memoryHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(memoryHtml, /<table class="seo-table">/);
+  assert.match(memoryHtml, /https:\/\/docs\.langchain\.com\/oss\/python\/deepagents\/memory/);
+  assert.match(memoryHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',

@@ -24,6 +24,12 @@ const escapeHtml = (value) => String(value)
 
 const list = (items) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
 
+const renderGuideTable = (table) => `
+  <div class="seo-table-wrap"><table class="seo-table">
+    <thead><tr>${table.headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join('')}</tr></thead>
+    <tbody>${table.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+
 const replaceMarkedSection = (template, start, end, content) => {
   const startIndex = template.indexOf(start);
   const endIndex = template.indexOf(end);
@@ -316,7 +322,9 @@ const renderGuide = (guide) => {
       ${(section.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       ${section.bullets?.length ? list(section.bullets) : ''}
       ${section.orderedItems?.length ? `<ol>${section.orderedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : ''}
+      ${section.tables?.map(renderGuideTable).join('') || ''}
       ${section.codeBlocks?.map((block) => `<pre class="seo-code"><code${block.language ? ` class="language-${escapeHtml(block.language)}"` : ''}>${escapeHtml(block.code)}</code></pre>`).join('') || ''}
+      ${section.links?.length ? `<p class="seo-source-links">${section.links.map((link) => `<a href="${escapeHtml(link.path)}"${link.external ? ' rel="noreferrer"' : ''}>${escapeHtml(link.label)}</a>`).join(' · ')}</p>` : ''}
     </section>`).join('');
   const faq = guide.faq.map((item) => `
     <article class="seo-card"><h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p></article>`).join('');
