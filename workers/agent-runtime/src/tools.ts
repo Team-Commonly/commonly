@@ -16,7 +16,11 @@ interface PodContextShape {
   recentMessages?: { senderName?: string; content?: string; createdAt?: string }[];
 }
 
-const renderPodContext = (ctx: PodContextShape, limit: number): string => {
+// Hard cap on rendered characters so a single tool result cannot dominate
+// the transcript byte ceiling (Otto: 50 × 600 unbounded per call).
+export const RENDER_CHAR_CAP = 8_000;
+
+export const renderPodContext = (ctx: PodContextShape, limit: number): string => {
   const lines: string[] = [];
   if (ctx.pod?.name) lines.push(`Pod: ${ctx.pod.name}${ctx.pod.description ? ` — ${ctx.pod.description}` : ''}`);
   if (ctx.members?.length) {
@@ -25,7 +29,8 @@ const renderPodContext = (ctx: PodContextShape, limit: number): string => {
   const msgs = (ctx.recentMessages || []).slice(-limit);
   lines.push(`Recent messages (${msgs.length}):`);
   for (const m of msgs) lines.push(`- ${m.senderName || 'someone'}: ${String(m.content || '').slice(0, 600)}`);
-  return lines.join('\n');
+  const out = lines.join('\n');
+  return out.length > RENDER_CHAR_CAP ? `${out.slice(0, RENDER_CHAR_CAP)}\n…(truncated)` : out;
 };
 
 export const buildCapTools = (cfg: CapConfig, podId: string): AgentTool<typeof readPodContextSchema>[] => [

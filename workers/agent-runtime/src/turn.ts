@@ -32,6 +32,8 @@ export interface TurnDeps {
   loop?: typeof runAgentLoop;
   // CAP tools for this turn (built per event; see tools.ts).
   tools?: AgentTool<any>[];
+  maxToolCalls?: number;
+  timeoutMs?: number;
 }
 
 const TRANSCRIPT_KEY = 'transcript';
@@ -87,6 +89,29 @@ export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentM
   return out;
 };
 
+// Otto's #1340 blocker: with tools, pi's loop is while(hasMoreToolCalls)
+// with no step cap — a model that keeps calling a tool loops on paid calls
+// forever. Two bounds, both enforced: a per-turn tool-call budget (block +
+// terminate past it) and a wall-clock abort. A turn is bounded by
+// construction again, as it was before tools.
+export const MAX_TOOL_CALLS_PER_TURN = 4;
+export const TURN_TIMEOUT_MS = 90_000;
+
+export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN) => {
+  let calls = 0;
+  return {
+    beforeToolCall: async () => {
+      calls += 1;
+      if (calls > max) {
+        return { block: true, terminate: true, reason: `tool-call budget (${max}) exhausted for this turn` };
+      }
+      return undefined;
+    },
+    shouldStopAfterTurn: async () => calls >= max,
+    count: () => calls,
+  };
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
   if (!deps.apiKey) {
     // A misconfigured deploy must surface on /status, not silently ack every
@@ -110,17 +135,27 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
 
   const prompt: AgentMessage = { role: 'user', content: [{ type: 'text', text: userText }], timestamp: Date.now() } as AgentMessage;
   const context: AgentContext = { systemPrompt: deps.systemPrompt, messages: transcript, tools: deps.tools || [] };
+  const budget = makeToolBudget(deps.maxToolCalls ?? MAX_TOOL_CALLS_PER_TURN);
   const config: AgentLoopConfig = {
     model,
     convertToLlm,
     getApiKey: () => deps.apiKey,
+    beforeToolCall: budget.beforeToolCall,
+    shouldStopAfterTurn: budget.shouldStopAfterTurn,
   };
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(new Error(`turn exceeded ${TURN_TIMEOUT_MS}ms`)), deps.timeoutMs ?? TURN_TIMEOUT_MS);
 
   // runAgentLoop returns ONLY this turn's messages (prompts + replies), never
   // context.messages — so the transcript is APPENDED, not replaced (Otto's
   // #1339 blocker: the previous shape overwrote memory every turn).
   const loop = deps.loop || runAgentLoop;
-  const turnMessages = await loop([prompt], context, config, () => {}, undefined, streamSimple);
+  let turnMessages: AgentMessage[];
+  try {
+    turnMessages = await loop([prompt], context, config, () => {}, abort.signal, streamSimple);
+  } finally {
+    clearTimeout(timer);
+  }
   const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
   await deps.storage.put(TRANSCRIPT_KEY, merged);
   return lastAssistantText(turnMessages).trim() || 'NO_REPLY';

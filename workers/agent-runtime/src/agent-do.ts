@@ -9,7 +9,7 @@
 // Turn engine: pi agent-core with an injected fetch-based streamFn (the
 // spike's finding #2: transport is dependency-injected and workerd-clean).
 // v1 wires a minimal turn; harness/compaction integration follows.
-import { listEvents, ackEvent, getPodContext, postMessage, CapConfig, CapEvent } from './cap';
+import { listEvents, ackEvent, postMessage, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
 
@@ -128,8 +128,10 @@ export class AgentRuntimeDO implements DurableObject {
     const podId = event.podId || event.payload?.podId;
     if (!podId) return;
     if (event.type !== 'chat.mention' && event.type !== 'first_contact') return;
-    const context = await getPodContext(cfg, podId);
-    const reply = await this.runTurn(String(event.payload?.content || ''), context, buildCapTools(cfg, podId));
+    // No eager context fetch: the mention is the prompt and read_pod_context
+    // earns the read when the model needs it (Otto: two CAP reads per turn
+    // and the same content twice against the byte ceiling otherwise).
+    const reply = await this.runTurn(String(event.payload?.content || ''), buildCapTools(cfg, podId));
     // NO_REPLY contract: total-match suppression, same as every runtime.
     if (reply && reply.trim() !== 'NO_REPLY') {
       await postMessage(cfg, podId, reply);
@@ -139,15 +141,11 @@ export class AgentRuntimeDO implements DurableObject {
   // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
   // transport, tail-bounded context. Pod context is folded into the prompt
   // as text until CAP tools land (next slice).
-  private async runTurn(prompt: string, context: unknown, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
+  private async runTurn(prompt: string, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
     // No silent NO_REPLY on a missing key — runTurn throws, the event stays
     // unacked, and /status shows the misconfiguration (Otto, #1339).
     const key = this.env.ANTHROPIC_API_KEY || '';
-    const recent = ((context as { recentMessages?: { content?: string; senderName?: string }[] })?.recentMessages || [])
-      .slice(-10)
-      .map((m) => `${m.senderName || 'someone'}: ${String(m.content || '').slice(0, 400)}`)
-      .join('\n');
-    const userText = `Recent pod messages:\n${recent}\n\nYou were mentioned with: ${prompt}`;
+    const userText = `You were mentioned with: ${prompt}`;
     return runTurn({
       storage: this.state.storage,
       apiKey: key,
