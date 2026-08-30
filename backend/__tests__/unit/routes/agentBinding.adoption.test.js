@@ -87,6 +87,7 @@ describe('adoption CAS', () => {
     await AgentCredential.create({ tokenHash: hash(tok), kind: 'daemon', ownerUserId: stranger._id, machineId: 'machine-s', scopes: ['machine:heartbeat', 'agents:adopt'] });
     const res = await adopt(tok);
     expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'owner_installation_missing' });
   });
 
   it('a heartbeat-only credential cannot adopt — scopes are enforced, not decorative', async () => {
@@ -108,6 +109,22 @@ describe('adoption CAS', () => {
     });
     const res = await adopt(DAEMON_A);
     expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'another_installer' });
+    const row = await User.findById(bot._id).lean();
+    expect(row.botMetadata.machineId ?? null).toBeNull();
+  });
+
+  it('blocks a legacy installation with no known installer and reports why', async () => {
+    await AgentInstallation.collection.insertOne({
+      agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', createdAt: new Date(), updatedAt: new Date(),
+    });
+    const res = await adopt(DAEMON_A);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      code: 'unknown_installer',
+      message: expect.stringMatching(/no recorded installer/i),
+    });
     const row = await User.findById(bot._id).lean();
     expect(row.botMetadata.machineId ?? null).toBeNull();
   });
