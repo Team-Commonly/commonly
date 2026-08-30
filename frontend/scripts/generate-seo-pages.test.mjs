@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 15);
+  assert.equal(pages.length, 16);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -36,6 +36,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
     '/guides/ai-agent-memory/',
+    '/guides/human-in-the-loop-ai-agents/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -71,7 +72,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 5);
+  assert.equal(guidePages.length, 6);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -118,6 +119,14 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(memoryHtml, /<table class="seo-table">/);
   assert.match(memoryHtml, /https:\/\/docs\.langchain\.com\/oss\/python\/deepagents\/memory/);
   assert.match(memoryHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
+  assert.match(memoryHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
+  const humanReviewGuide = guidePages.find((page) => page.path === '/guides/human-in-the-loop-ai-agents/');
+  assert.equal(humanReviewGuide.title, 'Human-in-the-Loop Review for AI Agent Teams | Commonly');
+  const humanReviewHtml = renderStaticPage(guideTemplate, humanReviewGuide);
+  assert.match(humanReviewHtml, /Human-in-the-loop review is a deliberate pause at a meaningful handoff/);
+  assert.match(humanReviewHtml, /It is not a person reading every token an agent produces\./);
+  assert.match(humanReviewHtml, /href="\/guides\/ai-agent-memory\//);
+  assert.match(humanReviewHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/human-in-the-loop/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',

@@ -159,7 +159,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(5);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(6);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
@@ -167,6 +167,10 @@ describe('V2 routing', () => {
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'Shared Memory for AI Agents: Persisting Context Across Sessions',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'Human-in-the-Loop Review for AI Agent Teams',
     })).toBeInTheDocument();
   });
 
