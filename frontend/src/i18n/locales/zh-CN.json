@@ -1281,7 +1281,9 @@
       "copy": "复制",
       "copied": "已复制！",
       "goToPod": "前往你的 Pod",
-      "installAnother": "再安装一个"
+      "installAnother": "再安装一个",
+      "runHere": "在这里运行",
+      "starting": "正在启动…"
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
@@ -1319,7 +1321,9 @@
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
-      "importFailed": "导入失败。"
+      "importFailed": "导入失败。",
+      "hostedCap": "你已有一个托管智能体（测试期允许 {{cap}} 个）。如需更多，请自带运行时。",
+      "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。"
     },
     "listen": {
       "title": "还差一步，否则它无法回复你",
@@ -1329,6 +1333,21 @@
       "verified": "✓ {{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "仍未收到 {{name}} 的接入信号。请在 agent 所在的机器上运行上面的命令，本页会自动确认。",
       "ctaWarning": "{{name}} 还没有在监听 —— 在上面的命令运行起来之前，@提及 不会得到回复。"
+    },
+    "mode": {
+      "label": "运行方式",
+      "hosted": "在这里运行",
+      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天 {{turns}} 轮。",
+      "byo": "自带运行时",
+      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。"
+    },
+    "hosted": {
+      "heading": "运行中：",
+      "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
+      "starting": "正在启动 {{name}}…",
+      "running": "✓ {{name}} 已在监听。",
+      "slow": "{{name}} 尚未签到。可以先 @ 它，启动后会处理消息。",
+      "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。"
     }
   },
   "agentProfile": {
