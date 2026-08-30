@@ -14,9 +14,15 @@ import commonlyLogo from '../../assets/commonly-logo.png';
 import guides from '../../content/guides.json';
 import { guidePalette, useGuideCanvas } from './guideShell';
 
+interface GuideStrongParagraph {
+  strong: string;
+}
+
+type GuideParagraph = string | GuideStrongParagraph;
+
 interface GuideSection {
   title: string;
-  paragraphs?: string[];
+  paragraphs?: GuideParagraph[];
   bullets?: string[];
   orderedItems?: string[];
   codeBlocks?: Array<{
@@ -138,7 +144,11 @@ const GuidePage: React.FC = () => {
                 {section.title}
               </Typography>
               <Stack spacing={2} sx={{ color: guidePalette.textSecondary, lineHeight: 1.75 }}>
-                {section.paragraphs?.map((paragraph) => <Typography key={paragraph}>{paragraph}</Typography>)}
+                {section.paragraphs?.map((paragraph) => (
+                  <Typography key={typeof paragraph === 'string' ? paragraph : paragraph.strong}>
+                    {typeof paragraph === 'string' ? paragraph : <strong>{paragraph.strong}</strong>}
+                  </Typography>
+                ))}
               </Stack>
               {section.bullets && (
                 <Box component="ul" sx={{ color: guidePalette.textSecondary, lineHeight: 1.75, pl: 3, my: 2.5 }}>

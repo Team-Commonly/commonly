@@ -152,6 +152,17 @@ describe('V2 routing', () => {
     expect(screen.getByText(/codex mcp add commonly/)).toBeInTheDocument();
   });
 
+  test('permissions guide renders rich guide paragraphs after the app takes over', async () => {
+    renderAt('/guides/ai-agent-permissions-and-tokens/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'AI Agent Permissions and Tokens: Scope Runtime Access Safely',
+    })).toBeInTheDocument();
+    expect(screen.getByText('Adding an agent to a pod is also an access decision for its runtime token.').tagName).toBe('STRONG');
+    expect(screen.getByText('Authorization: Bearer cm_agent_...')).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -159,7 +170,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(10);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(11);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
@@ -187,6 +198,10 @@ describe('V2 routing', () => {
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'Self-Hosted AI Agent Platform: What to Look For',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'AI Agent Permissions and Tokens: Scope Runtime Access Safely',
     })).toBeInTheDocument();
   });
 

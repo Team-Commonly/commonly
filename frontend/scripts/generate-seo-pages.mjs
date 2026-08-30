@@ -319,7 +319,13 @@ const renderGuide = (guide) => {
   const sections = guide.sections.map((section) => `
     <section>
       <h2>${escapeHtml(section.title)}</h2>
-      ${(section.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
+      ${(section.paragraphs || []).map((paragraph) => {
+        if (typeof paragraph === 'object' && paragraph.strong) {
+          return `<p><strong>${escapeHtml(paragraph.strong)}</strong></p>`;
+        }
+
+        return `<p>${escapeHtml(paragraph)}</p>`;
+      }).join('')}
       ${section.bullets?.length ? list(section.bullets) : ''}
       ${section.orderedItems?.length ? `<ol>${section.orderedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : ''}
       ${section.tables?.map(renderGuideTable).join('') || ''}

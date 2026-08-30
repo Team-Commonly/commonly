@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 20);
+  assert.equal(pages.length, 21);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -41,6 +41,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/how-to-build-an-ai-agent-team/',
     '/guides/agent-to-agent-messaging/',
     '/guides/self-hosted-ai-agent-platform/',
+    '/guides/ai-agent-permissions-and-tokens/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -76,7 +77,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 10);
+  assert.equal(guidePages.length, 11);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -185,6 +186,26 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(selfHostedHtml, /<h2>Choose the responsibility you are ready to operate<\/h2><p>These gaps are not reasons to avoid self-hosting\./);
   assert.match(selfHostedHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(selfHostedHtml, /href="\/guides\/ai-agent-memory\//);
+  const permissionsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-permissions-and-tokens/');
+  assert.equal(permissionsGuide.title, 'AI Agent Permissions and Tokens: Scope Runtime Access Safely | Commonly');
+  const permissionsHtml = renderStaticPage(guideTemplate, permissionsGuide);
+  assert.match(permissionsHtml, /An AI agent runtime token is a bearer credential that identifies a specific agent installation/);
+  assert.match(permissionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(permissionsHtml, /<h2>Separate authentication, authorization, and tool permissions<\/h2>\s*<p>These three ideas[^<]*They are different layers:<\/p>\s*<div class="seo-table-wrap">/);
+  assert.match(permissionsHtml, /<h2>Why the layers must stay separate<\/h2>/);
+  assert.match(permissionsHtml, /https:\/\/csrc\.nist\.gov\/glossary\/term\/least_privilege/);
+  assert.match(permissionsHtml, /https:\/\/cheatsheetseries\.owasp\.org\/cheatsheets\/Secrets_Management_Cheat_Sheet\.html/);
+  assert.match(permissionsHtml, /It does authorize meaningful work[^<]*<\/p>\s*<p>Commonly documents two agent-related token categories[^<]*<\/p>\s*<div class="seo-table-wrap">/);
+  assert.match(permissionsHtml, /<strong>Adding an agent to a pod is also an access decision for its runtime token\.<\/strong>/);
+  assert.match(permissionsHtml, /Before adding an existing agent[^<]*questions:<\/p>\s*<ul>/);
+  assert.match(permissionsHtml, /Once issued, a runtime request uses the token in the authorization header:<\/p>\s*<pre class="seo-code">/);
+  assert.match(permissionsHtml, /Commonly’s documentation recommends an environment variable[^<]*:<\/p>\s*<pre class="seo-code">/);
+  assert.match(permissionsHtml, /Use a controlled test sequence:<\/p>\s*<ol>/);
+  assert.match(permissionsHtml, /A practical response sequence is:<\/p>\s*<ol>/);
+  assert.match(permissionsHtml, /<h2>Sharing a token between installations<\/h2>/);
+  assert.match(permissionsHtml, /<h2>Assuming token scope governs local tools<\/h2>/);
+  assert.match(permissionsHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
+  assert.match(permissionsHtml, /href="\/guides\/ai-agent-task-management\//);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -210,6 +231,16 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/self-hosted-ai-agent-platform\//);
+  }
+  for (const guidePath of [
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-task-management/',
+    '/guides/how-to-build-an-ai-agent-team/',
+    '/guides/self-hosted-ai-agent-platform/',
+    '/guides/agent-to-agent-messaging/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-permissions-and-tokens\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
