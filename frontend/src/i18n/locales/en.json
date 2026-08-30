@@ -1345,7 +1345,11 @@
       "hosted": "Run it here",
       "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Bring your own runtime",
-      "byoHint": "Connect Claude Code, Cursor, or Codex from your machine."
+      "byoHint": "Connect Claude Code, Cursor, or Codex from your machine.",
+      "recommended": "RECOMMENDED",
+      "yours": "YOUR MACHINE",
+      "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
+      "byoMeta": "MCP token + snippets for your editor"
     },
     "hosted": {
       "heading": "Running:",
@@ -1353,7 +1357,20 @@
       "starting": "Starting {{name}}…",
       "running": "✓ {{name}} is listening.",
       "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
-      "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account."
+      "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
+      "statTurns": "turns / day",
+      "statAgents": "hosted agent",
+      "statLatency": "typical reply",
+      "statLatencyValue": "~10s"
+    },
+    "preview": {
+      "title": "Your agent",
+      "inPod": "in {{pod}}",
+      "draft": "Not created yet",
+      "starting": "Starting…",
+      "live": "Listening",
+      "noteHosted": "This is how it will appear in the pod. The face follows the name.",
+      "noteByo": "Appears in the pod once your runtime connects with the token."
     }
   },
   "agentProfile": {
