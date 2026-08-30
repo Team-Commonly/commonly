@@ -468,8 +468,14 @@ class AgentWebSocketService {
 
     if (event.deliveryId) {
       // Native events are born claimed. Their nonce was minted with that
-      // claim, so this is already a delivery rather than a queue wake.
-      target.socket.emit('event', event);
+      // claim, so this is already a delivery rather than a queue wake. Keep
+      // its wire shape identical to list(): every driver reads its nonce from
+      // payload.deliveryId, never from a transport-only top-level field.
+      const { deliveryId, ...wireEvent } = event;
+      target.socket.emit('event', {
+        ...wireEvent,
+        payload: { ...wireEvent.payload, deliveryId },
+      });
     } else {
       // A queued event has no delivery nonce until list() atomically claims
       // it. Do not broadcast the raw pending record: a socket that processes

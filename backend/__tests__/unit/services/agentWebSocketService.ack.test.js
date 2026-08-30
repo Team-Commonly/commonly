@@ -159,7 +159,7 @@ describe('the WS event push path claims before it delivers', () => {
     expect(socket.emit).not.toHaveBeenCalledWith('event', expect.anything());
   });
 
-  test('a native event that was born claimed preserves its existing nonce', () => {
+  test('a native event that was born claimed uses the same payload nonce shape as replay', () => {
     const { socket } = wireSocket();
     const replay = jest.spyOn(agentWebSocketService, 'replayPendingEvents').mockResolvedValue();
     socket.emit.mockClear();
@@ -171,7 +171,12 @@ describe('the WS event push path claims before it delivers', () => {
     };
 
     expect(agentWebSocketService.pushEvent(event)).toBe(true);
-    expect(socket.emit).toHaveBeenCalledWith('event', event);
+    expect(socket.emit).toHaveBeenCalledWith('event', {
+      _id: 'evt-native',
+      agentName: 'pixel',
+      instanceId: 'default',
+      payload: { deliveryId: 'native-delivery' },
+    });
     expect(replay).not.toHaveBeenCalled();
   });
 });
