@@ -3330,6 +3330,7 @@ compliant arm and the untouched arm are byte-identical.
   enqueue-time snapshot in one collection and a `$set` on another, and each half
   is locally correct.
 ## 52. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
+## 53. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
 
 ADR-026 D6 shipped as two PRs. #1347 (backend) minted a delivery nonce and put
 it on the wire. #1349 (`workers/agent-runtime`) read it back on ack. Both were
