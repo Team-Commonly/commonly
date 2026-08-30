@@ -80,12 +80,32 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
     // Admin moderation: one indexed read so a ban (or account deletion) takes
     // effect on the NEXT request, not at JWT expiry days later.
-    const live = await User.findById(id).select('banned').lean() as { banned?: boolean } | null;
+    //
+    // The projection is wider than the ban check needs, deliberately. This
+    // branch used to assign `req.user = { id }` while the `cm_` branch above
+    // assigned `{ id, username, email, role }`, so every consumer of
+    // `req.user.username` or `req.user.role` silently got `undefined` for
+    // browser sessions — `github.ts:146` refused genuine admins with
+    // `403 Admin only`, and the registry persisted `publisher.name: undefined`
+    // (#1211). Three call sites had already grown a private DB re-read to work
+    // around it (`podController.isGlobalAdminRequest`,
+    // `agentProfile.canEditAgentAvatar`, `marketplace-api.resolveUsername`);
+    // a fourth was one copy short. Widening a query this branch already runs
+    // makes both branches shape-identical at zero extra round-trips, so no
+    // consumer has to know which token type it was called with.
+    const live = await User.findById(id)
+      .select('banned username email role')
+      .lean() as { banned?: boolean; username?: string; email?: string; role?: string } | null;
     if (!live) return res.status(401).json({ msg: 'Account no longer exists' });
     if (live.banned) return res.status(403).json({ msg: 'This account has been suspended.' });
 
     req.userId = id;
-    req.user = { id };
+    req.user = {
+      id,
+      username: live.username,
+      email: live.email,
+      role: live.role,
+    };
     touchLastActive(id);
     next();
   } catch (err: unknown) {
