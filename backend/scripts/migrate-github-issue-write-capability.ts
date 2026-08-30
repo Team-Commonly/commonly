@@ -18,8 +18,8 @@
  * value as a revocation rather than turning a rerun into a re-grant.
  *
  * Run:
- *   MONGO_URI=... node --import tsx backend/scripts/migrate-github-issue-write-capability.ts --dry
- *   MONGO_URI=... node --import tsx backend/scripts/migrate-github-issue-write-capability.ts
+ *   MONGO_URI=... npm run migrate:github-issue-write-capability -- --dry
+ *   MONGO_URI=... npm run migrate:github-issue-write-capability
  */
 
 import mongoose from 'mongoose';

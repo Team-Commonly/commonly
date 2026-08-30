@@ -10,6 +10,7 @@ jest.mock('../../../services/githubIssueWriteCapability', () => ({
 
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const { isConfiguredDevTierGitHubIssueWriter } = require('../../../services/githubIssueWriteCapability');
+const backendPackage = require('../../../package.json');
 const {
   migrateGitHubIssueWriteCapability,
 } = require('../../../scripts/migrate-github-issue-write-capability');
@@ -24,6 +25,11 @@ describe('migrateGitHubIssueWriteCapability', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     AgentInstallation.updateMany.mockResolvedValue({ modifiedCount: 0 });
+  });
+
+  test('exposes the migration through the backend package scripts for deploy operators', () => {
+    expect(backendPackage.scripts['migrate:github-issue-write-capability'])
+      .toContain('migrate-github-issue-write-capability.ts');
   });
 
   test('grants every legacy install for a configured dev identity once, while leaving other identities ungranted', async () => {
