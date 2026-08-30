@@ -24,7 +24,14 @@ export default {
     // kill or provision any agent by name. Unset means no second bearer.
     const bearer = req.headers.get('Authorization');
     const isAdmin = bearer === `Bearer ${admin}`;
-    const isStatusReader = Boolean(env.RUNTIME_STATUS_TOKEN) && bearer === `Bearer ${env.RUNTIME_STATUS_TOKEN}`;
+    // A status token EQUAL to the admin token is treated as unset (Otto on
+    // #1360): an operator pasting the wrong secret would otherwise silently
+    // collapse the two capabilities back into one — the exact split this
+    // token exists to enforce.
+    const statusToken = env.RUNTIME_STATUS_TOKEN && env.RUNTIME_STATUS_TOKEN !== admin
+      ? env.RUNTIME_STATUS_TOKEN
+      : undefined;
+    const isStatusReader = Boolean(statusToken) && bearer === `Bearer ${statusToken}`;
     const statusOnly = req.method === 'GET' && rest === '/status';
     if (!isAdmin && !(isStatusReader && statusOnly)) {
       return Response.json({ error: 'unauthorized' }, { status: 401 });
