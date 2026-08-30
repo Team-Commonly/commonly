@@ -27,7 +27,9 @@ Operator/CI only (Cloudflare account is operator-private):
   operator-invoked and ENFORCED: every route requires RUNTIME_ADMIN_TOKEN
   (worker refuses to serve without it configured). A per-user provision
   surface only appears together with metering.
-- Failed-event handling: per-event isolation, processed-id dedupe (last 200)
-  so a post is never replayed on a failed ack, deprovision halts mid-batch.
-  Dead-lettering beyond the kernel's 3 redeliveries is future work, with the
-  kernel, not here.
+- Failed-event handling: per-event isolation; processed-id dedupe (last 200
+  ids on DO storage) so a post is not replayed on a failed ack within that
+  window — older redeliveries can still duplicate; deprovision halts between
+  events, not inside one — a turn already inside handleEvent finishes and
+  posts. Dead-lettering beyond the kernel's 3 redeliveries is future work,
+  with the kernel, not here.
