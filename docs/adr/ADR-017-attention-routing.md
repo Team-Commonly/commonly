@@ -419,6 +419,17 @@ So `blockedOn` must be writable on a `claimed` row, not only at the `-> blocked`
 
 This does not settle whether `prUrl` should also become writable before merge — that is a board-model question, not an attention one, and this spec deliberately does not answer it. What it fixes here is the write trigger.
 
+**And the clear side of the same field has a measured failure the queue would inherit.** A row whose blocker is *a human decision* is the cleanest `kind: 'human'` case there is, and on this board the decision arrives as **prose in the row's update log**, which no predicate reads. The row's `title` — the field the board wake quotes verbatim — is never rewritten when the question is answered, so the queue's fact source for "this decision is outstanding" goes on asserting it indefinitely. Two instances, measured on this pod's board at 2026-08-30T05:1xZ:
+
+| row | title still asks | ruled at | state since |
+|---|---|---|---|
+| TASK-067 | `DECIDE (Sam): should a LEADING bare NO_REPLY suppress the whole reply?` | 2026-08-26T07:07:04Z, restated 2026-08-28T22:39:06Z | row is `done`; title unchanged |
+| TASK-023 | `DECIDE then fix: … needs Sam's accept-or-fix call before implementation` | 2026-08-28T23:17:16Z | implementation commits pushed 2026-08-30T05:11Z and 05:19Z — 30h after the ruling, title unchanged |
+
+**The cost is observable and it is a re-ask, not a silent drop.** On TASK-067 a reviewing seat put the ruled question back in front of Sam six hours after his second ruling, reading the title rather than the update history. This document's own author received the TASK-023 board wake twice within thirty minutes tonight, each time quoting a request for a decision made thirty hours earlier — so the failure reproduces on the surface this ADR specifies, not merely on the board.
+
+**Which sharpens §4a rather than adding a fourth source.** The `blockedOn` design above already says a bare enum with no referent cannot be cleared by anything but hand; this is the case where the blocker *did* resolve, in a recorded event, and the row still cannot see it. For `kind: 'human'` the ratification signal is the resolvable referent — whatever a human writes to settle the question must clear `blockedOn`, and a row whose title still poses a settled question is the observable symptom that it did not. **A title is the surface everyone reads and the one nobody updates**; a queue that derives urgency from it inherits every stale question on the board.
+
 #### 3. `AgentAsk` widened to a human target — three changes, and the middle one is the one that gets missed
 
 Only if §Ratification-point 3 goes that way rather than to the escalation feed. Costed at `origin/main`:
