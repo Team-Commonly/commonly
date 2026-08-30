@@ -731,6 +731,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('var(--v2-fs-feature)');
   });
 
+  // Every presence assertion in this file greps a STRING. A stylesheet whose
+  // braces do not balance still contains every string, so the whole suite
+  // stayed green while a stray brace (#1376, `.v2-team__tabs {.v2-team__tabs {`)
+  // folded 734 selectors — Avatar, Login, empty states, admin users, billing —
+  // into one unparseable rule that ran to EOF. Browsers recover silently: no
+  // console error, no failed build, 11/11 CI checks green. This is the cheapest
+  // check that discriminates, and the only one here that is about SYNTAX rather
+  // than content.
+  it('v2.css braces balance and no line opens two rules', () => {
+    expect(v2.split('{').length).toBe(v2.split('}').length);
+    const doubled = v2.split('\n')
+      .map((line, i) => [i + 1, line] as const)
+      .filter(([, line]) => (line.match(/{/g) || []).length > 1);
+    expect(doubled).toEqual([]);
+  });
+
   it('platform tint tokens exist in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
