@@ -31,7 +31,7 @@ describe('runTurn storage round-trip (the #1339 blocker)', () => {
 
   it('throws on a missing API key so the event stays unacked and lastError records it', async () => {
     await expect(runTurn({ storage: fakeStorage(), apiKey: '', systemPrompt: 's', loop: fakeLoop('x') }, 'hi'))
-      .rejects.toThrow(/API key unset/);
+      .rejects.toThrow(/ANTHROPIC_API_KEY unset/);
   });
 
   it('a failed turn persists NOTHING — redeliveries must not stack duplicate prompts', async () => {
