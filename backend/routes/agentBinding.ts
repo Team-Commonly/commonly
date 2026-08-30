@@ -35,19 +35,24 @@ const bindingRateLimit = rateLimit({
 
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
-// Ownership predicate: the daemon's owner must own the agent. Agent
-// ownership = an active installation installedBy the owner (the #609
-// owner-scoping surface); registry rows do not carry an owner field.
+// Ownership predicate — SOLE-INSTALLER (Vera's ruling on #1315). Two clauses,
+// both must hold: an active installation of (agentName, instanceId)
+// installedBy the owner exists, AND no active installation of that identity
+// exists installedBy anyone else. The negative clause is what stops a shared
+// identity (two humans each installed it) from being bound to one person's
+// machine; once #609 gives per-owner identities it becomes redundant rather
+// than wrong, so it stays.
 const ownsAgent = async (ownerUserId: unknown, agentName: string, instanceId: string): Promise<boolean> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { AgentInstallation } = require('../models/AgentRegistry');
-  const row = await AgentInstallation.findOne({
-    agentName,
-    instanceId,
-    installedBy: ownerUserId,
-    status: 'active',
+  const mine = await AgentInstallation.findOne({
+    agentName, instanceId, installedBy: ownerUserId, status: 'active',
   }).select('_id').lean();
-  return Boolean(row);
+  if (!mine) return false;
+  const others = await AgentInstallation.findOne({
+    agentName, instanceId, status: 'active', installedBy: { $ne: ownerUserId },
+  }).select('_id').lean();
+  return !others;
 };
 
 router.post('/adopt', bindingRateLimit, daemonAuth('agents:adopt'), async (req: DaemonAuthedRequest, res: express.Response) => {

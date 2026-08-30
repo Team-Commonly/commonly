@@ -100,6 +100,18 @@ describe('adoption CAS', () => {
     expect(res.body.message).toMatch(/lacks scope/);
   });
 
+  it('sole-installer: an identity ALSO installed by someone else cannot be adopted (Vera ruling)', async () => {
+    const other = await User.create({ username: 'oth', email: 'oth@x.com', password: 'x'.repeat(12) });
+    await AgentInstallation.create({
+      agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
+      version: '1.0.0', status: 'active', installedBy: other._id,
+    });
+    const res = await adopt(DAEMON_A);
+    expect(res.status).toBe(403);
+    const row = await User.findById(bot._id).lean();
+    expect(row.botMetadata.machineId ?? null).toBeNull();
+  });
+
   it('a revoked daemon credential cannot adopt', async () => {
     await AgentCredential.updateOne({ machineId: 'machine-a' }, { $set: { status: 'revoked' } });
     const res = await adopt(DAEMON_A);
