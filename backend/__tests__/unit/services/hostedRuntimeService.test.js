@@ -67,15 +67,16 @@ describe('hostedRuntimeService', () => {
       });
     });
 
-    it('meters acked events since the UTC day start and reports the reset', async () => {
+    it('meters acked events by ACK time (deliveredAt) since the UTC day start and reports the reset', async () => {
       process.env.HOSTED_TURNS_PER_DAY = '2';
       mockEventCount.mockResolvedValue(1);
       const meter = await hosted.meterAllowsTurn('Scout', 'default');
       expect(meter).toMatchObject({ allowed: true, used: 1, cap: 2 });
       const filter = mockEventCount.mock.calls[0][0];
       expect(filter).toMatchObject({ agentName: 'scout', instanceId: 'default', status: 'acked' });
-      expect(filter.createdAt.$gte.toISOString()).toMatch(/T00:00:00\.000Z$/);
-      expect(new Date(meter.resetsAt).getTime() - filter.createdAt.$gte.getTime()).toBe(24 * 3600 * 1000);
+      expect(filter.createdAt).toBeUndefined();
+      expect(filter.deliveredAt.$gte.toISOString()).toMatch(/T00:00:00\.000Z$/);
+      expect(new Date(meter.resetsAt).getTime() - filter.deliveredAt.$gte.getTime()).toBe(24 * 3600 * 1000);
 
       mockEventCount.mockResolvedValue(2);
       await expect(hosted.meterAllowsTurn('scout', 'default')).resolves.toMatchObject({ allowed: false, used: 2 });

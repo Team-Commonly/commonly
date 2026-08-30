@@ -116,6 +116,17 @@ describe('registry install — hosted runtime cap gate', () => {
     }));
   });
 
+  it('stores runtimeType normalized so a mixed-case value cannot dodge the count (Otto on #1355)', async () => {
+    mockCountHosted.mockResolvedValue(0);
+    const res = makeRes();
+    await installHandler(makeReq('Hosted'), res);
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mockCountHosted).toHaveBeenCalledWith('user-1');
+    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.objectContaining({
+      config: expect.objectContaining({ runtime: expect.objectContaining({ runtimeType: 'hosted' }) }),
+    }));
+  });
+
   it('403s hosted_cap_reached at the cap, before any row is written', async () => {
     mockCountHosted.mockResolvedValue(1);
     const res = makeRes();

@@ -11,10 +11,17 @@
  *   HOSTED_AGENTS_PER_USER  active hosted installations per owner (default 1)
  *   HOSTED_TURNS_PER_DAY    acked events per hosted agent per UTC day (200)
  *
- * A "turn" is counted as an acked AgentEvent for the agent — the kernel sees
- * deliveries, not model calls, and one delivered event is one worker turn.
+ * The daily cap is a RATE LIMIT ON REQUESTS, not a spend meter: it counts
+ * acked AgentEvents by ack time (`deliveredAt`, which ack() stamps). One
+ * acked event is up to the worker's tool budget in model calls, and a turn
+ * that fails every retry is never acked — metered zero. Good enough as the
+ * D3.1 beta floor; charging against credits needs the worker's own counts.
+ * Counting by ack time rather than createdAt matters at the UTC boundary:
+ * an event created 23:59 and acked 00:01 must land in today's bucket, or
+ * anything queued across midnight is free (Otto on #1355).
  * When the daily cap is reached the events feed returns empty for that agent
- * (see agentsRuntime GET /events), so the worker idles rather than spends.
+ * BEFORE list() claims anything (see agentsRuntime GET /events), so capped
+ * events stay pending and un-attempted; GC only touches 'delivered' rows.
  *
  * Configuration: HOSTED_RUNTIME_URL + HOSTED_RUNTIME_ADMIN_TOKEN. Unset means
  * the surface reports 503 `hosted_runtime_unconfigured` — never a silent
@@ -86,7 +93,7 @@ export const turnsToday = async (agentName: string, instanceId: string): Promise
     agentName: String(agentName).toLowerCase(),
     instanceId: instanceId || 'default',
     status: 'acked',
-    createdAt: { $gte: utcDayStart() },
+    deliveredAt: { $gte: utcDayStart() },
   })
 );
 

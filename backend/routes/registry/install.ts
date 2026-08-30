@@ -352,8 +352,16 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
     // route ever writes that field, it only ever arrives in caller config — so
     // webhook-typed WITHOUT a URL is a polling seat. Never overwrite an
     // explicit host; the CLI attach path already sets it correctly.
+    // Store runtimeType NORMALIZED. Every gate below lowercases its own copy;
+    // the stored value was whatever the caller sent, so `runtimeType: "Hosted"`
+    // passed the hosted gate, got metered as hosted, and was never counted by
+    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open
+    // (Otto on #1355). Query the field the code writes: write it normalized.
+    if (runtimeConfig.runtimeType !== undefined && runtimeConfig.runtimeType !== null) {
+      runtimeConfig.runtimeType = String(runtimeConfig.runtimeType).trim().toLowerCase();
+    }
     if (!runtimeConfig.host
-      && String(runtimeConfig.runtimeType || '').toLowerCase() === 'webhook'
+      && runtimeConfig.runtimeType === 'webhook'
       && !runtimeConfig.webhookUrl) {
       runtimeConfig.host = 'byo';
     }

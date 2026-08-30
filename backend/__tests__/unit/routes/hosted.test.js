@@ -29,6 +29,8 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOne: (...args) => mockFindOne(...args) },
 }));
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockUserFindOne(...args) }));
+const mockCredentialUpdateMany = jest.fn();
+jest.mock('../../../models/AgentCredential', () => ({ updateMany: (...args) => mockCredentialUpdateMany(...args) }));
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: (name, instance) => (instance === 'default' ? name : `${name}-${instance}`),
 }));
@@ -58,7 +60,8 @@ describe('/api/hosted', () => {
     mockHosted.isConfigured.mockReturnValue(true);
     mockHosted.isHostedInstallation.mockReturnValue(true);
     mockHosted.countHostedAgentsForUser.mockResolvedValue(1);
-    mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout' });
+    mockUserFindOne.mockResolvedValue({ _id: 'bot-1', username: 'scout', agentRuntimeTokens: [] });
+    mockCredentialUpdateMany.mockResolvedValue({ modifiedCount: 0 });
     mockIssueToken.mockResolvedValue({ token: 'cm_agent_secret', existing: false });
     mockHosted.provisionAgent.mockResolvedValue({ provisioned: true });
   });
@@ -128,6 +131,24 @@ describe('/api/hosted', () => {
     expect(mockHosted.provisionAgent).toHaveBeenCalledWith({ agentName: 'scout', instanceId: 'demo', runtimeToken: 'cm_agent_secret' });
     expect(installation.config.get('hosted').provisionedAt).toBeInstanceOf(Date);
     expect(installation.save).toHaveBeenCalled();
+  });
+
+  it('rotates: revokes the old credential rows, clears the stored hashes, mints fresh', async () => {
+    const installation = makeInstallation({ runtimeTokens: [{ tokenHash: 'old-hash' }] });
+    const agentUser = { _id: 'bot-1', username: 'scout', agentRuntimeTokens: [{ tokenHash: 'old-hash' }] };
+    mockFindOne.mockResolvedValue(installation);
+    mockUserFindOne.mockResolvedValue(agentUser);
+    mockIssueToken.mockResolvedValue({ token: 'cm_agent_fresh', existing: false });
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(mockCredentialUpdateMany).toHaveBeenCalledWith(
+      { tokenHash: { $in: ['old-hash'] }, status: 'active' },
+      { $set: expect.objectContaining({ status: 'revoked' }) },
+    );
+    // Cleared BEFORE minting, so issueRuntimeTokenForAgent cannot take its reuse path.
+    expect(agentUser.agentRuntimeTokens).toEqual([]);
+    expect(installation.runtimeTokens).toEqual([]);
+    expect(mockHosted.provisionAgent).toHaveBeenCalledWith(expect.objectContaining({ runtimeToken: 'cm_agent_fresh' }));
   });
 
   it('relays a worker failure as 502 and does not record a provision', async () => {

@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 
 const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const AgentCredential = require('../models/AgentCredential');
 const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const hostedRuntime = require('../services/hostedRuntimeService');
@@ -144,12 +145,31 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       return res.status(409).json({ code: 'identity_missing', message: 'Agent identity has not been created yet; reinstall the agent' });
     }
 
+    // ROTATE, never reuse (Otto on #1355). Two pollers on one token is the
+    // case D6 does not cover — both post before either acks, duplicates land
+    // in the pod, nothing errors. A fresh token turns an orphaned poller (a
+    // still-running CLI wrapper, a DO that was never deprovisioned) into a
+    // 401 it dies on, and self-heals the case where the old runtime is gone.
+    const staleHashes = (agentUser.agentRuntimeTokens || [])
+      .map((entry: any) => entry?.tokenHash)
+      .filter(Boolean);
+    if (staleHashes.length) {
+      await AgentCredential.updateMany(
+        { tokenHash: { $in: staleHashes }, status: 'active' },
+        { $set: { status: 'revoked', revokedAt: new Date() } },
+      );
+    }
+    agentUser.agentRuntimeTokens = [];
+    installation.runtimeTokens = [];
     const token = await issueRuntimeTokenForAgent(
       agentUser,
       'Hosted runtime',
       installation,
       { ownerUserId: userId },
     );
+    if (!token?.token) {
+      return res.status(500).json({ code: 'token_mint_failed', message: 'Runtime token rotation returned no token' });
+    }
     await hostedRuntime.provisionAgent({ agentName, instanceId, runtimeToken: token.token });
 
     installation.config.set('hosted', { provisionedAt: new Date() });
