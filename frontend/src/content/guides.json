@@ -878,7 +878,8 @@
       { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
       { "label": "Connect Claude Code and Codex to one workspace", "path": "/guides/connect-claude-codex-shared-workspace/" },
       { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
-      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" }
+      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
+      { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" }
     ],
     "cta": {
       "title": "Make the next session start ahead",
@@ -1073,7 +1074,8 @@
       { "label": "Read the multi-agent collaboration guide", "path": "/guides/multi-agent-collaboration-platform/" },
       { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
       { "label": "Learn about shared memory for AI agents", "path": "/guides/ai-agent-memory/" },
-      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" }
+      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
+      { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" }
     ],
     "cta": {
       "title": "Build review into the way the team works",
@@ -1268,11 +1270,241 @@
       { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
       { "label": "Connect Claude Code and Codex to one workspace", "path": "/guides/connect-claude-codex-shared-workspace/" },
       { "label": "Learn about shared memory for AI agents", "path": "/guides/ai-agent-memory/" },
-      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" }
+      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
+      { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" }
     ],
     "cta": {
       "title": "Make handoffs a team habit",
       "body": "Agent teams gain speed from specialization only when work crosses specialties without losing the reason it exists. Define the outcome, name the next owner, transfer the evidence and constraints, and preserve the decision where the next session can find it.",
+      "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
+      "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
+    }
+  },
+  "how-to-build-an-ai-agent-team": {
+    "eyebrow": "Guide",
+    "titleTag": "How to Build an AI Agent Team: Roles, Handoffs, and Review | Commonly",
+    "title": "How to Build an AI Agent Team: Roles, Handoffs, and Review",
+    "description": "Learn how to build an AI agent team around a real workflow: choose the right scope, define roles and handoffs, preserve shared context, and keep people accountable for consequential decisions.",
+    "summary": "Build an AI agent team around a real workflow with explicit role contracts, visible handoffs, shared evidence, and human decisions at consequential boundaries.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-08-30",
+      "dateModified": "2026-08-30"
+    },
+    "intro": [
+      "An AI agent team is a small group of people and agents with distinct responsibilities, a shared record of work, and an accountable path from a request to a checked result. It is not a collection of chat tabs running in parallel, and it is not an excuse to automate a workflow nobody has defined.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives that team a place to coordinate around the work: pods hold threads and @mentions, a task list, files, shared memory, and named human and agent members. The agents still run in their own runtimes; the workspace makes their collaboration visible.",
+      "The useful question is not “How many agents should we add?” It is what repeatable workflow needs more than one kind of judgment, and what should each owner leave behind for the next one? Start there and the team can stay small, inspectable, and useful."
+    ],
+    "sections": [
+      {
+        "title": "Start with one workflow, not a roster of agents",
+        "paragraphs": [
+          "Choose one piece of work that already happens often enough to recognize its stages. A technical content release, a bug fix, a customer-research brief, or a documentation update can work. “Make our product better” cannot: it has no stable outcome, decision boundary, or way to tell when someone is done.",
+          "OpenAI’s practical guide to building agents makes the same basic point from a system-design perspective: use an agent where a workflow needs contextual judgment, difficult-to-maintain rules, or work with unstructured information. A deterministic solution may be the better choice when the process is already clear and predictable.",
+          "Write the workflow in one sentence before assigning anyone to it:",
+          "Turn a requested guide topic into a publicly available, technically verified article without making unsupported product claims.",
+          "That sentence gives the team a shared outcome. Then identify the stage changes inside it:",
+          "Not every workflow needs five owners. The point is to find places where the input, output, authority, or evidence changes. Those are the natural boundaries for roles and handoffs."
+        ],
+        "orderedItems": [
+          "Research establishes what is true and what must not be claimed.",
+          "Writing turns the evidence into a draft for the intended reader.",
+          "Editorial review accepts, rejects, or changes the claims and framing.",
+          "Implementation makes the approved page crawlable and tests it.",
+          "Release verification confirms the public artifact matches the approved work."
+        ],
+        "links": [
+          { "label": "OpenAI: a practical guide to building agents", "path": "https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/", "external": true }
+        ]
+      },
+      {
+        "title": "Build the smallest team that can own the workflow",
+        "paragraphs": [
+          "More agents are not automatically more capable. Each additional role creates another routing decision, another context transfer, and another place for responsibility to become vague. Start with a few distinct responsibilities; split a role only after the work repeatedly shows a real boundary.",
+          "Here is a practical first team for a multi-stage workflow.",
+          "These are roles, not a prescription for five separate models. A human may coordinate and review. One agent may research and draft a small task. An existing agent can connect to Commonly through MCP, a local CLI wrapper, or a custom HTTP integration; Commonly does not run that agent for you.",
+          "The role boundary matters more than the label. If two agents can both silently approve a public claim, no one is reliably accountable. If a builder must decide whether a source is trustworthy, but the team said research owns evidence, that is an escalation—not an invitation to guess."
+        ],
+        "tables": [{
+          "headers": ["Role", "Owns", "Receives", "Leaves behind", "Does not own"],
+          "rows": [
+            ["Accountable human", "Scope, consequential decisions, and acceptance", "An escalation or review packet", "A clear decision and reason", "Every routine subtask"],
+            ["Coordinator", "The overall task state and the next unblocked action", "The request and completion criteria", "A named owner, status, and handoff request", "Silent approval of claims or risky actions"],
+            ["Research specialist", "Evidence and claim boundaries", "A focused question", "Source links, findings, uncertainty, and constraints", "Final positioning or publication"],
+            ["Builder", "A concrete artifact such as copy, code, or analysis", "The approved brief and inputs", "A reviewable deliverable plus checks", "Reinterpreting unresolved scope"],
+            ["Reviewer", "Whether the deliverable meets stated criteria", "The artifact and evidence", "Approval, requested changes, or a blocker", "Doing the work invisibly for the owner"]
+          ]
+        }]
+      },
+      {
+        "title": "Give every role a compact contract",
+        "paragraphs": [
+          "A role description like “help with research” is too broad to be useful. Instead, give each owner a contract that a teammate can inspect before work begins.",
+          "This contract is also a prompt-design aid. OpenAI describes model, tools, and instructions/guardrails as the core parts of an agent. A clear role gives those instructions an operational shape: it tells the agent what outcome it is pursuing, what action is permitted, and when it must stop.",
+          "Do not put credentials, private runtime tokens, or sensitive configuration into a shared role brief. Those belong in the access controls and runtime configuration that enforce them. A role contract describes authority; it does not create it."
+        ],
+        "tables": [{
+          "headers": ["Contract field", "Question to answer", "Example for a research role"],
+          "rows": [
+            ["Purpose", "Why does this role exist?", "Establish whether a proposed product claim is supported."],
+            ["Input", "What does it need to start?", "Query, audience, product docs, and a deadline or scope boundary."],
+            ["Output", "What artifact counts as work?", "A source-linked brief with supported claims and explicit unknowns."],
+            ["Tools and access", "What may it use?", "Approved docs and public sources; no production changes."],
+            ["Completion rule", "When is the role done?", "Evidence is attached and every proposed claim is supported, removed, or marked uncertain."],
+            ["Escalation path", "When and to whom does it stop?", "Ask the editor when sources conflict or the claim changes scope."]
+          ]
+        }]
+      },
+      {
+        "title": "Make work visible in one shared place",
+        "paragraphs": [
+          "A team cannot coordinate from private sessions alone. The next owner needs a record of what the previous owner found, decided, and checked—not a summary reconstructed from memory.",
+          "In Commonly, a pod can hold the complementary parts of that record:",
+          "Commonly’s documented task flow is pending → claimed → blocked → done, with an assignee and activity timeline. That does not make the process automatically correct. It gives the team a visible lifecycle so the next person can see whether work is waiting, owned, blocked on a dependency, or genuinely complete.",
+          "Use shared memory selectively. MEMORY.md is a good place for stable project context, TASK-NNN.md for task-specific research, and ARCHITECTURE.md for durable design choices. The task board should remain the source of current task state; a memory file should not become a second, stale task tracker."
+        ],
+        "tables": [{
+          "headers": ["Need", "Useful Commonly surface", "What belongs there"],
+          "rows": [
+            ["Current owner and work state", "Task list", "The outcome, assignee, status, blocker, and acceptance criteria"],
+            ["Discussion around a decision", "Thread and @mentions", "Questions, review comments, and a link to the source of record"],
+            ["Evidence to inspect", "Attachments or links", "Research memo, draft, screenshot, test output, or pull request"],
+            ["Context that must survive a new session", "Shared pod memory", "Durable decision, terminology, architecture note, or sourced rule"],
+            ["An agent’s temporary reasoning", "Its private context or notes", "Intermediate work the rest of the team does not need"]
+          ]
+        }]
+      },
+      {
+        "title": "Design the handoff before the team needs it",
+        "paragraphs": [
+          "An agent team becomes coherent when a handoff has a standard shape. The receiver should be able to answer five questions without rereading every message:",
+          "A handoff packet can be short:",
+          "This is not a substitute for a pull request, code review, or production controls. It is the coordination record that tells the receiving owner what those systems need to verify. For a deeper distinction between delegating a bounded answer, transferring ownership, and escalating a decision, read AI Agent Handoffs."
+        ],
+        "orderedItems": [
+          "What outcome is this work trying to produce?",
+          "What is already true, and where is the evidence?",
+          "Who owns the next stage?",
+          "What constraints or decisions must remain true?",
+          "How will the team know the next stage is complete—or blocked?"
+        ],
+        "codeBlocks": [{
+          "language": "markdown",
+          "code": "Handoff: research → implementation\\n\\n- Outcome: publish a crawler-readable guide at the approved route.\\n- Current state: copy is approved; no static page has been generated yet.\\n- Evidence: attached research memo, approved draft, and product-doc links.\\n- Constraints: retain the trailing-slash canonical; make no unsupported product claims.\\n- New owner: implementation agent.\\n- Completion check: initial HTML, title, canonical, sitemap, and a real unknown-route 404 pass."
+        }]
+      },
+      {
+        "title": "Put a human at meaningful decision boundaries",
+        "paragraphs": [
+          "Human review does not mean stopping an agent after every small operation. It means naming the moments where a person must decide because the action is consequential, evidence is ambiguous, or the team needs an accountable acceptance decision.",
+          "Common examples include:",
+          "The human should receive a decision packet, not an unbounded transcript. Include the recommended action, relevant evidence, alternatives or uncertainty, blast radius, and the exact decision requested. This makes review a meaningful handoff rather than a ceremonial checkbox.",
+          "Commonly can record the task, thread, and decision around that boundary. It does not replace the systems that enforce authorization, branch protection, secret handling, tool approvals, or deployment gates. Keep those controls where they can actually deny an unsafe action.",
+          "For a worked review pattern, see Human-in-the-Loop Review for AI Agent Teams."
+        ],
+        "bullets": [
+          "A claim will appear in public marketing or documentation.",
+          "A source conflicts with an existing policy or product record.",
+          "A code change affects authentication, data, money, production infrastructure, or another irreversible surface.",
+          "An agent needs access or authority outside its defined role.",
+          "The task changes from the scope the requester approved."
+        ]
+      },
+      {
+        "title": "A worked example: build a small publishing team",
+        "paragraphs": [
+          "Suppose a developer-relations team wants to publish a technical guide. The outcome is not “have agents write content.” It is: publish a useful guide that a builder can verify, a search crawler can read, and an editor can stand behind."
+        ]
+      },
+      {
+        "title": "1. The accountable human sets the outcome",
+        "paragraphs": [
+          "The human creates a task with the target reader, the primary question, the product boundary, and the approval point: “Do not publish until the editor accepts every product claim.” They do not need to decide every heading or test command, but they own the decision to make the guide public."
+        ]
+      },
+      {
+        "title": "2. A research owner produces evidence, not prose",
+        "paragraphs": [
+          "The research agent or teammate collects first-party product documentation and a small number of reliable category sources. It records supported claims, unknowns, and links. If a source is not clear enough to support a statement, the brief says so.",
+          "This produces an input a writer can use. It does not produce permission to make the claim anyway."
+        ]
+      },
+      {
+        "title": "3. A writer turns the evidence into a draft",
+        "paragraphs": [
+          "The writer receives the source brief, reader, and route intent. They create an article with a clear answer, an example, internal links to relevant published pages, and explicit boundaries where the product is not the enforcement layer.",
+          "The handoff to editorial review names the draft version and asks a specific question: “Are the product claims and recommended workflow accurate enough to implement?”"
+        ]
+      },
+      {
+        "title": "4. A reviewer makes the editorial decision",
+        "paragraphs": [
+          "The reviewer checks the sources, claims, links, and reader value. They either approve the draft, request bounded changes, or escalate a product question. Approval is a record: it tells the implementation owner what copy is accepted, not merely that a conversation felt positive."
+        ]
+      },
+      {
+        "title": "5. An implementation owner makes and verifies the page",
+        "paragraphs": [
+          "The implementation agent adds the static page and its metadata, then runs the checks that belong to the repository and deployment: initial HTML, canonical URL, sitemap coverage, internal links, and unknown-route behavior. It links the pull request and verification result back to the task."
+        ]
+      },
+      {
+        "title": "6. The team records the result and learns from it",
+        "paragraphs": [
+          "When the guide is live, the task becomes done only after the public URL and checks are recorded. A durable editorial rule—such as “use only verified product claims”—belongs in shared memory if it will shape future work. The team can then repeat the workflow without pretending every new request is a blank slate.",
+          "This example uses several agents, but it can begin with a human, one research-and-writing agent, and one reviewer. Add a separate implementation agent only when that technical handoff is frequent enough to benefit from it."
+        ]
+      },
+      {
+        "title": "Starting with a swarm",
+        "paragraphs": [
+          "Assigning many general agents to the same request creates duplicate research, conflicting drafts, and more coordination than the original work needed. Start with one agent or a small, explicitly divided team. Add specialization when the role contract or tool boundary becomes difficult to manage in one place."
+        ]
+      },
+      {
+        "title": "Giving multiple owners the same final decision",
+        "paragraphs": [
+          "Two people can collaborate on research. Two agents can propose solutions. But if no one knows who accepts the outcome, both may assume the other person has checked the risky part. Name an accountable owner and an escalation route."
+        ]
+      },
+      {
+        "title": "Moving the work but not the evidence",
+        "paragraphs": [
+          "“Research is done” is not a handoff. Attach the memo, link the source, record the current state, and call out uncertainty. The next owner should be able to verify an important statement rather than trust a paraphrase."
+        ]
+      },
+      {
+        "title": "Treating a task board as a permission system",
+        "paragraphs": [
+          "A claimed task makes ownership visible; it does not grant the agent credentials or authority to deploy, spend money, modify access controls, or reveal a secret. Keep enforcement in the systems designed for it, and treat missing authority as a blocker or escalation."
+        ]
+      },
+      {
+        "title": "Reviewing after the irreversible action",
+        "paragraphs": [
+          "If a human must approve an external message, production change, or public claim, put the review before that action. A retrospective review can improve the next run; it cannot undo an action the team should have paused."
+        ]
+      }
+    ],
+    "faq": [
+      { "question": "How many AI agents should a team start with?", "answer": "Start with the fewest distinct roles that make ownership clear. For a narrow workflow, that may be one agent plus an accountable human reviewer. Add a specialist when a recurring stage needs different tools, instructions, authority, or evidence—not because a larger diagram looks more sophisticated." },
+      { "question": "Do all the agents need to use the same model or runtime?", "answer": "No. The role contract should define the result and boundary, not require identical implementations. Commonly supports connecting existing Claude Code, Cursor, Codex, OpenClaw, local CLI, and custom HTTP agents, each running where it already runs. The team still needs a shared record and a way to see who owns the next action." },
+      { "question": "When should I move from one agent to a multi-agent team?", "answer": "First make the single-agent workflow clear. Then split it when prompts acquire difficult, unrelated decision logic; tool choices overlap often enough to confuse the owner; or a real specialty and acceptance boundary appears. More agents introduce coordination cost, so the split should solve a visible problem." },
+      { "question": "Does a shared workspace replace source control or deployment controls?", "answer": "No. A workspace helps the team coordinate and retain context. Source control, CI, authorization, secret management, and deployment systems remain the records and enforcement points for their respective actions." }
+    ],
+    "relatedLinks": [
+      { "label": "Read the multi-agent collaboration guide", "path": "/guides/multi-agent-collaboration-platform/" },
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Connect Claude Code and Codex to one workspace", "path": "/guides/connect-claude-codex-shared-workspace/" },
+      { "label": "Learn about shared memory for AI agents", "path": "/guides/ai-agent-memory/" },
+      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
+      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" }
+    ],
+    "cta": {
+      "title": "Build for legible work, not autonomous theater",
+      "body": "The best first AI agent team is not the one with the most autonomous behavior. It is the one where a teammate can see the outcome, the current owner, the evidence, the decision boundary, and the check that closes the work.",
       "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
       "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
     }
