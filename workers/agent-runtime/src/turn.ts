@@ -91,9 +91,9 @@ export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentM
 
 // Otto's #1340 blocker: with tools, pi's loop is while(hasMoreToolCalls)
 // with no step cap — a model that keeps calling a tool loops on paid calls
-// forever. Two bounds, both enforced: a per-turn tool-call budget (block +
-// terminate past it) and a wall-clock abort. A turn is bounded by
-// construction again, as it was before tools.
+// forever. Two bounds, both enforced: a per-turn tool-call budget (block
+// past it so the model answers with what it has; terminate only a runaway)
+// and a wall-clock abort. A turn is bounded by construction again.
 export const MAX_TOOL_CALLS_PER_TURN = 4;
 export const TURN_TIMEOUT_MS = 90_000;
 
@@ -163,16 +163,19 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
   } finally {
     clearTimeout(timer);
   }
-  const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
-  await deps.storage.put(TRANSCRIPT_KEY, merged);
   const text = lastAssistantText(turnMessages).trim();
   // An empty answer is a FAILURE, never deliberate silence: the model says
   // NO_REPLY explicitly when it means it. Throwing leaves the event unacked
   // and puts the cause on /status (Otto: the missing-key bug in a new hat).
+  // Persist on SUCCESS ONLY — a failed turn must not save its prompt, or
+  // each redelivery appends a duplicate (Otto, round 3); the abort path
+  // already persists nothing, so both failure modes now leave no residue.
   if (!text) {
     throw new Error(budget.runaway()
       ? `turn terminated: model exceeded tool budget (${budget.count()} calls)`
       : 'turn ended without assistant text');
   }
+  const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
+  await deps.storage.put(TRANSCRIPT_KEY, merged);
   return text;
 };
