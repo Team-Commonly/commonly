@@ -6032,6 +6032,38 @@ body.modern-ui.v2-canvas {
   color: #1e6b2a;
   font-size: 13px;
 }
+/* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
+   the accent border + focus ring marks the pressed card. */
+.v2-byo__modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.v2-root button.v2-byo__mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  background: var(--v2-surface, #fff);
+  color: var(--v2-text-primary);
+  cursor: pointer;
+  transition: border-color 0.08s ease;
+}
+.v2-root button.v2-byo__mode:hover {
+  background: var(--v2-surface-hover);
+}
+.v2-root button.v2-byo__mode[aria-pressed="true"] {
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+.v2-byo__mode-title {
+  font-size: 14px;
+  font-weight: 600;
+}
 .v2-root button.v2-byo__submit {
   align-self: flex-start;
   padding: 10px 18px;

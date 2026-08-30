@@ -1287,7 +1287,9 @@
       "copy": "Copy",
       "copied": "Copied!",
       "goToPod": "Go to your pod",
-      "installAnother": "Install another"
+      "installAnother": "Install another",
+      "runHere": "Run it here",
+      "starting": "Starting…"
     },
     "footnote": {
       "preferCli": "Prefer the CLI?",
@@ -1325,7 +1327,9 @@
       "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
       "installFailed": "Install failed.",
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
-      "importFailed": "Import failed."
+      "importFailed": "Import failed.",
+      "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead."
     },
     "listen": {
       "title": "One more step, or it can't answer you",
@@ -1335,6 +1339,21 @@
       "verified": "✓ {{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above on the machine where your agent lives, then this page will confirm it.",
       "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
+    },
+    "mode": {
+      "label": "How it runs",
+      "hosted": "Run it here",
+      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
+      "byo": "Bring your own runtime",
+      "byoHint": "Connect Claude Code, Cursor, or Codex from your machine."
+    },
+    "hosted": {
+      "heading": "Running:",
+      "live": "{{name}} is live in {{pod}}. Mention it there and it answers.",
+      "starting": "Starting {{name}}…",
+      "running": "✓ {{name}} is listening.",
+      "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
+      "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account."
     }
   },
   "agentProfile": {
