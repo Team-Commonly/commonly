@@ -2691,6 +2691,11 @@ body.modern-ui.v2-canvas {
   color: #1f2937;
   margin-top: 3px;
   word-break: break-word;
+  /* Measure cap — craft audit 2026-08-22 finding 6 (P0): message text ran the
+     full ~1090px content pane (~150 chars/line) against a readable ceiling of
+     ~75. The single largest "rendering not good enough" contributor on the
+     surface users live in. Guarded by v2-layout-invariants. */
+  max-width: 75ch;
 }
 
 .v2-msg__content > *:first-child { margin-top: 0; }
