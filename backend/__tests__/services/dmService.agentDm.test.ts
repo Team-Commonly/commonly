@@ -37,6 +37,7 @@ describe('DMService — agent-dm + sharePod', () => {
       instance: { dbName: 'dm-service-agent-dm-test' },
     });
     await mongoose.connect(mongoServer.getUri());
+    await Pod.init();
   });
 
   afterAll(async () => {
@@ -159,6 +160,42 @@ describe('DMService — agent-dm + sharePod', () => {
       expect(room1._id.toString()).toBe(room2._id.toString());
       const all = await Pod.find({ type: 'agent-dm' });
       expect(all).toHaveLength(1);
+    });
+
+    it('claims a legacy room before creating a room for the same pair', async () => {
+      const legacy = await Pod.create({
+        name: 'aria ↔ codex',
+        type: 'agent-dm',
+        joinPolicy: 'invite-only',
+        createdBy: aria._id,
+        members: [aria._id, codex._id],
+      });
+
+      const room = await DMService.getOrCreateAgentDmRoom(memberFor(codex), memberFor(aria));
+
+      expect(room._id.toString()).toBe(legacy._id.toString());
+      expect(room.agentDmPairKey).toBe(
+        [aria._id.toString(), codex._id.toString()].sort().join(':'),
+      );
+      expect(await Pod.countDocuments({ type: 'agent-dm' })).toBe(1);
+    });
+
+    it('atomically creates one room when callers race on the same pair', async () => {
+      const calls = Array.from(
+        { length: 16 },
+        (_, index) => DMService.getOrCreateAgentDmRoom(
+          index % 2 === 0 ? memberFor(aria) : memberFor(codex),
+          index % 2 === 0 ? memberFor(codex) : memberFor(aria),
+        ),
+      );
+      const rooms = await Promise.all(calls);
+
+      expect(new Set(rooms.map((room) => room._id.toString())).size).toBe(1);
+      const stored = await Pod.find({ type: 'agent-dm' });
+      expect(stored).toHaveLength(1);
+      expect(stored[0].agentDmPairKey).toBe(
+        [aria._id.toString(), codex._id.toString()].sort().join(':'),
+      );
     });
 
     it('creates AgentInstallation rows for both bot members', async () => {

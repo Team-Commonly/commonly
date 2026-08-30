@@ -139,6 +139,7 @@ describe('V2 routing', () => {
     })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create a workspace' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Watch a live room' })).toBeInTheDocument();
+    expect(document.body).toHaveClass('guide-canvas');
   });
 
   test('shared workspace guide retains its MCP setup commands after the app takes over', async () => {
@@ -158,10 +159,34 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(10);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'Shared Memory for AI Agents: Persisting Context Across Sessions',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'Human-in-the-Loop Review for AI Agent Teams',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'AI Agent Handoffs: Transfer Work Without Losing Context',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'How to Build an AI Agent Team: Roles, Handoffs, and Review',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'Agent-to-Agent Messaging: How AI Agents DM Each Other',
+    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: 'Self-Hosted AI Agent Platform: What to Look For',
     })).toBeInTheDocument();
   });
 

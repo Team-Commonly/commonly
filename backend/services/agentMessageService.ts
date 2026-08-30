@@ -58,6 +58,58 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 // add an entry here only after observing it as a wrapper artifact in production.
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
+const NO_REPLY_SENTINEL = 'NO_REPLY';
+// `trim()` does not remove Unicode format characters. Normalize a
+// decision-only copy before total-match and leading-sentinel checks so one
+// invisible prefix cannot bypass both suppression paths. Do not rewrite the
+// stored payload: U+200D, for example, joins emoji glyphs.
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
+
+/**
+ * Word-boundary test for the sentinel scan. Deliberately not `\w` via regex:
+ * this runs character-by-character over user-controlled message text, and the
+ * two callers below must agree exactly on what "bare" means — a leading
+ * sentinel that suppresses and a mid-reply sentinel that is stripped are the
+ * same token under the same boundary rule, differing only in position.
+ */
+const isSentinelWordCharacter = (character: string | undefined): boolean => (
+  character !== undefined
+  && (
+    (character >= 'A' && character <= 'Z')
+    || (character >= 'a' && character <= 'z')
+    || (character >= '0' && character <= '9')
+    || character === '_'
+  )
+);
+
+/**
+ * Does this reply OPEN with a bare sentinel (TASK-067, ratified by Sam
+ * 2026-08-26)?
+ *
+ * The measured failure mode is AX-43: a seat writes
+ * `NO_REPLY.\n\n<private reasoning about why it is staying silent>`,
+ * believing the leading token silences the turn. Under total-match-only the
+ * kernel stripped the token and published the reasoning — 11 times in one day.
+ * At that position the agent's intent is unambiguous, so the whole reply is
+ * suppressed rather than edited.
+ *
+ * Position is the entire discriminator. A sentinel anywhere else keeps the
+ * #785 behaviour (strip and post), because there it really is producer
+ * leakage inside a reply the agent meant to send, and swallowing a genuine
+ * reply is the worse error. Callers must apply this AFTER the outer-fence
+ * unwrap and the total-match check, and it is never reached for a backticked
+ * or fenced sentinel — those remain deliberate mentions.
+ *
+ * Consumes a run (`NO_REPLYNO_REPLY...`) for the same reason the strip loop
+ * does: gateways have historically joined silent blocks without a separator.
+ */
+const opensWithBareSentinel = (trimmed: string): boolean => {
+  if (!trimmed.startsWith(NO_REPLY_SENTINEL)) return false;
+  let end = 0;
+  while (trimmed.startsWith(NO_REPLY_SENTINEL, end)) end += NO_REPLY_SENTINEL.length;
+  return !isSentinelWordCharacter(trimmed[end]);
+};
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -1788,12 +1840,13 @@ class AgentMessageService {
     const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
     const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
+    const sentinelContent = trimmed.replace(FORMAT_CHARACTERS, '');
 
     // Sentinels are total-match contracts: suppress only when the complete
     // reply consists of NO_REPLY tokens. Gateways have historically joined
     // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
     // whitespace), so retain that compatibility.
-    if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
+    if (/^(?:NO_REPLY\s*)+$/.test(sentinelContent)) return '';
 
     // A substantive fully fenced reply is explicitly code-formatted even
     // though this sanitizer removes the outer transport fence before storage.
@@ -1801,6 +1854,29 @@ class AgentMessageService {
     // reply was already suppressed above so runtimes cannot bypass silence by
     // wrapping the token in a transport fence.
     if (outerFence) return trimmed;
+
+    // TASK-067. A reply that OPENS with a bare sentinel is intended silence,
+    // not producer leakage, so suppress the whole thing rather than editing
+    // the token out and posting the rest. See `opensWithBareSentinel`.
+    //
+    // This sits below the fence return on purpose: inside a fence the token is
+    // a deliberate mention (the "backtick a sentinel to mention it" rule), and
+    // a fenced sentinel-only reply was already suppressed by the total-match
+    // check above, so nothing can bypass silence by fencing.
+    //
+    // Read-time note: `findPreviousNonSilentMessage` re-sanitizes stored
+    // history, so a legacy message that still opens with a bare sentinel now
+    // reads as silent there too. That is the intended reading of those rows —
+    // and it does not apply to the AX-43 leaks themselves, which were stored
+    // with the token already stripped.
+    if (opensWithBareSentinel(sentinelContent)) {
+      if (observe) {
+        console.warn(
+          `[agent-msg] suppressed a reply opening with a bare sentinel (intended silence, not an edit) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,
+        );
+      }
+      return '';
+    }
 
     // Bare sentinel tokens inside a substantive reply are producer leakage;
     // matching backtick-delimited spans are deliberate mentions. Pair the
@@ -1843,16 +1919,8 @@ class AgentMessageService {
       }
     }
 
-    const isWordCharacter = (character: string | undefined): boolean => (
-      character !== undefined
-      && (
-        (character >= 'A' && character <= 'Z')
-        || (character >= 'a' && character <= 'z')
-        || (character >= '0' && character <= '9')
-        || character === '_'
-      )
-    );
-    const sentinel = 'NO_REPLY';
+    const isWordCharacter = isSentinelWordCharacter;
+    const sentinel = NO_REPLY_SENTINEL;
     let cleaned = '';
     let cursor = 0;
     let rangeIndex = 0;

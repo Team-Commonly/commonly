@@ -2614,6 +2614,13 @@ measured intent there is silence, the kernel's reading is leakage.
   intended-silence leakage. Whether a LEADING bare sentinel should suppress
   the whole reply is now an open contract question (TASK-067) — it is a
   semantics change to a load-bearing invariant and needs Sam, not a patch.
+  **RESOLVED 2026-08-26: Sam ratified suppress-on-leading; mid and trailing
+  keep strip-and-post.** Position is the discriminator, and both halves of the
+  original argument survive intact — at the head the intent is unambiguous, and
+  anywhere else the token is still leakage inside a reply the agent meant to
+  send. Shipped in `sanitizeAgentContent` with the contract restated in
+  CLAUDE.md; the frames' totality clause stays, since it is now the accurate
+  description of the mid/trailing half.
 - An agent's self-audit is a detection channel. The seat found in one turn
   what the operator's noise measurement had misattributed for a day.
 
@@ -2762,3 +2769,254 @@ declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
 the other seven PRs is what found `#1330`, where both APIs are silent and the
 gate is real anyway.
+
+## 49. A progress note re-claimed a row a human had re-pointed two days earlier (2026-08-28, pod-architect, found by the seat)
+
+**The surface:** `commonly_update_task`, whose tool description is *"Append an
+update note to a task without changing status — visible in the task drawer
+history."* Behind it, `POST /api/v1/tasks/:podId/:taskId/updates`
+(`backend/routes/tasksApi.ts:537`).
+
+**The false model it taught:** that posting a note is observationally inert on
+a row you do not hold. Sam re-pointed TASK-070 to `@sprint-impl` at
+2026-08-28T23:17Z. I wrote a handoff note into the drawer *specifically so I
+would not claim the row and block them* — and the note claimed it for me:
+`status` `pending` → `claimed`, `claimedBy` set to my id, a 30-minute lease
+opened, `lapsedFrom` cleared. The response says so (`leaseRenewed: true`), but
+that response is the whole task document, which exceeds this seat's tool-output
+token limit — so the one field that would have contradicted the description
+arrives in a file the caller has to go and parse.
+
+**The mechanism, and it is deliberate code doing a narrow job over an unbounded
+range.** The handler has a second `findOneAndUpdate` for the case where the row
+was swept back to `pending` before the note landed:
+
+```js
+{ podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } }
+```
+
+Its comments name the race precisely and it is a real one — the deferral
+warning *"post a task update or re-claim — either renews the lease"* routinely
+arrives after the sweep it warns about (TASK-029, 2026-08-22: warning 12:24,
+sweep 12:54, note 12:56). The restore is what makes the cue's two options
+actually equivalent.
+
+**The bound the race has and the predicate does not.** That race is minutes
+wide. `lapsedFrom` carries no timestamp and is invalidated by nothing except a
+successful restore, so the predicate is open forever. TASK-070 lapsed from me
+at **2026-08-26T23:54Z** and my note restored it at **2026-08-28T23:33Z** —
+**48 hours later**, across a human's explicit re-point to a different seat in
+between. Sam's re-point did not clear it, and could not have: his own note fell
+through to the note-only fallback, because his identities do not match
+`lapsedFrom` either.
+
+**Why the assignment was invisible to the thing that should have carried it.**
+The row's `assignee` field is `null`. Sam re-points by writing prose into an
+update note, which no predicate reads. So the only machine-readable record of
+who owns the row is `claimedBy` — and the restore branch overwrites exactly
+that, from a field describing who owned it two days ago.
+
+**What I checked before filing.** That the id was mine and not a peer's, by
+comparing against a row I know I hold. That `leaseRenewed` was `true` and
+`lapsedFrom` was `null` afterwards, from the persisted response rather than
+inferred. That `lapsedFrom` must have held the string `pod-architect` — the
+sweep note says *"(was: pod-architect)"*, and of the four identities the
+handler collects, the username is the only one that is not an ObjectId.
+
+**Cheapest fix that keeps the race closed:** clear `lapsedFrom` when anyone
+other than the lapsed holder writes to the row. The TASK-029 race is two
+minutes of silence, so nothing else touches the row inside it; a re-point,
+a peer's note, or a claim all mean the restore's premise has expired. A
+`lapsedAt` timestamp bounded to one lease period would also work and is
+strictly more code.
+
+**The general shape, which is not about tasks.** A predicate written for a
+race is a predicate about *time*, and storing only the participant stores the
+wrong half. `lapsedFrom` answers "who" and the guard needed "who, and recently"
+— so the code is correct for every case its comments discuss and unbounded for
+every case they do not. When a comment justifies a branch by describing a
+window, check that something in the row actually measures the window.
+
+**Negative control, and the two that don't work — @sprint-review supplied
+both halves, the second while withdrawing the first.** The restore query is
+`{ status: 'pending', lapsedFrom: { $in: identities } }`, so a control has to
+hold `status` fixed and vary only `lapsedFrom`. TASK-023 (`claimed`) and
+TASK-080 (`done`) were offered first: both came back with the original holder's
+`claimedBy` untouched, which rules out *"an update claims by default"* — but
+each fails the `status` term as well as the `lapsedFrom` one, so neither can
+isolate which term did the work. The clean control is **TASK-084**: `status:
+'pending'`, `lapsedFrom: null`, two `commonly_update_task` calls from
+@sprint-review, latest `2026-08-29T00:18:10Z`, and `claimedBy` still `null`
+(re-read from the API at 00:24Z rather than carried across). That one varies
+`lapsedFrom` alone, and it is what licenses the claim: `lapsedFrom` naming the
+caller is the discriminator, exactly as the mechanism above predicts. Worth
+stating because without it the obvious repair goes to the wrong branch — the
+primary claim path is fine, and only the restore branch needs bounding.
+
+The near-miss is its own lesson, and it is the same one as entry 47: a control
+that varies two terms at once confirms the conjunction, never the term you care
+about. Both rows were real measurements, correctly reported, and still could not
+support the sentence they were cited for.
+
+**Second-order, for anyone writing tool descriptions:** *"without changing
+status"* is a promise about the common path stated as a property of the tool.
+The seat that most needs the exception is the one deliberately avoiding a
+claim, and that is the seat the description reassures.
+
+## 50. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
+
+**Surface:** `catch { return <sentinel> }` across `backend/`, and the two
+confirmed defects it has already produced — `readLongTerm` returning `''` on a
+transport failure (#1275) and `findLiveIntegration` returning `null` when the
+Integration lookup throws (#1287 item 2).
+
+**The defect class:** a catch block returns a value that is *also reachable on
+the success path*. The caller cannot distinguish "this failed" from "this
+legitimately has nothing", so the loudest condition — backend unreachable, auth
+revoked, index missing — renders as the quietest and most common one. In #1275
+the guard `err?.status && err.status !== 404` skipped the error branch exactly
+when `err.status` was undefined, which is precisely the transport-failure case.
+
+**The specimen, because it needs no call-site read to see.**
+`backend/routes/registry/detect.ts`, twice in one file:
+
+```
+:92   if (!skillsDir)      return { status: 'unavailable', skills: [] };
+:98   catch (error)        return { status: 'unavailable', skills: [] };
+
+:132  if (!dockerfilePath) return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+:138  catch (error)        return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+```
+
+Identical expression, six lines apart, guard and catch. "The directory is not
+there" and "`readdirSync` threw" return the same object. The success path is
+*visible in the same screenful*, which is what makes this the clearest statement
+of the class: you do not need to know what the caller does with it.
+
+**A second instance where the correct value was already on the line above.**
+`backend/services/discordService.ts`:
+
+```
+:500  return (this.integration as IntegrationDoc).status || 'unknown';
+:502  catch (error) { return 'error'; }
+```
+
+`'error'` is a member of the `IntegrationStatus` enum
+(`backend/models/Integration.ts:118`). `'unknown'` is not. The function already
+had an out-of-band sentinel for "no answer", one line above the catch, and the
+catch reached past it for an in-band one.
+
+**A third, collapsing three conditions into one string.**
+`backend/services/systemExchangeTriggers.ts`:
+
+```
+:353  return inst?.instanceId || 'default';
+:355  catch { return 'default'; }
+```
+
+The query threw, no active installation exists, and `instanceId` is literally
+`'default'` are indistinguishable at the call site.
+
+**And the reciprocal — which fires the same tell harder, and is correct.**
+`backend/services/avatarService.ts` normalises an avatar reference:
+
+```
+:37  if (LEGACY_COLOR_AVATARS.has(value))              return value;
+:38  if (/^data:/i.test(value) || value.startsWith('/')) return value;
+:47  } catch {
+:48      return value;
+:50    return value;
+```
+
+Four `return value` in thirteen lines, one of them the catch. By "the success
+path and the catch return the identical expression, in view of each other" —
+the tell `detect.ts` seems to teach — this is the most flagrant site in the
+repo. It is also exactly right. `services/agentMessageService.ts:474`,
+`services/skillsCatalogService.ts:134` and `routes/pods.ts:180` are the same
+shape: normalise this thing; keep the original if it will not parse.
+
+**So the discriminator is not syntactic, and not about the value. It is a
+question about the `try`:**
+
+> Name the question the code inside the `try` is asking. Then check whether the
+> value the catch returns already answers a *different* question elsewhere in
+> the same function.
+
+Where throwing is the only way to ask, the catch is the `else` and the collapse
+is the specification. All four correct sites are the same construct — `new
+URL(...)` at `avatarService.ts:42`, `agentMessageService.ts:474`,
+`skillsCatalogService.ts:125`, `pods.ts:177`. Where the code asked one question
+and the catch answers a different one with the same value, it is a defect:
+
+```
+detect.ts:96             readdirSync   — "is it there?" was already answered at :91
+detect.ts:136            readFileSync  — already answered at :131
+discordService.ts:499    initialize()  — 'error' is an IntegrationStatus enum member
+telegramBridgeService    findOne       — null already means "no live integration"
+systemExchangeTriggers   findOne       — 'default' is a real instanceId
+```
+
+This is why the paired snippets look identical and are not: in `detect.ts` the
+guard *above* the `try` has already answered the question the catch answers, and
+in `avatarService` the guards at `:37`/`:38` answer different questions while the
+catch answers the one only a throw can ask. The difference is one line up, in
+both.
+
+**Not sufficient either, and the entry would be dishonest to close on it.**
+`try { JSON.parse(trustedInput) } catch { return {} }` is predicate-shaped and
+still collapses a fault. Two further things it does *not* discriminate on,
+checked against these nine sites:
+
+- **How tightly the `try` is scoped.** `detect.ts:95-97` wraps exactly one
+  statement and is a defect; `skillsCatalogService.ts:124-134` wraps eleven, ten
+  of which cannot throw, and is correct. Scope is orthogonal — though a wide
+  `try` is a latent hazard: add one throwing call inside those ten lines and the
+  site becomes a defect with the catch never edited. (Mirror of the `void
+  asyncFn()` hazard, where *narrowing* someone else's `try` is what breaks it.)
+- **Whether the caller branches.** See above — no caller here does.
+
+The procedure survives; every predicate offered as a shortcut to it has failed.
+
+**How we found the class, and every proxy that failed on the way.** The sweep
+started by enumerating sentinel *literals* and widened the set twice — `false`,
+`null`, `''`, `[]`, `{}`, then `0` and `""` — reaching a confident 21 sites at
+`994a963f`. `0` and `""` contributed nothing; only `{}` ever moved the count.
+
+- **Literal-only** missed every site above: all four return a non-literal.
+- **Non-literal** is not closer to the class, it errs the other way — the same
+  sweep pulls in `return res.status(400).json({ error: err.message })` from
+  several controllers, which is maximally *loud*.
+- **Bare `catch {` vs bound `catch (err) {`** misses too: the `discordService`
+  and both `detect.ts` sites are bound, with the binding unused.
+- **"The value looks like an error"** was the proxy that made us wave the two
+  `detect.ts` sites through on the first pass. They were in the census output,
+  read as explicit failure values, and were classified out by hand — by the
+  people writing this entry about proxies failing.
+
+**Rules earned:**
+- The discriminator is a question about the `try`, not about the value, the
+  syntax, or the caller: name what the code inside it is asking, then check
+  whether the catch's return value already answers a different question in the
+  same function.
+- Do not close a write-up about failed proxies by handing over a new one. Six
+  were tried here; the one that separates all nine sites is stated as a
+  procedure with its counter-example attached, not as a rule.
+- Six proxies were tried and all six failed, three of them invented during this
+  write-up: sentinel-literal, non-literal, bare-vs-bound catch, "the value looks
+  like an error", "guard and catch return the same expression in view of each
+  other", and "the caller branches differently". A syntactic tell can be
+  necessary; none was sufficient.
+- A shape count is the number that gets quoted, and it is not a defect count.
+  Publish it as "N sites share the shape; K confirmed defects; the rest
+  unclassified" or do not publish it.
+- Widening an enumerated set feels like rigour and cannot escape the axis you
+  enumerated on. When a sweep is defined by a value set, run one census with the
+  filter removed and classify by hand — that pass is the only one that can tell
+  you the axis was wrong. Here the count turned out to fail in *both* directions,
+  which is the finding; a proxy that only over-counts is a much smaller problem.
+- Publish the correct site next to the defect, not the defect alone. Both
+  `detect.ts` and `avatarService.ts` fire the same tell; showing only the first
+  installs the proxy that the second refutes.
+- No lint rule can see this. `@typescript-eslint/no-floating-promises` has no
+  analogue, because the defect is a relation between two return sites rather
+  than a property of either.

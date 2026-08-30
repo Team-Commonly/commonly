@@ -77,6 +77,21 @@ describe('AgentCredential substrate', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rejects a daemon credential even if its hash is poisoned into a legacy token list', async () => {
+    // The cm_agent spelling deliberately simulates an issuer/copy bug. The
+    // credential kind, not that prefix, is the authority boundary.
+    const raw = `cm_agent_${'p'.repeat(32)}`;
+    const bot = await makeBot(raw);
+    await AgentCredential.create({
+      tokenHash: hash(raw), kind: 'daemon', ownerUserId: bot._id, machineId: 'm-poison',
+    });
+
+    const { res, nexted } = await runAuth(raw);
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(401);
+    expect(res.body.message).toBe('Invalid agent credential');
+  });
+
   it('a child of a revoked daemon credential is rejected — lineage enforced at auth', async () => {
     const raw = `cm_agent_${'c'.repeat(32)}`;
     const bot = await makeBot(raw);

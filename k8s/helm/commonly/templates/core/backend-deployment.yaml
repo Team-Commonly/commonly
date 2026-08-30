@@ -150,6 +150,24 @@ spec:
         - name: COMMUNITY_POD_ID
           value: {{ .Values.backend.env.communityPodId | quote }}
         {{- end }}
+        {{- if .Values.backend.env.hostedRuntimeUrl }}
+        - name: HOSTED_RUNTIME_URL
+          value: {{ .Values.backend.env.hostedRuntimeUrl | quote }}
+        - name: HOSTED_RUNTIME_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hosted-runtime
+              key: HOSTED_RUNTIME_ADMIN_TOKEN
+              optional: true
+        {{- end }}
+        {{- if .Values.backend.env.hostedAgentsPerUser }}
+        - name: HOSTED_AGENTS_PER_USER
+          value: {{ .Values.backend.env.hostedAgentsPerUser | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.hostedTurnsPerDay }}
+        - name: HOSTED_TURNS_PER_DAY
+          value: {{ .Values.backend.env.hostedTurnsPerDay | quote }}
+        {{- end }}
         {{- if .Values.backend.env.retentionExemptPodIds }}
         # Pods the 30-day PG message-retention cron must never touch —
         # publicly-linked rooms (showcase, community HQ) whose history IS the

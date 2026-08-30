@@ -139,6 +139,50 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
     expect(profile.name).not.toBe('Cuz 🦞');
   });
 
+  it('does not promote a legacy runtime-shaped User displayName into either higher-precedence label', async () => {
+    await User.create({
+      username: 'openclaw-nova',
+      email: 'openclaw-nova@bot.local',
+      password: 'bot-no-login',
+      isBot: true,
+      botMetadata: {
+        agentName: 'openclaw',
+        instanceId: 'nova',
+        // A historical writer stored the runtime rather than Nova’s label.
+        displayName: 'openclaw (nova)',
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${installerToken}`)
+      .send({
+        agentName: 'openclaw',
+        instanceId: 'nova',
+        podId: pod._id.toString(),
+        version: '1.0.0',
+        scopes: ['context:read', 'summaries:read', 'messages:write'],
+      });
+
+    expect(res.status).toBe(200);
+
+    const installation = await AgentInstallation.findOne({
+      podId: pod._id,
+      agentName: 'openclaw',
+      instanceId: 'nova',
+    }).lean();
+    expect(installation.displayName).toBe('nova');
+    expect(installation.displayName).not.toBe('openclaw (nova)');
+
+    const profile = await AgentProfile.findOne({
+      podId: pod._id,
+      agentName: 'openclaw',
+      instanceId: 'nova',
+    }).lean();
+    expect(profile.name).toBe('nova');
+    expect(profile.name).not.toBe('openclaw (nova)');
+  });
+
   it('respects explicit displayName in request body over both registry default AND existing User row', async () => {
     const res = await request(app)
       .post('/api/registry/install')

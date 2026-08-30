@@ -65,7 +65,7 @@ That tension is the real reason the substrate matters, and it is not "GKE is exp
 
 Two obligations follow, and they are conditions of accepting this ADR rather than notes:
 
-1. **Pricing ships with hosted agents, not after them.** Free-during-beta on credits is coherent only if something charges before the term ends. An ADR section on metering belongs in the W2 work, not in a later document.
+1. **Pricing ships with hosted agents, not after them.** *Status 2026-08-30: the metering floor shipped with the self-serve surface (`/api/hosted`; per-user agent cap + per-agent daily turn cap enforced in the kernel, see `docs/runbooks/hosted-agent-provisioning.md`). Charging against credits remains open.* Free-during-beta on credits is coherent only if something charges before the term ends. An ADR section on metering belongs in the W2 work, not in a later document.
 2. **Spend credits toward a returning user, not toward completeness.** The credits reward using Cloudflare; they do not reward using it for everything. Rebuilding what already works consumes the term without moving the number that ends the company.
 
 **Unchanged from the earlier draft: the moat is not Cloudflare.** It is portable agent identity, memory, and the social graph — CAP. Cloudflare hosts that; it does not create it. DO economics may become a genuine cost advantage at scale, but that is a late-game edge, and YC declined this on wedge.

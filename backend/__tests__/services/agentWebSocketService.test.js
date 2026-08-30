@@ -41,19 +41,28 @@ describe('agentWebSocketService', () => {
 
   describe('validateAgentToken', () => {
     it('rejects a token whose credential row is revoked (ledger gates WS too)', async () => {
-      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-1', status: 'revoked' });
+      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-1', kind: 'runtime', status: 'revoked' });
       const result = await agentWebSocketService.validateAgentToken('cm_agent_revokedtoken');
       expect(result).toBeNull();
       expect(User.findOne).not.toHaveBeenCalled();
     });
 
     it('rejects a child token whose issuing credential is revoked', async () => {
-      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-2', status: 'active', parentId: 'daemon-1' });
+      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-2', kind: 'runtime', status: 'active', parentId: 'daemon-1' });
       AgentCredential.findById.mockReturnValue({
         select: () => ({ lean: () => Promise.resolve({ status: 'revoked' }) }),
       });
       const result = await agentWebSocketService.validateAgentToken('cm_agent_childtoken');
       expect(result).toBeNull();
+    });
+
+    it('rejects a daemon credential before falling back to a legacy token list', async () => {
+      AgentCredential.findOne.mockResolvedValue({ _id: 'daemon-cred', kind: 'daemon', status: 'active' });
+
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_poisoneddaemonhash');
+
+      expect(result).toBeNull();
+      expect(User.findOne).not.toHaveBeenCalled();
     });
 
     it('validates cm_agent tokens using hashed runtime tokens', async () => {

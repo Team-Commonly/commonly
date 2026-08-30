@@ -16,6 +16,10 @@ const User = require('../models/User');
 const ActivityService = require('../services/activityService');
 // eslint-disable-next-line global-require
 const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
+// eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
 
 interface Req {
   query?: Record<string, string>;
@@ -222,6 +226,9 @@ router.post('/seed/:podId', auth, async (req: Req, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = getAuthenticatedUserId(req);
+    const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can seed activities' });
     const result = await ActivityService.seedPodActivities(podId, userId) as { success?: boolean; error?: string };
     if (!result.success) return res.status(400).json({ error: result.error });
     return res.json(result);
@@ -236,8 +243,23 @@ router.post('/create', auth, async (req: Req, res: Res) => {
     const { type, action, content, podId, target, agentMetadata } = (req.body || {}) as Record<string, unknown>;
     const userId = getAuthenticatedUserId(req);
     if (!type || !action || !podId) return res.status(400).json({ error: 'type, action, and podId are required' });
+    // `approval_needed` is what `getPendingApprovals` selects into a pod's
+    // admins' decision queue. This is the generic client-facing create, so it
+    // must not be able to mint one: the caller supplies no `approval` subdoc
+    // and does not need to, because `Activity.approval.status` defaults to
+    // 'pending' and Mongoose materialises exactly the two fields that filter
+    // selects on.
+    if (type === 'approval_needed') return res.status(400).json({ error: 'approval_needed activities cannot be created through this route' });
+    // `podId` arrives as `unknown` off the body, so it is coerced before it
+    // reaches a query: a raw object would otherwise be interpreted as Mongo
+    // operators rather than an id.
+    const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can create activities in a pod' });
     const user = await User.findById(userId).select('username').lean() as { username?: string } | null;
-    const activity = await Activity.create({ type, actor: { id: userId, name: user?.username || 'Unknown', type: ActivityService.isAgentUsername(user?.username) ? 'agent' : 'human', verified: false }, action, content, podId, target, agentMetadata });
+    // Store the id of the pod that was actually resolved and authorised, not
+    // the body's copy of it.
+    const activity = await Activity.create({ type, actor: { id: userId, name: user?.username || 'Unknown', type: ActivityService.isAgentUsername(user?.username) ? 'agent' : 'human', verified: false }, action, content, podId: pod._id, target, agentMetadata });
     return res.json({ success: true, activity: { id: activity._id.toString(), type: activity.type, action: activity.action, content: activity.content, createdAt: activity.createdAt } });
   } catch (error) {
     console.error('Error creating activity:', error);

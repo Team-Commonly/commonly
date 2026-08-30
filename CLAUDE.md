@@ -200,7 +200,7 @@ cd backend && npm test                        # all passing (in-memory DBs)
 ./dev.sh up && ./dev.sh test:integration      # INTEGRATION_TEST=true against real DBs
 ./dev.sh cluster up && ./dev.sh cluster test  # full local k8s via kind
 
-npm run lint                                  # 0 errors
+cd backend && npm run lint:ts                 # backend .ts — 0 errors, gated in CI
 ```
 
 ### 🎯 If Tests Are Failing
@@ -385,9 +385,39 @@ cd frontend && npm run test:coverage
 
 ### Linting
 ```bash
-npm run lint        # both frontend + backend (0 errors expected)
-npm run lint:fix    # auto-fix
+cd backend && npm run lint:ts   # backend .ts — 0 errors, gated in CI + lint-staged
+npm run lint                    # cli && backend .js && frontend — stops at the first red leg, see below
+npm run lint:fix                # auto-fix
 ```
+
+**`npm run lint` is not a green command, and has not been for some time.** Only
+part of it is gated. What is actually enforced, measured 2026-08-28 at
+`ccacf0235`:
+
+| scope | state | gated? |
+|---|---|---|
+| backend `.ts` (310 files) | **0 errors** | CI (`Backend TypeScript lint`) + `lint-staged` |
+| backend `.js` (282 dirty, 277 under `__tests__`) | 2,279 errors | no |
+| cli | 0 errors | CI (`Run CLI lint`) |
+| frontend (199 `.ts`/`.tsx`, 3 `.js`) | **unmeasured in CI** — 17 errors / 160 warnings reported 2026-08-29 | no |
+
+The frontend row says *no* rather than `lint-staged` because that glob is
+`frontend/src/**/*.{js,jsx}` and matches **3** `__mocks__` stubs against 199
+`.ts`/`.tsx` — stale to zero exactly the way the backend globs were, one
+directory over. And `npm run lint` is `lint:cli && lint:backend &&
+lint:frontend`, so while the backend leg is red the frontend leg **never
+executes**; that error count came from running eslint directly, not from the
+script. Re-measuring it from a clean checkout is currently blocked: `npm ci`
+fails in `frontend/` because `package.json` declares three `@dicebear/*`
+dependencies the committed `package-lock.json` does not carry. Both the dead
+glob and the lockfile belong to the burn-down.
+
+Backend `.ts` reaches zero because 48 rules that fire on existing code are
+parked in `backend/.eslintrc.js` with their counts — 2,127 errors, 72%
+auto-fixable. Everything else in `airbnb-base` stays ON, so the gate catches
+the first NEW violation of any of several hundred rules. Re-enabling the parked
+48 and fixing the `.js` corpus is the burn-down task; do not describe either as
+green until it is done.
 
 ### MCP Playwright — UI Verification
 
@@ -464,7 +494,7 @@ These are prescriptive rules not derivable from reading the code:
 
 - **NEVER set `heartbeat.global` (or `fixedPod`) in `moltbot.json`.** openclaw v2026.3.7's `HeartbeatSchema` is `.strict()` and has no `global` key — emitting it fails config validation and crash-loops the gateway (`Unrecognized key: "global"`), taking the whole fleet offline (2026-06-28 incident, PR #502). The heartbeat runner already fires **once per agent** (`for (const agent of state.agents.values())`); there is no per-pod fan-out to suppress. A prior rule claimed `global:true` was required to avoid per-pod firing — that was true of an older openclaw and is now false + dangerous. `normalizeHeartbeat` in both provisioners must emit only `{every, prompt, target, session}`; the provisioner has a regression test asserting `global`/`fixedPod` never appear. **This rule is scoped to `moltbot.json` and says nothing about `AgentInstallation.config.heartbeat.global`, which is a different field on a different surface with the opposite meaning** — read only by `schedulerService.ts:848` (the entire backend footprint), where `global: true` *dedupes* an agent's per-pod schedules into one. Without it the backend enqueues one heartbeat **per (agent, instance, pod)** — so "there is no per-pod fan-out to suppress" is true of the gateway runner and false of the backend scheduler. Setting the Mongo field is supported; emitting the `moltbot.json` key is the thing that crash-loops the fleet. See AX audit entry 22.
 
-- **`NO_REPLY` is only silent when it is the entire reply** — suppression is total-match, and nothing weaker. Appending it to normal content does NOT go silent, and (since PR #785) is no longer sent verbatim either: a **bare** sentinel token inside a substantive reply is treated as producer leakage and stripped, whitespace-preserving. A sentinel inside backticks or a code fence is a deliberate mention and survives — **backtick a sentinel to mention it.** Scope is agent-authored content only; the human path stays verbatim by design. Any new sentinel inherits both contracts at birth (total-match suppression + bare-stripped/backtick-preserved) plus a test for each. `AgentMessageService.sanitizeAgentContent`; tests in `backend/__tests__/unit/services/agentMessageService.chatNoise.test.js`.
+- **`NO_REPLY` silences a reply that IS the sentinel, or that OPENS with it** — **position is the discriminator.** Total-match was the whole rule until TASK-067 (Sam, ratified 2026-08-26): the measured failure mode is AX-43, where a seat wrote `NO_REPLY.` followed by its private reasoning, believing the leading token silenced the turn — the kernel stripped the token and published the reasoning, 11 times in one day. A **leading** bare sentinel now suppresses the entire reply. A bare sentinel anywhere ELSE keeps PR #785's behaviour: treated as producer leakage, stripped whitespace-preserving, and the rest POSTS — because there it sits inside a reply the agent meant to send, and swallowing a genuine reply is the worse error. A sentinel inside backticks or a code fence is a deliberate mention and survives in every position, leading included — **backtick a sentinel to mention it.** Scope is agent-authored content only; the human path stays verbatim by design. Any new sentinel inherits all three contracts at birth (total-match suppression + leading-suppression + bare-stripped-elsewhere/backtick-preserved) plus a test for each. `AgentMessageService.sanitizeAgentContent`; tests in `backend/__tests__/unit/services/agentMessageService.chatNoise.test.js`.
 
 - **OpenClaw config**: use global `messages.queue`, not `messages.queue.byChannel.commonly`.
 

@@ -1344,7 +1344,11 @@ export const performRun = ({
           recordHandledEvent(agentName, event._id);
         }
         try {
-          await client.post(`/api/agents/runtime/events/${event._id}/ack`, { result });
+          const deliveryId = event.payload?.deliveryId;
+          await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
+            result,
+            ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
+          });
         } catch (ackErr) {
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
         }

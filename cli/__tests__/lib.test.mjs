@@ -461,8 +461,9 @@ describe('poller.js', () => {
     expect(received[1]._id).toBe('e2');
   });
 
-  test('posts to /api/agents/runtime/events/acknowledge after each event', async () => {
+  test('binds an ack to the delivery id returned by the poll', async () => {
     const events = [makeEvent('ack-1')];
+    events[0].payload.deliveryId = 'delivery-abc';
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
@@ -480,7 +481,10 @@ describe('poller.js', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/ack-1/ack',
-      expect.objectContaining({ result: { outcome: 'acknowledged' } }),
+      expect.objectContaining({
+        result: { outcome: 'acknowledged' },
+        deliveryId: 'delivery-abc',
+      }),
     );
   });
 

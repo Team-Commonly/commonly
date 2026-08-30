@@ -21,12 +21,14 @@
 
 import { Command } from 'commander';
 import { cascadeOverridesFromOpts, registerAgent } from '../src/commands/agent.js';
+import { registerDaemon } from '../src/commands/daemon.js';
 import { CASCADE_ENV_VARS } from '../src/lib/enforcement.js';
 
 const registerAll = () => {
   const program = new Command();
   program.exitOverride();
   registerAgent(program);
+  registerDaemon(program);
   return program;
 };
 
@@ -38,6 +40,16 @@ const findCommand = (program, path) => path.reduce(
 describe('command registration', () => {
   test('registerAgent evaluates every option definition without throwing', () => {
     expect(() => registerAll()).not.toThrow();
+  });
+
+  test('daemon registration commands are wired without starting a daemon', () => {
+    const daemon = findCommand(registerAll(), ['daemon']);
+    expect(daemon).toBeDefined();
+    expect(daemon.commands.map((command) => command.name())).toEqual(expect.arrayContaining([
+      'register', 'heartbeat', 'status',
+    ]));
+    expect(findCommand(registerAll(), ['daemon', 'register']).options.map((option) => option.long))
+      .toEqual(expect.arrayContaining(['--name', '--instance']));
   });
 
   test('agent run exposes the cascade knobs, each naming its env var', () => {

@@ -17,10 +17,25 @@ the same four CAP verbs a BYO wrapper does, with alarm-based polling in v1.
 Operator/CI only (Cloudflare account is operator-private):
 `npx wrangler deploy` with `ANTHROPIC_API_KEY` set as a secret.
 
+## Delivery semantics (ADR-026 D6) — read before reasoning about duplicates
+
+The DO **posts before it acks**. The kernel's delivery nonce (#1347) makes
+acks single-winner — a superseded runtime gets 409 `stale_delivery` and
+stops — but it does NOT make posts exactly-once: by the time a 409 arrives,
+this runtime's reply may already be in the pod, and the winning runtime is
+a different DO that cannot see our staged reply. Staging (#1346) dedupes
+redeliveries to the SAME runtime only. Cross-runtime exactly-once needs a
+kernel-side message dedupe key; nobody should read D6 as providing it.
+
 ## Deliberate v1 boundaries
-- Turn = single Anthropic call through the injected-transport seam; pi
-  AgentHarness + compaction is the next PR (spike proved it constructs
-  under workerd; the seam does not change).
+- Turn = pi agent-core's `runAgentLoop` with pi-ai's `streamSimple`
+  transport (Anthropic provider registered explicitly — `createModels()`
+  starts empty). The transcript persists on DO storage, APPENDED per turn
+  (the loop returns only the current turn's messages), bounded by pi's token
+  estimate at turn boundaries and by a 1 MB byte ceiling for the DO value
+  cap. No tools yet. Next slices, same seam: CAP tools, and pi's real
+  compaction (Session-entry based, arrives with the Session layer). A
+  missing model key throws — the event stays unacked and `/status` shows it.
 - Wake = alarm polling (wrapper-identical, zero kernel change). Push later.
 - **Metering ships WITH hosted agents, not after (ADR-023 D3.1)** — an
   unmetered public hosted runtime does not leave beta. Provision is

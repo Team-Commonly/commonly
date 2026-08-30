@@ -1281,7 +1281,9 @@
       "copy": "复制",
       "copied": "已复制！",
       "goToPod": "前往你的 Pod",
-      "installAnother": "再安装一个"
+      "installAnother": "再安装一个",
+      "runHere": "在这里运行",
+      "starting": "正在启动…"
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
@@ -1319,7 +1321,9 @@
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
-      "importFailed": "导入失败。"
+      "importFailed": "导入失败。",
+      "hostedCap": "你已有一个托管智能体（测试期允许 {{cap}} 个）。如需更多，请自带运行时。",
+      "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。"
     },
     "listen": {
       "title": "还差一步，否则它无法回复你",
@@ -1329,6 +1333,38 @@
       "verified": "✓ {{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "仍未收到 {{name}} 的接入信号。请在 agent 所在的机器上运行上面的命令，本页会自动确认。",
       "ctaWarning": "{{name}} 还没有在监听 —— 在上面的命令运行起来之前，@提及 不会得到回复。"
+    },
+    "mode": {
+      "label": "运行方式",
+      "hosted": "在这里运行",
+      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天 {{turns}} 轮。",
+      "byo": "自带运行时",
+      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
+      "recommended": "推荐",
+      "yours": "你的电脑",
+      "hostedMeta": "约 10 秒上线——无需终端与密钥",
+      "byoMeta": "MCP 令牌 + 编辑器代码片段"
+    },
+    "hosted": {
+      "heading": "运行中：",
+      "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
+      "starting": "正在启动 {{name}}…",
+      "running": "✓ {{name}} 已在监听。",
+      "slow": "{{name}} 尚未签到。可以先 @ 它，启动后会处理消息。",
+      "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。",
+      "statTurns": "轮 / 天",
+      "statAgents": "托管智能体",
+      "statLatency": "典型响应",
+      "statLatencyValue": "约 10 秒"
+    },
+    "preview": {
+      "title": "你的智能体",
+      "inPod": "位于 {{pod}}",
+      "draft": "尚未创建",
+      "starting": "正在启动…",
+      "live": "监听中",
+      "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
+      "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。"
     }
   },
   "agentProfile": {
@@ -1375,11 +1411,24 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
-      "updatedClause": " · 更新于 {{time}}",
+      "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有 {{count}} 条",
       "entriesRemembered": "条已记住的条目",
       "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
-      "lastUpdated": "最后更新于 {{time}}。",
+      "lastSaved": "最后保存至 {{section}}，{{time}}。",
+      "kinds": {
+        "durable": "长期记忆",
+        "bookkeeping": "内部记录"
+      },
+      "sections": {
+        "soul": "身份",
+        "long_term": "长期记忆",
+        "dedup_state": "去重状态",
+        "shared": "共享记忆",
+        "runtime_meta": "运行时元数据",
+        "daily": "每日记录",
+        "relationships": "关系"
+      },
       "none": "尚无记忆记录。"
     },
     "activity": {
@@ -1567,7 +1616,8 @@
       "agentCount_one": "{{count}} 个智能体",
       "agentCount_other": "{{count}} 个智能体",
       "projectCount_one": "{{count}} 个项目",
-      "projectCount_other": "{{count}} 个项目"
+      "projectCount_other": "{{count}} 个项目",
+      "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
       "hire": "+ 雇佣智能体",
@@ -1620,6 +1670,16 @@
       "loadFailed": "无法加载你的团队。",
       "redeemFailed": "无法兑换该邀请码。",
       "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
+    },
+    "tiers": {
+      "workingNow": "正在工作",
+      "team": "团队",
+      "quiet": "沉寂",
+      "internal": "内部席位",
+      "quietCount": "沉寂（{{count}}）",
+      "internalCount": "内部席位（{{count}}）",
+      "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
+      "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
     }
   },
   "billing": {

@@ -70,10 +70,13 @@ class BridgeBase {
   /**
    * Acknowledge an event
    */
-  async ackEvent(eventId) {
+  async ackEvent(eventId, deliveryId) {
     const res = await fetch(`${this.baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
       method: 'POST',
       headers: this.headers,
+      body: JSON.stringify(
+        typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {},
+      ),
     });
     if (!res.ok) {
       throw new Error(`Failed to ack event: ${res.status}`);
@@ -200,7 +203,7 @@ class BridgeBase {
       const events = await this.fetchEvents();
       for (const event of events) {
         if (this.wasProcessed(event._id)) {
-          await this.ackEvent(event._id);
+          await this.ackEvent(event._id, event.payload?.deliveryId);
           continue;
         }
         try {
@@ -209,7 +212,7 @@ class BridgeBase {
         } catch (err) {
           console.error(`Error handling event ${event._id}:`, err.message);
         }
-        await this.ackEvent(event._id);
+        await this.ackEvent(event._id, event.payload?.deliveryId);
       }
     } catch (error) {
       console.error('Poll failed:', error.message);

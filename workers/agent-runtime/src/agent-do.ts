@@ -9,13 +9,22 @@
 // Turn engine: pi agent-core with an injected fetch-based streamFn (the
 // spike's finding #2: transport is dependency-injected and workerd-clean).
 // v1 wires a minimal turn; harness/compaction integration follows.
-import { listEvents, ackEvent, getPodContext, postMessage, CapConfig, CapEvent } from './cap';
+import { listEvents, ackEvent, postMessage, StaleDeliveryError, CapConfig, CapEvent } from './cap';
+import { runTurn } from './turn';
+import { buildCapTools } from './tools';
+import { resolveStagedReply, commitStagedReply, stagedKey } from './staging';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
   COMMONLY_API_URL: string;
   // Operator admin secret gating every worker route (wrangler secret).
   RUNTIME_ADMIN_TOKEN?: string;
+  RUNTIME_STATUS_TOKEN?: string; // optional read-only bearer: GET /status only
+  // Optional model override (defaults in turn.ts).
+  MODEL_ID?: string;
+  // 'anthropic' (default) or 'deepseek' — which key/provider the runtime uses.
+  MODEL_PROVIDER?: string;
+  DEEPSEEK_API_KEY?: string;
   // Model transport for the injected streamFn. BYOK per instance; metering
   // ships WITH hosted agents, not after (ADR-023 D3.1) — see TODO below.
   ANTHROPIC_API_KEY?: string;
@@ -100,8 +109,21 @@ export class AgentRuntimeDO implements DurableObject {
             processed.push(event._id);
             await this.state.storage.put('processedEventIds', processed.slice(-200));
           }
-          await ackEvent(cfg, event._id);
+          const deliveryId = event.payload?.deliveryId;
+          await ackEvent(
+            cfg,
+            event._id,
+            typeof deliveryId === 'string' && deliveryId ? deliveryId : undefined,
+          );
         } catch (err) {
+          if (err instanceof StaleDeliveryError) {
+            // Superseded: the kernel handed this event to another runtime
+            // after our claim expired. Not an error to record as ours; stop
+            // this runtime's retry path. The processed-id ring is what keeps
+            // a later redelivery from re-running an already handled turn.
+            await this.state.storage.delete(stagedKey(event._id));
+            continue;
+          }
           batchErrors += 1;
           await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
         }
@@ -120,40 +142,49 @@ export class AgentRuntimeDO implements DurableObject {
     }
   }
 
+  // #1344 (Otto): a postMessage failure after a successful turn must not
+  // re-run the model on redelivery. The reply is STAGED on DO storage keyed
+  // by event id before posting; a redelivery of the same event posts the
+  // staged reply and skips the model entirely. Staged entries are cleared
+  // once the post succeeds; orphans from a stuck post are pruned after
+  // STAGE_TTL_MS on the next stage (staging.ts), so storage cannot grow.
   private async handleEvent(cfg: CapConfig, event: CapEvent): Promise<void> {
     const podId = event.podId || event.payload?.podId;
     if (!podId) return;
     if (event.type !== 'chat.mention' && event.type !== 'first_contact') return;
-    const context = await getPodContext(cfg, podId);
-    const reply = await this.runTurn(String(event.payload?.content || ''), context);
+    // No eager context fetch: the mention is the prompt and read_pod_context
+    // earns the read when the model needs it.
+    const { reply } = await resolveStagedReply(
+      this.state.storage,
+      event._id,
+      () => this.runTurn(String(event.payload?.content || ''), buildCapTools(cfg, podId)),
+    );
     // NO_REPLY contract: total-match suppression, same as every runtime.
-    if (reply && reply.trim() !== 'NO_REPLY') {
+    if (reply.trim() !== 'NO_REPLY') {
       await postMessage(cfg, podId, reply);
     }
+    await commitStagedReply(this.state.storage, event._id);
   }
 
-  // v1 turn: direct Anthropic call through the injected-transport seam the
-  // spike proved. pi AgentHarness + compaction integration is the next PR —
-  // the seam (string in, string out, context available) does not change.
-  private async runTurn(prompt: string, _context: unknown): Promise<string> {
-    const key = this.env.ANTHROPIC_API_KEY;
-    if (!key) return 'NO_REPLY';
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt || 'You were woken with no content.' }],
-        system: 'You are a Commonly hosted agent. Reply concisely and usefully to the pod message you were mentioned in. If no reply is genuinely needed, reply with exactly NO_REPLY.',
-      }),
-    });
-    if (!res.ok) throw new Error(`anthropic ${res.status}`);
-    const body = (await res.json()) as { content?: { text?: string }[] };
-    return body.content?.map((c) => c.text || '').join('') || 'NO_REPLY';
+  // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
+  // transport, tail-bounded context. Pod context is folded into the prompt
+  // as text until CAP tools land (next slice).
+  private async runTurn(prompt: string, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
+    // No silent NO_REPLY on a missing key — runTurn throws, the event stays
+    // unacked, and /status shows the misconfiguration (Otto, #1339).
+    const provider = (this.env.MODEL_PROVIDER === 'deepseek' ? 'deepseek' : 'anthropic') as 'anthropic' | 'deepseek';
+    const key = (provider === 'deepseek' ? this.env.DEEPSEEK_API_KEY : this.env.ANTHROPIC_API_KEY) || '';
+    const userText = `You were mentioned with: ${prompt}`;
+    return runTurn({
+      storage: this.state.storage,
+      apiKey: key,
+      provider,
+      modelId: this.env.MODEL_ID,
+      tools,
+      // Contract the model must know (first live turn narrated a missing
+      // posting tool): the final answer IS the pod message — the runtime posts
+      // it. There is no posting tool to look for and nothing to say about tools.
+      systemPrompt: 'You are a Commonly hosted agent living in a shared pod with humans and other agents. Your final answer is posted into the pod automatically by the runtime — write it as the message itself, addressed to the pod. Do not look for, mention, or apologize about posting tools. Reply concisely and usefully to the message you were mentioned in. Use read_pod_context when the mention alone is not enough. If no reply is genuinely needed, reply with exactly NO_REPLY.',
+    }, userText);
   }
 }

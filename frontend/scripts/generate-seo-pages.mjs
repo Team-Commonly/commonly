@@ -24,6 +24,12 @@ const escapeHtml = (value) => String(value)
 
 const list = (items) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
 
+const renderGuideTable = (table) => `
+  <div class="seo-table-wrap"><table class="seo-table">
+    <thead><tr>${table.headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join('')}</tr></thead>
+    <tbody>${table.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+
 const replaceMarkedSection = (template, start, end, content) => {
   const startIndex = template.indexOf(start);
   const endIndex = template.indexOf(end);
@@ -94,7 +100,16 @@ const staticDocument = (template) => {
     navigationRuntimeEnd,
   );
 
-  return removeModulePreloads(removeRuntimeEntryScript(withoutNavigationRuntime));
+  const withoutRuntime = removeModulePreloads(removeRuntimeEntryScript(withoutNavigationRuntime));
+  const headEnd = withoutRuntime.indexOf('</head>');
+  if (headEnd < 0) {
+    throw new Error('Missing closing head tag in the static SEO page template.');
+  }
+
+  // Static-only pages deliberately omit the React bundle. The regular template
+  // hides #seo-page until React takes over, so reveal that real page content
+  // again for browsers as well as text-only crawlers.
+  return `${withoutRuntime.slice(0, headEnd)}<style>#seo-page { display: block !important; }</style>${withoutRuntime.slice(headEnd)}`;
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
@@ -307,7 +322,9 @@ const renderGuide = (guide) => {
       ${(section.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}
       ${section.bullets?.length ? list(section.bullets) : ''}
       ${section.orderedItems?.length ? `<ol>${section.orderedItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ol>` : ''}
+      ${section.tables?.map(renderGuideTable).join('') || ''}
       ${section.codeBlocks?.map((block) => `<pre class="seo-code"><code${block.language ? ` class="language-${escapeHtml(block.language)}"` : ''}>${escapeHtml(block.code)}</code></pre>`).join('') || ''}
+      ${section.links?.length ? `<p class="seo-source-links">${section.links.map((link) => `<a href="${escapeHtml(link.path)}"${link.external ? ' rel="noreferrer"' : ''}>${escapeHtml(link.label)}</a>`).join(' · ')}</p>` : ''}
     </section>`).join('');
   const faq = guide.faq.map((item) => `
     <article class="seo-card"><h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p></article>`).join('');
@@ -388,42 +405,67 @@ const metadata = ({ title, description, path, schema, ogType = 'website', datePu
 };
 
 export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }) => {
+  const organizationId = `${siteUrl}/#organization`;
+  const websiteId = `${siteUrl}/#website`;
   const organization = {
     '@type': 'Organization',
+    '@id': organizationId,
     name: 'Commonly',
+    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
     url: `${siteUrl}/`,
     logo: `${siteUrl}/favicon.svg`,
-    sameAs: ['https://github.com/Team-Commonly/commonly'],
+    description: 'Commonly (commonly.me) is a shared workspace platform where humans and AI agents from any origin work together in pods with shared memory, tasks, and messaging.',
+    sameAs: [
+      'https://github.com/Team-Commonly/commonly',
+      'https://www.npmjs.com/package/@commonlyai/mcp',
+      'https://discord.gg/NsS3fzsJDw',
+    ],
+  };
+  const website = {
+    '@type': 'WebSite',
+    '@id': websiteId,
+    name: 'Commonly',
+    alternateName: 'Commonly.me',
+    url: `${siteUrl}/`,
+    publisher: { '@id': organizationId },
   };
   const softwareApplication = {
     '@type': 'SoftwareApplication',
     name: 'Commonly',
+    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
     url: `${siteUrl}/`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
     description: landing.hero.lede,
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
+    publisher: { '@id': organizationId },
   };
-  const webPage = (title, description, path) => ({
-    '@context': 'https://schema.org',
+  const webPageNode = (title, description, path) => ({
     '@type': 'WebPage',
+    '@id': pageUrl(path),
     name: title,
     description,
     url: pageUrl(path),
-    isPartOf: { '@type': 'WebSite', name: 'Commonly', url: `${siteUrl}/` },
+    isPartOf: { '@id': websiteId },
+  });
+  const webPage = (title, description, path) => ({
+    '@context': 'https://schema.org',
+    '@graph': [organization, website, webPageNode(title, description, path)],
   });
 
-  const pages = [{
+  const landingPage = {
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly — chat with your agents, ship real work',
     description: 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.',
     content: renderLanding(landing, useCases, guides),
-    schema: {
-      '@context': 'https://schema.org',
-      '@graph': [organization, softwareApplication],
-    },
-  }, {
+  };
+  landingPage.schema = {
+    '@context': 'https://schema.org',
+    '@graph': [organization, website, softwareApplication, webPageNode(landingPage.title, landingPage.description, landingPage.path)],
+  };
+
+  const pages = [landingPage, {
     path: '/compare/',
     outputPath: 'compare/index.html',
     title: 'Commonly vs the alternatives | Commonly',
@@ -458,7 +500,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const guidePages = Object.entries(guides).map(([id, guide]) => {
     const path = `/guides/${id}/`;
     const provenance = guideProvenance(guide);
-    const author = { '@type': 'Organization', name: provenance.author, url: `${siteUrl}/` };
+    const author = { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
     const reviewer = { '@type': 'Organization', name: provenance.reviewer, url: `${siteUrl}/` };
     return {
       path,
@@ -481,7 +523,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
           author,
           datePublished: provenance.datePublished,
           dateModified: provenance.dateModified,
-          publisher: organization,
+          publisher: { '@id': organizationId },
         }, {
           '@type': 'WebPage',
           '@id': pageUrl(path),
@@ -489,8 +531,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
           description: guide.description,
           url: pageUrl(path),
           reviewedBy: reviewer,
-          isPartOf: { '@type': 'WebSite', name: 'Commonly', url: `${siteUrl}/` },
-        }],
+          isPartOf: { '@id': websiteId },
+        }, organization, website],
       },
     };
   });

@@ -21,6 +21,9 @@ const bootPath = window.location.pathname;
 if (bootPath === '/' || bootPath.startsWith('/v2')) {
   document.body.classList.add('v2-canvas');
 }
+if (bootPath === '/guides' || bootPath.startsWith('/guides/')) {
+  document.body.classList.add('guide-canvas');
+}
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(

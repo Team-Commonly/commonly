@@ -72,7 +72,9 @@ jobs:
           npm ci --include=dev
           cd ../cli
           npm ci --include=dev
-          cd ..
+          cd ../workers/agent-runtime
+          npm ci --include=dev
+          cd ../..
 
       - name: Verify moltbot tool contract
         run: npm run verify:moltbot-tools
@@ -125,6 +127,20 @@ jobs:
           cd commonly-mcp
           npm test
 
+      # Backend `.ts` lint. TASK-024 measured this reaching 0 of 286 files:
+      # `npm run lint` was scoped `--ext .js`, every backend `lint-staged` glob
+      # had gone stale to zero as its files were converted, and no CI job ran
+      # backend lint at all.
+      #
+      # Deliberately `lint:ts`, NOT `npm run lint`. The backend `.js` corpus is
+      # 2,279 errors across 282 files (277 of them under `__tests__`) and has
+      # been red on main for some time — wiring the existing script in would
+      # fail on the first run. That half is in the burn-down task, not here.
+      - name: Backend TypeScript lint
+        run: |
+          cd backend
+          npm run lint:ts
+
       - name: Run CLI lint
         run: |
           cd cli
@@ -133,6 +149,12 @@ jobs:
       - name: Run CLI tests
         run: |
           cd cli
+          npm test
+
+      - name: Run hosted-runtime tests (ADR-023 W2)
+        run: |
+          cd workers/agent-runtime
+          npm run typecheck
           npm test
 
       - name: Upload coverage report

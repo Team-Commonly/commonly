@@ -196,12 +196,35 @@ describe('stalledConnectService.scan', () => {
     expect(doc.producer).toBe('timer');
   });
 
+  it('finds the reachable User-token-only seat, even when the installation token store is empty', async () => {
+    // `issueRuntimeTokenForAgent` returns an existing User-row token without
+    // backfilling installation.runtimeTokens. Model Mongo's former existence
+    // predicate so restoring it makes this end-to-end scan regression fail.
+    const userTokenOnlyInstall = install({ runtimeTokens: [] });
+    setup({ installs: [userTokenOnlyInstall], userTokens: [{ createdAt: OLD_TOKEN }] });
+    mockInstallFind.mockImplementation((filter) => ({
+      limit: () => ({
+        lean: () => Promise.resolve(filter['runtimeTokens.0'] ? [] : [userTokenOnlyInstall]),
+      }),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    expect(r.nudged).toHaveLength(1);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockEpCreate.mock.calls[0][0]).toEqual(expect.objectContaining({
+      tokenIssuedAt: OLD_TOKEN,
+      tokenSource: 'user',
+    }));
+  });
+
   it('only considers BYO seats — nothing else can derive never-connected', async () => {
     setup();
     await scan({ now: NOW });
 
     const [filter] = mockInstallFind.mock.calls[0];
     expect(filter.status).toBe('active');
+    expect(filter).not.toHaveProperty('runtimeTokens.0');
     expect(filter.$or).toEqual(expect.arrayContaining([{ 'config.runtime.host': 'byo' }]));
   });
 });

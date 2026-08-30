@@ -81,7 +81,7 @@ describe('performRun', () => {
   });
 
   test('event with content → adapter.spawn → message posted → event acked', async () => {
-    const events = [makeEvent()];
+    const events = [makeEvent({ payload: { content: 'hello from tester', deliveryId: 'delivery-abc' } })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
@@ -121,7 +121,7 @@ describe('performRun', () => {
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
-      { result: { outcome: 'posted' } },
+      { result: { outcome: 'posted' }, deliveryId: 'delivery-abc' },
     );
   });
 

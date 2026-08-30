@@ -14,6 +14,7 @@ jest.mock('../../../models/User', () => ({
 }));
 jest.mock('../../../models/Pod', () => ({}));
 jest.mock('../../../models/AgentMemory', () => ({}));
+jest.mock('../../../models/AgentProfile', () => ({}));
 jest.mock('../../../models/AgentRun', () => ({}));
 jest.mock('../../../models/PodAsset', () => ({}));
 jest.mock('../../../models/pg/Message', () => ({}));

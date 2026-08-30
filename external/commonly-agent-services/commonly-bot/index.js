@@ -1,5 +1,6 @@
 const fs = require('fs');
 const LiteLLMClient = require('../shared/litellm-client');
+const { ackBodyForEvent } = require('../shared/delivery-nonce');
 const baseUrl = process.env.COMMONLY_BASE_URL || 'http://localhost:5000';
 const token = process.env.COMMONLY_AGENT_TOKEN;
 const userToken = process.env.COMMONLY_USER_TOKEN;
@@ -599,10 +600,13 @@ const persistSummary = async (runtimeToken, podId, {
   return res.json();
 };
 
-const ackEvent = async (runtimeToken, eventId) => {
+const ackEvent = async (runtimeToken, event) => {
+  const eventId = event?._id;
+  if (!eventId) throw new Error('Cannot acknowledge an event without an id');
   const res = await fetch(`${baseUrl}/api/agents/runtime/events/${eventId}/ack`, {
     method: 'POST',
     headers: buildHeaders(runtimeToken),
+    body: JSON.stringify(ackBodyForEvent(event)),
   });
   if (!res.ok) {
     throw new Error(`Failed to ack event: ${res.status}`);
@@ -630,7 +634,7 @@ const handleEvent = async (account, event) => {
     });
 
     if (!digest) {
-      await ackEvent(runtimeToken, event._id);
+      await ackEvent(runtimeToken, event);
       return;
     }
 
@@ -729,7 +733,7 @@ const handleEvent = async (account, event) => {
       }
     }
 
-    await ackEvent(runtimeToken, event._id);
+    await ackEvent(runtimeToken, event);
     return;
   }
 
@@ -746,7 +750,7 @@ const handleEvent = async (account, event) => {
       podName: context?.pod?.name || 'this pod',
     });
     if (!synthetic?.summary) {
-      return ackEvent(runtimeToken, event._id);
+      return ackEvent(runtimeToken, event);
     }
 
     if (silentDelivery) {
@@ -758,7 +762,7 @@ const handleEvent = async (account, event) => {
         messageCount: synthetic.messageCount || 0,
         eventId: event._id?.toString?.() || event._id,
       });
-      return ackEvent(runtimeToken, event._id);
+      return ackEvent(runtimeToken, event);
     }
 
     const content = `[BOT_MESSAGE]${JSON.stringify(synthetic)}`;
@@ -768,20 +772,20 @@ const handleEvent = async (account, event) => {
       summaryType: 'chats',
       messageCount: synthetic.messageCount,
     });
-    return ackEvent(runtimeToken, event._id);
+    return ackEvent(runtimeToken, event);
   }
 
   if (!event?.payload?.summary) {
-    return ackEvent(runtimeToken, event._id);
+    return ackEvent(runtimeToken, event);
   }
 
   if (silentDelivery) {
-    return ackEvent(runtimeToken, event._id);
+    return ackEvent(runtimeToken, event);
   }
 
   const content = formatIntegrationSummary(event.payload.summary, event.payload.source);
   if (!content) {
-    return ackEvent(runtimeToken, event._id);
+    return ackEvent(runtimeToken, event);
   }
 
   await postMessage(runtimeToken, event.podId, content, {
@@ -791,7 +795,7 @@ const handleEvent = async (account, event) => {
     messageCount: event.payload?.summary?.messageCount || 0,
   });
 
-  return ackEvent(runtimeToken, event._id);
+  return ackEvent(runtimeToken, event);
 };
 
 const pollAccount = async (account) => {

@@ -20,7 +20,11 @@
 // ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
-import { filterSectionsByVisibility } from '../services/agentMemoryService';
+import {
+  filterSectionsByVisibility,
+  getLastAgentMemoryWrite,
+  coarsenAgentMemoryWrite,
+} from '../services/agentMemoryService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -30,6 +34,8 @@ const User = require('../models/User');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentProfile = require('../models/AgentProfile');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentMemory = require('../models/AgentMemory');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -129,11 +135,40 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
       instanceId,
       status: 'active',
     })
-      .select('podId')
+      // A public profile is identity-wide, while these two label fields are
+      // pod-scoped. Sort so the first active attachment is deterministic; its
+      // profile label has the same precedence as the Your Team payload.
+      .sort({ createdAt: 1, _id: 1 })
+      .select('podId displayName')
       .lean();
     const ownerPodIds = (installs as Array<{ podId?: { toString(): string } }>)
       .map((i) => (i?.podId ? String(i.podId) : ''))
       .filter(Boolean);
+    // AgentProfile.name and AgentInstallation.displayName are the curated
+    // labels written at install time. The User row's username is a stable
+    // runtime seat identifier, not necessarily a human-facing name. Pair each
+    // profile with its active installation so a stale, detached profile cannot
+    // affect this public identity card.
+    const scopedProfiles = ownerPodIds.length
+      ? await AgentProfile.find({
+        podId: { $in: ownerPodIds },
+        agentName,
+        instanceId,
+        status: 'active',
+      }).select('podId name').lean()
+      : [];
+    const profileNameByPodId = new Map(
+      (scopedProfiles as Array<{ podId?: unknown; name?: string }>).map((profile) => [
+        String(profile.podId),
+        typeof profile.name === 'string' ? profile.name.trim() : '',
+      ]),
+    );
+    const scopedDisplayName = (installs as Array<{ podId?: unknown; displayName?: string }>)
+      .map((installation) => (
+        profileNameByPodId.get(String(installation.podId))
+        || (typeof installation.displayName === 'string' ? installation.displayName.trim() : '')
+      ))
+      .find(Boolean);
     const publicPodDocs = ownerPodIds.length
       ? await Pod.find({ _id: { $in: ownerPodIds }, publicRead: true }).select('name').lean()
       : [];
@@ -155,19 +190,26 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
     // Empty requester-pods ⇒ filterSectionsByVisibility returns ONLY public
     // sections. Never read record.content (the unfiltered v1 blob).
     // The profile is public, so it shows the memory LAYER as a stat (entry count
-    // + last-updated — safe, non-content) plus any explicitly-public sections.
+    // + the KIND and time of the last agent-authored write — safe, non-content,
+    // and deliberately not the section name) plus any explicitly-public
+    // sections. The envelope's updatedAt is not used: system writers bump it.
     // Entry counts reveal size, never content. Private/pod memory never leaks.
     let publicMemory: unknown = {};
     let hasMemory = false;
-    let memoryUpdatedAt: unknown = null;
+    // Coarse kind, never the section name: this route is unauthenticated, and
+    // which housekeeping section a seat last touched is runtime detail rather
+    // than public identity. The owner/admin memory view keeps the exact section.
+    let lastAgentWrite: ReturnType<typeof coarsenAgentMemoryWrite> = null;
     let memoryEntryCount = 0;
     const memRecord = await AgentMemory.findOne({ agentName, instanceId })
-      .select('sections updatedAt')
+      .select('sections')
       .lean();
     if (memRecord) {
       const sections = (memRecord as Record<string, unknown>).sections;
       hasMemory = true;
-      memoryUpdatedAt = (memRecord as Record<string, unknown>).updatedAt || null;
+      lastAgentWrite = coarsenAgentMemoryWrite(getLastAgentMemoryWrite(
+        sections as Parameters<typeof getLastAgentMemoryWrite>[0],
+      ));
       // Count entries across sections (size only — never content).
       for (const v of Object.values((sections || {}) as Record<string, unknown>)) {
         if (Array.isArray(v)) memoryEntryCount += v.length;
@@ -198,9 +240,11 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
       agent: {
         agentName,
         instanceId,
-        displayName: resolveAgentDisplayLabel(user, user.username),
+        displayName: scopedDisplayName || resolveAgentDisplayLabel(user, user.username),
         profilePicture: user.profilePicture || 'default',
-        runtime: bm.runtimeId ? String(bm.runtimeId) : (bm.agentName ? String(bm.agentName) : null),
+        // agentName is a legacy identity field, not a runtime descriptor. Falling
+        // back to it rendered the raw seat name as a misleading runtime badge.
+        runtime: bm.runtimeId ? String(bm.runtimeId) : null,
         officialAgent: !!bm.officialAgent,
         description: bm.description ? String(bm.description) : undefined,
         capabilities: Array.isArray(bm.capabilities) ? (bm.capabilities as string[]) : [],
@@ -217,7 +261,7 @@ router.get('/:agentName/:instanceId?', async (req: Req, res: Res) => {
       memory: {
         has: hasMemory,
         entryCount: memoryEntryCount,
-        updatedAt: memoryUpdatedAt,
+        lastAgentWrite,
         sections: publicMemory,
       },
       activity,
