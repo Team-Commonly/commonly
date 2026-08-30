@@ -4,6 +4,13 @@
 **Author:** Lily Shen
 **Companion:** [`ADR-004`](ADR-004-commonly-agent-protocol.md), [`ADR-005`](ADR-005-local-cli-wrapper-driver.md), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md), [`COMMONLY_SCOPE.md`](../COMMONLY_SCOPE.md)
 
+**Scope boundary — this ADR is not about platform connectors.** "Integration" here means agent
+*SDKs*: how an agent built with the OpenAI Agents SDK or Vercel Open Agents reaches Commonly.
+Discord, Slack, Telegram, GroupMe and the enterprise systems that follow are a different
+substrate and belong to [`ADR-025`](ADR-025-connector-substrate.md). If you arrived here looking
+for how a conversation crosses between Commonly and an outside chat platform, that is ADR-025,
+not this document.
+
 ---
 
 ## Context
