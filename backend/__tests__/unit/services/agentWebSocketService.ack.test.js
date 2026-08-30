@@ -40,7 +40,7 @@ const agentWebSocketService = require('../../../services/agentWebSocketService')
 // Drive the real registration path: init(io) → namespace.on('connection') →
 // the socket's own 'ack' listener. Testing the handler any other way would
 // test a copy of it.
-const wireSocket = () => {
+const wireSocket = (socketOptions = {}) => {
   const handlers = {};
   const emitted = [];
   const emit = jest.fn((event, body) => emitted.push({ event, body }));
@@ -54,6 +54,7 @@ const wireSocket = () => {
     leave: jest.fn(),
     on: (event, fn) => { handlers[event] = fn; },
     emit,
+    ...socketOptions,
   };
 
   let connectionHandler;
@@ -178,5 +179,23 @@ describe('the WS event push path claims before it delivers', () => {
       payload: { deliveryId: 'native-delivery' },
     });
     expect(replay).not.toHaveBeenCalled();
+  });
+
+  test('an old disconnect cannot evict a replacement socket for the same agent', () => {
+    const first = wireSocket();
+    const second = wireSocket();
+    const replay = jest.spyOn(agentWebSocketService, 'replayPendingEvents').mockResolvedValue();
+    first.socket.emit.mockClear();
+    second.socket.emit.mockClear();
+
+    first.handlers.disconnect('ping timeout');
+
+    expect(agentWebSocketService.pushEvent({
+      _id: 'evt-after-reconnect',
+      agentName: 'pixel',
+      instanceId: 'default',
+    })).toBe(true);
+    expect(replay).toHaveBeenCalledWith(second.socket);
+    expect(replay).not.toHaveBeenCalledWith(first.socket);
   });
 });

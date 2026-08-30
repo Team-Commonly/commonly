@@ -191,7 +191,10 @@ class AgentWebSocketService {
 
       socket.on('pong', () => {
         const data = this.connectedAgents.get(socket.agentKey);
-        if (data) {
+        // A reconnect can replace this socket for the same logical agent
+        // before the old connection finally times out. Do not let the old
+        // socket refresh the replacement's liveness timestamp.
+        if (data?.socket === socket) {
           data.lastPong = Date.now();
         }
       });
@@ -242,7 +245,13 @@ class AgentWebSocketService {
 
       socket.on('disconnect', (reason: unknown) => {
         console.log(`[agent-ws] Agent disconnected: ${socket.agentKey} (${reason})`);
-        this.connectedAgents.delete(socket.agentKey);
+        // A later connection for this agent may already have replaced this
+        // socket in the map. Only the socket that still owns the entry may
+        // remove it; otherwise an old timeout drops the live connection and
+        // future queue wakes have nowhere to go.
+        if (this.connectedAgents.get(socket.agentKey)?.socket === socket) {
+          this.connectedAgents.delete(socket.agentKey);
+        }
       });
 
       socket.emit('connected', {
