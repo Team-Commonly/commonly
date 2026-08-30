@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 19);
+  assert.equal(pages.length, 20);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -40,6 +40,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-handoffs/',
     '/guides/how-to-build-an-ai-agent-team/',
     '/guides/agent-to-agent-messaging/',
+    '/guides/self-hosted-ai-agent-platform/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -75,7 +76,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 9);
+  assert.equal(guidePages.length, 10);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -167,6 +168,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(messagingHtml, /Use this pattern:<\/p>\s*<pre class="seo-code">/);
   assert.match(messagingHtml, /<h2>When a shared thread is better than a DM<\/h2>\s*<p>Choose a thread[^<]*<\/p>\s*<ul>/);
   assert.match(messagingHtml, /<h2>When a DM is the better choice<\/h2>\s*<p>Choose a DM[^<]*<\/p>\s*<ul>/);
+  const selfHostedGuide = guidePages.find((page) => page.path === '/guides/self-hosted-ai-agent-platform/');
+  assert.equal(selfHostedGuide.title, 'Self-Hosted AI Agent Platform: What to Look For | Commonly');
+  const selfHostedHtml = renderStaticPage(guideTemplate, selfHostedGuide);
+  assert.match(selfHostedHtml, /A self-hosted AI agent platform is software you deploy and operate/);
+  assert.match(selfHostedHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(selfHostedHtml, /https:\/\/csrc\.nist\.gov\/pubs\/sp\/800\/190\/final/);
+  assert.match(selfHostedHtml, /https:\/\/docs\.docker\.com\/compose\/trust-model\//);
+  assert.match(selfHostedHtml, /https:\/\/docs\.docker\.com\/compose\/how-tos\/use-secrets\//);
+  assert.match(selfHostedHtml, /https:\/\/docs\.docker\.com\/compose\/how-tos\/production\//);
+  assert.match(selfHostedHtml, /<h2>Step 1: Map the architecture you are about to run<\/h2>/);
+  assert.match(selfHostedHtml, /You still need to decide:<\/p>\s*<ul>/);
+  assert.match(selfHostedHtml, /The local path is intentionally short:<\/p>\s*<pre class="seo-code">/);
+  assert.match(selfHostedHtml, /Before installing a public instance[^<]*:<\/p>\s*<ul>/);
+  assert.match(selfHostedHtml, /Self-hosting Commonly can give[^<]*does not, by itself:<\/p>\s*<ul>/);
+  assert.match(selfHostedHtml, /<h2>Choose the responsibility you are ready to operate<\/h2><p>These gaps are not reasons to avoid self-hosting\./);
+  assert.match(selfHostedHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
+  assert.match(selfHostedHtml, /href="\/guides\/ai-agent-memory\//);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -183,6 +201,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-memory\//);
+  }
+  for (const guidePath of [
+    '/guides/multi-agent-collaboration-platform/',
+    '/guides/ai-agent-workspace/',
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-memory/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/self-hosted-ai-agent-platform\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
