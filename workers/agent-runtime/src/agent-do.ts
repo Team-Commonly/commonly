@@ -9,10 +9,10 @@
 // Turn engine: pi agent-core with an injected fetch-based streamFn (the
 // spike's finding #2: transport is dependency-injected and workerd-clean).
 // v1 wires a minimal turn; harness/compaction integration follows.
-import { listEvents, ackEvent, postMessage, CapConfig, CapEvent } from './cap';
+import { listEvents, ackEvent, postMessage, StaleDeliveryError, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
 import { buildCapTools } from './tools';
-import { resolveStagedReply, commitStagedReply } from './staging';
+import { resolveStagedReply, commitStagedReply, stagedKey } from './staging';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
@@ -108,8 +108,21 @@ export class AgentRuntimeDO implements DurableObject {
             processed.push(event._id);
             await this.state.storage.put('processedEventIds', processed.slice(-200));
           }
-          await ackEvent(cfg, event._id);
+          const deliveryId = event.payload?.deliveryId;
+          await ackEvent(
+            cfg,
+            event._id,
+            typeof deliveryId === 'string' && deliveryId ? deliveryId : undefined,
+          );
         } catch (err) {
+          if (err instanceof StaleDeliveryError) {
+            // Superseded: the kernel handed this event to another runtime
+            // after our claim expired. Not an error to record as ours; stop
+            // this runtime's retry path. The processed-id ring is what keeps
+            // a later redelivery from re-running an already handled turn.
+            await this.state.storage.delete(stagedKey(event._id));
+            continue;
+          }
           batchErrors += 1;
           await this.state.storage.put('lastError', `event ${event._id}: ${String((err as Error).message)}`);
         }
