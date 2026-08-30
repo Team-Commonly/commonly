@@ -15,8 +15,17 @@
 process.env.PG_HOST = '';
 process.env.JWT_SECRET = 'tasks-claim-lease-test-secret';
 
+// Partial mock so the renewal-gating tests below can assert WHO gets woken.
+// Everything else is the real module: emitTaskUpdated stays a socket no-op in
+// tests, and notifyPodAgents becomes observable without changing behavior.
+jest.mock('../../services/taskEventService', () => {
+  const actual = jest.requireActual('../../services/taskEventService');
+  return { ...actual, notifyPodAgents: jest.fn().mockResolvedValue(undefined) };
+});
+
 const express = require('express');
 const request = require('supertest');
+const { notifyPodAgents } = require('../../services/taskEventService');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const User = require('../../models/User');
@@ -277,6 +286,51 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
       await liveHeld();
       const both = await list(rivalToken, '?status=claimed&claimable=true');
       expect(both.body.tasks.map((t) => t.taskId)).toEqual(['T-1']);
+    });
+  });
+
+  // A lease timestamp is not an event. Renewals fanned a wake to every seat
+  // in the pod, each burning a model turn to conclude "nothing new" — 4 wakes
+  // for one task in one session, with seats meta-discussing the noise
+  // (measured in Sharpen, 2026-08-25). The board UI still updates via the
+  // socket emit; only the agent fan-out is gated.
+  describe('renewal wakes nobody — the fan-out fires only on news', () => {
+    beforeEach(() => {
+      notifyPodAgents.mockClear();
+    });
+
+    test('a fresh claim fans out; the holder renewing does not', async () => {
+      await seedTask();
+      await claim(ownerToken);
+      expect(notifyPodAgents).toHaveBeenCalledTimes(1);
+
+      const renew = await claim(ownerToken);
+      expect(renew.status).toBe(200);
+      expect(notifyPodAgents).toHaveBeenCalledTimes(1); // unchanged
+    });
+
+    test('a takeover after a lapse fans out — a NEW holder is news', async () => {
+      await seedTask();
+      await claim(ownerToken);
+      await Task.updateOne(
+        { podId: pod._id, taskId: 'T-1' },
+        { $set: { claimExpiresAt: new Date(Date.now() - 1000) } },
+      );
+      notifyPodAgents.mockClear();
+      const res = await claim(rivalToken);
+      expect(res.status).toBe(200);
+      expect(notifyPodAgents).toHaveBeenCalledTimes(1);
+    });
+
+    test('re-taking a task you yourself lapsed from is a continuation, not news', async () => {
+      await seedTask({
+        status: 'pending',
+        claimedBy: null,
+        lapsedFrom: owner._id.toString(),
+      });
+      const res = await claim(ownerToken);
+      expect(res.status).toBe(200);
+      expect(notifyPodAgents).not.toHaveBeenCalled();
     });
   });
 });

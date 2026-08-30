@@ -7,12 +7,14 @@
     "start": "docker compose up",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm start",
-    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint": "npm run lint:cli && npm run lint:backend && npm run lint:frontend",
     "lint:backend": "cd backend && npm run lint",
     "lint:frontend": "cd frontend && npm run lint",
-    "lint:fix": "npm run lint:fix:backend && npm run lint:fix:frontend",
+    "lint:cli": "cd cli && npm run lint",
+    "lint:fix": "npm run lint:fix:cli && npm run lint:fix:backend && npm run lint:fix:frontend",
     "lint:fix:backend": "cd backend && npm run lint:fix",
     "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "lint:fix:cli": "cd cli && npm run lint:fix",
     "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
     "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
     "prepare": "husky"
@@ -25,11 +27,14 @@
     "wait-on": "^9.0.4"
   },
   "lint-staged": {
-    "backend/{routes/auth.js,routes/integrations.js,routes/pods.js,middleware/auth.js,models/User.js,controllers/*.js}": [
+    "backend/**/*.ts": [
       "./backend/node_modules/.bin/eslint --fix"
     ],
     "frontend/src/**/*.{js,jsx}": [
       "./frontend/node_modules/.bin/eslint --fix"
+    ],
+    "cli/src/**/*.js": [
+      "./cli/node_modules/.bin/eslint --fix"
     ]
   }
 }

@@ -43,6 +43,12 @@ export const createClient = ({ instance = null, token = null } = {}) => {
     body: JSON.stringify(body),
   }).then(handleResponse);
 
+  const patch = (path, body = {}) => fetch(`${baseUrl}${path}`, {
+    method: 'PATCH',
+    headers: headers(authToken),
+    body: JSON.stringify(body),
+  }).then(handleResponse);
+
   const del = (path) => fetch(`${baseUrl}${path}`, {
     method: 'DELETE',
     headers: headers(authToken),
@@ -70,7 +76,7 @@ export const createClient = ({ instance = null, token = null } = {}) => {
   };
 
   return {
-    get, post, del, upload, baseUrl,
+    get, post, patch, del, upload, baseUrl,
   };
 };
 

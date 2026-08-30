@@ -18,7 +18,7 @@ import {
   readFile, mkdir, lstat, cp, rm, chmod, readdir, writeFile,
 } from 'fs/promises';
 import { existsSync } from 'fs';
-import { dirname, isAbsolute, join, resolve as pathResolve, basename } from 'path';
+import { isAbsolute, join, resolve as pathResolve, basename } from 'path';
 import { homedir } from 'os';
 
 // ── Schema — keep the allow-list narrow; ADR-008 §invariants #1+#2 ──────────

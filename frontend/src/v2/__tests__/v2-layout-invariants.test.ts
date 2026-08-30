@@ -105,6 +105,44 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-team-card__runtime {');
   });
 
+  test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
+    // Every input under 16px makes iOS Safari zoom on focus and stay zoomed
+    // on blur (Sam, 2026-08-26). The floor lives in the touch media block and
+    // must keep its !important (it has to beat per-component sizes including
+    // a legacy 15px !important).
+    expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
+  });
+
+  test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
+    // Day-zero onboarding and approval actions share the queue row. Keeping
+    // their action cluster explicit prevents a later button refactor from
+    // forcing a third column past a 390px viewport.
+    // The desktop declaration shares its rule with the buttons, so it is not
+    // eligible for ruleBody's exact-selector helper.
+    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button,[\s\S]*?\{\n\s*display: flex;[\s\S]*?gap: 6px;/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
+  });
+
+  test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
+    // Below 1024px the pane used display:none while V2Layout still mounted it
+    // on tap: the avatar-stack button looked broken and members/files were
+    // unreachable on phones (Sam, 2026-08-26). The pane's presence in the DOM
+    // is the open state, so the drawer needs no extra toggle class.
+    // Slice the 1023px block out rather than regex across it — a lazy
+    // [\s\S]*? happily crosses media-block boundaries and matches unrelated
+    // rules pages later.
+    const start = v2.indexOf('@media (max-width: 1023px)');
+    expect(start).toBeGreaterThan(-1);
+    const block = v2.slice(start, v2.indexOf('@media', start + 10));
+    expect(block).toContain('.v2-pane--inspector');
+    expect(block).toContain('position: fixed');
+    expect(block).not.toContain('display: none');
+    // The 760px secondary-pane eraser out-specifies the drawer (0-4-0 vs
+    // 0-1-0); the inspector must be in its :not chain or the drawer is a
+    // mounted-but-invisible pane again — the exact live bug, twice.
+    expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
+  });
+
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
@@ -140,10 +178,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // still see the content. The script must PRECEDE the style block that
     // uses it, and both must precede </head>.
     const indexHtml = read('../../../index.html');
-    expect(indexHtml).toContain("documentElement.className += ' js'");
-    expect(indexHtml).toContain('html.js #seo-page { display: none; }');
-    expect(indexHtml.indexOf("className += ' js'"))
-      .toBeLessThan(indexHtml.indexOf('html.js #seo-page'));
+    // Rev 2 (Sam re-sighted the flash, 2026-08-26): the script-gate had a
+    // timing window — delayed head-script execution painted the prerender.
+    // Hidden-by-default has none: #seo-page is display:none from the first
+    // byte, and <noscript> reveals it only for text-only crawlers. The
+    // noscript override must carry !important to beat the base rule.
+    expect(indexHtml).toContain('#seo-page { display: none; }');
+    expect(indexHtml).toMatch(/<noscript><style>#seo-page \{ display: block !important; \}<\/style><\/noscript>/);
   });
 
   test('the conversation column is FULL-WIDTH — no measure cap, one left edge (rule 2, v5)', () => {
@@ -392,6 +433,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(row).toContain('34px minmax(0, 1fr) auto');
   });
 
+  test('Activity cards have shrinkable desktop and mobile layout guards', () => {
+    // The recap is a feature-wide page, but it is still reachable at 390px.
+    // The zero-min grid tracks are the load-bearing no-horizontal-overflow
+    // rule; jsdom cannot observe the scrollbar they prevent.
+    expect(ruleBody(v2, '.v2-activity__agent-grid'))
+      .toContain('repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-activity__queue-row'))
+      .toContain('28px minmax(0, 1fr) auto');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__agent-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
+    // Board rows do not inherit the queue icon column. At 390px that left
+    // only one character of a task title — an overflow-free but unusable
+    // primary identifier, which violates the craft baseline rule.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  });
+
+  test('Activity queue actions distinguish an action from the thread handoff', () => {
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
+  });
+
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
     const active = ruleBody(v2, '.v2-root button.v2-filter-segment__item--active');
 
@@ -614,4 +677,53 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.v2-thread-replies[\s\S]*?transition: none/,
     );
   });
+  test('zh-CN: every negative-tracking title is reset under :lang(zh) — CJK never takes negative letter-spacing (TASK-055)', () => {
+    // Every selector in v2.css that declares negative letter-spacing must be
+    // listed in the :lang(zh) reset block. Measured in a real browser: CJK
+    // glyphs have no side bearings, so -0.025em on a 20px title crushes strokes.
+    // The selector list may span lines (`a,\nb,\nc {`) — capture the whole
+    // list, then split on commas, or a multi-line list is checked by its last
+    // line only (sprint-review's gate on #1253: h1–h5 slipped past h6).
+    const negative = [...v2.matchAll(/\n((?:[^\n{}]+,\n)*[^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative.length).toBeGreaterThan(0);
+    const resetStart = v2.indexOf('.v2-root:lang(zh) .v2-rail__brand');
+    expect(resetStart).toBeGreaterThan(-1);
+    const resetBlock = v2.slice(resetStart, v2.indexOf('}', resetStart));
+    expect(resetBlock).toContain('letter-spacing: 0');
+    for (const sel of negative) {
+      const bare = sel.replace(/^\.v2-root /, '');
+      expect(resetBlock).toContain(`.v2-root:lang(zh) ${bare}`);
+    }
+  });
+
+  test('zh-CN: body copy takes line-height 1.6 and a 12px floor under :lang(zh) (TASK-055)', () => {
+    // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55,
+    // the composer hint at 1.45/11px. CJK glyphs fill the em box, so Latin
+    // leading leaves no white between lines and 11px is below legibility.
+    const lhStart = v2.indexOf('.v2-root:lang(zh) .v2-msg__content,');
+    expect(lhStart).toBeGreaterThan(-1);
+    const lhBlock = v2.slice(lhStart, v2.indexOf('}', lhStart));
+    expect(lhBlock).toContain('line-height: 1.6');
+    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint', '.v2-inspector__pod-meta']) {
+      expect(lhBlock).toContain(`.v2-root:lang(zh) ${sel}`);
+    }
+    const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-chat__composer-hint,\n.v2-root:lang(zh) button.v2-inspector__tab');
+    expect(floorStart).toBeGreaterThan(-1);
+    expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
+  });
+
+  // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
+  // token files (the same-PR rule), and the tile class must consume them.
+  it('platform tint tokens exist in v2.css and tokens.css together', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
+      expect(v2).toContain(`--v2-platform-${pf}-soft`);
+      expect(ds).toContain(`--c-platform-${pf}-soft`);
+    }
+    expect(v2).toContain('.v2-connector__tile--telegram');
+    expect(v2).toContain('var(--v2-platform-telegram-soft)');
+  });
+
 });

@@ -1,14 +1,31 @@
 /**
  * Backend-local mirror of the NativeAgentDefinition contract.
  *
- * The source of truth lives in packages/commonly-apps/src/types.ts. This
- * file is duplicated here because backend/tsconfig.typescheck.json scopes
- * includes to backend/** — cross-package imports don't typecheck. Round 2
- * can consolidate via project references or a path alias; for Round 1 the
- * shapes are kept byte-identical so substitution is trivial.
+ * This file is duplicated from packages/commonly-apps/src/types.ts because
+ * backend/tsconfig.typescheck.json scopes includes to backend/** — cross-package
+ * imports don't typecheck. Round 2 can consolidate via project references or a
+ * path alias.
  *
- * DO NOT drift from packages/commonly-apps/src/types.ts without updating
- * both files.
+ * The previous version of this comment named packages/commonly-apps as "the
+ * source of truth", said the shapes were "kept byte-identical so substitution is
+ * trivial", and instructed readers not to drift from it. All three were false at
+ * the time of this change, and had been for a while:
+ *
+ *   - The shapes had ALREADY drifted. That file's `CommonlyTool` lists six
+ *     names; this one listed seven. The missing one is `commonly_agent_status`,
+ *     which scout declares, so substituting the "source of truth" would have
+ *     failed to type a shipped agent.
+ *   - Nothing imports the package. There are no non-comment imports of
+ *     commonly-apps anywhere in the repo, and it is not a workspace member, so
+ *     no compiler and no test has ever read it.
+ *   - A "DO NOT drift" instruction was therefore the only guard on that pairing,
+ *     which is to say there was none — it is addressed to a human who must
+ *     already know the other file exists.
+ *
+ * `CommonlyTool` below is now DERIVED from the runtime's own declarations
+ * rather than restated, so it cannot drift from the surface it describes.
+ * The remaining shapes here are still hand-mirrored; treat packages/commonly-apps
+ * as historical until someone deletes it or wires it up.
  */
 export type NativeAgentTrigger =
   | 'mention'
@@ -17,14 +34,22 @@ export type NativeAgentTrigger =
   | 'chat.message'
   | 'pod.join';
 
+/**
+ * DERIVED from the runtime's own tool declarations — never hand-maintained.
+ *
+ * This was a written-out union of the same seven names as `TOOLS` in
+ * services/nativeRuntimeService.ts, with no derivation between them. Two silent
+ * drift modes: add to TOOLS and forget the union, and no definition can declare
+ * the new tool, so `toolsForConfig` filters it out of every install (the tool
+ * exists and is unreachable); rename in TOOLS and not the union, and definitions
+ * still typecheck while `declared.includes(...)` drops the tool with nothing red
+ * (the agent silently loses a capability).
+ *
+ * Deriving retires the second copy: a rename in TOOLS now fails the build at
+ * every definition that declares the old name.
+ */
 export type CommonlyTool =
-  | 'commonly_read_context'
-  | 'commonly_read_memory'
-  | 'commonly_write_memory'
-  | 'commonly_post_message'
-  | 'commonly_create_task'
-  | 'commonly_propose_action'
-  | 'commonly_agent_status';
+  (typeof import('../../services/nativeRuntimeService').TOOLS)[number]['function']['name'];
 
 export interface NativeAgentDefinition {
   agentName: string;

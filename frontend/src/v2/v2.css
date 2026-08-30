@@ -39,6 +39,25 @@ body.modern-ui.v2-canvas {
   --v2-accent-deep: #14306f;
   --v2-focus-ring: 0 0 0 3px rgba(47, 111, 235, 0.18);
 
+  /* Platform brand + tint tokens (connectors) — mirror of --c-platform-* in
+     design-system/tokens.css; the two move together. */
+  --v2-platform-telegram: #2aabee;
+  --v2-platform-telegram-soft: #e4f3fb;
+  --v2-platform-slack: #611f69;
+  --v2-platform-slack-soft: #f3e9f4;
+  --v2-platform-discord: #5865f2;
+  --v2-platform-discord-soft: #eaecfe;
+  --v2-platform-whatsapp: #1fa855;
+  --v2-platform-whatsapp-soft: #e5f6ec;
+  --v2-platform-x: #111827;
+  --v2-platform-x-soft: #eef0f3;
+  --v2-platform-instagram: #d62976;
+  --v2-platform-instagram-soft: #fbe9f1;
+  --v2-platform-messenger: #0084ff;
+  --v2-platform-messenger-soft: #e5f2ff;
+  --v2-platform-groupme: #00aff0;
+  --v2-platform-groupme-soft: #e3f5fd;
+
   --v2-success: #10b981;
   --v2-success-soft: #e3f6ec;
   --v2-success-ring: rgba(16, 185, 129, 0.40);
@@ -5335,8 +5354,23 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
+  /* Below the 3-pane width the inspector becomes a right DRAWER, not a
+     casualty. Hiding the pane outright here made the avatar-stack button a
+     no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
+     pod's members/files/artifacts were unreachable on mobile entirely
+     (Sam, 2026-08-26). The pane only exists in the DOM while open
+     (V2Layout mounts it conditionally), so its presence IS the open state;
+     the existing v2-inspector__close dismisses it. Shadow is allowed here:
+     the design system reserves shadows for floating UI, which this now is. */
   .v2-pane--inspector {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - 48px));
+    z-index: 60;
+    border-left: 1px solid var(--v2-border);
+    box-shadow: -12px 0 32px rgba(17, 24, 39, 0.14);
   }
 }
 
@@ -5369,10 +5403,13 @@ body.modern-ui.v2-canvas {
     align-self: flex-start;
   }
 
-  /* Hide secondary panes (e.g. the inspector) — but NOT the pods sidebar,
-     which becomes a slide-over drawer below. The extra :not() keeps the
-     drawer reachable instead of dead-ending the user in a single pod. */
-  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside) {
+  /* Hide secondary panes — but NOT the pods sidebar OR the inspector, which
+     are both drawers now (pods slide-over below; inspector fixed-right in
+     the 1023px block above). This :not chain out-specifies the drawer rules
+     (0-4-0 vs 0-1-0), so an omission here is an invisible mounted pane: the
+     inspector was exactly that on phones until 2026-08-26 — the header
+     avatar button mounted it, this rule erased it. */
+  .v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside):not(.v2-pane--inspector) {
     display: none;
   }
 
@@ -6441,6 +6478,21 @@ body.modern-ui.v2-canvas {
    all row variants, zero layout shift. See the cluster block near .v2-msg.
    Touch layouts keep ≥44px targets via the media block below. */
 @media (hover: none), (pointer: coarse) {
+  /* iOS Safari auto-zooms on focusing any input under 16px and does not
+     zoom back on blur — the shell's inputs ranged 12–15px, so every tap on
+     the composer or a search field left the page stuck zoomed (Sam,
+     2026-08-26). 16px on touch devices removes the trigger entirely; this
+     is the root fix, NOT the viewport maximum-scale hack, which blocks
+     pinch-zoom on Android and is an accessibility regression. !important is
+     deliberate: it must beat every per-component size including the legacy
+     15px !important, and a device-scoped accessibility floor is the rare
+     case that earns it. */
+  .v2-root input,
+  .v2-root textarea,
+  .v2-root select {
+    font-size: 16px !important;
+  }
+
   /* No hover on touch — but always-on clusters over every message are
      chrome over content (Sam, 2026-08-23). A tap on the message toggles
      .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
@@ -7442,10 +7494,782 @@ body.modern-ui.v2-canvas {
   }
 }
 
+/* Activity is a feature-wide read surface: short attention rows first, then
+   evidence of agent work and board movement. Every grid child is min-width:0
+   so a long pod or task title cannot create horizontal scroll at 390px. */
+.v2-activity {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: 8px 0 28px;
+}
+
+.v2-activity__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-activity__title,
+.v2-activity__section h2,
+.v2-activity__agent-card h3,
+.v2-activity__board-row h3 {
+  margin: 0;
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__title {
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.v2-activity__subtitle,
+.v2-activity__section-heading > p {
+  margin: 6px 0 0;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.v2-activity__controls,
+.v2-activity__window,
+.v2-activity__agent-topline,
+.v2-activity__board-meta {
+  display: flex;
+  align-items: center;
+}
+
+.v2-activity__controls {
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.v2-activity__window {
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-activity__window-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: calc(var(--v2-radius-sm) - 2px);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-activity__window-button--active {
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.v2-activity__scope select {
+  min-height: 36px;
+  max-width: 180px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.v2-activity__loading,
+.v2-activity__error,
+.v2-activity__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 118px;
+  gap: 4px;
+  padding: 20px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  color: var(--v2-text-secondary);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.v2-activity__error {
+  margin-top: 20px;
+  border-color: var(--v2-danger);
+  background: var(--v2-danger-soft);
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__sections {
+  display: grid;
+  gap: 38px;
+  margin-top: 30px;
+}
+
+.v2-activity__section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.v2-activity__section-heading > p {
+  max-width: 440px;
+  text-align: right;
+}
+
+.v2-activity__eyebrow {
+  margin-bottom: 5px;
+  color: var(--v2-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v2-activity__section h2 {
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.v2-activity__queue,
+.v2-activity__board-list {
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  overflow: hidden;
+}
+
+.v2-activity__queue-row,
+.v2-activity__board-row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 15px 16px;
+  background: var(--v2-surface);
+}
+
+.v2-activity__queue-row + .v2-activity__queue-row,
+.v2-activity__board-row + .v2-activity__board-row {
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-activity__queue-row {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.v2-activity__queue-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.v2-activity__queue-row--approval .v2-activity__queue-mark {
+  background: var(--v2-warning-soft);
+  color: #a85d08;
+}
+
+.v2-activity__queue-row--onboarding .v2-activity__queue-mark {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__queue-copy,
+.v2-activity__board-main > div,
+.v2-activity__agent-card,
+.v2-activity__agent-topline > div {
+  min-width: 0;
+}
+
+.v2-activity__queue-kind,
+.v2-activity__queue-copy > span,
+.v2-activity__agent-topline span,
+.v2-activity__board-meta,
+.v2-activity__task-id,
+.v2-activity__update-time {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-activity__queue-copy strong,
+.v2-activity__queue-copy p,
+.v2-activity__board-row h3,
+.v2-activity__board-row p,
+.v2-activity__update-content {
+  overflow-wrap: anywhere;
+}
+
+.v2-activity__queue-copy strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--v2-text-primary);
+  font-size: 14px;
+}
+
+.v2-activity__queue-copy p,
+.v2-activity__board-row p {
+  margin: 3px 0;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.v2-activity__queue-actions,
+.v2-activity__queue-row button,
+.v2-activity__board-meta button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v2-activity__queue-row button,
+.v2-activity__board-meta button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-root .v2-activity__queue-actions button {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+}
+
+.v2-root .v2-activity__queue-actions button:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary {
+  border-color: var(--v2-border);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread {
+  padding-inline: 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--v2-accent-text);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+
+.v2-activity__action-error {
+  margin-top: 10px;
+  color: var(--v2-danger);
+  font-size: 13px;
+}
+
+.v2-activity__queue-row button:disabled,
+.v2-activity__updates button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.v2-activity__agent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.v2-activity__agent-card {
+  padding: 16px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+}
+
+.v2-activity__agent-topline {
+  gap: 10px;
+}
+
+.v2-activity__agent-topline h3 {
+  font-size: 14px;
+}
+
+.v2-activity__agent-topline > div > span {
+  display: block;
+  margin-top: 2px;
+}
+
+.v2-activity__count-chip,
+.v2-activity__status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.v2-activity__count-chip {
+  margin-left: auto;
+  padding: 4px 7px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+}
+
+.v2-activity__agent-recap {
+  margin: 14px 0 10px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.v2-activity__updates {
+  display: grid;
+  gap: 2px;
+}
+
+.v2-root .v2-activity__updates button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 0;
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+
+.v2-root .v2-activity__updates button:hover:not(:disabled) {
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__update-pod {
+  color: var(--v2-accent-text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.v2-activity__update-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-activity__board-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.v2-activity__board-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v2-activity__status {
+  flex-shrink: 0;
+  padding: 4px 7px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+}
+
+.v2-activity__status--done { background: var(--v2-success-soft); color: #087946; }
+.v2-activity__status--blocked { background: var(--v2-danger-soft); color: #b42318; }
+.v2-activity__status--claimed { background: var(--v2-accent-soft); color: var(--v2-accent-text); }
+
+.v2-activity__task-id {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 700;
+}
+
+.v2-activity__board-row h3 { font-size: 14px; }
+
+.v2-activity__board-meta {
+  justify-content: flex-end;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.v2-activity__footer {
+  margin-top: 34px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .v2-activity { padding-top: 0; }
+
+  .v2-activity__header,
+  .v2-activity__section-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .v2-activity__controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px;
+    width: 100%;
+  }
+  .v2-activity__window { width: 100%; }
+  .v2-root button.v2-activity__window-button { flex: 1 1 0; }
+  .v2-activity__scope select { width: 100%; max-width: none; }
+  .v2-activity__section-heading > p { text-align: left; }
+  .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
+
+  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .v2-activity__board-row { grid-template-columns: minmax(0, 1fr); }
+
+  .v2-activity__queue-row > button,
+  .v2-activity__queue-actions { grid-column: 2; }
+
+  .v2-activity__queue-actions { flex-wrap: wrap; }
+
+  .v2-activity__board-meta {
+    grid-column: 1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .v2-activity__update-time { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .v2-root button.v2-thread-card__main,
   .v2-thread-card__chevron,
   .v2-thread-replies {
     transition: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: no negative tracking on CJK (TASK-055, rule class 1).
+ * The 12 title selectors above tighten Latin display type with negative
+ * letter-spacing. CJK glyphs are full-width squares with no side bearings to
+ * reclaim, so the same value only crushes strokes together. Measured in the
+ * real browser (.dev/task-055-zh-harness.html): .v2-chat__title -0.5px,
+ * .v2-pods__title -0.32px, .v2-inspector__now-title -0.15px on Chinese text.
+ * `html[lang]` is set by frontend/src/i18n/index.ts, so :lang(zh) matches
+ * zh-CN. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-rail__brand,
+.v2-root:lang(zh) .v2-pods__title,
+.v2-root:lang(zh) .v2-chat__title,
+.v2-root:lang(zh) .v2-first-run__title,
+.v2-root:lang(zh) .v2-chat__new-pod-title,
+.v2-root:lang(zh) button.v2-inspector__tab,
+.v2-root:lang(zh) .v2-inspector__now-title,
+.v2-root:lang(zh) .v2-inspector__detail-name,
+.v2-root:lang(zh) .v2-login__title,
+.v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h2,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h3,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
+.v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
+.v2-root:lang(zh) .v2-team__title,
+.v2-root:lang(zh) .v2-activity__title,
+.v2-root:lang(zh) .v2-activity__section h2,
+.v2-root:lang(zh) .v2-activity__agent-card h3,
+.v2-root:lang(zh) .v2-activity__board-row h3 {
+  letter-spacing: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * zh-CN: CJK body line-height 1.6 and a 12px floor (TASK-055, rule class 2).
+ * Latin body copy sits at 1.45–1.55 here; CJK glyphs fill the em box, so the
+ * same leading leaves no white between lines. Measured in the real browser
+ * (.dev/task-055-zh-harness.html): .v2-msg__content 21.7px/14px = 1.55,
+ * .v2-chat__composer-hint 1.45, .v2-inspector__pod-meta 1.45, and the
+ * composer hint (11px) / inspector tab (11.5px) render CJK below the 12px
+ * legibility floor. Single-line nowrap+ellipsis rows are not touched — their
+ * height is not text-driven. Guarded by v2-layout-invariants.test.ts.
+ * ------------------------------------------------------------------------ */
+.v2-root:lang(zh) .v2-msg__content,
+.v2-root:lang(zh) .v2-msg__content pre,
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) .v2-chat__delivery-hint,
+.v2-root:lang(zh) .v2-chat__readonly-text,
+.v2-root:lang(zh) .v2-chat__new-pod-text,
+.v2-root:lang(zh) .v2-first-run__lede,
+.v2-root:lang(zh) .v2-first-run__step-body,
+.v2-root:lang(zh) .v2-pods__join-notice,
+.v2-root:lang(zh) .v2-pods__discover-description,
+.v2-root:lang(zh) .v2-pods__community-copy,
+.v2-root:lang(zh) .v2-activity__subtitle,
+.v2-root:lang(zh) .v2-activity__section-heading > p,
+.v2-root:lang(zh) .v2-activity__queue-copy p,
+.v2-root:lang(zh) .v2-activity__board-row p,
+.v2-root:lang(zh) .v2-activity__agent-recap,
+.v2-root:lang(zh) .v2-activity__empty,
+.v2-root:lang(zh) .v2-activity__footer,
+.v2-root:lang(zh) .v2-inspector__pod-meta,
+.v2-root:lang(zh) .v2-inspector__now-meta,
+.v2-root:lang(zh) .v2-inspector__goal-text,
+.v2-root:lang(zh) .v2-inspector__empty,
+.v2-root:lang(zh) .v2-inspector__danger-text,
+.v2-root:lang(zh) .v2-inspector__detail-body,
+.v2-root:lang(zh) .v2-modal__hint,
+.v2-root:lang(zh) .v2-invite-card__description,
+.v2-root:lang(zh) .v2-login__field-hint,
+.v2-root:lang(zh) .v2-billing__note,
+.v2-root:lang(zh) .v2-approval__summary,
+.v2-root:lang(zh) .v2-approval__action {
+  line-height: 1.6;
+}
+
+.v2-root:lang(zh) .v2-chat__composer-hint,
+.v2-root:lang(zh) button.v2-inspector__tab {
+  font-size: 12px;
+}
+
+/* ── Connectors ─────────────────────────────────────────────────────────── */
+/* Channel bridges — Wren's connectors-v2 spec rev 5. Tokens only, 1px
+   borders, no shadows. Platform brand + tint tokens live on .v2-root below
+   and mirror design-system/tokens.css (same-PR rule). */
+.v2-connectors {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 720px;
+}
+.v2-connectors__section {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--v2-text-secondary);
+  margin: 0 0 10px;
+}
+.v2-connectors__loading { color: var(--v2-text-tertiary); font-size: 14px; }
+.v2-connectors__list { display: flex; flex-direction: column; gap: 12px; }
+
+.v2-connector {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2-connector--ghost {
+  border: 1px solid var(--v2-border-strong);
+  background: transparent;
+  gap: 14px;
+}
+.v2-connectors__empty-line { margin: 0; color: var(--v2-text-secondary); font-size: 14px; }
+
+.v2-connector__row { display: flex; align-items: center; gap: 12px; }
+.v2-connector__tile {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--v2-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.v2-connector__tile--telegram { background: var(--v2-platform-telegram-soft); color: var(--v2-platform-telegram); }
+.v2-connector__tile--slack { background: var(--v2-platform-slack-soft); color: var(--v2-platform-slack); }
+.v2-connector__tile--discord { background: var(--v2-platform-discord-soft); color: var(--v2-platform-discord); }
+.v2-connector__tile--whatsapp { background: var(--v2-platform-whatsapp-soft); color: var(--v2-platform-whatsapp); }
+.v2-connector__tile--x { background: var(--v2-platform-x-soft); color: var(--v2-platform-x); }
+.v2-connector__tile--instagram { background: var(--v2-platform-instagram-soft); color: var(--v2-platform-instagram); }
+.v2-connector__tile--messenger { background: var(--v2-platform-messenger-soft); color: var(--v2-platform-messenger); }
+.v2-connector__tile--groupme { background: var(--v2-platform-groupme-soft); color: var(--v2-platform-groupme); }
+
+.v2-connector__body { min-width: 0; flex: 1; }
+.v2-connector__title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.v2-connector__title strong { font-size: 14px; font-weight: 650; color: var(--v2-text-primary); }
+.v2-connector__meta { font-size: 13px; color: var(--v2-text-tertiary); }
+.v2-connector__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  margin-top: 3px;
+}
+.v2-connector__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.v2-connector__dot--success { background: var(--v2-success); }
+.v2-connector__dot--warning { background: var(--v2-warning); }
+.v2-connector__dot--danger { background: var(--v2-danger); }
+.v2-connector__dot--pulse { animation: v2-connector-pulse 2s ease-out infinite; }
+@keyframes v2-connector-pulse {
+  0% { box-shadow: 0 0 0 0 var(--v2-success-ring); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-connector__dot--pulse { animation: none; }
+}
+
+.v2-root button.v2-connector__manage {
+  border: none;
+  background: none;
+  color: var(--v2-accent-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.v2-connector__manage-panel { border-top: 1px solid var(--v2-border-soft); padding-top: 10px; }
+.v2-root button.v2-connector__danger {
+  border: none;
+  background: none;
+  color: var(--v2-danger);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.v2-connector__controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.v2-connector__relay {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+.v2-connector__relay input { accent-color: var(--v2-accent); }
+.v2-connector__mode {
+  display: inline-flex;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-pill);
+  overflow: hidden;
+}
+.v2-root button.v2-connector__mode-opt {
+  border: none;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-root button.v2-connector__mode-opt--on {
+  background: var(--v2-accent);
+  color: #fff;
+  cursor: default;
+}
+.v2-connector__mode-hint { font-size: 12px; color: var(--v2-text-muted); }
+
+.v2-connector__code-step {
+  border-top: 1px solid var(--v2-border-soft);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.v2-connector__code-hint { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-root button.v2-connector__copy {
+  border: none;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-root button.v2-connector__copy:hover { background: var(--v2-accent-strong); }
+.v2-connector__code {
+  font-family: var(--v2-font-mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--v2-text-primary);
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.v2-connector-add__tiles { display: flex; gap: 14px; flex-wrap: wrap; }
+.v2-root button.v2-connector-add__tile,
+.v2-root span.v2-connector-add__tile {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 80ms ease;
+}
+.v2-root button.v2-connector-add__tile:hover { border-color: var(--v2-border-strong); }
+.v2-connector-add__tile .v2-connector__tile { width: 48px; height: 48px; }
+.v2-root span.v2-connector-add__tile--soon { opacity: 0.45; cursor: default; }
+.v2-connector-add__soon {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--v2-text-muted);
+}
+
+.v2-connectors__new-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.v2-connectors__select { flex: 1; min-width: 200px; }
+.v2-root button.v2-connectors__create {
+  border: none;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.v2-root button.v2-connectors__create:hover:not(:disabled) { background: var(--v2-accent-strong); }
+.v2-root button.v2-connectors__create:disabled { opacity: 0.55; cursor: default; }
+.v2-connectors__foot { font-size: 12px; color: var(--v2-text-muted); margin: 8px 0 0; }
+.v2-connectors__error {
+  border: 1px solid var(--v2-danger);
+  background: var(--v2-danger-soft);
+  color: var(--v2-danger);
+  border-radius: var(--v2-radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .v2-connector__controls { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .v2-connector__row { flex-wrap: wrap; }
 }

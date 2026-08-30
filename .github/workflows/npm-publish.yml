@@ -1,0 +1,159 @@
+name: Publish npm packages
+
+# Companion to package-version-guard.yml. That guard makes "source moved but
+# version didn't" go red on the PR; this workflow closes the other half of the
+# loop: "version moved but nobody published". As of 2026-08-29 main carried
+# cli 0.1.22 / mcp 0.3.5 while npm served 0.1.18 / 0.3.4 — four CLI releases
+# that never left the repo, so every `commonly` install and every seat on this
+# laptop ran code the repo had already replaced.
+#
+# Trigger: a push to main that touches a published package. For each package,
+# compare package.json's version with what the registry serves:
+#   equal            → nothing to do (most pushes)
+#   repo > registry  → publish, then read it back from the registry
+#   repo < registry  → fail loudly; the repo walked backwards (see the guard)
+#
+# Needs one secret: NPM_TOKEN — an npm granular access token with
+# read+write on @commonlyai/*, "bypass 2FA" enabled, no IP allowlist.
+# Publishes with --provenance (OIDC; needs id-token: write) so each version on
+# npm links back to the exact commit and run that produced it.
+#
+# This file is deliberately NOT in its own path filter: merging it must not
+# fire a publish before the secret exists. First release goes through
+# workflow_dispatch once NPM_TOKEN is in place.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'cli/**'
+      - 'commonly-mcp/**'
+      - 'docs/agents/skills/commonly/SKILL.md'   # cli prepublishOnly copies it in
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package dir to publish (cli | commonly-mcp | all)'
+        default: 'all'
+        type: choice
+        options: [ all, cli, commonly-mcp ]
+
+permissions:
+  contents: read
+  id-token: write   # npm --provenance
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false   # never abort a publish mid-flight
+
+jobs:
+  publish:
+    name: ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [ cli, commonly-mcp ]
+    # No job-level `if` on matrix: jobs.<id>.if cannot see the matrix context
+    # (only github/needs/vars/inputs), and a workflow that fails validation
+    # never appears in the check set — it is absent, not red. The package
+    # picker is applied in the compare step instead.
+    defaults:
+      run:
+        working-directory: ${{ matrix.pkg }}
+    env:
+      PKG: ${{ matrix.pkg }}
+      PICK: ${{ github.event.inputs.package || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Compare repo version with the registry
+        id: cmp
+        shell: bash
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          repo_v=$(node -p "require('./package.json').version")
+          echo "name=$name"     >> "$GITHUB_OUTPUT"
+          echo "repo_v=$repo_v" >> "$GITHUB_OUTPUT"
+
+          if [ "$PICK" != "all" ] && [ "$PICK" != "$PKG" ]; then
+            echo "· $name: not selected (package=$PICK)"
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # "Never published" (E404) is the first-release path and maps to
+          # 0.0.0. Anything else — outage, auth, rate limit — must stop the
+          # run: a registry we cannot read is not a registry at 0.0.0.
+          if reg_v=$(npm view "$name" version 2>/tmp/npm-view.err); then
+            :
+          elif grep -q 'E404' /tmp/npm-view.err; then
+            reg_v="0.0.0"
+          else
+            echo "::error::$name: npm view failed for a reason other than E404:"; cat /tmp/npm-view.err
+            exit 1
+          fi
+          echo "reg_v=$reg_v" >> "$GITHUB_OUTPUT"
+
+          if [ "$repo_v" = "$reg_v" ]; then
+            echo "· $name: registry already at $reg_v"
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Prerelease ordering is beyond `sort -V` (same limit the version
+          # guard documents). Checked AFTER equality so a repo and registry
+          # parked on the same prerelease is a no-op, not a failure.
+          case "$repo_v$reg_v" in *-*)
+            echo "::error::$name: prerelease in $reg_v → $repo_v; this workflow does not order prereleases. Publish by hand."
+            exit 1;;
+          esac
+          if [ "$(printf '%s\n%s\n' "$reg_v" "$repo_v" | sort -V | tail -1)" = "$repo_v" ]; then
+            echo "✓ $name: $reg_v → $repo_v, publishing"
+            echo "action=publish" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::$name: repo $repo_v is BELOW registry $reg_v. main walked the version backwards; fix the repo, do not republish."
+            exit 1
+          fi
+
+      - name: Refuse to publish without a token
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NAME: ${{ steps.cmp.outputs.name }}
+          WANT: ${{ steps.cmp.outputs.repo_v }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not set. $NAME@$WANT is on main but cannot reach npm — add the secret (Settings → Secrets → Actions) and re-run this workflow."
+            exit 1
+          fi
+
+      - name: Install
+        if: steps.cmp.outputs.action == 'publish'
+        run: npm ci --ignore-scripts
+
+      - name: Publish
+        if: steps.cmp.outputs.action == 'publish'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      - name: Read it back from the registry
+        if: steps.cmp.outputs.action == 'publish'
+        shell: bash
+        env:
+          NAME: ${{ steps.cmp.outputs.name }}
+          WANT: ${{ steps.cmp.outputs.repo_v }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            got=$(npm view "$NAME@$WANT" version 2>/dev/null || true)
+            [ "$got" = "$WANT" ] && { echo "✓ $NAME@$WANT is live"; exit 0; }
+            sleep 10
+          done
+          echo "::error::$NAME@$WANT not visible on the registry after publish"
+          exit 1

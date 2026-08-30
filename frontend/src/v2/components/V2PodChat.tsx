@@ -20,6 +20,7 @@ import type { V2InviteTab } from './V2InviteModal';
 import V2ThreadCard from './V2ThreadCard';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { buildThreadView } from '../utils/threadView';
+import { agentKeyFor } from '../utils/agentKey';
 
 const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
@@ -504,8 +505,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       const username = !instance || instance === 'default' || instance === name
         ? name
         : `${name}-${instance}`;
-      const key = agent.instanceId || agent.agentName;
-      if (!key) continue;
+      // Shared composite key (agentKey.ts): instanceId alone collapsed every
+      // 'default'-instance fleet seat onto one key, so every author click
+      // opened the same member's profile (Sam, 2026-08-26).
+      const key = agentKeyFor(agent);
+      if (!rawName) continue;
       if (username) map.set(username, key);
       const display = agent.displayName || agent.profile?.displayName;
       if (display) map.set(display.toLowerCase(), key);

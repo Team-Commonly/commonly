@@ -20,7 +20,16 @@ name: PR Base Freshness
 on:
   pull_request:
     branches: [ main ]
-    types: [opened, synchronize, reopened]
+    # `edited` is load-bearing, not tidiness. This guard is deliberately
+    # scoped to base=main (see tests.yml) — a stacked PR's base freshness is
+    # meaningless while it targets a feature branch. But when its parent
+    # merges, GitHub RETARGETS the child to main, and that is the exact moment
+    # the stale-base footgun applies. Retargeting fires `edited`, never
+    # `synchronize`, so without this the child crosses into the guard's
+    # population and is never inspected: it arrives already-passing on a check
+    # set it was never subject to. Cost is a re-run on title/body edits too —
+    # one fetch and a merge-base, seconds.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read

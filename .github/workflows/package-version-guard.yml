@@ -17,7 +17,11 @@ name: Package Version Guard
 on:
   pull_request:
     branches: [ main ]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` catches base-branch retargeting — see the note in
+    # pr-base-freshness.yml. A stacked PR retargeted to main after its parent
+    # merges enters this guard's population without any event in the list
+    # below ever firing for it.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
@@ -80,11 +84,39 @@ jobs:
             base_v=$(git show "$BASE:$pkg/package.json" 2>/dev/null | sed -n 's/.*"version": "\([^"]*\)".*/\1/p' | head -1)
             head_v=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$pkg/package.json" | head -1)
 
+            # `sort -V` is not semver. It orders 1.0.0 BEFORE 1.0.0-beta.1,
+            # reading a prerelease as NEWER than its own release, and it
+            # inverts in both directions: base=1.0.0 head=1.0.0-beta.1 would
+            # PASS — the exact backwards walk this check exists to stop — and
+            # the legitimate promotion 1.0.0-beta.1 → 1.0.0 would FAIL.
+            # No version ever committed to either package carries a
+            # prerelease, so this is latent today. It fails OPEN in the
+            # direction that matters, so the guard refuses to judge rather
+            # than guessing, on the same principle as the merge-base check
+            # above: a guard that cannot compare its inputs must say so.
+            case "$base_v$head_v" in
+              *-*)
+                echo "::error file=$pkg/package.json::$pkg version comparison involves a prerelease ($base_v → $head_v). \`sort -V\` orders a prerelease as NEWER than its release, so this guard reaches the wrong answer in BOTH directions. Teach it semver before landing a prerelease; do not merge on this check alone."
+                fail=1
+                continue
+                ;;
+            esac
+
+            # An INCREASE, not merely a difference. A long-lived branch that
+            # bumped while the base moved further ahead leaves head_v BELOW
+            # base_v — different, so an equality test passes it, and merging
+            # then walks the version backwards on the base. Observed on two
+            # open PRs at once (base 0.1.21, heads 0.1.20 and 0.1.19), both
+            # showing this check green.
+            newest=$(printf '%s\n%s\n' "$base_v" "$head_v" | sort -V | tail -1)
             if [ "$base_v" = "$head_v" ]; then
               echo "::error file=$pkg/package.json::$pkg/src changed ($changed file(s)) but version is still $head_v. A published version that maps to two different artifacts defeats the only check available from outside this repo — bump it, or move the change out of $pkg/src."
               fail=1
+            elif [ "$newest" != "$head_v" ]; then
+              echo "::error file=$pkg/package.json::$pkg/src changed ($changed file(s)) and $head_v is BELOW the base's $base_v. Merging would walk the published version backwards. Rebase and bump above $base_v."
+              fail=1
             else
-              echo "✓ $pkg: src changed and version moved $base_v → $head_v"
+              echo "✓ $pkg: src changed and version rose $base_v → $head_v"
             fi
           done
 
