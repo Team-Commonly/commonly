@@ -276,6 +276,36 @@ describe('markPosted annotates the delivery in flight, it does not start a new o
     expect(stored.status).toBe('acked');
   });
 
+  test('a requeued event is not flipped back to delivered by a stale post', async () => {
+    const event = await seedEvent();
+    await claim();
+    await requeue(event._id);
+
+    // The stale child posts after losing its delivery. Under the first,
+    // looser gate ($ne: 'acked') this flipped pending → delivered with a null
+    // nonce, and the next claim then saw nothing — the event was hidden for
+    // another full requeue window by a child that no longer owned it.
+    await AgentEventService.markPosted(String(event._id), AGENT, INSTANCE, { messageId: 'm-stale' });
+
+    const stored = await AgentEvent.findById(event._id).lean();
+    expect(stored.status).toBe('pending');
+    const replacement = await claim();
+    expect(replacement).toBeTruthy();
+    expect(replacement.payload.deliveryId).toEqual(expect.any(String));
+  });
+
+  test('a failed event retired by the cap is not resurrected by a post', async () => {
+    const event = await seedEvent();
+    await AgentEvent.updateOne(
+      { _id: event._id },
+      { $set: { status: 'failed', error: 'retired', deliveryNonce: null } },
+    );
+
+    await AgentEventService.markPosted(String(event._id), AGENT, INSTANCE, { messageId: 'm-late' });
+
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('failed');
+  });
+
   test('it leaves the holder\'s nonce intact, so the holder can still ack', async () => {
     const event = await seedEvent();
     const child = await claim();

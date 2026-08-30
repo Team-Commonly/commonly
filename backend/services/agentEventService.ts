@@ -1421,13 +1421,21 @@ class AgentEventService {
     // construction, not by trust in the call site.
     const safeAgentName = typeof agentName === 'string' ? agentName.toLowerCase() : '';
     const safeInstanceId = typeof instanceId === 'string' ? instanceId : 'default';
-    // `status: { $ne: 'acked' }` is load-bearing, not defensive. Without it
-    // this write returned an already-terminal event to 'delivered' with a
-    // fresh deliveredAt — which is exactly the requeue's target population
-    // (garbageCollect below selects status 'delivered' by deliveredAt age),
-    // so posting a second message citing a completed event re-delivered it.
-    // Same class as the webhook duplicate-delivery bug described at
-    // deliverEventViaWebhook, on the path that one did not cover.
+    // `status: 'delivered'` is load-bearing, not defensive. Ungated, this
+    // write returned an already-terminal event to 'delivered' with a fresh
+    // deliveredAt — exactly the requeue's target population (garbageCollect
+    // selects status 'delivered' by deliveredAt age), so posting a second
+    // message citing a completed event re-delivered it. Same class as the
+    // webhook duplicate-delivery bug described at deliverEventViaWebhook, on
+    // the path that fix did not cover.
+    //
+    // `$ne: 'acked'` was the first attempt and was too loose in two ways
+    // (found in review): a stale child posting after a requeue flipped
+    // 'pending' back to 'delivered' with a null nonce, hiding the event from
+    // list() for another full requeue window; and a 'failed' event retired by
+    // the attempt cap could be resurrected the same way. Annotating a
+    // delivery only makes sense while one is in flight, so the predicate is
+    // the positive state, not the absence of the terminal one.
     //
     // It deliberately does NOT mint a delivery nonce. This is an annotation
     // of the delivery already in flight, not a new claim — minting here would
@@ -1438,7 +1446,7 @@ class AgentEventService {
         _id: eventIdStr,
         agentName: safeAgentName,
         instanceId: safeInstanceId,
-        status: { $ne: 'acked' },
+        status: 'delivered',
       },
       {
         $set: {
