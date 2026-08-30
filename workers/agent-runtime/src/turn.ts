@@ -1,0 +1,125 @@
+// The turn engine: pi agent-core driven directly (runAgentLoop), with the
+// transcript persisted on DO storage and pi's own compaction keeping it
+// bounded. This is the ADR-021/023 engine landing in its production home.
+//
+// v1 scope (deliberate): streamSimple as the transport (pi-ai's Anthropic
+// provider — fetch-based, workerd-clean per the spike), no tools yet. The
+// reply is the final assistant text. Two named next slices, neither of which
+// changes this seam (transcript in, text out): CAP tools (read pod context,
+// attach), and pi's real compaction — which is Session-entry based
+// (prepareCompaction takes Entry[], not AgentMessage[]), so it arrives with
+// the Session layer. Until then the transcript is tail-bounded by pi's own
+// token estimate: honest, bounded, and lossy only at the oldest end.
+import {
+  runAgentLoop,
+  estimateContextTokens,
+  type AgentMessage,
+  type AgentContext,
+  type AgentLoopConfig,
+} from '@earendil-works/pi-agent-core';
+import { createModels, hasApi, type Message } from '@earendil-works/pi-ai';
+import { streamSimple } from '@earendil-works/pi-ai/compat';
+import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
+
+export interface TurnDeps {
+  storage: DurableObjectStorage;
+  apiKey: string;
+  modelId?: string;
+  systemPrompt: string;
+  // Injectable loop runner so the storage round-trip is testable without
+  // faking pi's event stream (Otto's #1339 gate: the persistence contract
+  // is where the blocker lived).
+  loop?: typeof runAgentLoop;
+}
+
+const TRANSCRIPT_KEY = 'transcript';
+const DEFAULT_MODEL = 'claude-sonnet-5';
+// DO storage caps a value at ~2 MiB on the SQLite backend (128 KiB on KV).
+// A token budget alone is denominated wrong for that (Otto): bound bytes too.
+export const TRANSCRIPT_BYTE_BUDGET = 1_000_000;
+
+// Identity conversion: AgentMessage ⊇ Message; anything that is not a plain
+// LLM message (custom agent messages) is dropped. Contract: never throws.
+export const convertToLlm = (messages: AgentMessage[]): Message[] => messages.filter(
+  (m): m is Message => m && typeof (m as { role?: unknown }).role === 'string'
+    && ['user', 'assistant', 'toolResult'].includes(String((m as { role: string }).role)),
+);
+
+export const lastAssistantText = (messages: AgentMessage[]): string => {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i] as { role?: string; content?: unknown };
+    if (m.role !== 'assistant') continue;
+    const content = m.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.map((c) => (c && (c as { type?: string }).type === 'text' ? String((c as { text?: string }).text || '') : '')).join('');
+    }
+  }
+  return '';
+};
+
+// Tail-bound the transcript to a token budget using pi's estimator, dropping
+// from the oldest end at turn boundaries (the next user message) so a turn is
+// never split. Always keeps at least the last two messages.
+export const tailBound = (
+  messages: AgentMessage[],
+  budgetTokens: number,
+  estimate: (m: AgentMessage[]) => number = (m) => estimateContextTokens(m).tokens,
+): AgentMessage[] => {
+  let out = messages;
+  while (out.length > 2 && estimate(out) > budgetTokens) {
+    const nextUser = out.findIndex((m, i) => i > 0 && (m as { role?: string }).role === 'user');
+    out = nextUser > 0 ? out.slice(nextUser) : out.slice(1);
+  }
+  return out;
+};
+
+// Byte-bound after the token bound: drop oldest turns until the serialized
+// transcript fits DO storage. Same turn-boundary rule, same floor of two.
+export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentMessage[] => {
+  let out = messages;
+  while (out.length > 2 && JSON.stringify(out).length > budgetBytes) {
+    const nextUser = out.findIndex((m, i) => i > 0 && (m as { role?: string }).role === 'user');
+    out = nextUser > 0 ? out.slice(nextUser) : out.slice(1);
+  }
+  return out;
+};
+
+export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
+  if (!deps.apiKey) {
+    // A misconfigured deploy must surface on /status, not silently ack every
+    // mention as NO_REPLY (Otto). Throwing leaves the event unacked → lastError.
+    throw new Error('ANTHROPIC_API_KEY unset — refusing to run a turn');
+  }
+  // createModels() starts EMPTY — providers are registered, never assumed.
+  // (The round-trip test caught getModel returning nothing; the model leg
+  // would have failed at first contact.)
+  const models = createModels();
+  models.setProvider(anthropicProvider());
+  const model = models.getModel('anthropic', deps.modelId || DEFAULT_MODEL);
+  if (!model || !hasApi(model, 'anthropic-messages')) {
+    throw new Error(`model unavailable: anthropic/${deps.modelId || DEFAULT_MODEL}`);
+  }
+
+  let transcript = (await deps.storage.get<AgentMessage[]>(TRANSCRIPT_KEY)) || [];
+
+  const contextWindow = (model as { contextWindow?: number }).contextWindow || 200_000;
+  transcript = tailBound(transcript, Math.floor(contextWindow * 0.6));
+
+  const prompt: AgentMessage = { role: 'user', content: [{ type: 'text', text: userText }], timestamp: Date.now() } as AgentMessage;
+  const context: AgentContext = { systemPrompt: deps.systemPrompt, messages: transcript, tools: [] };
+  const config: AgentLoopConfig = {
+    model,
+    convertToLlm,
+    getApiKey: () => deps.apiKey,
+  };
+
+  // runAgentLoop returns ONLY this turn's messages (prompts + replies), never
+  // context.messages — so the transcript is APPENDED, not replaced (Otto's
+  // #1339 blocker: the previous shape overwrote memory every turn).
+  const loop = deps.loop || runAgentLoop;
+  const turnMessages = await loop([prompt], context, config, () => {}, undefined, streamSimple);
+  const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
+  await deps.storage.put(TRANSCRIPT_KEY, merged);
+  return lastAssistantText(turnMessages).trim() || 'NO_REPLY';
+};
