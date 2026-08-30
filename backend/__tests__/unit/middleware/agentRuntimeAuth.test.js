@@ -18,12 +18,7 @@ const mockUserUpdateOne = jest.fn();
 const mockInstallationFindOne = jest.fn();
 const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
-const mockInstallationUpdateMany = jest.fn();
 const mockCompleteStarterTask = jest.fn();
-
-jest.mock('../../../services/globalModelConfigService', () => ({
-  getConfig: jest.fn(),
-}));
 
 jest.mock('../../../services/starterTaskService', () => ({
   completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
@@ -50,7 +45,6 @@ jest.mock('../../../models/AgentRegistry', () => ({
     findOne: (...args) => mockInstallationFindOne(...args),
     find: (...args) => mockInstallationFind(...args),
     updateOne: (...args) => mockInstallationUpdateOne(...args),
-    updateMany: (...args) => mockInstallationUpdateMany(...args),
   },
 }));
 jest.mock('../../../models/Pod', () => ({
@@ -58,7 +52,6 @@ jest.mock('../../../models/Pod', () => ({
 }));
 
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
-const GlobalModelConfigService = require('../../../services/globalModelConfigService');
 
 const buildReq = (token) => {
   const headers = { authorization: `Bearer ${token}` };
@@ -83,10 +76,6 @@ beforeEach(() => {
   mockInstallationFindOne.mockReset();
   mockInstallationFind.mockReset();
   mockInstallationUpdateOne.mockReset();
-  mockInstallationUpdateMany.mockReset();
-  mockInstallationUpdateMany.mockResolvedValue({ modifiedCount: 0 });
-  GlobalModelConfigService.getConfig.mockReset();
-  GlobalModelConfigService.getConfig.mockResolvedValue({ openclaw: { devAgentIds: ['theo'] } });
   mockCompleteStarterTask.mockReset();
   mockCompleteStarterTask.mockResolvedValue(undefined);
 });
@@ -152,37 +141,6 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
   });
 
-  test('backfills a configured dev seat on the legacy installation-token path too', async () => {
-    mockUserFindOne.mockResolvedValue(null);
-    const matchedInstall = {
-      _id: 'install-theo',
-      agentName: 'openclaw',
-      instanceId: 'theo',
-      podId: { toString: () => 'pod-workspace' },
-      githubIssueWrite: false,
-      runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date('2026-08-01T00:00:00Z') }],
-    };
-    mockInstallationFindOne.mockResolvedValue(matchedInstall);
-    mockInstallationFind.mockResolvedValue([matchedInstall]);
-    mockInstallationUpdateOne.mockResolvedValue({});
-
-    const req = buildReq('cm_agent_legacy_dev');
-    await agentRuntimeAuth(req, buildRes(), jest.fn());
-
-    expect(mockInstallationUpdateMany).toHaveBeenCalledWith(
-      {
-        agentName: 'openclaw',
-        instanceId: 'theo',
-        status: 'active',
-        githubIssueWrite: { $ne: true },
-      },
-      { $set: { githubIssueWrite: true } },
-    );
-    expect(req.agentUser).toBeUndefined();
-    expect(req.agentInstallations).toEqual([
-      expect.objectContaining({ githubIssueWrite: true }),
-    ]);
-  });
 });
 
 describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#916)', () => {
@@ -240,86 +198,4 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     expect(next).not.toHaveBeenCalled();
   });
 
-  test('backfills the server-owned GitHub write grant for an existing configured dev seat before routes inspect it', async () => {
-    mockUserFindOne.mockResolvedValue({
-      _id: 'bot-user-1',
-      username: 'openclaw-theo',
-      isBot: true,
-      botMetadata: { agentName: 'openclaw', instanceId: 'theo' },
-      agentRuntimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date('2026-08-01T00:00:00Z') }],
-    });
-    mockInstallationFind.mockReturnValue({
-      lean: async () => [{
-        _id: 'install-theo',
-        podId: { toString: () => 'pod-workspace' },
-        githubIssueWrite: false,
-      }],
-    });
-
-    const req = buildReq('cm_agent_dev');
-    await agentRuntimeAuth(req, buildRes(), jest.fn());
-
-    expect(mockInstallationUpdateMany).toHaveBeenCalledWith(
-      {
-        agentName: 'openclaw',
-        instanceId: 'theo',
-        status: 'active',
-        githubIssueWrite: { $ne: true },
-      },
-      { $set: { githubIssueWrite: true } },
-    );
-    expect(req.agentInstallations).toEqual([
-      expect.objectContaining({ githubIssueWrite: true }),
-    ]);
-  });
-
-  test('does not backfill GitHub write access for a non-dev OpenClaw seat', async () => {
-    mockUserFindOne.mockResolvedValue({
-      _id: 'bot-user-1',
-      username: 'openclaw-community',
-      isBot: true,
-      botMetadata: { agentName: 'openclaw', instanceId: 'community' },
-      agentRuntimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date('2026-08-01T00:00:00Z') }],
-    });
-    mockInstallationFind.mockReturnValue({
-      lean: async () => [{
-        _id: 'install-community',
-        podId: { toString: () => 'pod-workspace' },
-        githubIssueWrite: false,
-      }],
-    });
-
-    const req = buildReq('cm_agent_community');
-    await agentRuntimeAuth(req, buildRes(), jest.fn());
-
-    expect(mockInstallationUpdateMany).not.toHaveBeenCalled();
-    expect(req.agentInstallations).toEqual([
-      expect.objectContaining({ githubIssueWrite: false }),
-    ]);
-  });
-
-  test('does not backfill GitHub write access for a non-OpenClaw identity using a dev-seat label', async () => {
-    mockUserFindOne.mockResolvedValue({
-      _id: 'bot-user-1',
-      username: 'codex-theo',
-      isBot: true,
-      botMetadata: { agentName: 'codex', instanceId: 'theo' },
-      agentRuntimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date('2026-08-01T00:00:00Z') }],
-    });
-    mockInstallationFind.mockReturnValue({
-      lean: async () => [{
-        _id: 'install-codex-theo',
-        podId: { toString: () => 'pod-workspace' },
-        githubIssueWrite: false,
-      }],
-    });
-
-    const req = buildReq('cm_agent_non_openclaw');
-    await agentRuntimeAuth(req, buildRes(), jest.fn());
-
-    expect(mockInstallationUpdateMany).not.toHaveBeenCalled();
-    expect(req.agentInstallations).toEqual([
-      expect.objectContaining({ githubIssueWrite: false }),
-    ]);
-  });
 });
