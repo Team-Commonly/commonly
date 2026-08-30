@@ -405,29 +405,52 @@ const metadata = ({ title, description, path, schema, ogType = 'website', datePu
 };
 
 export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }) => {
+  const organizationId = `${siteUrl}/#organization`;
+  const websiteId = `${siteUrl}/#website`;
   const organization = {
     '@type': 'Organization',
+    '@id': organizationId,
     name: 'Commonly',
+    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
     url: `${siteUrl}/`,
     logo: `${siteUrl}/favicon.svg`,
-    sameAs: ['https://github.com/Team-Commonly/commonly'],
+    description: 'Commonly (commonly.me) is a shared workspace platform where humans and AI agents from any origin work together in pods with shared memory, tasks, and messaging.',
+    sameAs: [
+      'https://github.com/Team-Commonly/commonly',
+      'https://www.npmjs.com/package/@commonlyai/mcp',
+      'https://discord.gg/NsS3fzsJDw',
+    ],
+  };
+  const website = {
+    '@type': 'WebSite',
+    '@id': websiteId,
+    name: 'Commonly',
+    alternateName: 'Commonly.me',
+    url: `${siteUrl}/`,
+    publisher: { '@id': organizationId },
   };
   const softwareApplication = {
     '@type': 'SoftwareApplication',
     name: 'Commonly',
+    alternateName: ['Commonly.me', 'commonly.me', 'Commonly AI'],
     url: `${siteUrl}/`,
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'Web',
     description: landing.hero.lede,
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
+    publisher: { '@id': organizationId },
   };
-  const webPage = (title, description, path) => ({
-    '@context': 'https://schema.org',
+  const webPageNode = (title, description, path) => ({
     '@type': 'WebPage',
+    '@id': pageUrl(path),
     name: title,
     description,
     url: pageUrl(path),
-    isPartOf: { '@type': 'WebSite', name: 'Commonly', url: `${siteUrl}/` },
+    isPartOf: { '@id': websiteId },
+  });
+  const webPage = (title, description, path) => ({
+    '@context': 'https://schema.org',
+    '@graph': [organization, website, webPageNode(title, description, path)],
   });
 
   const pages = [{
@@ -438,7 +461,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
     content: renderLanding(landing, useCases, guides),
     schema: {
       '@context': 'https://schema.org',
-      '@graph': [organization, softwareApplication],
+      '@graph': [organization, website, softwareApplication, webPageNode('Commonly — chat with your agents, ship real work', 'The open-source workspace where agents and teammates share one project memory — any runtime, your infra, no per-agent fees.', '/')],
     },
   }, {
     path: '/compare/',
@@ -475,7 +498,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
   const guidePages = Object.entries(guides).map(([id, guide]) => {
     const path = `/guides/${id}/`;
     const provenance = guideProvenance(guide);
-    const author = { '@type': 'Organization', name: provenance.author, url: `${siteUrl}/` };
+    const author = { '@type': 'Organization', '@id': organizationId, name: provenance.author, url: `${siteUrl}/` };
     const reviewer = { '@type': 'Organization', name: provenance.reviewer, url: `${siteUrl}/` };
     return {
       path,
@@ -498,7 +521,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
           author,
           datePublished: provenance.datePublished,
           dateModified: provenance.dateModified,
-          publisher: organization,
+          publisher: { '@id': organizationId },
         }, {
           '@type': 'WebPage',
           '@id': pageUrl(path),
@@ -506,8 +529,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {} }
           description: guide.description,
           url: pageUrl(path),
           reviewedBy: reviewer,
-          isPartOf: { '@type': 'WebSite', name: 'Commonly', url: `${siteUrl}/` },
-        }],
+          isPartOf: { '@id': websiteId },
+        }, organization, website],
       },
     };
   });

@@ -39,8 +39,28 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
+    'WebSite',
     'SoftwareApplication',
+    'WebPage',
   ]);
+  const organization = pages[0].schema['@graph'].find((item) => item['@type'] === 'Organization');
+  const website = pages[0].schema['@graph'].find((item) => item['@type'] === 'WebSite');
+  const softwareApplication = pages[0].schema['@graph'].find((item) => item['@type'] === 'SoftwareApplication');
+  assert.equal(organization['@id'], 'https://commonly.me/#organization');
+  assert.deepEqual(organization.alternateName, ['Commonly.me', 'commonly.me', 'Commonly AI']);
+  assert.deepEqual(organization.sameAs, [
+    'https://github.com/Team-Commonly/commonly',
+    'https://www.npmjs.com/package/@commonlyai/mcp',
+    'https://discord.gg/NsS3fzsJDw',
+  ]);
+  assert.equal(website['@id'], 'https://commonly.me/#website');
+  assert.deepEqual(website.publisher, { '@id': organization['@id'] });
+  assert.deepEqual(softwareApplication.publisher, { '@id': organization['@id'] });
+  for (const page of pages) {
+    const graph = page.schema['@graph'] || [page.schema];
+    const webPage = graph.find((item) => item['@type'] === 'WebPage');
+    assert.deepEqual(webPage.isPartOf, { '@id': website['@id'] });
+  }
   const guidePages = pages.filter((page) => page.path.startsWith('/guides/') && page.path !== '/guides/');
   assert.equal(guidePages.length, 5);
   for (const guide of guidePages) {
@@ -105,7 +125,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
-  assert.equal(guidesIndex.schema['@type'], 'WebPage');
+  assert.equal(guidesIndex.schema['@graph'].find((item) => item['@type'] === 'WebPage').name, 'Guides for teams working with AI agents');
   assert.match(indexHtml, /#seo-page \{[^}]*color: #111827; background: #f8f8fb;/);
   assert.match(indexHtml, /#seo-page \.seo-code \{[^}]*color: #111827; background: #f4f3f8;/);
 });
