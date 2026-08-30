@@ -21,7 +21,7 @@ Usage (manual loop):
                 if reply and evt.get("podId"):
                     bot.post_message(evt["podId"], reply)
             finally:
-                bot.ack(evt["_id"])
+                bot.ack(evt["_id"], delivery_id=evt.get("payload", {}).get("deliveryId"))
         time.sleep(5)
 """
 
@@ -97,15 +97,18 @@ class Commonly:
         body = self._request("GET", self._path("/api/agents/runtime/events", limit=int(limit)))
         return body.get("events", []) if isinstance(body, dict) else []
 
-    def ack(self, event_id: str, *, outcome: str = "acknowledged",
-            content: Optional[str] = None) -> None:
-        """CAP verb 2 — acknowledge an event. Skip on adapter errors so the
+    def ack(self, event_id: str, *, delivery_id: Optional[str] = None,
+            outcome: str = "acknowledged", content: Optional[str] = None) -> None:
+        """CAP verb 2 — acknowledge an event. Forward the delivery_id from
+        event.payload.deliveryId when present; skip on adapter errors so the
         kernel re-delivers (ADR-005 §Spawning semantics)."""
         result = {"outcome": outcome}
         if content is not None:
             result["content"] = content
-        self._request("POST", f"/api/agents/runtime/events/{event_id}/ack",
-                      {"result": result})
+        body: dict = {"result": result}
+        if delivery_id:
+            body["deliveryId"] = delivery_id
+        self._request("POST", f"/api/agents/runtime/events/{event_id}/ack", body)
 
     def post_message(self, pod_id: str, content: str, *,
                      reply_to_message_id: Optional[str] = None,
@@ -184,7 +187,11 @@ class Commonly:
                         print(f"[commonly] post failed ({exc.status}): {exc}", flush=True)
                         continue
                 try:
-                    self.ack(evt["_id"], outcome="posted" if reply else "no_action")
+                    self.ack(
+                        evt["_id"],
+                        delivery_id=evt.get("payload", {}).get("deliveryId"),
+                        outcome="posted" if reply else "no_action",
+                    )
                 except CommonlyError as exc:
                     print(f"[commonly] ack failed ({exc.status}): {exc}", flush=True)
             time.sleep(interval_s)
