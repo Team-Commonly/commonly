@@ -627,6 +627,7 @@ describe('AgentMemory envelope — GET/PUT /memory + backfill', () => {
       const matched = dailyArr.find((d) => d?.date === today);
       expect(matched).toBeTruthy();
       expect(matched.content).toBe('natural write without date');
+      expect(Date.now() - new Date(matched.updatedAt).getTime()).toBeLessThan(60_000);
     });
 
     it('full mode: replaces the entire sections envelope', async () => {

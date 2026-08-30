@@ -33,7 +33,8 @@ export const MEMORY_HISTORY_CAP = 10;
 export interface IMemorySection {
   content: string;
   visibility: MemoryVisibility;
-  updatedAt: Date;
+  // Server-stamped write time. Optional on records written before TASK-076.
+  updatedAt?: Date;
   byteSize: number;
   source?: IMemoryWriteSource;
   history?: IMemorySectionVersion[];
@@ -43,13 +44,18 @@ export interface IDailySection {
   date: string; // YYYY-MM-DD
   content: string;
   visibility: MemoryVisibility;
+  // Server-stamped write time. `date` identifies the journal day, not when
+  // the agent last changed that entry. Optional for legacy entries written
+  // before TASK-076; never default it during document hydration.
+  updatedAt?: Date;
 }
 
 export interface IRelationshipNote {
   otherInstanceId: string;
   notes: string;
   visibility: MemoryVisibility;
-  updatedAt: Date;
+  // Server-stamped write time. Optional on records written before TASK-076.
+  updatedAt?: Date;
 }
 
 // ADR-012 §1: structured entries for system-driven exchange records.
@@ -194,7 +200,7 @@ const memorySectionSchema = new Schema<IMemorySection>(
   {
     content: { type: String, default: '' },
     visibility: { type: String, enum: VISIBILITY_VALUES, default: 'private' },
-    updatedAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date },
     byteSize: { type: Number, default: 0 },
     source: { type: memoryWriteSourceSchema, required: false },
     history: { type: [memorySectionVersionSchema], required: false, default: undefined },
@@ -207,6 +213,7 @@ const dailySectionSchema = new Schema<IDailySection>(
     date: { type: String, required: true },
     content: { type: String, default: '' },
     visibility: { type: String, enum: VISIBILITY_VALUES, default: 'private' },
+    updatedAt: { type: Date },
   },
   { _id: false },
 );
@@ -216,7 +223,7 @@ const relationshipNoteSchema = new Schema<IRelationshipNote>(
     otherInstanceId: { type: String, required: true },
     notes: { type: String, default: '' },
     visibility: { type: String, enum: VISIBILITY_VALUES, default: 'private' },
-    updatedAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date },
   },
   { _id: false },
 );

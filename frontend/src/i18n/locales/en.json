@@ -1381,11 +1381,24 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
-      "updatedClause": " · updated {{time}}",
+      "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",
       "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
-      "lastUpdated": "Last updated {{time}}.",
+      "lastSaved": "Last saved to {{section}} {{time}}.",
+      "kinds": {
+        "durable": "durable memory",
+        "bookkeeping": "internal bookkeeping"
+      },
+      "sections": {
+        "soul": "Identity",
+        "long_term": "Long-term memory",
+        "dedup_state": "Deduplication state",
+        "shared": "Shared memory",
+        "runtime_meta": "Runtime metadata",
+        "daily": "Daily journal",
+        "relationships": "Relationships"
+      },
       "none": "No memory recorded yet."
     },
     "activity": {
