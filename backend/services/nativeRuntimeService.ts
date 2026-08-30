@@ -816,7 +816,7 @@ export async function runAgent(
   // The claim releases in the same cleanup: typing-stops and lease-release
   // are one moment (D7 — "someone's on it" ends when the turn ends), and
   // emitStop is already called on every terminal path of this function.
-  const emitStop = () => {
+  const emitStop = (claimOutcome?: 'declined' | 'completed') => {
     try {
       const typing = require('./agentTypingService');
       typing.emitAgentTypingStop({ podId, agentName, instanceId });
@@ -828,9 +828,21 @@ export async function runAgent(
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const MessageClaimService = require('./messageClaimService');
+        // A native runtime shares the kernel handoff contract with the CLI:
+        // only a normal, silent human broadcast advances to another original
+        // wake target. Failure keeps legacy release semantics so event
+        // redelivery remains possible.
+        const ClaimReleaseService = claimOutcome === 'declined'
+          ? require('./messageClaimHandoffService')
+          : MessageClaimService;
         // Fire-and-forget: a miss just means the lease already lapsed.
         Promise.resolve(
-          MessageClaimService.release({ messageId: claimMessageId, agentName, instanceId }),
+          ClaimReleaseService.release({
+            messageId: claimMessageId,
+            agentName,
+            instanceId,
+            ...(claimOutcome ? { outcome: claimOutcome } : {}),
+          }),
         ).catch(() => {});
       } catch (err) {
         console.warn('[native-runtime] claim release failed:', (err as Error).message);
@@ -1048,7 +1060,7 @@ export async function runAgent(
         // Post it anyway so the human actually sees a reply.
         try {
           const AgentMessageService = require('./agentMessageService');
-          await AgentMessageService.postMessage({
+          const postResult = await AgentMessageService.postMessage({
             agentName,
             instanceId,
             podId,
@@ -1058,7 +1070,11 @@ export async function runAgent(
             installationConfig: cfg,
             metadata: { source: 'native-runtime', fallback: true },
           });
-          finalMessage = textOut;
+          // The message service suppresses a bare NO_REPLY (and other
+          // silent output) without throwing. That is a normal declined turn,
+          // not a user-visible final message; retaining textOut here would
+          // complete the claim and swallow the human wake a second time.
+          if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
@@ -1081,7 +1097,17 @@ export async function runAgent(
     console.error('[native-runtime] failed to persist AgentRun:', (saveErr as Error).message);
   }
 
-  emitStop();
+  const completedSilently = run.status === 'succeeded'
+    && !finalMessage
+    && !postedViaTool;
+  const claimOutcome = run.status === 'succeeded'
+    ? (trigger.type === 'message.posted'
+      && (trigger.payload as { senderIsHuman?: unknown } | null)?.senderIsHuman === true
+      && completedSilently
+        ? 'declined'
+        : 'completed')
+    : undefined;
+  emitStop(claimOutcome);
 
   return {
     runId,

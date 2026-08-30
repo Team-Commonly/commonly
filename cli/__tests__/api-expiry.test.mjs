@@ -32,3 +32,25 @@ test.each(['Token is not valid', 'Invalid API token', 'Account no longer exists'
   );
   },
 );
+
+test('DELETE forwards an explicit body through the profile-aware client', async () => {
+  saveInstance({
+    key: 'dev', url: 'https://api.commonly.me', token: 'current-token', userId: 'u1', username: 'lily',
+  });
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ released: true }),
+  });
+
+  await expect(createClient({ instance: 'dev' }).del('/api/claims/message-1', { outcome: 'declined' }))
+    .resolves.toEqual({ released: true });
+
+  const [url, init] = global.fetch.mock.calls[0];
+  expect(url).toBe('https://api.commonly.me/api/claims/message-1');
+  expect(init).toMatchObject({
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer current-token', 'Content-Type': 'application/json' },
+  });
+  expect(JSON.parse(init.body)).toEqual({ outcome: 'declined' });
+});
