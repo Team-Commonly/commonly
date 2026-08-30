@@ -4020,7 +4020,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-team-quiet__profile { font-size: 12px; }
 
-.v2-team__tabs {.v2-team__tabs {
+.v2-team__tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
