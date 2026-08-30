@@ -59,6 +59,11 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
+// `trim()` does not remove Unicode format characters. Normalize a
+// decision-only copy before total-match and leading-sentinel checks so one
+// invisible prefix cannot bypass both suppression paths. Do not rewrite the
+// stored payload: U+200D, for example, joins emoji glyphs.
+const FORMAT_CHARACTERS = /\p{Cf}/gu;
 
 /**
  * Word-boundary test for the sentinel scan. Deliberately not `\w` via regex:
@@ -1835,12 +1840,13 @@ class AgentMessageService {
     const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
     const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
+    const sentinelContent = trimmed.replace(FORMAT_CHARACTERS, '');
 
     // Sentinels are total-match contracts: suppress only when the complete
     // reply consists of NO_REPLY tokens. Gateways have historically joined
     // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
     // whitespace), so retain that compatibility.
-    if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
+    if (/^(?:NO_REPLY\s*)+$/.test(sentinelContent)) return '';
 
     // A substantive fully fenced reply is explicitly code-formatted even
     // though this sanitizer removes the outer transport fence before storage.
@@ -1863,7 +1869,7 @@ class AgentMessageService {
     // reads as silent there too. That is the intended reading of those rows —
     // and it does not apply to the AX-43 leaks themselves, which were stored
     // with the token already stripped.
-    if (opensWithBareSentinel(trimmed)) {
+    if (opensWithBareSentinel(sentinelContent)) {
       if (observe) {
         console.warn(
           `[agent-msg] suppressed a reply opening with a bare sentinel (intended silence, not an edit) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,

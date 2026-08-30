@@ -2769,6 +2769,100 @@ declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
 the other seven PRs is what found `#1330`, where both APIs are silent and the
 gate is real anyway.
+
+## 49. A progress note re-claimed a row a human had re-pointed two days earlier (2026-08-28, pod-architect, found by the seat)
+
+**The surface:** `commonly_update_task`, whose tool description is *"Append an
+update note to a task without changing status — visible in the task drawer
+history."* Behind it, `POST /api/v1/tasks/:podId/:taskId/updates`
+(`backend/routes/tasksApi.ts:537`).
+
+**The false model it taught:** that posting a note is observationally inert on
+a row you do not hold. Sam re-pointed TASK-070 to `@sprint-impl` at
+2026-08-28T23:17Z. I wrote a handoff note into the drawer *specifically so I
+would not claim the row and block them* — and the note claimed it for me:
+`status` `pending` → `claimed`, `claimedBy` set to my id, a 30-minute lease
+opened, `lapsedFrom` cleared. The response says so (`leaseRenewed: true`), but
+that response is the whole task document, which exceeds this seat's tool-output
+token limit — so the one field that would have contradicted the description
+arrives in a file the caller has to go and parse.
+
+**The mechanism, and it is deliberate code doing a narrow job over an unbounded
+range.** The handler has a second `findOneAndUpdate` for the case where the row
+was swept back to `pending` before the note landed:
+
+```js
+{ podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } }
+```
+
+Its comments name the race precisely and it is a real one — the deferral
+warning *"post a task update or re-claim — either renews the lease"* routinely
+arrives after the sweep it warns about (TASK-029, 2026-08-22: warning 12:24,
+sweep 12:54, note 12:56). The restore is what makes the cue's two options
+actually equivalent.
+
+**The bound the race has and the predicate does not.** That race is minutes
+wide. `lapsedFrom` carries no timestamp and is invalidated by nothing except a
+successful restore, so the predicate is open forever. TASK-070 lapsed from me
+at **2026-08-26T23:54Z** and my note restored it at **2026-08-28T23:33Z** —
+**48 hours later**, across a human's explicit re-point to a different seat in
+between. Sam's re-point did not clear it, and could not have: his own note fell
+through to the note-only fallback, because his identities do not match
+`lapsedFrom` either.
+
+**Why the assignment was invisible to the thing that should have carried it.**
+The row's `assignee` field is `null`. Sam re-points by writing prose into an
+update note, which no predicate reads. So the only machine-readable record of
+who owns the row is `claimedBy` — and the restore branch overwrites exactly
+that, from a field describing who owned it two days ago.
+
+**What I checked before filing.** That the id was mine and not a peer's, by
+comparing against a row I know I hold. That `leaseRenewed` was `true` and
+`lapsedFrom` was `null` afterwards, from the persisted response rather than
+inferred. That `lapsedFrom` must have held the string `pod-architect` — the
+sweep note says *"(was: pod-architect)"*, and of the four identities the
+handler collects, the username is the only one that is not an ObjectId.
+
+**Cheapest fix that keeps the race closed:** clear `lapsedFrom` when anyone
+other than the lapsed holder writes to the row. The TASK-029 race is two
+minutes of silence, so nothing else touches the row inside it; a re-point,
+a peer's note, or a claim all mean the restore's premise has expired. A
+`lapsedAt` timestamp bounded to one lease period would also work and is
+strictly more code.
+
+**The general shape, which is not about tasks.** A predicate written for a
+race is a predicate about *time*, and storing only the participant stores the
+wrong half. `lapsedFrom` answers "who" and the guard needed "who, and recently"
+— so the code is correct for every case its comments discuss and unbounded for
+every case they do not. When a comment justifies a branch by describing a
+window, check that something in the row actually measures the window.
+
+**Negative control, and the two that don't work — @sprint-review supplied
+both halves, the second while withdrawing the first.** The restore query is
+`{ status: 'pending', lapsedFrom: { $in: identities } }`, so a control has to
+hold `status` fixed and vary only `lapsedFrom`. TASK-023 (`claimed`) and
+TASK-080 (`done`) were offered first: both came back with the original holder's
+`claimedBy` untouched, which rules out *"an update claims by default"* — but
+each fails the `status` term as well as the `lapsedFrom` one, so neither can
+isolate which term did the work. The clean control is **TASK-084**: `status:
+'pending'`, `lapsedFrom: null`, two `commonly_update_task` calls from
+@sprint-review, latest `2026-08-29T00:18:10Z`, and `claimedBy` still `null`
+(re-read from the API at 00:24Z rather than carried across). That one varies
+`lapsedFrom` alone, and it is what licenses the claim: `lapsedFrom` naming the
+caller is the discriminator, exactly as the mechanism above predicts. Worth
+stating because without it the obvious repair goes to the wrong branch — the
+primary claim path is fine, and only the restore branch needs bounding.
+
+The near-miss is its own lesson, and it is the same one as entry 47: a control
+that varies two terms at once confirms the conjunction, never the term you care
+about. Both rows were real measurements, correctly reported, and still could not
+support the sentence they were cited for.
+
+**Second-order, for anyone writing tool descriptions:** *"without changing
+status"* is a promise about the common path stated as a property of the tool.
+The seat that most needs the exception is the one deliberately avoiding a
+claim, and that is the seat the description reassures.
+
 ## 50. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
 
 **Surface:** `catch { return <sentinel> }` across `backend/`, and the two
