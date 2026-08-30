@@ -731,6 +731,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('var(--v2-fs-feature)');
   });
 
+  it('v2.css braces balance — an unclosed block silently swallows every later rule', () => {
+    // Shipped 2026-08-30: a doubled selector anchor ('.v2-team__tabs {.v2-team__tabs {')
+    // left one brace unclosed; the build tolerated it, the browser dropped
+    // every rule after line ~4023 (header CTAs unstyled, avatar sizing gone).
+    // jsdom can't see the breakage; brace balance is the cheap structural pin.
+    const opens = (v2.match(/\{/g) || []).length;
+    const closes = (v2.match(/\}/g) || []).length;
+    expect(opens).toBe(closes);
+    expect(v2).not.toMatch(/\{[^\n}]*\{/); // two opens on one line = doubled anchor
+  });
+
   it('platform tint tokens exist in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
