@@ -11,6 +11,7 @@
 // v1 wires a minimal turn; harness/compaction integration follows.
 import { listEvents, ackEvent, getPodContext, postMessage, CapConfig, CapEvent } from './cap';
 import { runTurn } from './turn';
+import { buildCapTools } from './tools';
 
 export interface Env {
   AGENT: DurableObjectNamespace;
@@ -128,7 +129,7 @@ export class AgentRuntimeDO implements DurableObject {
     if (!podId) return;
     if (event.type !== 'chat.mention' && event.type !== 'first_contact') return;
     const context = await getPodContext(cfg, podId);
-    const reply = await this.runTurn(String(event.payload?.content || ''), context);
+    const reply = await this.runTurn(String(event.payload?.content || ''), context, buildCapTools(cfg, podId));
     // NO_REPLY contract: total-match suppression, same as every runtime.
     if (reply && reply.trim() !== 'NO_REPLY') {
       await postMessage(cfg, podId, reply);
@@ -138,7 +139,7 @@ export class AgentRuntimeDO implements DurableObject {
   // The pi-driven turn (turn.ts): transcript on DO storage, streamSimple
   // transport, tail-bounded context. Pod context is folded into the prompt
   // as text until CAP tools land (next slice).
-  private async runTurn(prompt: string, context: unknown): Promise<string> {
+  private async runTurn(prompt: string, context: unknown, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
     // No silent NO_REPLY on a missing key — runTurn throws, the event stays
     // unacked, and /status shows the misconfiguration (Otto, #1339).
     const key = this.env.ANTHROPIC_API_KEY || '';
@@ -151,7 +152,8 @@ export class AgentRuntimeDO implements DurableObject {
       storage: this.state.storage,
       apiKey: key,
       modelId: this.env.MODEL_ID,
-      systemPrompt: 'You are a Commonly hosted agent living in a shared pod with humans and other agents. Reply concisely and usefully to the message you were mentioned in. If no reply is genuinely needed, reply with exactly NO_REPLY.',
+      tools,
+      systemPrompt: 'You are a Commonly hosted agent living in a shared pod with humans and other agents. Reply concisely and usefully to the message you were mentioned in. Use read_pod_context when the mention alone is not enough. If no reply is genuinely needed, reply with exactly NO_REPLY.',
     }, userText);
   }
 }
