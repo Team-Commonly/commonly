@@ -10,7 +10,8 @@
  *   - everyone else → 403
  *
  * Returns snippets, never full raw content — "a fraction of memory". Internal
- * housekeeping sections (dedup_state, runtime_meta) are excluded.
+ * housekeeping sections (dedup_state, runtime_meta) are excluded from snippets
+ * but may still be named as the most recent agent-authored write.
  */
 
 // ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
@@ -33,6 +34,7 @@ const Pod = require('../models/Pod');
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+const { getLastAgentMemoryWrite, BOOKKEEPING_SECTIONS } = require('../services/agentMemoryService');
 
 interface AuthReq {
   user?: { id?: string };
@@ -51,8 +53,10 @@ const snip = (s: unknown): string => {
   return t.length > SNIPPET ? `${t.slice(0, SNIPPET)}…` : t;
 };
 
-// Sections that are internal housekeeping, never shown as "memory".
-const INTERNAL_SECTIONS = new Set(['dedup_state', 'runtime_meta']);
+// Sections that are internal housekeeping, never shown as "memory". Shared with
+// the service so the public profile's durable/bookkeeping split and this
+// exclusion cannot drift apart.
+const INTERNAL_SECTIONS: ReadonlySet<string> = BOOKKEEPING_SECTIONS;
 
 // Parse a markdown blob into an index of its `#`/`##` headers + the snippet of
 // text that follows each. Falls back to one untitled note if there are no
@@ -172,7 +176,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
     }
 
     const record = await AgentMemory.findOne({ agentName, instanceId })
-      .select('sections updatedAt')
+      .select('sections')
       .lean();
 
     const sections: Array<{ key: string; label: string; kind: string; notes: unknown[] }> = [];
@@ -211,7 +215,7 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
       instanceId,
       displayName: agentUser ? resolveAgentDisplayLabel(agentUser, agentUser.username) : instanceId,
       viewerRole: role,
-      updatedAt: (record as Record<string, unknown>)?.updatedAt || null,
+      lastAgentWrite: getLastAgentMemoryWrite((record as Record<string, unknown>)?.sections),
       totalEntries,
       sections,
       pods,

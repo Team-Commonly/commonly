@@ -1,9 +1,11 @@
 jest.mock('../../../services/agentIdentityService', () => ({
   syncUserToPostgreSQL: jest.fn().mockResolvedValue(undefined),
+  resolveAgentDisplayLabel: jest.fn((user, fallback) => user.botMetadata?.displayName || fallback),
 }));
 
 const User = require('../../../models/User');
 const userController = require('../../../controllers/userController');
+const { resolveAgentDisplayLabel } = require('../../../services/agentIdentityService');
 
 const mockUserDoc = (fields) => ({
   ...fields,
@@ -89,6 +91,26 @@ describe('User Controller', () => {
       await userController.getUserById(req, res);
       expect(User.findById).toHaveBeenCalledWith('u1');
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', username: 'test' }));
+    });
+
+    it('returns the curated display label for an agent seat', async () => {
+      const mockUser = mockUserDoc({
+        _id: 'u1',
+        username: 'vale',
+        isBot: true,
+        botMetadata: { displayName: 'Vale', agentName: 'openclaw', instanceId: 'vale' },
+      });
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
+      const req = { params: { id: 'u1' }, user: { id: 'viewer' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.getUserById(req, res);
+
+      expect(resolveAgentDisplayLabel).toHaveBeenCalledWith(mockUser, 'vale');
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        username: 'vale',
+        displayName: 'Vale',
+      }));
     });
 
     it('returns 404 if the user is not found', async () => {

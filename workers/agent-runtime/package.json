@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.2"
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",
     "typescript": "^5.5.0",
+    "vitest": "^3.2.7",
     "wrangler": "^4.0.0"
   }
 }

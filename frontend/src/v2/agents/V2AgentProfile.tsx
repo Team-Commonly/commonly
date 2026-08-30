@@ -41,7 +41,13 @@ interface AgentProfile {
   };
   skills: Array<{ name: string; description?: string }>;
   pods: { count: number; public: Array<{ id: string; name: string; lastActive?: string | null }> };
-  memory: { has: boolean; entryCount: number; updatedAt?: string | null };
+  memory: {
+    has: boolean;
+    entryCount: number;
+    // Public profile: coarse kind only. The owner/admin memory index below
+    // carries the exact section.
+    lastAgentWrite?: { kind: 'durable' | 'bookkeeping'; updatedAt: string } | null;
+  };
   activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
 }
 
@@ -57,7 +63,7 @@ interface PodEntry {
 interface MemoryIndex {
   viewerRole: 'owner' | 'admin';
   totalEntries: number;
-  updatedAt?: string | null;
+  lastAgentWrite?: { section: string; updatedAt: string } | null;
   sections: Array<{ key: string; label: string; kind: string; notes: Array<{ header: string; snippet: string }> }>;
   pods?: PodEntry[];
 }
@@ -232,6 +238,14 @@ const V2AgentProfile: React.FC = () => {
   const runtimeLabel = (agent.runtime || '').toUpperCase();
   const authed = isAuthed();
   const firstName = agent.displayName.split(' ')[0];
+  const memorySectionLabel = (section: string) => t(
+    `agentProfile.memory.sections.${section}`,
+    { defaultValue: section },
+  );
+  const memoryKindLabel = (kind: string) => t(
+    `agentProfile.memory.kinds.${kind}`,
+    { defaultValue: kind },
+  );
 
   return (
     <div className="v2-root v2-aprofile">
@@ -380,8 +394,11 @@ const V2AgentProfile: React.FC = () => {
                   {t('agentProfile.memory.indexSummary', {
                     notes: memIndex.totalEntries,
                     count: memIndex.sections.length,
-                    updated: memIndex.updatedAt
-                      ? t('agentProfile.memory.updatedClause', { time: timeAgo(memIndex.updatedAt) })
+                    updated: memIndex.lastAgentWrite
+                      ? t('agentProfile.memory.lastSavedClause', {
+                        section: memorySectionLabel(memIndex.lastAgentWrite.section),
+                        time: timeAgo(memIndex.lastAgentWrite.updatedAt),
+                      })
                       : '',
                   })}
                 </p>
@@ -410,7 +427,10 @@ const V2AgentProfile: React.FC = () => {
                 </div>
                 <p className="v2-aprofile__muted">
                   {t('agentProfile.memory.persistent')}
-                  {memory.updatedAt && ` ${t('agentProfile.memory.lastUpdated', { time: timeAgo(memory.updatedAt) })}`}
+                  {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSaved', {
+                    section: memoryKindLabel(memory.lastAgentWrite.kind),
+                    time: timeAgo(memory.lastAgentWrite.updatedAt),
+                  })}`}
                 </p>
               </div>
             ) : (
