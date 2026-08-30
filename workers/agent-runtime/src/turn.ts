@@ -20,10 +20,17 @@ import {
 import { createModels, hasApi, type Message } from '@earendil-works/pi-ai';
 import { streamSimple } from '@earendil-works/pi-ai/compat';
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
+import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
+
+export type ModelProvider = 'anthropic' | 'deepseek';
 
 export interface TurnDeps {
   storage: DurableObjectStorage;
   apiKey: string;
+  // Which pi-ai provider the key belongs to. BYOK per instance; the operator
+  // picks. DeepSeek is OpenAI-completions-shaped and cheap — the guide agent
+  // already runs on it in the cluster.
+  provider?: ModelProvider;
   modelId?: string;
   systemPrompt: string;
   // Injectable loop runner so the storage round-trip is testable without
@@ -37,7 +44,14 @@ export interface TurnDeps {
 }
 
 const TRANSCRIPT_KEY = 'transcript';
-const DEFAULT_MODEL = 'claude-sonnet-5';
+const DEFAULT_MODEL: Record<ModelProvider, string> = {
+  anthropic: 'claude-sonnet-5',
+  deepseek: 'deepseek-v4-flash',
+};
+const PROVIDER_API: Record<ModelProvider, string> = {
+  anthropic: 'anthropic-messages',
+  deepseek: 'openai-completions',
+};
 // DO storage caps a value at ~2 MiB on the SQLite backend (128 KiB on KV).
 // A token budget alone is denominated wrong for that (Otto): bound bytes too.
 export const TRANSCRIPT_BYTE_BUDGET = 1_000_000;
@@ -120,20 +134,28 @@ export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN, grace = 2)
   };
 };
 
+const KEY_ENV: Record<ModelProvider, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
+  // Provider resolves FIRST so a missing key names the variable (Otto).
+  const provider: ModelProvider = deps.provider || 'anthropic';
   if (!deps.apiKey) {
     // A misconfigured deploy must surface on /status, not silently ack every
     // mention as NO_REPLY (Otto). Throwing leaves the event unacked → lastError.
-    throw new Error('ANTHROPIC_API_KEY unset — refusing to run a turn');
+    throw new Error(`${KEY_ENV[provider]} unset — refusing to run a turn`);
   }
   // createModels() starts EMPTY — providers are registered, never assumed.
   // (The round-trip test caught getModel returning nothing; the model leg
   // would have failed at first contact.)
   const models = createModels();
-  models.setProvider(anthropicProvider());
-  const model = models.getModel('anthropic', deps.modelId || DEFAULT_MODEL);
-  if (!model || !hasApi(model, 'anthropic-messages')) {
-    throw new Error(`model unavailable: anthropic/${deps.modelId || DEFAULT_MODEL}`);
+  models.setProvider(provider === 'deepseek' ? deepseekProvider() : anthropicProvider());
+  const modelId = deps.modelId || DEFAULT_MODEL[provider];
+  const model = models.getModel(provider, modelId);
+  if (!model || !hasApi(model, PROVIDER_API[provider] as never)) {
+    throw new Error(`model unavailable: ${provider}/${modelId}`);
   }
 
   let transcript = (await deps.storage.get<AgentMessage[]>(TRANSCRIPT_KEY)) || [];
