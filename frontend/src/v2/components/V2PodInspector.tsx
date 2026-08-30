@@ -1405,7 +1405,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
         <button
           type="button"
           className="v2-inspector__action"
-          onClick={() => navigate(`/v2/agents?podId=${pod._id}`)}
+          onClick={() => navigate(`/v2/agents/manage?podId=${pod._id}`)}
           title={t('inspector.members.manageTitle')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
