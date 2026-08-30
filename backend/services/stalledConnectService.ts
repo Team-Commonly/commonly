@@ -166,8 +166,9 @@ export const scan = async ({
   // second opinion. `deriveAgentState` can only answer 'never-connected' when
   // the install is BYO (host 'byo' or runtimeType 'local-cli'), so gating on
   // that here narrows the scan without being able to change a verdict. Seats
-  // with no token at all are excluded because a token-episode is the unit of
-  // work: no token issued means nothing was ever promised to connect.
+  // with no token at all are excluded below, after both token stores have
+  // been read. A token-episode is the unit of work: no token issued means
+  // nothing was ever promised to connect.
   //
   // `.lean()` is not optional — `config` is `{ type: Map }`, so on a live
   // Mongoose document `config.runtime` is undefined and every install would
@@ -176,7 +177,6 @@ export const scan = async ({
   // deriveAgentState reads.
   const candidates = await AgentInstallation.find({
     status: 'active',
-    'runtimeTokens.0': { $exists: true },
     $or: [
       { 'config.runtime.host': 'byo' },
       { 'config.runtime.runtimeType': 'local-cli' },
