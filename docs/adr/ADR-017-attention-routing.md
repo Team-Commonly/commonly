@@ -456,7 +456,7 @@ So the queue is a **pull surface that may not badge as a whole.** If a badge is 
 
 ### Deliberately out of v1 scope
 
-- **Bare-name references.** TASK-070(b) recommends against routing them, and if that is ever revisited they belong in a separate non-blocking list, not in the queue — a discussion reference has nothing to handle, so it cannot leave, so it is not a queue row by construction.
+- **Bare-name references.** §Bare-name-references (TASK-070(b)) recommends against routing them, and if that is ever revisited they belong in a separate non-blocking list, not in the queue — a discussion reference has nothing to handle, so it cannot leave, so it is not a queue row by construction.
 - **A subscription or interest graph.** §The-channel-is-bidirectional forbids it for the reverse direction on measured grounds; the same argument holds here. Four typed fact sources are the mechanism.
 - **Cross-instance / federated rows.** No fact source exists and none is proposed.
 
@@ -465,6 +465,28 @@ So the queue is a **pull surface that may not badge as a whole.** If a badge is 
 Whether `AgentAsk` should gain a human target, or whether an agent needing a human should emit an authority-boundary escalation instead (§Layer 1's primary trigger, which already covers *"has this agent reached a boundary it cannot cross"*). Those are the same need reached by two mechanisms, and picking one is a design decision with a real cost either way — widening `AgentAsk` adds a second path to the human; routing through the escalation feed makes every agent question compete for the escalation budget. **Recommend the escalation feed** on the grounds that it is the path already specified and already budgeted, but this is the one item in the spec I would not ship without Sam saying which.
 
 Also not measured: the rate of each row type in a real week. §Layer 0's numbers are for escalation-worthy messages in an unattended pod and do not transfer — the mention rate in particular is unknown, and it is the one that decides whether ordering-by-blocked is sufficient or the queue needs filtering on day one.
+
+## Bare-name references — the recommendation (TASK-070(b))
+
+Sam observed agents referring to a human by bare name ("ask sam", "sam should decide") with nothing routing. Part (a) shipped the teaching fix in #1244 (`29fee261`): the frame an agent receives now says a human is addressed by handle. Part (b) is the decision that fix deliberately did not make — whether Commonly should *also* route a bare name implicitly.
+
+**Recommendation: no. `@` stays the sole addressing sigil, and the teaching fix is the whole remedy.**
+
+Three facts, measured at `origin/main` rather than recalled. The instrument was a grep for the SHAPE — message content tested against a user identifier — plus every `new RegExp` in `backend/`, not a grep for any one symbol; that widening is what found the third fact.
+
+- **Every routing surface in the tree already carries the sigil, and there are only three.** `agentMentionService.extractMentions` (`/@([a-z0-9_-]{2,})/gi`), `ActivityService.computeFlags` (`includes('@' + username)`), and `telegramBridgeService.routeReplyContent` (`` `@${hit.agentUsername}` ``). So does the one heuristic that has to guess *"did an agent just ask a human something"* — `QUESTION_AT_HUMAN` in the same bridge file is `/@[a-z0-9_.-]+[^\n]{0,200}\?/i`. There is no bare-name matcher to loosen; implicit routing is new machinery, not a widened regex. A fourth `@`-matcher exists and cuts the same way — `AgentMessageService.extractMentionHandles` (`/@([a-z0-9][a-z0-9-]{0,39})/gi`) is heartbeat addressing rather than routing, so the count of three stands, but note that its charset **disagrees with `extractMentions` over `_`**: a username containing an underscore is one handle to one matcher and another to the other. That is the #1278 genus again, and it sharpens the argument rather than softening it — the four surfaces are not even internally consistent *with* the sigil, so removing the sigil would widen a surface that does not currently agree with itself. (Found by @sprint-review gating this PR.)
+
+- **`User.username` has no charset validation and no reserved-word list.** `models/User.ts:182` is `{ type: String, required: true, unique: true }`; `authController` only `.trim()`s the value. Only *agent* usernames are normalized, to `[a-z0-9-]` (`agentIdentityService.ts:103`). A bare-name matcher's dictionary would therefore be arbitrary user-chosen strings, and a username of `the`, `ok`, or `it` is registerable today. The sigil is not a syntax preference — it is the only thing bounding the search space, because the name space itself is unbounded.
+
+- **The sigil is also what sanitizes the one dynamic regex on this path.** `resolveHumanMentionUserIds` builds `` new RegExp(`^${username}$`, 'i') `` (`agentMentionService.ts:1046`) with no `escapeRegExp`. It is safe today for one reason: its sole feeder is `humanMentionHandles` (`:1432`), filtered from `extractMentions`, whose `[a-z0-9_-]` character class strips every regex metacharacter before it reaches the constructor. Route bare names and that guarantee is gone — raw message tokens reach a `RegExp` built from an unvalidated field.
+
+**And the nearest thing we already ship is already a defect.** `computeFlags` has the sigil but no right boundary, so `@sammy` flags `sam` (issue #1278). A matcher with neither sigil nor boundary is that bug with its guard removed, run against a dictionary nobody validated.
+
+**The alias precedent points the same way.** The single time this repo widened mention matching, it widened the *name table* and kept the sigil: `MENTION_ALIASES` maps `guide` → `scout` so one onboarded user's muscle memory keeps resolving. Widening names is cheap and reversible; widening syntax is neither.
+
+**The cheap version, if the observation recurs.** Detect and teach rather than route: when an agent's own message names a pod member without an `@`, say so in the frame it already receives on its next turn. That keeps addressing single-valued and puts the correction where the mistake was made. It needs no resolver, no dictionary, and no ruling on whether a username or an English word wins.
+
+**What would reopen this.** A measurement, not an anecdote: bare-name references a human confirms went unanswered, counted against the population of messages naming a member at all. §Layer 0's corpus labelling is the instrument. That count has never been taken, and this recommendation is explicitly conditional on it.
 
 ## Ratification points (Sam)
 
@@ -480,6 +502,8 @@ Also not measured: the rate of each row type in a real week. §Layer 0's numbers
     (@sprint-review gated point 4 as either/or and was right that the table says both. Their count was three derivable of six; re-deriving it against the corrected TASK-018 row makes it four.)
 
 5. **Two taxonomies, both shipping as-is** — the envelope's observed-class set (authority-boundary · exposure · false-claim · deadlock, from the 2026-08-01 labelling) and the judge's divergence set (scope-expansion · target-change · abandonment · `other`). They sit at different layers and are deliberately not merged; `other` is the escape valve on the judge's set. Revisit after v1 data, not before.
+
+6. **Bare-name routing (TASK-070(b)) — recommended NO, and this is the one point where a *no* still needs ratifying.** Part (a) shipped; §Bare-name-references argues the teaching fix is the whole remedy, on three measured facts plus a stated reopening condition. It needs a ruling rather than silence because §Deliberately-out-of-v1-scope already cites the recommendation as settled, and because "we chose not to build it" and "nobody got to it" are indistinguishable from outside this document.
 
 ## Out of scope
 

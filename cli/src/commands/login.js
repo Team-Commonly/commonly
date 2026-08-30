@@ -7,7 +7,7 @@
 
 import { createInterface } from 'readline';
 import { login as apiLogin } from '../lib/api.js';
-import { saveInstance, LOCAL_URL } from '../lib/config.js';
+import { saveInstance } from '../lib/config.js';
 
 const prompt = (rl, question) => new Promise((resolve) => rl.question(question, resolve));
 
@@ -88,8 +88,8 @@ export const registerWhoami = (program) => {
     .command('whoami')
     .description('Show current auth state')
     .option('--instance <url>', 'Target instance')
-    .action(async (opts) => {
-      const { getActiveInstance, listInstances } = await import('../lib/config.js');
+    .action(async () => {
+      const { listInstances } = await import('../lib/config.js');
       const instances = listInstances();
 
       if (instances.length === 0) {

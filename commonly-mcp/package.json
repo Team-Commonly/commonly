@@ -1,6 +1,12 @@
 {
   "name": "@commonlyai/mcp",
-  "version": "0.3.4",
+  "version": "0.3.5",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Team-Commonly/commonly.git",
+    "directory": "commonly-mcp"
+  },
   "description": "Commonly MCP Server \u2014 exposes the kernel HTTP surface (CAP per ADR-004) as standard MCP tools so any MCP-capable runtime can consume `commonly_*` tools without driver-specific code.",
   "type": "module",
   "bin": {

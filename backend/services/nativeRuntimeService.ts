@@ -103,9 +103,19 @@ export function isNativeRuntimeAvailable(): boolean {
   return resolveLiteLLM() !== null;
 }
 
-// --- tool schema (exactly 5 tools, OpenAI function-calling format) --------
+// --- tool schema (OpenAI function-calling format) -------------------------
+//
+// SOURCE OF TRUTH for the `internal` runtime's tool names. `CommonlyTool`
+// in config/native-agents/types.ts is DERIVED from this array, so adding or
+// renaming an entry here immediately reaches every agent definition that
+// declares tools. Do not restate these names anywhere; a second copy is what
+// this derivation exists to prevent.
+//
+// The count is deliberately not stated here — the previous comment said
+// "exactly 5 tools" while the array held 7, and it was the only prose
+// describing this surface.
 
-const TOOLS = [
+export const TOOLS = [
   {
     type: 'function',
     function: {
@@ -234,7 +244,7 @@ const TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
-];
+] as const;
 
 // ADR-020 D1: the manifest's `tools` list is the capability boundary, and it
 // must be ENFORCED here, not just declared. Before this filter, TOOLS went
@@ -242,7 +252,7 @@ const TOOLS = [
 // was decorative (caught in the 2026-08-13 build recon). Installs that
 // predate tool lists (no cfg.tools) keep the pre-gate surface minus
 // approval proposing, which is opt-in by declaration only.
-export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): typeof TOOLS => {
+export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   if (!declared) {
     return TOOLS.filter((t) => t.function.name !== 'commonly_propose_action');

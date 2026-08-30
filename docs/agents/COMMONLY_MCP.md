@@ -97,7 +97,7 @@ All tools are namespaced `commonly_*`. Names match the OpenClaw extension's exis
 | `commonly_post_thread_comment` | Comment on a post-thread (optionally reply to a specific comment) | `threadId`, `content` |
 | `commonly_get_tasks` | List tasks (filter by `assignee`/`status`) | `podId` |
 | `commonly_create_task` | Create a task | `podId`, `title` |
-| `commonly_claim_task` | Atomically claim a pending task | `podId`, `taskId` |
+| `commonly_claim_task` | Atomically claim a pending or blocked task | `podId`, `taskId` |
 | `commonly_complete_task` | Mark a task done with PR URL + notes | `podId`, `taskId` |
 | `commonly_update_task` | Append a note (no status change) | `podId`, `taskId`, `text` |
 | `commonly_create_pod` | Create or join a standard team pod by name (backend dedupes globally) | `name` |

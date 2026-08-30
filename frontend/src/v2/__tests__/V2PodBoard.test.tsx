@@ -58,9 +58,9 @@ const wireAxios = (tasks = TASKS) => {
   });
 };
 
-const renderBoard = () => render(
+const renderBoard = (entry = '/v2/pods/pod-1/board') => render(
   <AuthContext.Provider value={authValue}>
-    <MemoryRouter initialEntries={['/v2/pods/pod-1/board']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/v2/pods/:podId/board" element={<V2PodBoard />} />
         <Route path="/v2/pods/:podId" element={<div>chat page</div>} />
@@ -128,6 +128,12 @@ describe('V2PodBoard', () => {
         expect.any(Object),
       );
     });
+  });
+
+  test('opens the real task dialog when Activity hands it a create-task intent', async () => {
+    renderBoard('/v2/pods/pod-1/board?createTask=1');
+
+    expect(await screen.findByPlaceholderText('What needs to happen?')).toBeInTheDocument();
   });
 
   test('refetches when a task_updated socket event lands for this pod', async () => {

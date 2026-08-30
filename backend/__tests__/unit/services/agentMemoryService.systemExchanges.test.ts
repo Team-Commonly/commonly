@@ -179,6 +179,114 @@ describe('appendSystemExchange (DB-backed)', () => {
     expect(codex.sections.system_exchanges.entries[0].peers).toEqual(['default']);
   });
 
+  // dedupeWindowMs — opt-in repeat suppression for constant-payload kinds.
+  // The ring is fixed at 50; a repeat writer with an unvarying takeaway evicts
+  // the entries the ring exists to preserve. Measured live before this landed:
+  // ~45 of 50 slots held one byte-identical loop-trip notice.
+  describe('dedupeWindowMs', () => {
+    const WINDOW = 6 * 60 * 60 * 1000;
+    const trip = {
+      ...baseEntry,
+      kind: 'agent-dm-loop-trip',
+      takeaway: '8 consecutive bot turns within 30 min — guard tripped',
+      dedupeWindowMs: WINDOW,
+    };
+
+    it('suppresses a byte-identical repeat inside the window without touching revision', async () => {
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T00:00:00Z') });
+      const second = await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T01:00:00Z') });
+      expect(second?.deduped).toBe(true);
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(1);
+      // revision is the delta cursor drivers read; a suppressed append must not
+      // advance it, or a seat re-fetches an envelope that did not change.
+      expect(doc.revision).toBe(1);
+    });
+
+    it('records the recurrence once the window has passed', async () => {
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T00:00:00Z') });
+      const later = await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T06:00:01Z') });
+      expect(later?.deduped).toBeUndefined();
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    // The control that stops this becoming "suppress everything". Only the
+    // NEWEST entry is compared, and only on all three of kind/pod/takeaway —
+    // so a different pod, a different kind, or a real per-event payload is
+    // never suppressed, which is what makes the option safe to leave off by
+    // default for every other caller.
+    //
+    // One term per case, deliberately. Chaining all three variations into a
+    // single four-append test proves nothing about any of them: the comparison
+    // only looks at the NEWEST entry, so each variant is checked against the
+    // previous VARIANT rather than against the base, and they differ on some
+    // other term anyway. Delete the kind term or the takeaway term from the
+    // comparison and that chained test stays green. Two appends per case —
+    // base, then one changed field — is what makes each term load-bearing.
+    it('does not suppress a different pod', async () => {
+      const ts = new Date('2026-05-03T00:00:00Z');
+      await appendSystemExchange({ ...trip, ts });
+      await appendSystemExchange({ ...trip, surfacePodId: '69f7b89aabbccddeeff00022', ts });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    it('does not suppress a different kind', async () => {
+      const ts = new Date('2026-05-03T00:00:00Z');
+      await appendSystemExchange({ ...trip, ts });
+      await appendSystemExchange({ ...trip, kind: 'agent-dm-conclusion', ts });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    it('does not suppress a different takeaway', async () => {
+      const ts = new Date('2026-05-03T00:00:00Z');
+      await appendSystemExchange({ ...trip, ts });
+      await appendSystemExchange({ ...trip, takeaway: 'something else', ts });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    // Dedupe compares against the newest entry only, so an unrelated append in
+    // between reopens the window. Pinned as a KNOWN limit rather than left to
+    // be rediscovered: it is what keeps the check one indexed read instead of
+    // a scan, and the failure it guards is a run of consecutive repeats.
+    it('is defeated by an interleaved entry, by design', async () => {
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T00:00:00Z') });
+      await appendSystemExchange({ ...baseEntry, ts: new Date('2026-05-03T00:30:00Z') });
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T01:00:00Z') });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(3);
+    });
+
+    // An out-of-order ts yields a negative age. Treating that as "inside the
+    // window" would silently drop an entry that is genuinely older than the
+    // one it is being compared to.
+    it('does not suppress an entry older than the newest one', async () => {
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T02:00:00Z') });
+      await appendSystemExchange({ ...trip, ts: new Date('2026-05-03T01:00:00Z') });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+
+    it('appends every repeat when the option is omitted — off by default', async () => {
+      const { dedupeWindowMs, ...noOpt } = trip;
+      await appendSystemExchange({ ...noOpt, ts: new Date('2026-05-03T00:00:00Z') });
+      await appendSystemExchange({ ...noOpt, ts: new Date('2026-05-03T00:00:01Z') });
+
+      const doc = await AgentMemory.findOne({ agentName: 'pixel', instanceId: 'default' }).lean();
+      expect(doc.sections.system_exchanges.entries).toHaveLength(2);
+    });
+  });
+
   it('returns null on missing required identity fields', async () => {
     expect(await appendSystemExchange({ ...baseEntry, agentName: '' })).toBeNull();
     expect(await appendSystemExchange({ ...baseEntry, instanceId: '' })).toBeNull();

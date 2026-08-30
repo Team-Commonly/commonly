@@ -66,6 +66,7 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
+import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -78,10 +79,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = (prompt, memoryLongTerm) => {
-  if (!memoryLongTerm) return prompt;
-  return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
+const buildPrompt = buildMemoryPreamble;
 
 const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 const PUBLIC_DENIED_TOOLS = [
@@ -472,7 +470,13 @@ export default {
   async spawn(prompt, ctx = {}) {
     const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
+    // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
+    // `null || ''` is `''` — which routed the unreadable case straight into
+    // the empty-memory branch and made the whole distinction unreachable from
+    // the only two paths that build a real prompt. buildPrompt handles
+    // undefined and '' as absence itself; it does not need a guard, it needs
+    // the value.
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm);
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
     // own default — which is how a fleet of ten agents ended up running three

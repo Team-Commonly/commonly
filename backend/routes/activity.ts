@@ -1,3 +1,9 @@
+// ESM import so CodeQL recognises the limiter on this database-backed read
+// route; it runs before auth and the recap aggregation.
+import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -23,6 +29,20 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// Activity queries and actions fan out to multiple projections. Sixty per
+// minute leaves room for normal use without an unbounded hot loop.
+const activityRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: Request) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
+});
+
+router.use(activityRateLimit);
+
 router.get('/feed', auth, async (req: Req, res: Res) => {
   try {
     const { limit = '20', before, filter, mode = 'updates' } = req.query || {};
@@ -32,6 +52,30 @@ router.get('/feed', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error fetching activity feed:', error);
     res.status(500).json({ error: 'Failed to fetch activity feed' });
+  }
+});
+
+router.get('/recap', auth, async (req: Req, res: Res) => {
+  try {
+    const window = req.query?.window;
+    const podId = req.query?.podId;
+    if (window !== undefined && window !== 'today' && window !== '7d') {
+      return res.status(400).json({ error: 'window must be today or 7d' });
+    }
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.getRecap(userId, {
+      window: window === '7d' ? '7d' : 'today',
+      podId,
+    });
+    return res.json(result);
+  } catch (error) {
+    const e = error as { message?: string };
+    if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+    console.error('Error fetching activity recap:', error);
+    return res.status(500).json({ error: 'Failed to fetch activity recap' });
   }
 });
 
@@ -47,6 +91,19 @@ router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
     console.error('Error fetching pod activity:', error);
     if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
     res.status(500).json({ error: 'Failed to fetch pod activity' });
+  }
+});
+
+// Everything concretely waiting on this human: approvals + unacked mentions +
+// board decision/handoff rows. TASK-083: the queue reads FACTS that exist,
+// never name-matching heuristics (TASK-070b stays a design decision).
+router.get('/decision-queue', auth, async (req: Req, res: Res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    res.json(await ActivityService.getDecisionQueue(userId));
+  } catch (error) {
+    console.error('Error fetching decision queue:', error);
+    res.status(500).json({ error: 'Failed to fetch decision queue' });
   }
 });
 
@@ -91,6 +148,19 @@ router.post('/mark-read', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error marking activity as read:', error);
     return res.status(500).json({ error: 'Failed to mark activity as read' });
+  }
+});
+
+router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
+  try {
+    const { activityId } = req.params || {};
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.acknowledgeMention(userId, String(activityId)) as { success?: boolean; error?: string };
+    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge mention' });
+    return res.json(result);
+  } catch (error) {
+    console.error('Error acknowledging activity mention:', error);
+    return res.status(500).json({ error: 'Failed to acknowledge mention' });
   }
 });
 

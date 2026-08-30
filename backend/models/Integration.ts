@@ -79,6 +79,20 @@ export interface IIntegration extends Document {
     maxBufferSize?: number;
     agentAccessEnabled?: boolean;
     globalAgentAccess?: boolean;
+    // Telegram live bridge (telegramBridgeService). Undeclared config paths
+    // are silently stripped by Mongoose writes — these MUST stay declared or
+    // the enable path becomes a no-op that reports success (found by
+    // sprint-review on #1282 before first deploy).
+    liveRelay?: boolean;
+    linkedUserId?: string;
+    leadAgentUsername?: string;
+    relayAllAgentMessages?: boolean;
+    relayMutedUntil?: Date;
+    relayMap?: {
+      tgMessageId: string;
+      agentUsername: string;
+      podMessageId?: string | null;
+    }[];
   };
   ingestTokens: IIngestToken[];
   lastSync?: Date | null;
@@ -157,6 +171,19 @@ const IntegrationSchema = new Schema<IIntegration>(
         },
       ],
       maxBufferSize: { type: Number, default: 1000 },
+      // Telegram live bridge — see interface note above; keep in lockstep.
+      liveRelay: { type: Boolean, default: false },
+      linkedUserId: String,
+      leadAgentUsername: String,
+      relayAllAgentMessages: { type: Boolean, default: false },
+      relayMutedUntil: Date,
+      relayMap: [
+        {
+          tgMessageId: String,
+          agentUsername: String,
+          podMessageId: String,
+        },
+      ],
       agentAccessEnabled: { type: Boolean, default: false },
       globalAgentAccess: { type: Boolean, default: false },
     },

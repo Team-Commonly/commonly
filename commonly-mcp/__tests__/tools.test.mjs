@@ -211,6 +211,12 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001/claim');
   });
 
+  it('teaches that blocked tasks resume through claim', () => {
+    expect(byName.commonly_claim_task.description).toContain('pending or blocked');
+    expect(byName.commonly_claim_task.description).toContain('resumes it into active work');
+    expect(byName.commonly_get_tasks.description).toContain('pending,claimed,blocked');
+  });
+
   it('complete_task hits /:podId/:taskId/complete with prUrl + notes', async () => {
     const fetchSpy = installFetch(async () => okResponse({ ok: true }));
     await byName.commonly_complete_task.call({
