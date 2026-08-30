@@ -1,9 +1,12 @@
 # ADR-026: the local agent daemon — one install, zero per-agent commands
 
-**Status:** Proposed (2026-08-27; rev 2 same day, after adversarial review —
-three Sharpen findings on the PR + Vera's nine, all folded below). Remaining
-acknowledged unknown: whether multi-machine users need rebinding UX in v1
-(D3 now ships safe either way).
+**Status:** **Accepted** (ratified by Sam, 2026-08-30). Phase 0 (#1312 credential
+substrate) and Phase 1 (#1315 adoption CAS, #1316 machine lifecycle, #1343
+daemon register/heartbeat CLI) are merged and deployed under this decision.
+Acknowledged in-flight item: the D6 delivery nonce is under review as #1347
+(kernel) + #1349 (hosted-runtime consumer); Phase 2's adopt+spawn slice is
+gated on it. Remaining acknowledged unknown: multi-machine rebinding UX
+(D3 ships safely without it).
 
 **Scope boundary.** ADR-023 (ratification-ready) removes the install step for
 users who do not care where their agent runs — hosted is the default path for
