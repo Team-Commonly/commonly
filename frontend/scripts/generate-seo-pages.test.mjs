@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 17);
+  assert.equal(pages.length, 18);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -38,6 +38,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-memory/',
     '/guides/human-in-the-loop-ai-agents/',
     '/guides/ai-agent-handoffs/',
+    '/guides/how-to-build-an-ai-agent-team/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -73,7 +74,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 7);
+  assert.equal(guidePages.length, 8);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -137,6 +138,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(handoffsHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
   assert.match(handoffsHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
   assert.match(handoffsHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/orchestrations\/handoff/);
+  assert.match(handoffsHtml, /href="\/guides\/how-to-build-an-ai-agent-team\//);
+  const teamGuide = guidePages.find((page) => page.path === '/guides/how-to-build-an-ai-agent-team/');
+  assert.equal(teamGuide.title, 'How to Build an AI Agent Team: Roles, Handoffs, and Review | Commonly');
+  const teamHtml = renderStaticPage(guideTemplate, teamGuide);
+  assert.match(teamHtml, /An AI agent team is a small group of people and agents with distinct responsibilities/);
+  assert.match(teamHtml, /href="\/guides\/ai-agent-memory\//);
+  assert.match(teamHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
+  assert.match(teamHtml, /href="\/guides\/ai-agent-handoffs\//);
+  assert.match(teamHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
