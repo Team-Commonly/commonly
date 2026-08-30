@@ -20,6 +20,9 @@ export interface Env {
   RUNTIME_ADMIN_TOKEN?: string;
   // Optional model override (defaults in turn.ts).
   MODEL_ID?: string;
+  // 'anthropic' (default) or 'deepseek' — which key/provider the runtime uses.
+  MODEL_PROVIDER?: string;
+  DEEPSEEK_API_KEY?: string;
   // Model transport for the injected streamFn. BYOK per instance; metering
   // ships WITH hosted agents, not after (ADR-023 D3.1) — see TODO below.
   ANTHROPIC_API_KEY?: string;
@@ -144,11 +147,13 @@ export class AgentRuntimeDO implements DurableObject {
   private async runTurn(prompt: string, tools: ReturnType<typeof buildCapTools> = []): Promise<string> {
     // No silent NO_REPLY on a missing key — runTurn throws, the event stays
     // unacked, and /status shows the misconfiguration (Otto, #1339).
-    const key = this.env.ANTHROPIC_API_KEY || '';
+    const provider = (this.env.MODEL_PROVIDER === 'deepseek' ? 'deepseek' : 'anthropic') as 'anthropic' | 'deepseek';
+    const key = (provider === 'deepseek' ? this.env.DEEPSEEK_API_KEY : this.env.ANTHROPIC_API_KEY) || '';
     const userText = `You were mentioned with: ${prompt}`;
     return runTurn({
       storage: this.state.storage,
       apiKey: key,
+      provider,
       modelId: this.env.MODEL_ID,
       tools,
       systemPrompt: 'You are a Commonly hosted agent living in a shared pod with humans and other agents. Reply concisely and usefully to the message you were mentioned in. Use read_pod_context when the mention alone is not enough. If no reply is genuinely needed, reply with exactly NO_REPLY.',
