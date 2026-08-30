@@ -1,7 +1,7 @@
 // ADR-026 D4: authenticates cm_daemon_* bearers against the AgentCredential
 // ledger. A daemon credential authorizes agent-LIFECYCLE operations only —
 // it deliberately does NOT pass agentRuntimeAuth and cannot act as any agent
-// (Vera's scope ruling on #1312/S1). Sets req.daemonCredential.
+// (Vera's scope ruling on #1312/S1). Sets req.machine only.
 import { Request, Response, NextFunction } from 'express';
 import AgentCredential from '../models/AgentCredential';
 
@@ -22,11 +22,8 @@ export interface DaemonAuthedRequest extends Request {
 }
 
 // Factory: daemonAuth('agents:adopt') returns middleware that requires the
-// credential to CARRY that scope. Scopes are enforced, not decorative
-// (Vera on #1315: "a scope nobody reads doesn't hold the claim"). There are
-// no legacy daemon credentials to grandfather — a credential without the
-// required scope is a 403, full stop. This is THE daemon middleware; do not
-// grow a second copy (the podWriteAccessService copy-drift rule).
+// credential to carry that scope. This is the one daemon middleware; do not
+// grow a second copy.
 export default function daemonAuth(requiredScope?: string) {
   return async function daemonAuthMw(
     req: DaemonAuthedRequest,
@@ -65,4 +62,4 @@ export default function daemonAuth(requiredScope?: string) {
 }
 // CJS compat
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = exports["default"]; Object.assign(module.exports, exports);
+module.exports = exports.default; Object.assign(module.exports, exports);

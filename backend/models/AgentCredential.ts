@@ -55,6 +55,7 @@ const AgentCredentialSchema = new Schema<IAgentCredential>(
 AgentCredentialSchema.index({ ownerUserId: 1, status: 1 });
 AgentCredentialSchema.index({ parentId: 1 });
 AgentCredentialSchema.index({ agentUserId: 1 });
+AgentCredentialSchema.index({ machineId: 1, kind: 1, status: 1 });
 
 // Revoke a credential AND every descendant, breadth-first. One level deep
 // today (daemon → runtime), but written as a walk so a deeper chain can

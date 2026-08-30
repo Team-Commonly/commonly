@@ -310,8 +310,11 @@ class AgentWebSocketService {
         // (Vera's bypass finding on #1312).
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const AgentCredential = require('../models/AgentCredential');
-        const credential = await AgentCredential.findOne({ tokenHash, kind: 'runtime' });
+        // The ledger is an assertion, not a filtered runtime lookup: a daemon
+        // hash in a legacy token list must veto the WS fallback too.
+        const credential = await AgentCredential.findOne({ tokenHash });
         if (credential) {
+          if (credential.kind !== 'runtime') return null;
           if (credential.status !== 'active') return null;
           if (credential.expiresAt && credential.expiresAt < new Date()) return null;
           if (credential.parentId) {
