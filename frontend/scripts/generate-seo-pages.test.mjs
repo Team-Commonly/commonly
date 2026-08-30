@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 18);
+  assert.equal(pages.length, 19);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -39,6 +39,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/human-in-the-loop-ai-agents/',
     '/guides/ai-agent-handoffs/',
     '/guides/how-to-build-an-ai-agent-team/',
+    '/guides/agent-to-agent-messaging/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -74,7 +75,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 8);
+  assert.equal(guidePages.length, 9);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -122,6 +123,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(memoryHtml, /https:\/\/docs\.langchain\.com\/oss\/python\/deepagents\/memory/);
   assert.match(memoryHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
   assert.match(memoryHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
+  assert.match(memoryHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const humanReviewGuide = guidePages.find((page) => page.path === '/guides/human-in-the-loop-ai-agents/');
   assert.equal(humanReviewGuide.title, 'Human-in-the-Loop Review for AI Agent Teams | Commonly');
   const humanReviewHtml = renderStaticPage(guideTemplate, humanReviewGuide);
@@ -130,6 +132,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(humanReviewHtml, /href="\/guides\/ai-agent-memory\//);
   assert.match(humanReviewHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/human-in-the-loop/);
   assert.match(humanReviewHtml, /href="\/guides\/ai-agent-handoffs\//);
+  assert.match(humanReviewHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const handoffsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-handoffs/');
   assert.equal(handoffsGuide.title, 'AI Agent Handoffs: Transfer Work Without Losing Context | Commonly');
   const handoffsHtml = renderStaticPage(guideTemplate, handoffsGuide);
@@ -139,6 +142,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(handoffsHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
   assert.match(handoffsHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/orchestrations\/handoff/);
   assert.match(handoffsHtml, /href="\/guides\/how-to-build-an-ai-agent-team\//);
+  assert.match(handoffsHtml, /href="\/guides\/agent-to-agent-messaging\//);
   const teamGuide = guidePages.find((page) => page.path === '/guides/how-to-build-an-ai-agent-team/');
   assert.equal(teamGuide.title, 'How to Build an AI Agent Team: Roles, Handoffs, and Review | Commonly');
   const teamHtml = renderStaticPage(guideTemplate, teamGuide);
@@ -147,6 +151,22 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(teamHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
   assert.match(teamHtml, /href="\/guides\/ai-agent-handoffs\//);
   assert.match(teamHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
+  assert.match(teamHtml, /href="\/guides\/agent-to-agent-messaging\//);
+  const messagingGuide = guidePages.find((page) => page.path === '/guides/agent-to-agent-messaging/');
+  assert.equal(messagingGuide.title, 'Agent-to-Agent Messaging: How AI Agents DM | Commonly');
+  const messagingHtml = renderStaticPage(guideTemplate, messagingGuide);
+  assert.match(messagingHtml, /An agent-to-agent message is a focused, one-to-one request or response/);
+  assert.match(messagingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(messagingHtml, /commonly_dm_agent/);
+  assert.match(messagingHtml, /href="\/guides\/multi-agent-collaboration-platform\//);
+  assert.match(messagingHtml, /href="\/guides\/connect-claude-codex-shared-workspace\//);
+  assert.match(messagingHtml, /href="\/guides\/ai-agent-handoffs\//);
+  assert.match(messagingHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
+  assert.match(messagingHtml, /https:\/\/a2a-protocol\.org\//);
+  assert.match(messagingHtml, /Conceptually, the tool flow looks like this:<\/p>\s*<ol>/);
+  assert.match(messagingHtml, /Use this pattern:<\/p>\s*<pre class="seo-code">/);
+  assert.match(messagingHtml, /<h2>When a shared thread is better than a DM<\/h2>\s*<p>Choose a thread[^<]*<\/p>\s*<ul>/);
+  assert.match(messagingHtml, /<h2>When a DM is the better choice<\/h2>\s*<p>Choose a DM[^<]*<\/p>\s*<ul>/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
