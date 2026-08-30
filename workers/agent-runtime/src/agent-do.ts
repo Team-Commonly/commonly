@@ -139,8 +139,9 @@ export class AgentRuntimeDO implements DurableObject {
   // transport, tail-bounded context. Pod context is folded into the prompt
   // as text until CAP tools land (next slice).
   private async runTurn(prompt: string, context: unknown): Promise<string> {
-    const key = this.env.ANTHROPIC_API_KEY;
-    if (!key) return 'NO_REPLY';
+    // No silent NO_REPLY on a missing key — runTurn throws, the event stays
+    // unacked, and /status shows the misconfiguration (Otto, #1339).
+    const key = this.env.ANTHROPIC_API_KEY || '';
     const recent = ((context as { recentMessages?: { content?: string; senderName?: string }[] })?.recentMessages || [])
       .slice(-10)
       .map((m) => `${m.senderName || 'someone'}: ${String(m.content || '').slice(0, 400)}`)

@@ -19,16 +19,24 @@ import {
 } from '@earendil-works/pi-agent-core';
 import { createModels, hasApi, type Message } from '@earendil-works/pi-ai';
 import { streamSimple } from '@earendil-works/pi-ai/compat';
+import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
 
 export interface TurnDeps {
   storage: DurableObjectStorage;
   apiKey: string;
   modelId?: string;
   systemPrompt: string;
+  // Injectable loop runner so the storage round-trip is testable without
+  // faking pi's event stream (Otto's #1339 gate: the persistence contract
+  // is where the blocker lived).
+  loop?: typeof runAgentLoop;
 }
 
 const TRANSCRIPT_KEY = 'transcript';
 const DEFAULT_MODEL = 'claude-sonnet-5';
+// DO storage caps a value at ~2 MiB on the SQLite backend (128 KiB on KV).
+// A token budget alone is denominated wrong for that (Otto): bound bytes too.
+export const TRANSCRIPT_BYTE_BUDGET = 1_000_000;
 
 // Identity conversion: AgentMessage ⊇ Message; anything that is not a plain
 // LLM message (custom agent messages) is dropped. Contract: never throws.
@@ -66,8 +74,28 @@ export const tailBound = (
   return out;
 };
 
+// Byte-bound after the token bound: drop oldest turns until the serialized
+// transcript fits DO storage. Same turn-boundary rule, same floor of two.
+export const byteBound = (messages: AgentMessage[], budgetBytes: number): AgentMessage[] => {
+  let out = messages;
+  while (out.length > 2 && JSON.stringify(out).length > budgetBytes) {
+    const nextUser = out.findIndex((m, i) => i > 0 && (m as { role?: string }).role === 'user');
+    out = nextUser > 0 ? out.slice(nextUser) : out.slice(1);
+  }
+  return out;
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
+  if (!deps.apiKey) {
+    // A misconfigured deploy must surface on /status, not silently ack every
+    // mention as NO_REPLY (Otto). Throwing leaves the event unacked → lastError.
+    throw new Error('ANTHROPIC_API_KEY unset — refusing to run a turn');
+  }
+  // createModels() starts EMPTY — providers are registered, never assumed.
+  // (The round-trip test caught getModel returning nothing; the model leg
+  // would have failed at first contact.)
   const models = createModels();
+  models.setProvider(anthropicProvider());
   const model = models.getModel('anthropic', deps.modelId || DEFAULT_MODEL);
   if (!model || !hasApi(model, 'anthropic-messages')) {
     throw new Error(`model unavailable: anthropic/${deps.modelId || DEFAULT_MODEL}`);
@@ -86,7 +114,12 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
     getApiKey: () => deps.apiKey,
   };
 
-  const updated = await runAgentLoop([prompt], context, config, () => {}, undefined, streamSimple);
-  await deps.storage.put(TRANSCRIPT_KEY, updated);
-  return lastAssistantText(updated).trim() || 'NO_REPLY';
+  // runAgentLoop returns ONLY this turn's messages (prompts + replies), never
+  // context.messages — so the transcript is APPENDED, not replaced (Otto's
+  // #1339 blocker: the previous shape overwrote memory every turn).
+  const loop = deps.loop || runAgentLoop;
+  const turnMessages = await loop([prompt], context, config, () => {}, undefined, streamSimple);
+  const merged = byteBound([...transcript, ...turnMessages], TRANSCRIPT_BYTE_BUDGET);
+  await deps.storage.put(TRANSCRIPT_KEY, merged);
+  return lastAssistantText(turnMessages).trim() || 'NO_REPLY';
 };
