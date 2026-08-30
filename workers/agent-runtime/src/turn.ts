@@ -134,16 +134,22 @@ export const makeToolBudget = (max: number = MAX_TOOL_CALLS_PER_TURN, grace = 2)
   };
 };
 
+const KEY_ENV: Record<ModelProvider, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
+  // Provider resolves FIRST so a missing key names the variable (Otto).
+  const provider: ModelProvider = deps.provider || 'anthropic';
   if (!deps.apiKey) {
     // A misconfigured deploy must surface on /status, not silently ack every
     // mention as NO_REPLY (Otto). Throwing leaves the event unacked → lastError.
-    throw new Error('model API key unset — refusing to run a turn');
+    throw new Error(`${KEY_ENV[provider]} unset — refusing to run a turn`);
   }
   // createModels() starts EMPTY — providers are registered, never assumed.
   // (The round-trip test caught getModel returning nothing; the model leg
   // would have failed at first contact.)
-  const provider: ModelProvider = deps.provider || 'anthropic';
   const models = createModels();
   models.setProvider(provider === 'deepseek' ? deepseekProvider() : anthropicProvider());
   const modelId = deps.modelId || DEFAULT_MODEL[provider];
