@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
-import { startPoller } from '../lib/poller.js';
+import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { startWebhookServer, forwardToLocalWebhook } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
 import {
@@ -1670,11 +1670,10 @@ export const performRun = ({
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
-          // ADR-026 D6: this child lost its delivery to a requeue. It must
-          // stand down instead of polling again and racing the replacement.
-          if (ackErr?.status === 409 && ackErr?.body?.code === 'stale_delivery') {
+          const terminalError = terminalDeliveryAckError(ackErr, event._id, 'agent run');
+          if (terminalError) {
             running = false;
-            onError?.(new Error(`Delivery ${event._id} was superseded — stopping agent run.`));
+            onError?.(terminalError);
             return;
           }
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));

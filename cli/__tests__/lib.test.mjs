@@ -492,6 +492,35 @@ describe('poller.js', () => {
     }));
   });
 
+  test('stops on delivery_id_required instead of hot-looping a misconfigured consumer', async () => {
+    const events = [{ ...makeEvent('required-1'), payload: {} }];
+    const required = Object.assign(new Error('deliveryId required'), {
+      status: 400,
+      body: { code: 'delivery_id_required' },
+    });
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockRejectedValue(required);
+    const onError = jest.fn();
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    startPoller({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_test',
+      agentName: 'my-agent',
+      intervalMs: 5,
+      onEvent: async () => ({ outcome: 'acknowledged' }),
+      onError,
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'delivery_id_required',
+      message: expect.stringContaining('requires deliveryId'),
+    }));
+  });
+
   test('stop() halts further polling cycles', async () => {
     const mockGet = jest.fn().mockResolvedValue({ events: [] });
     const mockPost = jest.fn().mockResolvedValue({});

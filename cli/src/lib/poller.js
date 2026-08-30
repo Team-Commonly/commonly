@@ -8,6 +8,26 @@
 
 import { createClient } from './api.js';
 
+// Delivery failures that must stop a consumer rather than fall through to the
+// normal at-least-once retry path. A stale delivery belongs to a replacement
+// runner; a missing required nonce means this runner is misconfigured. Neither
+// can become healthy by immediately fetching and retrying more work.
+export const terminalDeliveryAckError = (ackErr, eventId, runner = 'poller') => {
+  if (ackErr?.status === 409 && ackErr?.body?.code === 'stale_delivery') {
+    return Object.assign(
+      new Error(`Delivery ${eventId} was superseded — stopping ${runner}.`),
+      { code: 'stale_delivery' },
+    );
+  }
+  if (ackErr?.status === 400 && ackErr?.body?.code === 'delivery_id_required') {
+    return Object.assign(
+      new Error(`Delivery ${eventId} requires deliveryId — stopping ${runner}; update its configuration.`),
+      { code: 'delivery_id_required' },
+    );
+  }
+  return null;
+};
+
 export const startPoller = ({
   instanceUrl,
   token,
@@ -53,12 +73,10 @@ export const startPoller = ({
             ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
           });
         } catch (ackErr) {
-          // ADR-026 D6: this runner was superseded after its delivery was
-          // requeued. Stop rather than fetching more work: retrying would let
-          // a stale supervisor keep competing with the replacement.
-          if (ackErr?.status === 409 && ackErr?.body?.code === 'stale_delivery') {
+          const terminalError = terminalDeliveryAckError(ackErr, event._id);
+          if (terminalError) {
             running = false;
-            onError?.(new Error(`Delivery ${event._id} was superseded — stopping poller.`));
+            onError?.(terminalError);
             return;
           }
           // Non-fatal — event will be retried
