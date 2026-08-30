@@ -190,7 +190,9 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
 /**
  * POST /api/hosted/deprovision { agentName, instanceId? }
  * Stops the runtime. The installation and identity stay — ADR-001 §3 identity
- * continuity; re-provisioning finds the same memory and the same token.
+ * continuity; re-provisioning finds the same memory. The token does NOT
+ * survive: provision rotates on every call (Otto on #1355), so a
+ * re-provision mints fresh and orphans anything still holding the old one.
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {
   try {
