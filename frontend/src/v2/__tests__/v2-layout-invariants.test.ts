@@ -716,6 +716,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
   // token files (the same-PR rule), and the tile class must consume them.
+  it('chat message text keeps its measure cap (craft audit finding 6)', () => {
+    // 150-char lines on the chat surface were the audit's P0 readability
+    // defect; jsdom cannot measure line length, so pin the rule itself.
+    const block = v2.match(/\.v2-msg__content \{[^}]*\}/);
+    expect(block).not.toBeNull();
+    expect(block![0]).toContain('max-width: 75ch');
+  });
+
   it('platform tint tokens exist in v2.css and tokens.css together', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
