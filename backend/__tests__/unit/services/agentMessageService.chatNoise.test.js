@@ -177,7 +177,7 @@ describe('sanitizeAgentContent — NO_REPLY suppression and sanitization', () =>
     )).toBe(`${brailleBlank}\n\nvisible content`);
   });
 
-  it('keeps format characters outside Default_Ignorable in the decision copy', () => {
+  it('normalizes Cf-only prefixes before both sentinel checks', () => {
     // U+0600 is Cf but not Default_Ignorable. The union is intentional: using
     // Default_Ignorable alone re-opens both suppression paths for this prefix.
     const arabicNumberSign = '\u0600';
