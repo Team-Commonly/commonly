@@ -1,20 +1,51 @@
 # Runbook: provisioning a hosted agent (ADR-023 W2)
 
-Operator-invoked until metering lands (ADR-023 D3.1). Everything below is a
-five-minute operation once a model key exists; nothing here touches the
-kernel — the hosted runtime speaks the same four CAP verbs a BYO wrapper does.
+Two paths. **Self-serve** (`/api/hosted`, metered — ADR-023 D3.1) is what a
+user reaches from the product; **operator-invoked** (direct worker calls) is
+the escape hatch and the smoke path. Nothing here touches the kernel — the
+hosted runtime speaks the same four CAP verbs a BYO wrapper does.
 
 ## One-time: deploy the worker
 
     cd workers/agent-runtime
     npm ci
     npx wrangler secret put RUNTIME_ADMIN_TOKEN     # operator-chosen, gates every route
-    npx wrangler secret put ANTHROPIC_API_KEY       # BYOK; never in config or chat
-    npx wrangler deploy                             # → https://commonly-agent-runtime.<account>.workers.dev
+    npx wrangler secret put DEEPSEEK_API_KEY        # provider key; never in config or chat
+    npx wrangler deploy --var MODEL_PROVIDER:deepseek   # → https://commonly-agent-runtime.<account>.workers.dev
 
-Optional: `MODEL_ID` var (defaults to `claude-sonnet-5` in `turn.ts`).
+`MODEL_PROVIDER` is `deepseek` (decision 2026-08-29) or `anthropic` (then
+`ANTHROPIC_API_KEY`). Optional `MODEL_ID` overrides the provider default in
+`turn.ts` (`deepseek-v4-flash` / `claude-sonnet-5`).
 
-## Per agent
+Then point the backend at it — `backend.env.hostedRuntimeUrl` in the Helm
+values, and the admin bearer as GCP SM secret
+`commonly-dev-hosted-runtime-admin-token` (its own ExternalSecret,
+`hosted-runtime`, rendered only when the URL is set). Until both exist the
+self-serve surface answers `503 hosted_runtime_unconfigured` — it never falls
+back to another runtime.
+
+## Self-serve (what a user does)
+
+1. Install with `POST /api/registry/install` and
+   `config.runtime.runtimeType: 'hosted'` (the BYO page's "Run it here").
+   No entitlement — the install gate enforces `HOSTED_AGENTS_PER_USER`
+   (default 1; admins bypass) and answers `403 hosted_cap_reached`.
+2. `POST /api/hosted/provision { agentName, instanceId? }` — the backend mints
+   the runtime token itself (credential ledger, owner lineage) and calls the
+   worker with the admin bearer. Neither secret reaches the browser. Owner
+   only: the caller must be `installedBy` of the active installation
+   (`404 not_owner_or_missing`, `409 not_hosted`).
+3. `GET /api/hosted/status?agentName=` — worker status plus today's meter
+   `{ used, cap, resetsAt }`; `POST /api/hosted/deprovision` stops it,
+   installation and identity stay.
+
+Metering: `HOSTED_TURNS_PER_DAY` (default 200) counts acked events per agent
+per UTC day; at the cap `GET /api/agents/runtime/events` returns
+`{ events: [], meter }` for that agent so the worker idles — events stay
+pending and deliver after the reset. Both caps are env-overridable through
+`backend.env.hostedAgentsPerUser` / `hostedTurnsPerDay`.
+
+## Operator-invoked (escape hatch / smoke)
 
 1. Register the identity + installation as for any BYO agent (Agents → BYO,
    or `POST /api/registry/install` with `runtimeType: 'webhook'`) and mint
@@ -37,7 +68,7 @@ Optional: `MODEL_ID` var (defaults to `claude-sonnet-5` in `turn.ts`).
 | `lastError` | meaning |
 |---|---|
 | `listEvents 401` | runtime token invalid/revoked (or the fake one from a smoke) |
-| `ANTHROPIC_API_KEY unset` | secret missing — the event stays unacked, nothing is silently eaten |
+| `DEEPSEEK_API_KEY unset` (or `ANTHROPIC_API_KEY`) | provider secret missing — the event stays unacked, nothing is silently eaten |
 | `turn ended without assistant text` / `model exceeded tool budget` | model failure or runaway; event unacked, redelivered ≤3× by the kernel |
 | `model unavailable: anthropic/<id>` | `MODEL_ID` not in pi-ai's Anthropic catalog |
 
@@ -51,7 +82,7 @@ untouched (rule 8).
 
 ## Known boundaries (tracked)
 
-- Metering: none yet — provision stays operator-invoked (#D3.1).
+- Metering is the D3.1 floor (per-user agent cap + daily turn cap), not billing; credits/charging is still open.
 - A `postMessage` failure after a successful turn re-runs the model on
   redelivery (#1344).
 - Real compaction (pi Session layer) not yet wired; transcripts are

@@ -11,6 +11,7 @@ const express = require('express');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const auth = require('../middleware/auth');
 const AgentEventService = require('../services/agentEventService');
+const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentThreadService = require('../services/agentThreadService');
@@ -476,6 +477,16 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
     const fallbackPodId = podIds.length === 0 && installation?.podId
       ? installation.podId
       : undefined;
+
+    // Hosted-runtime meter (ADR-023 D3.1): once a hosted agent has used its
+    // daily turn budget the feed goes empty for it — the worker idles instead
+    // of spending. Events stay pending and deliver after the UTC reset.
+    if (installation && HostedRuntimeMeter.isHostedInstallation(installation)) {
+      const meter = await HostedRuntimeMeter.meterAllowsTurn(agentName, instanceId);
+      if (!meter.allowed) {
+        return res.json({ events: [], meter });
+      }
+    }
 
     const events = await AgentEventService.list({
       agentName,
