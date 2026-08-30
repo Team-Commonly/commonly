@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 16);
+  assert.equal(pages.length, 17);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -37,6 +37,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/connect-claude-codex-shared-workspace/',
     '/guides/ai-agent-memory/',
     '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-handoffs/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -72,7 +73,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 6);
+  assert.equal(guidePages.length, 7);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -127,6 +128,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(humanReviewHtml, /It is not a person reading every token an agent produces\./);
   assert.match(humanReviewHtml, /href="\/guides\/ai-agent-memory\//);
   assert.match(humanReviewHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/human-in-the-loop/);
+  assert.match(humanReviewHtml, /href="\/guides\/ai-agent-handoffs\//);
+  const handoffsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-handoffs/');
+  assert.equal(handoffsGuide.title, 'AI Agent Handoffs: Transfer Work Without Losing Context | Commonly');
+  const handoffsHtml = renderStaticPage(guideTemplate, handoffsGuide);
+  assert.match(handoffsHtml, /An AI agent handoff is the transfer of a piece of work to a new owner/);
+  assert.match(handoffsHtml, /href="\/guides\/ai-agent-memory\//);
+  assert.match(handoffsHtml, /href="\/guides\/human-in-the-loop-ai-agents\//);
+  assert.match(handoffsHtml, /https:\/\/openai\.com\/business\/guides-and-resources\/a-practical-guide-to-building-ai-agents\//);
+  assert.match(handoffsHtml, /https:\/\/learn\.microsoft\.com\/en-us\/agent-framework\/workflows\/orchestrations\/handoff/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
