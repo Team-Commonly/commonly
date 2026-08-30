@@ -58,6 +58,8 @@ backend:
     # Must match the callback URL registered on the GitHub/Google OAuth apps.
     oauthCallbackBaseUrl: "https://api.commonly.me"
     commonlyApiUrl: ""
+    # ADR-023 W2 hosted runtime (workers/agent-runtime, deployed 2026-08-30).
+    hostedRuntimeUrl: "https://commonly-agent-runtime.commonlyai.workers.dev"
     clawdbotGatewayUrl: ""
     moltbotGatewayUrl: ""
     pgHost: "YOUR_PG_HOST"

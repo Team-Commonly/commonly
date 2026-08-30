@@ -18,3 +18,5 @@ new_sqlite_classes = ["AgentRuntimeDO"]
 # The Commonly instance this runtime serves. Runtime tokens come per-agent
 # via the provision call, never from worker config.
 COMMONLY_API_URL = "https://api.commonly.me"
+# Provider decision 2026-08-29 (Sam): DeepSeek. Key is a secret (DEEPSEEK_API_KEY).
+MODEL_PROVIDER = "deepseek"
