@@ -14,7 +14,7 @@ import {
 import { join } from 'path';
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
-import { loadDaemonRecord, saveDaemonRecord } from '../lib/daemon-store.js';
+import { loadDaemonRecord, removeDaemonRecord, saveDaemonRecord } from '../lib/daemon-store.js';
 import {
   createDaemonSupervisor,
   DEFAULT_HEARTBEAT_MS,
@@ -78,7 +78,7 @@ export const registerDaemonMachine = async ({
       await client.del(`/api/machines/${machine.id}`);
     } catch (revokeError) {
       throw new Error(
-        `Could not store the daemon credential and could not revoke machine ${machine.name}: ${revokeError.message}`,
+        `Could not store the daemon credential and could not revoke machine ${machine.name} (${machine.id}): ${revokeError.message}`,
       );
     }
     throw new Error(`Could not store the daemon credential securely: ${error.message}. Machine registration was revoked.`);
@@ -94,6 +94,18 @@ export const heartbeatDaemonMachine = async ({ client, record }) => (
 export const getDaemonMachineStatus = async ({ client }) => {
   const response = await client.get('/api/machines/me');
   return response?.machine || null;
+};
+
+// Revoke remotely before unlinking locally. A failed network call must leave
+// the bearer record intact so the operator can retry rather than orphaning a
+// year-long daemon credential they can no longer address from the CLI.
+export const unregisterDaemonMachine = async ({ client, record, remove = removeDaemonRecord }) => {
+  try {
+    await client.del(`/api/machines/${record.machineDbId}`);
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+  remove();
 };
 
 // The adapter names a binary on THIS machine — the one fact the server cannot
@@ -121,6 +133,7 @@ Examples:
   $ commonly daemon register --name "Sam's MacBook"
   $ commonly daemon heartbeat
   $ commonly daemon status
+  $ commonly daemon unregister
 `);
 
   daemon
@@ -156,6 +169,24 @@ Examples:
         }
       } catch (error) {
         console.error(`Daemon registration failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  daemon
+    .command('unregister')
+    .description('Revoke this machine on the server and remove its local daemon credential')
+    .action(async () => {
+      try {
+        const record = requireDaemonRecord();
+        const client = createClient({
+          instance: record.instanceUrl,
+          token: requireUserToken(record.instanceUrl),
+        });
+        await unregisterDaemonMachine({ client, record });
+        console.log(`Unregistered ${record.machineName} and removed its local daemon credential.`);
+      } catch (error) {
+        console.error(`Daemon unregister failed: ${error.message}`);
         process.exitCode = 1;
       }
     });
