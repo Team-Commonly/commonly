@@ -32,12 +32,12 @@ const DEFAULT_MODEL = 'claude-sonnet-5';
 
 // Identity conversion: AgentMessage ⊇ Message; anything that is not a plain
 // LLM message (custom agent messages) is dropped. Contract: never throws.
-const convertToLlm = (messages: AgentMessage[]): Message[] => messages.filter(
+export const convertToLlm = (messages: AgentMessage[]): Message[] => messages.filter(
   (m): m is Message => m && typeof (m as { role?: unknown }).role === 'string'
     && ['user', 'assistant', 'toolResult'].includes(String((m as { role: string }).role)),
 );
 
-const lastAssistantText = (messages: AgentMessage[]): string => {
+export const lastAssistantText = (messages: AgentMessage[]): string => {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i] as { role?: string; content?: unknown };
     if (m.role !== 'assistant') continue;
@@ -50,6 +50,22 @@ const lastAssistantText = (messages: AgentMessage[]): string => {
   return '';
 };
 
+// Tail-bound the transcript to a token budget using pi's estimator, dropping
+// from the oldest end at turn boundaries (the next user message) so a turn is
+// never split. Always keeps at least the last two messages.
+export const tailBound = (
+  messages: AgentMessage[],
+  budgetTokens: number,
+  estimate: (m: AgentMessage[]) => number = (m) => estimateContextTokens(m).tokens,
+): AgentMessage[] => {
+  let out = messages;
+  while (out.length > 2 && estimate(out) > budgetTokens) {
+    const nextUser = out.findIndex((m, i) => i > 0 && (m as { role?: string }).role === 'user');
+    out = nextUser > 0 ? out.slice(nextUser) : out.slice(1);
+  }
+  return out;
+};
+
 export const runTurn = async (deps: TurnDeps, userText: string): Promise<string> => {
   const models = createModels();
   const model = models.getModel('anthropic', deps.modelId || DEFAULT_MODEL);
@@ -59,14 +75,8 @@ export const runTurn = async (deps: TurnDeps, userText: string): Promise<string>
 
   let transcript = (await deps.storage.get<AgentMessage[]>(TRANSCRIPT_KEY)) || [];
 
-  // Tail-bound the transcript to ~60% of the window using pi's estimator,
-  // dropping from the oldest end at turn boundaries (a user message).
   const contextWindow = (model as { contextWindow?: number }).contextWindow || 200_000;
-  const budget = Math.floor(contextWindow * 0.6);
-  while (transcript.length > 2 && estimateContextTokens(transcript).tokens > budget) {
-    const nextUser = transcript.findIndex((m, i) => i > 0 && (m as { role?: string }).role === 'user');
-    transcript = nextUser > 0 ? transcript.slice(nextUser) : transcript.slice(1);
-  }
+  transcript = tailBound(transcript, Math.floor(contextWindow * 0.6));
 
   const prompt: AgentMessage = { role: 'user', content: [{ type: 'text', text: userText }], timestamp: Date.now() } as AgentMessage;
   const context: AgentContext = { systemPrompt: deps.systemPrompt, messages: transcript, tools: [] };
