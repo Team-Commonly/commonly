@@ -3329,3 +3329,72 @@ compliant arm and the untouched arm are byte-identical.
 - No lint rule can see this. The defect is a relation between an event's
   enqueue-time snapshot in one collection and a `$set` on another, and each half
   is locally correct.
+## 52. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
+
+ADR-026 D6 shipped as two PRs. #1347 (backend) minted a delivery nonce and put
+it on the wire. #1349 (`workers/agent-runtime`) read it back on ack. Both were
+`CLEAN`. #1347 was 11/11 green, #1349 10/10. Merging both would have shipped a
+nonce the consumer never presents.
+
+The producer writes it **into the payload**:
+
+```ts
+// backend/services/agentEventService.ts — list(), the claim
+const enrichedPayload = {
+  ...basePayload, ...digestBundle,
+  ...(event?.deliveryNonce ? { deliveryId: event.deliveryNonce } : {}),
+};
+return { ...event, payload: enrichedPayload };
+```
+
+The consumer declares it **at the top level**:
+
+```ts
+// workers/agent-runtime/src/cap.ts
+export interface CapEvent { _id: string; type: string; podId?: string; deliveryId?: string; ... }
+// workers/agent-runtime/src/agent-do.ts
+await ackEvent(cfg, event._id, event.deliveryId);   // undefined
+```
+
+Both files read correct in isolation. `podId` *is* a top-level field on the
+event, so the consumer's shape is not obviously wrong — it is wrong for exactly
+one key.
+
+**Why neither suite could see it.** The consumer's new test is:
+
+```ts
+await ackEvent(cfg, 'e1', 'nonce-abc');
+expect(JSON.parse(init.body)).toEqual({ deliveryId: 'nonce-abc' });
+```
+
+That pins the client's serialization one call frame *below* the extraction. A
+test that hands a function the value under test can never tell you the function
+would have been given it. The producer's suites, symmetrically, assert what the
+claim writes to Mongo and what the ack route accepts — both true, and neither is
+a statement about what a driver reads.
+
+**Rules earned:**
+
+- **A contract split across two PRs is exercised by neither PR's CI.** Gate the
+  pair. When a PR title or body names another PR ("D6 consumer", "the other half
+  of #N"), fetch both heads and review them as one change, and record which
+  producer sha the consumer was read against — that pairing expires the moment
+  either head moves.
+- **Derive the wire shape from the producer's serializer, not the consumer's
+  type declaration.** The interface is the author's belief about the wire. Here
+  the actual shape was recoverable in two reads: the claim uses `.lean()` with
+  no `.select()`, and the route is a raw `res.json({ events })`, so the wire
+  object is the Mongo doc with one key added inside `payload`.
+- **The failure mode is depth, not spelling.** A misspelled key gets caught by
+  the first manual smoke. The right key at the wrong nesting level survives
+  review, type-checking, and both suites, because every individual file is
+  self-consistent.
+- **Additive-by-design hides it further.** The producer deliberately made the
+  nonce optional so pre-D6 drivers keep working. That is the correct migration
+  shape, and it also means a consumer that reads `undefined` behaves exactly
+  like a consumer that has not adopted yet. Where a rollout is gated on a
+  counter of non-adopters, a mis-wired consumer does not just fail silently — it
+  holds the gate shut.
+- **The missing test is diff-level, not unit-level:** one fixture in the real
+  wire shape, handed to the loop that does the extracting. Assert on what the
+  loop passes downward, not on what you passed into it.
