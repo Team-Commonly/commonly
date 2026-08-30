@@ -424,7 +424,7 @@ This does not settle whether `prUrl` should also become writable before merge �
 | row | title still asks | ruled at | state since |
 |---|---|---|---|
 | TASK-067 | `DECIDE (Sam): should a LEADING bare NO_REPLY suppress the whole reply?` | 2026-08-26T07:07:04Z, restated 2026-08-28T22:39:06Z | row is `done`; title unchanged |
-| TASK-023 | `DECIDE then fix: … needs Sam's accept-or-fix call before implementation` | 2026-08-28T23:17:16Z | implementation commits `b885b12f` 2026-08-30T05:10:33Z and `91c250a9` 05:16:42Z — 30h after the ruling, title unchanged |
+| TASK-023 | `DECIDE then fix: … needs Sam's accept-or-fix call before implementation` | 2026-08-28T23:17:16Z | implementation commits `b885b12f` 2026-08-30T05:10:33Z and `91c250a9` 05:16:42Z — 30h after the ruling; title still asking for the call at that point, corrected at 06:03:50Z (below) |
 
 **The cost is observable and it is a re-ask, not a silent drop.** On TASK-067 a reviewing seat put the ruled question back in front of Sam six hours after his second ruling, reading the title rather than the update history. This document's own author received the TASK-023 board wake twice within thirty minutes tonight, each time quoting a request for a decision made thirty hours earlier — so the failure reproduces on the surface this ADR specifies, not merely on the board.
 
