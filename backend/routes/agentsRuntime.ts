@@ -1102,11 +1102,17 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
     }
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it
     // acked while the event rolled into the requeue unhandled.
-    if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
       return res.status(400).json({
         code: 'delivery_id_required',
         message: 'This instance requires the deliveryId from the event payload on ack',
@@ -1118,6 +1124,7 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
       instanceId,
       delivery,
       deliveryId,
+      ackConsumer,
     );
     // ADR-026 D6: only a caller that presented a deliveryId can be told it was
     // superseded, so pre-D6 drivers see byte-identical behaviour. 409, not 404
@@ -1152,11 +1159,17 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
     }
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it
     // acked while the event rolled into the requeue unhandled.
-    if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
       return res.status(400).json({
         code: 'delivery_id_required',
         message: 'This instance requires the deliveryId from the event payload on ack',
@@ -1168,6 +1181,7 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
       instanceId,
       delivery,
       deliveryId,
+      ackConsumer,
     );
     // See the /bot/events ack above: 409 only for nonce-presenting callers.
     if (!acked && await AgentEventService.isSupersededDelivery(

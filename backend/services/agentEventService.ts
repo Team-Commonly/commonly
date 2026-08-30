@@ -50,20 +50,48 @@ const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
 // build so the compatibility mode has an end rather than an intention.
 //
 // Phase A (default): a presented nonce must match; an absent one is accepted
-// and counted. Phase B: set AGENT_EVENT_REQUIRE_DELIVERY_NONCE=true and an
-// absent nonce is refused. The exit condition is `withoutNonce` holding at
-// zero for longer than one requeue window across the fleet — a number an
-// operator reads off the garbageCollect log line below, not a date someone
-// picks. Flipping the flag is a config change that is already tested, not a
-// future PR that may never be written.
+// and counted. Phase B: an absent nonce is refused.
+//
+// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// draft gated the flip on `withoutNonce` reaching zero across everything,
+// which hands a veto to whichever consumer is slowest — and one of them, the
+// openclaw extension, has been parked since 2026-08-20. A parked runtime
+// cannot be the long pole on a live kernel change, so enforcement is keyed on
+// HOW THE ACK ARRIVED:
+//
+//   AGENT_EVENT_REQUIRE_DELIVERY_NONCE=ws,cli,hosted   → those three enforce
+//   AGENT_EVENT_REQUIRE_DELIVERY_NONCE=true  (or `*`)  → everything enforces
+//   unset                                              → Phase A everywhere
+//
+// A consumer key that is not listed stays on Phase A indefinitely, which is
+// the point: migrated paths get the guarantee now, unmigrated ones keep
+// working, and neither waits on the other.
 //
 // Read the counter precisely (review on #1347): it counts ack CALLS, not
 // distinct deliveries — a retry against a vanished event still increments —
-// and it is per-process and resets on restart. With multiple replicas,
-// "zero at the consumers" therefore means zero on EVERY replica since its
-// last restart, which is a stronger condition than a single green line.
-const ackNonceStats = { withNonce: 0, withoutNonce: 0 };
-const requireDeliveryNonce = (): boolean => process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE === 'true';
+// and it is per-process and resets on restart. With multiple replicas, "zero
+// for this consumer" means zero on EVERY replica since its last restart.
+const ackNonceStats: {
+  withNonce: number;
+  withoutNonce: number;
+  withoutNonceByConsumer: Record<string, number>;
+} = { withNonce: 0, withoutNonce: 0, withoutNonceByConsumer: {} };
+
+const enforcedAckConsumers = (): Set<string> => new Set(
+  String(process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+// No consumer argument = "is it required for everyone?" — which is what the
+// service-internal check asks, since acknowledge() cannot see the transport.
+// The per-consumer refusal happens at the ack sites, where the key is known.
+const requireDeliveryNonce = (consumer?: string): boolean => {
+  const enforced = enforcedAckConsumers();
+  if (enforced.has('true') || enforced.has('*')) return true;
+  return consumer ? enforced.has(consumer.toLowerCase()) : false;
+};
 
 interface EventDoc {
   _id?: unknown;
@@ -629,15 +657,19 @@ class AgentEventService {
   // from "already gone" — so the route would answer 200 and the driver would
   // believe it acked while the event rolled into the requeue with no signal
   // (found in review). A refused ack has to say so.
-  static isDeliveryNonceRequired(): boolean {
-    return requireDeliveryNonce();
+  static isDeliveryNonceRequired(consumer?: string): boolean {
+    return requireDeliveryNonce(consumer);
   }
 
   // Reads the Phase A migration counter. The flip to a required nonce is
   // gated on `withoutNonce` being zero at the consumers, so the number has to
   // be reachable by something other than a grep of the logs.
-  static getAckNonceStats(): { withNonce: number; withoutNonce: number } {
-    return { ...ackNonceStats };
+  static getAckNonceStats(): {
+    withNonce: number;
+    withoutNonce: number;
+    withoutNonceByConsumer: Record<string, number>;
+  } {
+    return { ...ackNonceStats, withoutNonceByConsumer: { ...ackNonceStats.withoutNonceByConsumer } };
   }
 
   static logEventLifecycle(action: string, details: Record<string, unknown> = {}): void {
@@ -720,7 +752,12 @@ class AgentEventService {
       // window is the signal to set AGENT_EVENT_REQUIRE_DELIVERY_NONCE.
       console.log(
         `[agent-event] ack deliveryId coverage (ack CALLS this process since restart, not distinct deliveries): `
-        + `with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} required=${requireDeliveryNonce()}`,
+        + `with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} `
+        // Naming the holdouts is the whole point of a per-consumer flip: the
+        // operator needs to see WHICH consumer is still nonce-less, not just
+        // that something is.
+        + `withoutBy=${JSON.stringify(ackNonceStats.withoutNonceByConsumer)} `
+        + `enforced=${JSON.stringify([...enforcedAckConsumers()])}`,
       );
 
       // Retire events that have exhausted the cap. This pass is what makes the
@@ -1085,6 +1122,7 @@ class AgentEventService {
             instanceId,
             { outcome: 'acknowledged', reason: 'native-runtime-completed' },
             nativeDeliveryId,
+            'native',
           ).catch((ackErr: Error) => {
             console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
           }),
@@ -1302,6 +1340,7 @@ class AgentEventService {
     instanceId = 'default',
     delivery: DeliveryMeta | null = null,
     deliveryId: unknown = null,
+    consumer: string | null = null,
   ): Promise<EventDoc | null> {
     // Same NoSQL-injection guard as list() — coerce all caller-supplied query
     // inputs to plain primitives before they reach Mongo.
@@ -1326,14 +1365,18 @@ class AgentEventService {
     // only once that counter is zero AT THE CONSUMERS — publishing a client
     // is not deploying one (AX 34).
     const safeDeliveryId = typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
+    const safeConsumer = String(consumer || 'unknown').toLowerCase();
     if (safeDeliveryId) {
       ackNonceStats.withNonce += 1;
     } else {
       ackNonceStats.withoutNonce += 1;
+      ackNonceStats.withoutNonceByConsumer[safeConsumer] = (ackNonceStats.withoutNonceByConsumer[safeConsumer] || 0) + 1;
       console.warn(
-        `[agent-event] ack without deliveryId from ${safeAgentName}:${safeInstanceId} — pre-D6 driver`,
+        `[agent-event] ack without deliveryId from ${safeAgentName}:${safeInstanceId} via ${safeConsumer} — pre-D6 driver`,
       );
-      if (requireDeliveryNonce()) return null;
+      // Per-consumer: an unlisted consumer stays on Phase A even while others
+      // enforce, so a parked path cannot hold the flip hostage.
+      if (requireDeliveryNonce(safeConsumer)) return null;
     }
     const result = await AgentEvent.findOneAndUpdate(
       {

@@ -210,7 +210,10 @@ class AgentWebSocketService {
           // prevent, on a live surface (review on #1347). Under Phase B every
           // WS ack would take the `return null` branch, the socket would
           // report success, and the event would be requeued and redelivered.
-          if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+          // 'ws' is its own consumer key: the socket transport can be flipped
+          // to Phase B independently of any HTTP client (Sam's per-consumer
+          // steer, 2026-08-30).
+          if (!deliveryId && AgentEventService.isDeliveryNonceRequired('ws')) {
             socket.emit('ack:error', {
               eventId,
               code: 'delivery_id_required',
@@ -224,6 +227,7 @@ class AgentWebSocketService {
             socket.instanceId,
             null,
             deliveryId || null,
+            'ws',
           );
           if (!acked && await AgentEventService.isSupersededDelivery(
             eventId, socket.agentName, socket.instanceId, deliveryId || null,

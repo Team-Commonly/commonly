@@ -459,3 +459,58 @@ describe('Phase B has a switch, so the compatibility mode terminates', () => {
     expect(acked).toBeTruthy();
   });
 });
+
+describe('Phase B flips per consumer, so a parked path cannot veto it', () => {
+  afterEach(() => { delete process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE; });
+
+  test('a listed consumer is enforced while an unlisted one keeps working', async () => {
+    process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE = 'ws,cli';
+
+    expect(AgentEventService.isDeliveryNonceRequired('ws')).toBe(true);
+    expect(AgentEventService.isDeliveryNonceRequired('cli')).toBe(true);
+    // The parked openclaw extension. It must not hold the flip hostage, and
+    // it must not break while it is parked.
+    expect(AgentEventService.isDeliveryNonceRequired('openclaw')).toBe(false);
+    expect(AgentEventService.isDeliveryNonceRequired()).toBe(false);
+
+    const event = await seedEvent();
+    await claim();
+    const acked = await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'acknowledged' }, null, 'openclaw',
+    );
+    expect(acked).toBeTruthy();
+  });
+
+  test('a listed consumer acking nonce-less is refused', async () => {
+    process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE = 'ws,cli';
+    const event = await seedEvent();
+    await claim();
+
+    const acked = await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'acknowledged' }, null, 'cli',
+    );
+
+    expect(acked).toBeNull();
+    expect((await AgentEvent.findById(event._id).lean()).status).toBe('delivered');
+  });
+
+  test("`true` still means everyone — the global switch is not lost", async () => {
+    process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE = 'true';
+    expect(AgentEventService.isDeliveryNonceRequired('openclaw')).toBe(true);
+    expect(AgentEventService.isDeliveryNonceRequired()).toBe(true);
+  });
+
+  test('the counter attributes nonce-less acks to the consumer that made them', async () => {
+    const before = AgentEventService.getAckNonceStats().withoutNonceByConsumer.openclaw || 0;
+    const event = await seedEvent();
+    await claim();
+
+    await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'acknowledged' }, null, 'openclaw',
+    );
+
+    const after = AgentEventService.getAckNonceStats().withoutNonceByConsumer.openclaw || 0;
+    // Naming the holdout is what makes a per-consumer flip decidable.
+    expect(after - before).toBe(1);
+  });
+});
