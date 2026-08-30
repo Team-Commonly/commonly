@@ -129,7 +129,8 @@ export class AgentRuntimeDO implements DurableObject {
   // re-run the model on redelivery. The reply is STAGED on DO storage keyed
   // by event id before posting; a redelivery of the same event posts the
   // staged reply and skips the model entirely. Staged entries are cleared
-  // once the post succeeds (and capped so a stuck post cannot grow storage).
+  // once the post succeeds; orphans from a stuck post are pruned after
+  // STAGE_TTL_MS on the next stage (staging.ts), so storage cannot grow.
   private async handleEvent(cfg: CapConfig, event: CapEvent): Promise<void> {
     const podId = event.podId || event.payload?.podId;
     if (!podId) return;

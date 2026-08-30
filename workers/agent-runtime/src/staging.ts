@@ -7,20 +7,42 @@ export interface StagingStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<boolean | void>;
+  list<T = unknown>(options: { prefix: string }): Promise<Map<string, T>>;
 }
 
-export const stagedKey = (eventId: string): string => `staged:${eventId}`;
+export const STAGE_PREFIX = 'staged:';
+export const stagedKey = (eventId: string): string => `${STAGE_PREFIX}${eventId}`;
+// A stuck post leaves its staged entry behind (no commit). The kernel retires
+// an event after 3 redeliveries, so an orphan is never reused — prune anything
+// older than this on each stage so orphans cannot accumulate (Otto, #1346).
+export const STAGE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface StagedEntry { reply: string; at: number }
 
 export const resolveStagedReply = async (
   storage: StagingStorage,
   eventId: string,
   run: () => Promise<string>,
+  now: number = Date.now(),
 ): Promise<{ reply: string; fromStage: boolean }> => {
-  const existing = await storage.get<string>(stagedKey(eventId));
-  if (existing !== undefined) return { reply: existing, fromStage: true };
+  const existing = await storage.get<StagedEntry>(stagedKey(eventId));
+  if (existing !== undefined) return { reply: existing.reply, fromStage: true };
   const reply = await run();
-  await storage.put(stagedKey(eventId), reply);
+  await pruneStaged(storage, now);
+  await storage.put(stagedKey(eventId), { reply, at: now } satisfies StagedEntry);
   return { reply, fromStage: false };
+};
+
+export const pruneStaged = async (storage: StagingStorage, now: number = Date.now()): Promise<number> => {
+  const all = await storage.list<StagedEntry>({ prefix: STAGE_PREFIX });
+  let pruned = 0;
+  for (const [key, entry] of all) {
+    if (!entry || typeof entry.at !== 'number' || now - entry.at > STAGE_TTL_MS) {
+      await storage.delete(key);
+      pruned += 1;
+    }
+  }
+  return pruned;
 };
 
 export const commitStagedReply = async (storage: StagingStorage, eventId: string): Promise<void> => {
