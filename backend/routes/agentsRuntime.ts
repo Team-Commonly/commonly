@@ -1101,7 +1101,23 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
       return res.status(403).json({ message: 'Agent token does not match bot user' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId, delivery);
+    const deliveryId = req.body?.deliveryId || null;
+    const acked = await AgentEventService.acknowledge(
+      req.params.id,
+      resolvedAgentName,
+      instanceId,
+      delivery,
+      deliveryId,
+    );
+    // ADR-026 D6: only a caller that presented a deliveryId can be told it was
+    // superseded, so pre-D6 drivers see byte-identical behaviour. 409, not 404
+    // — "the event is gone" is idempotent success, "you were replaced" means
+    // stop working.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, resolvedAgentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
 
     return res.json({ success: true });
   } catch (error: any) {
@@ -1125,12 +1141,20 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(
+    const deliveryId = req.body?.deliveryId || null;
+    const acked = await AgentEventService.acknowledge(
       req.params.id,
       agentName,
       instanceId,
       delivery,
+      deliveryId,
     );
+    // See the /bot/events ack above: 409 only for nonce-presenting callers.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, agentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
     return res.json({ success: true });
   } catch (error: any) {
     console.error('Error acknowledging agent event:', error);
