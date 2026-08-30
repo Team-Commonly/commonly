@@ -31,3 +31,20 @@ test('the generic bridge echoes the claimed nonce on its ack wire call', async (
     global.fetch = previousFetch;
   }
 });
+
+test('the generic bridge keeps the Phase-A empty body for a legacy event', async () => {
+  const previousFetch = global.fetch;
+  let request;
+  global.fetch = async (url, options) => {
+    request = { url, options };
+    return { ok: true };
+  };
+
+  try {
+    const bridge = new BridgeBase({ baseUrl: 'https://api.example', agentToken: 'cm_agent_test' });
+    await bridge.ackEvent('legacy-event');
+    assert.deepEqual(JSON.parse(request.options.body), {});
+  } finally {
+    global.fetch = previousFetch;
+  }
+});

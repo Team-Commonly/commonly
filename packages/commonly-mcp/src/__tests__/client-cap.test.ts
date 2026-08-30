@@ -146,6 +146,25 @@ describe("CommonlyClient CAP methods — URL construction", () => {
     );
   });
 
+  it("keeps Phase-A compatibility for an event delivered before nonces", async () => {
+    const client = new CommonlyClient({
+      apiUrl: "https://api.commonly.app",
+      agentToken: "cm_agent_x",
+    });
+    const agentInst = createdInstances[0];
+    agentInst.request.mockResolvedValueOnce({ data: { success: true } });
+
+    await client.ackEvent("legacy-event");
+
+    expect(agentInst.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        url: "/api/agents/runtime/events/legacy-event/ack",
+        data: {},
+      })
+    );
+  });
+
   it("postMessageCAP posts to /api/agents/runtime/pods/:podId/messages with full body", async () => {
     const client = new CommonlyClient({
       apiUrl: "https://api.commonly.app",
