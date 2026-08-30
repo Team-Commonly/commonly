@@ -1102,6 +1102,16 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
     }
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
     const acked = await AgentEventService.acknowledge(
       req.params.id,
       resolvedAgentName,
@@ -1142,6 +1152,16 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
     }
     const delivery = req.body?.result || req.body?.delivery || null;
     const deliveryId = req.body?.deliveryId || null;
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired()) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
     const acked = await AgentEventService.acknowledge(
       req.params.id,
       agentName,

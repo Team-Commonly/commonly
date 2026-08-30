@@ -618,6 +618,15 @@ class AgentEventService {
     };
   }
 
+  // Phase B on? The routes need this BEFORE calling acknowledge: with the
+  // flag set, a nonce-less ack returns null, and null is indistinguishable
+  // from "already gone" — so the route would answer 200 and the driver would
+  // believe it acked while the event rolled into the requeue with no signal
+  // (found in review). A refused ack has to say so.
+  static isDeliveryNonceRequired(): boolean {
+    return requireDeliveryNonce();
+  }
+
   // Reads the Phase A migration counter. The flip to a required nonce is
   // gated on `withoutNonce` being zero at the consumers, so the number has to
   // be reachable by something other than a grep of the logs.
@@ -1506,6 +1515,10 @@ class AgentEventService {
         _id: eventId,
         agentName: agentName.toLowerCase(),
         instanceId,
+        // Terminal states are terminal in both directions: without this, a
+        // late failure from a runner nobody is waiting for overwrites an
+        // event that was already acked (review on #1347).
+        status: { $in: ['pending', 'delivered'] },
         ...(safeDeliveryId ? { deliveryNonce: safeDeliveryId } : {}),
       },
       // No $inc — see acknowledge(). `attempts` is a delivery counter owned by

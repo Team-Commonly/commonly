@@ -415,6 +415,22 @@ describe('recordFailure is as terminal as an ack, and gated the same way', () =>
   });
 });
 
+describe('recordFailure will not overwrite a terminal event', () => {
+  test('a late nonce-less failure leaves an acked event acked', async () => {
+    const event = await seedEvent();
+    const child = await claim();
+    await AgentEventService.acknowledge(
+      event._id, AGENT, INSTANCE, { outcome: 'posted' }, child.payload.deliveryId,
+    );
+
+    await AgentEventService.recordFailure(String(event._id), AGENT, INSTANCE, 'late boom');
+
+    const stored = await AgentEvent.findById(event._id).lean();
+    expect(stored.status).toBe('acked');
+    expect(stored.error).toBeUndefined();
+  });
+});
+
 describe('Phase B has a switch, so the compatibility mode terminates', () => {
   afterEach(() => { delete process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE; });
 
