@@ -429,6 +429,13 @@ describe('Auth Routes Integration Tests', () => {
       .send({ clientName: 'commonly-cli', clientVersion: '0.1.26', hostname: 'sam-laptop' })
       .expect(201);
 
+    it('declares a zero-delay TTL reaper in addition to endpoint expiry checks', () => {
+      const expiryIndex = DeviceAuthorization.schema.indexes()
+        .find(([keys]) => Object.prototype.hasOwnProperty.call(keys, 'expiresAt'));
+      expect(expiryIndex).toBeDefined();
+      expect(expiryIndex[1]).toEqual(expect.objectContaining({ expireAfterSeconds: 0 }));
+    });
+
     it('hands an approved token to exactly one poller and persists only its digest', async () => {
       const user = await createVerifiedUser();
       const browserToken = generateTestToken(user._id);

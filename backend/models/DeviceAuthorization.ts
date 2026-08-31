@@ -38,7 +38,7 @@ const DeviceAuthorizationSchema = new Schema<IDeviceAuthorization>(
     consumedAt: { type: Date },
     // The TTL reaper is a cleanup backstop; every endpoint still checks this
     // timestamp so expiry behaves correctly before Mongo's next TTL sweep.
-    expiresAt: { type: Date, required: true, index: { expires: 0 } },
+    expiresAt: { type: Date, required: true, expires: 0 },
   },
   { collection: 'device_authorizations' },
 );
