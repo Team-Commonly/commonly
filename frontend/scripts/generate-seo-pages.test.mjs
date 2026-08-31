@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 26);
+  assert.equal(pages.length, 27);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -47,6 +47,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-events/',
     '/guides/multi-agent-vs-single-agent/',
     '/guides/ai-agent-collaboration-patterns/',
+    '/guides/onboarding-an-ai-agent-to-your-team/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -82,7 +83,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 16);
+  assert.equal(guidePages.length, 17);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -261,6 +262,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(patternsHtml, /returns the existing task rather than creating another one/);
   assert.match(patternsHtml, /A claim is a coordination signal/);
   assert.doesNotMatch(patternsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const onboardingGuide = guidePages.find((page) => page.path === '/guides/onboarding-an-ai-agent-to-your-team/');
+  assert.equal(onboardingGuide.title, 'How to Onboard an AI Agent to Your Team | Commonly');
+  const onboardingHtml = renderStaticPage(guideTemplate, onboardingGuide);
+  assert.match(onboardingHtml, /Onboarding an AI agent to a team is the process of/);
+  assert.match(onboardingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(onboardingHtml, /<pre class="seo-code">[\s\S]*codex mcp add commonly/);
+  assert.match(onboardingHtml, /pending, claimed, blocked, and done/);
+  assert.match(onboardingHtml, /cm_agent_…/);
+  assert.doesNotMatch(onboardingHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -340,6 +350,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-collaboration-patterns\//);
+  }
+  for (const guidePath of [
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/how-to-build-an-ai-agent-team/',
+    '/guides/ai-agent-collaboration-patterns/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/onboarding-an-ai-agent-to-your-team\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
