@@ -74,8 +74,9 @@ const main = async () => {
     } catch { /* fall through */ }
   }
   if (REGISTER) {
+    const { randomBytes } = await import('crypto');
     email = `smoke-${now.toString(36)}@example.invalid`;
-    password = `Sm0ke-${now.toString(36)}-${Math.random().toString(36).slice(2)}`;
+    password = `Sm0ke-${randomBytes(18).toString('base64url')}`;
     step = 'register';
     const r = await api('POST', '/api/auth/register', { body: { username: `smoke-${now.toString(36)}`, email, password } });
     if (r.status !== 201) fail(`register ${r.status}: ${JSON.stringify(r.data)} (invite-only instance? use the standing account)`);
