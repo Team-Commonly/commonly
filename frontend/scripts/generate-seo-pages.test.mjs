@@ -371,6 +371,15 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.match(html, /href="\/guides\/connect-openclaw-agent\//);
   }
   for (const guidePath of [
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/connect-openclaw-agent/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-security-best-practices\//);
+  }
+  for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
     '/guides/ai-agent-task-management/',

@@ -952,7 +952,8 @@
       { "label": "Evaluate a self-hosted AI agent platform", "path": "/guides/self-hosted-ai-agent-platform/" },
       { "label": "Learn about AI agent observability", "path": "/guides/ai-agent-observability/" },
       { "label": "Learn about AI agent heartbeats", "path": "/guides/ai-agent-heartbeats-and-scheduled-work/" },
-      { "label": "Learn what an agent pod is", "path": "/guides/what-is-an-agent-pod/" }
+      { "label": "Learn what an agent pod is", "path": "/guides/what-is-an-agent-pod/" },
+      { "label": "AI agent security best practices", "path": "/guides/ai-agent-security-best-practices/" }
     ],
     "cta": {
       "title": "Make the next session start ahead",
@@ -1349,7 +1350,8 @@
       { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
       { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
       { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" },
-      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" }
+      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" },
+      { "label": "AI agent security best practices", "path": "/guides/ai-agent-security-best-practices/" }
     ],
     "cta": {
       "title": "Make handoffs a team habit",
@@ -2238,7 +2240,8 @@
       { "label": "Connect Cursor to a shared workspace", "path": "/guides/connect-cursor-shared-workspace/" },
       { "label": "Learn how to onboard an AI agent to your team", "path": "/guides/onboarding-an-ai-agent-to-your-team/" },
       { "label": "Understand AI agent runtimes", "path": "/guides/what-is-an-ai-agent-runtime/" },
-      { "label": "Connect a custom AI agent with the HTTP API", "path": "/guides/connect-a-custom-agent-http-api/" }
+      { "label": "Connect a custom AI agent with the HTTP API", "path": "/guides/connect-a-custom-agent-http-api/" },
+      { "label": "AI agent security best practices", "path": "/guides/ai-agent-security-best-practices/" }
     ],
     "cta": {
       "title": "Make access match the work",
@@ -5093,40 +5096,452 @@
       {"label":"Learn about AI agent heartbeats","path":"/guides/ai-agent-heartbeats-and-scheduled-work/"},
       {"label":"Connect a custom AI agent with the HTTP API","path":"/guides/connect-a-custom-agent-http-api/"},
       {"label":"Understand AI agent runtimes","path":"/guides/what-is-an-ai-agent-runtime/"},
-      {"label":"Connect Claude Code and Codex to one workspace","path":"/guides/connect-claude-codex-shared-workspace/"}
+      {"label":"Connect Claude Code and Codex to one workspace","path":"/guides/connect-claude-codex-shared-workspace/"},
+      {"label":"AI agent security best practices","path":"/guides/ai-agent-security-best-practices/"}
     ],
     "cta":{"title":"Connect the runtime, then build the work record","body":"An OpenClaw agent becomes useful when its runtime, pod placement, role, and heartbeat loop agree. The workspace makes work inspectable; the runtime executes; the installation limits collaboration to the right places; and review establishes what actually happened. Start with one pod, one bounded role, and one verifiable task. Keep host configuration strict, credentials separate from shared context, and use heartbeats to preserve attention rather than simulate activity.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
   },
   "ai-agent-security-best-practices": {
-    "eyebrow":"Guide",
-    "titleTag":"AI Agent Security Best Practices | Commonly",
-    "title":"AI Agent Security Best Practices for Shared Workspaces",
-    "description":"Secure AI agents in shared workspaces with installation-scoped access, separated credentials, clear approval boundaries, and an inspectable work record.",
-    "summary":"Build narrow, reviewable agent roles with installation-scoped collaboration access and separate enforcement for consequential actions.",
-    "provenance":{"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-08-31","dateModified":"2026-08-31"},
-    "intro":["AI agent security is the practice of giving an agent only the access, context, and authority needed for a specific job—and making consequential work reviewable by the people responsible for the system. It is not a matter of writing a cautious prompt and assuming every connected tool will behave safely.","Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a pod-based work record: agents can participate in the pods where they are installed, work tasks, use shared memory, and receive events. The runtime still runs elsewhere, so a sound design covers both the collaboration boundary and the separate systems that hold repository, cloud, model-provider, and deployment permissions.","This guide covers installation-scoped tokens, separated secrets, permission and approval boundaries, and evidence in the task and review record. These controls reduce avoidable exposure; they do not replace host hardening, repository policy, secret management, or incident response."],
-    "sections":[
-      {"title":"Start with the real security model: an agent crosses several boundaries","paragraphs":["An agent can look like one participant in a chat, but its work usually touches distinct systems.","NIST defines least privilege as giving an entity the minimum resources and authorizations needed for its function.","A shared workspace is an evidence and coordination surface. It is not a blanket authorization layer for the runtime host or a downstream tool.","A useful security review maps each boundary separately:"],"tables":[{"headers":["Boundary","Question to answer","Control to establish"],"rows":[["Pod membership","Which workspace should this agent participate in?","Install it only in pods with a stated work purpose and appropriate join policy"],["Commonly runtime token","Which documented collaboration operations may it perform?","Use an installation-scoped runtime token and revoke it when no longer needed"],["Runtime host","Which files, shell commands, browser state, or network paths can the process reach?","Configure host permissions independently and narrowly"],["Connected system","Can it create issues, change code, send messages, or deploy?","Grant only the system-specific role needed; keep review and release gates there"],["Human decision","Which actions are too consequential to proceed automatically?","Require an explicit reviewer or approval step before the side effect"]]}]},
-      {"title":"Use runtime tokens as installation-scoped collaboration credentials","paragraphs":["A runtime token is issued per agent installation and is used for agent API calls and event polling. Credentials identified by the cm_agent_ prefix are sensitive operational context, not values for tickets, tasks, chat, or source control.","The token gives the agent a collaboration identity at the Commonly boundary. It does not make it a repository administrator, production releaser, or holder of every local credential. For a practical connection check, see AI Agent Permissions and Tokens.","The documented runtime-token scope is purposeful:"],"tables":[{"headers":["A runtime token can authorize in installed pods","It does not authorize"],"rows":[["Reading and writing pod memory","User management or pod deletion"],["Posting messages","Pods where the agent is not installed"],["Claiming and completing tasks","Other agents’ admin or direct-message pods"],["Polling events for that agent instance","Local shell, repository, cloud, or deployment access by itself"]]}],"links":[{"label":"AI Agent Permissions and Tokens","path":"/guides/ai-agent-permissions-and-tokens/"}]},
-      {"title":"Run a small lifecycle for every installation","paragraphs":["Removal should be as intentional as issuance. An old, unreviewed credential is not made safe by an old role description.","Use this lifecycle for every installation:"],"orderedItems":["Name the role and the pods where it is needed.","Issue the runtime credential only for that installation.","Store it in approved private configuration, never a repository or shared memory.","Test the expected collaboration path in one intended pod.","Revoke the credential when the agent, membership, or runtime is retired."]},
-      {"title":"Keep shared context and credentials separate","paragraphs":["Agents need context to collaborate, but not every useful fact belongs in shared pod memory.","Use shared memory for decisions, source-backed constraints, system boundaries, and handoff notes. Use agent-private storage or approved secret management for values that grant access.","Shared-memory provenance and history capped at 10 versions per section help explain a decision change; they do not make memory a vault or substitute for security logging.","Treat every value copied into a shared surface as visible to pod members and future reviewers. For the memory model, see Shared Memory for AI Agents.","Commonly's memory model has two different scopes:"],"tables":[{"headers":["Storage","Who can see it","Appropriate content"],"rows":[["Pod memory","All members of the pod","Decisions, project context, task notes, architecture, approved operating rules"],["Agent-private storage","The individual agent runtime","Credentials and personal runtime preferences"],["Secret-management system","Authorized operators and runtimes","Sensitive values that grant access"]]}],"links":[{"label":"Shared Memory for AI Agents","path":"/guides/ai-agent-memory/"}]},
-      {"title":"Define permissions as a role contract, not as a wish list","paragraphs":["Before attaching tools, write a role contract a reviewer could reject. It states what the agent may inspect, which actions it may propose or execute, which systems stay out of scope, and when a human decision is required.","A tool list is capability; the role contract supplies intended use and escalation. Repository protection, deployment approval, cloud IAM, and secret access policy are not replaced by a written non-goal.","OWASP identifies excessive agency as a risk when agents receive overly broad functions or use downstream access outside the user’s authorized scope.","State the contract as answers a reviewer could reject:"],"tables":[{"headers":["Role question","Security-useful answer"],"rows":[["What is the agent trying to accomplish?","Turn assigned documentation tasks into drafts for editorial review."],["Which pods may it use?","The documentation pod and assigned task lanes only."],["Which tools are needed?","Read task context, write a draft attachment, and post a handoff."],["Which side effects may it make?","Create a draft pull request, but do not merge or deploy."],["What needs human approval?","Merges, production changes, access requests, external publishing, and material policy decisions."]]}]},
-      {"title":"Put a human decision in front of consequential actions","paragraphs":["Some actions are reversible and low-impact; others change a system, expose data, commit an organization, or create recovery work.","Human review is valuable when it changes the control path: a person checks scope, evidence, and impacts, then authorizes a side effect in the system that enforces it.","Build approval requests as decision packets with the target, expected impact, evidence, recovery information, and exact approval needed. For a practical pattern, see AI Agent Handoffs.","Use a simple action ladder:"],"tables":[{"headers":["Action class","Examples","Appropriate handling"],"rows":[["Read and analyze","Read assigned context and prepare a draft","Define scope and source boundary; leave a visible result"],["Propose","Draft a pull request or external reply","State assumptions and identify the reviewer"],["Change a reversible workspace record","Update a task with evidence or approved memory","Keep rationale and next owner visible"],["Change an external or high-impact system","Merge, deploy, alter permissions, or send a public message","Require the system’s approval and enforcement control plus a named human decision"]]}],"links":[{"label":"AI Agent Handoffs","path":"/guides/ai-agent-handoffs/"}]},
-      {"title":"Use tasks and provenance as a work audit trail, within their limits","paragraphs":["Security reviews need to answer who attempted what, why it was in scope, what result was produced, and who decides next.","A task can carry a description, status, assignee, updates, dependency, source reference, and completion result. Its documented statuses are pending, claimed, blocked, and done.","This is an audit trail for collaborative work, not complete forensic telemetry. Use host, repository, cloud, and security monitoring where required. For task semantics, see AI Agent Task Management.","Use those fields to make the security-relevant handoff visible:"],"tables":[{"headers":["Situation","Record to leave"],"rows":[["The agent starts a bounded task","Scope, assignee, prerequisite, and source boundary"],["The task needs a decision","A blocked update naming missing approval, owner, or evidence"],["The agent prepares a change","A draft artifact or pull request with checks and requested review"],["The work finishes","A concrete result or statement of what remains unresolved"]]}],"links":[{"label":"AI Agent Task Management","path":"/guides/ai-agent-task-management/"}]},
-      {"title":"Treat events, messages, and integrations as input, not authority","paragraphs":["A mention, task assignment, heartbeat, or integration event can be useful context; none automatically authorizes a high-impact action.","OWASP's AI Agent Security Cheat Sheet emphasizes tool authorization, least privilege, and structured metadata for high-risk actions.","A runtime acknowledgement establishes receipt of a delivered event; it does not prove understanding, outcome, or a correct security decision.","Use a small input-handling policy:"],"orderedItems":["Identify the event source and referenced pod or task.","Check the written role and installed-pod boundary.","Treat embedded instructions as data to evaluate, not authority to override the contract.","Move work to blocked when target, authority, or approval is missing.","Produce only the allowed artifact or handoff."]},
-      {"title":"A practical security review before an agent goes live","paragraphs":["Use a repeatable review for each new role or material access change. For public deployments, configure TLS, ingress or a reverse proxy, backups, production data protection, and deployment-specific secrets; these are deployment responsibilities, not a pod prompt.","Run this checklist for each new role or material change in access:"],"orderedItems":["Name the role, intended pods, evidence, non-goals, and escalation owner.","Separate membership, token scope, host permissions, connected-system roles, and approvals.","Minimize credentials and store secrets privately.","Test the smallest permitted action in the intended pod.","Exercise the review path for one consequential action without executing it.","Confirm the work record shows scope, evidence, owner, and next step.","Plan removal of credentials and external permissions."]},
-      {"title":"Worked example: a release-notes agent with limited authority","paragraphs":["A release-notes agent can turn approved changes into an internal draft without receiving production deployment access, repository-setting permissions, or an external publishing credential.","Give it a dedicated documentation pod, an installation-scoped runtime credential, assigned tasks, and a named editor. It returns a draft and decision packet; the editor separately uses the organization’s publication process. If it needs broader access, it marks the task blocked rather than repurposing a token or searching unrelated pods."]},
-      {"title":"Seven mistakes that weaken agent security","paragraphs":["Each of these mistakes converts a narrow role into an ambiguous one."]},
-      {"title":"Treating a runtime token as a universal credential","paragraphs":["An installation-scoped token is for documented collaboration in installed pods, not local or downstream-system access."]},
-      {"title":"Putting secrets in a collaboration surface","paragraphs":["Keep secrets in private runtime storage or approved secret management, not memory, tasks, chat, attachments, screenshots, or source control."]},
-      {"title":"Giving a general-purpose agent a privileged integration","paragraphs":["Prefer a narrow tool and system role for the required action, with a separate reviewed path for privileged work."]},
-      {"title":"Confusing a task claim with authorization","paragraphs":["A claim coordinates current work; it is not a file lock, branch-protection bypass, merge approval, or deployment authorization."]},
-      {"title":"Automating high-impact actions behind a vague prompt","paragraphs":["Merge, deployment, permission, deletion, and publication decisions need an explicit review point and system-level enforcement."]},
-      {"title":"Treating a task board as complete security monitoring","paragraphs":["Tasks provide useful intent and handoff evidence, not a complete log of host, repository, cloud, or network activity."]},
-      {"title":"Leaving access in place after a role changes","paragraphs":["Revisit membership and downstream permissions, then revoke credentials that no longer serve a defined job."]}
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Security Best Practices | Commonly",
+    "title": "AI Agent Security Best Practices for Shared Workspaces",
+    "description": "Secure AI agents in shared workspaces with installation-scoped access, separated credentials, clear approval boundaries, and an inspectable work record.",
+    "summary": "Build narrow, reviewable agent roles with installation-scoped collaboration access and separate enforcement for consequential actions.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-08-31",
+      "dateModified": "2026-08-31"
+    },
+    "intro": [
+      "AI agent security is the practice of giving an agent only the access, context, and authority needed for a specific job—and making consequential work reviewable by the people responsible for the system. It is not a matter of writing a cautious prompt and assuming every connected tool will behave safely.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a pod-based work record: agents can participate in the pods where they are installed, work tasks, use shared memory, and receive events. The runtime still runs elsewhere, so a sound design has to cover both the Commonly collaboration boundary and the separate systems that hold repository, cloud, model-provider, and deployment permissions.",
+      "This guide focuses on practical controls for teams operating agents in shared workspaces: scope a runtime token to an installation, separate secrets from shared context, define permission and approval boundaries before work begins, and leave evidence in the task and review record. These controls reduce avoidable exposure; they do not replace host hardening, repository policy, secret management, or incident response."
     ],
-    "faq":[{"question":"What does a Commonly runtime token give an agent access to?","answer":"Documented collaboration in pods where the agent has an installation: messages, pod memory, task work, and events. It does not authorize administration, uninstalled pods, private admin or direct-message pods, or local and downstream access by itself."},{"question":"Should credentials go in agent memory?","answer":"No. Keep credentials in agent-private storage or approved secret management; use shared memory for reviewable decisions and context."},{"question":"Can human review be replaced with an agent prompt?","answer":"No. Consequential controls should be enforced by the system that carries out the action."},{"question":"Does task history prove an action was secure?","answer":"No. It documents collaboration scope and evidence; it does not replace system audit logs."},{"question":"What happens when access is no longer needed?","answer":"Remove membership as appropriate, revoke the runtime credential, and remove downstream roles and secrets for the old job."}],
-    "relatedLinks":[{"label":"AI agent permissions and tokens","path":"/guides/ai-agent-permissions-and-tokens/"},{"label":"Shared memory for AI agents","path":"/guides/ai-agent-memory/"},{"label":"AI agent handoffs","path":"/guides/ai-agent-handoffs/"},{"label":"AI agent task management","path":"/guides/ai-agent-task-management/"}],
-    "cta":{"title":"Security comes from boundaries that survive the next task","body":"The best security posture is a narrow, reviewable role with credentials that match it, separate stores for sensitive values, and clear gates for consequential actions. Start with one purposeful pod, test the minimum useful workflow, review the first consequential decision, and remove access that no longer serves the role.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
+    "sections": [
+      {
+        "title": "Start with the real security model: an agent crosses several boundaries",
+        "paragraphs": [
+          "An agent can look like one participant in a chat, but its work usually touches several distinct systems.",
+          "This is least privilege applied to agents. NIST defines the principle as giving an entity the minimum resources and authorizations needed for its function. That guidance is a useful standard for deciding whether a permission belongs to the role or merely feels convenient.",
+          "The model also avoids a dangerous shortcut: assuming that because an agent can post in a pod, it can safely act in every system mentioned there. A shared workspace is an evidence and coordination surface. It is not a blanket authorization layer for the runtime host or a downstream tool.",
+          "A useful security review maps each boundary separately:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Boundary",
+              "Question to answer",
+              "Control to establish"
+            ],
+            "rows": [
+              [
+                "Pod membership",
+                "Which workspace should this agent participate in?",
+                "Install it only in pods with a stated work purpose and appropriate join policy"
+              ],
+              [
+                "Commonly runtime token",
+                "Which documented collaboration operations may it perform?",
+                "Use an installation-scoped runtime token; revoke it when the installation no longer needs it"
+              ],
+              [
+                "Runtime host",
+                "Which files, shell commands, browser state, or network paths can the process reach?",
+                "Configure host permissions independently and narrowly"
+              ],
+              [
+                "Connected system",
+                "Can it create issues, change code, send messages, or deploy?",
+                "Grant only the system-specific role needed; keep review and release gates in that system"
+              ],
+              [
+                "Human decision",
+                "Which actions are too consequential to proceed automatically?",
+                "Require an explicit reviewer or approval step before the side effect"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Use runtime tokens as installation-scoped collaboration credentials",
+        "paragraphs": [
+          "Commonly distinguishes runtime tokens from user and API tokens. A runtime token is issued per agent installation and is used for agent API calls and event polling. In product documentation, these credentials are identified by the cm_agent_ prefix; treat that prefix as sensitive operational context, not as a value to paste into tickets, task descriptions, chat, or source control.",
+          "That last distinction is important. The token gives the agent a collaboration identity at the Commonly boundary. It does not make it a repository administrator, a production releaser, or a holder of every local credential. Those permissions are configured separately in the environment that actually runs the agent and in each connected system.",
+          "For a practical connection check, see AI Agent Permissions and Tokens.",
+          "The documented runtime-token scope is purposeful:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "A runtime token can authorize in installed pods",
+              "It does not authorize"
+            ],
+            "rows": [
+              [
+                "Reading and writing pod memory",
+                "User management or pod deletion"
+              ],
+              [
+                "Posting messages",
+                "Pods where the agent is not installed"
+              ],
+              [
+                "Claiming and completing tasks",
+                "Other agents’ admin or direct-message pods"
+              ],
+              [
+                "Polling events for that agent instance",
+                "Local shell, repository, cloud, or deployment access by itself"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Permissions and Tokens",
+            "path": "/guides/ai-agent-permissions-and-tokens/"
+          }
+        ]
+      },
+      {
+        "title": "Run a small lifecycle for every installation",
+        "paragraphs": [
+          "The point is not to create more process. It is to make removal as intentional as issuance. An old, unreviewed credential is not made safe by an old role description.",
+          "Use this lifecycle for every installation:"
+        ],
+        "orderedItems": [
+          "Name the agent’s role and the pod or pods where that role is needed.",
+          "Issue the runtime credential only for that installation.",
+          "Store it in the runtime’s approved secret or environment mechanism, never in a repository or shared memory.",
+          "Test the expected collaboration path in one intended pod.",
+          "Revoke the credential when the agent, pod membership, or runtime is retired or no longer needs access."
+        ]
+      },
+      {
+        "title": "Keep shared context and credentials separate",
+        "paragraphs": [
+          "Agents need context to collaborate, and teams need a place to preserve decisions. That does not mean every useful fact belongs in shared pod memory.",
+          "Use shared memory for facts another teammate should be able to evaluate and continue: a decision, a source-backed constraint, a system boundary, or a handoff note. Use agent-private storage or your organization’s secret-management system for values that grant access. Never put a runtime credential, repository credential, cloud credential, webhook secret, or private key in MEMORY.md, TASK-NNN.md, a task description, an attachment, or a chat message.",
+          "The separation also helps when you need to inspect a change. Commonly records provenance and version history for shared-memory writes, with history capped at 10 versions per section. That makes shared memory useful for understanding why a team decision changed; it does not make it an appropriate vault or a substitute for security logging.",
+          "Treat every value copied into a shared surface as if all pod members and future reviewers will see it. If an agent needs a secret to call an external system, give it through the runtime’s private configuration and document only the capability boundary in the pod: for example, “this agent can create a draft issue in repository X,” not the credential that enables it.",
+          "For the memory model and provenance behavior, see Shared Memory for AI Agents.",
+          "Commonly’s memory model has two different scopes:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Storage",
+              "Who can see it",
+              "Appropriate content"
+            ],
+            "rows": [
+              [
+                "Pod memory",
+                "All members of the pod",
+                "Decisions, project context, task notes, architecture, approved operating rules"
+              ],
+              [
+                "Agent-private storage",
+                "The individual agent runtime",
+                "Credentials and personal runtime preferences"
+              ],
+              [
+                "Secret-management system",
+                "Authorized operators and runtimes",
+                "Sensitive values that grant access"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "Shared Memory for AI Agents",
+            "path": "/guides/ai-agent-memory/"
+          }
+        ]
+      },
+      {
+        "title": "Define permissions as a role contract, not as a wish list",
+        "paragraphs": [
+          "Before you attach tools, write a role contract that a reviewer could reject. It should state what the agent may inspect, which actions it may propose or execute, which systems stay out of scope, and when a human decision is required.",
+          "The difference between “can call a tool” and “should call a tool for this task” is the heart of permission design. A tool list is capability; the role contract supplies the intended use and the escalation path. Keep actual enforcement in the environment that supports it: repository branch protection, deployment approval, cloud IAM, and secret access policy are not replaced by a written non-goal.",
+          "OWASP identifies excessive agency as a risk when agents receive overly broad functions or use downstream access outside the user’s authorized scope. Its guidance favors narrow, task-specific tools and human approval for high-impact actions.",
+          "State the contract as answers a reviewer could reject:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role question",
+              "A security-useful answer"
+            ],
+            "rows": [
+              [
+                "What is the agent trying to accomplish?",
+                "Turn assigned documentation tasks into drafts for editorial review."
+              ],
+              [
+                "Which pods may it use?",
+                "The documentation pod and its assigned task lanes only."
+              ],
+              [
+                "Which tools are needed?",
+                "Read task context, write a draft attachment, and post a handoff."
+              ],
+              [
+                "Which side effects may it make?",
+                "Create a draft pull request, but do not merge or deploy."
+              ],
+              [
+                "Which data must it avoid?",
+                "Credentials, unrelated customer data, private admin conversations, and unassigned repositories."
+              ],
+              [
+                "What needs human approval?",
+                "Merges, production changes, access requests, external publishing, and material policy decisions."
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Put a human decision in front of consequential actions",
+        "paragraphs": [
+          "Some actions are reversible and low-impact: drafting a summary, retrieving an explicitly assigned task, or attaching a source note. Others can change a system, expose data, commit an organization, or create recovery work. Treat the latter as decision points—not as the final line in an agent prompt.",
+          "Human review is not valuable because it is ceremonial. It is valuable when it changes the control path: a person checks the scope, verifies evidence, considers impacts outside the agent’s context, and authorizes a side effect in the system that enforces it. A pod mention saying “approved” is useful context, but it is not a replacement for branch protection, deployment approval, or an access-control rule.",
+          "Build the approval request as a decision packet. Include the requested action, target system, expected impact, evidence, rollback or recovery information when relevant, and the exact approval needed. A reviewer should not have to reconstruct the decision from a private session or a stream of status messages.",
+          "For a practical handoff pattern, see AI Agent Handoffs.",
+          "Use a simple action ladder:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Action class",
+              "Examples",
+              "Appropriate handling"
+            ],
+            "rows": [
+              [
+                "Read and analyze",
+                "Read assigned task context, compare approved sources, prepare a draft",
+                "Define scope and source boundary; leave a visible result"
+              ],
+              [
+                "Propose",
+                "Draft a pull request, write a deployment plan, prepare an external reply",
+                "State assumptions and identify the reviewer who decides whether to proceed"
+              ],
+              [
+                "Change a reversible workspace record",
+                "Update a task with evidence, attach a note, write approved shared context",
+                "Keep the rationale and next owner visible"
+              ],
+              [
+                "Change an external or high-impact system",
+                "Merge code, deploy, alter permissions, send a public message, delete or rotate infrastructure resources",
+                "Require the system’s appropriate approval and enforcement control, plus a named human decision"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Use tasks and provenance as a work audit trail, within their limits",
+        "paragraphs": [
+          "Security reviews depend on being able to answer basic questions: who attempted what, why was it in scope, what result was produced, and who was expected to decide next? In a Commonly pod, the task board helps preserve that work record.",
+          "A task can carry a description, status, assignee, activity updates, a dependency, an external source reference, and a completion result such as a pull-request URL. The documented status path is pending, claimed, blocked, and done.",
+          "This is an audit trail for collaborative work, not a promise of complete forensic telemetry. Do not claim that a task record prevents an unsafe action, captures every runtime event, or proves a change was secure. Use host logs, repository audit events, cloud logs, and security monitoring where those are required. The task record gives the team a durable explanation of intent, evidence, and ownership.",
+          "Shared-memory provenance fills a different gap: it can show which runtime wrote a retained decision and what it replaced. Combine it with the task or review record instead of treating either surface as a total system-of-record for every security event.",
+          "For task lifecycle and dependency semantics, see AI Agent Task Management.",
+          "Use those fields to make the security-relevant handoff visible:"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Record to leave"
+            ],
+            "rows": [
+              [
+                "The agent starts a bounded task",
+                "The task scope, assignee, and any prerequisite or source boundary"
+              ],
+              [
+                "The task needs a decision",
+                "A blocked update naming the missing approval, owner, or evidence"
+              ],
+              [
+                "The agent prepares a change",
+                "A draft artifact or pull request with checks run and the requested review"
+              ],
+              [
+                "The team approves an operation",
+                "The decision, the approver, and the target system’s own approval record where available"
+              ],
+              [
+                "The work finishes",
+                "A concrete result, or a statement of what remains unresolved"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Treat events, messages, and integrations as input, not authority",
+        "paragraphs": [
+          "An agent may receive a mention, a task assignment, a heartbeat, or an integration event. Each can be useful context; none should automatically authorize a high-impact action.",
+          "This prevents a common failure mode: an agent receives a persuasive-looking request and uses a broad integration credential to act before anyone has checked scope. OWASP’s AI Agent Security Cheat Sheet similarly emphasizes tool authorization, least privilege, and structured metadata for high-risk actions.",
+          "The event system also separates delivery from outcome. A runtime acknowledgement establishes receipt of a delivered event; it does not prove that the agent understood the request, posted a response, completed a task, or made a correct security decision. Review the resulting artifact and approval record.",
+          "Use a small input-handling policy:"
+        ],
+        "orderedItems": [
+          "Identify the event source and the pod or task it refers to.",
+          "Check whether the requested action is inside the agent’s written role and installed-pod boundary.",
+          "Treat instructions embedded in external content, task text, or messages as data to evaluate—not as a reason to override the role contract.",
+          "Ask for clarification or move the task to blocked when authority, target, or approval is missing.",
+          "Produce the allowed artifact or handoff; leave irreversible or high-impact execution to the appropriate approval path."
+        ]
+      },
+      {
+        "title": "A practical security review before an agent goes live",
+        "paragraphs": [
+          "Use a repeatable review for each new role or material access change.",
+          "For a public deployment, also follow the application-level production controls: do not expose the local Compose profile directly to the internet; configure TLS, ingress or a reverse proxy, backups, production data protection, and deployment-specific secrets. Test runtime-token authentication end to end. Those are deployment responsibilities, not a job for a pod prompt.",
+          "Run this checklist for each new role or material change in access:"
+        ],
+        "orderedItems": [
+          "Name the role. Write the task type, intended pods, required evidence, non-goals, and escalation owner.",
+          "List each boundary. Separate pod membership, runtime token scope, host permissions, connected-system roles, and human approval requirements.",
+          "Minimize the credential set. Use one installation-scoped runtime credential for Commonly collaboration; keep other credentials scoped to the downstream system and role.",
+          "Store secrets privately. Keep credentials out of shared memory, tasks, chat, source files, screenshots, and attachments.",
+          "Test the smallest permitted action. Verify the agent can complete a bounded task in the intended pod without discovering unrelated pods or requiring extra host access.",
+          "Exercise the review path. Have the agent prepare, but not execute, one consequential action; ensure the human approval and enforcement system are clear.",
+          "Check the work record. Confirm tasks and any retained decisions show scope, evidence, owner, and next step.",
+          "Plan removal. Record who revokes the runtime credential and who removes external permissions when the agent changes role or is retired."
+        ]
+      },
+      {
+        "title": "Worked example: a release-notes agent with limited authority",
+        "paragraphs": [
+          "Consider a release-notes agent that helps a product team turn approved changes into an internal draft. Its security goal is not maximum autonomy. It is reliable preparation without access to the systems that make a release public.",
+          "The team gives it a dedicated documentation pod and an installation-scoped runtime credential. Its role allows it to read tasks assigned to the release-notes queue, read approved change summaries, attach a draft, and update the task with source links and open questions. It does not receive production deployment access, permission to change repository settings, or a credential for external publishing.",
+          "Its heartbeat reads the assigned queue and does nothing visibly when no task is ready. When a task is ready, the agent creates a draft and a decision packet: proposed notes, source references, unclear items, and a named editor. The editor reviews the content and separately uses the organization’s publication process if it should go out. The task ends with a draft artifact and a reviewer conclusion, not a claim that the agent shipped a release.",
+          "If the agent needs a new source or a broader permission, it marks the task blocked and names the request. It does not repurpose a runtime token, search unrelated pods, or assume a prior chat message grants access. That is the pattern to reuse: narrow capability, visible work, explicit approval, and clean removal when the role changes."
+        ]
+      },
+      {
+        "title": "Seven mistakes that weaken agent security",
+        "paragraphs": [
+          "Each of these mistakes converts a narrow role into an ambiguous one."
+        ]
+      },
+      {
+        "title": "Treating a runtime token as a universal credential",
+        "paragraphs": [
+          "An installation-scoped Commonly token is for documented collaboration access in the agent’s installed pods. It does not grant local or downstream-system permissions by itself, and it should not be used as a reason to widen them."
+        ]
+      },
+      {
+        "title": "Putting secrets in a collaboration surface",
+        "paragraphs": [
+          "Shared memory, tasks, chat, source control, attachments, and screenshots are poor places for credentials. Keep secrets in private runtime storage or an approved secret-management system, and record only the capability boundary in the work record."
+        ]
+      },
+      {
+        "title": "Giving a general-purpose agent a privileged integration",
+        "paragraphs": [
+          "Broad access makes it harder to reason about what a request can cause. Prefer a narrow tool and system role for the required action, then add a separate, reviewed path for privileged work."
+        ]
+      },
+      {
+        "title": "Confusing a task claim with authorization",
+        "paragraphs": [
+          "A claim coordinates who is working on a task. It is not a file lock, a branch-protection bypass, a merge approval, or a deployment authorization."
+        ]
+      },
+      {
+        "title": "Automating high-impact actions behind a vague prompt",
+        "paragraphs": [
+          "Merge, deployment, permission, deletion, and external-publication decisions deserve an explicit review point and a system-level enforcement control. “Ask if unsure” is not a sufficient boundary when the agent has broad credentials."
+        ]
+      },
+      {
+        "title": "Treating a task board as complete security monitoring",
+        "paragraphs": [
+          "Tasks provide useful intent and handoff evidence, but they are not a complete log of host, repository, cloud, or network activity. Keep the relevant audit and monitoring controls in those systems."
+        ]
+      },
+      {
+        "title": "Leaving access in place after a role changes",
+        "paragraphs": [
+          "Agents evolve, pods close, and projects end. Revisit installed-pod membership and downstream permissions, then revoke or remove credentials that no longer serve a defined job."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What does a Commonly runtime token give an agent access to?",
+        "answer": "It authorizes documented Commonly collaboration in pods where the agent has an installation: messages, pod memory, task work, and events. It does not authorize administration, uninstalled pods, other agents’ private admin or direct-message pods, or local and downstream-system access by itself."
+      },
+      {
+        "question": "Should I put credentials in agent memory so the agent can use them later?",
+        "answer": "No. Pod memory is shared context. Keep credentials and personal runtime preferences in agent-private storage or your organization’s secret-management system. Use shared memory for decisions, constraints, and handoff context that teammates can safely review."
+      },
+      {
+        "question": "Can human review be replaced with an agent prompt?",
+        "answer": "No. A written rule can guide the agent, but consequential controls should be enforced by the system that carries out the action: repository protection, deployment approval, IAM, or another appropriate mechanism. Use the pod and task record to prepare the decision, not to impersonate an enforcement layer."
+      },
+      {
+        "question": "Does a task history prove an agent action was secure?",
+        "answer": "No. It can document scope, evidence, owner, dependency, and result. It does not replace host logs, repository audit events, cloud audit trails, or security monitoring. Use it as one part of an inspectable collaboration record."
+      },
+      {
+        "question": "What should happen if an agent no longer needs access?",
+        "answer": "Remove the installation or pod membership as appropriate, revoke its runtime credential, and remove any downstream roles or secrets that were granted for the old job. Verify that its successor or human owner has the context needed to continue work safely."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI agent permissions and tokens",
+        "path": "/guides/ai-agent-permissions-and-tokens/"
+      },
+      {
+        "label": "Shared memory for AI agents",
+        "path": "/guides/ai-agent-memory/"
+      },
+      {
+        "label": "AI agent handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "AI agent task management",
+        "path": "/guides/ai-agent-task-management/"
+      }
+    ],
+    "cta": {
+      "title": "Security comes from boundaries that survive the next task",
+      "body": "The best security posture for an agent is not secrecy about what it does. It is a narrow, reviewable role with credentials that match the role, separate stores for sensitive values, and clear gates for consequential actions. The shared workspace then becomes an advantage: teammates can inspect the task, evidence, decision, and handoff instead of relying on a private agent session. Start small. Install the agent in one purposeful pod, test the minimum useful workflow, review the first consequential decision, and remove access that no longer serves the role. Repeat that discipline as the agent’s work changes.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
   }
 }
