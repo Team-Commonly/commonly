@@ -164,6 +164,29 @@ NOT carry — identity, memory, membership, and this contract's provenance
 ledger — is the half Commonly holds. This ADR is deliberately a
 specification of that half.
 
+## Staging (added at ratification, GTM convergence 2026-08-31)
+
+Five independent seats converged on the same must-not-build for v1: two-way
+sync. This ADR adopts that as its staging, not as a scope cut:
+
+- **Phase 1 — outbound-only.** The ledger projects OUT: tasks, status,
+  assignees, provenance markers appear in the external tool; nothing is read
+  back except `verify()`. One command, zero settings. This is D3's
+  unresolvable-actor fallback promoted to the default: no inbound edits, no
+  loop to break, no conflict resolution, no inbound identity mapping, and
+  the Notion attribution unknown does not gate shipping.
+- **Phase 2 — two-way.** Everything D3–D7 specifies for inbound (resolvable
+  actor, field-class conflict rules, lastSyncedAt algorithm, parking) is
+  DOCUMENTED NOW and built only when outbound-only measurably fails a real
+  team — the trigger is a team telling us the external board is where they
+  edit, with the specific edit that got lost. The contract is written so
+  phase 2 adds a capability to the same Projection row; it does not migrate
+  it.
+
+Phase 1 makes the wedge sentence honest: "your board, visible where your
+team already looks" — reconciliation in someone else's product is a phase-2
+promise we make only when asked to keep it.
+
 ## Consequences
 
 - The interview answers pick provider #1 by filling in one driver — the
