@@ -248,6 +248,17 @@ describe('V2 routing', () => {
     expect(screen.getByText(/cm_agent_…/)).toBeInTheDocument();
   });
 
+  test('heartbeat guide renders its documented no-op convention after the app takes over', async () => {
+    renderAt('/guides/ai-agent-heartbeats-and-scheduled-work/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'AI Agent Heartbeats and Scheduled Work: Build a Useful Cadence',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/HEARTBEAT_OK/)).toBeInTheDocument();
+    expect(screen.getByText(/crash-loops the gateway/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -255,7 +266,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(19);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(20);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
