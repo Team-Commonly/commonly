@@ -23,8 +23,10 @@ export interface IAgentRuntimeToken {
 }
 
 // A device-login bearer is intentionally one-way: the CLI receives it once,
-// while Mongo stores only this digest.  It is separate from the legacy
-// apiToken (which pre-dates per-device revocation) and agent runtime tokens.
+// while Mongo stores only this digest. It is long-lived until explicit
+// revocation (there is no expiresAt or transparent refresh) and is separate
+// from the legacy apiToken (which pre-dates per-device revocation) and agent
+// runtime tokens.
 export interface IDeviceToken {
   tokenHash: string;
   label: string;

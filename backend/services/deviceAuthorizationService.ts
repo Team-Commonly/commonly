@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { Types } from 'mongoose';
 import DeviceAuthorization, { IDeviceAuthorization } from '../models/DeviceAuthorization';
 import User from '../models/User';
 
@@ -183,6 +184,7 @@ export const listDeviceTokens = async (userId: string) => {
 };
 
 export const revokeDeviceToken = async (userId: string, deviceId: string) => {
+  if (!Types.ObjectId.isValid(deviceId)) return false;
   const result = await User.updateOne(
     {
       _id: userId,

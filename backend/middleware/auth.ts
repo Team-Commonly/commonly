@@ -117,6 +117,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
     req.userId = id;
     req.user = { id };
+    req.authType = 'jwt';
     touchLastActive(id);
     next();
   } catch (err: unknown) {

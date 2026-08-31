@@ -43,6 +43,7 @@ const {
 interface AuthReq {
   user?: { id: string };
   userId?: string;
+  authType?: 'jwt' | 'apiToken' | 'deviceToken';
 }
 interface Res {
   status: (n: number) => Res;
@@ -196,6 +197,12 @@ router.post('/device/poll', devicePollLimiter, async (req: any, res: Res) => {
 });
 
 router.post('/device/authorize', deviceManageLimiter, auth, async (req: AuthReq & { body?: any }, res: Res) => {
+  // Only an interactive browser session can grant another device bearer.
+  // A device token is intentionally sufficient for ordinary user routes, but
+  // accepting it here would let a revoked device pre-mint a successor.
+  if (req.authType !== 'jwt') {
+    return res.status(403).json({ error: 'Device authorization requires a signed-in browser session' });
+  }
   try {
     const result = await decideDeviceAuthorization({
       userCode: req.body?.userCode,

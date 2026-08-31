@@ -522,6 +522,42 @@ describe('Auth Routes Integration Tests', () => {
         .get('/api/auth/user')
         .set('Authorization', `Bearer ${granted.body.token}`)
         .expect(401);
+
+      await request(app)
+        .delete('/api/auth/devices/not-a-device-id')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .expect(404);
+    });
+
+    it('requires a browser JWT to authorize a device and cannot mint a successor from a device token', async () => {
+      const user = await createVerifiedUser();
+      const browserToken = generateTestToken(user._id);
+      const first = await startAuthorization();
+
+      await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .send({ userCode: first.body.userCode, decision: 'authorize' })
+        .expect(200);
+      const firstGrant = await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: first.body.deviceCode })
+        .expect(200);
+
+      const successor = await startAuthorization();
+      await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .send({ userCode: successor.body.userCode, decision: 'authorize' })
+        .expect(403);
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: successor.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'authorization_pending' });
+
+      const persistedUser = await User.findById(user._id).select('deviceTokens');
+      expect(persistedUser.deviceTokens).toHaveLength(1);
     });
 
     it('returns slow_down, denied, and expired terminal states without minting a token', async () => {
