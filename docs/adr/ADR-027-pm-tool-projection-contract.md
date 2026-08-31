@@ -145,7 +145,15 @@ scope (`externalRef`: one database / one project / one board) at install,
 the kernel refuses to read or write outside it regardless of what the token
 allows, and `verify()` reports the token's actual grant so the Connectors
 surface can show "token exceeds declared scope" as a warning state. Scope
-widening is a new install decision, never a drift.
+widening is a new install decision, never a drift. Two further
+hardening properties bind here (same study): provider credentials are held
+in the encrypted credential store behind a `credentialId` — never inline in
+the Projection row, never returned by any API (ADR-025 D6 shape); and the
+Projection's config schema is enforced at the persistence boundary with
+unknown keys rejected, while runtime state (the projection map, cursors)
+lives in its own store with its own lifecycle, never inside config.
+`verify()` failures write the projection's `status`/`errorMessage`, which
+the Connectors surface renders — a broken projection is never silent.
 
 **D9 — The driver interface is four verbs**, mirroring CAP's shape:
 `pull(since)`, `push(changes)`, `mapIdentity(actor)`, `verify()` (health +
