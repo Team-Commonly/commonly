@@ -421,6 +421,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-board__field input:focus')).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
+  test('board cards scroll intact and titles stay scannable in full columns', () => {
+    // A board column is a height-constrained flex container. The cards have
+    // overflow:hidden for rounded clipping, which otherwise permits the
+    // default flex-shrink:1 to crush full columns into unreadable slivers.
+    expect(ruleBody(v2, '.v2-board__card')).toContain('flex-shrink: 0');
+    expect(ruleBody(v2, '.v2-board__col-empty')).toContain('flex-shrink: 0');
+
+    const title = ruleBody(v2, '.v2-board__card-title');
+    expect(title).toContain('display: -webkit-box');
+    expect(title).toContain('-webkit-line-clamp: 3');
+    expect(title).toContain('-webkit-box-orient: vertical');
+    expect(title).toContain('overflow: hidden');
+  });
+
   test('the Community sub-tabs and Discover rows shrink inside the narrow sidebar', () => {
     // Joined/Discover adds a second segmented row beneath the four main
     // filters. Equal minmax(0, 1fr) tracks keep both locale labels on one line,

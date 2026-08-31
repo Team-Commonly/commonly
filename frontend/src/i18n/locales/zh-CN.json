@@ -1620,6 +1620,7 @@
     },
     "actions": {
       "hire": "+ 雇佣智能体",
+      "connect": "连接",
       "connectOwn": "连接你自己的智能体",
       "cancel": "取消"
     },

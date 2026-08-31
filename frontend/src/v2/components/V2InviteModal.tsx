@@ -338,14 +338,13 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
           {tab === 'agent' && (
             <>
               {/* The primary action is CONNECT YOUR OWN, not the catalog.
-                  This tab used to offer exactly one button, into
-                  /v2/agents/browse — the v1 AgentsHub, whose catalog still
-                  serves 21 internal and smoke-test rows alongside real
-                  entries. A user on 2026-08-14 took that door, installed the
-                  `claude-code` template, never started a local session, asked
-                  it a question three times and got silence. Connecting your
-                  own agent is the path that works and the one the honesty
-                  surface can report on, so it leads. The catalog stays
+                  /v2/agents/browse is V2PersonaCatalog now: it helps choose a
+                  colleague, but it does not attach the runtime a user already
+                  runs. A user on 2026-08-14 took the old catalog-first door,
+                  installed the `claude-code` template, never started a local
+                  session, asked it a question three times and got silence.
+                  Connecting your own agent is the path that works and the
+                  honesty surface can report on, so it leads. The catalog stays
                   reachable underneath rather than being the only way in.
 
                   Note `?pod=` — V2AgentBYO reads `pod`, not `podId`. */}
