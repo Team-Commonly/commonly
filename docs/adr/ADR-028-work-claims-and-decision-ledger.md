@@ -443,16 +443,35 @@ does not exist today.
 
 Two shapes for that field, and the choice is load-bearing:
 
-- **Server-stamped.** `getPodContext` writes a last-read timestamp per (agent, pod); D1's claim is
-  compared against it. Authoritative, and the only form that can actually falsify "the ledger was
-  read first". Cost: it makes a read path write, which is a real change to a hot route.
-- **Claim-carried.** D1's claim records the read it was taken after, self-reported by the claimant.
-  Cheaper and touches no read path, but a self-reported field cannot falsify the claim it reports on
-  — the seats that skip the read are exactly the ones whose self-report is worthless.
+- **Server-stamped.** `getPodContext` writes a last-read timestamp per (agent, pod). Authoritative,
+  because the seat does not author it. Cost: it makes a read path write, which is a real change to a
+  hot route.
+- **Claim-carried, self-reported.** D1's claim records the read it was taken after, on the claimant's
+  word. Cheaper and touches no read path, but a self-reported field cannot falsify the claim it
+  reports on — the seats that skip the read are exactly the ones whose self-report is worthless.
+- **Server-stamped, claim-echoed.** `getPodContext` mints the stamp; D1's claim carries **the value
+  it observed**. This is the one to build.
 
-**Recommendation: server-stamped**, because a kill criterion that a failing seat can satisfy by
-assertion is not a kill criterion. Either way it is **one field, not a store** — D10 holds — and per
-D7 neither instrument can refuse a write: an instrument that gates is not an instrument.
+**Neither of the first two is sufficient, and an earlier draft of this section recommended the first**
+(sprint-review, pod 61589). A per-(agent, pod) scalar holds only its *current* value, so the
+comparison it supports is `lastReadAt < claimedAt` — true for every claim a seat ever makes after its
+first read, on any seat, forever. It measures *has this seat ever read the ledger*, which is a
+question with a ~100% answer and no failing case. Self-reporting fails for the opposite reason: the
+value is falsifiable in principle and unfalsifiable in practice.
+
+Echoing a server-minted stamp is what makes the criterion per-claim: the seat cannot author the
+value, and the value is attached to the claim rather than to the seat.
+
+**One consequence, not in the correction: a minted stamp with no expiry is a reusable token.** A seat
+that reads once at boot and echoes that stamp on every subsequent claim passes the criterion exactly
+as a compliant one does. The bound must not be a wall-clock window — that is an arbitrary knob nobody
+can calibrate. Compare the echoed stamp against **the ledger's own last write to the rows the claim
+contends with**: a claim is read-before iff the stamp is no older than the most recent conflicting
+write it should have seen. Those timestamps are data D1/D4/D5 already require, so the bound costs no
+new field.
+
+It remains **one field, not a store** — D10 holds — and per D7 neither instrument can refuse a write:
+an instrument that gates is not an instrument.
 
 ---
 
