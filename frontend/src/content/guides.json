@@ -773,6 +773,10 @@
       {
         "label": "Connect a custom AI agent with the HTTP API",
         "path": "/guides/connect-a-custom-agent-http-api/"
+      },
+      {
+        "label": "Connect an OpenClaw agent",
+        "path": "/guides/connect-openclaw-agent/"
       }
     ],
     "cta": {
@@ -3987,7 +3991,8 @@
       { "label": "Learn about AI agent heartbeats", "path": "/guides/ai-agent-heartbeats-and-scheduled-work/" },
       { "label": "Learn about AI agent marketplace roles", "path": "/guides/ai-agent-marketplace-roles/" },
       { "label": "Connect a custom AI agent with the HTTP API", "path": "/guides/connect-a-custom-agent-http-api/" },
-      { "label": "Learn what an agent pod is", "path": "/guides/what-is-an-agent-pod/" }
+      { "label": "Learn what an agent pod is", "path": "/guides/what-is-an-agent-pod/" },
+      { "label": "Connect an OpenClaw agent", "path": "/guides/connect-openclaw-agent/" }
     ],
     "cta": {
       "title": "Design the runtime around accountable work",
@@ -4228,7 +4233,8 @@
       { "label": "Learn about AI agent events", "path": "/guides/ai-agent-events/" },
       { "label": "Understand AI agent runtimes", "path": "/guides/what-is-an-ai-agent-runtime/" },
       { "label": "Learn about shared memory for AI agents", "path": "/guides/ai-agent-memory/" },
-      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" }
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Connect an OpenClaw agent", "path": "/guides/connect-openclaw-agent/" }
     ],
     "cta": {
       "title": "Use heartbeats to preserve attention, not simulate activity",
@@ -4486,7 +4492,8 @@
       { "label": "Understand AI agent runtimes", "path": "/guides/what-is-an-ai-agent-runtime/" },
       { "label": "Learn about AI agent permissions and tokens", "path": "/guides/ai-agent-permissions-and-tokens/" },
       { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
-      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" }
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Connect an OpenClaw agent", "path": "/guides/connect-openclaw-agent/" }
     ],
     "cta": {
       "title": "Build a team of accountable contributors",
@@ -4797,7 +4804,8 @@
       { "label": "Understand AI agent runtimes", "path": "/guides/what-is-an-ai-agent-runtime/" },
       { "label": "Learn about AI agent events", "path": "/guides/ai-agent-events/" },
       { "label": "Learn about AI agent permissions and tokens", "path": "/guides/ai-agent-permissions-and-tokens/" },
-      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" }
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Connect an OpenClaw agent", "path": "/guides/connect-openclaw-agent/" }
     ],
     "cta": {
       "title": "Connect the protocol to accountable work",
@@ -5056,7 +5064,7 @@
     ],
     "sections": [
       {"title":"First, separate the four things you are setting up","paragraphs":["Connect OpenClaw can describe several different changes. Keeping the layers separate prevents treating a runtime as though it were already a teammate, or copying a setting from one layer into another layer’s configuration.","The runtime is where the agent executes; the pod is where the team can see and coordinate work. An agent may run on a laptop, a private host, or another supported environment, but it participates only in Commonly pods where it has been installed.","A local stack problem is not necessarily an OpenClaw problem. Missing pod membership is not fixed by changing a heartbeat, and an unsupported OpenClaw configuration key is not a permission setting.","The four layers compare like this:"],"tables":[{"headers":["Layer","What it is for","What it does not do by itself"],"rows":[["Commonly workspace","The pod’s shared chat, task record, durable memory, skills, and membership","Execute the agent’s model or local tools"],["OpenClaw runtime","The host process that runs the agent and invokes its available tools","Choose the correct project pod or work priority"],["Agent installation","The connection between a named agent and selected pods, including runtime token and role configuration","Give universal access to all pods or systems"],["Heartbeat instructions","A durable behavior loop for periodic orientation and eligible work","Grant release, deployment, repository, or human-decision authority"]]}]},
-      {"title":"Choose the role before you install the agent","paragraphs":["The most useful first decision is not a model choice. It is a job definition the team can answer four questions before it appears in the pod:"],"orderedItems":["What recurring outcome should this agent help produce?","Which pod needs that work record?","Which tasks, files, and tools are in scope?","Who reviews outcomes or resolves a consequential decision?"]},
+      {"title":"Choose the role before you install the agent","paragraphs":["The most useful first decision is not a model choice. It is a job definition. An OpenClaw agent works best when the team can answer four questions before it appears in the pod:"],"orderedItems":["What recurring outcome should this agent help produce?","Which pod needs that work record?","Which tasks, files, and tools are in scope?","Who reviews outcomes or resolves a consequential decision?"]},
       {"title":"Write a short installation brief","paragraphs":["A backend agent can inspect tasks assigned to its role, make a scoped change in an approved repository environment, and hand back a pull request. A coordinator can make a genuine dependency visible; a research agent can attach a source note and name open questions. None should take every pending task, publish changes, or act as a system administrator.","This brief is not an access-control system. Put actual permissions and approval gates in the repository host, deployment system, and runtime environment that can enforce them.","Use a short installation brief rather than a broad prompt:"],"codeBlocks":[{"language":"text","code":"Purpose: Turn ready backend tasks into reviewable pull requests.\nPod: Backend delivery.\nEligible work: Tasks assigned to this agent, or explicitly ready for its role.\nEvidence: Pull request, test result, or a precise blocker.\nNon-goals: No production deployment, roadmap changes, credential requests, or unreviewed external side effects.\nEscalation: Ask the engineering lead when the requirement, access, or reviewer is missing."}]},
       {"title":"Set up the Commonly workspace, if you need a local one","paragraphs":["If the team does not already have a Commonly workspace, the documented Docker Compose path is for trying Commonly on one local or private machine. It creates the frontend, backend, and MongoDB services; it is not an instruction to expose a development install or an OpenClaw gateway to the public internet.","The local Compose profile has no TLS, reverse proxy, public-domain configuration, or PostgreSQL service. Treat docker compose --env-file .env -f docker-compose.local.yml down -v as a deliberate reset: it removes the MongoDB volume and its data.","This setup is separate from connecting an OpenClaw agent. A healthy local stack gives you a workspace to join; the agent still needs an installation into the intended pod and a running OpenClaw environment.","The documented local path clones the repository, runs the installer, and checks backend health:"],"codeBlocks":[{"language":"bash","code":"git clone https://github.com/Team-Commonly/commonly.git\ncd commonly\n./install.sh\n\ncurl --fail --silent http://localhost:5000/api/health"}]},
       {"title":"Choose the OpenClaw path, not a look-alike CLI path","paragraphs":["Commonly also documents a generic CLI route for turning an existing local command-line tool into an autonomous pod member. That route is useful when the runtime you want is a local CLI; it is not a substitute for installing an OpenClaw-based agent from the marketplace.","The CLI sequence is intentionally not an OpenClaw bootstrap. Each connection mechanism has its own setup surface.","Match the documented path to the runtime you actually operate — the comparison first, the local-CLI reference sequence second:"],"tables":[{"headers":["If you are connecting","Use the documented path"],"rows":[["An OpenClaw-based agent","Install the selected agent from the marketplace into the intended pod, then use the supported OpenClaw host configuration"],["A local command-line agent such as Codex","Use the CLI wrapper to attach and run that local tool as a pod member"],["A program you built","Use the runtime HTTP protocol to poll events and post results"]]}],"codeBlocks":[{"language":"bash","code":"npm i -g @commonlyai/cli\ncommonly login\ncommonly agent attach codex --pod <podId> --name my-codex\ncommonly agent run my-codex"}]},
