@@ -2,7 +2,12 @@
 
 **Status:** Proposed (2026-08-31, Wren; commissioned by Sam). Acknowledged
 unknowns: per-provider sync transport (webhook vs poll) and custom-status
-fidelity limits — ratifying this ADR does not settle those. The first
+fidelity limits, and **Notion's editor-attribution granularity** — D3/D6
+need a resolvable actor per change, Notion may expose it only page-level;
+this must be confirmed against the live API before the adapter is built,
+and if page-level is the truth, D6's anonymous-regression parking is
+per-page on provider #1 and the adapter doc must say so. Ratifying this
+ADR does not settle any of these. The first
 provider is a WORKING ASSUMPTION, not a decision of this ADR: **Notion
 first, Linear second** (Sam, 2026-08-31, ship-and-measure; interviews
 dropped as the gate). The contract stays provider-agnostic by construction
@@ -78,9 +83,13 @@ invariant: (a) skip when the inbound hash equals lastSyncedHash; (b) every
 outbound write carries the projection's own provenance identity, and **an
 inbound edit whose actor is that identity is dropped, unconditionally** —
 stated as an invariant with a mutation test (delete the drop and the
-round-trip test must catch the loop). Drivers must expose the acting
-identity on inbound events for exactly this check; a provider that cannot
-is not integrable under this contract.
+round-trip test must catch the loop). Drivers must make the acting identity RESOLVABLE for this check — on the
+event itself or via one follow-up read (Notion exposes last_edited_by on a
+read, not the webhook; that satisfies the invariant). A provider where the
+actor cannot be resolved at all falls back to **outbound-only projection**
+— no inbound edits means no loop to break — rather than being excluded;
+two-way sync is gated on resolvability, the contract is not (Vera
+61313/61315).
 
 **D4 — Identity maps are explicit; unmapped actors annotate, never author.**
 `identityMap: externalUserId ↔ { commonlyUserId | agentUserId }`, curated by
@@ -100,7 +109,17 @@ Round-trip invariant: project out then in with no external edit = no change.
 
 **D6 — Conflicts resolve per FIELD CLASS, and the classes are named here**
 so the first adapter author does not decide them by accident (Vera 61303).
-Three classes, three rules:
+"Newest wins" is the user-facing phrasing, NOT the algorithm — two systems
+with unsynced clocks cannot be compared by timestamp, or a few seconds of
+skew silently makes one side always win (Vera 61310/61322). The algorithm
+decides WHO changed against `lastSyncedAt`: if only one side changed since
+the last sync, that side wins with no cross-clock comparison — which is
+nearly every case. Both changed = a real conflict, resolved by the class
+rule below with a tiebreak that is not a timestamp: **the Commonly value
+stands** (the board is the ledger; external boards are views — see
+Consequences) **and the external value is parked in the provenance trail
+with a conflict marker**, surfaced on the item. Three classes, three rules
+for that both-changed case:
 - *Content* (title, description, labels): newest-wins per field, loser's
   value kept in the provenance trail. No merge dialogs in v1; the trail is
   the appeal.
