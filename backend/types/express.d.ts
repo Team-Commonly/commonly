@@ -9,7 +9,7 @@ declare global {
       // Set by auth.js
       userId?: string;
       user?: { id: string; username?: string; email?: string; role?: string };
-      authType?: 'jwt' | 'apiToken';
+      authType?: 'jwt' | 'apiToken' | 'deviceToken';
       apiTokenScopes?: string[];
       apiTokenCreatedAt?: Date | null;
 

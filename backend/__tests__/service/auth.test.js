@@ -4,6 +4,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
+const DeviceAuthorization = require('../../models/DeviceAuthorization');
+const { hashDeviceCredential } = require('../../services/deviceAuthorizationService');
 const authRoutes = require('../../routes/auth');
 const {
   setupMongoDb,
@@ -407,6 +409,150 @@ describe('Auth Routes Integration Tests', () => {
         .expect(401);
 
       expect(response.body.msg).toContain('Token is not valid');
+    });
+  });
+
+  describe('CLI device authorization', () => {
+    const createVerifiedUser = async () => {
+      const user = new User({
+        username: 'device-owner',
+        email: 'device-owner@example.com',
+        password: 'Password123!',
+        verified: true,
+      });
+      await user.save();
+      return user;
+    };
+
+    const startAuthorization = async () => request(app)
+      .post('/api/auth/device/start')
+      .send({ clientName: 'commonly-cli', clientVersion: '0.1.26', hostname: 'sam-laptop' })
+      .expect(201);
+
+    it('hands an approved token to exactly one poller and persists only its digest', async () => {
+      const user = await createVerifiedUser();
+      const browserToken = generateTestToken(user._id);
+      const start = await startAuthorization();
+
+      expect(start.body).toMatchObject({
+        verifyUrl: 'http://localhost:3000/cli/authorize',
+        expiresIn: 600,
+        interval: 5,
+      });
+      expect(start.body.deviceCode).toBeTruthy();
+      expect(start.body.userCode).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+
+      const storedRequest = await DeviceAuthorization.findOne();
+      expect(storedRequest.deviceCodeHash).not.toBe(start.body.deviceCode);
+      expect(storedRequest.userCodeHash).not.toBe(start.body.userCode.replace('-', ''));
+
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: start.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'authorization_pending' });
+
+      const confirmation = await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .send({ userCode: start.body.userCode })
+        .expect(200);
+      expect(confirmation.body).toMatchObject({
+        status: 'pending',
+        request: { hostname: 'sam-laptop', clientName: 'commonly-cli', clientVersion: '0.1.26' },
+      });
+
+      await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .send({ userCode: start.body.userCode, decision: 'authorize' })
+        .expect(200)
+        .expect({ status: 'authorized' });
+
+      const granted = await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: start.body.deviceCode })
+        .expect(200);
+      expect(granted.body).toMatchObject({ username: 'device-owner', userId: user._id.toString() });
+      expect(granted.body.token).toMatch(/^cm_[a-f0-9]{64}$/);
+
+      // The transient handoff is consumed atomically; a duplicate poll never
+      // returns a second copy of the bearer.
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: start.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'already_used' });
+
+      const persistedUser = await User.findById(user._id).select('deviceTokens');
+      expect(persistedUser.deviceTokens).toHaveLength(1);
+      expect(persistedUser.deviceTokens[0].label).toBe('sam-laptop · commonly-cli');
+      expect(persistedUser.deviceTokens[0].tokenHash).not.toBe(granted.body.token);
+      expect(JSON.stringify(persistedUser)).not.toContain(granted.body.token);
+
+      // It is a normal user bearer until explicitly revoked.
+      await request(app)
+        .get('/api/auth/user')
+        .set('Authorization', `Bearer ${granted.body.token}`)
+        .expect(200)
+        .expect((response) => expect(response.body.deviceTokens).toBeUndefined());
+
+      const devices = await request(app)
+        .get('/api/auth/devices')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .expect(200);
+      expect(devices.body.devices).toEqual([expect.objectContaining({
+        label: 'sam-laptop · commonly-cli',
+      })]);
+      expect(devices.body.devices[0].tokenHash).toBeUndefined();
+      expect(JSON.stringify(devices.body)).not.toContain(granted.body.token);
+
+      await request(app)
+        .delete(`/api/auth/devices/${devices.body.devices[0].id}`)
+        .set('Authorization', `Bearer ${browserToken}`)
+        .expect(200);
+      await request(app)
+        .get('/api/auth/user')
+        .set('Authorization', `Bearer ${granted.body.token}`)
+        .expect(401);
+    });
+
+    it('returns slow_down, denied, and expired terminal states without minting a token', async () => {
+      const user = await createVerifiedUser();
+      const browserToken = generateTestToken(user._id);
+
+      const pending = await startAuthorization();
+      await request(app).post('/api/auth/device/poll').send({ deviceCode: pending.body.deviceCode }).expect(200);
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: pending.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'slow_down' });
+
+      const denied = await startAuthorization();
+      await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .send({ userCode: denied.body.userCode, decision: 'deny' })
+        .expect(200)
+        .expect({ status: 'denied' });
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: denied.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'denied' });
+
+      const expired = await startAuthorization();
+      await DeviceAuthorization.updateOne(
+        { deviceCodeHash: hashDeviceCredential(expired.body.deviceCode) },
+        { $set: { expiresAt: new Date(Date.now() - 1000) } },
+      );
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: expired.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'expired' });
+      expect((await User.findById(user._id).select('deviceTokens')).deviceTokens).toHaveLength(0);
     });
   });
 

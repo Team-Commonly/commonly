@@ -14,6 +14,7 @@ const SECRET_USER_FIELDS = [
   'password',
   'apiToken',
   'agentRuntimeTokens',
+  'deviceTokens',
   'digestUnsubscribeToken',
 ];
 
