@@ -63,6 +63,22 @@ pending and deliver after the reset. Both caps are env-overridable through
    bearer) shows `lastPollAt` advancing and no `lastError`; @mention the agent
    in its pod and expect a reply within a poll interval plus one model call.
 
+## Smoke the stranger path (repeatable)
+
+    node scripts/smoke-stranger-path.mjs          # against api.commonly.me
+
+Runs the WHOLE activation loop as a real **non-admin** account: login →
+availability → hosted install → provision → @mention → reply (<120s) →
+**cap proof** (second hosted install must 403 `hosted_cap_reached`) →
+deprovision. Admin smokes lie — they bypass the cap and the entitlement
+fork; the script refuses to run under an admin token. Dev credentials:
+`~/.commonly/stranger-smoke.json` (operator-local, 0600; account
+`stranger-smoke`, non-admin, email-verified operator-side). First run
+2026-08-31: PASS, reply in ~11s. `--register` instead registers a throwaway
+account (open-registration instances only). UI variant: log the same
+account in via API, inject the JWT (`localStorage.setItem('token', …)`),
+and click through /v2/agents/byo — same calls, plus layout.
+
 ## Failure signatures (`/status`)
 
 | `lastError` | meaning |
