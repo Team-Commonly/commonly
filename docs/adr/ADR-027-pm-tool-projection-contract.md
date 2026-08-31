@@ -107,30 +107,27 @@ directions; a state with no mapping parks the item with an explicit marker
 and syncs the rest — silent drops and silent coercions are both defects.
 Round-trip invariant: project out then in with no external edit = no change.
 
-**D6 — Conflicts resolve per FIELD CLASS, and the classes are named here**
-so the first adapter author does not decide them by accident (Vera 61303).
-"Newest wins" is the user-facing phrasing, NOT the algorithm — two systems
-with unsynced clocks cannot be compared by timestamp, or a few seconds of
-skew silently makes one side always win (Vera 61310/61322). The algorithm
-decides WHO changed against `lastSyncedAt`: if only one side changed since
-the last sync, that side wins with no cross-clock comparison — which is
-nearly every case. Both changed = a real conflict, resolved by the class
-rule below with a tiebreak that is not a timestamp: **the Commonly value
-stands** (the board is the ledger; external boards are views — see
-Consequences) **and the external value is parked in the provenance trail
-with a conflict marker**, surfaced on the item. Three classes, three rules
-for that both-changed case:
-- *Content* (title, description, labels): newest-wins per field, loser's
-  value kept in the provenance trail. No merge dialogs in v1; the trail is
-  the appeal.
-- *Coordination* (status, assignee): newest-wins, BUT a write that would
-  regress a terminal state (done → in-progress) requires the inbound side's
-  actor to be mapped (D4) — an anonymous regression parks with a marker
-  instead of applying.
-- *Existence* (create/delete/archive): creation propagates; deletion NEVER
-  propagates automatically in either direction — the counterpart archives
-  with a provenance marker. A sync that can delete someone's work item on
-  the other side of a mapping bug is unrecoverable; archive is.
+**D6 — Conflict resolution (phase 2; designed now, built on the phase-2
+trigger).** "Newest wins" is user-facing phrasing, NOT the algorithm — two
+systems with unsynced clocks are never compared by timestamp (a few seconds
+of skew silently makes one side always win). The algorithm decides WHO
+changed against `lastSyncedAt`:
+
+- **One side changed since the last sync → that side wins**, no timestamp
+  comparison. This is nearly every write. Two exceptions when the changed
+  side is external: a terminal-state regression (done → in-progress) whose
+  actor is unmapped (D4) parks with a marker instead of applying; and
+  deletion NEVER propagates (below).
+- **Both sides changed since the last sync → a real conflict**, and the
+  tiebreak is not a timestamp: **the Commonly value stands** for every
+  field class (the board is the ledger; external boards are views — see
+  Consequences), and the external value is parked in the item's provenance
+  trail with a surfaced conflict marker. The trail is the appeal; no merge
+  dialogs.
+- **Existence is not a field**: creation propagates both ways; deletion
+  auto-propagates in NEITHER direction — the counterpart archives with a
+  provenance marker. A delete across a mapping bug is unrecoverable; an
+  archive is not.
 
 **D7 — Claims do not project; assignees do.** ADR-018 claims are attention
 leases, not assignments. Outward we project `assignee` only; an external
