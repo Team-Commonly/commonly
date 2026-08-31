@@ -1,7 +1,11 @@
 # ADR-028 — Work claims and the decision ledger: recording custody, work area, and why
 
-**Status:** **Draft** — design only, opened at Sam's request (2026-08-31 kickoff). Nothing here is
-ratified; D1–D7 are proposals. **Build waits for the five customer interviews** — this ADR exists so
+**Status:** **Draft, with one ratified doctrine folded in.** Opened at Sam's request (2026-08-31
+kickoff). **D1–D7 remain proposals and nothing in the audit is ratified.** What *is* ratified is the
+attention doctrine in §Ratified doctrine (Sam, 2026-08-31) and the three consequences it forces,
+carried below as **D8–D10**. Read the split literally: Sam ruled on where a decision is *rendered*
+and what it costs the human, not on what a claim records or where the ledger lives — those are still
+the open questions at §Ratification points, and D8–D10 do not presuppose an answer to any of them. **Build waits for the five customer interviews** — this ADR exists so
 that what gets built is decided before, not during. One section is deliberately unfilled: the
 competitive comparison, because the evidence pack behind it is operator-held and not readable from
 this seat (see §Evidence I could not verify).
@@ -24,10 +28,35 @@ decisions are proposals, the findings are measurements.
   They are siblings and the dependency runs one way — the ledger is what the projection projects, so
   a field this ADR does not require is a field ADR-027 cannot carry across. Numbered 028 because
   ADR-027 was filed three minutes earlier and both drafts took the same number (Sam, 2026-08-31).
-- [`ADR-017`](ADR-017-attention-routing.md) owns routing to the **human**. Everything here routes
-  between agents.
+- [`ADR-017`](ADR-017-attention-routing.md) owns routing to the **human**. The audit and D1–D7 route
+  only between agents. **D8–D10 are the exception and they are deliberate**: the ratified doctrine
+  puts a claim/decision event onto ADR-017's existing routing layer rather than beside it, so this
+  ADR now *consumes* ADR-017 and must not grow a second router. Two consequences of that dependency
+  are recorded at D8 rather than left to be discovered: ADR-017 is **`Proposed`**, so D8's substrate
+  is unratified, and the doctrine's phrase "attention threshold" names a mechanism ADR-017
+  explicitly rejected.
 - [`ADR-003`](ADR-003-memory-as-kernel-primitive.md) owns memory. A decision ledger is not memory: it
   is shared, addressable, and append-only, where memory is private and rewritable.
+
+---
+
+## Ratified doctrine (Sam, 2026-08-31)
+
+> **We route attention, we do not compete for it.**
+
+External messaging apps remain the human attention layer. The ledger owns the **decision moment** —
+gate approvals, claim-conflict resolution, and the what-my-agents-did-and-decided digest are rendered
+**only in Commonly** and reached by link from the external app.
+
+Ratified verbatim by Sam in the sprint pod (2026-08-31), with a standing constraint that binds every
+decision below it: **no new notification system, and no per-user routing UI in v1.**
+
+This is the doctrine D8–D10 implement. It settles a question the rest of this ADR had left implicit —
+whether a decision ledger should push. It should not. Everything downstream of it is a link.
+
+*Scope of the ratification:* the doctrine and its three consequences. It does not ratify D1–D7, and
+it does not choose D5's container — a link needs something addressable to point at, but "addressable"
+is satisfied by either candidate at §Ratification points 1, so the doctrine survives either answer.
 
 ---
 
@@ -160,7 +189,10 @@ re-offers nothing.
 
 ---
 
-## Decisions (proposals for Sam)
+## Decisions
+
+**D1–D7 are proposals for Sam. D8–D10 are ratified** — they are the ratified doctrine's consequences,
+and the only open thing about them is when ADR-017 is ratified so D8 has a substrate to build on.
 
 ### D1 — A claim carries a work area, written at claim time
 
@@ -251,6 +283,66 @@ The same reasoning applies with more force to work: "forgot to record a work are
 
 ---
 
+### D8 — A claim or decision event classifies on the existing routing layer, and adds no second one
+
+A claim/decision event is routed by the same machinery that already routes any wake event. It is not
+a new feed, a new store, or a new subscriber list. This is the operative half of "no new notification
+system": the cost of surfacing a decision must be the cost of one more event class, not the cost of a
+router.
+
+**Two corrections to the mechanism as named, recorded here so neither is inherited as fact.** The
+doctrine cites "the attention threshold … (ADR-018 machinery)". Measured on `origin/main`:
+
+1. **The machinery is ADR-017's, not ADR-018's.** ADR-018 disclaims the direction in its own text —
+   "ADR-017 covers agent→human escalation only. Agent↔agent coordination has no …". ADR-018's only
+   threshold is D6.3's consecutive-silence convergence counter, which is a loop bound between agents
+   and not a routing decision about a human. Citing "ADR-018's attention threshold" as the substrate
+   for D8 would point an implementer at a mechanism that is not there.
+2. **"Threshold" names the thing ADR-017 rejected.** ADR-017 Layer 2 rules *"Classes, not scores.
+   Scalars are miscalibrated and thresholds rot"* — routing is by **class**, budgeted and muted as a
+   class. So D8 is built as a divergence/decision **class** on ADR-017's taxonomy (which carries an
+   `other` + free-text escape valve for exactly this case), not as a score compared against a cutoff.
+
+Sam's intent is unambiguous and is what is ratified: reuse, don't build. The two corrections change
+which file an implementer opens and which shape they build; they change nothing about the ruling.
+
+**The dependency is real and is not resolved by this ADR:** ADR-017 is **`Proposed`**, and its
+Layer 3.1 attention queue carries three explicitly undecided items. D8 is therefore ratified in
+*direction* and blocked in *substrate* — it cannot be built before ADR-017 is ratified, and building
+it against an unratified spec is the failure mode CLAUDE.md's ADR-status discipline names. If
+ADR-017's ratification changes the class taxonomy, D8 follows it; D8 does not get its own.
+
+### D9 — Every externally-surfaced claim or decision carries a canonical ledger URL
+
+If a claim or decision is visible anywhere outside Commonly, the surfaced artifact carries a link
+back to the canonical record. The external copy is a **pointer, never the record** — it may be
+truncated, stale, or rendered by a surface Commonly does not control, and the link is what makes that
+safe. This is the mechanical half of "reached by link from the external app".
+
+Consequence worth stating, because it is the constraint that bites first: **the ledger record must be
+addressable before it can be surfaced.** Any container chosen at §Ratification points 1 must yield a
+stable URL for a single decision. That is a requirement D9 places *on* that open question, not an
+answer to it.
+
+Consequence for [`ADR-027`](ADR-027-pm-tool-projection-contract.md): a projection into an external PM
+surface is an external surfacing, so the projected item carries the ledger URL. The one-way
+dependency already recorded in the scope boundary holds — this ADR requires the field, ADR-027
+carries it across.
+
+### D10 — The digest is a read over the ledger, not a store
+
+The "what my agents did and decided" digest is computed from ledger records at read time. It does not
+get its own table, its own write path, or its own retention rule. This is the third face of the
+keep-it-simple constraint, and it is the one most likely to be violated by accident, because a digest
+is the natural place to start caching.
+
+The falsifiable consequence: **a digest must be reproducible from the ledger alone.** If a digest ever
+needs a fact the ledger does not carry, that is a signal to add the field to the ledger (D1/D4/D5),
+never to add a store beside it. D7 applies unchanged — a digest is a read-time signal and can refuse
+nothing.
+
+---
+
 ## Deliberately out of v1 scope
 
 - **Locking or arbitration.** D7 forecloses it. If two seats claim overlapping paths, both proceed and
@@ -259,6 +351,9 @@ The same reasoning applies with more force to work: "forgot to record a work are
   rulings from prose is how Finding 5 got its ambiguity in the first place.
 - **Cross-pod or cross-instance ledgers.** Pod-scoped in v1; federation is ADR-004's problem.
 - **Retrofitting history.** No backfill of past rows or past claims. The ledger starts empty.
+- **A second notification system, and per-user routing UI.** Foreclosed by the ratified doctrine, not
+  by preference — D8 reuses ADR-017's routing layer and D10 forbids a store beside the ledger. A v1
+  that ships either has not implemented the doctrine, it has worked around it.
 
 ---
 
