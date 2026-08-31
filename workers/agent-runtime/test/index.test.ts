@@ -58,4 +58,15 @@ describe('router bearers', () => {
     expect((await call(env, 'GET', '/nope', 'admin-secret')).status).toBe(404);
     expect((await call(env, 'GET', '/nope', 'status-secret')).status).toBe(404);
   });
+
+  it('a status token equal to the admin token refuses the configuration outright (503, every route, every bearer)', async () => {
+    // Otto, #1374 round 2: when the secrets are byte-identical, the admin
+    // check accepts the "status" bearer anyway — nothing downstream can
+    // distinguish the holders. So the router refuses to serve at all.
+    const { env, stubFetch } = makeEnv({ RUNTIME_STATUS_TOKEN: 'admin-secret' });
+    expect((await call(env, 'POST', '/agents/scout/default/provision', 'admin-secret')).status).toBe(503);
+    expect((await call(env, 'GET', '/agents/scout/default/status', 'admin-secret')).status).toBe(503);
+    expect((await call(env, 'GET', '/agents/scout/default/status', 'status-secret')).status).toBe(503);
+    expect(stubFetch).not.toHaveBeenCalled();
+  });
 });
