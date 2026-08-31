@@ -97,7 +97,9 @@ export const pollDeviceAuthorization = async (deviceCode: unknown) => {
   }
 
   // Conditional update prevents two concurrent polls from receiving the same
-  // bearer, even if they read the approved request at the same time.
+  // bearer, even if they read the approved request at the same time. Claim
+  // before minting: if token persistence fails after this transition, the CLI
+  // must re-run login rather than risk issuing a bearer twice.
   const claimed = await DeviceAuthorization.findOneAndUpdate(
     { _id: request._id, status: 'authorized', expiresAt: { $gt: new Date() } },
     { $set: { status: 'consumed', consumedAt: new Date() } },
