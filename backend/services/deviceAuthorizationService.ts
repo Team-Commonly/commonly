@@ -36,21 +36,6 @@ const userCodeHash = (value: unknown): string | null => {
 
 const isExpired = (request: IDeviceAuthorization, now = new Date()): boolean => request.expiresAt <= now;
 
-const revokeUndeliveredDeviceToken = async (request: IDeviceAuthorization) => {
-  if (request.status !== 'authorized' || !request.pendingToken || !request.userId) return;
-  const tokenHash = hashDeviceCredential(request.pendingToken);
-  await User.updateOne(
-    { _id: request.userId, 'deviceTokens.tokenHash': tokenHash },
-    { $set: { 'deviceTokens.$.revokedAt': new Date() } },
-  );
-  // The one-time secret has no remaining recipient. Do not retain it until
-  // Mongo's TTL reaper happens to remove this authorization row.
-  await DeviceAuthorization.updateOne(
-    { _id: request._id, status: 'authorized' },
-    { $unset: { pendingToken: 1 } },
-  );
-};
-
 export const createDeviceAuthorization = async ({
   clientName,
   clientVersion,
@@ -94,13 +79,9 @@ export const pollDeviceAuthorization = async (deviceCode: unknown) => {
   if (!raw) return { status: 'invalid' as const };
   const request = await DeviceAuthorization.findOne({
     deviceCodeHash: hashDeviceCredential(raw),
-  }).select('+pendingToken');
+  });
   if (!request) return { status: 'expired' as const };
   if (isExpired(request)) {
-    // A browser may approve during the final poll interval. If the terminal
-    // misses the handoff before the ten-minute deadline, that bearer was never
-    // delivered and must not remain as a ghost device in the account.
-    await revokeUndeliveredDeviceToken(request);
     return { status: 'expired' as const };
   }
   if (request.status === 'pending') {
@@ -111,7 +92,7 @@ export const pollDeviceAuthorization = async (deviceCode: unknown) => {
     return { status: polledTooSoon ? 'slow_down' as const : 'authorization_pending' as const };
   }
   if (request.status === 'denied') return { status: 'denied' as const };
-  if (request.status === 'consumed' || !request.pendingToken || !request.userId) {
+  if (request.status === 'consumed' || !request.userId) {
     return { status: 'already_used' as const };
   }
 
@@ -119,16 +100,29 @@ export const pollDeviceAuthorization = async (deviceCode: unknown) => {
   // bearer, even if they read the approved request at the same time.
   const claimed = await DeviceAuthorization.findOneAndUpdate(
     { _id: request._id, status: 'authorized', expiresAt: { $gt: new Date() } },
-    { $set: { status: 'consumed', consumedAt: new Date() }, $unset: { pendingToken: 1 } },
+    { $set: { status: 'consumed', consumedAt: new Date() } },
     { new: false },
-  ).select('+pendingToken');
-  if (!claimed?.pendingToken || !claimed.userId) return { status: 'already_used' as const };
+  );
+  if (!claimed?.userId) return { status: 'already_used' as const };
 
-  const user = await User.findById(claimed.userId).select('_id username banned');
-  if (!user || user.banned) return { status: 'denied' as const };
+  const token = randomDeviceToken();
+  const user = await User.findOneAndUpdate(
+    { _id: claimed.userId, banned: { $ne: true } },
+    {
+      $push: {
+        deviceTokens: {
+          tokenHash: hashDeviceCredential(token),
+          label: `${claimed.hostname} · ${claimed.clientName}`,
+          createdAt: new Date(),
+        },
+      },
+    },
+    { new: false, projection: '_id username' },
+  );
+  if (!user) return { status: 'denied' as const };
   return {
     status: 'authorized' as const,
-    token: claimed.pendingToken,
+    token,
     username: user.username,
     userId: user._id.toString(),
   };
@@ -166,30 +160,13 @@ export const decideDeviceAuthorization = async ({
     return denied ? { status: 'denied' as const } : { status: 'expired' as const };
   }
 
-  const token = randomDeviceToken();
   const now = new Date();
-  const label = `${request.hostname} · ${request.clientName}`;
-  const userUpdated = await User.updateOne(
-    { _id: userId, banned: { $ne: true } },
-    { $push: { deviceTokens: { tokenHash: hashDeviceCredential(token), label, createdAt: now } } },
-  );
-  if (!userUpdated.matchedCount) return { status: 'denied' as const };
-
   const authorized = await DeviceAuthorization.findOneAndUpdate(
     { _id: request._id, status: 'pending', expiresAt: { $gt: now } },
-    { $set: { status: 'authorized', userId, authorizedAt: now, pendingToken: token } },
+    { $set: { status: 'authorized', userId, authorizedAt: now } },
     { new: true },
   );
-  if (!authorized) {
-    // The new device token must not survive an expiry/race that lost the
-    // authorization request. Mark it revoked rather than leaving an orphan.
-    await User.updateOne(
-      { _id: userId, 'deviceTokens.tokenHash': hashDeviceCredential(token) },
-      { $set: { 'deviceTokens.$.revokedAt': now } },
-    );
-    return { status: 'expired' as const };
-  }
-  return { status: 'authorized' as const };
+  return authorized ? { status: 'authorized' as const } : { status: 'expired' as const };
 };
 
 export const listDeviceTokens = async (userId: string) => {

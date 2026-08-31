@@ -10,9 +10,6 @@ export interface IDeviceAuthorization extends Document {
   hostname: string;
   status: DeviceAuthorizationStatus;
   userId?: Types.ObjectId | null;
-  // This is the one-time handoff from a browser approval to its originating
-  // CLI. It is never projected by default and is unset once poll consumes it.
-  pendingToken?: string;
   createdAt: Date;
   lastPolledAt?: Date;
   authorizedAt?: Date;
@@ -30,7 +27,6 @@ const DeviceAuthorizationSchema = new Schema<IDeviceAuthorization>(
     hostname: { type: String, required: true, trim: true, maxlength: 253 },
     status: { type: String, enum: ['pending', 'authorized', 'denied', 'consumed'], default: 'pending' },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    pendingToken: { type: String, select: false },
     createdAt: { type: Date, default: Date.now },
     lastPolledAt: { type: Date },
     authorizedAt: { type: Date },

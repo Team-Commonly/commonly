@@ -562,7 +562,7 @@ describe('Auth Routes Integration Tests', () => {
       expect((await User.findById(user._id).select('deviceTokens')).deviceTokens).toHaveLength(0);
     });
 
-    it('revokes an approved bearer when its terminal misses the expiry deadline', async () => {
+    it('does not mint a bearer when an approved terminal abandons the flow', async () => {
       const user = await createVerifiedUser();
       const browserToken = generateTestToken(user._id);
       const started = await startAuthorization();
@@ -584,9 +584,7 @@ describe('Auth Routes Integration Tests', () => {
         .expect(200)
         .expect({ status: 'expired' });
 
-      const device = (await User.findById(user._id).select('deviceTokens')).deviceTokens[0];
-      expect(device.revokedAt).toBeTruthy();
-      expect((await DeviceAuthorization.findOne().select('+pendingToken')).pendingToken).toBeUndefined();
+      expect((await User.findById(user._id).select('deviceTokens')).deviceTokens).toHaveLength(0);
     });
   });
 
