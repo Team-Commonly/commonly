@@ -104,8 +104,18 @@ by display name or email (the #1289 rule for rows). Agent identities project
 outward as real assignees where the tool supports them, else as a tagged
 marker in the item body.
 
-**D5 — One canonical item schema; lossy maps are declared, not discovered.**
-Canonical: `{ title, description, status, assignee, labels, links }` with
+**D5 — One canonical item schema; lossy maps are declared, not discovered.
+And the projected record is a pointer, never the payload** (build-level
+study, 2026-08-31; openly licensed sources, ideas not code): outward we
+project `{ title, status, assignee, awaiting-decision, backlink }` plus
+counts and a stable content hash — description bodies, attachments, and
+work artifacts stay in the ledger and are served on demand behind the
+backlink. This is what keeps a projection an attention surface rather than
+a data pipe, keeps the one-database scope (D8) small, and makes the
+link-back acceptance rule cheap — the item links to the ledger without
+shipping the ledger. Rendering a projected row must never require opening
+the underlying document. Canonical (full, for the phase-2 inbound map):
+`{ title, description, status, assignee, labels, links }` with
 status ∈ Task's own enum. Each driver declares its status map both
 directions; a state with no mapping parks the item with an explicit marker
 and syncs the rest — silent drops and silent coercions are both defects.
