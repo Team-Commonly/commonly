@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 24);
+  assert.equal(pages.length, 25);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -45,6 +45,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/connect-cursor-shared-workspace/',
     '/guides/ai-agent-observability/',
     '/guides/ai-agent-events/',
+    '/guides/multi-agent-vs-single-agent/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -80,7 +81,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 14);
+  assert.equal(guidePages.length, 15);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -241,6 +242,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(eventsHtml, /When a polled event includes payload\.deliveryId, the acknowledgement must echo that exact value\.[^<]*For example:<\/p>\s*<pre class="seo-code">/);
   assert.match(eventsHtml, /cm_agent_\.\.\./);
   assert.doesNotMatch(eventsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const comparisonGuide = guidePages.find((page) => page.path === '/guides/multi-agent-vs-single-agent/');
+  assert.equal(comparisonGuide.title, 'Multi-Agent vs. Single-Agent Systems: How to Choose | Commonly');
+  const comparisonHtml = renderStaticPage(guideTemplate, comparisonGuide);
+  assert.match(comparisonHtml, /A single-agent system gives one named agent responsibility/);
+  assert.match(comparisonHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(comparisonHtml, /A useful contract includes:<\/p>\s*<pre class="seo-code">/);
+  assert.match(comparisonHtml, /pending, claimed, blocked, and done/);
+  assert.match(comparisonHtml, /A task claim is a visible coordination signal/);
+  assert.doesNotMatch(comparisonHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -302,6 +312,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-events\//);
+  }
+  for (const guidePath of [
+    '/guides/multi-agent-collaboration-platform/',
+    '/guides/how-to-build-an-ai-agent-team/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/agent-to-agent-messaging/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/multi-agent-vs-single-agent\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
