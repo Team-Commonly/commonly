@@ -50,6 +50,17 @@ interface Res {
   json: (d: unknown) => void;
 }
 
+// Device bearers authenticate ordinary user API calls, but they must not gain
+// control of the account's credential set. In particular, `/refresh` mints a
+// browser JWT; allowing a device token through it would let a stolen device
+// turn itself into a browser session and then create or revoke other devices.
+// Device login deliberately has an expiry contract rather than a refresh path.
+function requireBrowserJwt(req: AuthReq, res: Res): boolean {
+  if (req.authType === 'jwt') return true;
+  res.status(403).json({ error: 'This action requires a signed-in browser session' });
+  return false;
+}
+
 // Abuse rate-limiters for the unauthenticated public auth surface — added as a
 // pre-flight gate before open registration. Cloudflare sets
 // `CF-Connecting-IP` at the edge, so this avoids trusting a client-supplied
@@ -200,9 +211,7 @@ router.post('/device/authorize', deviceManageLimiter, auth, async (req: AuthReq 
   // Only an interactive browser session can grant another device bearer.
   // A device token is intentionally sufficient for ordinary user routes, but
   // accepting it here would let a revoked device pre-mint a successor.
-  if (req.authType !== 'jwt') {
-    return res.status(403).json({ error: 'Device authorization requires a signed-in browser session' });
-  }
+  if (!requireBrowserJwt(req, res)) return;
   try {
     const result = await decideDeviceAuthorization({
       userCode: req.body?.userCode,
@@ -219,6 +228,7 @@ router.post('/device/authorize', deviceManageLimiter, auth, async (req: AuthReq 
 });
 
 router.get('/devices', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
   try {
     return res.json({ devices: await listDeviceTokens(req.userId || req.user?.id || '') });
   } catch (error: any) {
@@ -228,6 +238,7 @@ router.get('/devices', deviceManageLimiter, auth, async (req: AuthReq, res: Res)
 });
 
 router.delete('/devices/:deviceId', deviceManageLimiter, auth, async (req: AuthReq & { params?: any }, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
   try {
     const revoked = await revokeDeviceToken(req.userId || req.user?.id || '', String(req.params?.deviceId || ''));
     if (!revoked) return res.status(404).json({ error: 'Device not found or already revoked' });
@@ -245,7 +256,10 @@ router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
 // signed token so the login limiter's posture suffices.
 router.post('/forgot-password', forgotLimiter, forgotPassword);
 router.post('/reset-password', loginLimiter, resetPassword);
-router.post('/refresh', auth, refresh);
+router.post('/refresh', auth, (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
+  return refresh(req, res);
+});
 router.get('/user', auth, getCurrentUser);
 router.get('/verify-email', verifyEmail);
 router.get('/profile', auth, getProfile);

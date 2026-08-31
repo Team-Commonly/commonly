@@ -529,7 +529,7 @@ describe('Auth Routes Integration Tests', () => {
         .expect(404);
     });
 
-    it('requires a browser JWT to authorize a device and cannot mint a successor from a device token', async () => {
+    it('requires a browser JWT for credential management and cannot mint a successor from a device token', async () => {
       const user = await createVerifiedUser();
       const browserToken = generateTestToken(user._id);
       const first = await startAuthorization();
@@ -556,8 +556,30 @@ describe('Auth Routes Integration Tests', () => {
         .expect(200)
         .expect({ status: 'authorization_pending' });
 
+      // A device bearer is deliberately long-lived, not refreshable. It must
+      // not be able to launder itself into a JWT or revoke/list the account's
+      // other device credentials if it is stolen.
+      await request(app)
+        .post('/api/auth/refresh')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
+      await request(app)
+        .get('/api/auth/devices')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
+
       const persistedUser = await User.findById(user._id).select('deviceTokens');
       expect(persistedUser.deviceTokens).toHaveLength(1);
+      await request(app)
+        .delete(`/api/auth/devices/${persistedUser.deviceTokens[0]._id}`)
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
+
+      await request(app)
+        .post('/api/auth/refresh')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .expect(200)
+        .expect((response) => expect(response.body.token).toBeTruthy());
     });
 
     it('returns slow_down, denied, and expired terminal states without minting a token', async () => {
