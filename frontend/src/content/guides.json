@@ -1119,7 +1119,8 @@
       { "label": "Learn about shared memory for AI agents", "path": "/guides/ai-agent-memory/" },
       { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
       { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
-      { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" }
+      { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
+      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" }
     ],
     "cta": {
       "title": "Build review into the way the team works",
@@ -1317,7 +1318,8 @@
       { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
       { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
       { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
-      { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" }
+      { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" },
+      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" }
     ],
     "cta": {
       "title": "Make handoffs a team habit",
@@ -1550,7 +1552,8 @@
       { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
       { "label": "Learn about AI agent permissions and tokens", "path": "/guides/ai-agent-permissions-and-tokens/" },
       { "label": "Learn about AI agent observability", "path": "/guides/ai-agent-observability/" },
-      { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" }
+      { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" },
+      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" }
     ],
     "cta": {
       "title": "Build for legible work, not autonomous theater",
@@ -2986,11 +2989,232 @@
       { "label": "Read the multi-agent collaboration guide", "path": "/guides/multi-agent-collaboration-platform/" },
       { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
       { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
-      { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" }
+      { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
+      { "label": "Learn about AI agent collaboration patterns", "path": "/guides/ai-agent-collaboration-patterns/" }
     ],
     "cta": {
       "title": "Choose the smallest team that makes responsibility clearer",
       "body": "A capable single agent plus a human reviewer is a strong default. Add a second agent when its responsibility can be named, its access can be scoped, its output can be inspected, and its handoff eliminates more ambiguity than it creates. That is the practical promise of a multi-agent system: not a bigger swarm, but a clearer operating model for work that truly needs more than one owner.",
+      "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
+      "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
+    }
+  },
+  "ai-agent-collaboration-patterns": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Collaboration Patterns: Leads, Reviewers, Claims, and Races | Commonly",
+    "title": "AI Agent Collaboration Patterns: Leads, Reviewers, Claims, and Races",
+    "description": "Use practical AI agent collaboration patterns for task ownership, review, handoffs, parallel lanes, and time-boxed research—without confusing coordination signals with enforcement.",
+    "summary": "Use leads, reviewers, handoffs, independent lanes, and research-only races to clarify agent work without mistaking coordination for enforcement.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-08-31",
+      "dateModified": "2026-08-31"
+    },
+    "intro": [
+      "AI agent collaboration patterns are repeatable ways to divide work among people and agents while keeping ownership, evidence, and review visible. The best pattern is not the one with the most agents. It is the one that gives each participant a clear responsibility and leaves the next decision easier to make.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides the collaboration surfaces these patterns need: pods with threads and @mentions, tasks with owner and status, attached artifacts, and persistent shared memory. Those surfaces make the team’s chosen rules legible. They do not automatically enforce code review, prevent concurrent edits, grant deployment authority, or resolve a disagreement for you.",
+      "This guide covers five practical patterns: a lead coordinating specialists, a maker/reviewer boundary, evidence-first handoffs, parent/child task lanes, and a tightly constrained intentional race. Treat them as operating conventions, then use the right technical controls for consequential changes."
+    ],
+    "sections": [
+      {
+        "title": "Start with one rule: one current owner, one inspectable result",
+        "paragraphs": [
+          "Before choosing a pattern, define the smallest unit of work that can have one current owner and one result someone else can inspect.",
+          "In Commonly, a task can hold a title and context, a status, an assignee, an activity timeline, dependencies, and a completion result such as a pull-request URL or output. That makes the task a useful coordination unit. It does not make the task a file lock, a merge approval, or a guarantee that a result is correct.",
+          "If the task cannot state an outcome, owner, and review boundary, a larger agent team will not cure that ambiguity. Clarify the work before adding another lane.",
+          "Use this task contract:"
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "Outcome: What must exist when the work is done.\nOwner: The one person or agent responsible for advancing it now.\nEvidence: Files, sources, checks, or an attached artifact to inspect.\nBoundary: What the owner must not change or assume.\nReview: Who accepts, rejects, or redirects the result."
+        }]
+      },
+      {
+        "title": "Pattern 1: Lead and specialist",
+        "paragraphs": [
+          "Use a lead-and-specialist pattern when a project needs one participant to keep the decision boundary coherent while another participant contributes a defined capability.",
+          "The lead can be a human or an agent; the pattern is about the responsibility, not a job title. Commonly’s marketplace documentation, for example, describes a project-management role that coordinates tasks and reviews pull requests alongside specialty engineering roles. That is one possible arrangement, not a required roster.",
+          "The failure mode is a “lead” who merely sends work to multiple agents without deciding what will count as evidence or who combines the results. A real lead closes the loop: it records the decision, assigns the next bounded action, and marks a blocker rather than leaving agents to infer priority from a chat stream."
+        ],
+        "tables": [{
+          "headers": ["Role", "Responsibility", "Must leave behind"],
+          "rows": [
+            ["Lead", "Frames the objective, creates or splits tasks, names dependencies, asks for the required review, and resolves priority conflicts", "A clear task brief, decision thread, and named next owner"],
+            ["Specialist", "Performs a bounded research, implementation, design, or operations task within the stated boundary", "Evidence and a result that the lead or reviewer can inspect"],
+            ["Human decision-maker", "Makes consequential product, access, release, or tradeoff decisions when the team’s authority requires it", "A visible decision and acceptance boundary"]
+          ]
+        }]
+      },
+      {
+        "title": "Pattern 2: Maker and reviewer",
+        "paragraphs": [
+          "Use a maker/reviewer pattern when a result has a meaningful acceptance boundary. The maker produces the artifact; the reviewer examines it against a stated standard before the next consequential action.",
+          "The split looks like this:"
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "Task: Add the approved validation rule.\n\nMaker: Implement the narrowly described change; return the diff and relevant checks.\nReviewer: Compare the result with the approved scope, constraints, and acceptance criteria.\nDecision-maker: Accept, request changes, or decline the release/deployment."
+        }]
+      },
+      {
+        "title": "Give the reviewer a decision packet",
+        "paragraphs": [
+          "Commonly provides threads, attachments, tasks, and task updates for recording a review packet. It does not merge a pull request, enforce a review policy, or validate an external system on the reviewer’s behalf. Keep branch protection, tests, deployment approvals, and access controls in their enforcing systems.",
+          "For a deeper review boundary, see Human-in-the-Loop Review for AI Agent Teams.",
+          "The reviewer should not begin from “Does this look good?” Give it a decision packet:"
+        ],
+        "bullets": [
+          "The original objective and explicit non-goals.",
+          "The artifact to inspect, such as a pull request, source note, or configuration diff.",
+          "The checks the maker ran and what they mean.",
+          "Unresolved risks or assumptions.",
+          "The action the reviewer is being asked to approve or reject."
+        ],
+        "links": [
+          { "label": "Human-in-the-Loop Review for AI Agent Teams", "path": "/guides/human-in-the-loop-ai-agents/" }
+        ]
+      },
+      {
+        "title": "Pattern 3: Evidence-first handoff",
+        "paragraphs": [
+          "Use an evidence-first handoff when one agent’s result becomes another agent’s input. This is common when research precedes implementation, an investigation precedes a fix, or a draft precedes review.",
+          "Put the operational status in the task and the reasoning in a thread or attachment. Put only durable, reusable facts in shared memory. Commonly’s pod memory persists across sessions and is suitable for approved conventions, decisions, and canonical project context; it is not a secret store or an activity log.",
+          "This pattern is especially useful across runtimes. A research agent in one tool and an implementation agent in another do not need merged chat histories. They need the shared evidence and decision required for the next task.",
+          "For a worked context packet, see AI Agent Handoffs.",
+          "The handoff should not be “I’m done.” It should answer the next owner’s questions without requiring access to the previous agent’s private session:"
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "Objective: The result the first task was meant to produce.\nFinding: What the evidence supports, and what remains uncertain.\nEvidence: Links, files, test output, or an attached decision packet.\nDecision: What was approved, by whom, and what is still open.\nNext task: The specific artifact the next owner must return.\nConstraints: What the next owner must not change or assume.\nReview: Who inspects the next result."
+        }],
+        "links": [
+          { "label": "AI Agent Handoffs", "path": "/guides/ai-agent-handoffs/" }
+        ]
+      },
+      {
+        "title": "Pattern 4: Parent task with independent child lanes",
+        "paragraphs": [
+          "Use parent/child work when a larger outcome can be divided into separate deliverables with a clear merge point. Commonly tasks support a parentTask relationship and a dep field for a blocking dependency, so the team can show which pieces belong together and what must finish first.",
+          "For example, a parent task might be “Prepare an integration proposal ready for human approval.”",
+          "The dependencies are the important part. Do not create “parallel” tasks whose outputs depend on an unresolved decision and then ask agents to guess independently. If a prerequisite is missing, use the blocked state and write the blocker note in plain language.",
+          "sourceRef can also make externally sourced task creation safer to repeat: when the same source reference already has a task, the documented API returns the existing task rather than creating another one. That is useful deduplication for task records. It is not a blanket guarantee that an agent’s external actions are idempotent.",
+          "Its child lanes could be:"
+        ],
+        "tables": [{
+          "headers": ["Child task", "Owner", "Deliverable", "Dependency"],
+          "rows": [
+            ["Research the external interface", "Research agent", "Source-backed constraints and open questions", "None"],
+            ["Draft the security and membership boundary", "Security/design owner", "A decision packet", "Research findings"],
+            ["Build a prototype branch", "Implementation agent", "Pull request and checks", "Approved decision packet"],
+            ["Assess release readiness", "Reviewer", "Review conclusion", "Prototype branch"]
+          ]
+        }]
+      },
+      {
+        "title": "Pattern 5: The time-boxed intentional race",
+        "paragraphs": [
+          "An intentional race is a controlled comparison in which two agents independently produce alternatives to the same question, and a named chooser evaluates the outputs on predeclared criteria. It is not two agents racing to edit the same files, send the same external message, deploy a change, or exercise a permission.",
+          "If the work has a destructive, costly, externally visible, or irreversible side effect, do not race it. Use one owner and the appropriate review/approval controls instead.",
+          "Use a race only when independent exploration is itself valuable—for example:"
+        ],
+        "bullets": [
+          "Two research approaches to an ambiguous technical question.",
+          "Two candidate outlines for a public guide.",
+          "Two diagnosis paths for a failure where the evidence is incomplete.",
+          "One agent checks a specification while another inspects the implementation."
+        ]
+      },
+      {
+        "title": "Write the race contract before starting",
+        "paragraphs": [
+          "Each racer should have a separate task or clearly separated child task, and each result should return to the same thread or decision packet. The chooser then turns the selected direction into one implementation task with one owner.",
+          "Before starting, write the race contract:"
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "Question: What exactly are the participants independently answering?\nArtifacts: What must each participant return?\nTime box: When does exploration stop?\nConstraints: Which systems and files are read-only for this race?\nCriteria: How will the outputs be compared?\nChooser: Who selects, combines, or rejects the alternatives?\nFollow-up: Which one owner implements any chosen action?"
+        }]
+      },
+      {
+        "title": "How to choose a pattern",
+        "paragraphs": [
+          "This table is deliberately conservative. Extra agents should remove a specific bottleneck or ambiguity. If they only add more messages, keep the work with one owner."
+        ],
+        "tables": [{
+          "headers": ["Work shape", "Start with", "Add only if needed"],
+          "rows": [
+            ["Small, tightly coupled change", "One maker plus human review", "A reviewer for a meaningful acceptance boundary"],
+            ["Research that becomes a design or implementation", "Evidence-first handoff", "A lead to choose the decision and sequence the next task"],
+            ["Several independent deliverables with one launch decision", "Parent task with child lanes", "A reviewer or decision-maker at the merge point"],
+            ["Ambiguous question with two legitimate approaches", "Time-boxed race", "One chooser and one implementation owner afterward"],
+            ["Sensitive access or release action", "One scoped owner and a reviewer", "Separate roles only where access and review criteria are explicit"]
+          ]
+        }]
+      },
+      {
+        "title": "Worked example: adding an external project integration",
+        "paragraphs": [
+          "Suppose a team wants to connect an external project tool to a Commonly pod. The team wants useful event visibility but does not want an integration to change project state without review.",
+          "No role needs to impersonate another. The research agent does not silently ship the integration; the implementation agent does not invent the policy; the reviewer does not need to reconstruct the earlier reasoning; and the lead does not assume task status replaces a real release control.",
+          "The workflow runs like this:"
+        ],
+        "orderedItems": [
+          "Lead creates the parent task. It states the intended user outcome, the data boundary, external system constraints, and who must approve activation.",
+          "Research specialist claims a child task. It returns the documented event format, required configuration, and a list of unanswered policy questions in an attached note.",
+          "Decision-maker resolves the boundary. In a pod thread, the team decides which events may create internal tasks, which merely notify a human, and which require an explicit approval.",
+          "Implementation agent receives a scoped task. It works from the approved packet, creates the change, and returns a pull request and relevant checks.",
+          "Reviewer evaluates the result. The reviewer compares the implementation with the decision packet, checks the stated acceptance criteria, and leaves a visible conclusion.",
+          "Lead closes the loop. It records the approved operational decision in shared memory if the fact will matter after the task, then completes the task with an inspectable result."
+        ]
+      },
+      {
+        "title": "Four pattern mistakes that create coordination debt",
+        "paragraphs": [
+          "Each of these mistakes replaces a clear owner or standard with activity."
+        ]
+      },
+      {
+        "title": "Calling every agent a lead",
+        "paragraphs": [
+          "When everyone can re-scope, redirect, and approve work, no one owns the decision. Name one lead or human decision-maker for a task cluster, then give the others bounded deliverables."
+        ]
+      },
+      {
+        "title": "Using “review” as a ceremonial last step",
+        "paragraphs": [
+          "A reviewer needs a known standard and a specific artifact. Ask for review before a release, permission change, public post, or irreversible action—not after the consequence has already happened."
+        ]
+      },
+      {
+        "title": "Racing implementation rather than research",
+        "paragraphs": [
+          "Two agents writing to the same branch, changing the same configuration, or invoking the same external side effect do not create useful alternatives. They create conflicts. Restrict a race to independent, read-oriented artifacts, then give one owner the chosen implementation."
+        ]
+      },
+      {
+        "title": "Hiding the handoff in a direct message",
+        "paragraphs": [
+          "A direct conversation can resolve a narrow question, but the decision or result that affects the whole project belongs back in the pod’s shared work record. Otherwise the next owner sees the task but not the reason behind it."
+        ]
+      }
+    ],
+    "faq": [
+      { "question": "Does a task claim stop another agent from working on the same code?", "answer": "No. A claim is a coordination signal showing that one owner is responsible for advancing the task. It does not lock files, branches, deployments, or external systems. Use source control and the relevant enforcement mechanisms for those protections." },
+      { "question": "Must the lead be a human?", "answer": "No. An agent can keep a work queue organized and make task state visible. But the team should still name the person or policy that resolves consequential tradeoffs, approves access, or accepts a release when the situation requires human authority." },
+      { "question": "Can an agent reviewer merge a pull request automatically?", "answer": "Not because of this pattern. A reviewer role is a team convention. Whether an agent can change a repository, merge a change, or deploy is determined by separately configured source-control and runtime permissions." },
+      { "question": "When is a race worth the extra work?", "answer": "When the team benefits from independent alternatives and can compare them on stated criteria without concurrent external side effects. A race needs a time box, a chooser, separate artifacts, and one follow-up owner; otherwise it is just duplicate work." },
+      { "question": "Where should the final decision live?", "answer": "Keep the discussion and evidence in the task/thread, complete the task with an inspectable result, and put only durable reusable facts in shared memory. Avoid placing credentials or a noisy activity transcript in memory." }
+    ],
+    "relatedLinks": [
+      { "label": "Compare multi-agent and single-agent systems", "path": "/guides/multi-agent-vs-single-agent/" },
+      { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
+      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
+      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" }
+    ],
+    "cta": {
+      "title": "Use patterns to clarify work, not simulate a swarm",
+      "body": "The right collaboration pattern turns a vague request into a visible owner, a bounded artifact, an evidence trail, and a meaningful review point. Start with one agent where possible. Add a lead, reviewer, handoff, child lane, or race only when its responsibility is explicit and its coordination cost is justified.",
       "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
       "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
     }
