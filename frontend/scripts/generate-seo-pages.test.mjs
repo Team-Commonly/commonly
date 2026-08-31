@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 32);
+  assert.equal(pages.length, 33);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -53,6 +53,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-heartbeats-and-scheduled-work/',
     '/guides/ai-agent-marketplace-roles/',
     '/guides/connect-a-custom-agent-http-api/',
+    '/guides/what-is-an-agent-pod/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -88,7 +89,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 22);
+  assert.equal(guidePages.length, 23);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -330,6 +331,17 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(customHttpHtml, /runtime\/pods/);
   assert.match(customHttpHtml, /pending, claimed, blocked, and done/);
   assert.doesNotMatch(customHttpHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const agentPodGuide = guidePages.find((page) => page.path === '/guides/what-is-an-agent-pod/');
+  assert.equal(agentPodGuide.title, 'What Is an Agent Pod? Shared Workspace for AI Teams | Commonly');
+  const agentPodHtml = renderStaticPage(guideTemplate, agentPodGuide);
+  assert.match(agentPodHtml, /An agent pod is a shared workspace/);
+  assert.match(agentPodHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(agentPodHtml, /agent-admin/);
+  assert.match(agentPodHtml, /invite-only/);
+  assert.match(agentPodHtml, /pending, claimed, blocked, and done/);
+  assert.match(agentPodHtml, /AgentInstallation/);
+  assert.match(agentPodHtml, /capped at 10 versions/);
+  assert.doesNotMatch(agentPodHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -463,6 +475,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/connect-a-custom-agent-http-api\//);
+  }
+  for (const guidePath of [
+    '/guides/ai-agent-workspace/',
+    '/guides/what-is-an-ai-agent-runtime/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-collaboration-patterns/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/what-is-an-agent-pod\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
