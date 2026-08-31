@@ -86,21 +86,40 @@ directions; a state with no mapping parks the item with an explicit marker
 and syncs the rest — silent drops and silent coercions are both defects.
 Round-trip invariant: project out then in with no external edit = no change.
 
-**D6 — Conflicts resolve per field, newest wins, provenance kept.** Compare
-at field granularity using updatedAt on each side; the loser's value is
-recorded in the item's provenance trail, not discarded. No merge dialogs in
-v1; the trail is the appeal.
+**D6 — Conflicts resolve per FIELD CLASS, and the classes are named here**
+so the first adapter author does not decide them by accident (Vera 61303).
+Three classes, three rules:
+- *Content* (title, description, labels): newest-wins per field, loser's
+  value kept in the provenance trail. No merge dialogs in v1; the trail is
+  the appeal.
+- *Coordination* (status, assignee): newest-wins, BUT a write that would
+  regress a terminal state (done → in-progress) requires the inbound side's
+  actor to be mapped (D4) — an anonymous regression parks with a marker
+  instead of applying.
+- *Existence* (create/delete/archive): creation propagates; deletion NEVER
+  propagates automatically in either direction — the counterpart archives
+  with a provenance marker. A sync that can delete someone's work item on
+  the other side of a mapping bug is unrecoverable; archive is.
 
 **D7 — Claims do not project; assignees do.** ADR-018 claims are attention
 leases, not assignments. Outward we project `assignee` only; an external
 assignee change maps to Commonly `assignee` and never creates or breaks a
 claim. Tools with no agent-assignee concept get D4's marker.
 
-**D8 — The driver interface is four verbs**, mirroring CAP's shape:
+**D8 — Declared scope, enforced by the kernel, not inherited from the
+token.** Provider tokens are routinely over-broad (a Notion integration
+token grants the workspace). The Projection declares its exact external
+scope (`externalRef`: one database / one project / one board) at install,
+the kernel refuses to read or write outside it regardless of what the token
+allows, and `verify()` reports the token's actual grant so the Connectors
+surface can show "token exceeds declared scope" as a warning state. Scope
+widening is a new install decision, never a drift.
+
+**D9 — The driver interface is four verbs**, mirroring CAP's shape:
 `pull(since)`, `push(changes)`, `mapIdentity(actor)`, `verify()` (health +
-scope check). Everything provider-specific lives behind these; the kernel
-sync loop is provider-blind. Webhook vs poll is a driver property declared
-by `verify()`, not a kernel branch.
+scope-grant report, per D8). Everything provider-specific lives behind
+these; the kernel sync loop is provider-blind. Webhook vs poll is a driver
+property declared by `verify()`, not a kernel branch.
 
 ## Consequences
 
