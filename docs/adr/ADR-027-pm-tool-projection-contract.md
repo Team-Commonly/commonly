@@ -55,11 +55,20 @@ stamping. Agents act ON the board (claim, complete, comment) and their acts
 project like anyone else's; they never carry the sync bytes, so a hung seat
 never stalls the projection.
 
-**D3 — The projection map is the ledger.** Per item: `{ taskId, externalId,
-lastSyncedAt, lastSyncedHash, origin }` on the Projection row. Every sync
-decision reads this map; nothing is matched by title or heuristics. Echo
-suppression = skip when the inbound hash equals lastSyncedHash (the
-relayMap lesson, applied to rows instead of messages).
+**D3 — The projection map is the ledger, and provenance is the loop
+breaker.** Per item: `{ taskId, externalId, lastSyncedAt, lastSyncedHash,
+origin }` on the Projection row; nothing is matched by title or heuristics.
+Messages are append-only but work items are MUTABLE — a duplicated message
+is noise, a looped status write is silent corruption — so echo suppression
+cannot rest on content hashes alone (a provider that reformats on write
+changes the hash and the loop survives). Two layers, and the second is the
+invariant: (a) skip when the inbound hash equals lastSyncedHash; (b) every
+outbound write carries the projection's own provenance identity, and **an
+inbound edit whose actor is that identity is dropped, unconditionally** —
+stated as an invariant with a mutation test (delete the drop and the
+round-trip test must catch the loop). Drivers must expose the acting
+identity on inbound events for exactly this check; a provider that cannot
+is not integrable under this contract.
 
 **D4 — Identity maps are explicit; unmapped actors annotate, never author.**
 `identityMap: externalUserId ↔ { commonlyUserId | agentUserId }`, curated by
