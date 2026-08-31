@@ -226,6 +226,17 @@ describe('V2 routing', () => {
     expect(screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/)).toBeInTheDocument();
   });
 
+  test('Discord integration guide renders its documented rollout after the app takes over', async () => {
+    renderAt('/guides/ai-agent-discord-integration/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'AI Agent Discord Integration: Turn a Channel into a Reviewable Work Signal',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/DISCORD_BOT_TOKEN=\.\.\./)).toBeInTheDocument();
+    expect(screen.getByText(/@commonly-bot/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -233,7 +244,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(17);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(18);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
