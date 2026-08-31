@@ -7173,6 +7173,7 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-muted);
   padding: 14px 6px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .v2-board__card {
@@ -7180,6 +7181,7 @@ body.modern-ui.v2-canvas {
   border-radius: 10px;
   background: var(--v2-bg);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .v2-root button.v2-board__card-main {
@@ -7211,6 +7213,10 @@ body.modern-ui.v2-canvas {
   font-weight: 500;
   color: var(--v2-text-primary);
   line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .v2-board__card-assignee {
