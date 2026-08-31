@@ -270,6 +270,7 @@ router.get('/admin/check', auth, adminAuth, (_req: unknown, res: Res) => {
 });
 
 router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');
@@ -290,6 +291,7 @@ router.post('/api-token/generate', auth, async (req: AuthReq, res: Res) => {
 });
 
 router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');
@@ -306,6 +308,7 @@ router.delete('/api-token', auth, async (req: AuthReq, res: Res) => {
 });
 
 router.get('/api-token', auth, async (req: AuthReq, res: Res) => {
+  if (!requireBrowserJwt(req, res)) return;
   try {
     // eslint-disable-next-line global-require
     const User = require('../models/User');

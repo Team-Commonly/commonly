@@ -574,12 +574,29 @@ describe('Auth Routes Integration Tests', () => {
         .delete(`/api/auth/devices/${persistedUser.deviceTokens[0]._id}`)
         .set('Authorization', `Bearer ${firstGrant.body.token}`)
         .expect(403);
+      await request(app)
+        .post('/api/auth/api-token/generate')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
+      await request(app)
+        .get('/api/auth/api-token')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
+      await request(app)
+        .delete('/api/auth/api-token')
+        .set('Authorization', `Bearer ${firstGrant.body.token}`)
+        .expect(403);
 
       await request(app)
         .post('/api/auth/refresh')
         .set('Authorization', `Bearer ${browserToken}`)
         .expect(200)
         .expect((response) => expect(response.body.token).toBeTruthy());
+      await request(app)
+        .post('/api/auth/api-token/generate')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .expect(200)
+        .expect((response) => expect(response.body.apiToken).toBeTruthy());
     });
 
     it('returns slow_down, denied, and expired terminal states without minting a token', async () => {
