@@ -2867,12 +2867,26 @@ it was never measured at.
 last review that was honest about the tree it read, on a head that has since
 moved. Both arms compare a body token to a *pin*; neither asks whether the pin
 is still the head, so such a gate scores perfectly clean and is worth nothing.
-I swept for it rather than assert it: across the **73 open PRs, 71 have a last
-review pinned exactly at head, one has no review at all, and the single stale
-pin is this PR** — an in-flight re-gate, not rot. The class is real, empty here,
-and recorded so the next reader knows the sweep was run rather than skipped.
-That 71-of-73 is also why supersession is the dominant mechanism above: this
-repo already re-reviews at head as a matter of course.
+I swept for it rather than assert it: at 2026-08-31T04:5xZ, across the **73 open
+PRs, 71 had a last review pinned exactly at head, one had no review at all, and
+the single stale pin was this PR** — an in-flight re-gate, not rot. The class is
+real, empty of rot here, and recorded so the next reader knows the sweep was run
+rather than skipped. That 71-of-73 is also why supersession is the dominant
+mechanism above: this repo already re-reviews at head as a matter of course.
+
+**Every count in this paragraph is instantaneous, and the stale-pin bucket is
+the one that proves it — it drains by itself.** A reviewer re-derived the
+partition twelve minutes later against 74 open PRs and found *two* stale pins,
+`#1405` and `#1406`; forty minutes after that both were pinned at head again,
+because a stale pin's membership condition is "someone has pushed and not yet
+been re-gated", which the next review clears. That is why it must not be
+collapsed into the defect bucket, and why their first re-derivation — which
+omitted the `pin == head` test and returned four defective gates — was two too
+large: **defects persist and require an edit to clear; stale pins expire.** Two
+buckets with the same predicate signature and opposite half-lives. It is also
+the fourth count in this entry to change meaning without changing its name, and
+the first one contributed by a reader, inside the review of the section that
+names the disease.
 
 **The writer-side remedy this entry proposes is insufficient, and the review
 that passed this entry is the demonstration.** Gate `5063156212` re-resolved
