@@ -24,14 +24,15 @@ export default {
     // kill or provision any agent by name. Unset means no second bearer.
     const bearer = req.headers.get('Authorization');
     const isAdmin = bearer === `Bearer ${admin}`;
-    // A status token EQUAL to the admin token is treated as unset (Otto on
-    // #1360): an operator pasting the wrong secret would otherwise silently
-    // collapse the two capabilities back into one — the exact split this
-    // token exists to enforce.
-    const statusToken = env.RUNTIME_STATUS_TOKEN && env.RUNTIME_STATUS_TOKEN !== admin
-      ? env.RUNTIME_STATUS_TOKEN
-      : undefined;
-    const isStatusReader = Boolean(statusToken) && bearer === `Bearer ${statusToken}`;
+    // A status token EQUAL to the admin token is a refused CONFIGURATION
+    // (Otto on #1374, round 2): nulling the reader path closes nothing,
+    // because the byte-identical bearer still authenticates as admin — no
+    // logic here can tell the two holders apart. The only remedy is to
+    // refuse to serve until the operator fixes the secrets.
+    if (env.RUNTIME_STATUS_TOKEN && env.RUNTIME_STATUS_TOKEN === admin) {
+      return Response.json({ error: 'misconfigured: RUNTIME_STATUS_TOKEN must differ from RUNTIME_ADMIN_TOKEN' }, { status: 503 });
+    }
+    const isStatusReader = Boolean(env.RUNTIME_STATUS_TOKEN) && bearer === `Bearer ${env.RUNTIME_STATUS_TOKEN}`;
     const statusOnly = req.method === 'GET' && rest === '/status';
     if (!isAdmin && !(isStatusReader && statusOnly)) {
       return Response.json({ error: 'unauthorized' }, { status: 401 });

@@ -59,13 +59,14 @@ describe('router bearers', () => {
     expect((await call(env, 'GET', '/nope', 'status-secret')).status).toBe(404);
   });
 
-  it('a status token equal to the admin token is treated as unset (no capability collapse)', async () => {
+  it('a status token equal to the admin token refuses the configuration outright (503, every route, every bearer)', async () => {
+    // Otto, #1374 round 2: when the secrets are byte-identical, the admin
+    // check accepts the "status" bearer anyway — nothing downstream can
+    // distinguish the holders. So the router refuses to serve at all.
     const { env, stubFetch } = makeEnv({ RUNTIME_STATUS_TOKEN: 'admin-secret' });
-    // Admin bearer still works — as ADMIN, on every route.
-    expect((await call(env, 'POST', '/agents/scout/default/provision', 'admin-secret')).status).toBe(200);
-    expect(stubFetch).toHaveBeenCalledTimes(1);
-    // A real reader token would be refused now: the reader path is OFF, so a
-    // non-admin bearer gets 401 even on GET /status.
-    expect((await call(env, 'GET', '/agents/scout/default/status', 'status-secret')).status).toBe(401);
+    expect((await call(env, 'POST', '/agents/scout/default/provision', 'admin-secret')).status).toBe(503);
+    expect((await call(env, 'GET', '/agents/scout/default/status', 'admin-secret')).status).toBe(503);
+    expect((await call(env, 'GET', '/agents/scout/default/status', 'status-secret')).status).toBe(503);
+    expect(stubFetch).not.toHaveBeenCalled();
   });
 });
