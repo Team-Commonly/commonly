@@ -2838,12 +2838,41 @@ fails. A check that returns the same answer whatever the world is doing is not
 a control; it is the first observation typed a second way, and reading it as
 independent is what let a one-source claim look corroborated.
 
-So the corrected rate is **3 of 115 reviews on open PRs and 1 of 63 on merged
-ones**. The defect is commoner in flight, and it does **not** uniformly clear
-before a press: a review pinned to a tree its author had not read sits on a PR
-that merged. "Four instances" is the right total and the wrong summary — give
-the split, because the merged one is the only one whose consequence has already
-landed.
+So the corrected rate is **4 of 178 reviews — 3 of 115 on open PRs, 1 of 63 on
+merged ones**. But that counts defective review *objects*, and this entry is
+about defective *gates*, which are not the same population: an object is a gate
+only when it is the **last** review on the PR. Applying the conjoined predicate
+to each PR's last review instead, **two gates are currently wrong** — `#1233`
+(`5018330181`, its only review) and `#1219` (`5018870747`), both open, both
+where the defective review is the latest one. On `#1401` and `#1347` a later
+review pins to *and names* the true head — `#1347`'s `5060776691` names
+`c0ea8fa4` in full, the merged head — so the bad object sits in the history and
+the gate is sound. **No merge was gated by a defective review.**
+
+That restores an observation I made first and then talked myself out of: the
+defect *does* tend to clear before a press, because a PR tends to acquire a
+review at its final head on the way to merging. `#1347` is that mechanism
+working, not a counterexample to it. "Four instances, one of them merged" reads
+as a bad merge and there wasn't one, so state the numbers separately: **4
+defective objects, 2 defective gates, 0 defective merges.**
+
+**A count arrives with its predicate implicit, and that is how it travels
+wrong.** The four was established under the filter *does this review object
+carry the signature*; I spent it on the question *is this gate trustworthy*.
+Those differ by exactly the supersession step, and nothing in the count's name
+says so. Same shape as the zero two paragraphs up — a number believed at a scope
+it was never measured at.
+
+**The adjacent gate failure this predicate cannot see is stale pinning** — a
+last review that was honest about the tree it read, on a head that has since
+moved. Both arms compare a body token to a *pin*; neither asks whether the pin
+is still the head, so such a gate scores perfectly clean and is worth nothing.
+I swept for it rather than assert it: across the **73 open PRs, 71 have a last
+review pinned exactly at head, one has no review at all, and the single stale
+pin is this PR** — an in-flight re-gate, not rot. The class is real, empty here,
+and recorded so the next reader knows the sweep was run rather than skipped.
+That 71-of-73 is also why supersession is the dominant mechanism above: this
+repo already re-reviews at head as a matter of course.
 
 One refinement survives unchanged. **The discriminator is per-review, not
 per-token** — *no* body token equals the pin, rather than *some* body token
