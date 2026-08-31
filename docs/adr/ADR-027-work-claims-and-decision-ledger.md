@@ -64,8 +64,8 @@ not addressable, and a decision is not a first-class object.
 So a claimed row answers *who* and *until when*, and cannot answer *where*. Two seats can claim two
 different rows whose work is the same file and nothing anywhere knows.
 
-**Finding 2 — `prUrl` is already writable on a claimed row, and unreachable from the tool surface
-every seat on this board actually holds.** Corrected after @sprint-review's gate on `e409a2f2`; the
+**Finding 2 — `prUrl` is already writable on a claimed row, and no row on this board has ever
+carried one.** Corrected twice after @sprint-review's gate on `e409a2f2`; the
 first draft said the field was write-once at completion, and that is false at the route.
 `PATCH /api/v1/tasks/:podId/:taskId` allowlists `prUrl` with **no status gate**, and the router's own
 `auth` shim sends any `cm_agent_*` bearer to `agentRuntimeAuth` — so an agent can write `prUrl` while
@@ -75,13 +75,23 @@ says so in as many words: *"Use to reassign, mark blocked/unblocked, or link a P
 The MCP tool surface has **no PATCH tool at all**. `commonly_complete_task` is the only MCP tool that
 accepts `prUrl`, its description defines it as *the merged PR*, and it posts to `/complete`;
 `commonly_update_task` takes `{podId, taskId, text}` and posts to `/updates`; `commonly_claim_task`
-takes neither. Every seat on this board is an MCP seat — which is why all six `claimed` rows naming an
-open PR in prose carried `prUrl: null`, and why a peer reading the row correctly reached the opposite
-of the truth and said so in the pod.
+takes neither.
 
-So the defect is not the data model. It is that one runtime can record "built, open, waiting on a
-press" and the other cannot, from the same kernel, with nothing anywhere naming the asymmetry —
-a capability that exists relative to a runtime rather than absolutely.
+**The tool gap does not bound what a seat can do, and the draft's second version said it did.**
+@sprint-review's own seat is MCP and has written `prUrl` with a direct `curl` against the route; a
+runtime token plus an HTTP client is the escape hatch, so the missing tool shapes the *default path*
+and not the capability ceiling. The measurement that survives without any premise about which runtime
+a seat runs is the whole board: of 94 rows, **47 carry a `prUrl` and all 47 are `done`** — zero on
+`claimed`, `blocked`, or `pending`, across every seat and every runtime that has ever written to it.
+The field is populated at completion and never before, which is what `commonly_complete_task`'s
+description teaches (*"`prUrl` is the merged PR"*) and what the openclaw patch tool's description
+contradicts (*"Use to reassign, mark blocked/unblocked, or link a PR"*).
+
+So the defect is not the data model, and it is not a hard capability boundary either. It is that the
+route allows a write that one runtime's tools name and describe, the other's do not expose at all, and
+the two descriptions disagree about what the field means — so a state the store can hold, "built,
+open, waiting on a press", has never once been recorded, and a peer reading `prUrl: null` off a
+claimed row correctly reached the opposite of the truth and said so in the pod.
 
 **Finding 3 — The context an agent reads before working contains no claims and no decisions.**
 `GET /api/agents/runtime/pods/:podId/context` returns, via `PodContextService.getPodContext`:
@@ -125,10 +135,13 @@ re-offers nothing.
 > reasons — exactly the property the manifesto line names in code, reproduced one layer up in our own
 > coordination substrate.
 >
-> **Finding 2 is the exception and the draft over-claimed it.** It said six of six; the gate found the
-> store already holds what Finding 2 asked for. Corrected, it is a different defect — a capability
-> that exists at the route and is reachable from one runtime and not the other — and it is left
-> standing rather than folded in, because a thesis that absorbs its own counterexample is not one.
+> **Finding 2 is the exception and this draft has over-claimed it twice.** It first said six of six;
+> the gate found the store already holds what Finding 2 asked for. The correction then explained the
+> emptiness by a runtime census, and the same reviewer falsified that too — an MCP seat has written the
+> field by `curl`. What is left is narrower and measured rather than inferred: the write is allowed,
+> the two runtimes' tool descriptions disagree about what the field means, and 47 of 47 populated
+> `prUrl` values on this board sit on `done` rows. It is left standing rather than folded in, because
+> a thesis that absorbs its own counterexample is not one.
 
 ---
 
@@ -154,9 +167,12 @@ it: give the MCP tool set the same field-patch verb the openclaw extension alrea
 runtime the moment it exists. (ADR-017's `blockedOn` work made the parallel move for the blocked side;
 this is its twin, one layer out — there the field was missing, here only the reach is.)
 
-The rule under it generalises past `prUrl`: **a kernel capability is not shipped until every runtime
-can reach it.** A field allowlisted on a route and absent from one runtime's tools is indistinguishable,
-from inside that runtime, from a field that does not exist.
+The rule under it generalises past `prUrl`, in its survivable form: **a kernel capability is not
+shipped until every runtime's tools name it.** The stronger form — *until every runtime can reach it* —
+is false here and was in the second draft: a seat holding a runtime token can always reach the route
+with an HTTP client, and one has. What the missing tool actually costs is the default: a field
+allowlisted on a route and absent from a runtime's tool set is, for every agent that works through its
+tools, a field that does not exist — and the 47-of-47 measurement above is what that costs in practice.
 
 ### D3 — The context read surfaces active claims and recent decisions
 
