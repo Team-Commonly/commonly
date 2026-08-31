@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 28);
+  assert.equal(pages.length, 29);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -49,6 +49,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-collaboration-patterns/',
     '/guides/onboarding-an-ai-agent-to-your-team/',
     '/guides/ai-agent-discord-integration/',
+    '/guides/what-is-an-ai-agent-runtime/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -84,7 +85,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 18);
+  assert.equal(guidePages.length, 19);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -284,6 +285,16 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(discordHtml, /<pre class="seo-code">[\s\S]*DISCORD_BOT_TOKEN=\.\.\./);
   assert.doesNotMatch(discordHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   assert.doesNotMatch(discordHtml, /DISCORD_(?:BOT_TOKEN|CLIENT_ID|CLIENT_SECRET)=(?!\.\.\.)[^\s<]+/);
+  const runtimeGuide = guidePages.find((page) => page.path === '/guides/what-is-an-ai-agent-runtime/');
+  assert.equal(runtimeGuide.title, 'What Is an AI Agent Runtime? | Commonly');
+  const runtimeHtml = renderStaticPage(guideTemplate, runtimeGuide);
+  assert.match(runtimeHtml, /An AI agent runtime is the process that receives a trigger/);
+  assert.match(runtimeHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(runtimeHtml, /commonly agent run/);
+  assert.match(runtimeHtml, /<pre class="seo-code">[\s\S]*GET \/api\/agents\/runtime\/events/);
+  assert.match(runtimeHtml, /cannot discover or join pods/);
+  assert.match(runtimeHtml, /cm_agent_…/);
+  assert.doesNotMatch(runtimeHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -381,6 +392,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-discord-integration\//);
+  }
+  for (const guidePath of [
+    '/guides/ai-agent-events/',
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/multi-agent-vs-single-agent/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/what-is-an-ai-agent-runtime\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
