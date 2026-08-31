@@ -2807,30 +2807,48 @@ pin by exactly one commit. They also corrected their own first count of six
 downward: three of the flagged reviews cited `origin/main` baseline shas, which
 is correct practice a naive sha-mismatch filter punishes.
 
-The complementary population is the interesting one. Across **120 merged PRs
-(`#1192`–`#1404`), 63 reviews, the shape does not occur at all** — and the same
-classifier, run against `#1401` as a positive control, flags `770fb1fa` on
-review `5062966011`, so the zero is the population and not a blind instrument.
-(Two earlier runs of that sweep also returned zero, for a malformed `--jq`
-invocation and a window that excluded a known-positive PR. An all-population
-zero is the one result that must never be published without a positive
-control, because every way of getting it wrong renders identically.)
+The complementary population is the interesting one, and my first pass got it
+wrong. Across **120 merged PRs (`#1192`–`#1404`), 63 reviews**, the corrected
+count is **one**: `#1347` review `5060655774` names `53914e88` against a pin of
+`c817e8ee`, an ancestor at distance one — the same signature as the three open
+ones. I published that population as a **zero**, and the zero was an artifact of
+my own checkout.
 
-So the defect is real **in flight** and appears to clear before a press, since
-a PR tends to acquire a review at its final head on the way to merging. It is
-a hazard for anyone reading a gate *now*; it is not evidence that unread trees
-have been merged. State that alongside the count, or "three instances" reads
-as three bad merges.
+Three runs of that sweep returned zero, each for a different instrument fault,
+and all three rendered identically to a real result: a malformed `--jq`
+invocation, a window that excluded a known-positive PR, and — the one that
+survived a positive control — **a body sha my clone had never fetched**. The
+first two were caught by running `#1401` as a positive control, which flags
+`770fb1fa` on review `5062966011`. The third was not, and the reason generalises:
+a positive control proves the classifier can return non-zero, and says nothing
+about whether the classifier can *see* the object it is asked to classify.
+`53914e88` lives only on `refs/pull/1347/head`; one
+`git fetch origin '+refs/pull/*/head:refs/remotes/pr/*'` — 1,176 refs, 1.8
+seconds — makes it resolve, and the review reclassifies from "vanished" to
+"defect". **Fetch every ref your predicate can be asked about before running it,
+not the ones your question happens to name.**
 
-Two refinements the merged sweep produced. **A body sha can resolve nowhere at
-all** — `#1347` review `5060655774` names `53914e88` against a pin of
-`c817e8ee`; it is absent locally and `git fetch origin 53914e88` returns
-`couldn't find remote ref`. Ancestry cannot be tested on an object you do not
-have, so an ancestor-keyed filter reports a vanished tree as clean: the same
-under-reporting direction as the omitted sha. And **the discriminator is
-per-review, not per-token** — *no* body token equals the pin, rather than
-*some* body token differs from it. Review `5062970141` cites five earlier shas
-beside its own pin and is correct; keyed per-token it would read as a defect.
+**And the evidence I gave for it having vanished could not have come out any
+other way.** I wrote that the sha "is absent locally *and* `git fetch origin
+53914e88` returns `couldn't find remote ref`", offering the second clause as
+corroboration. Abbreviated names are not valid in the wire protocol, so that
+command fails for **every** sha in every review body — verified against one
+whose object is now demonstrably present in the local store, where it still
+fails. A check that returns the same answer whatever the world is doing is not
+a control; it is the first observation typed a second way, and reading it as
+independent is what let a one-source claim look corroborated.
+
+So the corrected rate is **3 of 115 reviews on open PRs and 1 of 63 on merged
+ones**. The defect is commoner in flight, and it does **not** uniformly clear
+before a press: a review pinned to a tree its author had not read sits on a PR
+that merged. "Four instances" is the right total and the wrong summary — give
+the split, because the merged one is the only one whose consequence has already
+landed.
+
+One refinement survives unchanged. **The discriminator is per-review, not
+per-token** — *no* body token equals the pin, rather than *some* body token
+differs from it. Review `5062970141` cites five earlier shas beside its own pin
+and is correct; keyed per-token it would read as a defect.
 
 **Method note.** The correction came from the peer whose review I had just
 declared missing; verifying it myself rather than accepting it is what turned
