@@ -59,6 +59,20 @@ describe('V2CliAuthorize', () => {
     expect(screen.getByLabelText('Device code')).toBeDisabled();
   });
 
+  test('shows the request instance and the expired state for signed-in users', async () => {
+    axios.defaults.baseURL = 'https://self-hosted.example/api';
+    axios.post
+      .mockResolvedValueOnce({ data: { status: 'pending', request: { hostname: 'sam-laptop', clientName: 'commonly-cli', createdAt: '2026-08-31T00:00:00.000Z' } } })
+      .mockRejectedValueOnce({ response: { status: 410 } });
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('self-hosted.example')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
+    expect(await screen.findByText('Code expired')).toBeInTheDocument();
+    axios.defaults.baseURL = '';
+  });
+
   test('labels an already-consumed code instead of calling it expired', async () => {
     axios.post.mockResolvedValue({ data: { status: 'consumed' } });
     renderPage();
