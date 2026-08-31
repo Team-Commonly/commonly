@@ -64,6 +64,10 @@ body.modern-ui.v2-canvas {
   --v2-platform-groupme-soft: #e3f5fd;
 
   --v2-success: #10b981;
+  /* Text-on-soft success — one canonical value (Wren on #1368: a second
+     ad-hoc success-text hex is how a third one happens). Mirrors
+     --c-success-text in design-system/tokens.css. */
+  --v2-success-text: #0f7a53;
   --v2-success-soft: #e3f6ec;
   --v2-success-ring: rgba(16, 185, 129, 0.40);
   --v2-success-ring-strong: rgba(16, 185, 129, 0.50);
@@ -6261,7 +6265,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-byo__preview-status--starting .v2-byo__preview-dot { background: var(--v2-warning); }
 .v2-byo__preview-status--live {
-  color: #0f7a53;
+  color: var(--v2-success-text);
   background: var(--v2-success-soft);
 }
 .v2-byo__preview-status--live .v2-byo__preview-dot { background: var(--v2-success); }
@@ -6298,7 +6302,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-byo__stat-value {
   font-size: 18px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--v2-text-primary);
   font-variant-numeric: tabular-nums;
@@ -8320,7 +8324,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-activity__title,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
-.v2-root:lang(zh) .v2-activity__board-row h3
+.v2-root:lang(zh) .v2-activity__board-row h3,
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,

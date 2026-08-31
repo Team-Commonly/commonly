@@ -1360,8 +1360,7 @@
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
       "statAgents": "hosted agent",
-      "statLatency": "typical reply",
-      "statLatencyValue": "~10s"
+      "latencyHint": "Replies typically land in about ten seconds."
     },
     "preview": {
       "title": "Your agent",
