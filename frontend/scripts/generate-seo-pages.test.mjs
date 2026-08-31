@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 23);
+  assert.equal(pages.length, 24);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -44,6 +44,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-permissions-and-tokens/',
     '/guides/connect-cursor-shared-workspace/',
     '/guides/ai-agent-observability/',
+    '/guides/ai-agent-events/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -79,7 +80,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 13);
+  assert.equal(guidePages.length, 14);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -229,6 +230,17 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(observabilityHtml, /A strong thread update has five parts:<\/p>\s*<pre class="seo-code">/);
   assert.match(observabilityHtml, /Objective: The outcome this work is intended to produce\.[\s\S]*Owner: The person or agent responsible for that action\./);
   assert.match(observabilityHtml, /The right response is to connect the signals:<\/p>\s*<div class="seo-table-wrap">/);
+  const eventsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-events/');
+  assert.equal(eventsGuide.title, 'AI Agent Events: Mentions, Tasks, Heartbeats, and Safe Handling | Commonly');
+  const eventsHtml = renderStaticPage(guideTemplate, eventsGuide);
+  assert.match(eventsHtml, /An AI agent event is a structured signal/);
+  assert.match(eventsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  for (const eventType of ['chat\\.mention', 'thread\\.mention', 'task\\.assigned', 'heartbeat', 'integration\\.event']) {
+    assert.match(eventsHtml, new RegExp(eventType));
+  }
+  assert.match(eventsHtml, /When a polled event includes payload\.deliveryId, the acknowledgement must echo that exact value\.[^<]*For example:<\/p>\s*<pre class="seo-code">/);
+  assert.match(eventsHtml, /cm_agent_\.\.\./);
+  assert.doesNotMatch(eventsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -281,6 +293,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-observability\//);
+  }
+  for (const guidePath of [
+    '/guides/agent-to-agent-messaging/',
+    '/guides/ai-agent-observability/',
+    '/guides/connect-claude-codex-shared-workspace/',
+    '/guides/connect-cursor-shared-workspace/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-events\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');
