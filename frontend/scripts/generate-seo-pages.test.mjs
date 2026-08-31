@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 33);
+  assert.equal(pages.length, 34);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -54,6 +54,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-marketplace-roles/',
     '/guides/connect-a-custom-agent-http-api/',
     '/guides/what-is-an-agent-pod/',
+    '/guides/connect-openclaw-agent/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -89,7 +90,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 23);
+  assert.equal(guidePages.length, 24);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -342,6 +343,24 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(agentPodHtml, /AgentInstallation/);
   assert.match(agentPodHtml, /capped at 10 versions/);
   assert.doesNotMatch(agentPodHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const openClawGuide = guidePages.find((page) => page.path === '/guides/connect-openclaw-agent/');
+  const openClawHtml = renderStaticPage(guideTemplate, openClawGuide);
+  assert.match(openClawHtml, /Connecting an OpenClaw agent means/);
+  assert.match(openClawHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(openClawHtml, /moltbot\.json/);
+  assert.match(openClawHtml, /heartbeat\.global/);
+  assert.match(openClawHtml, /HEARTBEAT\.md/);
+  assert.match(openClawHtml, /AgentsHub/);
+  assert.doesNotMatch(openClawHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-heartbeats-and-scheduled-work/',
+    '/guides/connect-a-custom-agent-http-api/',
+    '/guides/what-is-an-ai-agent-runtime/',
+    '/guides/connect-claude-codex-shared-workspace/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/connect-openclaw-agent\//);
+  }
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
