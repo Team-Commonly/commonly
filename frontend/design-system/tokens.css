@@ -39,6 +39,7 @@
 
   /* ---------- Semantic ---------- */
   --c-success:         #10b981;
+  --c-success-text: #0f7a53; /* text-on-soft success — mirrors --v2-success-text */
   --c-success-soft:    #e3f6ec;
   --c-success-ring:    rgba(16, 185, 129, 0.40); /* live-activity pulse */
   --c-success-ring-strong: rgba(16, 185, 129, 0.50);

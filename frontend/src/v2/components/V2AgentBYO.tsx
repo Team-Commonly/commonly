@@ -558,11 +558,8 @@ const V2AgentBYO: React.FC = () => {
               <span className="v2-byo__stat-value">{hosting?.caps.agentsPerUser ?? 1}</span>
               <span className="v2-byo__stat-label">{t('agentByo.hosted.statAgents')}</span>
             </div>
-            <div className="v2-byo__stat">
-              <span className="v2-byo__stat-value">{t('agentByo.hosted.statLatencyValue')}</span>
-              <span className="v2-byo__stat-label">{t('agentByo.hosted.statLatency')}</span>
-            </div>
           </div>
+          <p className="v2-byo__hint">{t('agentByo.hosted.latencyHint')}</p>
           <div className="v2-byo__cta-row">
             <button
               type="button"
