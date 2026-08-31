@@ -37,9 +37,14 @@ decisions are proposals, the findings are measurements.
   only between agents. **D8–D10 are the exception and they are deliberate**: the ratified doctrine
   puts a claim/decision event onto ADR-017's existing routing layer rather than beside it, so this
   ADR now *consumes* ADR-017 and must not grow a second router. Two consequences of that dependency
-  are recorded at D8 rather than left to be discovered: ADR-017 is **`Proposed`**, so D8's substrate
-  is unratified, and the doctrine's phrase "attention threshold" names a mechanism ADR-017
-  explicitly rejected.
+  are recorded at D8 rather than left to be discovered: ADR-017 is **`Proposed`**, so D8's
+  *classification* substrate is unratified, and the doctrine's phrase "attention threshold" names a
+  mechanism ADR-017 explicitly rejected.
+- [`ADR-020`](ADR-020-admin-guide-delegated-authority.md) is **`Accepted`** and implements ADR-017's
+  card (its D3). It owns the surface on which a decision is *rendered*, and its structured message
+  `payload` is what D8 migrates onto. **Named here because the adjacent-ADR trap is on record**: this
+  document would otherwise be read as depending only on a `Proposed` ADR, when the rendering half it
+  needs is already ratified. This ADR adds no card and no second lifecycle.
 - [`ADR-003`](ADR-003-memory-as-kernel-primitive.md) owns memory. A decision ledger is not memory: it
   is shared, addressable, and append-only, where memory is private and rewritable.
 
@@ -328,9 +333,55 @@ surface is still routing. It sets the honest expectation: **on every connector b
 work this ADR does not own and must not silently assume. Recorded here so "reuse the existing layer"
 is not read as "the existing layer already covers the fleet".
 
-**The dependency is real and is not resolved by this ADR:** ADR-017 is **`Proposed`**, and its
-Layer 3.1 attention queue carries three explicitly undecided items. D8 is therefore ratified in
-*direction* and blocked in *substrate* — it cannot be built before ADR-017 is ratified, and building
+**Fourth correction, and this one is a build constraint rather than a caveat (@sprint-review, 2026-08-31).**
+The existing gate **cannot classify an event at all.** Its signature is
+`shouldEscalate({ content, agentUsername, integration }) => boolean` — a **string**, an agent
+identity, and a config. There is no event parameter and no type field, so *"a claim/decision event
+classifies like any wake event"* is not directly buildable: **a new event type has nothing to present
+to the classifier.** What the gate matches is a bracketed literal in the content:
+
+```
+ESCALATION_MARKERS = /\[(BLOCKED|ESCALATE|DECISION|NEEDS[-_ ]?HUMAN|APPROVAL)\]/i
+```
+
+**`DECISION` and `APPROVAL` are already in that set.** So "no new notification system" holds exactly,
+and by a narrower path than it first appears: a claim or decision reaches the human **iff it surfaces
+as a pod message whose content carries one of those markers.** No code change is required for the
+markers themselves; the requirement lands on the *producer*.
+
+**The call site narrows it once more** — `relayAgentMessageToTelegram` has exactly one caller,
+`AgentMessageService.postMessage` (`agentMessageService.ts:1746`). So the surfacing contract is not
+merely "a pod message with a marker" but **an agent-authored pod message posted through
+`postMessage`**. That matters for one of the three surfaces the doctrine names: **claim-conflict
+resolution is the case most likely to be kernel-authored** — a lease expiry, a sweep, a conflict the
+kernel settles with no agent speaking — and a kernel-authored record traverses no path to this gate.
+Gate approvals and the digest are agent- or read-shaped and do not have this problem. **So D8 is
+implementable today for two of the doctrine's three surfaces, and the third needs a producer that
+does not exist yet.** Stated rather than discovered during the build.
+
+**This is not a Telegram quirk — it is the current shape of the whole decision surface.**
+[`ADR-020`](ADR-020-admin-guide-delegated-authority.md) D3 records the same thing about approval
+cards: *"today neither store has a metadata column and every 'card' is a regex sentinel in the
+content string."* Two independently-built decision surfaces both key on a content string, for the
+same reason. **And the replacement is already ratified**: ADR-020 is **Accepted**, its D3 gives
+messages a real structured `payload` in both Mongo and PG, and that payload is precisely what would
+let a claim/decision be a typed object instead of a sentinel. **D8 should therefore be built on the
+marker today and migrate onto ADR-020's payload when it lands** — a stopgap whose successor is
+already decided is not technical debt, and picking the sentinel now costs nothing later.
+
+**Correction to this ADR's own earlier framing, and to what I told Sam in the pod (61578).** I wrote
+that nothing in the doctrine can be built until ADR-017 is ratified. **That is too strong.** It is
+true of D8's *classification* layer — ADR-017 is `Proposed` and owns the class taxonomy. It is false
+of the *rendering* half, which is the doctrine's core claim: ADR-020 is **Accepted** and D3 states
+"the approval card IS ADR-017's card, implemented", with the ADR-017 lifecycle
+(`flagged → resolved / expired / moot`) and its invariants — only a human writes `resolved`, retiring
+a card is never an approval, fail closed. **So "the decision moment is rendered only in Commonly" has
+a ratified home right now.** What is blocked is which events *reach* that surface automatically, not
+whether the surface exists.
+
+**The dependency is real, and narrower than I first stated (see the fourth correction below):**
+ADR-017 is **`Proposed`** and its Layer 3.1 attention queue carries three explicitly undecided items,
+so **D8's automatic classification** is ratified in *direction* and blocked in *substrate* — it cannot be built before ADR-017 is ratified, and building
 it against an unratified spec is the failure mode CLAUDE.md's ADR-status discipline names. If
 ADR-017's ratification changes the class taxonomy, D8 follows it; D8 does not get its own.
 
