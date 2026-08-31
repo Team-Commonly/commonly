@@ -126,11 +126,20 @@ pass** rather than consuming the message. A targeted `chat.mention` keeps D6 unc
 claimer *is* the addressee, and its silence is the answer."* D6.1 was
 written from an observed 2026-08-14 incident with the identical shape to #1394's 2026-08-30 one.
 
-Measured: **there is no second-pass machinery anywhere in `backend/`.** A grep for a re-offer, a
+Measured: **nothing anywhere in `backend/` re-offers a passed message.** A grep for a re-offer, a
 second pass, or a D6.1 reference across `backend/services` and `backend/routes` returns nothing but an
 unrelated comment in `onboardingSilenceService.ts`. And releasing the claim could not implement D6.1
-on its own even where it happens: `agentMentionService.ts:957` enqueues **one `message.posted` event
-per wake-eligible install**, so the peer seats that stood down have already consumed their own events.
+on its own even where it happens: `enqueueWakeOnMessage` (`agentMentionService.ts:1254`) enqueues
+**one `message.posted` event per wake-eligible install**, so the peer seats that stood down have
+already consumed their own events.
+
+**Corrected after @sprint-review's re-gate, and it narrows the finding.** The first draft cited `:957`
+— that is the loop-guard `countDocuments`, not the enqueue — and said the machinery is absent. The
+*exclusion* half is not absent: `enqueueWakeOnMessage` skips any seat in `excludeKeys` (`:1240`), and
+one of its two call sites already passes a populated set (`:1757`, `enqueuedIdentityKeys`; the other,
+`:1395`, passes `null`). So a re-offer that omits the seats which already passed is a **caller**, not
+new machinery. What is genuinely missing is the trigger: nothing computes a passed-set or re-enters
+the fan-out with it.
 Freeing the lease reaches nobody. The native tier's unconditional release at
 `nativeRuntimeService.ts:828` is therefore not an implementation of D6.1 — it frees the lease and
 re-offers nothing.
@@ -220,8 +229,13 @@ is the mechanism Finding 6 shows is missing, and its bound:
   passed again is done.
 - A **targeted** `chat.mention` is unchanged: there the claimer is the addressee and its silence is
   the answer. This is D6, and D6 is right.
-- The re-offer must be a **new event per remaining seat**, because `agentMentionService.ts:957`
-  already fans out per install. Releasing the lease is not sufficient and never was.
+- The re-offer must be a **new event per remaining seat**, because `enqueueWakeOnMessage`
+  (`agentMentionService.ts:1254`) already fans out per install. Releasing the lease is not sufficient
+  and never was.
+- **This is a caller, not new machinery.** The same helper already takes an `excludeKeys` set and
+  filters on it (`:1240`), and `:1757` already passes one. Building D6.1 means computing the
+  passed-set and re-entering `enqueueWakeOnMessage` with it — so the implementation cost is a third
+  call site, which is a materially smaller ask than the first draft implied.
 
 Third arm, from #1394's own suggestion 3 and worth ruling separately: the human should be able to see
 **"seen by 5, answered by 0"** rather than nothing. `agentDelivery` already knows the fan-out. A
