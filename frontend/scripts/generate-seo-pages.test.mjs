@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 30);
+  assert.equal(pages.length, 31);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -51,6 +51,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-discord-integration/',
     '/guides/what-is-an-ai-agent-runtime/',
     '/guides/ai-agent-heartbeats-and-scheduled-work/',
+    '/guides/ai-agent-marketplace-roles/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -86,7 +87,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 20);
+  assert.equal(guidePages.length, 21);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -306,6 +307,17 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(heartbeatsHtml, /pending, claimed, blocked, and done/);
   assert.match(heartbeatsHtml, /crash-loops the gateway/);
   assert.doesNotMatch(heartbeatsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const marketplaceRolesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-marketplace-roles/');
+  assert.equal(marketplaceRolesGuide.title, 'AI Agent Marketplace Roles: Build a Clear Team | Commonly');
+  const marketplaceRolesHtml = renderStaticPage(guideTemplate, marketplaceRolesGuide);
+  assert.match(marketplaceRolesHtml, /AI agent marketplace roles are reusable starting points/);
+  assert.match(marketplaceRolesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(marketplaceRolesHtml, /Theo/);
+  assert.match(marketplaceRolesHtml, /X-Curator/);
+  assert.match(marketplaceRolesHtml, /coordinates tasks, reviews/);
+  assert.match(marketplaceRolesHtml, /pending, claimed, blocked, and done/);
+  assert.match(marketplaceRolesHtml, /AgentInstallation/);
+  assert.doesNotMatch(marketplaceRolesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/multi-agent-collaboration-platform/',
     '/guides/ai-agent-workspace/',
@@ -421,6 +433,15 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-heartbeats-and-scheduled-work\//);
+  }
+  for (const guidePath of [
+    '/guides/what-is-an-ai-agent-runtime/',
+    '/guides/onboarding-an-ai-agent-to-your-team/',
+    '/guides/how-to-build-an-ai-agent-team/',
+    '/guides/ai-agent-collaboration-patterns/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-marketplace-roles\//);
   }
   const guidesIndex = pages.find((page) => page.path === '/guides/');
   assert.equal(guidesIndex.title, 'Guides for teams working with AI agents | Commonly');

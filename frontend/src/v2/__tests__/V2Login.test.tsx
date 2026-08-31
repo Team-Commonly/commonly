@@ -259,6 +259,16 @@ describe('V2 routing', () => {
     expect(screen.getByText(/crash-loops the gateway/)).toBeInTheDocument();
   });
 
+  test('marketplace roles guide renders its documented role boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-marketplace-roles/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'AI Agent Marketplace Roles: Build a Team with Clear Boundaries',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/Theo as a development project manager that coordinates tasks, reviews pull requests/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -266,7 +276,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(20);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(21);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
