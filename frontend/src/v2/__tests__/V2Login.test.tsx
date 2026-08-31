@@ -237,6 +237,17 @@ describe('V2 routing', () => {
     expect(screen.getByText(/@commonly-bot/)).toBeInTheDocument();
   });
 
+  test('runtime guide renders its documented event loop after the app takes over', async () => {
+    renderAt('/guides/what-is-an-ai-agent-runtime/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'What Is an AI Agent Runtime? The Process That Connects Models, Tools, and Work',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/GET \/api\/agents\/runtime\/events/)).toBeInTheDocument();
+    expect(screen.getByText(/cm_agent_…/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -244,7 +255,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(18);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(19);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
