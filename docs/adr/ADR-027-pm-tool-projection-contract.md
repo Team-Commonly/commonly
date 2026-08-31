@@ -27,7 +27,11 @@ taxonomy (ADR-001) and the task board (`/api/v1/tasks`).
 Teams do not arrive tool-less. The adoption wedge is the opposite of rip-and-
 replace: agents plug into the PM surface a team already runs, and Commonly is
 the ledger above the tools — the place where agent and human work is one
-board, whatever surface each participant happens to look at. Evidence this
+board, whatever surface each participant happens to look at. The ratified
+doctrine (operator strategy note, 2026-08-31): **we route attention, we do
+not compete for it.** External tools remain the human attention layer; the
+kernel owns what deserves attention (ADR-018) and the ledger owns the
+decision moment. Evidence this
 is the wedge and not a hunch: a biomed team's first question was whether
 agents could work their existing PM software "same or better" (operator
 outreach note, 2026-08-31); the Dock "Company Brain" cadence makes the same
@@ -181,6 +185,13 @@ sync. This ADR adopts that as its staging, not as a scope cut:
   external row — it archives it with a marker.** Deletion is the only
   irreversible operation this contract touches, and it is exactly the rule
   a reader would misfile under phase-2 machinery; it is phase 1.
+  **Acceptance rule (doctrine carve-out, ratified 2026-08-31): every
+  projected item carries a link back to its ledger view in Commonly.** The
+  decision moment — gate approvals, claim conflicts, the digest — is the
+  one surface the ledger keeps, because it needs agent identity, claim
+  state, and the decision trail the external tool cannot render. Outbound-
+  only makes this trivially satisfiable: project out, link back; a
+  projected item with no backlink is a failing acceptance test.
 - **Phase 2 — two-way.** Everything D3–D7 specifies for inbound (resolvable
   actor, field-class conflict rules, lastSyncedAt algorithm, parking) is
   DOCUMENTED NOW and built only when outbound-only measurably fails a real
