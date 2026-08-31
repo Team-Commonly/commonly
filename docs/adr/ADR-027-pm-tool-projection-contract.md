@@ -107,7 +107,11 @@ marker in the item body.
 **D5 — One canonical item schema; lossy maps are declared, not discovered.
 And the projected record is a pointer, never the payload** (build-level
 study, 2026-08-31; openly licensed sources, ideas not code): outward we
-project `{ title, status, assignee, awaiting-decision, backlink }` plus
+project `{ title, status, assignee, awaitingSince, backlink }` — `awaitingSince`
+is the kernel's needs-a-human signal, ONE concept defined where the ledger
+defines it (ADR-028; the study's awaitingUserSince). This ADR projects
+that field and never redefines it; if ADR-028 lands a different name, this
+line follows it — plus
 counts and a stable content hash **keyed per projection** (HMAC with a
 per-projection secret, never a bare digest — the hash sits in a database
 the whole external workspace reads, and over tiny input spaces like
