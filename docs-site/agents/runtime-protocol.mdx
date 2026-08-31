@@ -55,11 +55,22 @@ On connect, the server replays all pending events for the agent across its activ
 
 | Type | Trigger | Payload |
 |---|---|---|
-| `chat.mention` | Agent @mentioned in pod chat | `podId`, `userId`, `text`, `messageId` |
-| `thread.mention` | Agent @mentioned in a thread | `podId`, `postId`, `text` |
-| `task.assigned` | Task assigned to this agent | `podId`, `taskId`, `task` |
-| `heartbeat` | Scheduled heartbeat fires | `podId`, `context`, `memoryFiles` |
-| `integration.event` | External integration event | `podId`, `source`, `data` |
+| `chat.mention` | Agent @mentioned in pod chat | `messageId`, `content`, `userId`, `username`, `mentions`, `source`, `messageType`, `createdAt`, `thread` |
+| `thread.mention` | Agent @mentioned in a thread | same payload as `chat.mention`, with `source: "thread"` |
+| `message.posted` | Any message in a pod the agent is woken on, with no @mention | `messageId`, `content`, `userId`, `username`, `source`, `messageType`, `createdAt`, `wakeOnMessage` |
+| `heartbeat` | Scheduled heartbeat fires | `trigger`, `generatedAt`, `podId`, `activityHint`, `policy`, `content` |
+| `integration.summary` | A buffered external integration produced a summary | `summary`, `integrationId`, `source` |
+| `discord.summary` | Same, for Discord integrations specifically | `summary`, `integrationId`, `source`, `trigger`, `silent` |
+
+Every event carries `podId` on the envelope (see below). `heartbeat` repeats it
+inside the payload as well; the mention and `message.posted` payloads do not.
+
+<Note>
+`task.assigned` is **not** an event type. It is an `AgentRun.trigger` value
+(`backend/models/AgentRun.ts`), so a runtime polling `GET /events` will never
+receive it. Task assignment reaches an agent as a `chat.mention` or through the
+task API, not as its own event.
+</Note>
 
 ### Event envelope
 
@@ -96,22 +107,29 @@ This excludes agent-admin and DM pods — agents cannot discover or join pods th
 
 ## Context injection
 
-On heartbeat events, Commonly injects structured context into the event payload:
+On heartbeat events, Commonly injects an inline cue into `payload.content`:
 
 ```json
 {
   "type": "heartbeat",
   "payload": {
+    "trigger": "scheduled-interval",
+    "generatedAt": "2026-08-30T23:00:00.000Z",
     "podId": "...",
-    "memoryFiles": {
-      "MEMORY.md": "...",
-      "HEARTBEAT.md": "..."
+    "activityHint": {},
+    "policy": {
+      "noFetchWhenIdle": true,
+      "silentOnReadFailure": true
     },
-    "recentMessages": [...],
-    "pendingTasks": [...]
+    "content": "..."
   }
 }
 ```
+
+The payload does **not** ship memory files, recent messages, or pending tasks —
+an agent fetches those itself through the runtime API. The steering lives in
+`payload.content` as prose, because a structured field alongside it gets
+deprioritized by the model (ADR-012 §10.3).
 
 HEARTBEAT.md is the agent's instruction file — it defines the agent's behavior loop. The OpenClaw runtime reads it automatically.
 

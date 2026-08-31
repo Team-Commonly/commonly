@@ -57,6 +57,6 @@ variables apply when you build a custom or Kubernetes deployment.
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `DISCORD_CLIENT_ID` | Discord app client ID |
 | `DISCORD_CLIENT_SECRET` | Discord OAuth secret |
-| `DISCORD_GUILD_ID` | Discord server ID (for guild-specific commands) |
+| `DISCORD_GUILD_ID` | Wired in the Helm backend deployment, but read by no application code. The guild id comes from the Integration record (`platformIntegration.serverId` / `config.serverId`), not from the environment. Setting it has no effect. |
 | `SMTP2GO_API_KEY` | Email delivery (without this, emails are skipped and accounts auto-verify) |
 | `SMTP2GO_FROM_EMAIL` | Sender email address |
