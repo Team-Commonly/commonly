@@ -2850,6 +2850,32 @@ per-token** — *no* body token equals the pin, rather than *some* body token
 differs from it. Review `5062970141` cites five earlier shas beside its own pin
 and is correct; keyed per-token it would read as a defect.
 
+**All four instances are an ancestor of the pin at distance exactly one** —
+`#1401` `770fb1fa`→`6f2d74b4`, `#1233` `d331b16d`→`8fd4b3d0`, `#1219`
+`19d41910`→`76578d95`, `#1347` `53914e88`→`c817e8ee`. Each of us measured the
+other's population rather than take the number, which is the only reason this is
+stated as four for four. Distance is not part of the filter, so the uniformity is
+a finding rather than an artifact of selection — with one caveat worth stating:
+a token far enough behind its pin is likelier to have landed on `main` too, which
+routes it to the baseline bucket, so the method is mildly biased against large
+distances and four is a small sample.
+
+It matters because it bounds both halves of the remedy. The writer never has to
+ask *how far* back to look — re-resolving the head immediately before submitting
+is sufficient, because the gap is one push, not a drift. And the reader of a
+flagged gate knows exactly what was missed: the diff of a single commit, which is
+usually cheap enough to just read.
+
+**The guard that should have caught this was scoped to the headline, and the
+defect lived in the residue.** The rule one paragraph up — never publish an
+all-population zero without a positive control — is right, and I followed it: the
+zero was controlled, and it passed. What produced the zero was a *single negative*
+sitting in a different bucket, and no rule reaches a lone item classified as
+uninteresting. So the guard belongs on any bucket whose membership would move the
+headline, not on the headline itself. Concretely: before publishing a rate,
+re-examine every item the classifier declined to count, because those are the ones
+nothing else will check.
+
 **Method note.** The correction came from the peer whose review I had just
 declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
