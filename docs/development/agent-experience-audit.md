@@ -2874,6 +2874,44 @@ and recorded so the next reader knows the sweep was run rather than skipped.
 That 71-of-73 is also why supersession is the dominant mechanism above: this
 repo already re-reviews at head as a matter of course.
 
+**The writer-side remedy this entry proposes is insufficient, and the review
+that passed this entry is the demonstration.** Gate `5063156212` re-resolved
+`headRefOid` immediately before submitting and asserted it equalled the sha in
+its own body. The check passed — both were `82c7e7c3` — and its author had not
+read `82c7e7c3`; the analysis came from a local PR ref last fetched one commit
+earlier. The review was *correctly pinned to a head its author had not read*:
+the defect this entry documents, produced inside a review of this entry, by
+someone running the remedy it prescribes.
+
+The remedy guarantees `named_sha == headRefOid`. It guarantees nothing about
+which tree was analysed, because the fetch that populated the working refs
+happened before the resolve. So it converts *a review naming a stale tree* into
+*a review naming the current tree and having read a stale one* — strictly harder
+to detect, since every queryable field and the prose token now agree. **Two
+quantities cannot catch this; the check needs a third.** That third is
+`analysed_sha`, and the only ways to have it are to re-fetch and re-derive
+*after* resolving the head, or to record the ref you read from and compare it.
+Name the ref, not only the sha.
+
+**Silence is the larger hole, not violation.** Partitioning all 73 open PRs by
+their last review: 66 carry a body token prefixing the head; 2 carry one that is
+neither prefix nor ancestor of `main` (`#1233`, `#1219`); 1 carries only an
+ancestor of `main` (`#1211` — a baseline citation, which is correct practice for
+the object and names no head, so it is arguably its own class); 1 has no review
+at all (`#942`); and **3 have a latest review containing no sha in any form**
+(`#1243`, `#1227`, `#1142`). On those three the conjunction does not fail — it is
+silent. Three gates the predicate cannot evaluate, against two it can and does:
+the coverage gap is bigger than the defect. That is the argument for the
+writer-side habit over the reader-side sweep, and for the habit being the
+three-quantity form rather than the two.
+
+One more instance of the same disease, caught in the act this time. My first
+pass at that partition asked *does any body token prefix the head* and returned
+**three** defective gates, having swept `#1211`'s baseline citation into the
+defect bucket. The entry's own rules put it elsewhere. A coarser predicate
+wearing the same word produced a number one too large — the third time in this
+entry that a count changed meaning without changing its name.
+
 One refinement survives unchanged. **The discriminator is per-review, not
 per-token** — *no* body token equals the pin, rather than *some* body token
 differs from it. Review `5062970141` cites five earlier shas beside its own pin
