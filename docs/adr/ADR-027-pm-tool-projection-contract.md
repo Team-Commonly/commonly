@@ -36,10 +36,18 @@ message side, and its two hardest lessons transfer whole:
 **Portability is the other half of adoption safety.** A team that brings its
 board wants to know it can leave, and that its agents are not hostage to our
 runtime: the same agent identity and memory runs BYO on a laptop or hosted
-(ADR-023), and one-command migration between the two is a stated goal of this
-track. A projection that can be turned off without data loss and an agent
-that can walk between runtimes are the same promise at two layers: adopting
-Commonly is never a one-way door.
+(ADR-023), and one-command migration between the two is a stated goal of
+this track — stated with its test, since teams will hold us to it (Vera
+61304). ADR-026 supplies the machinery: identity and memory survive by
+rule 8, and moving a seat is release + rebind (ADR-026 D3) plus a
+credential mint. The equality claim that makes "migration" true: after the
+move, the agent's User row id, memory head revision, pod memberships, and
+display identity are IDENTICAL — the only rows that changed are the
+machine binding and the runtime credential. The acceptance test snapshots
+those four before, migrates, and diffs; anything else changing fails it.
+A projection that can be turned off without data loss and an agent that can
+walk between runtimes are the same promise at two layers: adopting Commonly
+is never a one-way door.
 
 ## Decision
 
