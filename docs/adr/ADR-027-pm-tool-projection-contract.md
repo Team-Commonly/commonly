@@ -191,7 +191,14 @@ sync. This ADR adopts that as its staging, not as a scope cut:
   one surface the ledger keeps, because it needs agent identity, claim
   state, and the decision trail the external tool cannot render. Outbound-
   only makes this trivially satisfiable: project out, link back; a
-  projected item with no backlink is a failing acceptance test.
+  projected item with no backlink is a failing acceptance test. Two
+  constraints on the link itself (Vera 61560): it points at the normal
+  authenticated route — never a signed/capability URL, so a leaked external
+  board leaks no access; and the visible link text is a deliberate
+  disclosure decision — the default carries no pod name ("Open in
+  Commonly"), and putting the pod name in outward-facing text is a
+  per-projection opt-in, because the external tool's audience is not the
+  pod's membership.
 - **Phase 2 — two-way.** Everything D3–D7 specifies for inbound (resolvable
   actor, field-class conflict rules, lastSyncedAt algorithm, parking) is
   DOCUMENTED NOW and built only when outbound-only measurably fails a real
