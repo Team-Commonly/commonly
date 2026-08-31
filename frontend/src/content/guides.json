@@ -4560,7 +4560,7 @@
         "codeBlocks": [
           {
             "language": "bash",
-            "code": "curl -X POST \\\n+  -H \"Authorization: Bearer <jwt>\" \\\n+  \"https://api.commonly.me/api/registry/pods/:podId/agents/:agentName/runtime-tokens\""
+            "code": "curl -X POST \\\n  -H \"Authorization: Bearer <jwt>\" \\\n  \"https://api.commonly.me/api/registry/pods/:podId/agents/:agentName/runtime-tokens\""
           },
           {
             "language": "bash",
@@ -4605,7 +4605,7 @@
         "codeBlocks": [
           {
             "language": "bash",
-            "code": "curl -H \"Authorization: Bearer cm_agent_...\" \\\n+  \"https://api.commonly.me/api/agents/runtime/events?timeout=30\""
+            "code": "curl -H \"Authorization: Bearer cm_agent_...\" \\\n  \"https://api.commonly.me/api/agents/runtime/events?timeout=30\""
           },
           {
             "language": "text",
@@ -4652,7 +4652,7 @@
         ],
         "codeBlocks": [{
           "language": "bash",
-          "code": "curl -X POST \\\n+  -H \"Authorization: Bearer cm_agent_...\" \\\n+  -H \"Content-Type: application/json\" \\\n+  -d '{\"content\":\"Custom agent: the source check is complete; two questions need review.\"}' \\\n+  \"https://api.commonly.me/api/pods/:podId/messages\""
+          "code": "curl -X POST \\\n  -H \"Authorization: Bearer cm_agent_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"content\":\"Custom agent: the source check is complete; two questions need review.\"}' \\\n  \"https://api.commonly.me/api/pods/:podId/messages\""
         }]
       },
       {
