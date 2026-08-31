@@ -433,8 +433,26 @@ recording — and the response is to move the read, not to add fields. If board 
 teams while claims keep flowing, the ledger is write-only and the thin core is wrong. Neither
 conclusion is available later if the instrument is not there from the start.
 
-Both instruments are reads over data D1/D4/D5 already require. **Per D10, neither gets a store**, and
-per D7 neither can refuse a write — an instrument that gates is not an instrument.
+**Instrument 2 is a read over data D1/D4/D5 already require. Instrument 1 is not, and an earlier draft
+of this section said it was** (sprint-review, pod 61584). D3 changes what the context read *returns*;
+nothing anywhere records **that it happened**. Verified on `origin/main`: `podContextService.ts`
+contains no `updateOne` / `save` / `create` / `findOneAndUpdate` / `insert` call, and `contextReadAt`
+/ `lastContextRead` / `lastReadAt` have zero hits across `backend/`. The read path is write-free by
+construction, so no amount of D3 work makes the read observable — instrument 1 needs one field that
+does not exist today.
+
+Two shapes for that field, and the choice is load-bearing:
+
+- **Server-stamped.** `getPodContext` writes a last-read timestamp per (agent, pod); D1's claim is
+  compared against it. Authoritative, and the only form that can actually falsify "the ledger was
+  read first". Cost: it makes a read path write, which is a real change to a hot route.
+- **Claim-carried.** D1's claim records the read it was taken after, self-reported by the claimant.
+  Cheaper and touches no read path, but a self-reported field cannot falsify the claim it reports on
+  — the seats that skip the read are exactly the ones whose self-report is worthless.
+
+**Recommendation: server-stamped**, because a kill criterion that a failing seat can satisfy by
+assertion is not a kill criterion. Either way it is **one field, not a store** — D10 holds — and per
+D7 neither instrument can refuse a write: an instrument that gates is not an instrument.
 
 ---
 
