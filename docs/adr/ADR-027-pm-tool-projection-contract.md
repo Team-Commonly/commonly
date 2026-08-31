@@ -119,7 +119,12 @@ the underlying document. Canonical (full, for the phase-2 inbound map):
 status ∈ Task's own enum. Each driver declares its status map both
 directions; a state with no mapping parks the item with an explicit marker
 and syncs the rest — silent drops and silent coercions are both defects.
-Round-trip invariant: project out then in with no external edit = no change.
+Round-trip invariant, scoped to the PROJECTED field set (Vera 61646 —
+unprojected fields like description cannot round-trip by construction):
+for every field the projection carries outward, project out then in with
+no external edit = no change. A driver is conformant when the projected
+set round-trips exactly and the unprojected set is untouched on both
+sides.
 
 **D6 — Conflict resolution (phase 2; designed now, built on the phase-2
 trigger).** "Newest wins" is user-facing phrasing, NOT the algorithm — two
