@@ -108,7 +108,11 @@ marker in the item body.
 And the projected record is a pointer, never the payload** (build-level
 study, 2026-08-31; openly licensed sources, ideas not code): outward we
 project `{ title, status, assignee, awaiting-decision, backlink }` plus
-counts and a stable content hash — description bodies, attachments, and
+counts and a stable content hash **keyed per projection** (HMAC with a
+per-projection secret, never a bare digest — the hash sits in a database
+the whole external workspace reads, and over tiny input spaces like
+status/assignee an unsalted hash is a lookup table away from disclosing
+exactly what this rule keeps in the ledger; Vera 61647) — description bodies, attachments, and
 work artifacts stay in the ledger and are served on demand behind the
 backlink. This is what keeps a projection an attention surface rather than
 a data pipe, keeps the one-database scope (D8) small, and makes the
