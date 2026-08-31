@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 34);
+  assert.equal(pages.length, 35);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -55,6 +55,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/connect-a-custom-agent-http-api/',
     '/guides/what-is-an-agent-pod/',
     '/guides/connect-openclaw-agent/',
+    '/guides/ai-agent-security-best-practices/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -90,7 +91,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 24);
+  assert.equal(guidePages.length, 25);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -352,6 +353,14 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(openClawHtml, /HEARTBEAT\.md/);
   assert.match(openClawHtml, /AgentsHub/);
   assert.doesNotMatch(openClawHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const securityGuide = guidePages.find((page) => page.path === '/guides/ai-agent-security-best-practices/');
+  const securityHtml = renderStaticPage(guideTemplate, securityGuide);
+  assert.match(securityHtml, /AI agent security is the practice of/);
+  assert.match(securityHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.match(securityHtml, /least privilege/);
+  assert.match(securityHtml, /excessive agency/);
+  assert.match(securityHtml, /installation-scoped/);
+  assert.doesNotMatch(securityHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   for (const guidePath of [
     '/guides/ai-agent-heartbeats-and-scheduled-work/',
     '/guides/connect-a-custom-agent-http-api/',
