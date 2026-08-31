@@ -1,9 +1,13 @@
 # ADR-027: PM-tool projection contract — structured work items across tool boundaries
 
 **Status:** Proposed (2026-08-31, Wren; commissioned by Sam). Acknowledged
-unknowns: the first provider (decided by next week's interview answers, not
-by this ADR), per-provider sync transport (webhook vs poll), and custom-status
-fidelity limits. Ratifying this ADR does not settle those.
+unknowns: per-provider sync transport (webhook vs poll) and custom-status
+fidelity limits — ratifying this ADR does not settle those. The first
+provider is a WORKING ASSUMPTION, not a decision of this ADR: **Notion
+first, Linear second** (Sam, 2026-08-31, ship-and-measure; interviews
+dropped as the gate). The contract stays provider-agnostic by construction
+(D1/D9), so a veto of that assumption costs one plugin, never this
+architecture.
 
 **Scope boundary:** this ADR governs how STRUCTURED work items (tasks, their
 status, assignees, provenance) project two-way between a Commonly pod and an
@@ -128,6 +132,18 @@ widening is a new install decision, never a drift.
 scope-grant report, per D8). Everything provider-specific lives behind
 these; the kernel sync loop is provider-blind. Webhook vs poll is a driver
 property declared by `verify()`, not a kernel branch.
+
+**D9 is transport-agnostic, and ACP is a supported binding.** The ecosystem
+is converging on ACP for agent↔tool session transport (operator strategy
+note, 2026-08-30; multiple independent adoptions). The four verbs carry no
+provider SDK assumptions: a driver may be implemented over an ACP
+connection exactly as over a REST client — we already run an ACP-family
+adapter in production (the acpx path, ADR-005 lineage), so this is a
+compatibility statement, not an aspiration. The strategic read is stated
+here so the ADR carries it: ACP commoditizes the transport; what it does
+NOT carry — identity, memory, membership, and this contract's provenance
+ledger — is the half Commonly holds. This ADR is deliberately a
+specification of that half.
 
 ## Consequences
 
