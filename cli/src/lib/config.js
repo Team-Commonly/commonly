@@ -107,13 +107,16 @@ export const resolveInstanceUrl = (instanceArg = null) => {
   return DEFAULT_INSTANCE_URL;
 };
 
-export const saveInstance = ({ key = 'default', url, token, userId, username }) => {
+export const saveInstance = ({ key = 'default', url, token, userId, username, tokenType = null }) => {
   const config = read();
   config.instances[key] = {
     url: url.replace(/\/$/, ''),
     token,
     userId,
     username,
+    // Device bearers are long-lived until revoked. Preserve the explicit kind
+    // so `whoami` can say that without guessing from a future token format.
+    ...(tokenType ? { tokenType } : {}),
     savedAt: new Date().toISOString(),
   };
   config.active = key;

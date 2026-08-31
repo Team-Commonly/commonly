@@ -6,8 +6,15 @@
  */
 
 import { createInterface } from 'readline';
-import { login as apiLogin } from '../lib/api.js';
+import { hostname } from 'os';
+import { createClient, login as apiLogin } from '../lib/api.js';
 import { saveInstance } from '../lib/config.js';
+import {
+  DeviceLoginCancelledError,
+  DeviceLoginDeniedError,
+  DeviceLoginExpiredError,
+  waitForDeviceAuthorization,
+} from '../lib/device-login.js';
 
 const prompt = (rl, question) => new Promise((resolve) => rl.question(question, resolve));
 
@@ -41,6 +48,7 @@ export const registerLogin = (program) => {
     .description('Authenticate to a Commonly instance')
     .option('--instance <url>', 'Instance URL (default: https://api.commonly.me)')
     .option('--key <name>', 'Config key to save as (default: "default" or "local")')
+    .option('--password', 'Use the legacy email/password prompt instead of device authorization')
     .addHelpText('after', `
 Examples:
   $ commonly login                                                   # production (default key)
@@ -58,26 +66,64 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
       const isLocal = instanceUrl.includes('localhost') || instanceUrl.includes('127.0.0.1');
       const configKey = opts.key || (isLocal ? 'local' : 'default');
 
-      console.log(`Logging in to ${instanceUrl}`);
-
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const email = await prompt(rl, 'Email: ');
-      rl.close();
-
-      const password = await promptSecret('Password: ');
-
       try {
+        if (!opts.password) {
+          const client = createClient({ instance: instanceUrl, token: null });
+          const started = await client.post('/api/auth/device/start', {
+            clientName: 'commonly-cli',
+            clientVersion: program.version(),
+            hostname: hostname(),
+          });
+          const minutes = Math.ceil(started.expiresIn / 60);
+          console.log(`Logging in to ${instanceUrl} as a new device.\n`);
+          console.log(`  Open   ${started.verifyUrl}`);
+          console.log(`  Code   ${started.userCode}`);
+          console.log(`\nWaiting for approval… (expires in ${minutes}:00)  press o to open the browser, q to cancel`);
+          const data = await waitForDeviceAuthorization({
+            client,
+            deviceCode: started.deviceCode,
+            userCode: started.userCode,
+            verifyUrl: started.verifyUrl,
+            interval: started.interval,
+            expiresIn: started.expiresIn,
+            onStatus: (message) => console.log(message),
+          });
+
+          saveInstance({
+            key: configKey,
+            url: instanceUrl,
+            token: data.token,
+            userId: data.userId,
+            username: data.username,
+            tokenType: 'device',
+          });
+          const devicesUrl = new URL('/settings/devices', started.verifyUrl).toString();
+          console.log(`\n✓ Authorized as @${data.username} on ${configKey} (${instanceUrl})`);
+          console.log(`  Token saved to ~/.commonly/config.json · manage devices at ${devicesUrl}`);
+          return;
+        }
+
+        console.log(`Logging in to ${instanceUrl}`);
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const email = await prompt(rl, 'Email: ');
+        rl.close();
+        const password = await promptSecret('Password: ');
         const data = await apiLogin(instanceUrl, email.trim(), password);
         const token = data.token;
         const userId = data.user?._id || data.user?.id;
         const username = data.user?.username;
 
-        saveInstance({ key: configKey, url: instanceUrl, token, userId, username });
+        saveInstance({ key: configKey, url: instanceUrl, token, userId, username, tokenType: 'jwt' });
 
         console.log(`\nLogged in as ${username} (${configKey})`);
         console.log(`Token saved to ~/.commonly/config.json`);
       } catch (err) {
-        console.error(`Login failed: ${err.message}`);
+        const message = err instanceof DeviceLoginExpiredError
+          ? `Code expired after 10 minutes. Run commonly login --instance ${configKey} for a new code.`
+          : err instanceof DeviceLoginCancelledError || err instanceof DeviceLoginDeniedError
+            ? err.message
+            : `Login failed: ${err.message}`;
+        console.error(message);
         process.exit(1);
       }
     });
@@ -97,9 +143,29 @@ export const registerWhoami = (program) => {
         return;
       }
 
-      instances.forEach(({ key, url, username, active, savedAt }) => {
+      instances.forEach(({ key, url, username, active, token, tokenType }) => {
         const marker = active ? '→' : ' ';
-        console.log(`${marker} ${key}  ${username || '?'}@${url}  (saved ${new Date(savedAt).toLocaleDateString()})`);
+        console.log(`${marker} ${key}  ${username || '?'}@${url}  (${formatTokenStatus(token, tokenType, Date.now(), key)})`);
       });
     });
+};
+
+const decodeJwtExpiry = (token) => {
+  if (typeof token !== 'string' || token.split('.').length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+export const formatTokenStatus = (token, tokenType, now = Date.now(), instanceKey = 'default') => {
+  if (tokenType === 'device' || String(token || '').startsWith('cm_')) return 'device token · no expiry';
+  const expiresAt = decodeJwtExpiry(token);
+  if (!expiresAt) return 'session token · expiry unknown';
+  const diff = expiresAt - now;
+  if (diff <= 0) return `expired — commonly login --instance ${instanceKey}`;
+  const hours = Math.max(1, Math.ceil(diff / (60 * 60 * 1000)));
+  return `expires in ${hours}h`;
 };

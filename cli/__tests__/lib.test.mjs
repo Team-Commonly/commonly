@@ -22,6 +22,7 @@ import http from 'http';
 // a fresh temp directory for each test suite run.
 
 const configTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-config-test-'));
+const configFile = path.join(configTmpDir, '.commonly', 'config.json');
 
 await jest.unstable_mockModule('os', () => {
   const actual = os;
@@ -52,8 +53,6 @@ const {
 // ── config.js tests ───────────────────────────────────────────────────────────
 
 describe('config.js', () => {
-  const configFile = path.join(configTmpDir, '.commonly', 'config.json');
-
   beforeEach(() => {
     // Remove any leftover config between tests
     if (fs.existsSync(configFile)) fs.unlinkSync(configFile);

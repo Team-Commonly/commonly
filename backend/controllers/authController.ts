@@ -688,7 +688,7 @@ exports.login = async (req: any, res: any) => {
 // 🔄 Refresh Token — issue a new 7d token from a still-valid token
 exports.refresh = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password');
+    const user = await User.findById(req.userId).select('-password -deviceTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
@@ -705,7 +705,7 @@ exports.refresh = async (req: any, res: any) => {
 // New method to get user profile
 exports.getProfile = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password');
+    const user = await User.findById(req.userId).select('-password -deviceTokens');
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err: any) {
@@ -716,7 +716,7 @@ exports.getProfile = async (req: any, res: any) => {
 // Get current user information
 exports.getCurrentUser = async (req: any, res: any) => {
   try {
-    const user = await User.findById(req.userId).select('-password');
+    const user = await User.findById(req.userId).select('-password -deviceTokens');
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -747,7 +747,7 @@ exports.updateProfile = async (req: any, res: any) => {
     await AgentIdentityService.syncUserToPostgreSQL(user);
 
     // Return the updated user without the password
-    const updatedUser = await User.findById(userId).select('-password');
+    const updatedUser = await User.findById(userId).select('-password -deviceTokens');
     res.json(updatedUser);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

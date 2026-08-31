@@ -16,6 +16,7 @@ import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
 import V2Showcase from './showcase/V2Showcase';
 import V2BillingPanel from './components/V2BillingPanel';
+import V2DevicesPanel from './components/V2DevicesPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
@@ -324,9 +325,14 @@ const V2App: React.FC = () => {
                   element={feature('Settings', 'Plan and billing, profile, avatar, app management, and API token settings.', (
                     <>
                       <V2BillingPanel />
+                      <V2DevicesPanel />
                       <UserProfile />
                     </>
                   ))}
+                />
+                <Route
+                  path="settings/devices"
+                  element={feature('Devices', 'Review and revoke CLI device tokens.', <V2DevicesPanel />)}
                 />
                 <Route
                   path="profile"
