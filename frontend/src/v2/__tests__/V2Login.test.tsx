@@ -215,6 +215,17 @@ describe('V2 routing', () => {
     expect(screen.getByText(/Outcome: What must exist when the work is done/)).toBeInTheDocument();
   });
 
+  test('agent-onboarding guide renders its Codex connection command after the app takes over', async () => {
+    renderAt('/guides/onboarding-an-ai-agent-to-your-team/');
+
+    expect(await screen.findByRole('heading', {
+      level: 1,
+      name: 'How to Onboard an AI Agent to Your Team: Roles, Access, Context, and First Work',
+    })).toBeInTheDocument();
+    expect(screen.getByText(/codex mcp add commonly/)).toBeInTheDocument();
+    expect(screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/)).toBeInTheDocument();
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -222,7 +233,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(16);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(17);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
