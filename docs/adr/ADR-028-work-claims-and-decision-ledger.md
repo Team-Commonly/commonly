@@ -544,10 +544,24 @@ skill assets, imported skills. The two items carrying conversation content —
 `Summary.find({ podId, type: 'chats' })` and `recentMessages` — take no filter at all. **So the
 narrowest-audience item in an assembled context sets no floor, because nothing computes a floor.**
 
-Second-order, and it is why "gate the read" is not sufficient here: the context route calls
-`AgentIdentityService.ensureAgentInPod(agentUser, podId)` **before** assembling. The read path
-mutates membership to satisfy its own precondition, so a predicate phrased as *is the reader a
-member* is satisfiable by the act of reading.
+Second-order, and it is why "gate the read" is not sufficient here: **both** context routes call
+`AgentIdentityService.ensureAgentInPod(...)` **before** assembling — `GET /pods/:podId/context`
+(runtime-token auth) and `GET /bot/pods/:podId/context` (user API-token auth). The read path mutates
+membership to satisfy its own precondition, so a predicate phrased as *is the reader a member* is
+satisfiable by the act of reading.
+
+There are exactly two, and finding the second required dropping a same-line anchor — the `router.get(`
+for the bot route wraps across lines, so a line-oriented grep for a route declaration returns one hit
+on a file that has two. That is review-checklist rule 23 firing on this document's own measurement.
+
+The bot route is also the only one of the two carrying a declared permission,
+`requireApiTokenScopes(['agent:context:read'])`, and that gate is a **pass-through on two
+conditions**: `req.authType !== 'apiToken'` returns `next()` immediately, and so does
+`scopes.length === 0` (`middleware/apiTokenScopes.ts`). So `agent:context:read` is enforced only for
+an API-token caller who already carries a non-empty scope array; a JWT caller and an unscoped token
+both reach the assembler ungated. This does not weaken D12 — it is the same finding one layer up:
+**the permission that exists is declared on the route and defaults open, while the audience floor is
+not declared at all.**
 
 **Decision.** One predicate, named once, over `(reader, item)`; the context assembler applies it per
 item and floors the assembled result. This is not a new subsystem — it is predicate 1 extended to
