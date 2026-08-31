@@ -246,12 +246,38 @@ starting work is a record that does not exist, and Finding 3 says the platform's
 
 ### D4 — A claim records its disposition, not only its custody
 
-`message_claims` gains a disposition written at release: **answered**, **passed**, or **expired**
-(the last being the absence of a release, not a value anyone writes). One column; the CAS is
-unchanged.
+A claim records a disposition: **answered**, **passed**, or **expired** (the last being the absence
+of a release, not a value anyone writes).
 
-This is the smallest possible fix for Finding 4, and it is the precondition for D5 — you cannot ask
-"what did this pod decide" of a store that cannot say whether anyone did anything.
+**This is NOT one column on `message_claims`, and an earlier draft of this decision said it was**
+(sprint-review, pod 61596). That table is current-state only, by three separate mechanisms, all
+verified on `origin/main`:
+
+- **`release` is a `DELETE`** (`MessageClaimService.release`). So a `passed` disposition is erased by
+  the declining seat itself, one call later, on the path the code calls normal: the route comment at
+  `DELETE /messages/:messageId/claim` reads "claim-then-decline is a normal, frequent path per D6".
+  No second seat is needed to lose the record — the seat that writes it destroys it.
+- **`message_id` is the PRIMARY KEY.** The table can hold at most one claim per message, ever, so it
+  cannot represent D6's re-offer at all: a re-offer is a *sequence* of claims on one message, and the
+  CAS's `ON CONFLICT DO UPDATE` overwrites `claimed_by` in place.
+- **Renewal sets `created_at = NOW()`.** A holder that follows its own instruction destroys the age
+  of its own claim, which is the same shape as the deferral counter zeroed by the event that makes it
+  meaningful.
+
+So D4 needs an **append-only claim-event record** — one row per (message, seat, disposition) — not a
+column. That is a larger ask than the first draft priced, and it is the honest price: the smallest
+thing that fits on the existing table cannot survive the ordinary path.
+
+**Widening, on a surface neither of us raised: main already depends on the persistence this table
+does not have.** `OnboardingSilenceEpisode.ts` names `message_claims.claimed_by` as *the*
+discriminator between "the runtime declined at its daily cap" and "another agent won the claim and
+this seat stood down" — two zero-run faults with opposite investigations — and defers reading it as
+"a bigger change than a label". The change is bigger than that comment thinks: an episode is
+diagnosed after the fact, and by then the winner has released, so the discriminator it names is
+already gone. A shipped diagnostic is pointed at a row that does not outlive the turn.
+
+This is still the precondition for D5 — you cannot ask "what did this pod decide" of a store that
+cannot say whether anyone did anything.
 
 ### D5 — Decision records are a typed object, and superseding is explicit
 
@@ -461,6 +487,11 @@ value is falsifiable in principle and unfalsifiable in practice.
 
 Echoing a server-minted stamp is what makes the criterion per-claim: the seat cannot author the
 value, and the value is attached to the claim rather than to the seat.
+
+**It inherits D4's substrate, not just D4's shape.** A stamp echoed onto the `message_claims` row is
+deleted at release like any other field on it, so the kill criterion could only ever be evaluated
+inside the lease — never retrospectively, which is the only time anyone asks. Instrument 1 and D4's
+disposition want the same append-only record; build one.
 
 **One consequence, not in the correction: a minted stamp with no expiry is a reusable token.** A seat
 that reads once at boot and echoes that stamp on every subsequent claim passes the criterion exactly
