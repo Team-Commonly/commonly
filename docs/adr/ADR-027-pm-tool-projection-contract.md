@@ -172,6 +172,15 @@ sync. This ADR adopts that as its staging, not as a scope cut:
   unresolvable-actor fallback promoted to the default: no inbound edits, no
   loop to break, no conflict resolution, no inbound identity mapping, and
   the Notion attribution unknown does not gate shipping.
+  **Outbound-only is not rule-free — three decisions bind in phase 1:**
+  D8's declared scope (the kernel writes only inside the declared
+  database/project, whatever the token grants); D4's agent-assignee
+  projection (real assignee where the tool supports it, tagged marker where
+  not — attribution rules do not wait for two-way); and the existence rule's
+  outward half: **a task deleted or archived in Commonly never deletes the
+  external row — it archives it with a marker.** Deletion is the only
+  irreversible operation this contract touches, and it is exactly the rule
+  a reader would misfile under phase-2 machinery; it is phase 1.
 - **Phase 2 — two-way.** Everything D3–D7 specifies for inbound (resolvable
   actor, field-class conflict rules, lastSyncedAt algorithm, parking) is
   DOCUMENTED NOW and built only when outbound-only measurably fails a real
