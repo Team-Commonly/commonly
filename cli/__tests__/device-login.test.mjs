@@ -2,6 +2,8 @@ import { EventEmitter } from 'events';
 import { jest } from '@jest/globals';
 import {
   DeviceLoginCancelledError,
+  DeviceLoginDeniedError,
+  DeviceLoginExpiredError,
   openBrowser,
   waitForDeviceAuthorization,
 } from '../src/lib/device-login.js';
@@ -61,6 +63,32 @@ describe('CLI device login', () => {
       callback(null);
     }, 'darwin');
     expect(calls).toEqual([['open', ['https://commonly.me/cli/authorize?code=ABCD-EFGH']]]);
+  });
+
+  test('uses a non-shell opener on Windows and rejects non-web verification URLs', async () => {
+    const calls = [];
+    await openBrowser('https://commonly.me/cli/authorize?code=ABCD-EFGH', (command, args, callback) => {
+      calls.push([command, args]);
+      callback(null);
+    }, 'win32');
+    expect(calls).toEqual([['rundll32', ['url.dll,FileProtocolHandler', 'https://commonly.me/cli/authorize?code=ABCD-EFGH']]]);
+    expect(() => openBrowser('file:///etc/passwd')).toThrow('Device authorization URL must use HTTP or HTTPS.');
+  });
+
+  test('uses terminal-safe messages for denied and expired device codes', async () => {
+    const denied = { post: jest.fn().mockResolvedValue({ status: 'denied' }) };
+    await expect(waitForDeviceAuthorization({
+      client: denied,
+      deviceCode: 'secret-device-code', userCode: 'ABCD-EFGH', verifyUrl: 'https://commonly.me/cli/authorize',
+      stdin: new EventEmitter(), wait: async () => undefined, now: () => 1,
+    })).rejects.toBeInstanceOf(DeviceLoginDeniedError);
+
+    const expired = { post: jest.fn().mockResolvedValue({ status: 'expired' }) };
+    await expect(waitForDeviceAuthorization({
+      client: expired,
+      deviceCode: 'secret-device-code', userCode: 'ABCD-EFGH', verifyUrl: 'https://commonly.me/cli/authorize',
+      stdin: new EventEmitter(), wait: async () => undefined, now: () => 1,
+    })).rejects.toBeInstanceOf(DeviceLoginExpiredError);
   });
 
   test('whoami differentiates a no-expiry device token from an expired JWT', () => {

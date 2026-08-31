@@ -40,9 +40,8 @@ describe('V2CliAuthorize', () => {
     expect(screen.getByLabelText('Device code')).toHaveValue('ABCD-EFGH');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/device/authorize', { userCode: 'ABCD-EFGH' }));
-    expect(await screen.findByText('Allow this device?')).toBeInTheDocument();
-    expect(screen.getByText('sam-laptop')).toBeInTheDocument();
-    expect(screen.getByText('api.commonly.me')).toBeInTheDocument();
+    expect(await screen.findByText('Authorize sam-laptop as @lily?')).toBeInTheDocument();
+    expect(screen.getByText('CLI SIGN-IN')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
     await waitFor(() => expect(axios.post).toHaveBeenLastCalledWith('/api/auth/device/authorize', {
@@ -58,5 +57,13 @@ describe('V2CliAuthorize', () => {
       expect.stringContaining('next=%2Fcli%2Fauthorize%3Fcode%3DABCD-EFGH'),
     );
     expect(screen.getByLabelText('Device code')).toBeDisabled();
+  });
+
+  test('labels an already-consumed code instead of calling it expired', async () => {
+    axios.post.mockResolvedValue({ data: { status: 'consumed' } });
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByText('Code already used')).toBeInTheDocument();
   });
 });

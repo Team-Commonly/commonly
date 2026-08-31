@@ -13,11 +13,13 @@ export const hashDeviceCredential = (value: string): string => crypto
   .digest('hex');
 
 const randomUserCode = (): string => {
-  const bytes = crypto.randomBytes(8);
-  let code = '';
-  for (let index = 0; index < 8; index += 1) {
-    code += USER_CODE_ALPHABET[bytes[index] % USER_CODE_ALPHABET.length];
-  }
+  // `randomInt` uses rejection sampling. Indexing random bytes with `%` is
+  // biased whenever the alphabet length does not divide 256 (and CodeQL is
+  // right not to make that safety depend on this alphabet's current length).
+  const code = Array.from(
+    { length: 8 },
+    () => USER_CODE_ALPHABET[crypto.randomInt(USER_CODE_ALPHABET.length)],
+  ).join('');
   return `${code.slice(0, 4)}-${code.slice(4)}`;
 };
 
@@ -33,6 +35,21 @@ const userCodeHash = (value: unknown): string | null => {
 };
 
 const isExpired = (request: IDeviceAuthorization, now = new Date()): boolean => request.expiresAt <= now;
+
+const revokeUndeliveredDeviceToken = async (request: IDeviceAuthorization) => {
+  if (request.status !== 'authorized' || !request.pendingToken || !request.userId) return;
+  const tokenHash = hashDeviceCredential(request.pendingToken);
+  await User.updateOne(
+    { _id: request.userId, 'deviceTokens.tokenHash': tokenHash },
+    { $set: { 'deviceTokens.$.revokedAt': new Date() } },
+  );
+  // The one-time secret has no remaining recipient. Do not retain it until
+  // Mongo's TTL reaper happens to remove this authorization row.
+  await DeviceAuthorization.updateOne(
+    { _id: request._id, status: 'authorized' },
+    { $unset: { pendingToken: 1 } },
+  );
+};
 
 export const createDeviceAuthorization = async ({
   clientName,
@@ -78,7 +95,14 @@ export const pollDeviceAuthorization = async (deviceCode: unknown) => {
   const request = await DeviceAuthorization.findOne({
     deviceCodeHash: hashDeviceCredential(raw),
   }).select('+pendingToken');
-  if (!request || isExpired(request)) return { status: 'expired' as const };
+  if (!request) return { status: 'expired' as const };
+  if (isExpired(request)) {
+    // A browser may approve during the final poll interval. If the terminal
+    // misses the handoff before the ten-minute deadline, that bearer was never
+    // delivered and must not remain as a ghost device in the account.
+    await revokeUndeliveredDeviceToken(request);
+    return { status: 'expired' as const };
+  }
   if (request.status === 'pending') {
     const now = new Date();
     const polledTooSoon = request.lastPolledAt

@@ -11,7 +11,7 @@ interface AuthorizationRequest {
   createdAt: string;
 }
 
-type Screen = 'code' | 'confirm' | 'done' | 'denied' | 'expired' | 'error';
+type Screen = 'code' | 'confirm' | 'done' | 'denied' | 'expired' | 'used' | 'error';
 
 const normalizeCode = (value: string): string => {
   const compact = value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 8);
@@ -23,8 +23,22 @@ const errorScreen = (error: unknown): Screen => {
   return status === 410 ? 'expired' : 'error';
 };
 
+const requestAge = (createdAt: string): string => {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+};
+
+const currentInstance = () => {
+  const baseUrl = String(axios.defaults.baseURL || window.location.origin);
+  try { return new URL(baseUrl, window.location.origin).host; } catch { return baseUrl; }
+};
+
 const V2CliAuthorize: React.FC = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
   const queryCode = useMemo(() => normalizeCode(new URLSearchParams(location.search).get('code') || ''), [location.search]);
   const [code, setCode] = useState(queryCode);
@@ -46,7 +60,13 @@ const V2CliAuthorize: React.FC = () => {
         setRequest(response.data.request);
         setScreen('confirm');
       } else {
-        setScreen(response.data.status === 'denied' ? 'denied' : 'expired');
+        setScreen(
+          response.data.status === 'denied'
+            ? 'denied'
+            : response.data.status === 'consumed' || response.data.status === 'authorized'
+              ? 'used'
+              : 'expired',
+        );
       }
     } catch (error) {
       setScreen(errorScreen(error));
@@ -76,6 +96,7 @@ const V2CliAuthorize: React.FC = () => {
     <main className="v2-cli-authorize">
       <section className="v2-cli-authorize__card" aria-live="polite">
         <div className="v2-cli-authorize__mark" aria-hidden="true">C</div>
+        <p className="v2-cli-authorize__eyebrow">CLI SIGN-IN</p>
         {loading && <p>Checking your session…</p>}
         {!loading && !isAuthenticated && (
           <>
@@ -110,12 +131,12 @@ const V2CliAuthorize: React.FC = () => {
         )}
         {!loading && isAuthenticated && screen === 'confirm' && request && (
           <>
-            <h1>Allow this device?</h1>
-            <p><strong>{request.hostname}</strong> is asking to use your Commonly account.</p>
+            <h1>Authorize {request.hostname} as @{user?.username || 'you'}?</h1>
+            <p>This device is asking to use your Commonly account.</p>
             <dl className="v2-cli-authorize__facts">
               <div><dt>Client</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
-              <div><dt>Instance</dt><dd>api.commonly.me</dd></div>
-              <div><dt>Requested</dt><dd>{new Date(request.createdAt).toLocaleString()}</dd></div>
+              <div><dt>Instance</dt><dd>{currentInstance()}</dd></div>
+              <div><dt>Requested</dt><dd>{requestAge(request.createdAt)}</dd></div>
             </dl>
             <p className="v2-cli-authorize__warning">Only approve a code you requested from your own terminal.</p>
             <div className="v2-cli-authorize__actions">
@@ -129,6 +150,7 @@ const V2CliAuthorize: React.FC = () => {
         {!loading && isAuthenticated && screen === 'done' && <><h1>Device authorized</h1><p>You can return to your terminal.</p></>}
         {!loading && isAuthenticated && screen === 'denied' && <><h1>Authorization denied</h1><p>No token was issued for this device.</p></>}
         {!loading && isAuthenticated && screen === 'expired' && <><h1>Code expired</h1><p>Return to your terminal and run <code>commonly login</code> again.</p></>}
+        {!loading && isAuthenticated && screen === 'used' && <><h1>Code already used</h1><p>This code was already approved or completed. Return to your terminal.</p></>}
         {!loading && isAuthenticated && screen === 'error' && <><h1>Couldn’t authorize this device</h1><p>Check the code and try again from your terminal.</p></>}
       </section>
     </main>

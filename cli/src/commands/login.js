@@ -9,7 +9,12 @@ import { createInterface } from 'readline';
 import { hostname } from 'os';
 import { createClient, login as apiLogin } from '../lib/api.js';
 import { saveInstance } from '../lib/config.js';
-import { DeviceLoginCancelledError, waitForDeviceAuthorization } from '../lib/device-login.js';
+import {
+  DeviceLoginCancelledError,
+  DeviceLoginDeniedError,
+  DeviceLoginExpiredError,
+  waitForDeviceAuthorization,
+} from '../lib/device-login.js';
 
 const prompt = (rl, question) => new Promise((resolve) => rl.question(question, resolve));
 
@@ -69,9 +74,11 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
             clientVersion: program.version(),
             hostname: hostname(),
           });
-          console.log(`Open ${started.verifyUrl}`);
-          console.log(`Enter code: ${started.userCode}`);
-          console.log('Press o to open your browser, or q to cancel.');
+          const minutes = Math.ceil(started.expiresIn / 60);
+          console.log(`Logging in to ${instanceUrl} as a new device.\n`);
+          console.log(`  Open   ${started.verifyUrl}`);
+          console.log(`  Code   ${started.userCode}`);
+          console.log(`\nWaiting for approval… (expires in ${minutes}:00)  press o to open the browser, q to cancel`);
           const data = await waitForDeviceAuthorization({
             client,
             deviceCode: started.deviceCode,
@@ -90,8 +97,9 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
             username: data.username,
             tokenType: 'device',
           });
-          console.log(`\nLogged in as ${data.username} (${configKey})`);
-          console.log('Device token saved to ~/.commonly/config.json');
+          const devicesUrl = new URL('/settings/devices', started.verifyUrl).toString();
+          console.log(`\n✓ Authorized as @${data.username} on ${configKey} (${instanceUrl})`);
+          console.log(`  Token saved to ~/.commonly/config.json · manage devices at ${devicesUrl}`);
           return;
         }
 
@@ -110,7 +118,11 @@ Tokens are stored in ~/.commonly/config.json. Other commands take
         console.log(`\nLogged in as ${username} (${configKey})`);
         console.log(`Token saved to ~/.commonly/config.json`);
       } catch (err) {
-        const message = err instanceof DeviceLoginCancelledError ? err.message : `Login failed: ${err.message}`;
+        const message = err instanceof DeviceLoginExpiredError
+          ? `Code expired after 10 minutes. Run commonly login --instance ${configKey} for a new code.`
+          : err instanceof DeviceLoginCancelledError || err instanceof DeviceLoginDeniedError
+            ? err.message
+            : `Login failed: ${err.message}`;
         console.error(message);
         process.exit(1);
       }

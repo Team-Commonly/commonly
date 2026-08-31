@@ -30,6 +30,7 @@
   font-weight: 800;
 }
 
+.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: #2f6feb !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
 .v2-cli-authorize__card h1 { margin: 18px 0 8px; font-size: 24px; }
 .v2-cli-authorize__card p { margin: 0 0 20px; color: #4b5563; line-height: 1.5; }
 .v2-cli-authorize__field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 700; }

@@ -105,6 +105,20 @@ const devicePollLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: too many device authorization polls'),
 });
 
+// The browser approval and device-management endpoints all authenticate, but
+// authentication itself reads User (and approval writes both collections).
+// Keep their bound separate from the public start/poll buckets: a terminal
+// polling normally must never consume the browser approval budget.
+const deviceManageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: too many device authorization requests'),
+});
+
 // Waitlist is a one-shot action per person — 5/hour/IP.
 const waitlistLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -181,7 +195,7 @@ router.post('/device/poll', devicePollLimiter, async (req: any, res: Res) => {
   }
 });
 
-router.post('/device/authorize', auth, async (req: AuthReq & { body?: any }, res: Res) => {
+router.post('/device/authorize', deviceManageLimiter, auth, async (req: AuthReq & { body?: any }, res: Res) => {
   try {
     const result = await decideDeviceAuthorization({
       userCode: req.body?.userCode,
@@ -197,7 +211,7 @@ router.post('/device/authorize', auth, async (req: AuthReq & { body?: any }, res
   }
 });
 
-router.get('/devices', auth, async (req: AuthReq, res: Res) => {
+router.get('/devices', deviceManageLimiter, auth, async (req: AuthReq, res: Res) => {
   try {
     return res.json({ devices: await listDeviceTokens(req.userId || req.user?.id || '') });
   } catch (error: any) {
@@ -206,7 +220,7 @@ router.get('/devices', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/devices/:deviceId', auth, async (req: AuthReq & { params?: any }, res: Res) => {
+router.delete('/devices/:deviceId', deviceManageLimiter, auth, async (req: AuthReq & { params?: any }, res: Res) => {
   try {
     const revoked = await revokeDeviceToken(req.userId || req.user?.id || '', String(req.params?.deviceId || ''));
     if (!revoked) return res.status(404).json({ error: 'Device not found or already revoked' });

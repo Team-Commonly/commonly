@@ -554,6 +554,33 @@ describe('Auth Routes Integration Tests', () => {
         .expect({ status: 'expired' });
       expect((await User.findById(user._id).select('deviceTokens')).deviceTokens).toHaveLength(0);
     });
+
+    it('revokes an approved bearer when its terminal misses the expiry deadline', async () => {
+      const user = await createVerifiedUser();
+      const browserToken = generateTestToken(user._id);
+      const started = await startAuthorization();
+
+      await request(app)
+        .post('/api/auth/device/authorize')
+        .set('Authorization', `Bearer ${browserToken}`)
+        .send({ userCode: started.body.userCode, decision: 'authorize' })
+        .expect(200)
+        .expect({ status: 'authorized' });
+
+      await DeviceAuthorization.updateOne(
+        { deviceCodeHash: hashDeviceCredential(started.body.deviceCode) },
+        { $set: { expiresAt: new Date(Date.now() - 1000) } },
+      );
+      await request(app)
+        .post('/api/auth/device/poll')
+        .send({ deviceCode: started.body.deviceCode })
+        .expect(200)
+        .expect({ status: 'expired' });
+
+      const device = (await User.findById(user._id).select('deviceTokens')).deviceTokens[0];
+      expect(device.revokedAt).toBeTruthy();
+      expect((await DeviceAuthorization.findOne().select('+pendingToken')).pendingToken).toBeUndefined();
+    });
   });
 
   describe('PUT /api/auth/profile', () => {
