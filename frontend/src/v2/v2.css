@@ -8641,7 +8641,9 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-byo__mode-title,
 .v2-root:lang(zh) .v2-byo__preview-name,
 .v2-root:lang(zh) .v2-byo__stat-value,
-.v2-root:lang(zh) .v2-team-feature__name {
+.v2-root:lang(zh) .v2-team-feature__name,
+.v2-root:lang(zh) .v2-connect__lane h2,
+.v2-root:lang(zh) .v2-connect__gateway h3 {
   letter-spacing: 0;
 }
 
