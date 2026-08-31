@@ -162,8 +162,9 @@ these; the kernel sync loop is provider-blind. Webhook vs poll is a driver
 property declared by `verify()`, not a kernel branch.
 
 **D9's outbound half is the hardened send contract, built once in the
-SDK.** Every `push()` send carries an idempotency key (retries never
-double-post) and resolves through the three-way error taxonomy: throttled →
+SDK.** Every `push()` send carries an idempotency key **derived from the item
+change (the event), never the attempt** — a per-attempt key turns every
+retry into a new provider message (retries never double-post) and resolves through the three-way error taxonomy: throttled →
 sleep the provider's retry-after and retry within budget; definitive
 rejection → fail fast into the projection's status; ambiguous → verify then
 retry. Adapter authors implement provider calls, never delivery policy —
