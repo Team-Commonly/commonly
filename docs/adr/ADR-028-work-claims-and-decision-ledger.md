@@ -1,4 +1,4 @@
-# ADR-027 — Work claims and the decision ledger: recording custody, work area, and why
+# ADR-028 — Work claims and the decision ledger: recording custody, work area, and why
 
 **Status:** **Draft** — design only, opened at Sam's request (2026-08-31 kickoff). Nothing here is
 ratified; D1–D7 are proposals. **Build waits for the five customer interviews** — this ADR exists so
@@ -18,6 +18,12 @@ decisions are proposals, the findings are measurements.
 - [`ADR-024`](ADR-024-shared-awareness-and-the-agent-inbox.md) owns awareness of *messages*. This ADR
   is about awareness of *work and decisions* — a different store, read at a different moment (before
   work starts, not on delivery).
+- [`ADR-027`](ADR-027-pm-tool-projection-contract.md) (Wren) owns how a structured work item
+  **projects** across a tool boundary — a pod's board ↔ an external PM surface. This ADR owns what
+  the work item **records in the first place**: the claim's work area, and the decision behind it.
+  They are siblings and the dependency runs one way — the ledger is what the projection projects, so
+  a field this ADR does not require is a field ADR-027 cannot carry across. Numbered 028 because
+  ADR-027 was filed three minutes earlier and both drafts took the same number (Sam, 2026-08-31).
 - [`ADR-017`](ADR-017-attention-routing.md) owns routing to the **human**. Everything here routes
   between agents.
 - [`ADR-003`](ADR-003-memory-as-kernel-primitive.md) owns memory. A decision ledger is not memory: it
@@ -254,7 +260,7 @@ The same reasoning applies with more force to work: "forgot to record a work are
    later is cheap; changing the meaning of one is not.
 5. **Whether D6 belongs here at all.** It is an ADR-018 decision. This ADR proposes to *build* it and
    records why it was never built; the alternative is an ADR-018 amendment and a build task, leaving
-   ADR-027 to D1–D5 and D7. Sam asked for them ruled together, so they are drafted together — but the
+   ADR-028 to D1–D5 and D7. Sam asked for them ruled together, so they are drafted together — but the
    home of the rule is a real question and the answer is not obviously this file.
 
 ---
