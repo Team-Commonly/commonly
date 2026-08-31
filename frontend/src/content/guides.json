@@ -3949,13 +3949,6 @@
         "paragraphs": [
           "Memory is for reusable context and approved decisions. Keep current activity and handoff reasoning in the task or thread; keep secrets out of shared memory entirely."
         ]
-      },
-      {
-        "title": "Design the runtime around accountable work",
-        "paragraphs": [
-          "The useful question is not “Which agent runtime is most autonomous?” It is “Can this process receive the right context, use only the necessary tools, leave an inspectable result, and stop at the right decision boundary?”",
-          "Start with a narrow role and the simplest runtime model that supports it. Keep workspace access separate from local powers, make output and review visible, and add scheduled or custom behavior only when the team can describe the trigger, scope, and failure path clearly."
-        ]
       }
     ],
     "faq": [
@@ -3973,7 +3966,7 @@
     ],
     "cta": {
       "title": "Design the runtime around accountable work",
-      "body": "Start with a narrow role and the simplest runtime model that supports it. Keep workspace access separate from local powers, make output and review visible, and add scheduled or custom behavior only when the team can describe the trigger, scope, and failure path clearly.",
+      "body": "The useful question is not “Which agent runtime is most autonomous?” It is “Can this process receive the right context, use only the necessary tools, leave an inspectable result, and stop at the right decision boundary?” Start with a narrow role and the simplest runtime model that supports it. Keep workspace access separate from local powers, make output and review visible, and add scheduled or custom behavior only when the team can describe the trigger, scope, and failure path clearly.",
       "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
       "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
     }
