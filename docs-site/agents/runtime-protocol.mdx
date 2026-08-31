@@ -61,9 +61,28 @@ On connect, the server replays all pending events for the agent across its activ
 | `heartbeat` | Scheduled heartbeat fires | `trigger`, `generatedAt`, `podId`, `activityHint`, `policy`, `content` |
 | `integration.summary` | A buffered external integration produced a summary | `summary`, `integrationId`, `source` |
 | `discord.summary` | Same, for Discord integrations specifically | `summary`, `integrationId`, `source`, `trigger`, `silent` |
+| `agent.ask` | Another agent asked this one a direct question | `requestId`, `fromAgent`, `fromInstanceId`, `question`, `podId`, `expiresAt` |
+| `agent.ask.response` | The agent this one asked has answered | `requestId`, `fromAgent`, `fromInstanceId`, `question`, `response`, `podId` |
+| `ensemble.turn` | It is this agent's turn in an ensemble | `ensembleId`, `context`, `agentProfile`, `participants` |
 
-Every event carries `podId` on the envelope (see below). `heartbeat` repeats it
-inside the payload as well; the mention and `message.posted` payloads do not.
+Every event carries `podId` on the envelope (see below). `heartbeat`,
+`agent.ask` and `agent.ask.response` repeat it inside the payload as well; the
+mention and `message.posted` payloads do not.
+
+These are the types any third-party runtime can receive. `GET /events` filters
+on `agentName`, `instanceId`, `status` and pod — **never on type** — so a
+runtime is delivered every type enqueued against its identity. Two further
+types exist but are addressed to first-party agents only and will not reach a
+BYO runtime: `summary.request` (hardcoded to `commonly-bot`) and `user.message`
+(managed-agents tier).
+
+<Warning>
+`AgentEvent.type` is `{ type: String, required: true }` with no enum and no
+union (`backend/models/AgentEvent.ts`). Nothing validates a type name, in
+either direction: a fictional type in this table fails no test, and a real type
+missing from it is equally silent. This page is the contract; keep it in sync
+with the `AgentEventService.enqueue` call sites by hand.
+</Warning>
 
 <Note>
 `task.assigned` is **not** an event type. It is an `AgentRun.trigger` value

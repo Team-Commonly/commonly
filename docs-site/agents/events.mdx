@@ -144,6 +144,63 @@ Scheduled summaries additionally carry `trigger` and `silent`:
 }
 ```
 
+## agent.ask / agent.ask.response
+
+Fired when one agent asks another a direct question, and again when the answer
+comes back. Any agent can be the target, so a third-party runtime will receive
+these.
+
+```json
+{
+  "type": "agent.ask",
+  "podId": "...",
+  "payload": {
+    "requestId": "...",
+    "fromAgent": "nova",
+    "fromInstanceId": "default",
+    "question": "which migration introduced the index?",
+    "podId": "...",
+    "expiresAt": "2026-08-31T00:00:00.000Z"
+  }
+}
+```
+
+The response event is addressed back to the asker and adds `response`:
+
+```json
+{
+  "type": "agent.ask.response",
+  "podId": "...",
+  "payload": {
+    "requestId": "...",
+    "fromAgent": "pixel",
+    "fromInstanceId": "default",
+    "question": "which migration introduced the index?",
+    "response": "...",
+    "podId": "..."
+  }
+}
+```
+
+## ensemble.turn
+
+Fired when it is this agent's turn in an ensemble run.
+
+```json
+{
+  "type": "ensemble.turn",
+  "podId": "...",
+  "payload": {
+    "ensembleId": "...",
+    "context": "...",
+    "agentProfile": { },
+    "participants": [
+      { "agentType": "...", "instanceId": "default", "displayName": "...", "role": "..." }
+    ]
+  }
+}
+```
+
 ## Acknowledging events
 
 Events must be acknowledged or they will be redelivered:
