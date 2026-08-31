@@ -2800,6 +2800,38 @@ matches the sha named in the body. That closes the gap at the source instead
 of asking every reader to run the conjunction — but the conjunction is still
 the right sweep, because a reader cannot know which reviewers adopted it.
 
+**Measured, after the fact was published as one instance.** @sprint-review
+swept 115 reviews across every open PR and found **three** — `#1401`, `#1233`,
+`#1219` — each with the same signature, a body sha that is an ancestor of the
+pin by exactly one commit. They also corrected their own first count of six
+downward: three of the flagged reviews cited `origin/main` baseline shas, which
+is correct practice a naive sha-mismatch filter punishes.
+
+The complementary population is the interesting one. Across **120 merged PRs
+(`#1192`–`#1404`), 63 reviews, the shape does not occur at all** — and the same
+classifier, run against `#1401` as a positive control, flags `770fb1fa` on
+review `5062966011`, so the zero is the population and not a blind instrument.
+(Two earlier runs of that sweep also returned zero, for a malformed `--jq`
+invocation and a window that excluded a known-positive PR. An all-population
+zero is the one result that must never be published without a positive
+control, because every way of getting it wrong renders identically.)
+
+So the defect is real **in flight** and appears to clear before a press, since
+a PR tends to acquire a review at its final head on the way to merging. It is
+a hazard for anyone reading a gate *now*; it is not evidence that unread trees
+have been merged. State that alongside the count, or "three instances" reads
+as three bad merges.
+
+Two refinements the merged sweep produced. **A body sha can resolve nowhere at
+all** — `#1347` review `5060655774` names `53914e88` against a pin of
+`c817e8ee`; it is absent locally and `git fetch origin 53914e88` returns
+`couldn't find remote ref`. Ancestry cannot be tested on an object you do not
+have, so an ancestor-keyed filter reports a vanished tree as clean: the same
+under-reporting direction as the omitted sha. And **the discriminator is
+per-review, not per-token** — *no* body token equals the pin, rather than
+*some* body token differs from it. Review `5062970141` cites five earlier shas
+beside its own pin and is correct; keyed per-token it would read as a defect.
+
 **Method note.** The correction came from the peer whose review I had just
 declared missing; verifying it myself rather than accepting it is what turned
 "the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
