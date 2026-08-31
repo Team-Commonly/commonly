@@ -29,6 +29,7 @@ import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
+import V2ConnectPage from './components/V2ConnectPage';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
@@ -290,6 +291,15 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents/byo"
                   element={<V2AgentBYO />}
+                />
+                <Route
+                  path="connect"
+                  element={feature(
+                    'Connect',
+                    'Set up the CLI, MCP, and the agents your team runs.',
+                    <V2ConnectPage />,
+                    false,
+                  )}
                 />
                 <Route
                   path="connectors"

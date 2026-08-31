@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import V2Avatar from './V2Avatar';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2LangSwitch from './V2LangSwitch';
+import V2AccountMenu from './V2AccountMenu';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
@@ -54,7 +54,7 @@ const isMobileViewport = (): boolean => (
 const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, logout } = useAuth();
+  const { logout } = useAuth();
   const { t } = useTranslation();
   // Labels resolve at render so the rail tooltip (v2.css attr(data-label))
   // follows the active locale — NAV_ITEMS.label is the English fallback.
@@ -119,19 +119,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav }) => {
           <span className="v2-rail__foot-sep" aria-hidden="true" />
           {/* Account */}
           <div className="v2-rail__user">
-            <V2Avatar name={currentUser?.username || 'You'} size="md" online />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="v2-rail__user-name" style={{
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}
-              >
-                {currentUser?.username || 'You'}
-              </div>
-              <div className="v2-rail__user-status">
-                <span className="v2-online-dot" />
-                Online
-              </div>
-            </div>
+            <V2AccountMenu />
             <button
               type="button"
               className="v2-rail__signout"

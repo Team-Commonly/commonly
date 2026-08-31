@@ -458,6 +458,13 @@ const V2YourTeamPage: React.FC = () => {
         <div className="v2-team__actions">
           <button
             type="button"
+            className="v2-team__byo-cta"
+            onClick={() => navigate('/v2/connect')}
+          >
+            {t('yourTeam.actions.connect')}
+          </button>
+          <button
+            type="button"
             className="v2-team__hire-cta"
             onClick={() => navigate(primaryHirePath)}
           >
