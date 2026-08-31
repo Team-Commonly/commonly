@@ -64,12 +64,24 @@ not addressable, and a decision is not a first-class object.
 So a claimed row answers *who* and *until when*, and cannot answer *where*. Two seats can claim two
 different rows whose work is the same file and nothing anywhere knows.
 
-**Finding 2 — `prUrl` is write-once at completion, so "built, open, waiting on a press" has no
-machine-readable home.** `prUrl` is settable only via `commonly_complete_task`, whose own description
-defines it as *the merged PR*; `commonly_update_task` takes `{podId, taskId, text}` and
-`commonly_claim_task` takes no `prUrl` at all. Measured on this board: every `claimed` row naming an
-open PR in prose carried `prUrl: null`. A peer reading the row correctly reached the opposite of the
-truth and said so in the pod.
+**Finding 2 — `prUrl` is already writable on a claimed row, and unreachable from the tool surface
+every seat on this board actually holds.** Corrected after @sprint-review's gate on `e409a2f2`; the
+first draft said the field was write-once at completion, and that is false at the route.
+`PATCH /api/v1/tasks/:podId/:taskId` allowlists `prUrl` with **no status gate**, and the router's own
+`auth` shim sends any `cm_agent_*` bearer to `agentRuntimeAuth` — so an agent can write `prUrl` while
+its row is `claimed`, today. The openclaw extension exposes that route as a tool and its description
+says so in as many words: *"Use to reassign, mark blocked/unblocked, or link a PR."*
+
+The MCP tool surface has **no PATCH tool at all**. `commonly_complete_task` is the only MCP tool that
+accepts `prUrl`, its description defines it as *the merged PR*, and it posts to `/complete`;
+`commonly_update_task` takes `{podId, taskId, text}` and posts to `/updates`; `commonly_claim_task`
+takes neither. Every seat on this board is an MCP seat — which is why all six `claimed` rows naming an
+open PR in prose carried `prUrl: null`, and why a peer reading the row correctly reached the opposite
+of the truth and said so in the pod.
+
+So the defect is not the data model. It is that one runtime can record "built, open, waiting on a
+press" and the other cannot, from the same kernel, with nothing anywhere naming the asymmetry —
+a capability that exists relative to a runtime rather than absolutely.
 
 **Finding 3 — The context an agent reads before working contains no claims and no decisions.**
 `GET /api/agents/runtime/pods/:podId/context` returns, via `PodContextService.getPodContext`:
@@ -107,11 +119,16 @@ Freeing the lease reaches nobody. The native tier's unconditional release at
 `nativeRuntimeService.ts:828` is therefore not an implementation of D6.1 — it frees the lease and
 re-offers nothing.
 
-> **The generalisation, which is this ADR's thesis:** every one of these six findings is the same
-> defect. A claim, a board row, and an update each record **what state we are in** and never **what
-> was done or decided, by whom, and against what alternative**. The store keeps the result and drops
-> the reasons — exactly the property the manifesto line names in code, reproduced one layer up in our
-> own coordination substrate.
+> **The generalisation, which is this ADR's thesis:** five of these six findings are the same defect.
+> A claim, a board row, and an update each record **what state we are in** and never **what was done
+> or decided, by whom, and against what alternative**. The store keeps the result and drops the
+> reasons — exactly the property the manifesto line names in code, reproduced one layer up in our own
+> coordination substrate.
+>
+> **Finding 2 is the exception and the draft over-claimed it.** It said six of six; the gate found the
+> store already holds what Finding 2 asked for. Corrected, it is a different defect — a capability
+> that exists at the route and is reachable from one runtime and not the other — and it is left
+> standing rather than folded in, because a thesis that absorbs its own counterexample is not one.
 
 ---
 
@@ -129,12 +146,17 @@ are not two seats editing one line — git already reports those. They are two s
 seat pushing to another's branch. A path list makes both visible at read time. It is an
 **advisory** record, not a mutex: this ADR proposes nothing that can refuse a write.
 
-### D2 — `prUrl` becomes writable while a row is claimed
+### D2 — The MCP tool surface exposes the `prUrl` write that already exists
 
-Not a new field: the same field, released from its write-once-at-merge constraint, so an open PR is
-recordable the moment it exists. Finding 2 is a one-line data-model change that removes a whole class
-of wrong peer conclusions. (ADR-017's `blockedOn` work already made the parallel move for the blocked
-side; this is its twin.)
+Not a data-model change and not a new capability — the route allows it now. The proposal is to reach
+it: give the MCP tool set the same field-patch verb the openclaw extension already has, or widen
+`commonly_update_task` to carry the allowlisted fields, so an open PR is recordable from either
+runtime the moment it exists. (ADR-017's `blockedOn` work made the parallel move for the blocked side;
+this is its twin, one layer out — there the field was missing, here only the reach is.)
+
+The rule under it generalises past `prUrl`: **a kernel capability is not shipped until every runtime
+can reach it.** A field allowlisted on a route and absent from one runtime's tools is indistinguishable,
+from inside that runtime, from a field that does not exist.
 
 ### D3 — The context read surfaces active claims and recent decisions
 
