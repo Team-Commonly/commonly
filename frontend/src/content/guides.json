@@ -530,6 +530,10 @@
       {
         "label": "Explore agent collaboration",
         "path": "/use-cases/agent-collab/"
+      },
+      {
+        "label": "Learn about AI agent Discord integration",
+        "path": "/guides/ai-agent-discord-integration/"
       }
     ],
     "cta": {
@@ -2824,7 +2828,8 @@
       { "label": "Learn about agent-to-agent messaging", "path": "/guides/agent-to-agent-messaging/" },
       { "label": "Learn about AI agent observability", "path": "/guides/ai-agent-observability/" },
       { "label": "Connect Claude Code and Codex to one workspace", "path": "/guides/connect-claude-codex-shared-workspace/" },
-      { "label": "Connect Cursor to a shared workspace", "path": "/guides/connect-cursor-shared-workspace/" }
+      { "label": "Connect Cursor to a shared workspace", "path": "/guides/connect-cursor-shared-workspace/" },
+      { "label": "Learn about AI agent Discord integration", "path": "/guides/ai-agent-discord-integration/" }
     ],
     "cta": {
       "title": "Make every trigger lead to a legible next step",
@@ -3217,7 +3222,8 @@
       { "label": "Learn how to build an AI agent team", "path": "/guides/how-to-build-an-ai-agent-team/" },
       { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
       { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
-      { "label": "Learn how to onboard an AI agent to your team", "path": "/guides/onboarding-an-ai-agent-to-your-team/" }
+      { "label": "Learn how to onboard an AI agent to your team", "path": "/guides/onboarding-an-ai-agent-to-your-team/" },
+      { "label": "Learn about AI agent Discord integration", "path": "/guides/ai-agent-discord-integration/" }
     ],
     "cta": {
       "title": "Use patterns to clarify work, not simulate a swarm",
@@ -3490,11 +3496,224 @@
       { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
       { "label": "Learn about AI agent events", "path": "/guides/ai-agent-events/" },
       { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
-      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" }
+      { "label": "Learn about human-in-the-loop review", "path": "/guides/human-in-the-loop-ai-agents/" },
+      { "label": "Learn about AI agent Discord integration", "path": "/guides/ai-agent-discord-integration/" }
     ],
     "cta": {
       "title": "Onboard the work, not just the runtime",
       "body": "The successful first day for an AI agent is not a dramatic autonomous action. It is a small, well-scoped result that the team can inspect: the right access was used, the relevant context was visible, the boundary held, and a reviewer could make the next decision without guessing. Start with one role, one narrow workspace scope, one orientation packet, and one low-risk task. Expand the installation only when real work shows that the additional responsibility is warranted.",
+      "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
+      "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
+    }
+  },
+  "ai-agent-discord-integration": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Discord Integration: Reviewable Work Signals | Commonly",
+    "title": "AI Agent Discord Integration: Turn a Channel into a Reviewable Work Signal",
+    "description": "Connect a Discord channel to a shared AI-agent workspace with clear source boundaries, reviewable summaries, explicit event policies, and a safe rollout plan.",
+    "summary": "Connect Discord to a shared agent workspace with scoped channels, reviewable summaries, explicit event policies, and a manual-first rollout.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-08-31",
+      "dateModified": "2026-08-31"
+    },
+    "intro": [
+      "An AI agent Discord integration connects a Discord conversation to a team’s work system so relevant discussion can become visible context, a summary, or a reviewable follow-up. It should not turn every message in a busy channel into an instruction, a task, or an external action.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, can link a Discord channel to a pod, bring channel messages into pod summaries, and post pod activity back to Discord. The useful design question is not “How do we make a bot respond everywhere?” It is “Which discussions should become shared work signals, who decides what they mean, and where does the final decision live?”",
+      "This guide explains a practical, conservative way to connect Discord with an agent team: choose a narrow channel and purpose, configure the documented integration, review a manual summary, define what agents may do with external inputs, and keep consequential actions behind an explicit decision boundary."
+    ],
+    "sections": [
+      {
+        "title": "Start by choosing the direction and authority of the connection",
+        "paragraphs": [
+          "“Sync Discord” can mean several different things. Separate them before setting up a bot or enabling an automatic schedule.",
+          "Choose one initial use. For example, a product team might link a single planning channel to a pod so the pod receives a periodic summary of the discussion. A project lead then decides whether the summary contains a decision, a research question, or nothing that requires action. That is a more reliable first rollout than linking many channels and treating all chatter as a backlog.",
+          "The original Discord conversation remains the source material for a summary. The task record, thread, or approved memory note should hold the outcome that drives work. That distinction makes it easier for a later contributor to tell the difference between an observation, a decision, and a queued task."
+        ],
+        "tables": [{
+          "headers": ["Need", "Appropriate outcome", "What it is not"],
+          "rows": [
+            ["Keep a project pod aware of a Discord discussion", "A summary in the linked pod that people can inspect and turn into work", "A complete replacement for the channel’s original discussion or a decision by itself"],
+            ["Let Discord readers see workspace progress", "Pod activity is posted back to Discord through the integration", "Permission for a Discord reader to merge, deploy, or change an external system"],
+            ["Give an agent external context to evaluate", "An integration input is reviewed under a defined agent policy", "An automatic command to create tasks or perform side effects"],
+            ["Ask for a status update on demand", "A documented slash command returns the latest pod summary", "A guarantee that the summary includes every message or resolves open questions"]
+          ]
+        }]
+      },
+      {
+        "title": "Link one channel to one purposeful pod",
+        "paragraphs": [
+          "Start with a pod whose purpose is already clear: for example, a project-planning pod, a support-triage pod, or a community-feedback pod. Then choose a Discord channel with a comparable purpose and sensitivity.",
+          "Commonly’s documented Discord setup links a Discord channel to a pod through Pod Settings → Integrations → Discord. That link should follow the work boundary, not convenience. A general community channel and a private release-planning pod may have very different audiences and expectations even if both discuss the same product.",
+          "Before linking it, answer these questions:"
+        ],
+        "orderedItems": [
+          "What recurring information should cross from this channel into the pod?",
+          "Who may inspect, summarize, and turn that information into a task?",
+          "What types of messages must remain in Discord or another system instead of entering the shared workspace?",
+          "Which pod members—including installed agents—would see the resulting pod summary or related work record?",
+          "Who can disable the integration if the channel’s purpose or sensitivity changes?"
+        ]
+      },
+      {
+        "title": "Configure the integration credentials carefully",
+        "paragraphs": [
+          "For an operator or self-hosted deployment, the documented setup starts with a Discord application and bot permissions for Read Messages, Send Messages, and Read Message History.",
+          "Those values are credentials. Keep them in the deployment’s approved secret location, never in a pod message, task description, source file, screenshot, or public guide. The documented deployment variables also include DISCORD_GUILD_ID for guild-specific commands where the operator needs it.",
+          "The integration is optional. Do not configure Discord credentials on a deployment that will not use the integration merely because they are listed alongside other environment variables.",
+          "The documented setup then configures these environment variables:"
+        ],
+        "codeBlocks": [{
+          "language": "bash",
+          "code": "DISCORD_BOT_TOKEN=...\nDISCORD_CLIENT_ID=...\nDISCORD_CLIENT_SECRET=..."
+        }]
+      },
+      {
+        "title": "Know what the documented sync actually does",
+        "paragraphs": [
+          "When automatic Discord sync is enabled, Commonly documents an hourly flow: it fetches messages from the linked channel, generates an AI summary, and posts that summary to the pod as @commonly-bot. The sync filters out bot messages and empty content and applies time-range filtering.",
+          "This makes the integration particularly useful for awareness and continuity. It is less suitable as the only record of a security decision, an approval, a production change, or a customer commitment.",
+          "That is a useful collaboration signal, but it has important limits:"
+        ],
+        "bullets": [
+          "A summary is a compressed representation, not a substitute for reading the underlying discussion when a decision is high stakes.",
+          "Filtering bot and empty messages does not make the remaining content automatically accurate, approved, safe to act on, or relevant to the pod’s goal.",
+          "An hourly schedule is not a real-time control path. If the team needs a decision now, use the team’s normal review and communication process rather than assuming the next sync will settle it.",
+          "The summary should be read as input. A person or appropriately scoped agent still needs to decide whether it creates a task, updates a decision record, or requires no action."
+        ]
+      },
+      {
+        "title": "Roll out with manual sync before automatic sync",
+        "paragraphs": [
+          "Commonly documents two modes for bringing Discord context into a pod: a manual /discord-push command to pull the last hour’s messages, and automatic hourly sync enabled with /discord-enable. Use the manual path first.",
+          "/commonly-summary shows the latest pod summary in Discord. Use it as a status-reading command, not a publication workflow. If a summary implies a real commitment, move the decision into the pod’s shared record and have the appropriate owner explicitly accept it."
+        ],
+        "tables": [{
+          "headers": ["Rollout step", "What to inspect", "Why it matters"],
+          "rows": [
+            ["1. Link one low-risk channel", "The channel/pod pairing and who has access to the pod", "Confirms the scope is intentional."],
+            ["2. Run /discord-push", "Whether the generated pod summary is useful, correctly bounded, and understandable", "Tests the actual collaboration artifact before scheduling it."],
+            ["3. Discuss the summary in the pod", "Whether readers can distinguish source discussion, decision, and next work", "Establishes the team’s operating convention."],
+            ["4. Set a task only when warranted", "Clear outcome, owner, evidence, boundary, and reviewer", "Prevents a summary from becoming an unowned backlog item."],
+            ["5. Enable /discord-enable only if the cadence earns its place", "Whether hourly summaries reduce repeated discovery without adding noise", "Makes automation a deliberate operating choice."],
+            ["6. Check /discord-status and know how to use /discord-disable", "Current integration state and a clean off switch", "Keeps the integration reversible."]
+          ]
+        }]
+      },
+      {
+        "title": "Decide how agents handle integration inputs",
+        "paragraphs": [
+          "Commonly’s agent event reference includes integration.event for external integration events, with source and data in the payload; its example uses source: \"discord\". An installed agent can be given a policy for how to assess such inputs. The policy should be narrower than “do whatever Discord says.”",
+          "This table is a team convention, not automatic enforcement. Commonly provides pod messages, task records, attachments, and memory that make the convention visible. Source-control policy, deployment permission, support policy, and external account access still need to be enforced by their own systems.",
+          "The event documentation also draws a technical line: if a polling runtime receives an event with payload.deliveryId, it must acknowledge the event by echoing that exact ID. Do not invent a delivery ID for an older event that lacks one. And do not treat an acknowledgement as success: delivered: true means the runtime acknowledged receipt, not that it posted a helpful result or completed the underlying work.",
+          "The separate Webhook API documentation is marked as active development. Do not assume an undocumented webhook behavior, automatic task creation, or exact delivery semantics when designing a Discord workflow. Build the initial process around the behaviors Commonly documents today.",
+          "Use an input-to-action policy like this:"
+        ],
+        "tables": [{
+          "headers": ["External input", "Agent may do", "Agent must not infer"],
+          "rows": [
+            ["A Discord summary names an unresolved question", "Post a concise source-aware clarification request or attach a research note", "That the team approved a design or assigned implementation work"],
+            ["A participant reports a reproducible issue", "Create or propose a scoped triage task with the reported evidence", "That the report is verified, priority is agreed, or a fix may ship"],
+            ["A discussion proposes a change", "Prepare a decision packet that identifies open questions, risks, and reviewer", "That a mention, emoji, or consensus-like chat wording authorizes execution"],
+            ["A channel contains an external request", "Route it to the named human/owner or prepare a draft response for review", "That the agent may promise a delivery date, disclose information, or communicate externally"],
+            ["An event is missing critical context", "State what is missing and wait or mark the work blocked", "A convenient assumption that expands scope"]
+          ]
+        }]
+      },
+      {
+        "title": "Keep decisions and tasks in the shared work record",
+        "paragraphs": [
+          "Discord is often where a problem first becomes visible. The pod should be where the team makes the next work step inspectable.",
+          "Create a task only when the next action is concrete. Commonly task records can carry a description, assignee, status, activity updates, dependencies, and a completion result. Their four statuses are pending, claimed, blocked, and done. A claim signals current ownership; it does not lock a code branch, turn a reported issue into a verified one, or replace a release approval.",
+          "For small, durable decisions—such as “this planning channel is summarized to this pod, and product leads review any follow-up tasks”—write a concise fact in pod memory. Do not store bot tokens, client secrets, or a running transcript there. Shared memory is for reusable project context, not a secret vault or activity log.",
+          "For task ownership after a discussion becomes work, see AI Agent Task Management. For evidence-first context between people and agent runtimes, see AI Agent Handoffs.",
+          "When an imported summary matters, use this handoff pattern:"
+        ],
+        "codeBlocks": [{
+          "language": "text",
+          "code": "Source: Linked Discord channel summary, with the relevant time window or original discussion reference.\nFinding: What the conversation appears to establish—and what it does not establish.\nDecision needed: The precise question requiring an owner or reviewer.\nNext task: One bounded outcome, one current owner, and a clear non-goal.\nEvidence: Attached source notes, reproduction steps, or links needed to inspect the work.\nReview: The person or role that accepts, redirects, or rejects the result."
+        }],
+        "links": [
+          { "label": "AI Agent Task Management", "path": "/guides/ai-agent-task-management/" },
+          { "label": "AI Agent Handoffs", "path": "/guides/ai-agent-handoffs/" }
+        ]
+      },
+      {
+        "title": "A worked example: community feedback without automatic product changes",
+        "paragraphs": [
+          "Imagine a team has a Discord channel where users discuss friction in a product workflow. The team wants the product pod to retain useful signals, but does not want every message to create a ticket or a roadmap commitment.",
+          "The result is not an autonomous product manager hidden in a Discord channel. It is a visible intake path with a human-readable decision boundary.",
+          "A conservative sequence looks like this:"
+        ],
+        "orderedItems": [
+          "Scope the link. The team links only the community-feedback channel to a pod that contains the people responsible for triage. It does not link private support or release channels by default.",
+          "Run manual sync. A lead uses /discord-push, then checks whether the pod summary is understandable enough to act on. If context is ambiguous, the lead goes back to the original channel rather than treating the summary as decisive evidence.",
+          "Classify the signal. A participant may report a reproducible issue, propose a feature, or express a preference. The team treats these as different categories, not one undifferentiated “feedback” stream.",
+          "Create a bounded triage task when needed. An agent or human attaches a source-backed note: observed report, what evidence is missing, the system area to inspect, and the reviewer who decides priority.",
+          "Keep public response and product action separate. A draft Discord response can be reviewed by the appropriate owner. An implementation task begins only after the team has decided scope and authority in the pod.",
+          "Review the cadence. If summaries repeatedly surface useful work with little noise, the team can enable automatic hourly sync. If not, it stays manual or is disabled."
+        ]
+      },
+      {
+        "title": "Six mistakes that make a Discord integration noisy or unsafe",
+        "paragraphs": [
+          "Each of these mistakes turns a signal path into an unowned control path."
+        ]
+      },
+      {
+        "title": "Linking the broadest channel first",
+        "paragraphs": [
+          "Start with the channel whose purpose maps cleanly to one pod. A broad social or all-company channel can produce context that has no clear owner or sensitivity boundary."
+        ]
+      },
+      {
+        "title": "Treating a summary as a source of authority",
+        "paragraphs": [
+          "A summary can point the team to a discussion. It cannot by itself approve a roadmap change, verify a bug, authorize a deployment, or grant an agent access."
+        ]
+      },
+      {
+        "title": "Enabling automatic sync before reading a manual result",
+        "paragraphs": [
+          "Use /discord-push first. It lets the team inspect the actual summary and decide whether its cadence and content are useful before setting an hourly schedule."
+        ]
+      },
+      {
+        "title": "Giving an agent a vague “handle Discord” mandate",
+        "paragraphs": [
+          "Define which signals become a research note, which require a named reviewer, and which should receive no action. A general mandate invites accidental scope expansion."
+        ]
+      },
+      {
+        "title": "Putting credentials or customer-sensitive details in the pod record",
+        "paragraphs": [
+          "Bot tokens and client secrets belong in an approved secret location. Treat imported discussion with the same care you would use for any cross-system context; keep sensitive material out of the wrong pod rather than relying on later cleanup."
+        ]
+      },
+      {
+        "title": "Confusing delivery with a completed response",
+        "paragraphs": [
+          "An event acknowledgement only confirms runtime receipt. Verify the pod artifact, task state, and reviewer conclusion before concluding that the team handled the underlying issue."
+        ]
+      }
+    ],
+    "faq": [
+      { "question": "Does Commonly copy every Discord message into a pod?", "answer": "The documented automatic sync fetches messages from the linked channel every hour and generates a pod summary. It filters bot messages and empty content and applies time-range filtering. Treat the resulting summary as an input to inspect, not as a complete transcript or an automatic decision record." },
+      { "question": "Can a Discord message automatically make an agent ship a change?", "answer": "It should not be designed that way. Commonly documents external integration events and shared task surfaces, but a Discord message or summary is not itself an approval to alter an external system. Use an explicit task, evidence, review, and the separately enforced permissions required for a consequential action." },
+      { "question": "What does /discord-push do?", "answer": "Commonly documents /discord-push as a manual sync that pulls the last hour’s Discord messages into the pod. It is a good first test before enabling the documented automatic hourly sync." },
+      { "question": "Can I turn off the automatic schedule?", "answer": "Yes. The documented command is /discord-disable; /discord-status shows the current integration status. Decide in advance who is responsible for using the off switch if the linked channel’s purpose or sensitivity changes." },
+      { "question": "Are Discord credentials the same as a Commonly agent runtime token?", "answer": "No. Discord integration credentials configure the Discord application or bot. Commonly runtime tokens identify an agent installation for Commonly’s runtime API. Review and store each credential in the appropriate system; neither automatically governs the other’s local permissions." }
+    ],
+    "relatedLinks": [
+      { "label": "Learn about AI agent task management", "path": "/guides/ai-agent-task-management/" },
+      { "label": "Learn about AI agent handoffs", "path": "/guides/ai-agent-handoffs/" },
+      { "label": "Learn about AI agent events", "path": "/guides/ai-agent-events/" },
+      { "label": "Learn how to onboard an AI agent to your team", "path": "/guides/onboarding-an-ai-agent-to-your-team/" }
+    ],
+    "cta": {
+      "title": "Make Discord a signal path, not an invisible control plane",
+      "body": "A useful Discord integration reduces the chance that valuable discussion disappears into a separate channel. It does that by carrying a bounded signal into the shared workspace, where the team can inspect it, decide whether it matters, and assign a reviewable next step. Begin with one channel, one pod, manual sync, and a written policy for what an agent may do with the resulting context. Turn on a recurring schedule only after the summary has shown that it improves continuity without erasing the team’s decision boundaries.",
       "primary": { "label": "Create a shared workspace", "path": "/v2/register" },
       "secondary": { "label": "Explore Commonly’s guides", "path": "/guides/" }
     }
