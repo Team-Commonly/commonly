@@ -2,13 +2,18 @@
 
 **Status:** **Draft, with one ratified doctrine folded in.** Opened at Sam's request (2026-08-31
 kickoff). **D1–D7 remain proposals and nothing in the audit is ratified.** What *is* ratified is the
-attention doctrine in §Ratified doctrine (Sam, 2026-08-31) and the three consequences it forces,
-carried below as **D8–D10**. Read the split literally: Sam ruled on where a decision is *rendered*
+attention doctrine in §Ratified doctrine (Sam, 2026-08-31) and the consequences it forces, carried
+below as **D8–D11** — D11 being the kill-criteria instrumentation Sam required at acceptance. Read the split literally: Sam ruled on where a decision is *rendered*
 and what it costs the human, not on what a claim records or where the ledger lives — those are still
-the open questions at §Ratification points, and D8–D10 do not presuppose an answer to any of them. **Build waits for the five customer interviews** — this ADR exists so
-that what gets built is decided before, not during. One section is deliberately unfilled: the
-competitive comparison, because the evidence pack behind it is operator-held and not readable from
-this seat (see §Evidence I could not verify).
+the open questions at §Ratification points, and D8–D10 do not presuppose an answer to any of them.
+
+**Build is no longer gated on customer interviews.** A previous revision of this line said "build
+waits for the five customer interviews"; **Sam rescinded that on 2026-08-31 (pod 61474) in favour of
+ship-and-measure**, and the sequencing is now at §Sequencing and acceptance. The instrumentation
+required there (D11) is what answers the questions the interviews were going to.
+
+One section is deliberately unfilled: the competitive comparison, because the evidence pack behind it
+is operator-held and not readable from this seat (see §Evidence I could not verify).
 **Date:** 2026-08-31
 **Method:** current-state audit measured on `origin/main` at `4d177817` (2026-08-31T02:34:30Z); the
 decisions are proposals, the findings are measurements.
@@ -57,6 +62,8 @@ whether a decision ledger should push. It should not. Everything downstream of i
 *Scope of the ratification:* the doctrine and its three consequences. It does not ratify D1–D7, and
 it does not choose D5's container — a link needs something addressable to point at, but "addressable"
 is satisfied by either candidate at §Ratification points 1, so the doctrine survives either answer.
+D11 and §Sequencing come from a second Sam ruling the same day (61474) and are ratified on the same
+footing; they are separated here only because they answer a different question.
 
 ---
 
@@ -191,8 +198,9 @@ re-offers nothing.
 
 ## Decisions
 
-**D1–D7 are proposals for Sam. D8–D10 are ratified** — they are the ratified doctrine's consequences,
-and the only open thing about them is when ADR-017 is ratified so D8 has a substrate to build on.
+**D1–D7 are proposals for Sam. D8–D11 are ratified** — D8–D10 are the attention doctrine's
+consequences and D11 is the instrumentation Sam required at acceptance. The only open thing about
+them is when ADR-017 is ratified, so D8 has a substrate to build on.
 
 ### D1 — A claim carries a work area, written at claim time
 
@@ -306,6 +314,20 @@ doctrine cites "the attention threshold … (ADR-018 machinery)". Measured on `o
 Sam's intent is unambiguous and is what is ratified: reuse, don't build. The two corrections change
 which file an implementer opens and which shape they build; they change nothing about the ruling.
 
+**Third correction, and it is about capability rather than citation (@sprint-review, 2026-08-31).**
+"Classifies like any wake event" reads as a platform property and is currently **one connector deep**.
+Measured on `origin/main`: `shouldEscalate` is *defined* once and *called* once, both inside
+`backend/services/telegramBridgeService.ts` (`:64`, `:137`). Discord and Slack services exist
+(`discordService.ts`, `discordGatewayService.ts`, `slackApi.ts`) and carry **no escalation gate at
+all**; WhatsApp and X have none either. So D8 reuses a mechanism that today reaches exactly one
+external surface.
+
+This does not weaken the doctrine — the doctrine says route, don't compete, and routing to one
+surface is still routing. It sets the honest expectation: **on every connector but Telegram, D8's
+"classify" step has nothing to classify against yet**, and building the missing gates is connector
+work this ADR does not own and must not silently assume. Recorded here so "reuse the existing layer"
+is not read as "the existing layer already covers the fleet".
+
 **The dependency is real and is not resolved by this ADR:** ADR-017 is **`Proposed`**, and its
 Layer 3.1 attention queue carries three explicitly undecided items. D8 is therefore ratified in
 *direction* and blocked in *substrate* — it cannot be built before ADR-017 is ratified, and building
@@ -340,6 +362,49 @@ The falsifiable consequence: **a digest must be reproducible from the ledger alo
 needs a fact the ledger does not carry, that is a signal to add the field to the ledger (D1/D4/D5),
 never to add a store beside it. D7 applies unchanged — a digest is a read-time signal and can refuse
 nothing.
+
+### D11 — Acceptance ships with kill-criteria instrumentation, and the criteria are named before the build
+
+Ship-and-measure only works if the measurement is specified before the thing that would bias it.
+**Sam named two instruments (pod 61474); both are required at acceptance, not after.**
+
+1. **Is the ledger read before work starts?** The falsifiable form: for each claim, did a context read
+   that surfaced active claims or recent decisions occur *before* the claim, or did it not. D3 is the
+   surface being measured, so D3 and its instrument land together — a D3 that ships unmeasured cannot
+   be killed, only argued about.
+2. **Per-team board depth.** How many rows a team's board actually carries over time. This is the
+   adoption signal: a ledger nobody deepens is a ledger nobody uses, and it is measurable without
+   asking anyone anything.
+
+**These are kill criteria, which means the failing case must be stated now.** If the ledger is
+consistently *not* read before work starts, the defect is D3's surfacing or the read moment, not the
+recording — and the response is to move the read, not to add fields. If board depth stays flat across
+teams while claims keep flowing, the ledger is write-only and the thin core is wrong. Neither
+conclusion is available later if the instrument is not there from the start.
+
+Both instruments are reads over data D1/D4/D5 already require. **Per D10, neither gets a store**, and
+per D7 neither can refuse a write — an instrument that gates is not an instrument.
+
+---
+
+## Sequencing and acceptance (Sam, 2026-08-31 — pod 61474)
+
+Interviews are not a precondition. The order Sam set:
+
+1. **@sprint-review stamps the renumbered ADR-028** (this document, at its current head).
+2. **The operator builds the thin core** — claims deriving work areas, decision records, and
+   context-read surfacing. That is D1, D5, and D3 respectively; **D2 is the tool surface those need
+   to be reachable through**, and D4's disposition vocabulary is the one open item inside the core
+   (§Ratification points 4).
+3. **Our own fleet dogfoods it first.**
+4. **The biomed team is the first external offer** — their letter asked for a multi-agent-fit task
+   board.
+
+Two things this sequencing does not do, stated because a sequence reads like a settlement. It does
+not ratify D1–D7: step 1 is a review stamp on a document that still carries open ratification points,
+and D5's container (point 1) sits *inside* the thin core, so it has to be answered before step 2 can
+start, not deferred by it. And it does not resolve D8's substrate — ADR-017 is `Proposed`, so the
+routing layer D8 reuses is unratified independently of anything here.
 
 ---
 
