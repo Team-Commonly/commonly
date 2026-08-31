@@ -3,7 +3,11 @@
 **Status:** **Draft, with one ratified doctrine folded in.** Opened at Sam's request (2026-08-31
 kickoff). **D1–D7 remain proposals and nothing in the audit is ratified.** What *is* ratified is the
 attention doctrine in §Ratified doctrine (Sam, 2026-08-31) and the consequences it forces, carried
-below as **D8–D11** — D11 being the kill-criteria instrumentation Sam required at acceptance. Read the split literally: Sam ruled on where a decision is *rendered*
+below as **D8–D11** — D11 being the kill-criteria instrumentation Sam required at acceptance — plus
+**D12–D13**, folded on Sam's 2026-08-31 ruling (pod 61641) that the audience-floor and
+credential-broker patterns change this ADR. D12–D13 are **ratified in direction and open in shape**:
+Sam ruled that the patterns apply, their build shape is at §Ratification points 6–7, and the study
+behind them is not readable from this seat (§Evidence I could not verify). Read the split literally: Sam ruled on where a decision is *rendered*
 and what it costs the human, not on what a claim records or where the ledger lives — those are still
 the open questions at §Ratification points, and D8–D10 do not presuppose an answer to any of them.
 
@@ -206,6 +210,12 @@ re-offers nothing.
 **D1–D7 are proposals for Sam. D8–D11 are ratified** — D8–D10 are the attention doctrine's
 consequences and D11 is the instrumentation Sam required at acceptance. The only open thing about
 them is when ADR-017 is ratified, so D8 has a substrate to build on.
+
+**D12–D13 are ratified in direction and open in shape.** Sam ruled (pod 61641) that the audience-floor
+and credential-broker patterns change this ADR; what each one *is* is drafted here and measured on
+`origin/main`, and the two genuinely open build choices are ratification points 6 and 7. Neither adds
+a subsystem: D12 extends an existing predicate to an existing read path, and D13 threads an existing
+optional parameter through six existing call sites.
 
 ### D1 — A claim carries a work area, written at claim time
 
@@ -504,6 +514,116 @@ new field.
 It remains **one field, not a store** — D10 holds — and per D7 neither instrument can refuse a write:
 an instrument that gates is not an instrument.
 
+### D12 — Audience floor is one predicate, applied to the model's context and not only to the UI
+
+Ruled by Sam (pod 61641) off a build-level architecture study of two MIT/Apache codebases. **I could
+not read that study from this seat** — see §Evidence I could not verify. What follows folds the
+ruling as Sam stated it and measures it against `origin/main` at `8b2ddf8b`; it does not paraphrase
+the source.
+
+The pattern: *what a reader may see is one predicate, enforced where the model assembles its own
+context, not only where a human renders a page.* A context built from items with different audiences
+floors to the narrowest of them.
+
+**Measured: four predicates answer "may this reader see this?", and no two share a definition.**
+
+| # | Predicate | Where | What it actually asks |
+|---|---|---|---|
+| 1 | `DMService.canViewPod` | ~20 sites — `podController`, `postController`, `messageController`, `routes/pods.ts`, `routes/approvals.ts`, `routes/registry/{files,pod-agents}.ts` | members + admins + the §3.7 agent-dm fan-out |
+| 2 | `ensurePodMatch` | `routes/agentsRuntime.ts`, on `GET /pods/:podId/context` | does the *token* name this pod |
+| 3 | `ensureMembership` | inside `PodContextService.getPodContext` | bare `pod.members` containment |
+| 4 | `PodAssetService.buildAgentScopeFilter` → `applyVisibilityFilter` | `podContextService.ts` | the only **per-item** audience filter that exists |
+
+Predicate 1 — the one ADR-016 describes — is called **zero times** in `agentsRuntime.ts`,
+`agentMentionService.ts`, `agentMessageService.ts` and `agentEventService.ts`. Enforcement lives on
+the surface a human reads and not on the surface a model reads.
+
+Inside the context the model actually receives, the per-item filter reaches one type. All four
+`visibilityFilter` uses in `podContextService.ts` are `PodAsset` queries — assets, latest skill,
+skill assets, imported skills. The two items carrying conversation content —
+`Summary.find({ podId, type: 'chats' })` and `recentMessages` — take no filter at all. **So the
+narrowest-audience item in an assembled context sets no floor, because nothing computes a floor.**
+
+Second-order, and it is why "gate the read" is not sufficient here: the context route calls
+`AgentIdentityService.ensureAgentInPod(agentUser, podId)` **before** assembling. The read path
+mutates membership to satisfy its own precondition, so a predicate phrased as *is the reader a
+member* is satisfiable by the act of reading.
+
+**Decision.** One predicate, named once, over `(reader, item)`; the context assembler applies it per
+item and floors the assembled result. This is not a new subsystem — it is predicate 1 extended to
+items and *called from the agent read path*, which today calls none of the four. D12 is the
+enforcement spine ADR-016 and ADR-024 both assume and neither specifies; both should cite it rather
+than restate it.
+
+**Not decided here:** whether flooring withholds the *item* or the *whole context*. ADR-017's
+fail-closed default argues withhold-the-item with the omission recorded, but this ADR does not rule
+it, and the choice is visible to every agent that reads a mixed-audience pod.
+
+### D13 — Privileged action goes through a broker that issues per request; otherwise the ledger's attribution stops at the credential
+
+Same ruling and same provenance as D12. The pattern Sam named: a **credential broker** — a
+response-only proxy plus a git smart-HTTP passthrough, with per-request revocation — rather than
+encrypting a stored secret. Sam's framing is that this is the ledger's *representation* problem, and
+that is the right frame: D1/D4/D5 make a decision attributable to a seat, and then every privileged
+act that decision produces leaves through a credential no seat owns.
+
+**Measured on `origin/main` at `8b2ddf8b` — the broker is most of the way built and none of the way
+wired.**
+
+- `GitHubAppService.getInstallationToken` already mints **short-lived installation access tokens**
+  (1h, `expiresAt` from GitHub). The issuing primitive exists.
+- `GitHubAppService._apiHeaders(token?)` takes an **optional caller-supplied token**. The injection
+  seam exists.
+- **All six call sites pass nothing** — `listOpenIssues`, `createIssue`, `addIssueComment` and three
+  siblings all call `this._apiHeaders()`, which falls through to `process.env.GITHUB_PAT`. So every
+  GitHub write the backend performs uses the shared, **never-expiring** credential
+  (`getPatToken()` returns `expiresAt: null`).
+- On the runtime side the credential is not brokered at all: `clawdbot-deployment.yaml` seeds
+  `GITHUB_PAT` into `git config credential.helper store` at container postStart, so it is on disk for
+  every seat on that deployment for the container's lifetime.
+- **It is one credential, not a family.** `clawdbot`, `cloud-codex` and `backend` deployments all
+  read key `GITHUB_PAT` from the same `api-keys` secret. The explain-away — that runtimes hold a
+  narrower token than the backend — is dead.
+
+**The repo has already ruled half of this, in prose, and then contradicted it in the chart.**
+`routes/github.ts` carries a removed route with its reasoning intact: `POST /token` handed callers
+the raw PAT, and the note says *"a token in a client's hands is a token that outlives any check we do
+here… A shell-less runtime that needs GitHub access needs a per-user App install of its own, not a
+share of ours."* That is the response-only-proxy argument, reached here independently. The HTTP
+surface refuses to hand the credential out; the deployment writes the same credential to every
+runtime's disk.
+
+**Decision.** Anything privileged that a ledger entry authorises is reached through a broker that
+issues **per request**, scoped to the acting seat, and revocable without rotating the shared secret.
+Concretely, and in that order: (a) thread the existing `token` parameter through the six
+`_apiHeaders()` call sites so the backend stops defaulting to the shared PAT; (b) mint via
+`getInstallationToken` rather than `getPatToken`; (c) only then take the runtime side, where the
+current shape is a file on disk and the replacement is a proxy. Steps (a) and (b) are wiring, not
+new machinery — which is why D13 is proposed at all under the standing *reuse, don't build*
+constraint.
+
+**Why this belongs in ADR-028 rather than a security ADR:** attribution. D1 and D5 record which seat
+claimed and which seat decided; the shared `lilyshen0722` GitHub account plus one shared PAT means
+that attribution is destroyed at the moment the decision becomes an action. A ledger whose entries
+cannot be tied to the acts they authorised records intent, not accountability.
+
+**Three anti-patterns Sam named explicitly, recorded as foreclosures rather than advice:**
+
+1. **Provider keys inside a replicated document.** Nothing in the ledger, in a decision record, or in
+   any surface that is broadcast, projected or injected into a model context may carry a credential.
+   D9's canonical URL is a pointer for exactly this reason; the same rule binds secrets.
+2. **Logout that does not revoke.** A revocation must invalidate the credential, not merely forget
+   it locally. Note the inverse hazard already present here: `revokeApiToken` clears one scalar for
+   *every* device and wrapper at once, which is over-broad rather than under-broad — a broker fixes
+   both directions, because per-request issuance makes per-seat revocation expressible.
+3. **Workspace-granularity auth.** Authority is per member and per act, never per deployment. The
+   `api-keys`/`GITHUB_PAT` shape above is precisely this anti-pattern in production today, and D13 is
+   the decision not to build the ledger on top of it.
+
+**Open, and not ruled here:** whether the broker is a Commonly service or a per-user GitHub App
+install (the removed route's own note argues the latter). That is a build decision with a real cost
+difference and it should be ratified, not assumed — added as ratification point 7.
+
 ---
 
 ## Sequencing and acceptance (Sam, 2026-08-31 — pod 61474)
@@ -555,6 +675,11 @@ routing layer D8 reuses is unratified independently of anything here.
    records why it was never built; the alternative is an ADR-018 amendment and a build task, leaving
    ADR-028 to D1–D5 and D7. Sam asked for them ruled together, so they are drafted together — but the
    home of the rule is a real question and the answer is not obviously this file.
+6. **D13's broker shape** — a Commonly-side response-only proxy, or a per-user GitHub App install per
+   seat? The removed `POST /token` note argues the second; the first is cheaper and keeps revocation
+   in one place. Steps (a) and (b) of D13 are wiring either way, so this only gates the runtime half.
+7. **D12's floor semantics** — withhold the offending item and record the omission, or withhold the
+   whole context? Fail-closed argues the second; every mixed-audience pod pays for it.
 
 ---
 
@@ -567,6 +692,15 @@ searched the local filesystem for both by name and found neither, and this repo 
 them. They are recorded here as **reported, not verified**, and the competitive comparison section is
 deliberately left unwritten rather than paraphrased from a summary. Nothing in the audit or in D1–D7
 depends on them: every finding above is measured on `origin/main`.
+
+The build-level architecture study behind **D12 and D13** is in the same category. Sam's pod 61641
+names it as a study of two MIT/Apache codebases (patterns only) held in an operator-private location;
+**it is not in this repo and I could not find it on this seat** — I searched the repo tree at
+`origin/main` and the local filesystem by name, and found neither. D12 and D13 therefore fold *Sam's
+statement of the ruling*, not the study, and every supporting fact in them is re-measured on
+`origin/main` at `8b2ddf8b` and cited by symbol. Where the study would have added detail the ruling
+did not carry, the decisions leave the question open rather than inventing it — see ratification
+points 6 and 7.
 
 The customer-evidence signal behind #1296 (device-flow CLI auth) is in the same category and is not
 this ADR's subject; it is noted only because the kickoff bundles them.
