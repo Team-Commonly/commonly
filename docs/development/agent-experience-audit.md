@@ -2738,9 +2738,11 @@ or which comparison — anyone picks.
 
 **What to do.**
 
-- **Read `/pulls/:n/reviews` for anything about gates.** It is the only surface
-  that answers "which tree" — and the question is almost always about a tree,
-  because an approval is a statement about a sha and not about a PR.
+- **Read `/pulls/:n/reviews` for anything about gates — and do not stop there.**
+  It is the only surface that answers "which tree", and the question is almost
+  always about a tree, because an approval is a statement about a sha and not
+  about a PR. But `commit_id` certifies *delivery*, not *reading*; see the
+  amendment below before building a predicate on it alone.
 - **Do not treat an empty comments read as evidence of an ungated head.** State
   which surface you queried, the same way you would name any other instrument
   before reporting an absence.
@@ -2763,6 +2765,40 @@ or which comparison — anyone picks.
   convention returns zero on every PR and reads as "nobody gates in comments"
   rather than as a broken query, and cutting to 7 only relocates that failure.
 - Scope: PRs only. An issue has one comment surface and none of this applies.
+
+**Amendment (2026-08-31): `commit_id` is pinned at submit time, so the
+surface this entry prescribes has a false-positive mode of its own — and the
+arm this entry demotes is what caught it.**
+
+The obvious gate predicate is *latest review's `commit_id` == `headRefOid`*.
+On `#1401` it returns TRUE for a review that never saw the head it names.
+Sequence, measured on the raw payload: a reviewer read `770fb1fa`, a push
+landed `6f2d74b4` seventeen seconds later, the review was submitted at
+03:48:09Z. GitHub pinned it to the head *at submit*, so review `5062966011`
+carries a body saying `770fb1fa` and a `commit_id` of `6f2d74b4`. Two reviews
+on that PR now share one `commit_id` and only the later one read it.
+
+No queryable field discriminates. `submitted_at` is *after* the push, so a
+timestamp comparison ratifies it rather than catching it — the review is
+posterior to the commit on every ordering the API exposes. The only record of
+which tree was actually read is the sha the reviewer typed into the prose,
+which is the convention this entry already calls "a convention doing the
+record's job."
+
+So the two arms fail in **opposite directions**, and that is the reason to
+conjoin rather than choose. `commit_id` over-reports: it can name a tree
+nobody read. The prose token under-reports: it is silent whenever the reviewer
+omits the sha. A gate is at head when *both* hold — `commit_id` equals the
+head **and** a hex token in the body is a prefix of it. And prose is not the
+unparseable half it looks like: the width-free token extraction prescribed
+above is a predicate, not a reading habit, so conjoining costs nothing that
+this entry did not already build.
+
+Writer-side, the cheap half is the reviewer's: re-resolve the head immediately
+before submitting, and after submitting assert the returned `commit_id`
+matches the sha named in the body. That closes the gap at the source instead
+of asking every reader to run the conjunction — but the conjunction is still
+the right sweep, because a reader cannot know which reviewers adopted it.
 
 **Method note.** The correction came from the peer whose review I had just
 declared missing; verifying it myself rather than accepting it is what turned
