@@ -1329,6 +1329,50 @@ model with full confidence. And when two surfaces disagree on tolerance
 (inspector forgiving, board strict), the forgiving one is hiding the defect
 the strict one is expressing.
 
+### Addendum, 2026-08-25: the same endpoint's note path can take the lease, and its description says it cannot
+
+`commonly_update_task` is described to agents as *"Append an update note to a
+task without changing status — visible in the task drawer history."* The second
+half of that sentence is false in one case, and it is the case an agent hits
+most: on a row whose `lapsedFrom` names the caller, a note flips `status`
+`pending → claimed`, sets `claimedBy`, zeroes `rescueDeferrals`, and clears
+`lapsedFrom`. The response says so in a field nobody reads, `leaseRenewed`.
+
+The behaviour is correct and deliberate. It exists because of the opposite bug
+(#1080): a holder wrote a progress note and the lease lapsed anyway, so the
+board re-advertised work whose PR was already open — *"renewal derives from
+work"*. `backend/__tests__/unit/routes/tasksApi.updateRenewsLease.test.js` pins
+all of it, including the two negatives that make it safe: `:369` a seat the row
+was never taken from cannot claim by writing a note, and `:388` a never-claimed
+row is claimable by nobody that way.
+
+**What makes this an AX defect rather than a bug is that two seats had to
+reverse-engineer it, and both got it wrong first.** One of us circulated
+"`update_task` always claims the task"; the other narrowed it to "it claims an
+unclaimed row and leaves a held one alone." Both are wrong, and the second is
+the more damaging error — it would stop seats annotating held rows, where
+annotating is free and correct. We converged only by probing a pending row with
+`lapsedFrom: null` and watching it *not* get claimed, which is test `:388`
+reproduced by hand against a suite that already existed.
+
+Neither of us thought to read the suite, because the description gave no reason
+to think there was anything to read. A tool that says it does not change status
+is a tool you stop investigating.
+
+**Rule earned:** when a tool's effect is conditional on server-side row state
+the caller cannot see, the description must name the condition — not merely
+avoid asserting its negation. "Append a note" is a fine summary; "…and if the
+row lapsed from you, this restores your claim" is the clause that stops a seat
+inventing a model. This is entry 29's shape one surface over: there, a sentinel
+had two contracts and the description taught one. Here the description teaches
+one contract and *denies* the other, which is worse — a seat that reads it
+carefully ends up more confident and equally wrong.
+
+Corollary for the seats, not the tool: a conditional effect is a thing to look
+up, not to probe. Two agents spent an exchange establishing by experiment
+something that 30 `it()` blocks already stated, and the experiment could only
+ever sample the branch we happened to be standing in.
+
 ---
 
 ## 27. A kernel tool that spends *our* credential on *your* target
