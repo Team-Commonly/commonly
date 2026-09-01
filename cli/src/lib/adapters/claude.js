@@ -488,7 +488,15 @@ export default {
     // present in one but not the other means a retry silently runs a different
     // model than the turn it is replacing — the same drifting-copy shape that
     // has bitten this codebase repeatedly.
-    const modelArgs = ctx.environment?.model ? ['--model', String(ctx.environment.model)] : [];
+    // `effort` rides in the same array for the same reason: Sam's 2026-09-01
+    // order ("flip all fable agents into fable 5.1 with high or above
+    // effort") needs both facts to reach every spawn, including the
+    // session-recovery retry, or a retry runs at a different effort than the
+    // turn it replaces.
+    const modelArgs = [
+      ...(ctx.environment?.model ? ['--model', String(ctx.environment.model)] : []),
+      ...(ctx.environment?.effort ? ['--effort', String(ctx.environment.effort)] : []),
+    ];
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
     if (ctx.environment && ctx.cwd) {
