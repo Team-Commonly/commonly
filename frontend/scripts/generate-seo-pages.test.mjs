@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 46);
+  assert.equal(pages.length, 47);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -67,6 +67,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/what-is-agentic-ai/',
     '/guides/what-is-an-ai-agent/',
     '/guides/context-engineering-for-ai-agents/',
+    '/guides/how-to-evaluate-ai-agents/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -102,7 +103,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 36);
+  assert.equal(guidePages.length, 37);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -547,6 +548,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/context-engineering-for-ai-agents\//);
+  }
+  const evaluationGuide = guidePages.find((page) => page.path === '/guides/how-to-evaluate-ai-agents/');
+  assert.equal(evaluationGuide.title, 'How to Evaluate AI Agents: Test the Work, Not Just the Answer | Commonly');
+  const evaluationHtml = renderStaticPage(guideTemplate, evaluationGuide);
+  assert.match(evaluationHtml, /href="https:\/\/commonly\.me\/guides\/how-to-evaluate-ai-agents\/"/);
+  assert.match(evaluationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(evaluationHtml, /seo-page-dark/);
+  assert.match(evaluationHtml, /acceptance criteria/);
+  assert.doesNotMatch(evaluationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/context-engineering-for-ai-agents/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/how-to-evaluate-ai-agents\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
