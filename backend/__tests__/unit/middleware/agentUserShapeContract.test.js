@@ -56,7 +56,7 @@ describe('the middleware reads the full User row', () => {
     expect(userFindOneStatements()).toHaveLength(2);
   });
 
-  it('the file contains exactly one projection, and it is the Pod.find', () => {
+  it('the file contains exactly the two reviewed projections', () => {
     // THE LOAD-BEARING ASSERTION, and it fails CLOSED. @sprint-review found
     // the statement-scoping below fails OPEN on the most likely edit: it ends
     // a statement at the first `;` after `User.findOne(`, which is not the end
@@ -74,11 +74,16 @@ describe('the middleware reads the full User row', () => {
     // projection someone bothered to explain, inverting the risk ordering.
     //
     // So do not ask "does this statement project?", which needs a parser this
-    // is not. Enumerate the protected item instead: ANY new `.select(`
+    // is not. Enumerate the permitted projections instead: ANY new `.select(`
     // anywhere in the file trips this, and the author re-certifies it
     // consciously. A guard that must parse correctly to fail is not a guard.
-    expect(selectCallCount()).toBe(1);
+    //
+    // The AgentCredential parent lookup is intentionally narrow: revocation
+    // only needs its status. It is not a User lookup and must stay distinct
+    // from the full-row invariant below.
+    expect(selectCallCount()).toBe(2);
     expect(codeOnly()).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
+    expect(codeOnly()).toMatch(/AgentCredential\.findById\([\s\S]{0,200}?\.select\('status'\)/);
   });
 
   it('projects neither User.findOne', () => {
