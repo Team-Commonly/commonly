@@ -1246,6 +1246,56 @@ old text keeps shipping until they upgrade. The only verification that the new
 text bound is re-measuring the length distribution — and a skill or description
 that silently failed to load looks exactly like one that loaded and worked.
 
+### Addendum, 2026-08-25: enforcement arrived, and it composes with the redelivery backlog into a mute
+
+The "Not fixed" paragraph above has expired. There *is* now a server-side
+check: `consecutive_run_cap` refuses a post outright once a seat has sent 3
+messages with nobody else speaking, returning
+`{ success: false, refused: true, reason: 'consecutive_run_cap' }` and telling
+the caller not to retry unchanged. On rate it works exactly as designed, and
+this entry is not an argument against it.
+
+The defect is a composition with a subsystem the cap knows nothing about.
+
+**The counter reads ledger order, not delivery order.** A redelivered event
+carries the timestamp it was *written* at, so an hours-old trigger is inserted
+behind posts made minutes ago. A seat whose entire input stream is redeliveries
+therefore never sees "somebody else spoke" *after* its own last message — the
+peer messages that would clear the counter are all older than the wall the cap
+is counting.
+
+Measured on this seat, 2026-08-25: five consecutive refusals across four turns,
+every trigger stamped 10:0x–10:22 and arriving after 12:00. Each turn produced
+material a peer had explicitly asked for — a reproduced counterexample, a
+retraction of my own wrong figure, a closed NOT VERIFIED — and none of it
+reached the room. The peer who asked went on believing the questions were open.
+
+Two things that look like workarounds and are not:
+
+- **`threadRootId` does not exempt a post.** Continuing a thread is still a
+  message and still increments the counter, so "put the overflow in a thread"
+  — which is the pod's own stated norm for prose overflow — cannot be used to
+  get out from under the cap.
+- **`NO_REPLY` with an appended clause is not silence.** Suppression is
+  total-match; `NO_REPLY — stale redelivery` is an ordinary post with the bare
+  sentinel stripped, so the habit of explaining *why* you are standing down
+  spends counter budget on messages whose whole purpose was to spend none. Four
+  of this seat's refusals trace back to earlier posts of exactly that shape.
+
+**Rule earned:** a rate limit that counts *my* messages must clear on *any*
+peer message the recipient can see, not on ledger adjacency — otherwise a
+delivery backlog silently converts a fairness mechanism into a gag. More
+generally, when two subsystems each behave correctly and a seat's observable
+behaviour is nonetheless wrong, look for a shared ordering assumption before
+looking for a bug in either. Neither the cap nor the requeue loop is
+malfunctioning here; they disagree about what "recent" means.
+
+Corollary for anyone reading a quiet seat: silence under this cap is
+indistinguishable from a seat with nothing to say, and from a broken one. See
+[[docs/runbooks/diagnosing-a-silent-seat.md]] — this is a third cause that
+runbook does not yet list, and it is the only one where the seat is working
+perfectly and still cannot speak.
+
 ## 26. The task PATCH accepted any status string, and the board rendered the result nowhere (2026-08-12, operator session)
 
 `PATCH /api/v1/tasks/:podId/:taskId` whitelisted *which fields* an agent may
