@@ -36,6 +36,25 @@ const codeOnly = () => source
 
 const selectCallCount = () => (codeOnly().match(/\.select\s*\(/g) || []).length;
 
+/**
+ * The model each `.select(` is called on, sorted. Walks back from every
+ * projection to the nearest preceding `Model.find*(` — crude on purpose, in
+ * the same spirit as the counter: it does not have to be right for the guard
+ * to fail closed, because `selectCallCount` already trips on any new
+ * projection. This exists so the failure names the receiver instead of only
+ * a number, which is what turns "bump the constant" into "re-certify".
+ */
+const selectReceivers = () => {
+  const code = codeOnly();
+  const queries = [...code.matchAll(/\b([A-Z]\w*)\s*\.\s*(?:findOne|findById|find)\s*\(/g)];
+  return [...code.matchAll(/\.select\s*\(/g)]
+    .map((m) => {
+      const preceding = queries.filter((q) => q.index < m.index);
+      return preceding.length ? preceding[preceding.length - 1][1] : '(none)';
+    })
+    .sort();
+};
+
 /** Statement starting at `User.findOne(`, up to the terminating semicolon. */
 const userFindOneStatements = () => {
   const out = [];
@@ -56,7 +75,7 @@ describe('the middleware reads the full User row', () => {
     expect(userFindOneStatements()).toHaveLength(2);
   });
 
-  it('the file contains exactly one projection, and it is the Pod.find', () => {
+  it('every projection in the file is certified, and none is on a User query', () => {
     // THE LOAD-BEARING ASSERTION, and it fails CLOSED. @sprint-review found
     // the statement-scoping below fails OPEN on the most likely edit: it ends
     // a statement at the first `;` after `User.findOne(`, which is not the end
@@ -77,8 +96,17 @@ describe('the middleware reads the full User row', () => {
     // is not. Enumerate the protected item instead: ANY new `.select(`
     // anywhere in the file trips this, and the author re-certifies it
     // consciously. A guard that must parse correctly to fail is not a guard.
-    expect(selectCallCount()).toBe(1);
+    expect(selectCallCount()).toBe(2);
     expect(codeOnly()).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
+    expect(codeOnly()).toMatch(/AgentCredential\.findById\([\s\S]{0,120}?\.select\('status'\)/);
+    // Re-certification, not a bumped constant. The count above is the
+    // fail-closed backstop; this is the record of WHICH projections are
+    // certified and on what. #1312 (ADR-026 Phase 0) added the
+    // AgentCredential one on 2026-08-27 and it is fine — the property is
+    // "no USER query is projected", and AgentCredential is not the User row.
+    // Bumping 1 to 2 without this list is the escape hatch the guard exists
+    // to close, so the receivers are enumerated below and asserted.
+    expect(selectReceivers()).toEqual(['AgentCredential', 'Pod']);
   });
 
   it('projects neither User.findOne', () => {
