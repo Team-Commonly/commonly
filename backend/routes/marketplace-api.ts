@@ -27,6 +27,115 @@ const validateNamespace = (installableId: string, username: string) => {
   return null;
 };
 
+// Validation stops at the components array (PR #215/#230): every scalar above
+// is length- or enum-checked, and then `components` is taken from the body and
+// persisted with one length test. Everything nested inside it — including
+// `widgetUrl`, whose immediate sibling `widgetLocation` HAS an enum — reaches
+// Mongo unchecked. Nested validation was not overlooked as a category; it was
+// applied one field over and stopped at the array boundary.
+//
+// This matters more than "an unused field is sloppy". Nothing renders a widget
+// today, so stored rows are inert — but they are inert only until a renderer
+// ships, at which point every `widgetUrl` already in the catalog goes live at
+// once. Validation has to land before the feature, not with it. It is cheapest
+// now, when the published catalog is empty and there is nothing to backfill.
+const COMPONENT_TYPES = [
+  'agent',
+  'slash-command',
+  'event-handler',
+  'scheduled-job',
+  'widget',
+  'webhook',
+  'data-schema',
+  'skill',
+];
+
+// The four `Schema.Types.Mixed` fields on ComponentSchema. Mixed accepts any
+// JSON of any size, and at 50 components per manifest that is an unbounded
+// write reachable by anyone who can publish — a larger surface than the URL
+// and independent of it, so a widgetUrl allowlist alone would not touch it.
+const MIXED_COMPONENT_FIELDS = ['widgetConfigSchema', 'schemaFields', 'skillExamples', 'metadata'];
+const MAX_MIXED_FIELD_BYTES = 16 * 1024;
+
+const MAX_COMPONENTS = 50;
+const MAX_WIDGET_URL_LENGTH = 2048;
+
+// Scheme allowlist rather than a denylist: `javascript:` and `data:` are the
+// two that turn a stored string into script execution the moment something
+// renders it, but enumerating what to block is the losing side of that
+// argument. http/https are what a widget host can legitimately be.
+const WIDGET_URL_SCHEMES = ['http:', 'https:'];
+
+const validateComponents = (components: any) => {
+  if (components === undefined || components === null) return null;
+  if (!Array.isArray(components)) return 'components must be an array';
+  if (components.length > MAX_COMPONENTS) {
+    return `Maximum ${MAX_COMPONENTS} components per manifest`;
+  }
+
+  for (let i = 0; i < components.length; i += 1) {
+    const component = components[i];
+    const at = `components[${i}]`;
+
+    if (!component || typeof component !== 'object' || Array.isArray(component)) {
+      return `${at} must be an object`;
+    }
+    if (typeof component.name !== 'string' || !component.name.trim()) {
+      return `${at}.name is required`;
+    }
+    if (component.name.length > 100) {
+      return `${at}.name must be 100 characters or fewer`;
+    }
+    if (!COMPONENT_TYPES.includes(component.type)) {
+      return `${at}.type must be one of: ${COMPONENT_TYPES.join(', ')}`;
+    }
+    if (component.description !== undefined) {
+      if (typeof component.description !== 'string') {
+        return `${at}.description must be a string`;
+      }
+      if (component.description.length > 500) {
+        return `${at}.description must be 500 characters or fewer`;
+      }
+    }
+
+    if (component.widgetUrl !== undefined) {
+      if (typeof component.widgetUrl !== 'string') {
+        return `${at}.widgetUrl must be a string`;
+      }
+      if (component.widgetUrl.length > MAX_WIDGET_URL_LENGTH) {
+        return `${at}.widgetUrl must be ${MAX_WIDGET_URL_LENGTH} characters or fewer`;
+      }
+      let parsed;
+      try {
+        parsed = new URL(component.widgetUrl);
+      } catch {
+        return `${at}.widgetUrl must be an absolute URL`;
+      }
+      if (!WIDGET_URL_SCHEMES.includes(parsed.protocol)) {
+        return `${at}.widgetUrl must use one of: ${WIDGET_URL_SCHEMES.join(', ')}`;
+      }
+    }
+
+    for (const field of MIXED_COMPONENT_FIELDS) {
+      if (component[field] === undefined) continue;
+      let serialized;
+      try {
+        serialized = JSON.stringify(component[field]);
+      } catch {
+        // A body that survived JSON.parse cannot be cyclic, so reaching here
+        // means something else (a getter, a BigInt) — reject rather than store
+        // a value we could not measure.
+        return `${at}.${field} could not be serialized`;
+      }
+      if (serialized !== undefined && Buffer.byteLength(serialized, 'utf8') > MAX_MIXED_FIELD_BYTES) {
+        return `${at}.${field} must be ${MAX_MIXED_FIELD_BYTES} bytes or fewer when serialized`;
+      }
+    }
+  }
+
+  return null;
+};
+
 const RUNTIME_MAP: Record<string, string> = {
   native: 'standalone',
   internal: 'standalone',
@@ -130,8 +239,9 @@ router.post('/publish', auth, async (req: any, res: any) => {
     if (!['agent', 'app', 'skill', 'bundle'].includes(kind)) {
       return res.status(400).json({ error: 'kind must be one of: agent, app, skill, bundle' });
     }
-    if (components && components.length > 50) {
-      return res.status(400).json({ error: 'Maximum 50 components per manifest' });
+    const componentsError = validateComponents(components);
+    if (componentsError) {
+      return res.status(400).json({ error: componentsError });
     }
 
     const nsError = validateNamespace(installableId.toLowerCase(), username);
@@ -404,6 +514,24 @@ router.post('/fork', auth, async (req: any, res: any) => {
       status: 'active',
     });
     if (!source) return res.status(404).json({ error: 'Source manifest not found or not active' });
+
+    // Fork copies `source.components` wholesale into a new `source:
+    // 'marketplace'`, `published: true` row, so it is a second writer into the
+    // published catalog and needs the same gate as /publish.
+    //
+    // It is NOT redundant with validating at publish. The lookup above filters
+    // on `status: 'active'` and nothing else — no `source` filter, no
+    // `marketplace.published` filter — so `builtin`, `user`, `template` and
+    // `remote` rows are all forkable, and none of them were written through
+    // /publish. Any row predating this validation is forkable too. Without
+    // this check, fork is the path that launders an unvalidated component into
+    // the published catalog. (@sprint-review, 58602.)
+    const sourceComponentsError = validateComponents(source.components);
+    if (sourceComponentsError) {
+      return res.status(400).json({
+        error: `Source manifest cannot be forked: ${sourceComponentsError}`,
+      });
+    }
 
     const existing = await Installable.findOne({ installableId: newInstallableId.toLowerCase() });
     if (existing) return res.status(409).json({ error: 'installableId already taken' });
