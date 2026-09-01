@@ -165,6 +165,47 @@ describe('Telegram webhook routes', () => {
     expect(res.status).toBe(200);
     expect(events).toHaveBeenCalled();
   });
+
+  it('releases the dedup claim when the async provider handler rejects', async () => {
+    // The provider's real `events` is async (telegramProvider.ts:111 awaits a
+    // Mongo write), so it can reject AFTER the route has claimed the update_id.
+    // With a bare `return events(...)` the rejection escapes the try/catch —
+    // express 4 has no async error handling — so the claim is never released,
+    // no response is sent, and Telegram's redelivery is then acked 200 as a
+    // duplicate and dropped permanently. Stubbing `events` synchronously, as
+    // the tests above do, cannot see this.
+    const integration = {
+      _id: 'integration-1',
+      type: 'telegram',
+      config: { chatId: '42' },
+    };
+    Integration.findOne.mockResolvedValue(integration);
+    const events = jest.fn(async () => {
+      throw new Error('provider write failed');
+    });
+    registry.get.mockReturnValue({
+      getWebhookHandlers: () => ({ events }),
+    });
+
+    const res = await request(app)
+      .post('/api/webhooks/telegram')
+      .send({
+        update_id: 5150,
+        message: {
+          text: 'hello',
+          chat: { id: 42, title: 'Test Chat', type: 'group' },
+          from: { id: 7, first_name: 'Sam' },
+        },
+      });
+
+    const WebhookDelivery = require('../../../models/WebhookDelivery');
+    expect(events).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(WebhookDelivery.deleteOne).toHaveBeenCalledWith({
+      provider: 'telegram',
+      deliveryId: '5150',
+    });
+  });
   describe('live relay ack', () => {
     const liveIntegration = {
       _id: 'integration-1',

@@ -462,7 +462,7 @@ router.post('/', async (req: any, res: any) => {
 
     const provider = registry.get('telegram', integration);
     const { events } = provider.getWebhookHandlers();
-    return events(req, res);
+    return await events(req, res);
   } catch (error) {
     console.error('Telegram webhook error', error);
     // Forget-on-error: the 500 makes Telegram redeliver this update_id; the
