@@ -1362,7 +1362,11 @@ class ActivityService {
       const pods: Array<{ _id: unknown }> = await Pod.find({
         $or: [
           { createdBy: userId },
-          { 'members.userId': userId, 'members.role': 'admin' },
+          // Pod.members is an ObjectId[] (not a role-bearing membership
+          // object). Keep the legacy embedded-member branch for old rows,
+          // but include ordinary members so decisions reach their audience.
+          { 'members.userId': userId },
+          { members: userId },
         ],
       })
         .select('_id')
