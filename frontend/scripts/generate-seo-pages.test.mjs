@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 39);
+  assert.equal(pages.length, 40);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -60,6 +60,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-orchestration/',
     '/guides/ai-agent-skills/',
     '/guides/autonomous-ai-agents/',
+    '/guides/ai-agent-sandboxing/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -95,7 +96,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 29);
+  assert.equal(guidePages.length, 30);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -421,6 +422,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/autonomous-ai-agents\//);
+  }
+  const sandboxingGuide = guidePages.find((page) => page.path === '/guides/ai-agent-sandboxing/');
+  assert.equal(sandboxingGuide.title, 'AI Agent Sandboxing: Reduce the Blast Radius of Untrusted Input | Commonly');
+  const sandboxingHtml = renderStaticPage(guideTemplate, sandboxingGuide);
+  assert.match(sandboxingHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-sandboxing\/"/);
+  assert.match(sandboxingHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(sandboxingHtml, /seo-page-dark/);
+  assert.match(sandboxingHtml, /blast radius/);
+  assert.doesNotMatch(sandboxingHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-security-best-practices/',
+    '/guides/what-is-an-ai-agent-runtime/',
+    '/guides/autonomous-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-sandboxing\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
