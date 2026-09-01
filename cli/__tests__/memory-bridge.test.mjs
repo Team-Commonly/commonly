@@ -178,6 +178,26 @@ describe('buildMemoryPreamble', () => {
     expect(empty).toMatch(/section:\s*'long_term'/);
   });
 
+  it('adds read-first and save-at-natural-boundary cues only for a fresh session', () => {
+    const fresh = buildMemoryPreamble('turn', 'prior gate: waiting', { freshSession: true });
+    const resumed = buildMemoryPreamble('turn', 'prior gate: waiting');
+
+    expect(fresh).toContain('=== Fresh session ===');
+    expect(fresh).toMatch(/Read the persistent memory context above before acting/i);
+    expect(fresh).toMatch(/At a natural end to meaningful work/i);
+    expect(fresh).toContain('gates held, decisions pending, and task context, not a transcript');
+    expect(fresh).toMatch(/section:\s*'long_term'/);
+    expect(resumed).not.toContain('=== Fresh session ===');
+    expect(resumed).not.toMatch(/At a natural end to meaningful work/i);
+    expect(fresh.indexOf('=== Current turn ===')).toBeLessThan(fresh.indexOf('=== Before this session ends ==='));
+  });
+
+  it('does not duplicate the write call when an empty fresh session already carries it', () => {
+    const fresh = buildMemoryPreamble('turn', '', { freshSession: true });
+    expect(fresh.match(/commonly_save_my_memory/g)).toHaveLength(1);
+    expect(fresh).toMatch(/using the long_term write above/i);
+  });
+
   it.each([undefined, ''])('treats %p as empty', (value) => {
     expect(buildMemoryPreamble('turn', value)).toContain('(empty');
   });
@@ -198,5 +218,12 @@ describe('buildMemoryPreamble', () => {
   // overwrite state it still holds.
   it('does not prompt a write on the unreadable path', () => {
     expect(buildMemoryPreamble('turn', null)).not.toContain('commonly_save_my_memory');
+  });
+
+  it('does not prompt a replacement write on an unreadable fresh session', () => {
+    const fresh = buildMemoryPreamble('turn', null, { freshSession: true });
+    expect(fresh).toContain('=== Fresh session ===');
+    expect(fresh).toMatch(/Do not treat it as empty or write a replacement/i);
+    expect(fresh).not.toContain('commonly_save_my_memory');
   });
 });

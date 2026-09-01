@@ -148,6 +148,9 @@ describe('claude adapter — spawn()', () => {
     // Second attempt used --session-id with a FRESH UUID (not the stale one)
     expect(calls[1].args).toContain('--session-id');
     expect(calls[1].args).not.toContain('abc-123');
+    // Recovery creates an underlying session, so it must receive the same
+    // fresh-session memory cues as an initial spawn.
+    expect(calls[1].args[1]).toContain('=== Fresh session ===');
     // newSessionId returned is the fresh one so the wrapper persists it next turn
     expect(res.newSessionId).not.toBe('abc-123');
     expect(res.newSessionId).toMatch(/^[0-9a-f]{8}-/);
@@ -176,6 +179,21 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain('I remember the user prefers dark mode.');
     expect(promptArg).toContain('=== Current turn ===');
     expect(promptArg).toContain('current message');
+    expect(promptArg).not.toContain('=== Fresh session ===');
+  });
+
+  test('a fresh Claude session receives read-first and durable-state cues', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', {
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('=== Fresh session ===');
+    expect(promptArg).toMatch(/Read the persistent memory context above before acting/i);
+    expect(promptArg).toMatch(/At a natural end to meaningful work/i);
+    expect(promptArg).toContain("section: 'long_term'");
   });
 
   // Replaces an assertion that empty memory passed the prompt verbatim. That

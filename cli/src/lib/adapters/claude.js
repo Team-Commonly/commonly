@@ -3,8 +3,9 @@
  *
  * Contract: ADR-005 §Adapter pattern.
  *
- * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
- * it to the prompt as a system-context preamble (§Memory bridge).
+ * Memory preamble: the adapter prepends the kernel's long-term memory context
+ * on every turn. A fresh underlying session additionally receives the
+ * read-first and durable-state-at-boundary cues (§Memory bridge).
  *
  * Environment (ADR-008 Phase 1): if ctx.environment is present, the adapter
  * symlinks declared Claude skills into `<cwd>/.claude/skills/`, writes an MCP
@@ -476,7 +477,7 @@ export default {
     // the only two paths that build a real prompt. buildPrompt handles
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm);
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
     // own default — which is how a fleet of ten agents ended up running three
@@ -544,7 +545,11 @@ export default {
       // session id poisons every subsequent event re-delivery.
       if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
         const freshId = randomUUID();
-        const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
+        // The retry creates a new underlying CLI session. Rebuild its prompt
+        // as fresh too: otherwise a session-recovery path is the one fresh
+        // session that misses the durable-state cue.
+        const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
+        const retryBase = ['-p', freshPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retry = await prepareArgv(retryBase, {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,

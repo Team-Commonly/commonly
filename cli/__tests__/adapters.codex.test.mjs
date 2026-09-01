@@ -138,9 +138,12 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args).toContain('--skip-git-repo-check');
     expect(calls[0].args).toContain('-o');
     // The invariant is that the prompt occupies the FINAL slot, not that it is
-    // byte-identical: empty memory now carries the empty-memory cue, which
-    // prepends. Anchored to the end so a stray arg still fails this.
-    expect(calls[0].args[calls[0].args.length - 1]).toMatch(/hi$/);
+    // The prompt remains the final argv item. Fresh sessions now also append
+    // the durable-state reminder after the current turn, so pin the turn's
+    // position inside that one prompt rather than falsely requiring it to be
+    // the prompt's final bytes.
+    expect(calls[0].args[calls[0].args.length - 1])
+      .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
   test('environment.mcp servers become -c mcp_servers.* overrides with substituted token/env', async () => {
@@ -190,7 +193,8 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
     // Overrides must precede the prompt (last arg) and not disturb -o pairing.
     expect(findOutputFile(args)).toBeTruthy();
-    expect(args[args.length - 1]).toMatch(/hi$/);
+    expect(args[args.length - 1])
+      .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
   test('public workspace mode uses a deny-by-default permission profile and never the legacy sandbox or bypass', async () => {
@@ -365,6 +369,24 @@ describe('codex adapter — spawn()', () => {
     expect(promptArg).toContain('I remember the user prefers dark mode.');
     expect(promptArg).toContain('=== Current turn ===');
     expect(promptArg).toContain('current message');
+    expect(promptArg).toContain('=== Fresh session ===');
+    expect(promptArg).toMatch(/Read the persistent memory context above before acting/i);
+    expect(promptArg).toMatch(/At a natural end to meaningful work/i);
+    expect(promptArg).toContain("section: 'long_term'");
+  });
+
+  test('a resumed Codex session does not repeat fresh-session cues', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', {
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
   });
 
   // Same swap as the claude adapter: both delegate to `buildMemoryPreamble`, so
