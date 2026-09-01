@@ -157,6 +157,23 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(params[2]).toBe('@Sam(?![A-Za-z0-9_])');
   });
 
+  test('mentions take at most 8 of the 12 slots so standing decisions stay visible', async () => {
+    // Live after #1464: 40+ thread mentions filled the page and the four
+    // ADR-024 decisions vanished below the cap.
+    pool.query.mockResolvedValue({ rows: Array.from({ length: 10 }, (_, i) => ({
+      id: 100 + i, pod_id: 'pod-1', user_id: 'bot-1', content: '@Sam ping', created_at: new Date(Date.now() - i * 1000), thread_root_id: null, author: 'vale',
+    })) });
+    Task.find.mockReturnValue(taskChain(Array.from({ length: 4 }, (_, i) => ({
+      taskId: `TASK-${200 + i}`, podId: 'pod-1', status: 'blocked', title: `Standing ${i}`,
+      updates: [{ text: 'blocked', createdAt: new Date() }],
+    }))));
+    const result = await ActivityService.getDecisionQueue('u1');
+    const kinds = result.items.map((i) => i.kind);
+    expect(kinds.filter((k) => k === 'mention')).toHaveLength(8);
+    expect(kinds.filter((k) => k === 'decision')).toHaveLength(4);
+    expect(result.count).toBe(14);
+  });
+
   test('one failed source degrades, never blanks the queue', async () => {
     ActivityService.getPendingApprovals.mockRejectedValue(new Error('store down'));
     Task.find.mockReturnValue(taskChain([
