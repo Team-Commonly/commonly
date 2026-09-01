@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 51);
+  assert.equal(pages.length, 52);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -72,6 +72,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-use-cases/',
     '/guides/human-ai-collaboration/',
     '/guides/agentic-workflows/',
+    '/guides/ai-agents-for-project-management/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -107,7 +108,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 41);
+  assert.equal(guidePages.length, 42);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -637,6 +638,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/agentic-workflows\//);
+  }
+  const projectManagementGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-project-management/');
+  assert.equal(projectManagementGuide.title, 'AI Agents for Project Management: Coordinate Work Without Losing Ownership | Commonly');
+  const projectManagementHtml = renderStaticPage(guideTemplate, projectManagementGuide);
+  assert.match(projectManagementHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-project-management\//);
+  assert.match(projectManagementHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(projectManagementHtml, /seo-page-dark/);
+  assert.match(projectManagementHtml, /decision packet/);
+  assert.doesNotMatch(projectManagementHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-use-cases/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-orchestration/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agents-for-project-management\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
