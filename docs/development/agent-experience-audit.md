@@ -2590,6 +2590,34 @@ And the fallback is unconditional: a request with no `cm_agent_` prefix does
 not fail, it takes the human branch and succeeds. Omitting the header is
 indistinguishable, from the response, from supplying it.
 
+**And the same divergence runs one level down, inside `middleware/auth.ts`
+itself** (@sprint-review, 2026-08-23). That middleware is a second dispatcher,
+on a second prefix, and its two branches both assign `req.user` — with
+different shapes:
+
+```ts
+:51  req.user = { id, username, email, role };   // cm_ API token
+:81  req.user = { id };                          // browser JWT
+```
+
+So a consumer reading `req.user.username` or `req.user.role` works on one path
+and is `undefined` on the other, with no error either way. That is not a
+hypothetical: `agentProfile.ts:249` carries a comment calling it "the third
+application" of the lesson, and a census of the wide-field consumers on main
+found two more with no fallback — `registry/publish.ts` persisted
+`publisher.name: undefined` for every browser-session publish (#1211), and
+`github.ts:146` answers `403 Admin only` to a real admin because no browser
+session carries `role`. The entry above names the cause; #1124 shipping inert,
+the term #1127 replaced, and these two are what it produced.
+
+**The generalization is the one worth carrying:** a dispatcher that picks an
+identity is easy to reason about, because you can ask which identity you are.
+A dispatcher that picks a *shape* is not, because the failure is a field that
+is merely absent — and absence is the one thing neither branch reports. Count
+the assignment sites, not the branches: `grep -n 'req.user = ' backend` returns
+two lines, and they are not the same object.
+
+
 **What that costs a test author.** Every case in
 `tasksApi.updateRenewsLease.test.js` went through the human mock, so
 `req.user` was always populated and the agent branch had never run — across
