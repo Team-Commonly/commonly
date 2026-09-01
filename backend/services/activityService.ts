@@ -617,7 +617,37 @@ class ActivityService {
       if (kindDelta !== 0) return kindDelta;
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-    return { items: items.slice(0, 12), count: items.length };
+    // Per-kind soft cap. Live after #1464: 40+ thread mentions filled all
+    // 12 slots and the four standing decisions vanished below the cap —
+    // the opposite of "decision pending on me" being visible. Mentions
+    // take at most 8 of the 12; whatever is left goes to the other kinds
+    // in attention order. `count` still reports the full total.
+    const MENTION_SLOTS = 8;
+    const picked: QueueItem[] = [];
+    let mentionsPicked = 0;
+    const deferredMentions: QueueItem[] = [];
+    for (const it of items) {
+      if (picked.length >= 12) break;
+      if (it.kind === 'mention') {
+        if (mentionsPicked < MENTION_SLOTS) { picked.push(it); mentionsPicked += 1; } else deferredMentions.push(it);
+      } else {
+        picked.push(it);
+      }
+    }
+    for (const it of deferredMentions) {
+      if (picked.length >= 12) break;
+      picked.push(it);
+    }
+    // Restore attention order within the final page (approval, press,
+    // mention, decision), recency inside each kind — the loop above kept
+    // the sorted order for everything it picked, so a stable re-sort is
+    // enough.
+    picked.sort((a, b) => {
+      const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
+      if (kindDelta !== 0) return kindDelta;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+    return { items: picked, count: items.length };
   }
 
   static async getPodFeed(
