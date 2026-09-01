@@ -1644,6 +1644,7 @@
     },
     "card": {
       "inProject": "属于",
+      "lastSaid": "“{{snippet}}”",
       "roleTitle": "角色：{{role}}",
       "profile": "资料页",
       "viewProfileAria": "查看 {{name}} 的资料页",

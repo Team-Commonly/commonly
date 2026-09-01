@@ -30,6 +30,8 @@ interface AgentInstallationSummary {
   podCount?: number;
   // Server-classified ops/smoke/demo seat (#1377) — drives the internal tier.
   internal?: boolean;
+  // What the agent last said in this pod, pre-trimmed by the server.
+  lastMessage?: { snippet?: string; at?: string | null } | null;
 }
 
 // Runtime labels removed from cards 2026-08-22: ADR-022 D1 (ratified) bans
@@ -338,9 +340,18 @@ const V2YourTeamPage: React.FC = () => {
             <span className="v2-team-feature__name">{display}</span>
             <span className="v2-team-feature__dot" data-testid="team-dot" />
           </div>
-          <div className="v2-team-feature__doing">
-            {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
-          </div>
+          {a.lastMessage?.snippet ? (
+            // Line 2 is what the agent last said (Wren spec §1.1) — quoted,
+            // one line, ellipsized. The project line is the fallback for an
+            // agent that has not spoken in this pod yet.
+            <div className="v2-team-feature__doing v2-team-feature__doing--snippet" title={a.lastMessage.snippet}>
+              {t('yourTeam.card.lastSaid', { snippet: a.lastMessage.snippet })}
+            </div>
+          ) : (
+            <div className="v2-team-feature__doing">
+              {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
+            </div>
+          )}
           <div className="v2-team-feature__meta">
             {t('yourTeam.tiers.activeMeta', { time: lastSeen, count: a.podCount || 1 })}
           </div>

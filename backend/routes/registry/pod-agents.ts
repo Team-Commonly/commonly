@@ -224,6 +224,24 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
 
+    // Last thing each agent said in THIS pod (Wren spec §1.1 line 2).
+    // Advisory like the activity map: a PG hiccup must never fail the roster.
+    let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
+    try {
+      // eslint-disable-next-line global-require
+      const PgMessage = require('../../models/pg/Message');
+      const rows = await PgMessage.findLastMessagePerUserInPod(
+        String(podId),
+        (userRows as any[]).map((u: any) => u._id),
+      );
+      lastMessageByUserId = new Map(
+        (rows as Array<{ userId: string; content: string; createdAt: unknown }>)
+          .map((r) => [r.userId, { content: r.content, createdAt: r.createdAt }]),
+      );
+    } catch (snippetErr) {
+      console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
+    }
+
     res.json({
       agents: installations.map((i: any) => {
         const profile = profiles.find(
@@ -240,6 +258,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
           lastActiveAt,
           user,
+          lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
         });
       }),
     });

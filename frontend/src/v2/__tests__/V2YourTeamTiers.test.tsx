@@ -40,7 +40,7 @@ const authValue = {
 const minutesAgo = (m) => new Date(Date.now() - m * 60000).toISOString();
 
 const agents = [
-  { name: 'fable', instanceId: 'lead', displayName: 'Fable', lastActiveAt: minutesAgo(4) },
+  { name: 'fable', instanceId: 'lead', displayName: 'Fable', lastActiveAt: minutesAgo(4), lastMessage: { snippet: 'Shipped the fix to main.', at: minutesAgo(4) } },
   { name: 'sage', instanceId: 'default', displayName: 'Sage', lastActiveAt: minutesAgo(2 * 24 * 60) },
   { name: 'dusty', instanceId: 'default', displayName: 'Dusty', lastActiveAt: minutesAgo(30 * 24 * 60) },
   { name: 'ghost', instanceId: 'default', displayName: 'Ghost', lastActiveAt: null },
@@ -78,6 +78,8 @@ describe('Your Team tiers', () => {
     expect(featured[0]).toHaveTextContent('Fable');
     // The dot exists exactly once on the page: in the featured tier.
     expect(screen.getAllByTestId('team-dot')).toHaveLength(1);
+    // Line 2 quotes what the agent last said (server-trimmed snippet).
+    expect(featured[0]).toHaveTextContent('“Shipped the fix to main.”');
   });
 
   test('standard cards carry the always-visible talk icon, no dot, no button pair', async () => {

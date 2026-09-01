@@ -1650,6 +1650,7 @@
     },
     "card": {
       "inProject": "in",
+      "lastSaid": "“{{snippet}}”",
       "roleTitle": "Role: {{role}}",
       "profile": "Profile",
       "viewProfileAria": "View {{name}}'s profile",

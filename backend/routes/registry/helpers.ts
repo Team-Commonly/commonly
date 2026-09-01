@@ -353,14 +353,25 @@ const isInternalSeat = (agentName: any, normalizedConfig: any): boolean => {
   return INTERNAL_SEAT_EXACT.has(n) || INTERNAL_SEAT_PREFIXES.some((p) => n.startsWith(p));
 };
 
+// The card shows one line of it; shipping the median 2,700-char agent message
+// per roster row is payload waste, so trim at the boundary.
+const SNIPPET_MAX = 200;
+const toSnippet = (content: any): string => {
+  const collapsed = String(content || '').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+  return collapsed.length > SNIPPET_MAX ? `${collapsed.slice(0, SNIPPET_MAX - 1)}…` : collapsed;
+};
+
 const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
   lastHeartbeatAt = null,
   lastActiveAt = null,
   user = null,
+  lastMessage = null,
 }: {
   profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
+  lastMessage?: { content?: any; createdAt?: any } | null;
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
@@ -397,6 +408,12 @@ const buildAgentInstallationPayload = (installation: any, {
     lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
     internal: isInternalSeat(installation.agentName, normalizedConfig),
+    // Wren spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
+    // it has never spoken in this pod (or the PG lookup was skipped/failed —
+    // the roster never fails over a snippet).
+    lastMessage: lastMessage && toSnippet(lastMessage.content)
+      ? { snippet: toSnippet(lastMessage.content), at: lastMessage.createdAt || null }
+      : null,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
     // Resolved at the boundary so the frontend doesn't need to know
@@ -629,6 +646,7 @@ module.exports = {
   buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
   isInternalSeat,
+  toSnippet,
   normalizePluginIdentifier,
   getPluginSpecBase,
   normalizeInstanceId,
