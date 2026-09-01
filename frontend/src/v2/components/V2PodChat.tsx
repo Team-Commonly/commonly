@@ -864,8 +864,20 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
       // It would not: resolveThreadRoot 400s only when the two DISAGREE
       // (thread_root_mismatch) and accepts them when they agree. An in-thread
       // post must carry no addressing edge because a reply edge pings the
-      // root's author (@ux-lead 56879) — that is the rule this enforces, and
-      // it is the client's to keep.
+      // author of whatever it points at (@ux-lead 56879) — that is the rule
+      // this enforces, and it is the client's to keep.
+      //
+      // "Agree" is a set, not a point: the backend accepts the pair whenever
+      // explicit === COALESCE(parent.thread_root_id, parent.id), i.e. whenever
+      // the parent is anywhere IN the thread being aimed at. Two members, and
+      // they differ in WHO gets pinged, because resolveImplicitReplyTarget
+      // resolves the author of replyToMessageId — the parent, not the root:
+      //   parent mid-thread (reply 101 in thread 100) -> pings 101's author
+      //   parent IS the root (replyTo 100, root 100)  -> pings the root's author
+      // Only the second collapses onto "the root's author", which is why that
+      // is the shape this comment is really about — and it is structurally
+      // unrefusable: a root's COALESCE falls through to its own id, so the two
+      // statements can never disagree. @sprint-review 56879.
       const created = await sendMessage(
         text,
         'text',
