@@ -2,6 +2,7 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import V2Avatar from './V2Avatar';
+import V2CatchUpStrip from './V2CatchUpStrip';
 import V2MessageBubble from './V2MessageBubble';
 import {
   UseV2PodDetailResult,
@@ -1125,6 +1126,8 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
             </div>
           )}
         </header>
+
+        <V2CatchUpStrip podId={pod._id} />
 
         <div className="v2-chat__messages" ref={messagesContainerRef}>
           {hasMore && (

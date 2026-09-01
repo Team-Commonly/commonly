@@ -440,7 +440,18 @@
       "replyFromExpandedThread": "在已展开的话题中回复",
       "replyingInThread": "正在话题中回复："
     },
-    "leadBadge": "负责人"
+    "leadBadge": "负责人",
+    "catchup": {
+      "title": "回顾",
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前",
+      "empty": "还没有摘要",
+      "summarize": "生成摘要",
+      "refresh": "刷新",
+      "working": "正在总结…"
+    }
   },
   "landing": {
     "nav": {

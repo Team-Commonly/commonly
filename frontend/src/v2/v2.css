@@ -1662,6 +1662,68 @@ body.modern-ui.v2-canvas {
 }
 .v2-chat__older-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* Catch-up strip — the constant agents-TL;DR pinned above the transcript
+   (Sam 2026-09-01). One thin row; the expanded body is bounded so a long
+   summary scrolls inside the strip, never the pane. */
+.v2-catchup {
+  border-bottom: 1px solid var(--v2-border);
+  background: var(--v2-surface);
+  padding: 6px 20px;
+  font-size: 13px;
+}
+.v2-catchup__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v2-root button.v2-catchup__toggle {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.v2-root button.v2-catchup__toggle:hover:not(:disabled) { color: var(--v2-text-primary); }
+.v2-root button.v2-catchup__toggle:disabled { cursor: default; }
+.v2-catchup__chevron {
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.08s ease;
+}
+.v2-catchup__chevron--open { transform: rotate(90deg); }
+.v2-catchup__time { font-weight: 400; color: var(--v2-text-tertiary); }
+.v2-catchup__snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-tertiary);
+}
+.v2-root button.v2-catchup__refresh {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--v2-accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.v2-root button.v2-catchup__refresh:hover:not(:disabled) { text-decoration: underline; }
+.v2-root button.v2-catchup__refresh:disabled { color: var(--v2-text-tertiary); cursor: default; }
+.v2-catchup__body {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: var(--v2-text-secondary);
+  line-height: 1.5;
+}
+
 .v2-chat__messages {
   flex: 1;
   overflow-y: auto;
