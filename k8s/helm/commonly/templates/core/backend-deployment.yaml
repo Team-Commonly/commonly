@@ -355,6 +355,12 @@ spec:
               name: api-keys
               key: telegram-bot-token
               optional: true
+        - name: TELEGRAM_SECRET_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: telegram-secret-token
+              optional: true
         - name: BRAVE_API_KEY
           valueFrom:
             secretKeyRef:
