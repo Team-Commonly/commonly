@@ -11,6 +11,10 @@ jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../services/telegramBridgeService', () => ({
   relayTelegramMessageToPod: jest.fn(),
 }));
+jest.mock('../../../models/WebhookDelivery', () => ({
+  create: jest.fn(),
+  deleteOne: jest.fn(),
+}));
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
@@ -32,6 +36,12 @@ describe('Telegram webhook routes', () => {
     jest.clearAllMocks();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
     delete process.env.TELEGRAM_SECRET_TOKEN;
+    // Verification is fail-closed now; the pre-existing tests exercise
+    // handlers, not auth, so they run with the explicit dev override.
+    process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    const WebhookDelivery = require('../../../models/WebhookDelivery');
+    WebhookDelivery.create.mockResolvedValue({});
+    WebhookDelivery.deleteOne.mockResolvedValue({});
   });
 
   it('handles /commonly-enable and links chat', async () => {
@@ -263,5 +273,98 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     const bridge = require('../../../services/telegramBridgeService');
     await post('/status');
     expect(bridge.relayTelegramMessageToPod).not.toHaveBeenCalled();
+  });
+
+  describe('hardening: fail-closed verification + update_id dedup', () => {
+    const WebhookDelivery = require('../../../models/WebhookDelivery');
+
+    beforeEach(() => {
+      // Env leaks between tests in this file (the reject-test deletes the
+      // override, the secret-test sets a secret) — pin the default state.
+      process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+      delete process.env.TELEGRAM_SECRET_TOKEN;
+      WebhookDelivery.create.mockResolvedValue({});
+      WebhookDelivery.deleteOne.mockResolvedValue({});
+    });
+
+    const liveUpdate = (updateId) => ({
+      update_id: updateId,
+      message: {
+        text: 'hello from telegram',
+        chat: { id: 42, title: 'Test Chat', type: 'group' },
+        from: { id: 7, first_name: 'Sam' },
+      },
+    });
+
+    it('rejects when TELEGRAM_SECRET_TOKEN is unset and no explicit override', async () => {
+      delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(1));
+      expect(res.status).toBe(401);
+      expect(WebhookDelivery.create).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a correct secret header when the secret is set', async () => {
+      delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
+      process.env.TELEGRAM_SECRET_TOKEN = 's3cret';
+      Integration.findOne = jest.fn().mockResolvedValue(null);
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .set('x-telegram-bot-api-secret-token', 's3cret')
+        .send(liveUpdate(2));
+      expect(res.status).toBe(200);
+    });
+
+    it('acks a duplicate update_id without processing it', async () => {
+      const dup = new Error('dup');
+      dup.code = 11000;
+      WebhookDelivery.create.mockRejectedValueOnce(dup);
+      Integration.findOne = jest.fn();
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(3));
+      expect(res.status).toBe(200);
+      expect(Integration.findOne).not.toHaveBeenCalled();
+      expect(bridge.relayTelegramMessageToPod).not.toHaveBeenCalled();
+    });
+
+    it('releases the claim when processing throws, so redelivery retries', async () => {
+      const integration = {
+        _id: 'integration-1',
+        type: 'telegram',
+        podId: 'pod-1',
+        config: { chatId: '42', liveRelay: true },
+      };
+      Integration.findOne = jest.fn().mockResolvedValue(integration);
+      bridge.relayTelegramMessageToPod.mockRejectedValueOnce(new Error('pod write failed'));
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(4));
+      expect(res.status).toBe(500);
+      expect(WebhookDelivery.create).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'telegram', deliveryId: '4' }),
+      );
+      expect(WebhookDelivery.deleteOne).toHaveBeenCalledWith(
+        { provider: 'telegram', deliveryId: '4' },
+      );
+    });
+
+    it('a dedup-store outage does not take the bridge down', async () => {
+      WebhookDelivery.create.mockRejectedValueOnce(new Error('mongo down'));
+      const integration = {
+        _id: 'integration-1',
+        type: 'telegram',
+        podId: 'pod-1',
+        config: { chatId: '42', liveRelay: true },
+      };
+      Integration.findOne = jest.fn().mockResolvedValue(integration);
+      bridge.relayTelegramMessageToPod.mockResolvedValueOnce({});
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(5));
+      expect(res.status).toBe(200);
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalled();
+    });
   });
 });
