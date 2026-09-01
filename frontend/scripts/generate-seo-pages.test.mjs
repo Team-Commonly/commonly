@@ -701,6 +701,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.doesNotMatch(supportHtml, /seo-page-dark/);
   assert.match(supportHtml, /triage packet/);
   assert.doesNotMatch(supportHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((supportHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
   for (const guidePath of [
     '/guides/prompt-injection-defense-for-ai-agents/',
     '/guides/ai-agent-use-cases/',
