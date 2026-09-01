@@ -63,9 +63,10 @@ export const createClient = ({ instance = null, token = undefined } = {}) => {
     body: JSON.stringify(body),
   }).then((res) => handleResponse(res, session));
 
-  const del = (path) => fetch(`${baseUrl}${path}`, {
+  const del = (path, body) => fetch(`${baseUrl}${path}`, {
     method: 'DELETE',
     headers: headers(authToken),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }).then((res) => handleResponse(res, session));
 
   // Multipart upload via native FormData/Blob (Node 18+) — no runtime deps.

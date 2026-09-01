@@ -1577,7 +1577,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(CLAIM_PATH, { podId: 'pod-abc', leaseSeconds: 90 });
     expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', { content: 'on it' });
-    expect(del).toHaveBeenCalledWith(CLAIM_PATH);
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
       { result: { outcome: 'posted' } },
@@ -1608,6 +1608,40 @@ describe('performRun — ADR-018 enforcement', () => {
       '/api/agents/runtime/events/evt-1/ack',
       { result: { outcome: 'no_action', reason: 'claim-held' } },
     );
+  });
+
+  test('a human broadcast NO_REPLY declares decline, so the kernel may hand off one seat', async () => {
+    const { post, del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'human question', messageId: 'msg-1', senderIsHuman: true },
+      })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'declined' });
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-1/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
+  test('a bot broadcast NO_REPLY completes normally and never opens a human handoff', async () => {
+    const { del } = makeClient({
+      events: [makeClaimEvent({
+        type: 'message.posted',
+        payload: { content: 'peer chatter', messageId: 'msg-1', senderIsHuman: false },
+      })],
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = run({ name: 'stub', detect: stubAdapter.detect, spawn });
+    await drainMicrotasks();
+    stop();
+
+    expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
   });
 
   test('a claim-route failure fails OPEN: the turn proceeds unguarded (#887 rule)', async () => {

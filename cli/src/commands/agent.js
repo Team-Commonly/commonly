@@ -1001,8 +1001,9 @@ export const performRun = ({
       }
     }
 
+    let turnResult;
     try {
-      return await runTurn({
+      turnResult = await runTurn({
         event,
         eventPodId,
         prompt: peerFrame ? `${peerFrame}\n\n${prompt}` : prompt,
@@ -1011,8 +1012,20 @@ export const performRun = ({
         claimKeeper,
         trigger,
       });
+      return turnResult;
     } finally {
-      await claimKeeper?.release();
+      // A silent, normally completed human wake is an explicit decline, not
+      // a successful answer. Tell the kernel so it can hand the message to
+      // exactly one remaining original listener. Any posted reply, refusal
+      // with a reason, or thrown spawn retains completion/legacy semantics:
+      // re-offering those would duplicate a visible response or defeat normal
+      // at-least-once redelivery after an infrastructure failure.
+      const claimOutcome = event.type === 'message.posted'
+        && event.payload?.senderIsHuman === true
+        && turnResult?.outcome === 'no_action' && !turnResult?.reason
+        ? 'declined'
+        : (turnResult ? 'completed' : undefined);
+      await claimKeeper?.release(claimOutcome);
     }
   };
 

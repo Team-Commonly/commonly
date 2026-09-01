@@ -11,7 +11,7 @@ jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 const { pool } = require('../../../config/db-pg');
 const MessageClaimService = require('../../../services/messageClaimService');
 
-const CAS = /INSERT INTO message_claims[\s\S]*ON CONFLICT \(message_id\) DO UPDATE[\s\S]*WHERE message_claims\.expires_at < NOW\(\)/;
+const CAS = /INSERT INTO message_claims[\s\S]*ON CONFLICT \(message_id\) DO UPDATE[\s\S]*message_claims\.state = 'declined'[\s\S]*message_claims\.expires_at < NOW\(\)/;
 
 describe('messageClaimService', () => {
   beforeEach(() => {
@@ -32,6 +32,23 @@ describe('messageClaimService', () => {
     expect(r.claimedBy).toBe('ux-lead'); // lowercased — one identity casing, learned the hard way (#804)
     const cas = pool.query.mock.calls.find(([sql]) => /INSERT INTO message_claims/.test(sql));
     expect(cas[0]).toMatch(CAS);
+    expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS state/.test(sql))).toBe(true);
+    expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS declined_by/.test(sql))).toBe(true);
+  });
+
+  test('prunes expired completed and abandoned-decline handoff history', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (/DELETE FROM message_claims/.test(sql)) {
+        expect(sql).toContain("state IN ('completed', 'declined')");
+      }
+      if (/INSERT INTO message_claims/.test(sql)) {
+        return Promise.resolve({ rows: [{ claimed_by: 'ux-lead', instance_id: 'default', expires_at: new Date() }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await MessageClaimService.claim({ messageId: 'prune-me', podId: 'p1', agentName: 'ux-lead' });
+    expect(pool.query.mock.calls.some(([sql]) => /DELETE FROM message_claims/.test(sql))).toBe(true);
   });
 
   test('the CAS also lets the current holder win — renewal is the same call', async () => {
@@ -83,6 +100,46 @@ describe('messageClaimService', () => {
     });
     const r = await MessageClaimService.release({ messageId: 'm', agentName: 'a' });
     expect(r.released).toBe(false); // reported, not thrown — claim-then-decline is a normal path (D6)
+  });
+
+  test('a decline preserves a bounded handoff record instead of deleting the claim', async () => {
+    pool.query.mockImplementation((sql, params) => {
+      if (/UPDATE message_claims/.test(sql)) {
+        expect(sql).toMatch(/SET state = 'declined'/);
+        expect(sql).toMatch(/expires_at = NOW\(\) \+ make_interval\(secs => \$5\)/);
+        expect(sql).toMatch(/array_append\(declined_by, \$4\)/);
+        expect(params).toEqual(['m', 'seat-a', 'default', 'seat-a:default', 3600]);
+        return Promise.resolve({
+          rows: [{ pod_id: 'p1', state: 'declined', declined_by: ['seat-a:default'] }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.release({
+      messageId: 'm', agentName: 'seat-a', outcome: 'declined',
+    });
+
+    expect(r).toEqual({
+      released: true, podId: 'p1', state: 'declined', declinedBy: ['seat-a:default'],
+    });
+  });
+
+  test('a completed claim remains terminal: a later seat cannot take it', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (/INSERT INTO message_claims/.test(sql)) return Promise.resolve({ rows: [] });
+      if (/SELECT claimed_by/.test(sql)) {
+        return Promise.resolve({
+          rows: [{
+            claimed_by: 'seat-a', instance_id: 'default', expires_at: new Date(), state: 'completed', declined_by: [],
+          }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const r = await MessageClaimService.claim({ messageId: 'm', podId: 'p1', agentName: 'seat-b' });
+    expect(r).toMatchObject({ claimed: false, state: 'completed', claimedBy: 'seat-a' });
   });
 
   test('an expired lease reads as unheld', async () => {

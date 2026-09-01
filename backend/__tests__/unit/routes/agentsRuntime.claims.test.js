@@ -42,6 +42,11 @@ jest.mock('../../../services/messageClaimService', () => ({
   release: (...a) => mockRelease(...a),
 }));
 
+const mockDeclineRelease = jest.fn();
+jest.mock('../../../services/messageClaimHandoffService', () => ({
+  release: (...a) => mockDeclineRelease(...a),
+}));
+
 const mockTypingStart = jest.fn();
 const mockTypingStop = jest.fn();
 jest.mock('../../../services/agentTypingService', () => ({
@@ -59,6 +64,7 @@ describe('claim routes', () => {
     mockFindOne.mockResolvedValue({ status: 'active' });
     mockClaim.mockResolvedValue({ claimed: true });
     mockRelease.mockResolvedValue({ released: true });
+    mockDeclineRelease.mockResolvedValue({ released: true, podId: 'p1', handoff: { queued: true } });
   });
 
   test('claims with token-derived identity, lowercased', async () => {
@@ -85,6 +91,28 @@ describe('claim routes', () => {
     const res = await request(app).delete('/api/agents/runtime/messages/52907/claim');
     expect(res.status).toBe(200);
     expect(mockRelease).toHaveBeenCalledWith(expect.objectContaining({ agentName: 'ux-lead' }));
+  });
+
+  test('a declared decline is handed to one remaining human-wake seat', async () => {
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'declined' });
+
+    expect(res.status).toBe(200);
+    expect(mockDeclineRelease).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: '52907', agentName: 'ux-lead', instanceId: 'default', outcome: 'declined',
+    }));
+    expect(mockRelease).not.toHaveBeenCalled();
+  });
+
+  test('rejects an invented release outcome', async () => {
+    const res = await request(app)
+      .delete('/api/agents/runtime/messages/52907/claim')
+      .send({ outcome: 'retry-everyone' });
+
+    expect(res.status).toBe(400);
+    expect(mockRelease).not.toHaveBeenCalled();
+    expect(mockDeclineRelease).not.toHaveBeenCalled();
   });
 
   // ── ADR-018 D7: the claim IS the visibility signal ─────────────────────────

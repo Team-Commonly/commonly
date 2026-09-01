@@ -351,10 +351,19 @@ router.delete('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, a
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
+    const outcome = req.body?.outcome;
+    if (outcome !== undefined && outcome !== 'declined' && outcome !== 'completed') {
+      return res.status(400).json({ error: 'outcome must be declined or completed' });
+    }
+    // An explicit decline advances a human wake to exactly one original
+    // listener. Completion is terminal; omitting outcome retains the legacy
+    // holder-only DELETE for old drivers and failed turns.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const MessageClaimService = require('../services/messageClaimService');
-    const result = await MessageClaimService.release({
-      messageId: req.params.messageId, agentName, instanceId,
+    const ClaimReleaseService = outcome === 'declined'
+      ? require('../services/messageClaimHandoffService')
+      : require('../services/messageClaimService');
+    const result = await ClaimReleaseService.release({
+      messageId: req.params.messageId, agentName, instanceId, ...(outcome ? { outcome } : {}),
     });
     // D7 mirror: releasing the lease ends "someone's on it" immediately
     // (claim-then-decline is a normal, frequent path per D6 — the indicator

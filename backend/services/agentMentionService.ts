@@ -1364,6 +1364,10 @@ const enqueueWakeOnMessage = async ({
           messageType: message?.messageType || message?.message_type || 'text',
           createdAt: message?.createdAt || message?.created_at || new Date(),
           wakeOnMessage: true,
+          // Claim-decline handoff is deliberately human-only. This stamp is
+          // the cross-layer proof the wrapper and kernel need; absent remains
+          // non-human/unknown for old events rather than widening a bot loop.
+          senderIsHuman: sender?.isBot === false,
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });

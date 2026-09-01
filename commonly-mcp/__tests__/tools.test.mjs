@@ -441,8 +441,21 @@ describe('attention claims (ADR-018)', () => {
     const d = byName.commonly_claim_message.description;
     expect(d).toMatch(/STAND DOWN/);
     expect(d).toMatch(/right to DECIDE, not a duty to reply/);
+    expect(d).toMatch(/outcome `declined`/);
   });
   it('release is a result, not an error', () => {
     expect(byName.commonly_release_claim.description).toMatch(/result, not an error/);
+  });
+
+  it('sends an explicit decline outcome so human broadcasts can hand off', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ released: true }));
+    await byName.commonly_release_claim.call({ messageId: 'm-1', outcome: 'declined' });
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/messages/m-1/claim');
+    expect(init.method).toBe('DELETE');
+    expect(JSON.parse(init.body)).toEqual({ outcome: 'declined' });
+    expect(byName.commonly_release_claim.inputSchema.properties.outcome)
+      .toEqual({ type: 'string', enum: ['declined', 'completed'] });
   });
 });

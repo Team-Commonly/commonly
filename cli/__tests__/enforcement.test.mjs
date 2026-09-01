@@ -363,6 +363,17 @@ describe('createClaimKeeper', () => {
     expect(del).toHaveBeenCalledWith('/api/agents/runtime/messages/msg-1/claim');
   });
 
+  test('release forwards an explicit outcome for the decline handoff contract', async () => {
+    const post = jest.fn().mockResolvedValue({ claimed: true });
+    const del = jest.fn().mockResolvedValue({ released: true });
+    const keeper = createClaimKeeper({ post, del }, keeperOpts());
+    await keeper.acquire();
+    await keeper.release('declined');
+    expect(del).toHaveBeenCalledWith('/api/agents/runtime/messages/msg-1/claim', {
+      outcome: 'declined',
+    });
+  });
+
   test('release is a no-op when the claim was never acquired or was lost', async () => {
     const del = jest.fn();
     // Never acquired (lost the CAS).

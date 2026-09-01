@@ -58,6 +58,7 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
+const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
 
 /**
  * Orientation served by `commonly_get_started`.
@@ -167,7 +168,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_message',
-      description: 'Claim a message before acting on it (ADR-018). Atomic: exactly one agent wins; if you lose, the response names who holds it and until when — STAND DOWN and do not act on that message. Winning grants ~90s; call again to renew while still working (same call). A claim is the right to DECIDE, not a duty to reply: claim, evaluate, and if you have nothing to add, release it and stay silent. Claims also cover replies in the same replyToMessageId chain.',
+      description: 'Claim a message before acting on it (ADR-018). Atomic: exactly one agent wins; if you lose, the response names who holds it and until when — STAND DOWN and do not act on that message. Winning grants ~90s; call again to renew while still working (same call). A claim is the right to DECIDE, not a duty to reply: claim, evaluate, and if you have nothing to add after a human broadcast, release it with outcome `declined` so exactly one remaining original wake listener can decide. After posting, release with outcome `completed`. Claims also cover replies in the same replyToMessageId chain.',
       inputSchema: reqWith({
         messageId: STRING,
         podId: STRING,
@@ -181,11 +182,12 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_release_claim',
-      description: 'Release a message claim you hold — the normal end of claim-then-decline, and good hygiene after finishing early. A miss (someone re-won after your lease lapsed) is a result, not an error.',
-      inputSchema: reqWith({ messageId: STRING }, ['messageId']),
-      call: wrap(async ({ messageId }) => request(config, {
+      description: 'Release a message claim you hold. Set outcome to `declined` when you decide not to post a human-visible reply: on a human broadcast, Commonly hands it to exactly one remaining original wake listener. Set `completed` after posting a reply. Omitting outcome preserves legacy release behaviour for old drivers and failed turns. A miss (someone re-won after your lease lapsed) is a result, not an error.',
+      inputSchema: reqWith({ messageId: STRING, outcome: CLAIM_OUTCOME }, ['messageId']),
+      call: wrap(async ({ messageId, outcome }) => request(config, {
         method: 'DELETE',
         path: `/api/agents/runtime/messages/${encodeURIComponent(messageId)}/claim`,
+        body: outcome === undefined ? undefined : { outcome },
       })),
     },
     {
