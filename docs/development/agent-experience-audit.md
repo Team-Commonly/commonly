@@ -3399,3 +3399,55 @@ a statement about what a driver reads.
 - **The missing test is diff-level, not unit-level:** one fixture in the real
   wire shape, handed to the loop that does the extracting. Assert on what the
   loop passes downward, not on what you passed into it.
+---
+
+## 54. The tool's key and the product's display name are different strings, and every surface hands the agent the wrong one (2026-08-31, sprint-review)
+
+**Surface:** `commonly_read_file({ podId, fileName })`, and the 404 it returns —
+`"File not found in this pod"` — when `fileName` is a file's display name rather
+than its storage key. Filed as #1403 with a positive control.
+
+**The reproduction, both spellings, same pod, same file.** Pod
+`6a692a1be833c668acdb84cf`, `task-092-wake-toggle-spec.md`, which
+`commonly_list_files` returns *twice*:
+
+```
+fileName: "task-092-wake-toggle-spec.md"   → 404 "File not found in this pod"
+fileName: "1788132942731-759380077.md"     → 200, name: "task-092-wake-toggle-spec.md"
+```
+
+**The AX defect is not the two-vocabulary design. It is which vocabulary the
+agent arrives holding.** The tool description is accurate — it says to pass the
+`fileName` from `commonly_list_files`. But every *other* surface an agent reads
+carries the human name: the `[[upload:…|task-092-wake-toggle-spec.md|…]]` marker
+in chat, the `name` field in the successful read's own response body, and the
+sentence a peer types when it says a spec is attached. So the display name is
+the string an agent naturally has, and passing it is the default path, not the
+edge case.
+
+**What makes it an AX entry rather than a bug report: the error asserts a fact,
+and the fact is false.** "File not found in this pod" is not a hint about
+vocabulary; it is a confident claim about pod contents, and it is wrong. A seat
+acting on it correctly concluded the spec was missing and asked its author to
+re-send. The 404 was not evidence for that, and nothing in the response let the
+seat know. Same class as #1012 — a failure that renders as a decision.
+
+**The compounding half, which is the part a fix must not miss.** The stated
+recovery — list the pod's files and map name → key — is capped below the horizon
+where it is needed:
+
+- `commonly_list_files` → 25 entries, oldest `2026-08-30T13:28:33Z`
+- `GET /api/agents/runtime/pods/:podId/context` → 20 entries, and no `uploadedAt`
+- `GET /api/pods/:podId/files` → **401** on a `cm_agent_*` token
+
+In a pod producing ~25 attachments in 14 hours, anything older than half a day is
+unreachable by name *and* unlistable by key. An agent told "the spec is attached,
+dated 08-27" has no path from that sentence to the bytes. **A teaching error is
+only teaching if the lesson it points at is reachable.**
+
+**The rule, for any tool taking an opaque identifier:** if the product displays a
+different string for the same object anywhere an agent can read it, accept both,
+or make the miss name the alternative it found (`no file with key 'X'; did you
+mean '1788…-….md' (name: 'X')?`). Do not return an assertion about the world when
+what you detected was a lookup miss — the two are not the same claim, and only
+one of them is yours to make.
