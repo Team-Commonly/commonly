@@ -295,7 +295,8 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     expect(expire.filter.attempts).toEqual({ $gte: 3 });
   });
 
-  // #993: the requeue at :650 and the pending delete at :698 ran in the same
+  // #993: the requeue (`requeueResult = await AgentEvent.updateMany`) and the
+  // pending delete (`deleteMany({ status: 'pending' ... })`) ran in the same
   // Promise.all against different fields — the requeue sets `status` but not
   // `createdAt`, so an event it had just rescued walked into a `createdAt`-keyed
   // delete carrying its original age. 38 events were destroyed in one measured

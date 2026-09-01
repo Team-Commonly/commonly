@@ -518,9 +518,14 @@ export function buildUserMessage(
   //
   // WHAT WAS BROKEN. The branches below compare `trigger.type` against
   // 'mention' / 'chat.message', but the caller passes the RAW event type —
-  // agentEventService:994 forwards `type` verbatim, and the claimable-set gate
-  // at :697 in this same file says so out loud ("raw-type gate mirrors the
-  // wrapper's claimable set"). So `chat.mention` never matched 'mention', and
+  // `agentEventService`'s native dispatch forwards `type` verbatim into
+  // `runAgent`, and the claimable-set gate further down THIS file says so out
+  // loud — grep `Raw-type gate mirrors the wrapper's claimable set`. Cited by
+  // its text rather than its line: that pointer read `:697` and the comment is
+  // at `:740`, forty-three lines adrift, which is a citation that survives
+  // being wrong because nobody follows it.
+  //
+  // So `chat.mention` never matched 'mention', and
   // every message-shaped wake fell through to the generic "Trigger: X, use
   // commonly_read_context" below — which discards the cue entirely and tells
   // the agent to go look around instead.
