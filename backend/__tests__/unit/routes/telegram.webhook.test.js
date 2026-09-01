@@ -350,6 +350,56 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       );
     });
 
+    // The real buffer handler is async and can reject (it awaits a Mongo
+    // write). A synchronous mock here would let an un-awaited
+    // `return events(req, res)` pass — the rejection must reach the catch so
+    // the claim is released and Telegram's redelivery is a retry, not a
+    // duplicate-acked drop.
+    it('releases the claim when the async buffer handler rejects', async () => {
+      const integration = {
+        _id: 'integration-1',
+        type: 'telegram',
+        config: { chatId: '42' },
+      };
+      Integration.findOne = jest.fn().mockResolvedValue(integration);
+      const events = jest.fn(async () => {
+        throw new Error('provider write failed');
+      });
+      registry.get.mockReturnValue({ getWebhookHandlers: () => ({ events }) });
+      const res = await request(app)
+        .post('/api/webhooks/telegram')
+        .send(liveUpdate(6));
+      expect(res.status).toBe(500);
+      expect(events).toHaveBeenCalled();
+      expect(WebhookDelivery.deleteOne).toHaveBeenCalledWith(
+        { provider: 'telegram', deliveryId: '6' },
+      );
+    });
+
+    // Updates with no update_id must bypass the claim entirely: without the
+    // guard they would all claim the literal key 'undefined' — the first one
+    // takes it and every later un-id'd update is acked and dropped.
+    it('processes every update that carries no update_id', async () => {
+      const integration = {
+        _id: 'integration-1',
+        type: 'telegram',
+        podId: 'pod-1',
+        config: { chatId: '42', liveRelay: true },
+      };
+      Integration.findOne = jest.fn().mockResolvedValue(integration);
+      bridge.relayTelegramMessageToPod.mockResolvedValue({});
+      const noIdUpdate = liveUpdate(undefined);
+      delete noIdUpdate.update_id;
+
+      const first = await request(app).post('/api/webhooks/telegram').send(noIdUpdate);
+      const second = await request(app).post('/api/webhooks/telegram').send(noIdUpdate);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalledTimes(2);
+      expect(WebhookDelivery.create).not.toHaveBeenCalled();
+    });
+
     it('a dedup-store outage does not take the bridge down', async () => {
       WebhookDelivery.create.mockRejectedValueOnce(new Error('mongo down'));
       const integration = {
