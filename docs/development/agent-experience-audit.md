@@ -2788,9 +2788,11 @@ or which comparison — anyone picks.
 
 **What to do.**
 
-- **Read `/pulls/:n/reviews` for anything about gates.** It is the only surface
-  that answers "which tree" — and the question is almost always about a tree,
-  because an approval is a statement about a sha and not about a PR.
+- **Read `/pulls/:n/reviews` for anything about gates — and do not stop there.**
+  It is the only surface that answers "which tree", and the question is almost
+  always about a tree, because an approval is a statement about a sha and not
+  about a PR. But `commit_id` certifies *delivery*, not *reading*; see the
+  amendment below before building a predicate on it alone.
 - **Do not treat an empty comments read as evidence of an ungated head.** State
   which surface you queried, the same way you would name any other instrument
   before reporting an absence.
@@ -2813,6 +2815,197 @@ or which comparison — anyone picks.
   convention returns zero on every PR and reads as "nobody gates in comments"
   rather than as a broken query, and cutting to 7 only relocates that failure.
 - Scope: PRs only. An issue has one comment surface and none of this applies.
+
+**Amendment (2026-08-31): `commit_id` is pinned at submit time, so the
+surface this entry prescribes has a false-positive mode of its own — and the
+arm this entry demotes is what caught it.**
+
+The obvious gate predicate is *latest review's `commit_id` == `headRefOid`*.
+On `#1401` it returns TRUE for a review that never saw the head it names.
+Sequence, measured on the raw payload: a reviewer read `770fb1fa`, a push
+landed `6f2d74b4` seventeen seconds later, the review was submitted at
+03:48:09Z. GitHub pinned it to the head *at submit*, so review `5062966011`
+carries a body saying `770fb1fa` and a `commit_id` of `6f2d74b4`. Two reviews
+on that PR now share one `commit_id` and only the later one read it.
+
+No queryable field discriminates. `submitted_at` is *after* the push, so a
+timestamp comparison ratifies it rather than catching it — the review is
+posterior to the commit on every ordering the API exposes. The only record of
+which tree was actually read is the sha the reviewer typed into the prose,
+which is the convention this entry already calls "a convention doing the
+record's job."
+
+So the two arms fail in **opposite directions**, and that is the reason to
+conjoin rather than choose. `commit_id` over-reports: it can name a tree
+nobody read. The prose token under-reports: it is silent whenever the reviewer
+omits the sha. A gate is at head when *both* hold — `commit_id` equals the
+head **and** a hex token in the body is a prefix of it. And prose is not the
+unparseable half it looks like: the width-free token extraction prescribed
+above is a predicate, not a reading habit, so conjoining costs nothing that
+this entry did not already build.
+
+Writer-side, the cheap half is the reviewer's: re-resolve the head immediately
+before submitting, and after submitting assert the returned `commit_id`
+matches the sha named in the body. That closes the gap at the source instead
+of asking every reader to run the conjunction — but the conjunction is still
+the right sweep, because a reader cannot know which reviewers adopted it.
+
+**Measured, after the fact was published as one instance.** @sprint-review
+swept 115 reviews across every open PR and found **three** — `#1401`, `#1233`,
+`#1219` — each with the same signature, a body sha that is an ancestor of the
+pin by exactly one commit. They also corrected their own first count of six
+downward: three of the flagged reviews cited `origin/main` baseline shas, which
+is correct practice a naive sha-mismatch filter punishes.
+
+The complementary population is the interesting one, and my first pass got it
+wrong. Across **120 merged PRs (`#1192`–`#1404`), 63 reviews**, the corrected
+count is **one**: `#1347` review `5060655774` names `53914e88` against a pin of
+`c817e8ee`, an ancestor at distance one — the same signature as the three open
+ones. I published that population as a **zero**, and the zero was an artifact of
+my own checkout.
+
+Three runs of that sweep returned zero, each for a different instrument fault,
+and all three rendered identically to a real result: a malformed `--jq`
+invocation, a window that excluded a known-positive PR, and — the one that
+survived a positive control — **a body sha my clone had never fetched**. The
+first two were caught by running `#1401` as a positive control, which flags
+`770fb1fa` on review `5062966011`. The third was not, and the reason generalises:
+a positive control proves the classifier can return non-zero, and says nothing
+about whether the classifier can *see* the object it is asked to classify.
+`53914e88` lives only on `refs/pull/1347/head`; one
+`git fetch origin '+refs/pull/*/head:refs/remotes/pr/*'` — 1,176 refs, 1.8
+seconds — makes it resolve, and the review reclassifies from "vanished" to
+"defect". **Fetch every ref your predicate can be asked about before running it,
+not the ones your question happens to name.**
+
+**And the evidence I gave for it having vanished could not have come out any
+other way.** I wrote that the sha "is absent locally *and* `git fetch origin
+53914e88` returns `couldn't find remote ref`", offering the second clause as
+corroboration. Abbreviated names are not valid in the wire protocol, so that
+command fails for **every** sha in every review body — verified against one
+whose object is now demonstrably present in the local store, where it still
+fails. A check that returns the same answer whatever the world is doing is not
+a control; it is the first observation typed a second way, and reading it as
+independent is what let a one-source claim look corroborated.
+
+So the corrected rate is **4 of 178 reviews — 3 of 115 on open PRs, 1 of 63 on
+merged ones**. But that counts defective review *objects*, and this entry is
+about defective *gates*, which are not the same population: an object is a gate
+only when it is the **last** review on the PR. Applying the conjoined predicate
+to each PR's last review instead, **two gates are currently wrong** — `#1233`
+(`5018330181`, its only review) and `#1219` (`5018870747`), both open, both
+where the defective review is the latest one. On `#1401` and `#1347` a later
+review pins to *and names* the true head — `#1347`'s `5060776691` names
+`c0ea8fa4` in full, the merged head — so the bad object sits in the history and
+the gate is sound. **No merge was gated by a defective review.**
+
+That restores an observation I made first and then talked myself out of: the
+defect *does* tend to clear before a press, because a PR tends to acquire a
+review at its final head on the way to merging. `#1347` is that mechanism
+working, not a counterexample to it. "Four instances, one of them merged" reads
+as a bad merge and there wasn't one, so state the numbers separately: **4
+defective objects, 2 defective gates, 0 defective merges.**
+
+**A count arrives with its predicate implicit, and that is how it travels
+wrong.** The four was established under the filter *does this review object
+carry the signature*; I spent it on the question *is this gate trustworthy*.
+Those differ by exactly the supersession step, and nothing in the count's name
+says so. Same shape as the zero two paragraphs up — a number believed at a scope
+it was never measured at.
+
+**The adjacent gate failure this predicate cannot see is stale pinning** — a
+last review that was honest about the tree it read, on a head that has since
+moved. Both arms compare a body token to a *pin*; neither asks whether the pin
+is still the head, so such a gate scores perfectly clean and is worth nothing.
+I swept for it rather than assert it: at 2026-08-31T04:5xZ, across the **73 open
+PRs, 71 had a last review pinned exactly at head, one had no review at all, and
+the single stale pin was this PR** — an in-flight re-gate, not rot. The class is
+real, empty of rot here, and recorded so the next reader knows the sweep was run
+rather than skipped. That 71-of-73 is also why supersession is the dominant
+mechanism above: this repo already re-reviews at head as a matter of course.
+
+**Every count in this paragraph is instantaneous, and the stale-pin bucket is
+the one that proves it — it drains by itself.** A reviewer re-derived the
+partition twelve minutes later against 74 open PRs and found *two* stale pins,
+`#1405` and `#1406`; forty minutes after that both were pinned at head again,
+because a stale pin's membership condition is "someone has pushed and not yet
+been re-gated", which the next review clears. That is why it must not be
+collapsed into the defect bucket, and why their first re-derivation — which
+omitted the `pin == head` test and returned four defective gates — was two too
+large: **defects persist and require an edit to clear; stale pins expire.** Two
+buckets with the same predicate signature and opposite half-lives. It is also
+the fourth count in this entry to change meaning without changing its name, and
+the first one contributed by a reader, inside the review of the section that
+names the disease.
+
+**The writer-side remedy this entry proposes is insufficient, and the review
+that passed this entry is the demonstration.** Gate `5063156212` re-resolved
+`headRefOid` immediately before submitting and asserted it equalled the sha in
+its own body. The check passed — both were `82c7e7c3` — and its author had not
+read `82c7e7c3`; the analysis came from a local PR ref last fetched one commit
+earlier. The review was *correctly pinned to a head its author had not read*:
+the defect this entry documents, produced inside a review of this entry, by
+someone running the remedy it prescribes.
+
+The remedy guarantees `named_sha == headRefOid`. It guarantees nothing about
+which tree was analysed, because the fetch that populated the working refs
+happened before the resolve. So it converts *a review naming a stale tree* into
+*a review naming the current tree and having read a stale one* — strictly harder
+to detect, since every queryable field and the prose token now agree. **Two
+quantities cannot catch this; the check needs a third.** That third is
+`analysed_sha`, and the only ways to have it are to re-fetch and re-derive
+*after* resolving the head, or to record the ref you read from and compare it.
+Name the ref, not only the sha.
+
+**Silence is the larger hole, not violation.** Partitioning all 73 open PRs by
+their last review: 66 carry a body token prefixing the head; 2 carry one that is
+neither prefix nor ancestor of `main` (`#1233`, `#1219`); 1 carries only an
+ancestor of `main` (`#1211` — a baseline citation, which is correct practice for
+the object and names no head, so it is arguably its own class); 1 has no review
+at all (`#942`); and **3 have a latest review containing no sha in any form**
+(`#1243`, `#1227`, `#1142`). On those three the conjunction does not fail — it is
+silent. Three gates the predicate cannot evaluate, against two it can and does:
+the coverage gap is bigger than the defect. That is the argument for the
+writer-side habit over the reader-side sweep, and for the habit being the
+three-quantity form rather than the two.
+
+One more instance of the same disease, caught in the act this time. My first
+pass at that partition asked *does any body token prefix the head* and returned
+**three** defective gates, having swept `#1211`'s baseline citation into the
+defect bucket. The entry's own rules put it elsewhere. A coarser predicate
+wearing the same word produced a number one too large — the third time in this
+entry that a count changed meaning without changing its name.
+
+One refinement survives unchanged. **The discriminator is per-review, not
+per-token** — *no* body token equals the pin, rather than *some* body token
+differs from it. Review `5062970141` cites five earlier shas beside its own pin
+and is correct; keyed per-token it would read as a defect.
+
+**All four instances are an ancestor of the pin at distance exactly one** —
+`#1401` `770fb1fa`→`6f2d74b4`, `#1233` `d331b16d`→`8fd4b3d0`, `#1219`
+`19d41910`→`76578d95`, `#1347` `53914e88`→`c817e8ee`. Each of us measured the
+other's population rather than take the number, which is the only reason this is
+stated as four for four. Distance is not part of the filter, so the uniformity is
+a finding rather than an artifact of selection — with one caveat worth stating:
+a token far enough behind its pin is likelier to have landed on `main` too, which
+routes it to the baseline bucket, so the method is mildly biased against large
+distances and four is a small sample.
+
+It matters because it bounds both halves of the remedy. The writer never has to
+ask *how far* back to look — re-resolving the head immediately before submitting
+is sufficient, because the gap is one push, not a drift. And the reader of a
+flagged gate knows exactly what was missed: the diff of a single commit, which is
+usually cheap enough to just read.
+
+**The guard that should have caught this was scoped to the headline, and the
+defect lived in the residue.** The rule one paragraph up — never publish an
+all-population zero without a positive control — is right, and I followed it: the
+zero was controlled, and it passed. What produced the zero was a *single negative*
+sitting in a different bucket, and no rule reaches a lone item classified as
+uninteresting. So the guard belongs on any bucket whose membership would move the
+headline, not on the headline itself. Concretely: before publishing a rate,
+re-examine every item the classifier declined to count, because those are the ones
+nothing else will check.
 
 **Method note.** The correction came from the peer whose review I had just
 declared missing; verifying it myself rather than accepting it is what turned
