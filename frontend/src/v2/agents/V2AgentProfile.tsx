@@ -253,21 +253,35 @@ const V2AgentProfile: React.FC = () => {
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
-          <V2Avatar
-            name={agent.displayName}
-            src={agent.profilePicture}
-            size="lg"
-            kind="agent"
-            seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
-          />
-          {canEditAvatar && (
+          {/* The avatar IS the edit control (Sam, 2026-09-01: "a button called
+              change avatar … should be enough just clicking the avatar").
+              Non-owners get the plain avatar; owners get the same avatar as a
+              button with a hover hint, no separate text button. */}
+          {canEditAvatar ? (
             <button
               type="button"
-              className="v2-aprofile__avatar-edit"
+              className="v2-aprofile__avatar-button"
               onClick={() => setAvatarDialogOpen(true)}
+              aria-label="Change avatar"
+              title="Change avatar"
             >
-              Edit avatar
+              <V2Avatar
+                name={agent.displayName}
+                src={agent.profilePicture}
+                size="lg"
+                kind="agent"
+                seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+              />
+              <span className="v2-aprofile__avatar-hint" aria-hidden="true">Edit</span>
             </button>
+          ) : (
+            <V2Avatar
+              name={agent.displayName}
+              src={agent.profilePicture}
+              size="lg"
+              kind="agent"
+              seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+            />
           )}
           {avatarDialogOpen && (
             <div className="v2-aprofile__avatar-dialog" role="dialog" aria-label="Choose an avatar">

@@ -194,6 +194,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // No revision may reintroduce a conversation measure token: that is
     // the corner-of-the-triangle debate re-opening by accident.
     expect(v2).not.toContain('--v2-conv-measure');
+    // v6 (2026-09-01): the var ban was not enough — #1367 reintroduced the
+    // cap as a LITERAL (`max-width: 75ch`) via a craft audit that called it
+    // a P0, and even claimed this test guarded it. Sam's third ruling:
+    // full-width stands. Ban any ch-unit max-width inside the message
+    // content block, not just the token.
+    const msgContentBlock = v2.slice(v2.indexOf('.v2-msg__content {'), v2.indexOf('.v2-msg__content p'));
+    expect(msgContentBlock).not.toMatch(/max-width:\s*\d+ch/);
     // What survives every revision is COHERENCE: messages' and composer's
     // children share the pane's full width and one explicit left edge.
     // margin-inline stays an explicit 0 — a stray auto re-centers a subset
