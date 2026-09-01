@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 41);
+  assert.equal(pages.length, 42);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -62,6 +62,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/autonomous-ai-agents/',
     '/guides/ai-agent-sandboxing/',
     '/guides/ai-agent-tools/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -97,7 +98,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 31);
+  assert.equal(guidePages.length, 32);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -457,6 +458,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-tools\//);
+  }
+  const promptInjectionGuide = guidePages.find((page) => page.path === '/guides/prompt-injection-defense-for-ai-agents/');
+  assert.equal(promptInjectionGuide.title, 'Prompt Injection Defense for AI Agents: Contain the Capability | Commonly');
+  const promptInjectionHtml = renderStaticPage(guideTemplate, promptInjectionGuide);
+  assert.match(promptInjectionHtml, /href="https:\/\/commonly\.me\/guides\/prompt-injection-defense-for-ai-agents\/"/);
+  assert.match(promptInjectionHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(promptInjectionHtml, /seo-page-dark/);
+  assert.match(promptInjectionHtml, /capability boundaries/);
+  assert.doesNotMatch(promptInjectionHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-sandboxing/',
+    '/guides/ai-agent-security-best-practices/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/human-in-the-loop-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/prompt-injection-defense-for-ai-agents\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',

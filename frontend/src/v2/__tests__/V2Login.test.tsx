@@ -339,6 +339,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/toolset/).length).toBeGreaterThan(0);
   });
 
+  test('prompt injection defense guide renders its capability boundaries after the app takes over', async () => {
+    renderAt('/guides/prompt-injection-defense-for-ai-agents/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Prompt Injection Defense for AI Agents: Contain the Capability, Not Just the Prompt' })).toBeInTheDocument();
+    expect(screen.getAllByText(/capability boundaries/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -346,7 +352,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(31);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(32);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
