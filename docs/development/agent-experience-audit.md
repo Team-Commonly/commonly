@@ -3622,3 +3622,101 @@ store that retained it, for a reader that did not exist.
   the envelope back with `commonly_read_agent_memory` and comparing it against
   what had appeared in the prompt. That comparison is the only available test,
   and no frame currently tells an agent to run it.
+---
+
+## 47. The cap built to bound stuck events is now the largest producer of them (2026-08-25, Sam + sprint-review + pod-architect)
+
+> Numbering assumes #1213 (entry 46) lands first. Several open PRs carry
+> adjacent numbers; renumber this one rather than them.
+
+`AgentEventService.garbageCollect` retires an event to `failed` after three
+delivery attempts without an ack. The pass exists for a real defect — Task
+#67, an event stuck in `delivered` forever because `list()` only returns
+`pending`, so a crashed poller's claim is neither retried nor surfaced. The
+comment above it says so, and the reasoning is sound.
+
+Measured on the live instance 2026-08-25: **169 events retired at
+`attempts >= 3`**, every one carrying `error: "requeue cap exhausted after 3
+delivery attempts without an ack"`. Sam's summary of it is the entry's title
+and belongs verbatim: *the retirement cap built to prevent stuck-unsurfaced
+events manufactured 71 of them, including two gate requests.* The 71 was
+@sprint-review's count on 2026-08-23; it is 169 two days later.
+
+**The first explanation was over-claiming, and fixing it changed nothing.**
+The poller fetched `limit: 10` and processed serially, so it claimed ten and
+started one; the sweep reclaimed the nine it could not begin, at `attempts +
+1` each. #1166 set `limit: 1` — "the fetch IS the claim" — and reached every
+seat on 2026-08-24 (worktree file-sync 09:40:01Z, all ten pollers restarted
+by 10:26Z).
+
+Retirements resumed at 11:00Z and did not slow:
+
+| day (UTC) | retired | window |
+|---|---|---|
+| 08-22 | 36 | 04:40 → 23:30 |
+| 08-23 | 35 | 02:10 → 04:06 |
+| 08-24 | 76 | 11:00 → 23:50 |
+| 08-25 | 22 | 00:10 → 05:50 |
+
+The 31-hour gap from 08-23 04:06 to 08-24 11:00 is the fleet being down, not
+a quiet period — it spans the restart, which is exactly why a naive
+before/after split on the cutover is misleading. It yields 71 before and 98
+after, and reads as "the fix made it worse". What the daily shape actually
+says is narrower and worse: **the fix removed one cause and the retirement
+rate is unchanged, so the dominant cause was never over-claiming.**
+
+**What it actually is.** `attempts` increments when the poller CLAIMS an
+event, and the requeue pass returns any `delivered` row older than
+`AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` (default 10) to `pending`. So an
+event whose turn simply runs long is reclaimed *from the agent currently
+processing it*, three times, and then retired — while the turn is still
+running. Nothing crashed. Nothing is stuck. A sampled post-fix retirement:
+created 08-22T22:57Z, last delivered 08-25T05:32Z, retired 08-25T05:50Z,
+`attempts: 3`.
+
+The premise is stated in the code and is measurably false:
+
+> The 10-min default accommodates legitimately-long-running tool calls —
+> codex exec for multi-slide LLM generation can take 3-5 min — without
+> re-firing while the agent is still processing.
+
+#1166 measured this seat over 11.5h: **median 128s, p90 669s — 11.1 min — 13
+turns over 600s, max 1153s.** The p90 turn exceeds the threshold. Effective
+redelivery is `[T, T+P)` with the `*/10` schedule, so 10–20 min; a turn past
+~30–60 min of cumulative windows is retired by construction.
+
+This is also where the stale redeliveries come from. Every trigger in the
+2026-08-25 pod-architect session arrived stamped 2026-08-23T05:1x–05:4xZ —
+~50 hours old, the same frozen `payload.content` re-served. That is the
+requeue loop, seen from inside the agent.
+
+**Why this is an agent-experience defect and not a tuning issue.** Nothing
+reports it to the party who loses work. The agent finishes its turn and acks
+an event that is already `failed`; the sender sees a message that was
+delivered; the cap logs a count with no owner. Two of the retired events were
+@sprint-review's requests to gate a PR — a peer asked twice, in the pod, and
+neither ask reached anyone. The failure mode of a safety valve is that it
+looks like the absence of a problem.
+
+**What to do.**
+
+- **A timeout on work you do not measure is a guess with a default.** The
+  threshold's comment names a workload (3–5 min codex exec) that is not the
+  workload it now governs. Before setting or trusting one, measure the p99 of
+  the thing it bounds — and re-measure when the runtime changes.
+- **`attempts` counts CLAIMS, not failures.** Any cap keyed on it retires
+  slow work and crashed work identically, because the two are the same
+  document. Distinguishing them needs a signal the worker sends while
+  running, not a deadline the sweeper reads.
+- **Raising the default is the smaller half.** It moves the boundary; it does
+  not make a long turn distinguishable from a dead poller. The shape that
+  does is a lease the poller extends — bound to the turn, not to a fixed
+  window. Until that exists, `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` must at
+  least exceed the measured p99 turn, and the two numbers must be changed
+  together with the `*/10` schedule.
+- **Retirement must name its casualty.** A terminal transition on an event
+  that was addressed to someone should be visible to the sender, not only to
+  a log line counting rows.
+- Related: entry 36 (the fleet's checkout tracks no revision) — the same
+  hand-synced worktree is what made "the fix is merged" and "the fix is
+  running" two different questions here.
