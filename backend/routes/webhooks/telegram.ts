@@ -1,4 +1,5 @@
 const express = require('express');
+const WebhookDelivery = require('../../models/WebhookDelivery');
 const Integration = require('../../models/Integration');
 const Pod = require('../../models/Pod');
 const Summary = require('../../models/Summary');
@@ -33,9 +34,30 @@ const getChatTitle = (chat: any) => (
   || 'Telegram chat'
 );
 
+// Fail CLOSED (hardening study 2026-08-31, gap 4): with no TELEGRAM_SECRET_TOKEN
+// configured this used to accept anything — anyone who found the URL could post
+// updates that wake agents and drive /mode //mute. Now a missing secret rejects,
+// unless the operator explicitly opts out (TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED=true,
+// for local dev only). Deploy note: set TELEGRAM_SECRET_TOKEN and re-register the
+// webhook with setWebhook(secret_token=...) BEFORE shipping this to an env with a
+// live bridge, or Telegram's deliveries (sent without the header) will 401.
+let warnedUnverified = false;
 const verifyTelegramHeader = (req: any) => {
   const expectedToken = process.env.TELEGRAM_SECRET_TOKEN;
-  if (!expectedToken) return true;
+  if (!expectedToken) {
+    if (process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED === 'true') {
+      if (!warnedUnverified) {
+        warnedUnverified = true;
+        console.warn('Telegram webhook: TELEGRAM_SECRET_TOKEN unset and verification explicitly disabled — accepting unverified updates');
+      }
+      return true;
+    }
+    if (!warnedUnverified) {
+      warnedUnverified = true;
+      console.error('Telegram webhook: TELEGRAM_SECRET_TOKEN is not set — rejecting all updates (set the secret and re-register via setWebhook, or set TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED=true for local dev)');
+    }
+    return false;
+  }
   const headerToken = req.headers['x-telegram-bot-api-secret-token'];
   return headerToken && headerToken === expectedToken;
 };
@@ -309,11 +331,53 @@ const handleUnmuteCommand = async (chat: any, integration: any) => {
   return sendToChat(chatId, 'Unmuted — relay resumes.');
 };
 
+// Dedup TTL: Telegram redelivers an unacked update for well under this window;
+// after it, a reused update_id would be a new update anyway (ids are sequential
+// per bot but survive restarts on Telegram's side).
+const DEDUP_TTL_MS = 10 * 60_000;
+
+// Atomic claim on this update's delivery id (claim-before-run; see
+// models/WebhookDelivery.ts for the contract). Returns 'claimed' | 'duplicate'.
+const claimDelivery = async (updateId: any) => {
+  try {
+    await WebhookDelivery.create({
+      provider: 'telegram',
+      deliveryId: String(updateId),
+      expiresAt: new Date(Date.now() + DEDUP_TTL_MS),
+    });
+    return 'claimed';
+  } catch (err: any) {
+    if (err?.code === 11000) return 'duplicate';
+    // A dedup-store failure must not take the bridge down: proceed unclaimed
+    // (worst case is the pre-existing duplicate behavior, loudly).
+    console.error('Telegram webhook: dedup claim failed, processing without a claim', err);
+    return 'claimed';
+  }
+};
+
+const releaseDelivery = async (updateId: any) => {
+  try {
+    await WebhookDelivery.deleteOne({ provider: 'telegram', deliveryId: String(updateId) });
+  } catch (err) {
+    console.error('Telegram webhook: failed to release dedup claim', err);
+  }
+};
+
 // Universal Telegram webhook (single bot, many chats)
 router.post('/', async (req: any, res: any) => {
+  const updateId = req.body?.update_id;
   try {
     if (!verifyTelegramHeader(req)) {
       return res.status(401).send('invalid secret token');
+    }
+
+    // Redelivery of an update we already claimed (processed, or processing on
+    // a parallel delivery): ack and stop, or it becomes a duplicate pod
+    // message and a duplicate agent wake.
+    if (updateId !== undefined && updateId !== null) {
+      if ((await claimDelivery(updateId)) === 'duplicate') {
+        return res.sendStatus(200);
+      }
     }
 
     const message = getMessageFromUpdate(req.body);
@@ -401,6 +465,12 @@ router.post('/', async (req: any, res: any) => {
     return events(req, res);
   } catch (error) {
     console.error('Telegram webhook error', error);
+    // Forget-on-error: the 500 makes Telegram redeliver this update_id; the
+    // claim must not survive to swallow that retry. (Per the liveRelay comment
+    // above, anything that threw did so before the pod write persisted.)
+    if (updateId !== undefined && updateId !== null) {
+      await releaseDelivery(updateId);
+    }
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
