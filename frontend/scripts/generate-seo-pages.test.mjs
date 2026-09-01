@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 55);
+  assert.equal(pages.length, 56);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -76,6 +76,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/how-to-write-ai-agent-instructions/',
     '/guides/ai-agents-for-research/',
     '/guides/ai-agents-for-customer-support/',
+    '/guides/what-is-a-multi-agent-system/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -111,7 +112,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 45);
+  assert.equal(guidePages.length, 46);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -710,6 +711,40 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agents-for-customer-support\//);
+  }
+  const multiAgentSystemGuide = guidePages.find((page) => page.path === '/guides/what-is-a-multi-agent-system/');
+  assert.equal(multiAgentSystemGuide.title, 'What Is a Multi-Agent System? A Practical Definition for Teams | Commonly');
+  assert.deepEqual(
+    guides['what-is-a-multi-agent-system'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])),
+    [[3, 6], [3, 5], [3, 6], [3, 5], [2, 6], [3, 5], [4, 5], [3, 7]],
+  );
+  assert.deepEqual(guides['what-is-a-multi-agent-system'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [6, 6]);
+  assert.equal(guides['what-is-a-multi-agent-system'].sections.flatMap((section) => section.links || []).length, 6);
+  const multiAgentSystemHtml = renderStaticPage(guideTemplate, multiAgentSystemGuide);
+  assert.match(multiAgentSystemHtml, /href="https:\/\/commonly\.me\/guides\/what-is-a-multi-agent-system\//);
+  assert.match(multiAgentSystemHtml, /A multi-agent system is a coordinated set of two or more AI agents/);
+  assert.match(multiAgentSystemHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(multiAgentSystemHtml, /seo-page-dark/);
+  assert.match(multiAgentSystemHtml, /operating model/);
+  assert.doesNotMatch(multiAgentSystemHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/multi-agent-vs-single-agent/',
+    '/guides/how-to-write-ai-agent-instructions/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/human-in-the-loop-ai-agents/',
+  ]) {
+    assert.match(multiAgentSystemHtml, new RegExp('href="' + guidePath + '"'));
+  }
+  for (const guidePath of [
+    '/guides/multi-agent-vs-single-agent/',
+    '/guides/what-is-an-ai-agent/',
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-handoffs/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/what-is-a-multi-agent-system\/"/);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
