@@ -461,14 +461,13 @@ const V2YourTeamPage: React.FC = () => {
                   })}
           </p>
         </div>
+        {/* Sam's 2026-09-01 ruling: two CTAs, user's mental model, not our
+            architecture. Channels ("Connect") live ONLY in the nav rail's
+            Connectors item — "Connect" next to "Connect your own agent" was
+            the same verb for two different concepts. "Add a computer" is the
+            ADR-026 direction: today it opens the where-it-runs flow; when
+            daemon Phase 2 lands it becomes the machine surface. */}
         <div className="v2-team__actions">
-          <button
-            type="button"
-            className="v2-team__byo-cta"
-            onClick={() => navigate('/v2/connect')}
-          >
-            {t('yourTeam.actions.connect')}
-          </button>
           <button
             type="button"
             className="v2-team__hire-cta"
@@ -481,7 +480,7 @@ const V2YourTeamPage: React.FC = () => {
             className="v2-team__byo-cta"
             onClick={() => navigate('/v2/agents/byo')}
           >
-            {t('yourTeam.actions.connectOwn')}
+            {t('yourTeam.actions.addComputer')}
           </button>
         </div>
       </header>
@@ -546,7 +545,7 @@ const V2YourTeamPage: React.FC = () => {
               className="v2-team__byo-cta"
               onClick={() => navigate('/v2/agents/byo')}
             >
-              {t('yourTeam.actions.connectOwn')}
+              {t('yourTeam.actions.addComputer')}
             </button>
           </div>
         </div>

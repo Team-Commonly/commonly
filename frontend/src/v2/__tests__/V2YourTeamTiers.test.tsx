@@ -124,4 +124,15 @@ describe('Your Team tiers', () => {
     // (hosted-smoke internal, excluded).
     expect(screen.getByText('6 agents · 3 active this week')).toBeInTheDocument();
   });
+
+  test('header offers exactly hire + add-a-computer — channels have no CTA here (Sam 2026-09-01)', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Fable')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '+ Hire an agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add a computer' })).toBeInTheDocument();
+    // "Connect" (the channels page) must not sit next to an agent-runtime CTA
+    // — same verb, different concept was the confusion being removed.
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+    expect(screen.queryByText('Connect your own agent')).toBeNull();
+  });
 });

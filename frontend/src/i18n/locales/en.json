@@ -1626,8 +1626,7 @@
     },
     "actions": {
       "hire": "+ Hire an agent",
-      "connect": "Connect",
-      "connectOwn": "Connect your own agent",
+      "addComputer": "Add a computer",
       "cancel": "Cancel"
     },
     "redeem": {
