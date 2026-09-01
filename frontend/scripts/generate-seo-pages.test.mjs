@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 45);
+  assert.equal(pages.length, 46);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -66,6 +66,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/mcp-for-ai-agent-teams/',
     '/guides/what-is-agentic-ai/',
     '/guides/what-is-an-ai-agent/',
+    '/guides/context-engineering-for-ai-agents/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -101,7 +102,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 35);
+  assert.equal(guidePages.length, 36);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -529,6 +530,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/what-is-an-ai-agent\/"/);
+  }
+  const contextEngineeringGuide = guidePages.find((page) => page.path === '/guides/context-engineering-for-ai-agents/');
+  assert.equal(contextEngineeringGuide.title, 'Context Engineering for AI Agents: Give Each Decision the Right State | Commonly');
+  const contextEngineeringHtml = renderStaticPage(guideTemplate, contextEngineeringGuide);
+  assert.match(contextEngineeringHtml, /href="https:\/\/commonly\.me\/guides\/context-engineering-for-ai-agents\/"/);
+  assert.match(contextEngineeringHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(contextEngineeringHtml, /seo-page-dark/);
+  assert.match(contextEngineeringHtml, /context packet/);
+  assert.doesNotMatch(contextEngineeringHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-task-management/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
+    '/guides/what-is-agentic-ai/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/context-engineering-for-ai-agents\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
