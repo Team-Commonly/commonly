@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 56);
+  assert.equal(pages.length, 57);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -77,6 +77,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agents-for-research/',
     '/guides/ai-agents-for-customer-support/',
     '/guides/what-is-a-multi-agent-system/',
+    '/guides/ai-agent-glossary/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -112,7 +113,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 46);
+  assert.equal(guidePages.length, 47);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -745,6 +746,31 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/what-is-a-multi-agent-system\/"/);
+  }
+  const glossaryGuide = guidePages.find((page) => page.path === '/guides/ai-agent-glossary/');
+  assert.equal(glossaryGuide.title, 'AI Agent Glossary: Essential Terms for Building Agent Teams | Commonly');
+  const glossaryData = guides['ai-agent-glossary'];
+  assert.deepEqual(
+    glossaryData.sections.filter((section) => !section.paragraphs).map((section) => section.title),
+    ['Core agent terms', 'Collaboration and workspace terms', 'Context and memory terms', 'Capability and safety terms', 'Governance and evaluation terms'],
+  );
+  assert.equal(glossaryData.sections.filter((section) => section.paragraphs).length, 36);
+  assert.equal(glossaryData.sections.flatMap((section) => section.links || []).length, 19);
+  assert.equal(glossaryData.sections.some((section) => section.tables || section.bullets || section.orderedItems || section.codeBlocks), false);
+  const glossaryHtml = renderStaticPage(guideTemplate, glossaryGuide);
+  assert.match(glossaryHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-glossary\//);
+  assert.match(glossaryHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(glossaryHtml, /seo-page-dark/);
+  assert.match(glossaryHtml, /shared vocabulary/);
+  assert.doesNotMatch(glossaryHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/what-is-an-ai-agent/',
+    '/guides/what-is-agentic-ai/',
+    '/guides/what-is-a-multi-agent-system/',
+    '/guides/how-to-write-ai-agent-instructions/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-glossary\/"/);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
