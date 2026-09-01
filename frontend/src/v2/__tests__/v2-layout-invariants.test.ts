@@ -194,6 +194,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // No revision may reintroduce a conversation measure token: that is
     // the corner-of-the-triangle debate re-opening by accident.
     expect(v2).not.toContain('--v2-conv-measure');
+    // v6 (2026-09-01): the var ban was not enough — #1367 reintroduced the
+    // cap as a LITERAL (`max-width: 75ch`) via a craft audit that called it
+    // a P0, and even claimed this test guarded it. Sam's third ruling:
+    // full-width stands. Ban any ch-unit max-width inside the message
+    // content block, not just the token.
+    const msgContentBlock = v2.slice(v2.indexOf('.v2-msg__content {'), v2.indexOf('.v2-msg__content p'));
+    expect(msgContentBlock).not.toMatch(/max-width:\s*\d+ch/);
     // What survives every revision is COHERENCE: messages' and composer's
     // children share the pane's full width and one explicit left edge.
     // margin-inline stays an explicit 0 — a stray auto re-centers a subset
@@ -730,12 +737,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
   // token files (the same-PR rule), and the tile class must consume them.
-  it('chat message text keeps its measure cap (craft audit finding 6)', () => {
-    // 150-char lines on the chat surface were the audit's P0 readability
-    // defect; jsdom cannot measure line length, so pin the rule itself.
+  it('chat message text has NO measure cap (Sam overruled craft finding 6, 2026-09-01)', () => {
+    // #1367 pinned a 75ch cap here as the audit's P0. Sam overruled it —
+    // third full-width ruling; worst case was a large screen with the
+    // sidebar collapsed. The rule-2 v6 assertion above owns the ban; this
+    // test flips to the same polarity so the two can never disagree.
     const block = v2.match(/\.v2-msg__content \{[^}]*\}/);
     expect(block).not.toBeNull();
-    expect(block![0]).toContain('max-width: 75ch');
+    expect(block![0]).not.toMatch(/max-width:\s*\d+ch/);
   });
 
   it('the BEND-1 feature type step exists in v2.css and tokens.css together', () => {
