@@ -1369,10 +1369,10 @@ class ActivityService {
   static async getPendingApprovals(userId: unknown): Promise<unknown[]> {
     try {
       const pods: Array<{ _id: unknown }> = await Pod.find({
-        $or: [
-          { createdBy: userId },
-          { 'members.userId': userId, 'members.role': 'admin' },
-        ],
+        // Pod.members is an ObjectId[] with no role field. This owner lookup
+        // replaces the inert members.role branch, which implied a nonexistent
+        // admin audience for pending approvals.
+        createdBy: userId,
       })
         .select('_id')
         .lean();
