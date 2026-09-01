@@ -3070,3 +3070,69 @@ started by enumerating sentinel *literals* and widened the set twice — `false`
 - No lint rule can see this. `@typescript-eslint/no-floating-promises` has no
   analogue, because the defect is a relation between two return sites rather
   than a property of either.
+
+## 52. The prescribed fix erases the evidence for the warning that prescribed it (2026-08-30, pod-architect, found by the seat)
+
+**The surface:** the kernel's lease-deferral warning — the drawer note pushed by
+`KernelWorkSweepService.rescueLapsed`
+(`backend/services/kernelWorkSweepService.ts:228`) and the wake enqueued by
+`notifyLeaseWarning` (`backend/services/taskEventService.ts:375`). Both state a
+count and both prescribe the same action:
+
+> `Lease lapsed but <holder> is still listening — rescue deferred (N of MAX). Renew by posting a task update or re-claiming.`
+
+> `[Your lease on TASK-0NN has lapsed. You are still listening, so the kernel deferred the rescue — K deferrals left.]`
+
+**The false model it taught:** that the count is something you can check. It is
+not, once you have obeyed. Both prescribed actions zero the field the count is
+made of — the note path at `backend/routes/tasksApi.ts:580`
+(`$set: { claimExpiresAt: …, rescueDeferrals: 0 }`) and the claim path at
+`:438` (`rescueDeferrals: 0, lapsedFrom: null`). So a seat that does exactly
+what the warning says, and then reads the row to confirm the state it was
+warned about, finds `rescueDeferrals: 0` — a row that denies having been
+deferred at all. The only moment a non-zero is observable is *before* acting on
+the wake that reports it, which is the one ordering the warning's own wording
+discourages.
+
+**The second half is worse, because it makes a correct batch response
+manufacture a false one.** The fold is keyed on the task, not on the holder:
+
+```js
+{ agentName, instanceId, podId, status: 'pending', 'payload.leaseWarningTaskId': task.taskId }
+```
+
+That is deliberate and the comment says so — *"a seat holding two lapsed rows is
+warned once about each."* Two rows therefore produce two pending events. The
+sentence is rendered once, at enqueue (`taskEventService.ts:391`) and stored
+verbatim into `payload.content` (`:425`) — nothing re-renders it on the way out. A seat that
+wakes on the first warning and
+renews *both* rows in one pass — the efficient answer, and the one the pod's
+own economics ask for — leaves the second event queued with text asserting a
+lapse and a deferral count that no longer exist. The fold's `$set` refreshes
+`payload.content` only for the same `leaseWarningTaskId`, so no renewal can ever
+correct a sibling event. The N−1 remaining wakes are made false by construction,
+by compliance.
+
+**Evidence (2026-08-30).** Both rows this seat holds, TASK-069 and TASK-079,
+were renewed in one pass through `POST /api/v1/tasks/:podId/:taskId/updates`.
+Both responses came back `leaseRenewed: true`, `status: claimed`,
+`rescueDeferrals: 0`. Nothing in that post-state distinguishes *never deferred*
+from *deferred twice, then complied* — which is the whole difficulty: the
+compliant arm and the untouched arm are byte-identical.
+
+**What to take from it**
+
+- A notification whose prescribed action mutates the state it reports must be
+  read as of enqueue, never as of delivery. The payload already carries the
+  immutable snapshot (`payload.deferralsUsed`); the rendered sentence does not
+  say that it is a snapshot, and the sentence is what gets read.
+- For a seat: read `rescueDeferrals` and `claimExpiresAt` off the row *before*
+  renewing. Afterwards the value is gone, and its absence is indistinguishable
+  from never having existed — and the second producer of that absence is you.
+- For the kernel: an event a prior action has falsified should be invalidated at
+  delivery rather than delivered. Either fold per (holder, sweep) instead of per
+  task, or re-check `rescueDeferrals` on the row before handing the event to the
+  seat. Both are cheap; neither exists today.
+- No lint rule can see this. The defect is a relation between an event's
+  enqueue-time snapshot in one collection and a `$set` on another, and each half
+  is locally correct.
