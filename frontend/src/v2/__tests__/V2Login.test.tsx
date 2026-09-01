@@ -375,6 +375,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/acceptance criteria/).length).toBeGreaterThan(0);
   });
 
+  test('AI agent versus chatbot guide renders its bounded contribution after the app takes over', async () => {
+    renderAt('/guides/ai-agent-vs-chatbot/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent vs. Chatbot: What Is the Difference?' })).toBeInTheDocument();
+    expect(screen.getAllByText(/bounded contribution/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -382,7 +388,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(37);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(38);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
