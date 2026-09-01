@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 47);
+  assert.equal(pages.length, 48);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -68,6 +68,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/what-is-an-ai-agent/',
     '/guides/context-engineering-for-ai-agents/',
     '/guides/how-to-evaluate-ai-agents/',
+    '/guides/ai-agent-vs-chatbot/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -103,7 +104,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 37);
+  assert.equal(guidePages.length, 38);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -565,6 +566,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/how-to-evaluate-ai-agents\//);
+  }
+  const chatbotGuide = guidePages.find((page) => page.path === '/guides/ai-agent-vs-chatbot/');
+  assert.equal(chatbotGuide.title, 'AI Agent vs. Chatbot: What Is the Difference? | Commonly');
+  const chatbotHtml = renderStaticPage(guideTemplate, chatbotGuide);
+  assert.match(chatbotHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-vs-chatbot\/"/);
+  assert.match(chatbotHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(chatbotHtml, /seo-page-dark/);
+  assert.match(chatbotHtml, /bounded contribution/);
+  assert.doesNotMatch(chatbotHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/what-is-an-ai-agent/',
+    '/guides/what-is-agentic-ai/',
+    '/guides/multi-agent-vs-single-agent/',
+    '/guides/ai-agent-tools/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-vs-chatbot\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
