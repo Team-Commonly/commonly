@@ -418,6 +418,14 @@ spec:
               optional: true
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
+        # injection-guard only (Sam, 2026-09-01): openai-moderation-enforce
+        # carries a PLACEHOLDER OpenAI key in litellm and 401s EVERY
+        # platform llmService call — summaries emitted the hardcoded
+        # template since the guardrail shipped. Fail-closed proved the
+        # guardrail wiring works; restore moderation only WITH a real
+        # key (see the Sharpen board task).
+        - name: LLMSERVICE_GUARDRAILS
+          value: "injection-guard"
         - name: LITELLM_CHAT_MODEL
           # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
           # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
