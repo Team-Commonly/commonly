@@ -462,7 +462,10 @@ router.post('/', async (req: any, res: any) => {
 
     const provider = registry.get('telegram', integration);
     const { events } = provider.getWebhookHandlers();
-    return events(req, res);
+    // await, not return: a rejected promise returned from inside `try` escapes
+    // this catch (express 4 won't catch it either), and the claim above would
+    // survive to swallow Telegram's redelivery.
+    return await events(req, res);
   } catch (error) {
     console.error('Telegram webhook error', error);
     // Forget-on-error: the 500 makes Telegram redeliver this update_id; the
