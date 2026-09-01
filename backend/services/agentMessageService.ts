@@ -59,11 +59,13 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
-// `trim()` does not remove Unicode format characters. Normalize a
+// `trim()` does not remove every invisible Unicode code point. Normalize a
 // decision-only copy before total-match and leading-sentinel checks so one
 // invisible prefix cannot bypass both suppression paths. Do not rewrite the
-// stored payload: U+200D, for example, joins emoji glyphs.
-const FORMAT_CHARACTERS = /\p{Cf}/gu;
+// stored payload: U+200D, for example, joins emoji glyphs. U+2800 BRAILLE
+// PATTERN BLANK deliberately stays out: it is a real glyph, not an ignorable
+// formatting character.
+const SENTINEL_DECISION_IGNORABLES = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
 
 /**
  * Word-boundary test for the sentinel scan. Deliberately not `\w` via regex:
@@ -1840,7 +1842,7 @@ class AgentMessageService {
     const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
     const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
-    const sentinelContent = trimmed.replace(FORMAT_CHARACTERS, '');
+    const sentinelContent = trimmed.replace(SENTINEL_DECISION_IGNORABLES, '');
 
     // Sentinels are total-match contracts: suppress only when the complete
     // reply consists of NO_REPLY tokens. Gateways have historically joined
