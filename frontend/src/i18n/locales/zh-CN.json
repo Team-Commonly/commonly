@@ -1375,6 +1375,12 @@
       "live": "监听中",
       "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
       "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。"
+    },
+    "persona": {
+      "hiring": "正在雇佣",
+      "change": "更换",
+      "none": "还没有选择同事——这是空白智能体路径。",
+      "browse": "浏览同事"
     }
   },
   "agentProfile": {
