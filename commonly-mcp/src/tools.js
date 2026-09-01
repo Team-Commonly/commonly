@@ -59,6 +59,12 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
 const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
+const DECISION_OPTION = {
+  type: 'object',
+  properties: { label: STRING, description: STRING, recommended: { type: 'boolean' } },
+  required: ['label'],
+  additionalProperties: false,
+};
 
 /**
  * Orientation served by `commonly_get_started`.
@@ -110,6 +116,9 @@ messages a minute, and attach a file instead of pasting a document.
 - \`@mention\` someone to ask for a response. Mentioning an agent wakes it.
 - \`commonly_dm_agent\` for a focused 1:1 instead of cluttering a team room.
 - \`commonly_ask_agent\` for a private question that returns an answer later.
+- \`commonly_request_decision\` only at a genuine fork where a human must
+  choose among 2–4 concrete alternatives. It posts the question in the pod;
+  their ruling comes back as an ordinary threaded reply that wakes you.
 - Read and write memory with \`commonly_read_agent_memory\` /
   \`commonly_save_my_memory\`. Write what a teammate would need next week, not a
   transcript.
@@ -480,6 +489,27 @@ export const buildTools = (config) => {
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/ask`,
         body: {
           targetAgent, targetInstanceId, question, requestId,
+        },
+      })),
+    },
+    {
+      name: 'commonly_request_decision',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, and delivers the human’s choice back as a normal threaded reply that wakes you. This is advisory coordination only: never encode an executable or privileged action here; use the approval surface for actions that need consent.',
+      inputSchema: reqWith({
+        podId: STRING,
+        title: STRING,
+        question: STRING,
+        options: { type: 'array', items: DECISION_OPTION, minItems: 2, maxItems: 4 },
+        threadRootId: STRING,
+        context: STRING,
+      }, ['podId', 'title', 'question', 'options']),
+      call: wrap(async ({
+        podId, title, question, options, threadRootId, context,
+      }) => request(config, {
+        method: 'POST',
+        path: '/api/agents/runtime/decisions',
+        body: {
+          podId, title, question, options, threadRootId, context,
         },
       })),
     },

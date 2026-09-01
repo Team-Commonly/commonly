@@ -11,7 +11,7 @@ const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
-const ApprovalAction = require('../models/ApprovalAction');
+const DecisionRequest = require('../models/DecisionRequest');
 
 let PGMessage: unknown = null;
 try {
@@ -112,42 +112,6 @@ interface ComputeFlagsOptions {
 // (95 updates in one window, TASK-083) drowned every real seat, which is what
 // made the Activity tab read as empty of real agent activity.
 const SYSTEM_BOT_NAMES = new Set(['commonly-bot', 'commonly-ai-agent']);
-
-// Decision options deliberately stay in the task's latest human-readable
-// update instead of gaining a second board state. Agents can propose a
-// decision with one portable line, and the queue can render it without
-// teaching every task producer a new write shape.
-//
-// The grammar is intentionally small: `OPTIONS: A | B | C`. Keeping it
-// bounded makes every option a tap target, while rejecting malformed lines
-// rather than guessing prevents a partial proposal from becoming a ruling.
-const parseDecisionOptions = (text: unknown): string[] => {
-  if (typeof text !== 'string') return [];
-  const line = text.match(/^\s*OPTIONS:\s*(.+?)\s*$/im)?.[1];
-  if (!line) return [];
-  const options = line.split('|').map((value) => value.trim()).filter(Boolean);
-  if (options.length < 2 || options.length > 4 || options.some((value) => value.length > 80)) return [];
-  const normalized = new Set(options.map((value) => value.toLocaleLowerCase()));
-  return normalized.size === options.length ? options : [];
-};
-
-const getTaskDecisionOptions = (task: Record<string, unknown>): string[] => {
-  const updates = Array.isArray(task.updates) ? task.updates as Array<{ text?: unknown }> : [];
-  for (const update of [...updates].reverse()) {
-    const options = parseDecisionOptions(update?.text);
-    if (options.length) return options;
-  }
-  return parseDecisionOptions(task.title);
-};
-
-const hasRuling = (task: Record<string, unknown>): boolean => {
-  const updates = Array.isArray(task.updates) ? task.updates as Array<{ text?: unknown }> : [];
-  // A DECIDE row stays open for the executor after the human rules, so an
-  // executor's later progress note must not put the resolved decision back
-  // into the attention queue. Unlike the handoff heuristic, this terminal
-  // marker is intentionally searched across the row's full update history.
-  return updates.some((update) => /^\s*SAM RULED:\s*/i.test(String(update?.text || '')));
-};
 
 class ActivityService {
   /**
@@ -476,11 +440,9 @@ class ActivityService {
 
   /**
    * The decision queue: everything concretely waiting on THIS human, from
-   * facts that exist today (TASK-083 defect 1's fix): pending approval
-   * requests, unacknowledged direct mentions, and board rows that name a
-   * human decision — DECIDE-titled tasks, blocked tasks, and tasks whose
-   * latest update hands off to a human press/ruling. No inference, no
-   * name-matching heuristics (TASK-070b stays open by design).
+   * stored facts: existing approval requests, unacknowledged direct mentions,
+   * agent-authored DecisionRequests, and explicit board press handoffs.
+   * A board title is never parsed into a decision surface.
    */
   /**
    * Every message in the user's pods that @mentions them, threads included,
@@ -525,76 +487,6 @@ class ActivityService {
       .filter((m) => !acked.has(m.id));
   }
 
-  /**
-   * A human ruling is a board update, not a new activity record. The task
-   * update wakes the asking seat through the established board fan-out and
-   * its terminal marker removes the resolved DECIDE row from this queue.
-   */
-  static async ruleTaskDecision(options: {
-    podId: string;
-    taskId: string;
-    option: string;
-    userId: unknown;
-  }): Promise<{ status: number; body: Record<string, unknown> }> {
-    const { podId, taskId, option, userId } = options;
-    if (!podId || !taskId || !option) return { status: 400, body: { error: 'podId, taskId, and option are required' } };
-
-    const pod = await Pod.findById(podId).select('createdBy members').lean() as PodDoc | null;
-    if (!pod) return { status: 404, body: { error: 'Pod not found' } };
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const isPodMember = require('../utils/isPodMember');
-    if (!isPodMember(pod, userId)) return { status: 403, body: { error: 'Only pod members can rule on this decision' } };
-
-    const caller = await User.findById(userId).select('username isBot').lean() as { username?: string; isBot?: boolean } | null;
-    if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a human can rule on this decision' } };
-
-    const task = await Task.findOne({ podId, taskId }).lean() as Record<string, unknown> | null;
-    if (!task) return { status: 404, body: { error: 'Task not found' } };
-    if (!['pending', 'claimed', 'blocked'].includes(String(task.status || ''))) {
-      return { status: 409, body: { error: 'Decision is no longer active' } };
-    }
-    if (!/^DECIDE\b/i.test(String(task.title || ''))) {
-      return { status: 400, body: { error: 'Task is not a decision request' } };
-    }
-    if (hasRuling(task)) return { status: 409, body: { error: 'Decision already ruled' } };
-
-    const choices = getTaskDecisionOptions(task);
-    if (!choices.includes(option)) return { status: 400, body: { error: 'Option is not available for this decision' } };
-
-    const now = new Date();
-    const update = {
-      text: `SAM RULED: ${option}`,
-      author: caller.username || 'Human',
-      authorId: String(userId),
-      createdAt: now,
-    };
-    // The ruling marker is the compare-and-set. A double tap (or a second
-    // browser) loses before it can append a conflicting human decision.
-    const ruled = await Task.findOneAndUpdate(
-      {
-        podId,
-        taskId,
-        status: { $in: ['pending', 'claimed', 'blocked'] },
-        updates: { $not: { $elemMatch: { text: /^\s*SAM RULED:\s*/i } } },
-      },
-      { $push: { updates: update } },
-      { new: true },
-    );
-    if (!ruled) return { status: 409, body: { error: 'Decision already ruled' } };
-
-    const emittedTask = typeof ruled.toObject === 'function' ? ruled.toObject() : ruled;
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const { emitTaskUpdated, notifyPodAgents } = require('./taskEventService');
-    emitTaskUpdated(podId, emittedTask, 'updated');
-    try {
-      const pending = notifyPodAgents(podId, emittedTask, 'updated', { userId, isAgent: false });
-      if (pending?.catch) pending.catch((err: Error) => console.warn('[decision-rule] agent notify failed:', err.message));
-    } catch (err) {
-      console.warn('[decision-rule] agent notify threw:', (err as Error).message);
-    }
-    return { status: 200, body: { ok: true, ruling: option, task: emittedTask } };
-  }
-
   static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
     const pods: PodDoc[] = await Pod.find({
       $or: [
@@ -614,32 +506,29 @@ class ActivityService {
       podId: string | null;
       podName?: string;
       taskId?: string;
-      options?: string[];
+      options?: Array<{ label: string; description?: string; recommended?: boolean }>;
+      messageId?: string;
+      threadRootId?: string;
       createdAt: Date | string | null;
     };
     const items: QueueItem[] = [];
     let composePodId: string | null = null;
 
-    // 1. Pending approval cards — the durable ApprovalAction row is the
-    // decision object. Legacy Activity.approval rows are seed-fed and must not
-    // enter this queue, or a card would appear twice on two different routes.
-    // This filter intentionally mirrors resolveApproval's owner gate: a
-    // "Needs you" row must never offer a press to a non-decider.
+    // 1. Existing binary approvals stay on their established Activity path.
+    // DecisionRequest is additive; it does not widen or replace the
+    // owner-scoped ApprovalAction flow.
     try {
-      const approvals = await ApprovalAction.find({ ownerUserId: userId, status: 'flagged' })
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .lean() as Array<{
-          _id: { toString(): string }; summary?: string; podId?: unknown; createdAt?: Date;
-          agentName?: string;
-        }>;
+      const approvals = await ActivityService.getPendingApprovals(userId) as Array<{
+        _id: { toString(): string }; content?: string; podId?: unknown; createdAt?: Date;
+        agentMetadata?: { agentName?: string };
+      }>;
       for (const a of approvals) {
         items.push({
           kind: 'approval',
-          // RAW ApprovalAction id — /api/approvals/:id/resolve keys on it.
+          // RAW Activity id — the existing Activity actions key on it.
           id: String(a._id),
-          title: a.agentName ? `${a.agentName} requests approval` : 'Approval requested',
-          detail: String(a.summary || '').slice(0, 160),
+          title: a.agentMetadata?.agentName ? `${a.agentMetadata.agentName} requests approval` : 'Approval requested',
+          detail: String(a.content || '').slice(0, 160),
           podId: a.podId ? String(a.podId) : null,
           podName: a.podId ? podName.get(String(a.podId)) : undefined,
           createdAt: a.createdAt || null,
@@ -680,9 +569,47 @@ class ActivityService {
       console.warn('[decision-queue] mentions read failed:', (err as Error).message);
     }
 
-    // 3. Board facts. Concrete, not inferred: a DECIDE-titled open row IS a
-    // decision request; a blocked row is waiting on someone; a latest update
-    // that says "human press" / "Sam's ruling" is an explicit handoff.
+    // 3. Agent-authored DecisionRequest rows. The asking runtime supplied
+    // the title, question, and alternatives at the fork; this reader neither
+    // parses task prose nor reconstructs context from a board title.
+    try {
+      const decisions = await DecisionRequest.find({
+        podId: { $in: podIds },
+        status: 'pending',
+        messageId: { $exists: true, $ne: null },
+      }).sort({ createdAt: -1 }).limit(50).lean() as Array<{
+        _id: { toString(): string }; podId?: unknown; title?: string; question?: string;
+        context?: string; options?: Array<{ label?: string; description?: string; recommended?: boolean }>;
+        messageId?: string; threadRootId?: string; createdAt?: Date;
+      }>;
+      for (const decision of decisions) {
+        const options = (decision.options || [])
+          .filter((option) => option && typeof option.label === 'string')
+          .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
+          .map((option) => ({
+            label: String(option.label),
+            ...(option.description ? { description: String(option.description) } : {}),
+            ...(option.recommended ? { recommended: true } : {}),
+          }));
+        items.push({
+          kind: 'decision',
+          id: String(decision._id),
+          title: String(decision.title || 'Decision requested'),
+          detail: String(decision.question || decision.context || '').slice(0, 1000),
+          podId: decision.podId ? String(decision.podId) : null,
+          podName: decision.podId ? podName.get(String(decision.podId)) : undefined,
+          options,
+          messageId: decision.messageId,
+          threadRootId: decision.threadRootId || decision.messageId,
+          createdAt: decision.createdAt || null,
+        });
+      }
+    } catch (err) {
+      console.warn('[decision-queue] decision request read failed:', (err as Error).message);
+    }
+
+    // 4. Board handoffs still need an open-board affordance, but task prose
+    // is never an option source. DECIDE rows remain ordinary board rows.
     try {
       const HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
       // Freshness cutoff (Sam, 2026-09-01: "some of those activities seem
@@ -704,15 +631,11 @@ class ActivityService {
         const title = String(t.title || '');
         const updates = (t.updates as Array<{ text?: string; createdAt?: Date }> | undefined) || [];
         const last = updates[updates.length - 1];
-        const isDecide = /^DECIDE\b/i.test(title);
         const isBlocked = t.status === 'blocked';
         const isHandoff = !!(last && HANDOFF_RE.test(String(last.text || '')));
-        // A ruling belongs in Task.updates. It is final for this decision, so
-        // the queue must not keep offering the same buttons after refresh.
-        if ((!isDecide || hasRuling(t)) && !isBlocked && !isHandoff) continue;
-        const decisionOptions = isDecide && !hasRuling(t) ? getTaskDecisionOptions(t) : [];
+        if (!isBlocked && !isHandoff) continue;
         items.push({
-          kind: isHandoff && !isDecide ? 'press' : 'decision',
+          kind: 'press',
           id: `task_${t.taskId}`,
           title,
           detail: last ? String(last.text || '').slice(0, 160) : undefined,
@@ -720,20 +643,17 @@ class ActivityService {
           podName: podName.get(String(t.podId)),
           taskId: String(t.taskId || ''),
           createdAt: (last?.createdAt as Date) || (t.updatedAt as Date) || null,
-          ...(decisionOptions.length ? { options: decisionOptions } : {}),
         });
       }
     } catch (err) {
       console.warn('[decision-queue] board read failed:', (err as Error).message);
     }
 
-    // Attention order, then recency, then a hard cap. Approvals and presses
-    // are actionable in one click; mentions need a reply; standing decisions
-    // (incl. the old blocked backlog) come last — 32 undifferentiated rows
-    // is a wall, not a queue (#1306's live verify). The count still reports
-    // the full total so the cap is visible, not silent.
+    // Attention order, then recency, then a hard cap. The option card is the
+    // direct decision surface; existing approvals and board presses retain
+    // their prior precedence and mentions stay bounded below action rows.
     const KIND_PRIORITY: Record<string, number> = {
-      approval: 0, press: 1, mention: 2, decision: 3,
+      approval: 0, decision: 1, press: 2, mention: 3,
     };
     items.sort((a, b) => {
       const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
@@ -741,9 +661,9 @@ class ActivityService {
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
     // Per-kind soft cap. Live after #1464: 40+ thread mentions filled all
-    // 12 slots and the four standing decisions vanished below the cap —
-    // the opposite of "decision pending on me" being visible. Mentions
-    // take at most 8 of the 12; whatever is left goes to the other kinds
+    // 12 slots and direct decision cards vanished below the cap — the
+    // opposite of "decision pending on me" being visible. Mentions take at
+    // most 8 of the 12; whatever is left goes to the other kinds
     // in attention order. `count` still reports the full total.
     const MENTION_SLOTS = 8;
     const picked: QueueItem[] = [];
@@ -761,10 +681,9 @@ class ActivityService {
       if (picked.length >= 12) break;
       picked.push(it);
     }
-    // Restore attention order within the final page (approval, press,
-    // mention, decision), recency inside each kind — the loop above kept
-    // the sorted order for everything it picked, so a stable re-sort is
-    // enough.
+    // Restore attention order within the final page, recency inside each
+    // kind — the loop above kept the sorted order for everything it picked,
+    // so a stable re-sort is enough.
     picked.sort((a, b) => {
       const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
       if (kindDelta !== 0) return kindDelta;

@@ -29,7 +29,6 @@ describe('activity route identity handling', () => {
       addReply: jest.fn(async () => ({ success: true })),
       approveActivity: jest.fn(async () => ({ success: true })),
       rejectActivity: jest.fn(async () => ({ success: true })),
-      ruleTaskDecision: jest.fn(async () => ({ status: 200, body: { ok: true, ruling: 'Ship now' } })),
       seedPodActivities: jest.fn(async () => ({ success: true, count: 1 })),
       getUnreadCount: jest.fn(async () => ({ unreadCount: 4 })),
       markRead: jest.fn(async () => ({ success: true })),
@@ -47,24 +46,25 @@ describe('activity route identity handling', () => {
     );
   });
 
-  it('passes a typed DECIDE option through the Activity route to the board ruling service', async () => {
+  it('passes an exact human choice through the Activity route to DecisionRequest', async () => {
     jest.doMock('../../../middleware/auth', () => (req, res, next) => {
       req.userId = 'human-1';
       next();
     });
-    jest.doMock('../../../services/activityService', () => ({
-      ruleTaskDecision: jest.fn(async () => ({ status: 200, body: { ok: true, ruling: 'Ship now' } })),
+    jest.doMock('../../../services/decisionRequestService', () => ({
+      chooseDecision: jest.fn(async () => ({ status: 200, body: { ok: true, decision: { id: 'decision-1' } } })),
+      DecisionRequestError: class DecisionRequestError extends Error {},
     }));
-    const ActivityService = require('../../../services/activityService');
+    const DecisionRequestService = require('../../../services/decisionRequestService');
     const app = buildApp();
 
     await request(app)
-      .post('/api/activity/tasks/TASK-024/rule')
-      .send({ podId: 'pod-1', option: 'Ship now' })
-      .expect(200, { ok: true, ruling: 'Ship now' });
+      .post('/api/activity/decisions/decision-1/choose')
+      .send({ value: 'Ship now' })
+      .expect(200, { ok: true, decision: { id: 'decision-1' } });
 
-    expect(ActivityService.ruleTaskDecision).toHaveBeenCalledWith({
-      podId: 'pod-1', taskId: 'TASK-024', option: 'Ship now', userId: 'human-1',
+    expect(DecisionRequestService.chooseDecision).toHaveBeenCalledWith({
+      decisionId: 'decision-1', callerUserId: 'human-1', value: 'Ship now',
     });
   });
 });

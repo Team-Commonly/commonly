@@ -15,6 +15,8 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const ActivityService = require('../services/activityService');
 // eslint-disable-next-line global-require
+const DecisionRequestService = require('../services/decisionRequestService');
+// eslint-disable-next-line global-require
 const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -111,6 +113,29 @@ router.get('/decision-queue', auth, async (req: Req, res: Res) => {
   }
 });
 
+// Human-only by construction: this route uses `auth`, not dual auth. The
+// service repeats the isBot + pod-membership checks so a future middleware
+// change cannot turn an agent token into a decision authority.
+router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) => {
+  try {
+    const decisionId = String(req.params?.decisionId || '');
+    const value = (req.body || {}).value;
+    const userId = getAuthenticatedUserId(req);
+    const result = await DecisionRequestService.chooseDecision({
+      decisionId,
+      callerUserId: String(userId || ''),
+      value,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error: any) {
+    if (error instanceof DecisionRequestService.DecisionRequestError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Error choosing a decision:', error);
+    return res.status(500).json({ error: 'Failed to choose a decision' });
+  }
+});
+
 router.get('/approvals', auth, async (req: Req, res: Res) => {
   try {
     const userId = getAuthenticatedUserId(req);
@@ -191,30 +216,6 @@ router.post('/:activityId/reply', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error replying to activity:', error);
     return res.status(500).json({ error: 'Failed to reply' });
-  }
-});
-
-// A DECIDE row's `OPTIONS: A | B` line is rendered in the Activity queue.
-// The human tap resolves through the board's own update stream, not a second
-// activity record, so the asking agents receive the ordinary task update.
-router.post('/tasks/:taskId/rule', auth, async (req: Req, res: Res) => {
-  try {
-    const { taskId } = req.params || {};
-    const { podId, option } = (req.body || {}) as { podId?: unknown; option?: unknown };
-    if (typeof podId !== 'string' || typeof option !== 'string') {
-      return res.status(400).json({ error: 'podId and option must be strings' });
-    }
-    const userId = getAuthenticatedUserId(req);
-    const result = await ActivityService.ruleTaskDecision({
-      podId,
-      taskId: String(taskId || ''),
-      option,
-      userId,
-    }) as { status: number; body: Record<string, unknown> };
-    return res.status(result.status).json(result.body);
-  } catch (error) {
-    console.error('Error ruling on task decision:', error);
-    return res.status(500).json({ error: 'Failed to rule on decision' });
   }
 });
 

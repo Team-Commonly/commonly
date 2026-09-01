@@ -102,6 +102,10 @@
     "decision": {
       "ruleOption": "Rule: {{option}}",
       "working": "Ruling…",
+      "other": "Other…",
+      "otherPlaceholder": "Write your ruling…",
+      "sendOther": "Send ruling",
+      "ruled": "✓ {{by}} ruled: {{value}}",
       "actionFailed": "That ruling could not be saved. Try again."
     },
     "mention": {

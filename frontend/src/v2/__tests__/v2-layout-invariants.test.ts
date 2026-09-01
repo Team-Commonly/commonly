@@ -477,6 +477,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
   });
 
+  test('DecisionRequest options remain 44px touch targets when they wrap at 390px', () => {
+    // Options are agent-authored data, not compact task metadata. Keep the
+    // recommended state and the free-text escape hatch visible in the CSS
+    // source because jsdom has no layout engine to catch a narrow regression.
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended'))
+      .toContain('background: var(--v2-accent-soft)');
+    expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
+  });
+
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
     const active = ruleBody(v2, '.v2-root button.v2-filter-segment__item--active');
 

@@ -8629,6 +8629,40 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
+/* DecisionRequest alternatives are touchable pills, not task metadata. The
+   recommendation is visually quiet but carries a stable accent distinction. */
+.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+
+.v2-activity__decision-other {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex-basis: 100%;
+  gap: 8px;
+  align-items: end;
+}
+
+.v2-activity__decision-other textarea {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.v2-activity__decision-ruled {
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .v2-activity__action-error {
   margin-top: 10px;
   color: var(--v2-danger);
@@ -8802,6 +8836,7 @@ body.modern-ui.v2-canvas {
   /* Options are one-tap decisions. Keep their touch targets honest even
      when a 390px viewport makes the pills wrap onto separate rows. */
   .v2-root .v2-activity__queue-actions button { min-height: 44px; }
+  .v2-activity__decision-other { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__board-meta {
     grid-column: 1;

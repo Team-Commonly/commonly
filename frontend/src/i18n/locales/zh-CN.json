@@ -102,6 +102,10 @@
     "decision": {
       "ruleOption": "裁定：{{option}}",
       "working": "正在裁定…",
+      "other": "其他…",
+      "otherPlaceholder": "写下你的裁定…",
+      "sendOther": "发送裁定",
+      "ruled": "✓ {{by}} 已裁定：{{value}}",
       "actionFailed": "无法保存该裁定，请重试。"
     },
     "mention": {

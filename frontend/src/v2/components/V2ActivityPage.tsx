@@ -27,20 +27,19 @@ interface AgentRecap {
 
 interface NeedsYouItem {
   id: string;
-  // decision = a DECIDE-titled or blocked board row; press = an explicit
-  // human-handoff in a task's latest update. Both come from the
-  // /decision-queue endpoint's board facts (TASK-083).
+  // Decision cards are agent-authored DecisionRequest rows. `press` remains
+  // an ordinary board handoff and never parses a task title into options.
   kind: 'mention' | 'approval' | 'decision' | 'press';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
   taskId?: string;
-  options?: string[];
+  options?: Array<{ label: string; description?: string; recommended?: boolean }>;
   timestamp: string | null;
   // Mention rows carry where they live so a reply can land IN the thread.
-  messageId?: number;
-  threadRootId?: number;
+  messageId?: number | string;
+  threadRootId?: number | string;
 }
 
 interface BoardItem {
@@ -85,6 +84,9 @@ const V2ActivityPage: React.FC = () => {
   const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [rulingId, setRulingId] = useState<string | null>(null);
+  const [otherDecisionId, setOtherDecisionId] = useState<string | null>(null);
+  const [otherDecisionValue, setOtherDecisionValue] = useState('');
+  const [ruledDecisions, setRuledDecisions] = useState<Record<string, { value: string; by: string }>>({});
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composing, setComposing] = useState(false);
@@ -171,18 +173,18 @@ const V2ActivityPage: React.FC = () => {
     navigate('/v2');
   };
 
-  const actOnApproval = async (item: NeedsYouItem, action: 'approved' | 'declined') => {
+  const actOnApproval = async (item: NeedsYouItem, action: 'approve' | 'reject') => {
     if (actingApprovalId) return;
     setActingApprovalId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post<{ ok?: boolean }>(
-        `/api/approvals/${encodeURIComponent(item.id)}/resolve`,
-        { decision: action },
+      const response = await axios.post<{ success?: boolean }>(
+        `/api/activity/${encodeURIComponent(item.id)}/${action}`,
+        { notes: `${action === 'approve' ? 'Approved' : 'Rejected'} via Activity` },
         { headers: { 'x-auth-token': token ?? '' } },
       );
-      if (!response.data?.ok) throw new Error('Approval action failed');
+      if (!response.data?.success) throw new Error('Approval action failed');
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.approval.actionFailed'));
@@ -191,21 +193,31 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  const ruleDecision = async (item: NeedsYouItem, option: string) => {
-    if (!item.taskId || !item.podId || rulingId) return;
+  const ruleDecision = async (item: NeedsYouItem, value: string) => {
+    if (rulingId || !value.trim()) return;
     setRulingId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ ok?: boolean }>(
-        `/api/activity/tasks/${encodeURIComponent(item.taskId)}/rule`,
-        { podId: item.podId, option },
+        `/api/activity/decisions/${encodeURIComponent(item.id)}/choose`,
+        { value },
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
+      setOtherDecisionId(null);
+      setOtherDecisionValue('');
       setReloadKey((value) => value + 1);
-    } catch {
-      setActionError(t('activity.decision.actionFailed'));
+    } catch (error) {
+      const standing = axios.isAxiosError(error) ? error.response?.data?.decision?.ruling : null;
+      if (standing?.value && standing?.by) {
+        setRuledDecisions((current) => ({
+          ...current,
+          [item.id]: { value: standing.value, by: standing.by },
+        }));
+      } else {
+        setActionError(t('activity.decision.actionFailed'));
+      }
     } finally {
       setRulingId(null);
     }
@@ -427,10 +439,10 @@ const V2ActivityPage: React.FC = () => {
                     <div className="v2-activity__queue-actions">
                       {item.kind === 'approval' && (
                         <>
-                          <button type="button" onClick={() => actOnApproval(item, 'approved')} disabled={actingApprovalId === item.id}>
+                          <button type="button" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>
                             {actingApprovalId === item.id ? t('activity.approval.working') : t('activity.approval.approve')}
                           </button>
-                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => actOnApproval(item, 'declined')} disabled={actingApprovalId === item.id}>
+                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => actOnApproval(item, 'reject')} disabled={actingApprovalId === item.id}>
                             {t('activity.approval.deny')}
                           </button>
                         </>
@@ -460,23 +472,63 @@ const V2ActivityPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {(item.kind === 'decision' || item.kind === 'press') && (
+                      {item.kind === 'decision' && (
                         <>
-                          {item.kind === 'decision' && item.options?.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => ruleDecision(item, option)}
-                              disabled={rulingId === item.id}
-                              aria-label={t('activity.decision.ruleOption', { option })}
-                            >
-                              {rulingId === item.id ? t('activity.decision.working') : option}
-                            </button>
-                          ))}
-                          <button type="button" className={item.options?.length ? 'v2-activity__queue-action--secondary' : ''} onClick={() => openBoard(item)} disabled={!item.podId}>
-                            {t('activity.openBoard')}
-                          </button>
+                          {ruledDecisions[item.id] ? (
+                            <span className="v2-activity__decision-ruled" role="status">
+                              {t('activity.decision.ruled', ruledDecisions[item.id])}
+                            </span>
+                          ) : (
+                            <>
+                              {[...(item.options || [])]
+                                .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
+                                .map((option) => (
+                                  <button
+                                    key={option.label}
+                                    type="button"
+                                    className={`v2-activity__option${option.recommended ? ' v2-activity__option--recommended' : ''}`}
+                                    onClick={() => ruleDecision(item, option.label)}
+                                    disabled={rulingId === item.id}
+                                    aria-label={t('activity.decision.ruleOption', { option: option.label })}
+                                    title={option.description}
+                                  >
+                                    {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                  </button>
+                                ))}
+                              <button
+                                type="button"
+                                className="v2-activity__queue-action--secondary v2-activity__option"
+                                onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
+                                disabled={rulingId === item.id}
+                              >
+                                {t('activity.decision.other')}
+                              </button>
+                              {otherDecisionId === item.id && (
+                                <div className="v2-activity__decision-other" data-testid="decision-other">
+                                  <textarea
+                                    aria-label={t('activity.decision.otherPlaceholder')}
+                                    rows={2}
+                                    value={otherDecisionValue}
+                                    onChange={(event) => setOtherDecisionValue(event.target.value)}
+                                    disabled={rulingId === item.id}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => ruleDecision(item, otherDecisionValue)}
+                                    disabled={rulingId === item.id || !otherDecisionValue.trim()}
+                                  >
+                                    {rulingId === item.id ? t('activity.decision.working') : t('activity.decision.sendOther')}
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </>
+                      )}
+                      {item.kind === 'press' && (
+                        <button type="button" onClick={() => openBoard(item)} disabled={!item.podId}>
+                          {t('activity.openBoard')}
+                        </button>
                       )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
                         {t('activity.openThread')}
