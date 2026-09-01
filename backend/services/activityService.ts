@@ -515,11 +515,20 @@ class ActivityService {
     // that says "human press" / "Sam's ruling" is an explicit handoff.
     try {
       const HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
+      // Freshness cutoff (Sam, 2026-09-01: "some of those activities seem
+      // stale and non new attention routes"). Measured that day: every queue
+      // item was 10–47 days old, half of them zombie rows from dead pods —
+      // "Fix CI failures on PR #N" from July does not need attention, it
+      // needs an archive. A board row qualifies as WAITING ON YOU only if
+      // someone touched it recently; the row itself stays on the board
+      // either way, so nothing is lost — only the attention claim expires.
+      const STALE_CUTOFF = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
       const tasks = await (Task as {
         find(q: unknown): { sort(s: unknown): { limit(n: number): { lean(): Promise<Array<Record<string, unknown>>> } } };
       }).find({
         podId: { $in: podIds },
         status: { $in: ['pending', 'claimed', 'blocked'] },
+        updatedAt: { $gte: STALE_CUTOFF },
       }).sort({ updatedAt: -1 }).limit(120).lean();
       for (const t of tasks) {
         const title = String(t.title || '');
