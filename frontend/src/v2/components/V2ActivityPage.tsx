@@ -36,6 +36,7 @@ interface NeedsYouItem {
   podId: string | null;
   podName: string;
   taskId?: string;
+  options?: string[];
   timestamp: string | null;
   // Mention rows carry where they live so a reply can land IN the thread.
   messageId?: number;
@@ -83,6 +84,11 @@ const V2ActivityPage: React.FC = () => {
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
   const [acknowledgingMentionId, setAcknowledgingMentionId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [rulingId, setRulingId] = useState<string | null>(null);
+  const [composePodId, setComposePodId] = useState('');
+  const [composeDraft, setComposeDraft] = useState('');
+  const [composing, setComposing] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
 
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
 
@@ -100,7 +106,10 @@ const V2ActivityPage: React.FC = () => {
         headers,
         params: { window, ...(podId !== 'all' ? { podId } : {}) },
       }),
-      axios.get<{ items: Array<NeedsYouItem & { createdAt?: string | null }> }>(
+      axios.get<{
+        items: Array<NeedsYouItem & { createdAt?: string | null }>;
+        composePodId?: string | null;
+      }>(
         '/api/activity/decision-queue',
         { headers },
       ).catch(() => null),
@@ -112,8 +121,16 @@ const V2ActivityPage: React.FC = () => {
         // endpoint failed (null), older server, malformed body — degrades to
         // recap.needsYou (mentions + approvals) rather than an empty queue.
         const rawItems = queueResponse?.data?.items;
+        const availablePods = recapResponse.data.pods || [];
+        const setComposeDefault = (candidate = '') => {
+          const fallback = candidate || availablePods[0]?.id || '';
+          setComposePodId((current) => (
+            current && availablePods.some((pod) => pod.id === current) ? current : fallback
+          ));
+        };
         if (!Array.isArray(rawItems)) {
           setQueue(recapResponse.data.needsYou || []);
+          setComposeDefault();
           return;
         }
         const queueItems = rawItems.map((item) => ({
@@ -125,6 +142,10 @@ const V2ActivityPage: React.FC = () => {
         setQueue(podId !== 'all'
           ? queueItems.filter((item) => item.podId === podId)
           : queueItems);
+        // Preserve an intentional target choice across queue refreshes. On
+        // first load, anchor the composer to the most recent direct traffic;
+        // no traffic simply falls back to the user's first available pod.
+        setComposeDefault(queueResponse?.data?.composePodId || '');
       })
       .catch(() => {
         if (active) setError(t('activity.loadFailed'));
@@ -150,23 +171,64 @@ const V2ActivityPage: React.FC = () => {
     navigate('/v2');
   };
 
-  const actOnApproval = async (item: NeedsYouItem, action: 'approve' | 'reject') => {
+  const actOnApproval = async (item: NeedsYouItem, action: 'approved' | 'declined') => {
     if (actingApprovalId) return;
     setActingApprovalId(item.id);
     setActionError(null);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.post<{ success?: boolean }>(
-        `/api/activity/${item.id}/${action}`,
-        { notes: `${action === 'approve' ? 'Approved' : 'Rejected'} via Activity` },
+      const response = await axios.post<{ ok?: boolean }>(
+        `/api/approvals/${encodeURIComponent(item.id)}/resolve`,
+        { decision: action },
         { headers: { 'x-auth-token': token ?? '' } },
       );
-      if (!response.data?.success) throw new Error('Activity action failed');
+      if (!response.data?.ok) throw new Error('Approval action failed');
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.approval.actionFailed'));
     } finally {
       setActingApprovalId(null);
+    }
+  };
+
+  const ruleDecision = async (item: NeedsYouItem, option: string) => {
+    if (!item.taskId || !item.podId || rulingId) return;
+    setRulingId(item.id);
+    setActionError(null);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post<{ ok?: boolean }>(
+        `/api/activity/tasks/${encodeURIComponent(item.taskId)}/rule`,
+        { podId: item.podId, option },
+        { headers: { 'x-auth-token': token ?? '' } },
+      );
+      if (!response.data?.ok) throw new Error('Decision ruling failed');
+      setReloadKey((value) => value + 1);
+    } catch {
+      setActionError(t('activity.decision.actionFailed'));
+    } finally {
+      setRulingId(null);
+    }
+  };
+
+  const sendCompose = async () => {
+    const content = composeDraft.trim();
+    if (!content || !composePodId || composing) return;
+    setComposing(true);
+    setComposeError(null);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `/api/messages/${encodeURIComponent(composePodId)}`,
+        { content },
+        { headers: { 'x-auth-token': token ?? '' } },
+      );
+      setComposeDraft('');
+      setReloadKey((value) => value + 1);
+    } catch {
+      setComposeError(t('activity.compose.actionFailed'));
+    } finally {
+      setComposing(false);
     }
   };
 
@@ -264,7 +326,38 @@ const V2ActivityPage: React.FC = () => {
       {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
       {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
       {!loading && !error && recap && (
-        <div className="v2-activity__sections">
+        <>
+          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
+            <div className="v2-activity__compose-heading">
+              <div>
+                <div className="v2-activity__eyebrow">{t('activity.compose.eyebrow')}</div>
+                <h2 id="activity-compose-title">{t('activity.compose.title')}</h2>
+              </div>
+              <label className="v2-activity__compose-pod">
+                <span>{t('activity.compose.podLabel')}</span>
+                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
+                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="v2-activity__compose-entry">
+              <textarea
+                aria-label={t('activity.compose.placeholder')}
+                rows={3}
+                placeholder={t('activity.compose.placeholder')}
+                value={composeDraft}
+                onChange={(event) => setComposeDraft(event.target.value)}
+                onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
+                disabled={composing || !composePodId}
+              />
+              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
+                {composing ? t('activity.compose.working') : t('activity.compose.send')}
+              </button>
+            </div>
+            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
+          </section>
+
+          <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
               <div>
@@ -334,11 +427,11 @@ const V2ActivityPage: React.FC = () => {
                     <div className="v2-activity__queue-actions">
                       {item.kind === 'approval' && (
                         <>
-                          <button type="button" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>
+                          <button type="button" onClick={() => actOnApproval(item, 'approved')} disabled={actingApprovalId === item.id}>
                             {actingApprovalId === item.id ? t('activity.approval.working') : t('activity.approval.approve')}
                           </button>
-                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => actOnApproval(item, 'reject')} disabled={actingApprovalId === item.id}>
-                            {t('activity.approval.reject')}
+                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => actOnApproval(item, 'declined')} disabled={actingApprovalId === item.id}>
+                            {t('activity.approval.deny')}
                           </button>
                         </>
                       )}
@@ -368,9 +461,22 @@ const V2ActivityPage: React.FC = () => {
                         </>
                       )}
                       {(item.kind === 'decision' || item.kind === 'press') && (
-                        <button type="button" onClick={() => openBoard(item)} disabled={!item.podId}>
-                          {t('activity.openBoard')}
-                        </button>
+                        <>
+                          {item.kind === 'decision' && item.options?.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => ruleDecision(item, option)}
+                              disabled={rulingId === item.id}
+                              aria-label={t('activity.decision.ruleOption', { option })}
+                            >
+                              {rulingId === item.id ? t('activity.decision.working') : option}
+                            </button>
+                          ))}
+                          <button type="button" className={item.options?.length ? 'v2-activity__queue-action--secondary' : ''} onClick={() => openBoard(item)} disabled={!item.podId}>
+                            {t('activity.openBoard')}
+                          </button>
+                        </>
                       )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
                         {t('activity.openThread')}
@@ -459,7 +565,8 @@ const V2ActivityPage: React.FC = () => {
               </div>
             )}
           </section>
-        </div>
+          </div>
+        </>
       )}
       <footer className="v2-activity__footer">{t('activity.footer')}</footer>
     </div>

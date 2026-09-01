@@ -194,6 +194,30 @@ router.post('/:activityId/reply', auth, async (req: Req, res: Res) => {
   }
 });
 
+// A DECIDE row's `OPTIONS: A | B` line is rendered in the Activity queue.
+// The human tap resolves through the board's own update stream, not a second
+// activity record, so the asking agents receive the ordinary task update.
+router.post('/tasks/:taskId/rule', auth, async (req: Req, res: Res) => {
+  try {
+    const { taskId } = req.params || {};
+    const { podId, option } = (req.body || {}) as { podId?: unknown; option?: unknown };
+    if (typeof podId !== 'string' || typeof option !== 'string') {
+      return res.status(400).json({ error: 'podId and option must be strings' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.ruleTaskDecision({
+      podId,
+      taskId: String(taskId || ''),
+      option,
+      userId,
+    }) as { status: number; body: Record<string, unknown> };
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    console.error('Error ruling on task decision:', error);
+    return res.status(500).json({ error: 'Failed to rule on decision' });
+  }
+});
+
 router.post('/:activityId/approve', auth, async (req: Req, res: Res) => {
   try {
     const { activityId } = req.params || {};

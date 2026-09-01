@@ -29,6 +29,7 @@ describe('activity route identity handling', () => {
       addReply: jest.fn(async () => ({ success: true })),
       approveActivity: jest.fn(async () => ({ success: true })),
       rejectActivity: jest.fn(async () => ({ success: true })),
+      ruleTaskDecision: jest.fn(async () => ({ status: 200, body: { ok: true, ruling: 'Ship now' } })),
       seedPodActivities: jest.fn(async () => ({ success: true, count: 1 })),
       getUnreadCount: jest.fn(async () => ({ unreadCount: 4 })),
       markRead: jest.fn(async () => ({ success: true })),
@@ -44,5 +45,26 @@ describe('activity route identity handling', () => {
       'legacy-user-123',
       expect.objectContaining({ all: true }),
     );
+  });
+
+  it('passes a typed DECIDE option through the Activity route to the board ruling service', async () => {
+    jest.doMock('../../../middleware/auth', () => (req, res, next) => {
+      req.userId = 'human-1';
+      next();
+    });
+    jest.doMock('../../../services/activityService', () => ({
+      ruleTaskDecision: jest.fn(async () => ({ status: 200, body: { ok: true, ruling: 'Ship now' } })),
+    }));
+    const ActivityService = require('../../../services/activityService');
+    const app = buildApp();
+
+    await request(app)
+      .post('/api/activity/tasks/TASK-024/rule')
+      .send({ podId: 'pod-1', option: 'Ship now' })
+      .expect(200, { ok: true, ruling: 'Ship now' });
+
+    expect(ActivityService.ruleTaskDecision).toHaveBeenCalledWith({
+      podId: 'pod-1', taskId: 'TASK-024', option: 'Ship now', userId: 'human-1',
+    });
   });
 });

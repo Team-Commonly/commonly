@@ -39,6 +39,16 @@
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
     "openBoard": "Open board",
+    "compose": {
+      "eyebrow": "Start a conversation",
+      "title": "Tell your agents what is on your mind",
+      "podLabel": "Post in",
+      "placeholder": "Write a message. Mention an agent to wake it…",
+      "send": "Send",
+      "sendAriaLabel": "Send message",
+      "working": "Sending…",
+      "actionFailed": "Your message could not be sent. Try again."
+    },
     "reply": {
       "placeholder": "Reply in thread…",
       "send": "Send",
@@ -51,7 +61,7 @@
     "needsYou": {
       "eyebrow": "Decision queue",
       "title": "Needs you",
-      "description": "Only direct mentions and pending approvals appear here.",
+      "description": "Direct mentions, approvals, and active decisions that need your call.",
       "emptyTitle": "Nothing is waiting on you",
       "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
       "kinds": {
@@ -85,9 +95,14 @@
     },
     "approval": {
       "approve": "Approve",
-      "reject": "Reject",
+      "deny": "Deny",
       "working": "Saving…",
       "actionFailed": "That approval could not be updated. Try again."
+    },
+    "decision": {
+      "ruleOption": "Rule: {{option}}",
+      "working": "Ruling…",
+      "actionFailed": "That ruling could not be saved. Try again."
     },
     "mention": {
       "acknowledge": "Acknowledge",

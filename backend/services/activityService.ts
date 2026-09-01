@@ -10,6 +10,8 @@ const Summary = require('../models/Summary');
 const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
+// eslint-disable-next-line global-require
+const ApprovalAction = require('../models/ApprovalAction');
 
 let PGMessage: unknown = null;
 try {
@@ -110,6 +112,42 @@ interface ComputeFlagsOptions {
 // (95 updates in one window, TASK-083) drowned every real seat, which is what
 // made the Activity tab read as empty of real agent activity.
 const SYSTEM_BOT_NAMES = new Set(['commonly-bot', 'commonly-ai-agent']);
+
+// Decision options deliberately stay in the task's latest human-readable
+// update instead of gaining a second board state. Agents can propose a
+// decision with one portable line, and the queue can render it without
+// teaching every task producer a new write shape.
+//
+// The grammar is intentionally small: `OPTIONS: A | B | C`. Keeping it
+// bounded makes every option a tap target, while rejecting malformed lines
+// rather than guessing prevents a partial proposal from becoming a ruling.
+const parseDecisionOptions = (text: unknown): string[] => {
+  if (typeof text !== 'string') return [];
+  const line = text.match(/^\s*OPTIONS:\s*(.+?)\s*$/im)?.[1];
+  if (!line) return [];
+  const options = line.split('|').map((value) => value.trim()).filter(Boolean);
+  if (options.length < 2 || options.length > 4 || options.some((value) => value.length > 80)) return [];
+  const normalized = new Set(options.map((value) => value.toLocaleLowerCase()));
+  return normalized.size === options.length ? options : [];
+};
+
+const getTaskDecisionOptions = (task: Record<string, unknown>): string[] => {
+  const updates = Array.isArray(task.updates) ? task.updates as Array<{ text?: unknown }> : [];
+  for (const update of [...updates].reverse()) {
+    const options = parseDecisionOptions(update?.text);
+    if (options.length) return options;
+  }
+  return parseDecisionOptions(task.title);
+};
+
+const hasRuling = (task: Record<string, unknown>): boolean => {
+  const updates = Array.isArray(task.updates) ? task.updates as Array<{ text?: unknown }> : [];
+  // A DECIDE row stays open for the executor after the human rules, so an
+  // executor's later progress note must not put the resolved decision back
+  // into the attention queue. Unlike the handoff heuristic, this terminal
+  // marker is intentionally searched across the row's full update history.
+  return updates.some((update) => /^\s*SAM RULED:\s*/i.test(String(update?.text || '')));
+};
 
 class ActivityService {
   /**
@@ -487,6 +525,76 @@ class ActivityService {
       .filter((m) => !acked.has(m.id));
   }
 
+  /**
+   * A human ruling is a board update, not a new activity record. The task
+   * update wakes the asking seat through the established board fan-out and
+   * its terminal marker removes the resolved DECIDE row from this queue.
+   */
+  static async ruleTaskDecision(options: {
+    podId: string;
+    taskId: string;
+    option: string;
+    userId: unknown;
+  }): Promise<{ status: number; body: Record<string, unknown> }> {
+    const { podId, taskId, option, userId } = options;
+    if (!podId || !taskId || !option) return { status: 400, body: { error: 'podId, taskId, and option are required' } };
+
+    const pod = await Pod.findById(podId).select('createdBy members').lean() as PodDoc | null;
+    if (!pod) return { status: 404, body: { error: 'Pod not found' } };
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const isPodMember = require('../utils/isPodMember');
+    if (!isPodMember(pod, userId)) return { status: 403, body: { error: 'Only pod members can rule on this decision' } };
+
+    const caller = await User.findById(userId).select('username isBot').lean() as { username?: string; isBot?: boolean } | null;
+    if (!caller || caller.isBot) return { status: 403, body: { error: 'Only a human can rule on this decision' } };
+
+    const task = await Task.findOne({ podId, taskId }).lean() as Record<string, unknown> | null;
+    if (!task) return { status: 404, body: { error: 'Task not found' } };
+    if (!['pending', 'claimed', 'blocked'].includes(String(task.status || ''))) {
+      return { status: 409, body: { error: 'Decision is no longer active' } };
+    }
+    if (!/^DECIDE\b/i.test(String(task.title || ''))) {
+      return { status: 400, body: { error: 'Task is not a decision request' } };
+    }
+    if (hasRuling(task)) return { status: 409, body: { error: 'Decision already ruled' } };
+
+    const choices = getTaskDecisionOptions(task);
+    if (!choices.includes(option)) return { status: 400, body: { error: 'Option is not available for this decision' } };
+
+    const now = new Date();
+    const update = {
+      text: `SAM RULED: ${option}`,
+      author: caller.username || 'Human',
+      authorId: String(userId),
+      createdAt: now,
+    };
+    // The ruling marker is the compare-and-set. A double tap (or a second
+    // browser) loses before it can append a conflicting human decision.
+    const ruled = await Task.findOneAndUpdate(
+      {
+        podId,
+        taskId,
+        status: { $in: ['pending', 'claimed', 'blocked'] },
+        updates: { $not: { $elemMatch: { text: /^\s*SAM RULED:\s*/i } } },
+      },
+      { $push: { updates: update } },
+      { new: true },
+    );
+    if (!ruled) return { status: 409, body: { error: 'Decision already ruled' } };
+
+    const emittedTask = typeof ruled.toObject === 'function' ? ruled.toObject() : ruled;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { emitTaskUpdated, notifyPodAgents } = require('./taskEventService');
+    emitTaskUpdated(podId, emittedTask, 'updated');
+    try {
+      const pending = notifyPodAgents(podId, emittedTask, 'updated', { userId, isAgent: false });
+      if (pending?.catch) pending.catch((err: Error) => console.warn('[decision-rule] agent notify failed:', err.message));
+    } catch (err) {
+      console.warn('[decision-rule] agent notify threw:', (err as Error).message);
+    }
+    return { status: 200, body: { ok: true, ruling: option, task: emittedTask } };
+  }
+
   static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
     const pods: PodDoc[] = await Pod.find({
       $or: [
@@ -506,24 +614,32 @@ class ActivityService {
       podId: string | null;
       podName?: string;
       taskId?: string;
+      options?: string[];
       createdAt: Date | string | null;
     };
     const items: QueueItem[] = [];
+    let composePodId: string | null = null;
 
-    // 1. Pending approvals — the authoritative reader already exists.
+    // 1. Pending approval cards — the durable ApprovalAction row is the
+    // decision object. Legacy Activity.approval rows are seed-fed and must not
+    // enter this queue, or a card would appear twice on two different routes.
+    // This filter intentionally mirrors resolveApproval's owner gate: a
+    // "Needs you" row must never offer a press to a non-decider.
     try {
-      const approvals = await ActivityService.getPendingApprovals(userId) as Array<{
-        _id: { toString(): string }; content?: string; podId?: unknown; createdAt?: Date;
-        agentMetadata?: { agentName?: string };
-      }>;
+      const approvals = await ApprovalAction.find({ ownerUserId: userId, status: 'flagged' })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean() as Array<{
+          _id: { toString(): string }; summary?: string; podId?: unknown; createdAt?: Date;
+          agentName?: string;
+        }>;
       for (const a of approvals) {
         items.push({
           kind: 'approval',
-          // RAW activity id — the act endpoints (/api/activity/:id/approve)
-          // key on it, so a prefixed id here would break the buttons.
+          // RAW ApprovalAction id — /api/approvals/:id/resolve keys on it.
           id: String(a._id),
-          title: a.agentMetadata?.agentName ? `${a.agentMetadata.agentName} requests approval` : 'Approval requested',
-          detail: String(a.content || '').slice(0, 160),
+          title: a.agentName ? `${a.agentName} requests approval` : 'Approval requested',
+          detail: String(a.summary || '').slice(0, 160),
           podId: a.podId ? String(a.podId) : null,
           podName: a.podId ? podName.get(String(a.podId)) : undefined,
           createdAt: a.createdAt || null,
@@ -544,6 +660,9 @@ class ActivityService {
     try {
       const mentions = await ActivityService.getMentionsForUser(userId, podIds);
       for (const m of mentions) {
+        // The query is newest-first, so its first result is the closest
+        // factual default for "tell them what is on my mind".
+        if (!composePodId) composePodId = m.podId;
         items.push({
           kind: 'mention',
           id: m.id,
@@ -588,7 +707,10 @@ class ActivityService {
         const isDecide = /^DECIDE\b/i.test(title);
         const isBlocked = t.status === 'blocked';
         const isHandoff = !!(last && HANDOFF_RE.test(String(last.text || '')));
-        if (!isDecide && !isBlocked && !isHandoff) continue;
+        // A ruling belongs in Task.updates. It is final for this decision, so
+        // the queue must not keep offering the same buttons after refresh.
+        if ((!isDecide || hasRuling(t)) && !isBlocked && !isHandoff) continue;
+        const decisionOptions = isDecide && !hasRuling(t) ? getTaskDecisionOptions(t) : [];
         items.push({
           kind: isHandoff && !isDecide ? 'press' : 'decision',
           id: `task_${t.taskId}`,
@@ -598,6 +720,7 @@ class ActivityService {
           podName: podName.get(String(t.podId)),
           taskId: String(t.taskId || ''),
           createdAt: (last?.createdAt as Date) || (t.updatedAt as Date) || null,
+          ...(decisionOptions.length ? { options: decisionOptions } : {}),
         });
       }
     } catch (err) {
@@ -647,7 +770,12 @@ class ActivityService {
       if (kindDelta !== 0) return kindDelta;
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-    return { items: picked, count: items.length };
+    return {
+      items: picked,
+      count: items.length,
+      // No mention yet is not an error; the page falls back to its first pod.
+      composePodId,
+    };
   }
 
   static async getPodFeed(

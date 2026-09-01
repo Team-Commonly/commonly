@@ -5,7 +5,7 @@
  * the human press, because its only wired source was direct @mentions (empty
  * — agents write the human's bare name, TASK-070). This suite pins the three
  * concrete fact sources and their classification:
- *   - pending approvals (raw activity id — the act endpoints key on it)
+ *   - pending ApprovalAction cards (raw id — the resolve endpoint keys on it)
  *   - unacknowledged direct mentions
  *   - board rows: DECIDE-titles and blocked rows -> 'decision';
  *     an explicit human-handoff in the LATEST update -> 'press'
@@ -13,9 +13,12 @@
 
 jest.mock('../../../models/Pod', () => ({
   find: jest.fn(),
+  findById: jest.fn(),
 }));
 jest.mock('../../../models/Task', () => ({
   find: jest.fn(),
+  findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
 }));
 jest.mock('../../../models/User', () => ({
   find: jest.fn(),
@@ -25,12 +28,19 @@ jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn().mockResolve
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/Summary', () => ({}));
 jest.mock('../../../models/Post', () => ({}));
+jest.mock('../../../models/ApprovalAction', () => ({ find: jest.fn() }));
+jest.mock('../../../services/taskEventService', () => ({
+  emitTaskUpdated: jest.fn(),
+  notifyPodAgents: jest.fn(),
+}));
 
 const ActivityService = require('../../../services/activityService');
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
 const User = require('../../../models/User');
+const ApprovalAction = require('../../../models/ApprovalAction');
 const { pool } = require('../../../config/db-pg');
+const { emitTaskUpdated, notifyPodAgents } = require('../../../services/taskEventService');
 
 const userChain = (doc) => ({ select: () => ({ lean: async () => doc }) });
 
@@ -39,14 +49,19 @@ const POD = { _id: 'pod-1', name: 'Sprint HQ', type: 'team' };
 const taskChain = (rows) => ({
   sort: () => ({ limit: () => ({ lean: async () => rows }) }),
 });
+const approvalChain = (rows) => ({
+  sort: () => ({ limit: () => ({ lean: async () => rows }) }),
+});
 
 describe('ActivityService.getDecisionQueue', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     Pod.find.mockReturnValue({ select: () => ({ lean: async () => [POD] }) });
-    jest.spyOn(ActivityService, 'getPendingApprovals').mockResolvedValue([]);
+    ApprovalAction.find.mockReturnValue(approvalChain([]));
     jest.spyOn(ActivityService, 'getUserFeed').mockResolvedValue({ activities: [], acknowledgedMentionIds: [] });
     Task.find.mockReturnValue(taskChain([]));
+    Task.findOne.mockReturnValue({ lean: async () => null });
+    Task.findOneAndUpdate.mockResolvedValue(null);
     User.findById.mockReturnValue(userChain({ username: 'Sam', activityQueue: { acknowledgedMentionIds: [] } }));
     pool.query.mockResolvedValue({ rows: [] });
   });
@@ -55,7 +70,7 @@ describe('ActivityService.getDecisionQueue', () => {
     Task.find.mockReturnValue(taskChain([
       {
         taskId: 'TASK-024', podId: 'pod-1', status: 'pending', title: 'DECIDE: backend eslint reaches 0 files',
-        updates: [{ text: 'filed', createdAt: new Date('2026-08-26T01:00:00Z') }],
+        updates: [{ text: 'filed\nOPTIONS: Ship now | Hold for review', createdAt: new Date('2026-08-26T01:00:00Z') }],
       },
       {
         taskId: 'TASK-016', podId: 'pod-1', status: 'blocked', title: 'REGRESSION: isOneToOneShapedPod counts bots',
@@ -78,6 +93,7 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(byTask['TASK-059']).toBe('press');
     // An ordinary in-flight row is NOT waiting on the human.
     expect(byTask['TASK-068']).toBeUndefined();
+    expect(result.items.find((item) => item.taskId === 'TASK-024').options).toEqual(['Ship now', 'Hold for review']);
   });
 
   test('the handoff match reads the LATEST update only — an old handoff already resolved does not resurrect', async () => {
@@ -94,20 +110,21 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(result.items).toHaveLength(0);
   });
 
-  test('approvals carry the RAW activity id, because /api/activity/:id/approve keys on it', async () => {
-    ActivityService.getPendingApprovals.mockResolvedValue([
-      { _id: 'act-77', content: 'May I merge?', podId: 'pod-1', createdAt: new Date(), agentMetadata: { agentName: 'anvil' } },
-    ]);
+  test('approvals carry the RAW ApprovalAction id and only query the viewer as decider', async () => {
+    ApprovalAction.find.mockReturnValue(approvalChain([
+      { _id: 'approval-77', summary: 'May I merge?', podId: 'pod-1', createdAt: new Date(), agentName: 'anvil' },
+    ]));
     const result = await ActivityService.getDecisionQueue('u1');
     const approval = result.items.find((i) => i.kind === 'approval');
-    expect(approval.id).toBe('act-77');
+    expect(approval.id).toBe('approval-77');
     expect(approval.title).toContain('anvil');
+    expect(ApprovalAction.find).toHaveBeenCalledWith({ ownerUserId: 'u1', status: 'flagged' });
   });
 
   test('attention order beats recency: approval, press, mention, then standing decisions — capped at 12 with an honest total', async () => {
-    ActivityService.getPendingApprovals.mockResolvedValue([
-      { _id: 'act-1', content: 'approve?', podId: 'pod-1', createdAt: new Date('2026-08-20T00:00:00Z') },
-    ]);
+    ApprovalAction.find.mockReturnValue(approvalChain([
+      { _id: 'approval-1', summary: 'approve?', podId: 'pod-1', createdAt: new Date('2026-08-20T00:00:00Z') },
+    ]));
     pool.query.mockResolvedValue({ rows: [{
       id: 501, pod_id: 'pod-1', user_id: 'bot-1', content: '@Sam ping', created_at: new Date('2026-08-27T00:00:00Z'),
       thread_root_id: 480, author: 'anvil',
@@ -150,6 +167,7 @@ describe('ActivityService.getDecisionQueue', () => {
     const mentions = result.items.filter((i) => i.kind === 'mention');
     expect(mentions.map((m) => m.id)).toEqual(['msg_9', 'msg_5']);
     expect(mentions[0]).toMatchObject({ threadRootId: 4, messageId: 9, title: 'vale mentioned you' });
+    expect(result.composePodId).toBe('pod-1');
     // A top-level mention is its own thread root.
     expect(mentions[1]).toMatchObject({ threadRootId: 5, messageId: 5 });
     const [sql, params] = pool.query.mock.calls[0];
@@ -175,7 +193,7 @@ describe('ActivityService.getDecisionQueue', () => {
   });
 
   test('one failed source degrades, never blanks the queue', async () => {
-    ActivityService.getPendingApprovals.mockRejectedValue(new Error('store down'));
+    ApprovalAction.find.mockImplementation(() => { throw new Error('store down'); });
     Task.find.mockReturnValue(taskChain([
       {
         taskId: 'TASK-024', podId: 'pod-1', status: 'pending', title: 'DECIDE: something',
@@ -184,5 +202,111 @@ describe('ActivityService.getDecisionQueue', () => {
     ]));
     const result = await ActivityService.getDecisionQueue('u1');
     expect(result.items.map((i) => i.taskId)).toEqual(['TASK-024']);
+  });
+
+  test('a SAM RULED update retires the DECIDE row from the queue', async () => {
+    Task.find.mockReturnValue(taskChain([{
+      taskId: 'TASK-024', podId: 'pod-1', status: 'pending', title: 'DECIDE: release scope',
+      updates: [
+        { text: 'OPTIONS: Ship now | Hold for review', createdAt: new Date() },
+        { text: 'SAM RULED: Ship now', createdAt: new Date() },
+      ],
+    }]));
+
+    const result = await ActivityService.getDecisionQueue('u1');
+    expect(result.items).toEqual([]);
+  });
+
+  test('a later executor update cannot resurrect a DECIDE row already ruled by Sam', async () => {
+    Task.find.mockReturnValue(taskChain([{
+      taskId: 'TASK-024', podId: 'pod-1', status: 'claimed', title: 'DECIDE: release scope',
+      updates: [
+        { text: 'OPTIONS: Ship now | Hold for review', createdAt: new Date() },
+        { text: 'SAM RULED: Ship now', createdAt: new Date() },
+        { text: 'Implementation started', createdAt: new Date() },
+      ],
+    }]));
+
+    const result = await ActivityService.getDecisionQueue('u1');
+    expect(result.items).toEqual([]);
+  });
+
+  test('renders only a complete bounded OPTIONS line on a DECIDE row', async () => {
+    Task.find.mockReturnValue(taskChain([
+      {
+        taskId: 'TASK-024', podId: 'pod-1', status: 'pending', title: 'DECIDE: release scope',
+        updates: [{ text: 'OPTIONS: Ship | Hold | Escalate', createdAt: new Date() }],
+      },
+      {
+        taskId: 'TASK-025', podId: 'pod-1', status: 'pending', title: 'DECIDE: ambiguous',
+        updates: [{ text: 'OPTIONS: Ship | ship', createdAt: new Date() }],
+      },
+      {
+        taskId: 'TASK-026', podId: 'pod-1', status: 'pending', title: 'DECIDE: too many',
+        updates: [{ text: 'OPTIONS: A | B | C | D | E', createdAt: new Date() }],
+      },
+    ]));
+    const result = await ActivityService.getDecisionQueue('u1');
+    expect(result.items.find((item) => item.taskId === 'TASK-024').options).toEqual(['Ship', 'Hold', 'Escalate']);
+    expect(result.items.find((item) => item.taskId === 'TASK-025').options).toBeUndefined();
+    expect(result.items.find((item) => item.taskId === 'TASK-026').options).toBeUndefined();
+  });
+
+  test('records one human ruling, emits the board update, and wakes the asking seats', async () => {
+    const task = {
+      _id: 'task-1', taskId: 'TASK-024', podId: 'pod-1', title: 'DECIDE: release scope', status: 'pending',
+      updates: [{ text: 'OPTIONS: Ship now | Hold for review', createdAt: new Date() }],
+    };
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-1', createdBy: 'u1', members: [] }) }) });
+    User.findById.mockReturnValue(userChain({ username: 'Sam', isBot: false }));
+    Task.findOne.mockReturnValue({ lean: async () => task });
+    const ruled = { ...task, updates: [...task.updates, { text: 'SAM RULED: Ship now' }], toObject: () => ({ ...task, ruled: true }) };
+    Task.findOneAndUpdate.mockResolvedValue(ruled);
+    notifyPodAgents.mockResolvedValue();
+
+    const result = await ActivityService.ruleTaskDecision({ podId: 'pod-1', taskId: 'TASK-024', option: 'Ship now', userId: 'u1' });
+
+    expect(result).toMatchObject({ status: 200, body: { ok: true, ruling: 'Ship now' } });
+    expect(Task.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ podId: 'pod-1', taskId: 'TASK-024' }),
+      expect.objectContaining({ $push: { updates: expect.objectContaining({ text: 'SAM RULED: Ship now', author: 'Sam', authorId: 'u1' }) } }),
+      { new: true },
+    );
+    expect(emitTaskUpdated).toHaveBeenCalledWith('pod-1', expect.objectContaining({ ruled: true }), 'updated');
+    expect(notifyPodAgents).toHaveBeenCalledWith('pod-1', expect.objectContaining({ ruled: true }), 'updated', { userId: 'u1', isAgent: false });
+  });
+
+  test('rejects a non-member and an option not declared by the task without writing a ruling', async () => {
+    const task = {
+      taskId: 'TASK-024', podId: 'pod-1', title: 'DECIDE: release scope',
+      status: 'pending',
+      updates: [{ text: 'OPTIONS: Ship now | Hold for review', createdAt: new Date() }],
+    };
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-1', createdBy: 'owner', members: [] }) }) });
+    expect(await ActivityService.ruleTaskDecision({ podId: 'pod-1', taskId: 'TASK-024', option: 'Ship now', userId: 'u1' }))
+      .toMatchObject({ status: 403 });
+
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-1', createdBy: 'u1', members: [] }) }) });
+    User.findById.mockReturnValue(userChain({ username: 'Sam', isBot: false }));
+    Task.findOne.mockReturnValue({ lean: async () => task });
+    expect(await ActivityService.ruleTaskDecision({ podId: 'pod-1', taskId: 'TASK-024', option: 'Delete it', userId: 'u1' }))
+      .toMatchObject({ status: 400 });
+    expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('the compare-and-set makes a second tap lose without another wake', async () => {
+    const task = {
+      taskId: 'TASK-024', podId: 'pod-1', title: 'DECIDE: release scope',
+      updates: [{ text: 'OPTIONS: Ship now | Hold for review', createdAt: new Date() }],
+    };
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ _id: 'pod-1', createdBy: 'u1', members: [] }) }) });
+    User.findById.mockReturnValue(userChain({ username: 'Sam', isBot: false }));
+    Task.findOne.mockReturnValue({ lean: async () => task });
+    Task.findOneAndUpdate.mockResolvedValue(null);
+
+    expect(await ActivityService.ruleTaskDecision({ podId: 'pod-1', taskId: 'TASK-024', option: 'Ship now', userId: 'u1' }))
+      .toMatchObject({ status: 409 });
+    expect(emitTaskUpdated).not.toHaveBeenCalled();
+    expect(notifyPodAgents).not.toHaveBeenCalled();
   });
 });
