@@ -41,7 +41,7 @@ import { homedir } from 'os';
 // "persona and runtime are chosen separately" requires to mean anything for a
 // BYO seat, and what lets an identity card answer "what is this running".
 const ALLOWED_TOP_KEYS = new Set([
-  'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model',
+  'version', 'workspace', 'sandbox', 'skills', 'mcp', 'model', 'effort',
 ]);
 const ALLOWED_SANDBOX_MODES = new Set([
   'none', 'workspace', 'read-only', 'bwrap', 'firejail', 'container', 'managed',
@@ -132,6 +132,16 @@ export const validateEnvironmentSpec = (spec) => {
   if (spec.model !== undefined) {
     if (typeof spec.model !== 'string' || spec.model.trim() === '') {
       errors.push('model must be a non-empty string');
+    }
+  }
+
+  // `effort` is the reasoning budget the claude adapter passes to `--effort`.
+  // Unlike `model` it IS a closed set — the CLI documents exactly these — so a
+  // typo fails here at attach time, not silently at the first spawn.
+  if (spec.effort !== undefined) {
+    const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+    if (typeof spec.effort !== 'string' || !EFFORTS.includes(spec.effort)) {
+      errors.push(`effort must be one of: ${EFFORTS.join(', ')}`);
     }
   }
 
