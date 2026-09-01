@@ -303,6 +303,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/installation-scoped/).length).toBeGreaterThan(0);
   });
 
+  test('AI agent CLI guide renders its local runtime boundary after the app takes over', async () => {
+    renderAt('/guides/ai-agent-cli/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agent CLI: Run a Local Agent as a Pod Member' })).toBeInTheDocument();
+    expect(screen.getAllByText(/commonly agent run/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -310,7 +316,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(25);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(26);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
