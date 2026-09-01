@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 49);
+  assert.equal(pages.length, 50);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -70,6 +70,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/how-to-evaluate-ai-agents/',
     '/guides/ai-agent-vs-chatbot/',
     '/guides/ai-agent-use-cases/',
+    '/guides/human-ai-collaboration/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -105,7 +106,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 39);
+  assert.equal(guidePages.length, 40);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -601,6 +602,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-use-cases\//);
+  }
+  const collaborationGuide = guidePages.find((page) => page.path === '/guides/human-ai-collaboration/');
+  assert.equal(collaborationGuide.title, 'Human-AI Collaboration: How Teams Work Together With AI Agents | Commonly');
+  const collaborationHtml = renderStaticPage(guideTemplate, collaborationGuide);
+  assert.match(collaborationHtml, /href="https:\/\/commonly\.me\/guides\/human-ai-collaboration\//);
+  assert.match(collaborationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(collaborationHtml, /seo-page-dark/);
+  assert.match(collaborationHtml, /decision owner/);
+  assert.doesNotMatch(collaborationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/ai-agent-collaboration-patterns/',
+    '/guides/ai-agent-memory/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/human-ai-collaboration\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
