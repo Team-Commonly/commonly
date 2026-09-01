@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 50);
+  assert.equal(pages.length, 51);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -71,6 +71,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-vs-chatbot/',
     '/guides/ai-agent-use-cases/',
     '/guides/human-ai-collaboration/',
+    '/guides/agentic-workflows/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -106,7 +107,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 40);
+  assert.equal(guidePages.length, 41);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -619,6 +620,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/human-ai-collaboration\//);
+  }
+  const workflowsGuide = guidePages.find((page) => page.path === '/guides/agentic-workflows/');
+  assert.equal(workflowsGuide.title, 'Agentic Workflows: How to Design AI Agent Work That Teams Can Trust | Commonly');
+  const workflowsHtml = renderStaticPage(guideTemplate, workflowsGuide);
+  assert.match(workflowsHtml, /href="https:\/\/commonly\.me\/guides\/agentic-workflows\//);
+  assert.match(workflowsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(workflowsHtml, /seo-page-dark/);
+  assert.match(workflowsHtml, /eligible trigger/);
+  assert.doesNotMatch(workflowsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/what-is-agentic-ai/',
+    '/guides/context-engineering-for-ai-agents/',
+    '/guides/ai-agent-use-cases/',
+    '/guides/ai-agent-handoffs/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/agentic-workflows\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
