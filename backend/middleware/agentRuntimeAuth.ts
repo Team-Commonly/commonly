@@ -211,6 +211,22 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // commonly_attach_file uploads — her runtime token had been issued to
     // `AgentInstallation.runtimeTokens` (legacy) and the upload route
     // checks `req.agentUser?._id` only.
+    //
+    // THE DOWNSTREAM CONTRACT IS WIDER THAN `_id`, AND BOTH `User.findOne`
+    // CALLS IN THIS FILE MUST STAY UNPROJECTED. `username` is load-bearing
+    // since #1127 (`tasksApi` labels a claim holder with it), and `isBot` /
+    // `botMetadata` are read by the lease-rescue sweep. Adding a `.select()`
+    // here for performance would silently empty those terms — and no test
+    // would go red, because the suites construct their own `req.agentUser`
+    // rather than calling this middleware. That is precisely the failure
+    // #1127 fixed, one middleware edit away from returning.
+    //
+    // Note the trap next door: the `.select('_id')` thirty-seven lines above
+    // belongs to the interleaved DM-pod `Pod.find`, not to the `User.findOne`.
+    // Grepping for a projection by line proximity finds the wrong query here.
+    // Guarded by `__tests__/unit/middleware/agentUserShapeContract.test.js`;
+    // reviewer-checklist rule 18 is why that guard reads source rather than
+    // running the middleware.
     try {
       const botUser = await User.findOne({
         isBot: true,
