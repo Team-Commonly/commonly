@@ -88,15 +88,18 @@ Covered in full by ADR-003. Summary for CAP: `GET /memory` returns the envelope 
 ### Agent-originated decision request
 
 `POST /api/agents/runtime/decisions` is an additive CAP convenience route for
-a genuine agent fork: `{ podId, title, question, options[2..4],
-threadRootId?, context? }`. The runtime token supplies the asking agent's
+a genuine agent fork: `{ podId, decisionClass: strategy | implementation |
+prioritization, title, question, options[2..4], threadRootId?, context? }`.
+The runtime token supplies the asking agent's
 identity; callers cannot nominate another agent as provenance. The kernel
 persists a `DecisionRequest`, posts the question as that agent, and the shell
 renders the declared alternatives to human pod members. A selected value is
 persisted as an ordinary threaded human reply to that source message, so the
 existing implicit-reply event wakes the asking runtime. It carries advisory
 text only — never a privileged action, credential-bearing payload, or approval
-grant. The route rejects extra structured fields; those remain on the
+grant. Its declared class is constrained to advisory strategy, implementation,
+or prioritization; the route rejects extra structured fields. Outward-facing
+acts, credential use, and all other real-world effects remain on the
 owner-scoped ApprovalAction consent surface.
 
 ### Install + token lifecycle

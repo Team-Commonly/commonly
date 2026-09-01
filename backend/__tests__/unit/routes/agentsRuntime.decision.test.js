@@ -56,7 +56,7 @@ describe('POST /api/agents/runtime/decisions', () => {
 
   test('uses the authenticated seat as provenance and forwards the declared fork', async () => {
     const response = await request(app).post('/api/agents/runtime/decisions').send({
-      podId: 'pod-1', title: 'Choose release', question: 'Which train?',
+      podId: 'pod-1', decisionClass: 'implementation', title: 'Choose release', question: 'Which train?',
       options: [{ label: 'Canary', recommended: true }, { label: 'Fast lane' }],
       threadRootId: '612', context: 'Green build.',
     });
@@ -64,14 +64,14 @@ describe('POST /api/agents/runtime/decisions', () => {
     expect(response.status).toBe(201);
     expect(mockRequestDecision).toHaveBeenCalledWith(expect.objectContaining({
       podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
-      displayName: 'Release Agent', title: 'Choose release', question: 'Which train?', threadRootId: '612',
+      displayName: 'Release Agent', decisionClass: 'implementation', title: 'Choose release', question: 'Which train?', threadRootId: '612',
     }));
     expect(mockRequestDecision.mock.calls[0][0]).not.toHaveProperty('action');
   });
 
   test('refuses structured action data instead of turning a human ruling into approval', async () => {
     const response = await request(app).post('/api/agents/runtime/decisions').send({
-      podId: 'pod-1', title: 'Choose release', question: 'Which train?',
+      podId: 'pod-1', decisionClass: 'implementation', title: 'Choose release', question: 'Which train?',
       options: [{ label: 'Canary' }, { label: 'Fast lane' }],
       actionType: 'deploy', params: { environment: 'production' },
     });
@@ -83,7 +83,7 @@ describe('POST /api/agents/runtime/decisions', () => {
 
   test('rejects an unscoped pod before the decision service writes anything', async () => {
     const response = await request(app).post('/api/agents/runtime/decisions').send({
-      podId: 'other-pod', title: 'Choose release', question: 'Which train?', options: [{ label: 'A' }, { label: 'B' }],
+      podId: 'other-pod', decisionClass: 'strategy', title: 'Choose release', question: 'Which train?', options: [{ label: 'A' }, { label: 'B' }],
     });
     expect(response.status).toBe(403);
     expect(mockRequestDecision).not.toHaveBeenCalled();

@@ -153,7 +153,7 @@ describe('commonly_request_decision', () => {
   it('POSTs the declared alternatives to the CAP decision route', async () => {
     const fetchSpy = installFetch(async () => okResponse({ decisionId: 'd1', status: 'pending' }));
     const result = await byName.commonly_request_decision.call({
-      podId: 'POD', title: 'Choose a release', question: 'Which train?',
+      podId: 'POD', decisionClass: 'implementation', title: 'Choose a release', question: 'Which train?',
       options: [
         { label: 'Canary', description: 'Small rollout first.', recommended: true },
         { label: 'Fast lane', description: 'Ship on green.' },
@@ -165,7 +165,7 @@ describe('commonly_request_decision', () => {
     expect(url).toBe('https://x.example/api/agents/runtime/decisions');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toEqual({
-      podId: 'POD', title: 'Choose a release', question: 'Which train?',
+      podId: 'POD', decisionClass: 'implementation', title: 'Choose a release', question: 'Which train?',
       options: [
         { label: 'Canary', description: 'Small rollout first.', recommended: true },
         { label: 'Fast lane', description: 'Ship on green.' },
@@ -177,6 +177,9 @@ describe('commonly_request_decision', () => {
   it('teaches when this tool is appropriate and keeps executable consent out of it', () => {
     const tool = byName.commonly_request_decision;
     expect(tool.inputSchema.properties.options).toMatchObject({ minItems: 2, maxItems: 4 });
+    expect(tool.inputSchema.properties.decisionClass).toMatchObject({
+      enum: ['strategy', 'implementation', 'prioritization'],
+    });
     expect(tool.description).toContain('genuine fork');
     expect(tool.description).toContain('not for status updates');
     expect(tool.description).toMatch(/never approval|not approval/i);

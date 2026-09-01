@@ -41,11 +41,17 @@ export interface DecisionOptionInput {
   recommended?: boolean;
 }
 
+export type DecisionClass = 'strategy' | 'implementation' | 'prioritization';
+const ADVISORY_DECISION_CLASSES: readonly DecisionClass[] = [
+  'strategy', 'implementation', 'prioritization',
+];
+
 interface RequestDecisionOptions {
   podId: string;
   agentUserId: string;
   agentName: string;
   instanceId?: string;
+  decisionClass: DecisionClass;
   displayName?: string;
   installationConfig?: Record<string, unknown> | null;
   title: string;
@@ -71,6 +77,18 @@ const cleanText = (value: unknown, field: string, max: number): string => {
     throw new DecisionRequestError(`${field} must be at most ${max} characters`, 400, `invalid_${field}`);
   }
   return trimmed;
+};
+
+export const normalizeDecisionClass = (value: unknown): DecisionClass => {
+  const decisionClass = cleanText(value, 'decisionClass', 40).toLowerCase() as DecisionClass;
+  if (!ADVISORY_DECISION_CLASSES.includes(decisionClass)) {
+    throw new DecisionRequestError(
+      'decisionClass must be strategy, implementation, or prioritization',
+      400,
+      'invalid_decision_class',
+    );
+  }
+  return decisionClass;
 };
 
 export const normalizeOptions = (value: unknown): DecisionOptionInput[] => {
@@ -141,6 +159,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   const agentUserId = cleanText(input.agentUserId, 'agentUserId', 128);
   const agentName = cleanText(input.agentName, 'agentName', 120).toLowerCase();
   const instanceId = String(input.instanceId || 'default').trim().toLowerCase() || 'default';
+  const decisionClass = normalizeDecisionClass(input.decisionClass);
   const title = cleanText(input.title, 'title', 160);
   const question = cleanText(input.question, 'question', 1000);
   const options = normalizeOptions(input.options);
@@ -186,6 +205,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     agentUserId,
     agentName,
     instanceId,
+    decisionClass,
     title,
     question,
     ...(context ? { context } : {}),
@@ -377,6 +397,10 @@ export const chooseDecision = async (
   return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
 };
 
-export default { requestDecision, chooseDecision, normalizeOptions, DecisionRequestError };
+export default {
+  requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { requestDecision, chooseDecision, normalizeOptions, DecisionRequestError };
+module.exports = {
+  requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
+};

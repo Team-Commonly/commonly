@@ -39,7 +39,7 @@ const mockResolveThreadRoot = jest.fn();
 jest.mock('../../../services/threadRootResolver', () => ({ resolveThreadRoot: (...args) => mockResolveThreadRoot(...args) }));
 
 const {
-  requestDecision, chooseDecision, normalizeOptions, DecisionRequestError,
+  requestDecision, chooseDecision, normalizeOptions, normalizeDecisionClass, DecisionRequestError,
 } = require('../../../services/decisionRequestService');
 
 const userChain = (user) => ({ select: () => ({ lean: async () => user }) });
@@ -47,7 +47,7 @@ const podChain = (pod) => ({ select: () => ({ lean: async () => pod }) });
 
 const source = () => ({
   podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
-  displayName: 'Release Agent', title: 'Choose the release train', question: 'Which rollout should I run?',
+  displayName: 'Release Agent', decisionClass: 'implementation', title: 'Choose the release train', question: 'Which rollout should I run?',
   options: [
     { label: 'Canary', description: 'Small cohort.', recommended: true },
     { label: 'Fast lane', description: 'Ship once green.' },
@@ -56,7 +56,7 @@ const source = () => ({
 });
 
 const pending = (overrides = {}) => ({
-  _id: 'decision-1', podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
+  _id: 'decision-1', podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1', decisionClass: 'implementation',
   title: 'Choose the release train', question: 'Which rollout should I run?',
   options: [{ label: 'Canary', recommended: true }, { label: 'Fast lane' }], status: 'pending',
   messageId: '700', threadRootId: '612', ...overrides,
@@ -84,7 +84,7 @@ describe('DecisionRequestService', () => {
     }));
     expect(mockPostMessage.mock.calls[0][0].content).toContain('Choose the release train');
     expect(mockDecision.create).toHaveBeenCalledWith(expect.objectContaining({
-      agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
+      agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1', decisionClass: 'implementation',
       messageId: '700', status: 'pending',
     }));
     expect(result).toEqual({ decisionId: 'decision-1', messageId: '700', threadRootId: '612', status: 'pending' });
@@ -105,6 +105,13 @@ describe('DecisionRequestService', () => {
       .toEqual([{ label: 'A' }, { label: 'B', description: 'why' }]);
     expect(() => normalizeOptions(Array.from({ length: 5 }, (_, index) => ({ label: `Choice ${index}` }))))
       .toThrow(DecisionRequestError);
+  });
+
+  test('requires an advisory decision class and rejects consent-shaped classes', async () => {
+    expect(normalizeDecisionClass('strategy')).toBe('strategy');
+    expect(() => normalizeDecisionClass('approval')).toThrow(DecisionRequestError);
+    await expect(requestDecision({ ...source(), decisionClass: 'credential_use' }))
+      .rejects.toMatchObject({ status: 400, code: 'invalid_decision_class' });
   });
 
   test('one human member posts an exact threaded ruling and wakes the asking agent', async () => {

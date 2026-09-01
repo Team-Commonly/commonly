@@ -14,6 +14,12 @@ export interface DecisionOption {
   recommended?: boolean;
 }
 
+// A DecisionRequest is intentionally limited to advisory forks. Any class
+// that could authorize an outward-facing act, credential use, or other
+// side-effect belongs to ApprovalAction instead.
+export const DECISION_CLASSES = ['strategy', 'implementation', 'prioritization'] as const;
+export type DecisionClass = typeof DECISION_CLASSES[number];
+
 export interface DecisionRuling {
   value: string;
   byUserId: Types.ObjectId;
@@ -27,6 +33,7 @@ export interface IDecisionRequest extends Document {
   agentUserId: Types.ObjectId;
   agentName: string;
   instanceId: string;
+  decisionClass: DecisionClass;
   title: string;
   question: string;
   context?: string;
@@ -57,6 +64,7 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
     agentUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     agentName: { type: String, required: true, trim: true, lowercase: true },
     instanceId: { type: String, required: true, trim: true, lowercase: true, default: 'default' },
+    decisionClass: { type: String, required: true, enum: DECISION_CLASSES },
     title: { type: String, required: true, trim: true, maxlength: 160 },
     question: { type: String, required: true, trim: true, maxlength: 1000 },
     context: { type: String, trim: true, maxlength: 2000 },
