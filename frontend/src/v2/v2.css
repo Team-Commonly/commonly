@@ -8629,12 +8629,51 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
-/* DecisionRequest alternatives are touchable pills, not task metadata. The
-   recommendation is visually quiet but carries a stable accent distinction. */
+/* DecisionRequest alternatives are content, not row actions: a decision gets
+   its own full-width action line below the question. A neutral base prevents
+   an arbitrary non-recommended choice from inheriting the queue's primary
+   CTA treatment; the recommended choice is the only emphasized pill. */
+.v2-activity__queue-row--decision .v2-activity__queue-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option {
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
 .v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
+  border-style: dashed;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__option-choice {
+  display: grid;
+  flex: 0 1 220px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.v2-activity__option-choice button {
+  width: 100%;
+  justify-content: center;
+}
+
+.v2-activity__option-description {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .v2-activity__decision-other {
@@ -8836,6 +8875,7 @@ body.modern-ui.v2-canvas {
   /* Options are one-tap decisions. Keep their touch targets honest even
      when a 390px viewport makes the pills wrap onto separate rows. */
   .v2-root .v2-activity__queue-actions button { min-height: 44px; }
+  .v2-activity__option-choice { flex-basis: min(100%, 220px); }
   .v2-activity__decision-other { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__board-meta {

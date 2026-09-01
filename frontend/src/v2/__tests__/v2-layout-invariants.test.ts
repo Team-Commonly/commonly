@@ -124,6 +124,25 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
 
+  test('DecisionRequest options are full-width content with one recommended primary choice', () => {
+    // The first build left options inside the narrow actions column. Generic
+    // queue-button CSS then made every non-recommended option blue while the
+    // recommended one looked secondary — exactly backwards for a fork card.
+    const decisionActions = ruleBody(v2, '.v2-activity__queue-row--decision .v2-activity__queue-actions');
+    expect(decisionActions).toContain('grid-column: 1 / -1');
+    expect(decisionActions).toContain('justify-content: flex-start');
+
+    const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
+    expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
+    expect(neutralOption).toContain('background: var(--v2-surface)');
+    expect(neutralOption).toContain('border-radius: 999px');
+
+    const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
+    expect(recommendedOption).toContain('background: var(--v2-accent)');
+    expect(recommendedOption).toContain('color: var(--v2-surface)');
+    expect(v2).toContain('.v2-activity__option-description');
+  });
+
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
     // Below 1024px the pane used display:none while V2Layout still mounted it
     // on tap: the avatar-stack button looked broken and members/files were
@@ -482,7 +501,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // recommended state and the free-text escape hatch visible in the CSS
     // source because jsdom has no layout engine to catch a narrow regression.
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended'))
-      .toContain('background: var(--v2-accent-soft)');
+      .toContain('background: var(--v2-accent)');
     expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });

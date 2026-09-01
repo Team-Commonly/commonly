@@ -483,17 +483,20 @@ const V2ActivityPage: React.FC = () => {
                               {[...(item.options || [])]
                                 .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
                                 .map((option) => (
-                                  <button
-                                    key={option.label}
-                                    type="button"
-                                    className={`v2-activity__option${option.recommended ? ' v2-activity__option--recommended' : ''}`}
-                                    onClick={() => ruleDecision(item, option.label)}
-                                    disabled={rulingId === item.id}
-                                    aria-label={t('activity.decision.ruleOption', { option: option.label })}
-                                    title={option.description}
-                                  >
-                                    {rulingId === item.id ? t('activity.decision.working') : option.label}
-                                  </button>
+                                  <div className="v2-activity__option-choice" key={option.label}>
+                                    <button
+                                      type="button"
+                                      className={`v2-activity__option${option.recommended ? ' v2-activity__option--recommended' : ''}`}
+                                      onClick={() => ruleDecision(item, option.label)}
+                                      disabled={rulingId === item.id}
+                                      aria-label={t('activity.decision.ruleOption', { option: option.label })}
+                                    >
+                                      {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                    </button>
+                                    {option.description && (
+                                      <span className="v2-activity__option-description">{option.description}</span>
+                                    )}
+                                  </div>
                                 ))}
                               <button
                                 type="button"

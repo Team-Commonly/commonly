@@ -108,6 +108,7 @@ describe('V2ActivityPage', () => {
     expect(screen.getByText('Ready for your press')).toBeInTheDocument();
     expect(screen.getByText('Choose the eslint scope')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rule: Ship now' })).toBeInTheDocument();
+    expect(screen.getByText('Release the bounded change.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open board' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
