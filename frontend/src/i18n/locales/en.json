@@ -450,7 +450,8 @@
       "empty": "No summary yet",
       "summarize": "Summarize",
       "refresh": "Refresh",
-      "working": "Summarizing…"
+      "working": "Summarizing…",
+      "dismiss": "Dismiss"
     }
   },
   "landing": {

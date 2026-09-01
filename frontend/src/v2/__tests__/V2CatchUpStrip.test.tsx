@@ -44,20 +44,43 @@ describe('V2CatchUpStrip', () => {
     expect(screen.getByTestId('catchup-body')).toHaveTextContent('Line one. Line two.');
   });
 
-  test('a pod with no summary offers Summarize; refresh swaps in the generated summary', async () => {
+  // Sam's revised ruling, hours after the strip shipped (2026-09-01): "always
+  // shows up is not a good design" — the strip EARNS its row. No summary, a
+  // stale summary, or a dismissed one ⇒ no strip at all.
+  test('a pod with no summary renders NO strip', async () => {
     axios.get.mockResolvedValueOnce({ data: null });
-    axios.post.mockResolvedValueOnce({ data: { summary: { content: 'Fresh digest.', createdAt: new Date().toISOString() } } });
     render(<V2CatchUpStrip podId="p2" />);
-    await waitFor(() => expect(screen.getByText('No summary yet')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Summarize' }));
-    await waitFor(() => expect(screen.getByTestId('catchup-body')).toHaveTextContent('Fresh digest.'));
-    expect(axios.post).toHaveBeenCalledWith('/api/summaries/pod/p2/refresh', {});
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(screen.queryByTestId('catchup-strip')).toBeNull();
   });
 
-  test('a failed summary read never blocks the chat — strip still renders', async () => {
+  test('a summary older than 24h renders NO strip', async () => {
+    axios.get.mockResolvedValueOnce({
+      data: { content: 'Old news.', createdAt: new Date(Date.now() - 25 * 3600000).toISOString() },
+    });
+    render(<V2CatchUpStrip podId="p4" />);
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(screen.queryByTestId('catchup-strip')).toBeNull();
+  });
+
+  test('dismiss hides this summary version and persists; the strip stays gone on re-render', async () => {
+    const createdAt = new Date(Date.now() - 5 * 60000).toISOString();
+    axios.get.mockResolvedValue({ data: { content: 'Digest.', createdAt } });
+    const { unmount } = render(<V2CatchUpStrip podId="p5" />);
+    await waitFor(() => expect(screen.getByTestId('catchup-strip')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByTestId('catchup-strip')).toBeNull();
+    expect(window.localStorage.getItem('v2.catchup.dismissed.p5')).toBe(createdAt);
+    unmount();
+    render(<V2CatchUpStrip podId="p5" />);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('catchup-strip')).toBeNull();
+  });
+
+  test('a failed summary read never blocks the chat — and renders no strip', async () => {
     axios.get.mockRejectedValueOnce(new Error('403'));
     render(<V2CatchUpStrip podId="p3" />);
-    await waitFor(() => expect(screen.getByTestId('catchup-strip')).toBeInTheDocument());
-    expect(screen.getByText('No summary yet')).toBeInTheDocument();
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(screen.queryByTestId('catchup-strip')).toBeNull();
   });
 });

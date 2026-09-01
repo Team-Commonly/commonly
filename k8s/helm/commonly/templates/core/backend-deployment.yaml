@@ -419,7 +419,10 @@ spec:
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
         - name: LITELLM_CHAT_MODEL
-          value: "chatgpt/gpt-5.4-mini"
+          # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
+          # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
+          # entry already exists in LiteLLM with a live key.
+          value: "deepseek-v4-flash"
         # Temporary: bypass LiteLLM's broken chatgpt/ bridge (BerriAI/litellm#25429)
         # and route Codex directly via OpenClaw's native openai-codex-responses handler.
         # Flip to "false" / remove once LiteLLM ships a fix for empty-output responses.

@@ -450,7 +450,8 @@
       "empty": "还没有摘要",
       "summarize": "生成摘要",
       "refresh": "刷新",
-      "working": "正在总结…"
+      "working": "正在总结…",
+      "dismiss": "关闭"
     }
   },
   "landing": {
