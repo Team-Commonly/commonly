@@ -28,6 +28,8 @@ interface AgentInstallationSummary {
   podName?: string;
   // Derived at dedupe time: how many of the user's pods carry this identity.
   podCount?: number;
+  // Server-classified ops/smoke/demo seat (#1377) — drives the internal tier.
+  internal?: boolean;
 }
 
 // Runtime labels removed from cards 2026-08-22: ADR-022 D1 (ratified) bans
@@ -35,17 +37,10 @@ interface AgentInstallationSummary {
 // violating it on every card. Owner-facing runtime detail lives on the agent
 // profile, not the roster.
 
-// BEND-3 (Wren spec §1.1, Sam-approved 2026-08-30): internal ops/smoke/demo
-// seats hide behind a disclosure. A client-side curated list is exactly the
-// drift the taxonomy forbids, accepted for ONE release; the server-side
-// `internal: true` flag replaces this constant (follow-up filed with the
-// spec). Match by exact name or prefix, lowercased.
-const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
-const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
-const isInternalSeat = (a: AgentInstallationSummary): boolean => {
-  const n = (a.name || '').toLowerCase();
-  return INTERNAL_SEAT_EXACT.has(n) || INTERNAL_SEAT_PREFIXES.some((p) => n.startsWith(p));
-};
+// BEND-3 (Wren spec §1.1): internal ops/smoke/demo seats hide behind a
+// disclosure. Classification is the server's (`internal: true` on the agent
+// listing, #1377) — the one-release client constant this replaced is gone;
+// never reintroduce a curated name list here.
 
 const AGENT_KIND = 'agent' as const;
 const seedOf = (a: AgentInstallationSummary): string => `${a.name}:${a.instanceId || 'default'}`;
@@ -113,7 +108,7 @@ const dedupeAgents = (agents: AgentInstallationSummary[]): AgentInstallationSumm
 // rule 6); everywhere else the relative time carries the signal.
 type Tier = 'workingNow' | 'team' | 'quiet' | 'internal';
 const tierOf = (a: AgentInstallationSummary, now: number): Tier => {
-  if (isInternalSeat(a)) return 'internal';
+  if (a.internal === true) return 'internal';
   const seen = lastSeenTime(a);
   if (!seen || now - seen > QUIET_MS) return 'quiet';
   if (now - seen < WORKING_NOW_MS) return 'workingNow';
@@ -269,7 +264,7 @@ const V2YourTeamPage: React.FC = () => {
     const now = Date.now();
     return sortedAgents.filter((a) => {
       const seen = lastSeenTime(a);
-      return seen > 0 && now - seen < QUIET_MS && !isInternalSeat(a);
+      return seen > 0 && now - seen < QUIET_MS && a.internal !== true;
     }).length;
   }, [sortedAgents]);
 

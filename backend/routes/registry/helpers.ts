@@ -338,6 +338,21 @@ const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
   return fallback;
 };
 
+// Internal ops/smoke/demo seats (Wren spec §1.1, BEND-3 follow-up #1377):
+// the roster hides these behind a disclosure. The classification lives HERE,
+// at the boundary, so every consumer reads one `internal: true` flag instead
+// of curating its own name list — the client-side constant this replaces was
+// accepted for exactly one release. An explicit `config.internal: true` on
+// the installation wins; the name patterns cover the seats scripts already
+// create without the flag.
+const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
+const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
+const isInternalSeat = (agentName: any, normalizedConfig: any): boolean => {
+  if (normalizedConfig?.internal === true) return true;
+  const n = String(agentName || '').toLowerCase();
+  return INTERNAL_SEAT_EXACT.has(n) || INTERNAL_SEAT_PREFIXES.some((p) => n.startsWith(p));
+};
+
 const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
@@ -381,6 +396,7 @@ const buildAgentInstallationPayload = (installation: any, {
     // connected" for native agents that talked minutes ago (#915).
     lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
+    internal: isInternalSeat(installation.agentName, normalizedConfig),
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
     // Resolved at the boundary so the frontend doesn't need to know
@@ -612,6 +628,7 @@ module.exports = {
   sanitizeRuntimeConfig,
   buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
+  isInternalSeat,
   normalizePluginIdentifier,
   getPluginSpecBase,
   normalizeInstanceId,
