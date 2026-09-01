@@ -511,6 +511,37 @@ class Message {
     }
   }
 
+  // One row per user: each given user's most-recent non-system message in ONE
+  // pod. Powers the Your Team featured card's line 2 (last-message snippet) —
+  // the inverse shape of findLastMessageByUserPerPod below.
+  static async findLastMessagePerUserInPod(
+    podId: unknown,
+    userIds: unknown[],
+  ): Promise<Array<{ userId: string; content: string; createdAt: unknown }>> {
+    if (!podId || !userIds || !userIds.length) return [];
+    try {
+      const pid = (podId as { toString(): string }).toString();
+      const userIdStrs = userIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
+      if (!userIdStrs.length) return [];
+      const result = await (pool as PgPool).query(
+        `SELECT DISTINCT ON (user_id) user_id, content, created_at
+         FROM messages
+         WHERE pod_id = $1 AND user_id = ANY($2) AND message_type != 'system'
+         ORDER BY user_id, created_at DESC`,
+        [pid, userIdStrs],
+      );
+      return (result.rows as Array<{ user_id: string; content: string; created_at: unknown }>).map((r) => ({
+        userId: r.user_id,
+        content: r.content,
+        createdAt: r.created_at,
+      }));
+    } catch (error) {
+      const e = error as { message?: string };
+      console.error('Error in findLastMessagePerUserInPod:', e.message);
+      return [];
+    }
+  }
+
   // One row per pod: the given user's most-recent non-system message in each pod.
   // Powers the agent-profile "pods" list (their last message + when, per pod).
   static async findLastMessageByUserPerPod(

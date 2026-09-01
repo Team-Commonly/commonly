@@ -4019,6 +4019,13 @@ body.modern-ui.v2-canvas {
   margin-top: 2px;
 }
 .v2-team-feature__doing em { font-style: normal; font-weight: 600; }
+/* Snippet variant: one line, ellipsized — a 200-char quote must not
+   change the card's height (grid column is already minmax(0,1fr)). */
+.v2-team-feature__doing--snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .v2-team-feature__meta {
   font-size: 12px;
   color: var(--v2-text-tertiary);
