@@ -44,7 +44,12 @@ const agents = [
   { name: 'sage', instanceId: 'default', displayName: 'Sage', lastActiveAt: minutesAgo(2 * 24 * 60) },
   { name: 'dusty', instanceId: 'default', displayName: 'Dusty', lastActiveAt: minutesAgo(30 * 24 * 60) },
   { name: 'ghost', instanceId: 'default', displayName: 'Ghost', lastActiveAt: null },
-  { name: 'hosted-smoke', instanceId: 'default', displayName: 'Hosted Smoke', lastActiveAt: minutesAgo(1) },
+  // internal comes from the server listing (#1377) — the page must not
+  // re-derive it from the name.
+  { name: 'hosted-smoke', instanceId: 'default', displayName: 'Hosted Smoke', lastActiveAt: minutesAgo(1), internal: true },
+  // Matches the RETIRED client name pattern but carries no server flag — must
+  // render like any other agent, proving the page no longer curates names.
+  { name: 'smoke-widget', instanceId: 'default', displayName: 'Smoke Widget', lastActiveAt: minutesAgo(3 * 24 * 60) },
 ];
 
 const renderPage = () => {
@@ -103,6 +108,9 @@ describe('Your Team tiers', () => {
     expect(screen.queryByText('Hosted Smoke')).not.toBeInTheDocument();
     const toggle = screen.getByTestId('team-internal-toggle');
     expect(toggle).toHaveTextContent('Internal seats (1)');
+    // smoke-widget matches the old client-side name pattern but has no server
+    // flag: it stays on the open roster, not behind the disclosure.
+    expect(screen.getByText('Smoke Widget')).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText('Hosted Smoke')).toBeInTheDocument();
   });
@@ -110,7 +118,8 @@ describe('Your Team tiers', () => {
   test('header kicker reports real numbers: total and active this week, internal excluded', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Fable')).toBeInTheDocument());
-    // 5 agents total; active this week = Fable + Sage (hosted-smoke internal, excluded).
-    expect(screen.getByText('5 agents · 2 active this week')).toBeInTheDocument();
+    // 6 agents total; active this week = Fable + Sage + Smoke Widget
+    // (hosted-smoke internal, excluded).
+    expect(screen.getByText('6 agents · 3 active this week')).toBeInTheDocument();
   });
 });
