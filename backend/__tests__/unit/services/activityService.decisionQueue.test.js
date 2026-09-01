@@ -21,6 +21,7 @@ jest.mock('../../../models/User', () => ({
   find: jest.fn(),
   findById: jest.fn(),
 }));
+jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn().mockResolvedValue({ rows: [] }) } }));
 jest.mock('../../../models/Activity', () => ({}));
 jest.mock('../../../models/Summary', () => ({}));
 jest.mock('../../../models/Post', () => ({}));
@@ -28,6 +29,10 @@ jest.mock('../../../models/Post', () => ({}));
 const ActivityService = require('../../../services/activityService');
 const Pod = require('../../../models/Pod');
 const Task = require('../../../models/Task');
+const User = require('../../../models/User');
+const { pool } = require('../../../config/db-pg');
+
+const userChain = (doc) => ({ select: () => ({ lean: async () => doc }) });
 
 const POD = { _id: 'pod-1', name: 'Sprint HQ', type: 'team' };
 
@@ -42,6 +47,8 @@ describe('ActivityService.getDecisionQueue', () => {
     jest.spyOn(ActivityService, 'getPendingApprovals').mockResolvedValue([]);
     jest.spyOn(ActivityService, 'getUserFeed').mockResolvedValue({ activities: [], acknowledgedMentionIds: [] });
     Task.find.mockReturnValue(taskChain([]));
+    User.findById.mockReturnValue(userChain({ username: 'Sam', activityQueue: { acknowledgedMentionIds: [] } }));
+    pool.query.mockResolvedValue({ rows: [] });
   });
 
   test('a DECIDE-titled open row and a blocked row are decisions; a human-handoff update is a press', async () => {
@@ -101,13 +108,10 @@ describe('ActivityService.getDecisionQueue', () => {
     ActivityService.getPendingApprovals.mockResolvedValue([
       { _id: 'act-1', content: 'approve?', podId: 'pod-1', createdAt: new Date('2026-08-20T00:00:00Z') },
     ]);
-    ActivityService.getUserFeed.mockResolvedValue({
-      activities: [{
-        id: 'm-1', flags: { isMention: true }, actor: { name: 'anvil' }, preview: 'ping',
-        pod: { id: 'pod-1', name: 'Sprint HQ' }, timestamp: '2026-08-27T00:00:00.000Z',
-      }],
-      acknowledgedMentionIds: [],
-    });
+    pool.query.mockResolvedValue({ rows: [{
+      id: 501, pod_id: 'pod-1', user_id: 'bot-1', content: '@Sam ping', created_at: new Date('2026-08-27T00:00:00Z'),
+      thread_root_id: 480, author: 'anvil',
+    }] });
     const rows = [];
     for (let i = 0; i < 13; i += 1) {
       rows.push({
@@ -130,6 +134,27 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(result.items[1].kind).toBe('press');
     expect(result.items[2].kind).toBe('mention');
     expect(result.items[3].kind).toBe('decision');
+  });
+
+  test('mentions come from a dedicated thread-aware query: acked rows drop, reply coordinates ride along', async () => {
+    // Sam, 2026-09-01: 15 @Sam mentions in 36h, 14 inside threads, feed saw
+    // zero. The queue asks the store directly and keeps the thread root so
+    // the tab can reply IN the thread.
+    User.findById.mockReturnValue(userChain({ username: 'Sam', activityQueue: { acknowledgedMentionIds: ['msg_7'] } }));
+    pool.query.mockResolvedValue({ rows: [
+      { id: 9, pod_id: 'pod-1', user_id: 'bot-1', content: '@Sam in a thread', created_at: new Date(), thread_root_id: 4, author: 'vale' },
+      { id: 7, pod_id: 'pod-1', user_id: 'bot-2', content: '@Sam already handled', created_at: new Date(), thread_root_id: null, author: 'juno' },
+      { id: 5, pod_id: 'pod-1', user_id: 'bot-3', content: '@Sam top-level', created_at: new Date(), thread_root_id: null, author: 'kai' },
+    ] });
+    const result = await ActivityService.getDecisionQueue('u1');
+    const mentions = result.items.filter((i) => i.kind === 'mention');
+    expect(mentions.map((m) => m.id)).toEqual(['msg_9', 'msg_5']);
+    expect(mentions[0]).toMatchObject({ threadRootId: 4, messageId: 9, title: 'vale mentioned you' });
+    // A top-level mention is its own thread root.
+    expect(mentions[1]).toMatchObject({ threadRootId: 5, messageId: 5 });
+    const [sql, params] = pool.query.mock.calls[0];
+    expect(sql).toMatch(/ANY\(\$1::text\[\]\)/);
+    expect(params[2]).toBe('@Sam(?![A-Za-z0-9_])');
   });
 
   test('one failed source degrades, never blanks the queue', async () => {

@@ -39,6 +39,12 @@
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
     "openBoard": "Open board",
+    "reply": {
+      "placeholder": "Reply in thread…",
+      "send": "Send",
+      "working": "Sending…",
+      "sent": "Reply posted"
+    },
     "lastActive": "Active {{time}} ago",
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",

@@ -444,6 +444,49 @@ class ActivityService {
    * latest update hands off to a human press/ruling. No inference, no
    * name-matching heuristics (TASK-070b stays open by design).
    */
+  /**
+   * Every message in the user's pods that @mentions them, threads included,
+   * minus their own and minus acknowledged ones. Ids are `msg_<pg id>` —
+   * the same shape the feed emits, so acknowledgedMentionIds keeps working.
+   */
+  static async getMentionsForUser(userId: unknown, podIds: unknown[]): Promise<Array<{
+    id: string; messageId: number; threadRootId: number; podId: string;
+    authorName: string; content: string; createdAt: Date;
+  }>> {
+    const user = await (User as {
+      findById(id: unknown): { select(f: string): { lean(): Promise<{ username?: string; activityQueue?: { acknowledgedMentionIds?: unknown[] } } | null> } };
+    }).findById(userId).select('username activityQueue.acknowledgedMentionIds').lean();
+    const username = String(user?.username || '').trim();
+    if (!username || !podIds.length) return [];
+    const acked = new Set(((user?.activityQueue?.acknowledgedMentionIds as unknown[]) || []).map(String));
+    const { pool } = require('../config/db-pg') as { pool: { query(q: string, p: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> } };
+    // ILIKE on the handle; the trailing boundary keeps @sam from matching
+    // @samantha. ::text[] is load-bearing (the rank query lesson, #1307).
+    const { rows } = await pool.query(
+      `SELECT m.id, m.pod_id, m.user_id, m.content, m.created_at, m.thread_root_id, u.username AS author
+         FROM messages m
+         LEFT JOIN users u ON u._id = m.user_id
+        WHERE m.pod_id = ANY($1::text[])
+          AND m.user_id <> $2
+          AND m.created_at > now() - interval '7 days'
+          AND m.content ~* $3
+        ORDER BY m.created_at DESC
+        LIMIT 40`,
+      [podIds.map(String), String(userId), `@${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`],
+    );
+    return rows
+      .map((r) => ({
+        id: `msg_${r.id}`,
+        messageId: Number(r.id),
+        threadRootId: Number(r.thread_root_id || r.id),
+        podId: String(r.pod_id),
+        authorName: String(r.author || 'Someone'),
+        content: String(r.content || ''),
+        createdAt: r.created_at as Date,
+      }))
+      .filter((m) => !acked.has(m.id));
+  }
+
   static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
     const pods: PodDoc[] = await Pod.find({
       $or: [
@@ -490,20 +533,28 @@ class ActivityService {
       console.warn('[decision-queue] approvals read failed:', (err as Error).message);
     }
 
-    // 2. Unacknowledged direct mentions, from the feed's existing flags.
+    // 2. Unacknowledged direct mentions — a DEDICATED query, not the feed.
+    // Sam, 2026-09-01: "pods mentioning me… but activity tab is not showing
+    // properly." Measured: 15 @Sam mentions in 36h, 14 inside THREADS, and
+    // the feed path saw zero — it samples ~20 recent rows per pod through
+    // the generic aggregator, so thread traffic (where agents now do most
+    // of their talking) never reaches the mention flag. The mention query
+    // asks the store the actual question, across every pod, threads
+    // included, for the last 7 days.
     try {
-      const feed = await ActivityService.getUserFeed(userId, { limit: 60, filter: 'mentions' });
-      const acked = new Set(((feed.acknowledgedMentionIds as unknown[]) || []).map(String));
-      for (const a of ((feed.activities as ActivityItem[]) || [])) {
-        if (!a.flags?.isMention || acked.has(String(a.id))) continue;
+      const mentions = await ActivityService.getMentionsForUser(userId, podIds);
+      for (const m of mentions) {
         items.push({
           kind: 'mention',
-          id: String(a.id),
-          title: `${a.actor?.name || 'Someone'} mentioned you`,
-          detail: String(a.preview || a.content || '').slice(0, 160),
-          podId: a.pod?.id || null,
-          podName: a.pod?.name,
-          createdAt: (a.timestamp as Date) || null,
+          id: m.id,
+          title: `${m.authorName} mentioned you`,
+          detail: m.content.slice(0, 220),
+          podId: m.podId,
+          podName: podName.get(m.podId),
+          createdAt: m.createdAt,
+          // Reply-in-place needs the thread root (or the message itself, as
+          // the root of a new thread) and the message to address.
+          ...({ threadRootId: m.threadRootId, messageId: m.messageId } as Record<string, unknown>),
         });
       }
     } catch (err) {
