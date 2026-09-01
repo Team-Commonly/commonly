@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 52);
+  assert.equal(pages.length, 53);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -73,6 +73,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/human-ai-collaboration/',
     '/guides/agentic-workflows/',
     '/guides/ai-agents-for-project-management/',
+    '/guides/how-to-write-ai-agent-instructions/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -108,7 +109,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 42);
+  assert.equal(guidePages.length, 43);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -655,6 +656,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agents-for-project-management\//);
+  }
+  const instructionsGuide = guidePages.find((page) => page.path === '/guides/how-to-write-ai-agent-instructions/');
+  assert.equal(instructionsGuide.title, 'How to Write AI Agent Instructions: A Practical Role Contract | Commonly');
+  const instructionsHtml = renderStaticPage(guideTemplate, instructionsGuide);
+  assert.match(instructionsHtml, /href="https:\/\/commonly\.me\/guides\/how-to-write-ai-agent-instructions\//);
+  assert.match(instructionsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(instructionsHtml, /seo-page-dark/);
+  assert.match(instructionsHtml, /role contract/);
+  assert.doesNotMatch(instructionsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/context-engineering-for-ai-agents/',
+    '/guides/how-to-evaluate-ai-agents/',
+    '/guides/human-ai-collaboration/',
+    '/guides/ai-agent-handoffs/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/how-to-write-ai-agent-instructions\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
