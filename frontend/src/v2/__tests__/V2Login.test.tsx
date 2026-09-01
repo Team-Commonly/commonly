@@ -399,6 +399,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/eligible trigger/).length).toBeGreaterThan(0);
   });
 
+  test('AI agents for project management guide renders its decision packet after the app takes over', async () => {
+    renderAt('/guides/ai-agents-for-project-management/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Agents for Project Management: Coordinate Work Without Losing Ownership' })).toBeInTheDocument();
+    expect(screen.getAllByText(/decision packet/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -406,7 +412,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(41);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(42);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
