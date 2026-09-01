@@ -94,10 +94,12 @@ This fleet has produced the evidence unprompted, in the repo, this week:
   surface #1234 had had open since 2026-08-25. Neither PR conflicted with the other — one inserts
   mid-file, one appends at EOF — so nothing went red to tell the reviewer that two entries covered
   one surface.
-- **`main` has carried two files named `ADR-018` for 22 days.** `ADR-018-agent-identity.md` (merged
+- **`main` carried two files named `ADR-018` for 22 days.** `ADR-018-agent-identity.md` (merged
   2026-08-04) and `ADR-018-agent-attention-claims.md` (merged 2026-08-11). Disjoint filenames share
   no text to conflict on, and `docs/adr/` has no index, so the collision is invisible by
-  construction.
+  construction. The stub is renumbered to ADR-030 in the same change that carries this sentence; the
+  finding stands, because nothing detected the collision for 22 days and a third instance (ADR-025)
+  arrived before it was resolved.
 - **A conflict resolution was silently discarded, twice in one hour.** #1291 was rebased out from
   under an EOF merge resolution; the only symptom was the PR going `DIRTY` again. Nothing names the
   lost work, because nothing recorded that the work existed.
