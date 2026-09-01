@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 37);
+  assert.equal(pages.length, 38);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -58,6 +58,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-security-best-practices/',
     '/guides/ai-agent-cli/',
     '/guides/ai-agent-orchestration/',
+    '/guides/ai-agent-skills/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -93,7 +94,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 27);
+  assert.equal(guidePages.length, 28);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -386,6 +387,23 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(orchestrationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
   assert.match(orchestrationHtml, /shared state/);
   assert.doesNotMatch(orchestrationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const skillsGuide = guidePages.find((page) => page.path === '/guides/ai-agent-skills/');
+  assert.equal(skillsGuide.title, 'AI Agent Skills: Reusable Workflows for Reliable Agents | Commonly');
+  const skillsHtml = renderStaticPage(guideTemplate, skillsGuide);
+  assert.match(skillsHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-skills\/"/);
+  assert.match(skillsHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(skillsHtml, /seo-page-dark/);
+  assert.match(skillsHtml, /source-backed-review/);
+  assert.doesNotMatch(skillsHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  for (const guidePath of [
+    '/guides/ai-agent-task-management/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/ai-agent-heartbeats-and-scheduled-work/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-skills\//);
+  }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
     '/guides/ai-agent-handoffs/',
