@@ -1715,6 +1715,16 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-catchup__refresh:hover:not(:disabled) { text-decoration: underline; }
 .v2-root button.v2-catchup__refresh:disabled { color: var(--v2-text-tertiary); cursor: default; }
+.v2-root button.v2-catchup__dismiss {
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--v2-text-tertiary);
+  cursor: pointer;
+}
+.v2-root button.v2-catchup__dismiss:hover { color: var(--v2-text); }
 .v2-catchup__body {
   margin-top: 6px;
   max-height: 220px;

@@ -75,7 +75,31 @@ const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
     }
   }, [podId, refreshing]);
 
+  // Dismissal is per summary VERSION: dismissing hides this summary, and the
+  // strip returns only when a newer one exists. localStorage per the browser
+  // storage rules — wrapped, and absence just means "not dismissed".
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      setDismissed(window.localStorage.getItem(`v2.catchup.dismissed.${podId}`) === (summary?.createdAt || ''));
+    } catch { setDismissed(false); }
+  }, [podId, summary]);
+  const handleDismiss = useCallback(() => {
+    try { window.localStorage.setItem(`v2.catchup.dismissed.${podId}`, summary?.createdAt || ''); } catch { /* per-viewer convenience only */ }
+    setDismissed(true);
+  }, [podId, summary]);
+
   if (!loaded) return null;
+  // Sam's revised ruling (2026-09-01, hours after the strip shipped):
+  // "always shows up is not a good design" and an empty/stale strip
+  // "reveals no good info". So the strip EARNS its row: it renders only
+  // when a summary exists, is fresh (24h), and this version has not been
+  // dismissed. No summary -> no strip, not an empty shell with a
+  // Summarize button — generating one on demand stays available from the
+  // inspector/summaries surface.
+  const FRESH_MS = 24 * 60 * 60 * 1000;
+  const isFresh = !!(summary?.createdAt && Date.now() - new Date(summary.createdAt).getTime() < FRESH_MS);
+  if (!summary?.content || !isFresh || dismissed) return null;
 
   return (
     <div className="v2-catchup" data-testid="catchup-strip">
@@ -108,7 +132,16 @@ const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
         >
           {refreshing
             ? t('podChat.catchup.working')
-            : summary ? t('podChat.catchup.refresh') : t('podChat.catchup.summarize')}
+            : t('podChat.catchup.refresh')}
+        </button>
+        <button
+          type="button"
+          className="v2-catchup__dismiss"
+          onClick={handleDismiss}
+          aria-label={t('podChat.catchup.dismiss')}
+          title={t('podChat.catchup.dismiss')}
+        >
+          ×
         </button>
       </div>
       {expanded && summary?.content && (
