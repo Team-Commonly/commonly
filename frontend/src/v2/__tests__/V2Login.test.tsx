@@ -345,6 +345,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/capability boundaries/).length).toBeGreaterThan(0);
   });
 
+  test('MCP guide renders its connection path after the app takes over', async () => {
+    renderAt('/guides/mcp-for-ai-agent-teams/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'MCP for AI Agent Teams: Connect Tools Without Losing Team Context' })).toBeInTheDocument();
+    expect(screen.getAllByText(/connection path/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -352,7 +358,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(32);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(33);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
