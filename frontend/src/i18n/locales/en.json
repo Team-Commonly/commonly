@@ -1382,6 +1382,12 @@
       "live": "Listening",
       "noteHosted": "This is how it will appear in the pod. The face follows the name.",
       "noteByo": "Appears in the pod once your runtime connects with the token."
+    },
+    "persona": {
+      "hiring": "Hiring",
+      "change": "Change",
+      "none": "No colleague picked yet — this is the blank-agent path.",
+      "browse": "Browse colleagues"
     }
   },
   "agentProfile": {

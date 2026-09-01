@@ -24,7 +24,10 @@ const PersonaCardView: React.FC<{ card: PersonaCard }> = ({ card }) => {
 
   const onCta = () => {
     if (card.availability === 'workspace') navigate('/v2');
-    if (card.availability === 'connect') navigate('/v2/agents/byo');
+    // Carry the choice — the where-step must show WHO was picked and why
+    // (Sam, 2026-09-01: both header CTAs converged on the same page with the
+    // persona silently dropped).
+    if (card.availability === 'connect') navigate(`/v2/agents/byo?persona=${encodeURIComponent(card.key)}`);
   };
 
   return (
