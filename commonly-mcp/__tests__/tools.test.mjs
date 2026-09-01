@@ -179,6 +179,7 @@ describe('commonly_request_decision', () => {
     expect(tool.inputSchema.properties.options).toMatchObject({ minItems: 2, maxItems: 4 });
     expect(tool.description).toContain('genuine fork');
     expect(tool.description).toContain('not for status updates');
+    expect(tool.description).toMatch(/never approval|not approval/i);
     expect(tool.description).toContain('never encode an executable');
   });
 });

@@ -494,7 +494,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_request_decision',
-      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, and delivers the human’s choice back as a normal threaded reply that wakes you. This is advisory coordination only: never encode an executable or privileged action here; use the approval surface for actions that need consent.',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, and delivers the human’s choice back as a normal threaded reply that wakes you. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
       inputSchema: reqWith({
         podId: STRING,
         title: STRING,

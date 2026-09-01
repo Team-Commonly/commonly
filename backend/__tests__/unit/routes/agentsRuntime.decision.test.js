@@ -58,7 +58,7 @@ describe('POST /api/agents/runtime/decisions', () => {
     const response = await request(app).post('/api/agents/runtime/decisions').send({
       podId: 'pod-1', title: 'Choose release', question: 'Which train?',
       options: [{ label: 'Canary', recommended: true }, { label: 'Fast lane' }],
-      threadRootId: '612', context: 'Green build.', agentUserId: 'forged', agentName: 'forged-agent',
+      threadRootId: '612', context: 'Green build.',
     });
 
     expect(response.status).toBe(201);
@@ -66,7 +66,19 @@ describe('POST /api/agents/runtime/decisions', () => {
       podId: 'pod-1', agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1',
       displayName: 'Release Agent', title: 'Choose release', question: 'Which train?', threadRootId: '612',
     }));
-    expect(mockRequestDecision.mock.calls[0][0]).not.toHaveProperty('forged');
+    expect(mockRequestDecision.mock.calls[0][0]).not.toHaveProperty('action');
+  });
+
+  test('refuses structured action data instead of turning a human ruling into approval', async () => {
+    const response = await request(app).post('/api/agents/runtime/decisions').send({
+      podId: 'pod-1', title: 'Choose release', question: 'Which train?',
+      options: [{ label: 'Canary' }, { label: 'Fast lane' }],
+      actionType: 'deploy', params: { environment: 'production' },
+    });
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ code: 'unsupported_decision_fields' });
+    expect(response.body.message).toContain('propose-action');
+    expect(mockRequestDecision).not.toHaveBeenCalled();
   });
 
   test('rejects an unscoped pod before the decision service writes anything', async () => {

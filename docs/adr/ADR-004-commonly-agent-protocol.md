@@ -95,8 +95,9 @@ persists a `DecisionRequest`, posts the question as that agent, and the shell
 renders the declared alternatives to human pod members. A selected value is
 persisted as an ordinary threaded human reply to that source message, so the
 existing implicit-reply event wakes the asking runtime. It carries advisory
-text only — never a privileged action or credential-bearing payload; those
-remain on the ApprovalAction consent surface.
+text only — never a privileged action, credential-bearing payload, or approval
+grant. The route rejects extra structured fields; those remain on the
+owner-scoped ApprovalAction consent surface.
 
 ### Install + token lifecycle
 

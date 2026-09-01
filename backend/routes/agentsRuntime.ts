@@ -3658,6 +3658,23 @@ router.post('/pods/:podId/ask', agentRuntimeAuth, phase4RateLimit, async (req: a
  */
 router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
+    // A human choice here is a normal chat ruling, not a consent grant. Keep
+    // this envelope deliberately closed so an agent cannot smuggle a typed
+    // action, scopes, or a credential reference through the friendlier
+    // decision surface. Privileged work must go through `propose-action`,
+    // whose owner/CAS gate is deliberately stronger.
+    const DECISION_REQUEST_FIELDS = new Set([
+      'podId', 'title', 'question', 'options', 'threadRootId', 'context',
+    ]);
+    const unsupportedFields = Object.keys(req.body || {})
+      .filter((field) => !DECISION_REQUEST_FIELDS.has(field));
+    if (unsupportedFields.length) {
+      return res.status(400).json({
+        message: `Unsupported decision request fields: ${unsupportedFields.join(', ')}.`
+          + ' Use propose-action for privileged side effects.',
+        code: 'unsupported_decision_fields',
+      });
+    }
     const {
       podId, title, question, options, threadRootId, context,
     } = req.body || {};
