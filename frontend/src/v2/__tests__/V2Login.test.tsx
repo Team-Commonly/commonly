@@ -351,6 +351,12 @@ describe('V2 routing', () => {
     expect(screen.getAllByText(/connection path/).length).toBeGreaterThan(0);
   });
 
+  test('agentic AI guide renders its work loop after the app takes over', async () => {
+    renderAt('/guides/what-is-agentic-ai/');
+    expect(await screen.findByRole('heading', { level: 1, name: 'What Is Agentic AI? A Practical Definition for Teams' })).toBeInTheDocument();
+    expect(screen.getAllByText(/work loop/).length).toBeGreaterThan(0);
+  });
+
   test('guides index renders after the app takes over', async () => {
     renderAt('/guides/');
 
@@ -358,7 +364,7 @@ describe('V2 routing', () => {
       level: 1,
       name: 'Guides for teams working with AI agents',
     })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(33);
+    expect(screen.getAllByRole('button', { name: 'Read the guide' })).toHaveLength(34);
     expect(screen.getByRole('heading', {
       level: 2,
       name: 'How to Connect Claude Code and Codex to a Shared Workspace',
