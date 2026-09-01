@@ -9038,3 +9038,34 @@ body.modern-ui.v2-canvas {
   .v2-connector__controls { flex-direction: column; align-items: flex-start; gap: 8px; }
   .v2-connector__row { flex-wrap: wrap; }
 }
+
+/* Activity queue: reply-in-place on mention rows (Sam, 2026-09-01). The
+   textarea shares the row's action cluster; on narrow screens it takes the
+   full width of the row so the thumb has something to hit. */
+.v2-activity__reply {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.v2-root textarea.v2-activity__reply-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: vertical;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--v2-text);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+}
+.v2-root textarea.v2-activity__reply-input:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 1px;
+}
+@media (max-width: 640px) {
+  .v2-activity__reply { flex-basis: 100%; }
+}

@@ -37,6 +37,9 @@ interface NeedsYouItem {
   podName: string;
   taskId?: string;
   timestamp: string | null;
+  // Mention rows carry where they live so a reply can land IN the thread.
+  messageId?: number;
+  threadRootId?: number;
 }
 
 interface BoardItem {
@@ -164,6 +167,37 @@ const V2ActivityPage: React.FC = () => {
       setActionError(t('activity.approval.actionFailed'));
     } finally {
       setActingApprovalId(null);
+    }
+  };
+
+  // Reply-in-place (Sam, 2026-09-01: "a way to really work with these agents
+  // more easily… and tell them what is on my mind"). The reply posts into
+  // the SAME thread the mention came from, addressed to the message, through
+  // the ordinary messages route — so the agent gets the normal implicit-reply
+  // wake — and then the mention is acknowledged.
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [repliedIds, setRepliedIds] = useState<Set<string>>(new Set());
+  const sendReply = async (item: NeedsYouItem) => {
+    const content = (replyDrafts[item.id] || '').trim();
+    if (!content || replyingId || !item.podId) return;
+    setReplyingId(item.id);
+    setActionError(null);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `/api/messages/${item.podId}`,
+        { content, threadRootId: item.threadRootId, replyToMessageId: item.messageId },
+        { headers: { 'x-auth-token': token ?? '' } },
+      );
+      setRepliedIds((prev) => new Set(prev).add(item.id));
+      setReplyDrafts((prev) => ({ ...prev, [item.id]: '' }));
+      await axios.post(`/api/activity/${item.id}/acknowledge`, {}, { headers: { 'x-auth-token': token ?? '' } }).catch(() => null);
+      setReloadKey((value) => value + 1);
+    } catch {
+      setActionError(t('activity.mention.actionFailed'));
+    } finally {
+      setReplyingId(null);
     }
   };
 
@@ -309,9 +343,29 @@ const V2ActivityPage: React.FC = () => {
                         </>
                       )}
                       {item.kind === 'mention' && (
-                        <button type="button" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
-                          {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
-                        </button>
+                        <>
+                          <div className="v2-activity__reply" data-testid="queue-reply">
+                            <textarea
+                              className="v2-activity__reply-input"
+                              rows={2}
+                              placeholder={t('activity.reply.placeholder')}
+                              value={replyDrafts[item.id] || ''}
+                              onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }}
+                              disabled={replyingId === item.id}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => sendReply(item)}
+                              disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}
+                            >
+                              {replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}
+                            </button>
+                          </div>
+                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
+                            {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
+                          </button>
+                        </>
                       )}
                       {(item.kind === 'decision' || item.kind === 'press') && (
                         <button type="button" onClick={() => openBoard(item)} disabled={!item.podId}>
