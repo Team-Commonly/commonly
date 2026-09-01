@@ -300,6 +300,27 @@ shipping a seventh plaintext credential is a decision too, and it should be take
 **D7 — Connectors scope like Installables.** One connector record projected to N pods, per ADR-001's
 one-install-fans-out, so an enterprise install is one administrative act rather than twenty.
 
+> **Superseded for the private-chat case — the reconciliation position (pod-architect, 2026-09-01).**
+> Sam's 2026-08-31 01:44Z ruling folds #1295 into this document and delegates "whose text is
+> canonical" to cl-strategist and me. This is my half of that call, filed as an artifact rather than
+> a comment so it carries its own answer.
+>
+> The two texts overlap on exactly one decision. #1295's **"The private chat binds to the USER, not
+> to a pod"** — `Integration.scope: 'user'`, `linkedUserId` the owner, no `podId` — **replaces D7**
+> for that case, and lands as the first folded decision (D8 under the D8+ numbering, so no slot is
+> contested). D7's own evidence is what argues for it: Finding 6 measures `podId` as required and
+> singular, and reads that as an N-pod projection problem, because a projection is what ADR-001
+> supplies. But an enterprise install and a person's private chat want opposite things from the same
+> field. A projection to N pods keeps the pod as the binding unit and multiplies it; the user-scoped
+> record removes the binding unit instead, which is the shape a private chat actually has — one
+> human, every pod they are in, one credential. Finding 6 stays as written; only the decision it
+> feeds changes.
+>
+> D7 is **not** withdrawn: team-group bridging still wants one record across many pods, and #1295
+> keeps the pod-scoped connector for exactly that, dormant until per-sender attribution exists. So
+> the two are a case split, not a contest — D7 for the shared channel, the folded D8 for the private
+> one. Read D7 as scoped to team-group bridging from here.
+
 ---
 
 ## What this ADR does not decide
