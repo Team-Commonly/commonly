@@ -77,8 +77,18 @@ describe('the middleware reads the full User row', () => {
     // is not. Enumerate the protected item instead: ANY new `.select(`
     // anywhere in the file trips this, and the author re-certifies it
     // consciously. A guard that must parse correctly to fail is not a guard.
-    expect(selectCallCount()).toBe(1);
+    // Re-certified 2026-09-01: count went 1 -> 2 when ADR-026 Phase 0
+    // (#1312, AgentCredential substrate) added a parent-status check —
+    // `AgentCredential.findById(...).select('status')`. That projection is
+    // on a CREDENTIAL record, not a User row, so the protected property
+    // (req.agentUser carries the whole User) is untouched. This test and
+    // #1312 were both green in isolation and broke only on main — AX entry
+    // 53's exact shape; the press that landed the stale side is the one
+    // writing this comment. Each certified projection is enumerated below,
+    // so the NEXT `.select(` still trips this consciously.
+    expect(selectCallCount()).toBe(2);
     expect(codeOnly()).toMatch(/Pod\.find\([\s\S]{0,200}?\.select\('_id'\)/);
+    expect(codeOnly()).toMatch(/AgentCredential\.findById\([\s\S]{0,120}?\.select\('status'\)/);
   });
 
   it('projects neither User.findOne', () => {
