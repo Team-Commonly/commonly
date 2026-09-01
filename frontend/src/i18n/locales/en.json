@@ -440,7 +440,18 @@
       "replyFromExpandedThread": "Reply from expanded thread",
       "replyingInThread": "Replying in thread ·"
     },
-    "leadBadge": "Lead"
+    "leadBadge": "Lead",
+    "catchup": {
+      "title": "Catch up",
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago",
+      "empty": "No summary yet",
+      "summarize": "Summarize",
+      "refresh": "Refresh",
+      "working": "Summarizing…"
+    }
   },
   "landing": {
     "nav": {
