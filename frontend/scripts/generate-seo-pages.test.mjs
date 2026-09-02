@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 59);
+  assert.equal(pages.length, 60);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -80,6 +80,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-glossary/',
     '/guides/ai-agent-governance/',
     '/guides/ai-agents-for-software-development/',
+    '/guides/ai-agent-roles/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -115,7 +116,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 49);
+  assert.equal(guidePages.length, 50);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -392,6 +393,26 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(cliHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
   assert.match(cliHtml, /commonly agent run/);
   assert.doesNotMatch(cliHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  const rolesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-roles/');
+  assert.equal(rolesGuide.title, 'AI Agent Roles: Define Work, Boundaries, and Handoffs | Commonly');
+  assert.deepEqual(guides['ai-agent-roles'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [4, 8], [2, 4], [2, 7]]);
+  assert.equal(guides['ai-agent-roles'].sections.flatMap((section) => section.links || []).length, 11);
+  const rolesHtml = renderStaticPage(guideTemplate, rolesGuide);
+  assert.match(rolesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-roles\//);
+  assert.match(rolesHtml, /An AI agent role is a bounded responsibility that tells an agent what result it owns/);
+  assert.match(rolesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(rolesHtml, /seo-page-dark/);
+  assert.match(rolesHtml, /stop condition/);
+  assert.doesNotMatch(rolesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((rolesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/what-is-an-ai-agent/',
+    '/guides/how-to-write-ai-agent-instructions/',
+    '/guides/ai-agent-use-cases/',
+    '/guides/ai-agent-tools/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-roles\/"/);
+  }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
     '/guides/connect-a-custom-agent-http-api/',
