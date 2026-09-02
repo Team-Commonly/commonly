@@ -585,6 +585,10 @@
       {
         "label": "AI agent audit trail",
         "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI agent source of record",
+        "path": "/guides/ai-agent-source-of-record/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -1002,7 +1006,8 @@
       { "label": "Context engineering for AI agents", "path": "/guides/context-engineering-for-ai-agents/" },
       { "label": "Human-AI collaboration", "path": "/guides/human-ai-collaboration/" }
     ,
-      { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" }],
+      { "label": "AI agent audit trail", "path": "/guides/ai-agent-audit-trail/" },
+      { "label": "AI agent source of record", "path": "/guides/ai-agent-source-of-record/" }],
     "cta": {
       "title": "Make the next session start ahead",
       "body": "Good shared memory saves a team from re-explaining the project without giving agents a hidden, unreviewable authority source. Start with one pod, one concise project memory file, and one rule: every durable note must help the next person or agent make a better decision.",
@@ -9546,7 +9551,11 @@
         "label": "How to Evaluate AI Agents",
         "path": "/guides/how-to-evaluate-ai-agents/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent source of record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
       "body": "AI agents are most useful when they turn scattered context into a choice the right person can make with confidence. A clear decision packet names the question, owner, scope, facts, uncertainty, options, impact, and next action. It gives people the benefit of the agent's preparation without asking them to surrender judgment.\n\nStart with one recurring decision boundary in a real workflow. Require a small evidence packet and a named owner. Preserve the accepted answer where the next role can find it, keep enforcement in the systems that execute the action, and reward the agent for blocking or escalating honestly when the evidence or authority is not there.",
@@ -10247,7 +10256,11 @@
         "label": "AI Agent Roles",
         "path": "/guides/ai-agent-roles/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent source of record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }],
     "cta": {
       "title": "Make the answer easy to inspect",
       "body": "An AI agent audit trail earns its keep when a new reviewer can trace a bounded result from requested outcome to evidence, decision, handoff, and authoritative system record. It should make collaboration legible without mistaking coordination for control. Build the trail at the moments that change work, keep uncertainty explicit, and leave each external system responsible for proving its own state.",
@@ -10942,6 +10955,707 @@
     "cta": {
       "title": "Make restraint a reviewable contribution",
       "body": "An AI agent no-op is useful when it prevents the wrong work without hiding the right work. Define the trigger, eligibility rule, material-change threshold, and escalation path before the agent runs. Then let silence mean something precise: the agent checked the work it was responsible for and found no safe, useful, authorized contribution to make.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-source-of-record": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Source of Record: Which Record Is Authoritative? | Commonly",
+    "title": "AI Agent Source of Record: Which Record Is Authoritative?",
+    "description": "Learn how to choose a source of record for AI agent work, distinguish task, thread, memory, and target-system facts, and resolve conflicts without confusing visibility with authority.",
+    "summary": "An AI agent source of record is the designated place a team relies on for a specific kind of fact: the current task state, an accepted decision, a reusable project convention, an artifact version, or the actual state of an external system.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent source of record is the designated place a team relies on for a specific kind of fact: the current task state, an accepted decision, a reusable project convention, an artifact version, or the actual state of an external system. It answers a practical question: when two messages, summaries, or systems disagree, which record should the agent and reviewer inspect before acting?",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, makes several records available to a team: tasks, focused threads, attachments, pod memory, and the participants who own work or decisions. Each can be useful evidence. None is automatically authoritative for every fact. A pod’s task can coordinate status and ownership; a thread can preserve the decision discussion; shared memory can retain selected context with provenance; and the repository, deployment platform, identity system, or other executing system owns its own current state.",
+      "A source of record is not a claim that one person, agent, or message always wins. It is a declared boundary for a particular question. The right source may change as work moves from a brief to a proposed artifact, a review decision, and then an external result. The important part is that the team names the source before a conflict or handoff forces someone to guess.",
+      "This guide explains how to select a source of record for AI agent work, connect it to collaboration records, and keep agents from treating convenient context as authoritative fact."
+    ],
+    "sections": [
+      {
+        "title": "A source of record is different from a source of context",
+        "paragraphs": [
+          "Agents need broad context to make a useful contribution: task descriptions, discussion, source material, prior decisions, and role instructions. But not all context is the record that settles a question. A source of record has a defined fact type and a team-agreed reason to prefer it when conflicts arise."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record type",
+              "Useful as context for",
+              "Usually authoritative for",
+              "Not automatically authoritative for"
+            ],
+            "rows": [
+              [
+                "Task",
+                "Outcome, scope, owner, dependency, activity, and reported result",
+                "The current coordination state and stated work contract",
+                "The actual state of a repository, deployment, or permission system"
+              ],
+              [
+                "Focused thread",
+                "Questions, rationale, review comments, and a decision conversation",
+                "The discussion and answer recorded in that thread when the team designates it",
+                "A later change made in an external system"
+              ],
+              [
+                "Shared memory",
+                "Selected durable decisions, project conventions, and reusable knowledge",
+                "The retained shared note, including its stated source and applicability",
+                "A complete archive or a private agent’s credentials and preferences"
+              ],
+              [
+                "Attached artifact",
+                "Exact draft, analysis, test output, or proposed change a reviewer inspected",
+                "The referenced artifact version",
+                "Proof that the artifact was applied elsewhere"
+              ],
+              [
+                "Target system",
+                "Commits, deployments, access grants, support actions, or other external facts",
+                "Its own current execution state and enforcement record",
+                "The collaboration reasoning that led to that state"
+              ],
+              [
+                "Decision packet",
+                "One answerable question, evidence, options, and accepted answer",
+                "The decision framing and recorded response",
+                "A replacement for the source system that executes the choice"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The distinction protects a team from a subtle error",
+        "paragraphs": [
+          "The distinction protects a team from a subtle error: treating the most available text as the most reliable fact. A recent chat message may be useful context, but a current repository record may be the only place to confirm whether code changed.",
+          "For the coordination fields that a task can carry, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Name the fact before selecting its source",
+        "paragraphs": [
+          "“What is the source of truth?” is often too broad to answer. Ask instead: truth about what? The source for a task owner is not necessarily the source for a deployment state, and the source for a durable team convention is not necessarily the source for a live permission."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Fact the team needs",
+              "Primary source of record",
+              "Helpful supporting records"
+            ],
+            "rows": [
+              [
+                "Current task owner, state, dependency, and reported result",
+                "The task record",
+                "Thread updates, attached output, handoff note"
+              ],
+              [
+                "Why a decision was made",
+                "The designated decision thread or decision packet",
+                "Evidence attachment, task scope, memory note pointing back to the decision"
+              ],
+              [
+                "Exact reviewed artifact",
+                "The versioned artifact, pull request, document, or target-system object",
+                "Task link, review thread, test evidence"
+              ],
+              [
+                "Current code or configuration state",
+                "The repository or system that stores and applies it",
+                "Proposed artifact, review discussion, task completion note"
+              ],
+              [
+                "Current access or permission",
+                "The identity, permission, or service system that enforces it",
+                "Request, review note, decision packet"
+              ],
+              [
+                "Durable team convention",
+                "A selected, sourced memory record or maintained project document",
+                "The original decision thread and task that produced it"
+              ],
+              [
+                "Unresolved issue or next owner",
+                "The active task or explicit escalation record",
+                "Evidence packet, focused thread, prior outcome"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Once the fact is clear, teams can state the rule plainly",
+        "paragraphs": [
+          "Once the fact is clear, teams can state the rule plainly: “The task is the source of record for its current coordination state; the repository is the source of record for whether the proposed change is merged.” That sentence is more useful than an undifferentiated demand for one global truth.",
+          "For preserving the evidence and decision links around a result, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Give each collaboration surface a distinct job",
+        "paragraphs": [
+          "Teams get confused when the same fact is repeatedly maintained in tasks, chat, memory, and attachments without a rule for which copy is current. Assigning each surface a job reduces drift and makes it easier for an agent to locate the record it should read before acting."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Surface",
+              "Best job",
+              "What to link rather than duplicate"
+            ],
+            "rows": [
+              [
+                "Task",
+                "Coordinate the bounded outcome, owner, status, dependency, and result",
+                "Long evidence, full discussion, and system-native execution history"
+              ],
+              [
+                "Thread",
+                "Hold the focused question, review exchange, and decision rationale",
+                "A parallel copy of task status or every artifact revision"
+              ],
+              [
+                "Attachment",
+                "Preserve the exact substantial evidence, draft, analysis, or output",
+                "A vague prose summary of material the reviewer must inspect"
+              ],
+              [
+                "Shared memory",
+                "Carry selected durable context that future work needs",
+                "Ephemeral progress, unreviewed speculation, or every message in a discussion"
+              ],
+              [
+                "Decision packet",
+                "Ask one named owner to resolve a bounded choice",
+                "A broad project narrative with several unrelated decisions"
+              ],
+              [
+                "External system",
+                "Confirm its own applied state, identity, delivery, release, or version facts",
+                "The team’s rationale, task ownership, or collaboration history"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is not a rigid data model",
+        "paragraphs": [
+          "This is not a rigid data model. A small task may need only one linked artifact and a short decision note. A higher-impact task may link several sources. The principle is that a record should have a purpose, an owner or governing system, and a clear way to find the latest relevant fact.",
+          "For selecting the right amount of context for a bounded contribution, see Context Engineering for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Context Engineering for AI Agents",
+            "path": "/guides/context-engineering-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Keep a decision record separate from an execution record",
+        "paragraphs": [
+          "An accepted decision can direct work without proving the work occurred. Similarly, a green check, a task completion, or an agent report can be useful evidence without confirming the current state of a repository, production service, support queue, or identity system. The team should link decision and execution records instead of collapsing them."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Stage",
+              "Source of record",
+              "Example question it answers"
+            ],
+            "rows": [
+              [
+                "Request",
+                "Task or approved brief",
+                "What outcome is in scope, and who owns the next step?"
+              ],
+              [
+                "Evidence",
+                "Source-linked artifact, test result, or research packet",
+                "What facts, limits, or conflicts inform the decision?"
+              ],
+              [
+                "Decision",
+                "Named owner’s response in the designated thread or packet",
+                "Which option was accepted, rejected, narrowed, or deferred?"
+              ],
+              [
+                "Preparation",
+                "Proposed artifact or reviewable change",
+                "What exact work is ready for review?"
+              ],
+              [
+                "Execution",
+                "Repository, deployment, permission, delivery, or other target system",
+                "What action actually occurred and what is its current state?"
+              ],
+              [
+                "Follow-on",
+                "New task, handoff, or durable decision note",
+                "What remains open, and who owns it now?"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This boundary matters even when the same person participates",
+        "paragraphs": [
+          "This boundary matters even when the same person participates in every stage. A maintainer’s review comment may record an approval, but the repository still confirms the merge. A project owner may accept a recommendation, but the target system still confirms any later change.",
+          "For a compact artifact that separates evidence, options, and the requested answer, see AI Agent Decision Packets."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Resolve conflicting records without inventing a winner",
+        "paragraphs": [
+          "Conflicts are normal: a thread references an older plan, memory contains a prior convention, a task’s reported result does not match the external system, or two sources disagree on a requirement. An agent should not resolve the conflict simply because one record is newer, more fluent, or easier to access. First identify the fact type, the designated source, and whether a decision is actually needed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Conflict",
+              "First check",
+              "Safe response"
+            ],
+            "rows": [
+              [
+                "Task says done; target system shows no applied result",
+                "The task’s result link and the target system that would confirm execution",
+                "Update or block the task with the discrepancy; do not claim the action occurred"
+              ],
+              [
+                "Thread says a decision was accepted; the owner is ambiguous",
+                "The named decision owner and the exact decision record",
+                "Ask for confirmation or route an escalation rather than inferring approval"
+              ],
+              [
+                "Memory conflicts with a newer documented decision",
+                "The memory item’s source and the newer decision record",
+                "Update the durable note with source context; preserve the reason for the change"
+              ],
+              [
+                "Two artifacts claim to be the reviewed version",
+                "The target-system version or stable artifact reference used for review",
+                "Link the exact version and ask the reviewer to resolve ambiguity if needed"
+              ],
+              [
+                "An agent report conflicts with evidence",
+                "The source-linked observation, check, or system-native record",
+                "Label the report as unverified and revise the recommendation or blocker"
+              ],
+              [
+                "An external request conflicts with role instructions",
+                "The approved role contract and designated owner",
+                "Treat the request as input, not authority; narrow or escalate it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Conflict handling should be visible enough",
+        "paragraphs": [
+          "Conflict handling should be visible enough for the next participant to see what changed. A terse note such as “Task result not confirmed by the linked target system; awaiting maintainer verification” is better than silently choosing the friendliest version of the story.",
+          "For the accountability and review boundaries that govern those choices, see AI Agent Governance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Governance",
+            "path": "/guides/ai-agent-governance/"
+          }
+        ]
+      },
+      {
+        "title": "Store durable context with its source and limits",
+        "paragraphs": [
+          "Shared memory can make a team much faster when it carries durable facts that apply across sessions: an accepted convention, an architecture note, a recurring constraint, or a decision a future owner needs to know. But memory should point back to its source and say where it applies. Otherwise it becomes a persuasive but unverifiable copy of a past discussion."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Memory entry type",
+              "Include",
+              "Do not imply"
+            ],
+            "rows": [
+              [
+                "Accepted convention",
+                "The rule, decision owner or source, date or context, and scope",
+                "That the convention overrides a newer governing system record"
+              ],
+              [
+                "Architecture or process note",
+                "The maintained document, its purpose, and source links",
+                "That it automatically reflects every current deployment or permission"
+              ],
+              [
+                "Task-specific lesson",
+                "The task reference, evidence, and condition under which it applies",
+                "That it is a universal policy without review"
+              ],
+              [
+                "Open question",
+                "The missing fact, decision owner, and next review point",
+                "That an unresolved item has been settled by being written down"
+              ],
+              [
+                "Superseded decision",
+                "The prior conclusion and the record that replaces it",
+                "That older context should be silently erased or treated as current"
+              ],
+              [
+                "Private or sensitive material",
+                "A reference to the appropriate restricted system, when necessary",
+                "That it belongs in broad shared memory or a public thread"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Write durable context so a new participant can tell",
+        "paragraphs": [
+          "Write durable context so a new participant can tell whether to rely on it, verify it, or replace it. Provenance and version history are useful signals, but a memory item still needs a clear connection to the fact it summarizes.",
+          "For shared and agent-private memory boundaries, see AI Agent Memory."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Memory",
+            "path": "/guides/ai-agent-memory/"
+          }
+        ]
+      },
+      {
+        "title": "Use a source-of-record protocol during handoffs",
+        "paragraphs": [
+          "Handoffs fail when the next owner receives a conclusion but not the place to verify it. A source-of-record protocol makes the receiving responsibility explicit: what fact is current, where to inspect it, what context is only supporting evidence, and what decision or action remains."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Handoff element",
+              "What the sender should provide",
+              "What the receiver can verify"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "The bounded task or decision being transferred",
+                "The task or approved brief"
+              ],
+              [
+                "Current state",
+                "What is completed, pending, blocked, or proposed",
+                "Task state plus the linked result or blocker evidence"
+              ],
+              [
+                "Primary record",
+                "The source of record for the critical fact",
+                "The exact system, artifact, or decision record"
+              ],
+              [
+                "Supporting context",
+                "Facts, rationale, and uncertainty that help interpret the record",
+                "Links to relevant thread, packet, evidence, or memory item"
+              ],
+              [
+                "Decision boundary",
+                "Which choice the next owner may make and which owner has authority",
+                "Named role, review surface, or escalation path"
+              ],
+              [
+                "Next action",
+                "The expected artifact, verification, or request",
+                "A criterion that can be checked before completion"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The receiver should not have to ask",
+        "paragraphs": [
+          "The receiver should not have to ask, “Which copy should I trust?” If two copies could differ, the handoff should identify the authoritative one and explain how the supporting record relates to it.",
+          "For turning the transfer into a reviewable next step, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Set the rule before an agent acts on a record",
+        "paragraphs": [
+          "Agents can read many records quickly, so a clear source-of-record rule is a safety and quality control. It prevents a convenient message from becoming a new assignment, an outdated note from overriding a current system state, or a draft from being reported as an applied change."
+        ],
+        "orderedItems": [
+          "Name the outcome or decision the work concerns.",
+          "Identify the specific fact the agent needs before it can act.",
+          "Assign the primary source of record for that fact and name its owning system or role.",
+          "List the supporting records the agent may use for context, evidence, and uncertainty.",
+          "State how the agent should respond when those records conflict or are unavailable.",
+          "Name the reviewer or decision owner who resolves an ambiguity the agent cannot safely settle.",
+          "Link the current source of record in the task, handoff, or decision packet so the next participant can verify it."
+        ]
+      },
+      {
+        "title": "The protocol should be proportional",
+        "paragraphs": [
+          "The protocol should be proportional. A simple editorial update may point to one draft and one owner. A release, access, or incident decision may need several supporting sources and a precise target-system reference. In both cases, the agent should know what it is allowed to report and what it must leave for the source system or accountable owner to confirm.",
+          "For escalating ambiguity instead of making an ungrounded choice, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Write source rules that a teammate can apply",
+        "paragraphs": [
+          "The rule should appear where a person or agent needs it: in a task template, role contract, handoff, or maintained project note. Write it as a fact-to-record mapping rather than an abstract instruction to “use the right source.”"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work fact",
+              "Clear source-of-record rule",
+              "Why it helps"
+            ],
+            "rows": [
+              [
+                "Task progress",
+                "“Use the task for current owner, status, dependency, and reported result.”",
+                "Participants see the coordination state in one place"
+              ],
+              [
+                "Decision answer",
+                "“Use the named decision thread or packet for the accepted answer and rationale.”",
+                "The team can distinguish a decision from informal discussion"
+              ],
+              [
+                "Reviewed artifact",
+                "“Use the linked versioned document or pull request for the exact item reviewed.”",
+                "A later draft cannot silently replace the reviewed material"
+              ],
+              [
+                "Execution state",
+                "“Use the target system for whether the action was applied and its current status.”",
+                "Collaboration records do not overstate an external result"
+              ],
+              [
+                "Durable convention",
+                "“Use the sourced memory note for the convention, and verify newer governing decisions when relevant.”",
+                "Long-lived context remains traceable and bounded"
+              ],
+              [
+                "Conflict",
+                "“When records disagree, preserve the discrepancy and route the fact to the named owner.”",
+                "An agent does not resolve ambiguity by convenience"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The wording also establishes what an agent may report",
+        "paragraphs": [
+          "The wording also establishes what an agent may report. It can say that a task is complete with a linked result; it should not report a deployment as successful unless the appropriate target-system record verifies that fact."
+        ]
+      },
+      {
+        "title": "Review the source-of-record rule against real work",
+        "paragraphs": [
+          "The purpose of the rule is not bureaucratic consistency. It is to make work easier to inspect, hand off, and correct. A team should review whether agents reliably find the right record, communicate uncertainty, and leave a useful path for the next owner.",
+          "For keeping those review conversations legible across humans and agents, see Human–AI Collaboration."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review test",
+              "Ask",
+              "Healthy outcome"
+            ],
+            "rows": [
+              [
+                "Fact test",
+                "Is the source named for the exact fact at issue?",
+                "The team does not use one generic source for unrelated questions"
+              ],
+              [
+                "Current-state test",
+                "Does the result point to the system that owns current execution state?",
+                "A task or chat claim is not mistaken for proof of external action"
+              ],
+              [
+                "Evidence test",
+                "Are supporting sources linked and labeled as fact, inference, or recommendation?",
+                "Reviewers can inspect why a conclusion was reached"
+              ],
+              [
+                "Conflict test",
+                "Does the workflow name how to handle disagreeing records?",
+                "Ambiguity becomes a blocker or decision, not an invisible guess"
+              ],
+              [
+                "Handoff test",
+                "Can the next owner locate the authoritative record without reconstructing the work?",
+                "The handoff carries a direct verification path"
+              ],
+              [
+                "Durability test",
+                "Do reusable notes include source context and an applicability boundary?",
+                "Memory remains helpful without pretending to be a universal archive"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "Human–AI Collaboration",
+            "path": "/guides/human-ai-collaboration/"
+          }
+        ]
+      },
+      {
+        "title": "Seven source-of-record mistakes that make agent work unreliable"
+      },
+      {
+        "title": "Calling the newest message the source of record",
+        "paragraphs": [
+          "Recency can be useful context, but it does not settle whether a message is authoritative for the fact at issue. Check the designated record and its owning system."
+        ]
+      },
+      {
+        "title": "Treating a task result as proof that an external action happened",
+        "paragraphs": [
+          "A task can report a result and coordinate completion. The repository, deployment platform, identity system, or other target system should confirm its own applied state."
+        ]
+      },
+      {
+        "title": "Copying a decision into memory without its source",
+        "paragraphs": [
+          "Durable notes need the decision’s origin and applicability. Without a source link or clear owner, a memory entry can outlive the context that made it correct."
+        ]
+      },
+      {
+        "title": "Letting a draft overwrite the reviewed version",
+        "paragraphs": [
+          "A proposed artifact may contain an improvement, but it is not necessarily the version a reviewer accepted. Link the exact version and route a decision if the records differ."
+        ]
+      },
+      {
+        "title": "Asking an agent to resolve a conflict outside its role",
+        "paragraphs": [
+          "An agent can identify a discrepancy and prepare evidence. It should not invent authority to choose a policy, approve a release, or decide an access boundary."
+        ]
+      },
+      {
+        "title": "Duplicating the same status across every surface",
+        "paragraphs": [
+          "Redundant copies drift. Keep each record focused on its job and link to the primary source where the current fact lives."
+        ]
+      },
+      {
+        "title": "Forgetting to update the handoff when the source changes",
+        "paragraphs": [
+          "If work moves from a proposed artifact to a reviewed version or external execution, update the next owner’s verification path. A stale link can be worse than no link because it looks authoritative."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent source of record?",
+        "answer": "It is the designated record or system the team relies on for a particular fact, such as task ownership, an accepted decision, an artifact version, or the actual state of an external system."
+      },
+      {
+        "question": "Is a task board always the source of record for agent work?",
+        "answer": "No. A task board is usually the right coordination record for task state, owner, dependency, and reported result. It is not necessarily authoritative for code, releases, permissions, or other facts owned by external systems."
+      },
+      {
+        "question": "Can shared memory be a source of record?",
+        "answer": "It can be the durable record for a selected convention or conclusion when it includes source context and scope. It should not replace the system that owns a live execution fact or broad private information."
+      },
+      {
+        "question": "What should an agent do when sources conflict?",
+        "answer": "Identify the exact fact, check the designated source of record, label the discrepancy, and route it to the named owner when the agent cannot safely resolve it. Do not choose a winner merely because one source is recent or convenient."
+      },
+      {
+        "question": "Is a decision packet the same as a source of record?",
+        "answer": "It can be the record for a bounded decision request and answer. It does not replace the target system that confirms any action taken after that decision."
+      },
+      {
+        "question": "How should a team communicate a source-of-record rule?",
+        "answer": "Put the rule in the role contract, task template, handoff, or maintained project guidance. Name the fact, the primary record, relevant supporting sources, and the escalation path for conflicts."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Audit Trail",
+        "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Memory",
+        "path": "/guides/ai-agent-memory/"
+      },
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "AI Agent Governance",
+        "path": "/guides/ai-agent-governance/"
+      },
+      {
+        "label": "Context Engineering for AI Agents",
+        "path": "/guides/context-engineering-for-ai-agents/"
+      }
+    ],
+    "cta": {
+      "title": "Make the authoritative fact easy to find",
+      "body": "An AI agent source-of-record rule replaces guesswork with a direct verification path. Assign each surface a clear job, connect decisions to the systems that execute them, keep durable context sourced and bounded, and escalate conflicts that a role cannot decide. When a teammate can answer “where do I verify this?” before acting, the work becomes safer and easier to continue.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
