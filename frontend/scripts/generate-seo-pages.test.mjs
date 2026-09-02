@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 61);
+  assert.equal(pages.length, 62);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -82,6 +82,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agents-for-software-development/',
     '/guides/ai-agent-roles/',
     '/guides/ai-agent-escalation/',
+    '/guides/ai-agent-acceptance-criteria/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -117,7 +118,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 51);
+  assert.equal(guidePages.length, 52);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -434,6 +435,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/prompt-injection-defense-for-ai-agents/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-escalation\/"/);
+  }
+  const acceptanceCriteriaGuide = guidePages.find((page) => page.path === '/guides/ai-agent-acceptance-criteria/');
+  assert.equal(acceptanceCriteriaGuide.title, 'AI Agent Acceptance Criteria: Testable, Reviewable Work | Commonly');
+  assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 6], [3, 8], [2, 7], [2, 4], [2, 6], [3, 5], [2, 8]]);
+  assert.deepEqual(guides['ai-agent-acceptance-criteria'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-acceptance-criteria'].sections.flatMap((section) => section.links || []).length, 9);
+  const acceptanceCriteriaHtml = renderStaticPage(guideTemplate, acceptanceCriteriaGuide);
+  assert.match(acceptanceCriteriaHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-acceptance-criteria\//);
+  assert.match(acceptanceCriteriaHtml, /AI agent acceptance criteria are the observable conditions that tell a team whether an agent&#39;s result is ready for its next handoff/);
+  assert.match(acceptanceCriteriaHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(acceptanceCriteriaHtml, /seo-page-dark/);
+  assert.match(acceptanceCriteriaHtml, /safe stop/);
+  assert.doesNotMatch(acceptanceCriteriaHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((acceptanceCriteriaHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/how-to-evaluate-ai-agents/',
+    '/guides/ai-agent-roles/',
+    '/guides/ai-agent-escalation/',
+    '/guides/how-to-write-ai-agent-instructions/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-acceptance-criteria\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
