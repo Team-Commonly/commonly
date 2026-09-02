@@ -233,13 +233,11 @@ const V2AgentProfile: React.FC = () => {
       const roomId = room.data?.room?._id;
       if (!roomId) throw new Error('Agent room not returned');
       navigate(`/v2/pods/${roomId}`);
-    } catch (err) {
-      const message = (err as { response?: { data?: { message?: string; error?: string; msg?: string } }; message?: string })
-        .response?.data?.message
-        || (err as { response?: { data?: { error?: string; msg?: string } } }).response?.data?.error
-        || (err as { response?: { data?: { msg?: string } } }).response?.data?.msg
-        || t('agentProfile.hero.openRoomFailed');
-      setRoomError(message);
+    } catch {
+      // The profile is a human-facing entry point. Server diagnostics (for
+      // example, installation-selection detail) belong in observability, not
+      // as raw red copy on the profile page.
+      setRoomError(t('agentProfile.hero.openRoomFailed'));
       setOpeningRoom(false);
     }
   }, [data, navigate, t]);
