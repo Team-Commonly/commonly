@@ -620,7 +620,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
                       ? 'podsSidebar.discover.empty'
                       : 'podsSidebar.discover.joinedEmpty',
                   )
-                  : t('podsSidebar.empty.noPods'))}
+                  : (filter === 'private'
+                    ? t('podsSidebar.empty.noDirectMessages')
+                    : t('podsSidebar.empty.noPods')))}
             </div>
           )}
 

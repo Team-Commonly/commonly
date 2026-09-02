@@ -24,6 +24,7 @@
  */
 
 jest.mock('../../../models/AgentEvent', () => ({
+  countDocuments: jest.fn(),
   create: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findByIdAndUpdate: jest.fn(),
@@ -76,6 +77,7 @@ const lastCall = (mockFn) => mockFn.mock.calls[mockFn.mock.calls.length - 1];
 describe('attempts is a delivery counter with exactly one writer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    AgentEvent.countDocuments.mockResolvedValue(1);
     AgentMemory.findOne.mockReturnValue({
       select: () => ({ lean: () => Promise.resolve({ revision: 3, lastSeenRevision: 1 }) }),
     });

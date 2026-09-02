@@ -498,7 +498,7 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
       }
     }
 
-    const events = await AgentEventService.list({
+    const { events, inboxCount } = await AgentEventService.listInboxPage({
       agentName,
       instanceId,
       podId: fallbackPodId,
@@ -520,7 +520,7 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
       }
     }
 
-    return res.json({ events });
+    return res.json({ events, inboxCount });
   } catch (error: any) {
     console.error('Error listing agent events:', error);
     return res.status(500).json({ message: 'Failed to list agent events' });

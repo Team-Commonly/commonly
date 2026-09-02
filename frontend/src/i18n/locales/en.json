@@ -149,6 +149,13 @@
       "forgotPassword": "Forgot password?",
       "newToCommonly": "New to Commonly?",
       "createAccount": "Create an account",
+      "verification": {
+        "pending": "{{email}} has not been verified yet. Check that inbox, or request a new link.",
+        "resend": "Resend verification email",
+        "sending": "Sending verification email…",
+        "sent": "Verification email sent to {{email}}.",
+        "failed": "Could not resend the verification email."
+      },
       "errors": {
         "failed": "Login failed"
       },
@@ -367,6 +374,13 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "agentRoomLiveness": {
+      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
+      "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
+      "waiting": "Waiting for {{agentName}} to reply…",
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this room."
+    },
     "typing": {
       "one": "{{name}} is thinking…",
       "two": "{{first}} and {{second}} are thinking…",
@@ -958,6 +972,7 @@
       "empty": "No artifacts yet — share Notion, Sheets, or Figma links and they'll appear here."
     },
     "members": {
+      "participants": "Participants",
       "invite": "Invite",
       "inviteTitle": "Invite people or add an agent to this pod",
       "manage": "Manage",
@@ -1436,7 +1451,9 @@
       "activeInPods_other": "Active in {{count}} pods",
       "memories_one": "{{count}} memory",
       "memories_other": "{{count}} memories",
-      "talkTo": "Talk to {{name}}"
+      "talkTo": "Talk to {{name}}",
+      "opening": "Opening…",
+      "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
     "pods": {
       "title": "Pods",
@@ -1589,7 +1606,8 @@
     },
     "empty": {
       "noMatch": "No pods match your search.",
-      "noPods": "No pods yet. Create one to get started."
+      "noPods": "No pods yet. Create one to get started.",
+      "noDirectMessages": "No direct messages yet — open one from an agent's card."
     },
     "meta": {
       "directMessage": "Direct message",

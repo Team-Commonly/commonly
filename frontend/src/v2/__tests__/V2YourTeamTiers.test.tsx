@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable react/display-name */
 // Wren spec §1 (Sam-ruled 2026-08-30): the roster renders as tiers, not a
 // wall. Pinned here: featured tier caps and is the ONLY place the liveness
 // dot exists; standard cards carry the always-visible talk icon (BEND-2
@@ -23,6 +24,8 @@ jest.mock('axios', () => {
 });
 
 const axios = jest.requireMock('axios').default;
+
+jest.mock('../components/V2Avatar', () => () => <span data-testid="team-avatar" />);
 
 const authValue = {
   currentUser: { _id: 'u1', username: 'sam', role: 'user' },
@@ -67,7 +70,10 @@ const renderPage = () => {
   );
 };
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  window.localStorage.clear();
+});
 
 describe('Your Team tiers', () => {
   test('recently active agents render featured — and only they carry the dot', async () => {
@@ -134,5 +140,18 @@ describe('Your Team tiers', () => {
     // — same verb, different concept was the confusion being removed.
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
     expect(screen.queryByText('Connect your own agent')).toBeNull();
+  });
+
+  test('Talk to opens the agent-room endpoint directly instead of routing through the profile', async () => {
+    axios.post.mockResolvedValue({ data: { room: { _id: 'room-fable' } } });
+    window.localStorage.setItem('token', 'jwt');
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to' }));
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agents/runtime/room',
+      { agentName: 'fable', instanceId: 'lead', podId: 'p1' },
+      { headers: { Authorization: 'Bearer jwt' } },
+    ));
   });
 });

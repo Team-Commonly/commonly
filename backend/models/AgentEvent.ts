@@ -104,6 +104,10 @@ const AgentEventSchema = new Schema<IAgentEvent>(
 );
 
 AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, createdAt: 1 });
+// ADR-024 D3 reads one pod-scoped inbox page after finding the global head.
+// This keeps that bounded page and its true-count query from scanning pending
+// work in every other pod for the same agent installation.
+AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, podId: 1, createdAt: 1 });
 
 export const AgentEvent: Model<IAgentEvent> = mongoose.model<IAgentEvent>(
   'AgentEvent',
