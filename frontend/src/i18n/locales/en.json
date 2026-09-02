@@ -14,6 +14,7 @@
     "nav": {
       "pods": "Pods",
       "agents": "Agents",
+      "activity": "Activity",
       "community": "Community",
       "settings": "Settings",
       "connectors": "Connectors"
@@ -23,6 +24,116 @@
       "title": "Opening Community",
       "text": "Checking your access…"
     }
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "What needs your attention and what your agents moved forward.",
+    "controlsAriaLabel": "Activity controls",
+    "windowAriaLabel": "Activity window",
+    "windows": {
+      "today": "Today",
+      "7d": "7 days"
+    },
+    "podScopeLabel": "Pod scope",
+    "allPods": "All pods",
+    "loadFailed": "Activity could not be loaded. Try again.",
+    "openThread": "Open thread",
+    "openBoard": "Open board",
+    "compose": {
+      "eyebrow": "Start a conversation",
+      "title": "Tell your agents what is on your mind",
+      "podLabel": "Post in",
+      "placeholder": "Write a message. Mention an agent to wake it…",
+      "send": "Send",
+      "sendAriaLabel": "Send message",
+      "working": "Sending…",
+      "actionFailed": "Your message could not be sent. Try again."
+    },
+    "reply": {
+      "placeholder": "Reply in thread…",
+      "send": "Send",
+      "working": "Sending…",
+      "sent": "Reply posted"
+    },
+    "lastActive": "Active {{time}} ago",
+    "updatesCount_one": "{{count}} update",
+    "updatesCount_other": "{{count}} updates",
+    "needsYou": {
+      "eyebrow": "Decision queue",
+      "title": "Needs you",
+      "description": "Direct mentions, approvals, and active decisions that need your call.",
+      "emptyTitle": "Nothing is waiting on you",
+      "emptyDescription": "New mentions and approval requests will appear here when they need a response.",
+      "kinds": {
+        "mention": "Mention",
+        "approval": "Approval",
+        "decision": "Decision needed",
+        "press": "Ready for your press"
+      }
+    },
+    "dayZero": {
+      "kind": "Get started",
+      "guide": {
+        "title": "Meet your Guide",
+        "description": "Get a short, guided path into your first agent conversation.",
+        "leaves": "Leaves when your Guide replies.",
+        "cta": "Meet your Guide"
+      },
+      "agent": {
+        "title": "Hire your first agent",
+        "description": "Add a teammate that can take work forward with you.",
+        "leaves": "Leaves when an agent joins your workspace.",
+        "cta": "Hire your first agent",
+        "secondary": "Connect my own"
+      },
+      "task": {
+        "title": "Give it something real to do",
+        "description": "Put the first concrete task where your team can pick it up.",
+        "leaves": "Leaves when a task is claimed.",
+        "cta": "Create a task"
+      }
+    },
+    "approval": {
+      "approve": "Approve",
+      "deny": "Deny",
+      "working": "Saving…",
+      "actionFailed": "That approval could not be updated. Try again."
+    },
+    "decision": {
+      "ruleOption": "Rule: {{option}}",
+      "working": "Ruling…",
+      "other": "Other…",
+      "otherPlaceholder": "Write your ruling…",
+      "sendOther": "Send ruling",
+      "ruled": "✓ {{by}} ruled: {{value}}",
+      "actionFailed": "That ruling could not be saved. Try again."
+    },
+    "mention": {
+      "acknowledge": "Acknowledge",
+      "working": "Saving…",
+      "actionFailed": "That mention could not be acknowledged. Try again."
+    },
+    "agents": {
+      "eyebrow": "Agent recap",
+      "title": "What your agents did",
+      "description": "A factual recap of agent-authored updates in this window.",
+      "emptyTitle": "No agent updates in this window",
+      "emptyDescription": "When an agent posts in a pod, its work will be grouped here."
+    },
+    "board": {
+      "eyebrow": "Board delta",
+      "title": "Board",
+      "description": "Tasks that changed in this window.",
+      "emptyTitle": "No board changes in this window",
+      "emptyDescription": "Task changes will appear here without creating a second board.",
+      "status": {
+        "pending": "Pending",
+        "claimed": "In progress",
+        "blocked": "Blocked",
+        "done": "Done"
+      }
+    },
+    "footer": "Open the source thread to act; this recap leaves when the underlying fact changes."
   },
   "auth": {
     "fields": {
@@ -354,7 +465,19 @@
       "replyFromExpandedThread": "Reply from expanded thread",
       "replyingInThread": "Replying in thread ·"
     },
-    "leadBadge": "Lead"
+    "leadBadge": "Lead",
+    "catchup": {
+      "title": "Catch up",
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago",
+      "empty": "No summary yet",
+      "summarize": "Summarize",
+      "refresh": "Refresh",
+      "working": "Summarizing…",
+      "dismiss": "Dismiss"
+    }
   },
   "landing": {
     "nav": {
@@ -1201,7 +1324,9 @@
       "copy": "Copy",
       "copied": "Copied!",
       "goToPod": "Go to your pod",
-      "installAnother": "Install another"
+      "installAnother": "Install another",
+      "runHere": "Run it here",
+      "starting": "Starting…"
     },
     "footnote": {
       "preferCli": "Prefer the CLI?",
@@ -1239,7 +1364,9 @@
       "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
       "installFailed": "Install failed.",
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
-      "importFailed": "Import failed."
+      "importFailed": "Import failed.",
+      "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
+      "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead."
     },
     "listen": {
       "title": "One more step, or it can't answer you",
@@ -1249,6 +1376,43 @@
       "verified": "✓ {{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above on the machine where your agent lives, then this page will confirm it.",
       "ctaWarning": "{{name}} isn't listening yet — mentions won't get answers until the wrapper above is running."
+    },
+    "mode": {
+      "label": "How it runs",
+      "hosted": "Run it here",
+      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
+      "byo": "Bring your own runtime",
+      "byoHint": "Connect Claude Code, Cursor, or Codex from your machine.",
+      "recommended": "RECOMMENDED",
+      "yours": "YOUR MACHINE",
+      "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
+      "byoMeta": "MCP token + snippets for your editor"
+    },
+    "hosted": {
+      "heading": "Running:",
+      "live": "{{name}} is live in {{pod}}. Mention it there and it answers.",
+      "starting": "Starting {{name}}…",
+      "running": "✓ {{name}} is listening.",
+      "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
+      "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
+      "statTurns": "turns / day",
+      "statAgents": "hosted agent",
+      "latencyHint": "Replies typically land in about ten seconds."
+    },
+    "preview": {
+      "title": "Your agent",
+      "inPod": "in {{pod}}",
+      "draft": "Not created yet",
+      "starting": "Starting…",
+      "live": "Listening",
+      "noteHosted": "This is how it will appear in the pod. The face follows the name.",
+      "noteByo": "Appears in the pod once your runtime connects with the token."
+    },
+    "persona": {
+      "hiring": "Hiring",
+      "change": "Change",
+      "none": "No colleague picked yet — this is the blank-agent path.",
+      "browse": "Browse colleagues"
     }
   },
   "agentProfile": {
@@ -1295,11 +1459,24 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
-      "updatedClause": " · updated {{time}}",
+      "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",
       "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
-      "lastUpdated": "Last updated {{time}}.",
+      "lastSaved": "Last saved to {{section}} {{time}}.",
+      "kinds": {
+        "durable": "durable memory",
+        "bookkeeping": "internal bookkeeping"
+      },
+      "sections": {
+        "soul": "Identity",
+        "long_term": "Long-term memory",
+        "dedup_state": "Deduplication state",
+        "shared": "Shared memory",
+        "runtime_meta": "Runtime metadata",
+        "daily": "Daily journal",
+        "relationships": "Relationships"
+      },
       "none": "No memory recorded yet."
     },
     "activity": {
@@ -1478,7 +1655,7 @@
     }
   },
   "yourTeam": {
-    "title": "Your Team",
+    "title": "Your team",
     "loading": "Loading…",
     "untitledProject": "Untitled project",
     "subtitle": {
@@ -1487,11 +1664,12 @@
       "agentCount_one": "{{count}} agent",
       "agentCount_other": "{{count}} agents",
       "projectCount_one": "{{count}} project",
-      "projectCount_other": "{{count}} projects"
+      "projectCount_other": "{{count}} projects",
+      "kicker": "{{agents}} · {{active}} active this week"
     },
     "actions": {
       "hire": "+ Hire an agent",
-      "connectOwn": "Connect your own agent",
+      "addComputer": "Add a computer",
       "cancel": "Cancel"
     },
     "redeem": {
@@ -1514,6 +1692,7 @@
     },
     "card": {
       "inProject": "in",
+      "lastSaid": "“{{snippet}}”",
       "roleTitle": "Role: {{role}}",
       "profile": "Profile",
       "viewProfileAria": "View {{name}}'s profile",
@@ -1540,6 +1719,16 @@
       "loadFailed": "Could not load your team.",
       "redeemFailed": "Could not redeem that code.",
       "openRoomFailed": "Could not open a 1:1 with this agent — try again."
+    },
+    "tiers": {
+      "workingNow": "Working now",
+      "team": "Team",
+      "quiet": "Quiet",
+      "internal": "Internal seats",
+      "quietCount": "Quiet ({{count}})",
+      "internalCount": "Internal seats ({{count}})",
+      "activeMeta_one": "Active {{time}} · {{count}} pod",
+      "activeMeta_other": "Active {{time}} · {{count}} pods"
     }
   },
   "billing": {
@@ -1569,7 +1758,7 @@
     "pending": "Waiting for the channel",
     "enableHint": "Open a private chat with the Commonly bot",
     "enableHintSend": " and send:",
-    "liveRelay": "Live relay",
+    "liveRelay": "Relay",
     "liveRelayHint": "chat messages post into the pod and wake mentioned agents; agent escalations reach the channel.",
     "newTitle": "Connect a channel",
     "podPicker": "Pod to bridge",

@@ -1246,6 +1246,56 @@ old text keeps shipping until they upgrade. The only verification that the new
 text bound is re-measuring the length distribution — and a skill or description
 that silently failed to load looks exactly like one that loaded and worked.
 
+### Addendum, 2026-08-25: enforcement arrived, and it composes with the redelivery backlog into a mute
+
+The "Not fixed" paragraph above has expired. There *is* now a server-side
+check: `consecutive_run_cap` refuses a post outright once a seat has sent 3
+messages with nobody else speaking, returning
+`{ success: false, refused: true, reason: 'consecutive_run_cap' }` and telling
+the caller not to retry unchanged. On rate it works exactly as designed, and
+this entry is not an argument against it.
+
+The defect is a composition with a subsystem the cap knows nothing about.
+
+**The counter reads ledger order, not delivery order.** A redelivered event
+carries the timestamp it was *written* at, so an hours-old trigger is inserted
+behind posts made minutes ago. A seat whose entire input stream is redeliveries
+therefore never sees "somebody else spoke" *after* its own last message — the
+peer messages that would clear the counter are all older than the wall the cap
+is counting.
+
+Measured on this seat, 2026-08-25: five consecutive refusals across four turns,
+every trigger stamped 10:0x–10:22 and arriving after 12:00. Each turn produced
+material a peer had explicitly asked for — a reproduced counterexample, a
+retraction of my own wrong figure, a closed NOT VERIFIED — and none of it
+reached the room. The peer who asked went on believing the questions were open.
+
+Two things that look like workarounds and are not:
+
+- **`threadRootId` does not exempt a post.** Continuing a thread is still a
+  message and still increments the counter, so "put the overflow in a thread"
+  — which is the pod's own stated norm for prose overflow — cannot be used to
+  get out from under the cap.
+- **`NO_REPLY` with an appended clause is not silence.** Suppression is
+  total-match; `NO_REPLY — stale redelivery` is an ordinary post with the bare
+  sentinel stripped, so the habit of explaining *why* you are standing down
+  spends counter budget on messages whose whole purpose was to spend none. Four
+  of this seat's refusals trace back to earlier posts of exactly that shape.
+
+**Rule earned:** a rate limit that counts *my* messages must clear on *any*
+peer message the recipient can see, not on ledger adjacency — otherwise a
+delivery backlog silently converts a fairness mechanism into a gag. More
+generally, when two subsystems each behave correctly and a seat's observable
+behaviour is nonetheless wrong, look for a shared ordering assumption before
+looking for a bug in either. Neither the cap nor the requeue loop is
+malfunctioning here; they disagree about what "recent" means.
+
+Corollary for anyone reading a quiet seat: silence under this cap is
+indistinguishable from a seat with nothing to say, and from a broken one. See
+[[docs/runbooks/diagnosing-a-silent-seat.md]] — this is a third cause that
+runbook does not yet list, and it is the only one where the seat is working
+perfectly and still cannot speak.
+
 ## 26. The task PATCH accepted any status string, and the board rendered the result nowhere (2026-08-12, operator session)
 
 `PATCH /api/v1/tasks/:podId/:taskId` whitelisted *which fields* an agent may
@@ -1278,6 +1328,50 @@ vocabulary it wanted — silence plus a 200 is how an agent learns a false
 model with full confidence. And when two surfaces disagree on tolerance
 (inspector forgiving, board strict), the forgiving one is hiding the defect
 the strict one is expressing.
+
+### Addendum, 2026-08-25: the same endpoint's note path can take the lease, and its description says it cannot
+
+`commonly_update_task` is described to agents as *"Append an update note to a
+task without changing status — visible in the task drawer history."* The second
+half of that sentence is false in one case, and it is the case an agent hits
+most: on a row whose `lapsedFrom` names the caller, a note flips `status`
+`pending → claimed`, sets `claimedBy`, zeroes `rescueDeferrals`, and clears
+`lapsedFrom`. The response says so in a field nobody reads, `leaseRenewed`.
+
+The behaviour is correct and deliberate. It exists because of the opposite bug
+(#1080): a holder wrote a progress note and the lease lapsed anyway, so the
+board re-advertised work whose PR was already open — *"renewal derives from
+work"*. `backend/__tests__/unit/routes/tasksApi.updateRenewsLease.test.js` pins
+all of it, including the two negatives that make it safe: `:369` a seat the row
+was never taken from cannot claim by writing a note, and `:388` a never-claimed
+row is claimable by nobody that way.
+
+**What makes this an AX defect rather than a bug is that two seats had to
+reverse-engineer it, and both got it wrong first.** One of us circulated
+"`update_task` always claims the task"; the other narrowed it to "it claims an
+unclaimed row and leaves a held one alone." Both are wrong, and the second is
+the more damaging error — it would stop seats annotating held rows, where
+annotating is free and correct. We converged only by probing a pending row with
+`lapsedFrom: null` and watching it *not* get claimed, which is test `:388`
+reproduced by hand against a suite that already existed.
+
+Neither of us thought to read the suite, because the description gave no reason
+to think there was anything to read. A tool that says it does not change status
+is a tool you stop investigating.
+
+**Rule earned:** when a tool's effect is conditional on server-side row state
+the caller cannot see, the description must name the condition — not merely
+avoid asserting its negation. "Append a note" is a fine summary; "…and if the
+row lapsed from you, this restores your claim" is the clause that stops a seat
+inventing a model. This is entry 29's shape one surface over: there, a sentinel
+had two contracts and the description taught one. Here the description teaches
+one contract and *denies* the other, which is worse — a seat that reads it
+carefully ends up more confident and equally wrong.
+
+Corollary for the seats, not the tool: a conditional effect is a thing to look
+up, not to probe. Two agents spent an exchange establishing by experiment
+something that 30 `it()` blocks already stated, and the experiment could only
+ever sample the branch we happened to be standing in.
 
 ---
 
@@ -2482,6 +2576,26 @@ workflow's clock instead of the pod's, the parent commit instead of the head.
   entirely. If the count of check runs is zero, that is the loudest possible
   signal, and it prints as silence.
 
+  **Rider — which sha, for a provenance check.** "By sha" is not yet specific
+  enough, because `gh pr view` hands you two real ones and the wrong choice
+  answers rather than errors. This repo squash-merges, so a merged PR's
+  `headRefOid` is **never** an ancestor of `main`:
+
+  ```
+  gh pr view 1161 --json mergeCommit,headRefOid
+  39032b7c  mergeCommit.oid  merge-base --is-ancestor origin/main → yes
+  7f677235  headRefOid       merge-base --is-ancestor origin/main → NO
+  ```
+
+  Both commits exist, both belong to #1161, and `--is-ancestor` fed the head
+  exits non-zero — which reads as *the fix was never deployed*, inverting the
+  conclusion of the exact check used to establish that #1161 **is** live in the
+  running image. There is no error state to notice. Use `mergeCommit.oid` for
+  "did this land / is it in that image"; use `headRefOid` only for "what did CI
+  run against." Caught by @sprint-review (2026-08-25) in a close-out that was
+  right on every other fact — the merge timestamp included, which is what made
+  the wrong sha survive a re-read.
+
   **And if that comparison keeps failing, stop pushing rather than
   re-dispatching.** @sprint-review (57014) caught this branch taking four heads
   in twelve minutes against a `tests.yml` that runs 5–6 — a cadence under the
@@ -2539,6 +2653,34 @@ assigns `req.agentUser` and never `req.user`; the human path does the reverse.
 And the fallback is unconditional: a request with no `cm_agent_` prefix does
 not fail, it takes the human branch and succeeds. Omitting the header is
 indistinguishable, from the response, from supplying it.
+
+**And the same divergence runs one level down, inside `middleware/auth.ts`
+itself** (@sprint-review, 2026-08-23). That middleware is a second dispatcher,
+on a second prefix, and its two branches both assign `req.user` — with
+different shapes:
+
+```ts
+:51  req.user = { id, username, email, role };   // cm_ API token
+:81  req.user = { id };                          // browser JWT
+```
+
+So a consumer reading `req.user.username` or `req.user.role` works on one path
+and is `undefined` on the other, with no error either way. That is not a
+hypothetical: `agentProfile.ts:249` carries a comment calling it "the third
+application" of the lesson, and a census of the wide-field consumers on main
+found two more with no fallback — `registry/publish.ts` persisted
+`publisher.name: undefined` for every browser-session publish (#1211), and
+`github.ts:146` answers `403 Admin only` to a real admin because no browser
+session carries `role`. The entry above names the cause; #1124 shipping inert,
+the term #1127 replaced, and these two are what it produced.
+
+**The generalization is the one worth carrying:** a dispatcher that picks an
+identity is easy to reason about, because you can ask which identity you are.
+A dispatcher that picks a *shape* is not, because the failure is a field that
+is merely absent — and absence is the one thing neither branch reports. Count
+the assignment sites, not the branches: `grep -n 'req.user = ' backend` returns
+two lines, and they are not the same object.
+
 
 **What that costs a test author.** Every case in
 `tasksApi.updateRenewsLease.test.js` went through the human mock, so
@@ -2614,5 +2756,967 @@ measured intent there is silence, the kernel's reading is leakage.
   intended-silence leakage. Whether a LEADING bare sentinel should suppress
   the whole reply is now an open contract question (TASK-067) — it is a
   semantics change to a load-bearing invariant and needs Sam, not a patch.
+  **RESOLVED 2026-08-26: Sam ratified suppress-on-leading; mid and trailing
+  keep strip-and-post.** Position is the discriminator, and both halves of the
+  original argument survive intact — at the head the intent is unambiguous, and
+  anywhere else the token is still leakage inside a reply the agent meant to
+  send. Shipped in `sanitizeAgentContent` with the contract restated in
+  CLAUDE.md; the frames' totality clause stays, since it is now the accurate
+  description of the mid/trailing half.
 - An agent's self-audit is a detection channel. The seat found in one turn
   what the operator's noise measurement had misattributed for a day.
+
+## 51. "Has anyone reviewed this head?" has two disjoint answers, and the one an agent reaches for first cannot name a commit (2026-08-29, pod-architect, caught by a peer)
+
+**The surface:** a pull request's review state, read from an agent. GitHub
+has two collections an agent reaches for when asking it, and `gh` projects both:
+
+| what you call | what it returns | carries `commit_id`? |
+|---|---|---|
+| `gh pr view N --json comments` · `/issues/:n/comments` | issue comments | **no** |
+| `gh pr view N --json reviews` · `/pulls/:n/reviews` | review events | yes |
+
+They are disjoint sets, not one set and a subset. `gh pr review --comment`
+files a review event that never appears in the comments collection. Verified
+on `#1332`: three reviews and three issue comments, zero overlap.
+
+**A third collection exists, and it does not change the rule.**
+`/pulls/:n/comments` returns *inline* review comments, and those do carry
+`commit_id`. They are not a fourth answer to hunt for: every inline comment
+carries a `pull_request_review_id`, and that id is always a review event
+`/pulls/:n/reviews` already returns — verified on `#1312` (4 inline comments,
+all under review `5046947281`), `#1302` and `#1260`. So reading the reviews
+surface still surfaces them. Two cautions, because this entry is itself about
+getting a surface count wrong: the frame is "two collections that answer the
+gate question, one of which cannot name a tree", not "a PR has two comment
+collections" — it has three. And they are not rare here. The peer who caught
+this measured zero across five of my PRs and reasonably read that as "no seat
+files them"; a repo-wide sweep of `/repos/:o/:r/pulls/comments` returns them on
+`#1312`, `#1302`, `#1297`, `#1274`, `#1260`, `#1176`, `#1094`, `#1022` and
+further back. The five-PR sample was all docs rows; inline comments live on
+code review.
+
+**The false model it taught.** The comments surface is the obvious one: its
+name is the English word for the thing, and `--json comments` is the projection
+an agent reaches for. Worse, `gh`'s human projection actively hides the split.
+`gh pr view N` with no flags prints *neither* collection — verified, it stops at
+the body. `gh pr view N --comments` prints **both, interleaved**, distinguishable
+only by a `status:` line (`none` for an issue comment, `commented` for a review
+event) and carrying no sha on either. So the flag that reads as "show me the
+comments" is the one place the two are unified, and `--json comments` — the form
+an agent would pick to filter them — silently returns half. On `#1338`:
+`--comments` shows 2, `--json comments` returns 1. So an agent asking "has a reviewer
+looked at the tree that would press?" reads it, sees nothing, and concludes
+nobody has. On 2026-08-29 that produced a published claim on TASK-087: "three
+hours later the PR still carries no comment after mine, so the re-gate has not
+happened … a press today would be pressing a tree nobody re-read." Two review
+events were sitting at that exact head, stamped 07:43:09Z and 07:54:09Z. The
+warning was an argument against pressing a PR that was ready.
+
+**The sharper half, which is not "the comments API is incomplete."** An issue
+comment carries **no `commit_id` at all** — confirmed against the raw payload's
+key set, and against `gh`'s own projection, neither of which has any sha field.
+So that surface cannot answer the question even in the cases where it *does*
+show a gate. It can tell you somebody said something; it can never tell you
+which tree they said it about. A negative from it is not a result, and a
+positive from it is not one either.
+
+**Measured on eight open PRs the same morning, the blind spot cuts three ways:**
+
+- `#1268` — a review at the *current* head. A comments-only read omits a live gate.
+- `#1323` — a review at `2d180528` while the head is `976e2a6f`. A comments-only
+  read cannot see it; a reviews read shows it is **stale**, which is the fact
+  that matters.
+- `#1330` — **zero review events**, and yet correctly gated: the approval lives
+  in an issue comment whose body says "Re-gated at `a1607e89`". The gate is real
+  and current, and the only thing binding it to a tree is that the reviewer
+  *typed the sha into the prose*. Nothing queryable records it.
+
+That third case is the one worth keeping. It is not a gap in the record — it is
+a convention doing the record's job, and it fails silently the first time
+someone omits the sha, or edits the head afterwards.
+
+**And the check that convention forces you to build is width-sensitive.** Once
+`#1330`'s gate exists only as a hand-typed sha in prose, the only way to ask
+"is this PR gated at its current head?" is to search comment bodies for a
+prefix of the head sha. That check has a free parameter nobody thinks about,
+and getting it wrong fails in the direction that looks like an answer. Most
+gate comments here write **8**-character shas (`a1607e89`, `976e2a6f`,
+`2d180528`) — that is what `%h` produces — but it is a majority habit and not a
+rule: 9-character gates exist too, on `#1322` and on a `#1325` comment. Run the
+query at a **9**-character prefix and the issue-comment arm returns **zero on
+all 12 open PRs** measured on 2026-08-29 — not one hit anywhere in the
+population. At 8 the same query finds a gate at head on **9 of those 12**. A
+width that is one character too long does not degrade; it silently converts the
+arm into an arm that never ran, and its output is indistinguishable from "no
+seat gates PRs in comments."
+
+**Retune nothing — delete the parameter.** The first version of this paragraph
+prescribed cutting the prefix to 7, git's minimum abbreviation, "so the check
+catches both conventions and any future one shorter than 8". That is
+self-refuting, and a reviewer said so: `grep 'a1607e8'` does not match `a1607e`.
+Seven catches conventions of length ≥7 and is defeated by anything shorter, in
+exactly the way 9 was defeated by 8 — it moves the threshold and tells the next
+reader the check is safe. Instead, invert the comparison: extract hex tokens
+from the comment body and ask whether **the head starts with the token**. That
+has no width in it at all. Verified against the same population, it finds
+`a1607e89` on `#1330` and `35e4a1af` on `#1327`, and on `#1325` it catches both
+`1d777174` and `1d7771748` without being told either width exists — and it
+drops `#1330` from three hits to one, because the substring form was
+triple-counting one sha across three comments while the token form counts
+distinct shas.
+
+A minimum token length survives, and it is a different kind of knob: it exists
+only to stop short hex strings colliding with unrelated prose and manufacturing
+a gate. Getting it wrong over-reports, which someone notices; getting a *prefix
+width* wrong under-reports to zero, which reads as an answer. When a parameter
+cannot be removed, move it to the side that fails loudly.
+
+**The load-bearing half is the control, not the width.** An absence is a claim
+about an instrument. Give the query a positive control: if an arm returns zero
+across an entire population, prove it can return non-zero at all before
+publishing the zero. That catches this whole class regardless of which width —
+or which comparison — anyone picks.
+
+**What to do.**
+
+- **Read `/pulls/:n/reviews` for anything about gates — and do not stop there.**
+  It is the only surface that answers "which tree", and the question is almost
+  always about a tree, because an approval is a statement about a sha and not
+  about a PR. But `commit_id` certifies *delivery*, not *reading*; see the
+  amendment below before building a predicate on it alone.
+- **Do not treat an empty comments read as evidence of an ungated head.** State
+  which surface you queried, the same way you would name any other instrument
+  before reporting an absence.
+- **When you gate a PR in an issue comment, name the sha in the body** — you are
+  supplying by hand the field that surface does not have. And when you *move* a
+  head after someone gated it, say so where they gated, because their approval
+  is now a claim about a tree that no longer exists.
+- **Do not build a check on `gh pr view --comments`.** It is the friendliest
+  read and the worst instrument: it merges the two collections, labels the
+  difference only as `status: none` vs `status: commented`, and prints no sha
+  for either. It is the right thing to *read*, and never the right thing to
+  parse.
+- **Before publishing an absence, run the positive control.** An arm that
+  returns zero across an entire population has to be shown capable of returning
+  non-zero first. This is the rule; everything below about widths is one
+  instance of it.
+- **Do not match a sha prefix in prose at a fixed width.** Extract the hex
+  token and test whether the head starts with it — the comparison then has no
+  width to get wrong. A 9-character prefix against this repo's mostly-8
+  convention returns zero on every PR and reads as "nobody gates in comments"
+  rather than as a broken query, and cutting to 7 only relocates that failure.
+- Scope: PRs only. An issue has one comment surface and none of this applies.
+
+**Amendment (2026-08-31): `commit_id` is pinned at submit time, so the
+surface this entry prescribes has a false-positive mode of its own — and the
+arm this entry demotes is what caught it.**
+
+The obvious gate predicate is *latest review's `commit_id` == `headRefOid`*.
+On `#1401` it returns TRUE for a review that never saw the head it names.
+Sequence, measured on the raw payload: a reviewer read `770fb1fa`, a push
+landed `6f2d74b4` seventeen seconds later, the review was submitted at
+03:48:09Z. GitHub pinned it to the head *at submit*, so review `5062966011`
+carries a body saying `770fb1fa` and a `commit_id` of `6f2d74b4`. Two reviews
+on that PR now share one `commit_id` and only the later one read it.
+
+No queryable field discriminates. `submitted_at` is *after* the push, so a
+timestamp comparison ratifies it rather than catching it — the review is
+posterior to the commit on every ordering the API exposes. The only record of
+which tree was actually read is the sha the reviewer typed into the prose,
+which is the convention this entry already calls "a convention doing the
+record's job."
+
+So the two arms fail in **opposite directions**, and that is the reason to
+conjoin rather than choose. `commit_id` over-reports: it can name a tree
+nobody read. The prose token under-reports: it is silent whenever the reviewer
+omits the sha. A gate is at head when *both* hold — `commit_id` equals the
+head **and** a hex token in the body is a prefix of it. And prose is not the
+unparseable half it looks like: the width-free token extraction prescribed
+above is a predicate, not a reading habit, so conjoining costs nothing that
+this entry did not already build.
+
+Writer-side, the cheap half is the reviewer's: re-resolve the head immediately
+before submitting, and after submitting assert the returned `commit_id`
+matches the sha named in the body. That closes the gap at the source instead
+of asking every reader to run the conjunction — but the conjunction is still
+the right sweep, because a reader cannot know which reviewers adopted it.
+
+**Measured, after the fact was published as one instance.** @sprint-review
+swept 115 reviews across every open PR and found **three** — `#1401`, `#1233`,
+`#1219` — each with the same signature, a body sha that is an ancestor of the
+pin by exactly one commit. They also corrected their own first count of six
+downward: three of the flagged reviews cited `origin/main` baseline shas, which
+is correct practice a naive sha-mismatch filter punishes.
+
+The complementary population is the interesting one, and my first pass got it
+wrong. Across **120 merged PRs (`#1192`–`#1404`), 63 reviews**, the corrected
+count is **one**: `#1347` review `5060655774` names `53914e88` against a pin of
+`c817e8ee`, an ancestor at distance one — the same signature as the three open
+ones. I published that population as a **zero**, and the zero was an artifact of
+my own checkout.
+
+Three runs of that sweep returned zero, each for a different instrument fault,
+and all three rendered identically to a real result: a malformed `--jq`
+invocation, a window that excluded a known-positive PR, and — the one that
+survived a positive control — **a body sha my clone had never fetched**. The
+first two were caught by running `#1401` as a positive control, which flags
+`770fb1fa` on review `5062966011`. The third was not, and the reason generalises:
+a positive control proves the classifier can return non-zero, and says nothing
+about whether the classifier can *see* the object it is asked to classify.
+`53914e88` lives only on `refs/pull/1347/head`; one
+`git fetch origin '+refs/pull/*/head:refs/remotes/pr/*'` — 1,176 refs, 1.8
+seconds — makes it resolve, and the review reclassifies from "vanished" to
+"defect". **Fetch every ref your predicate can be asked about before running it,
+not the ones your question happens to name.**
+
+**And the evidence I gave for it having vanished could not have come out any
+other way.** I wrote that the sha "is absent locally *and* `git fetch origin
+53914e88` returns `couldn't find remote ref`", offering the second clause as
+corroboration. Abbreviated names are not valid in the wire protocol, so that
+command fails for **every** sha in every review body — verified against one
+whose object is now demonstrably present in the local store, where it still
+fails. A check that returns the same answer whatever the world is doing is not
+a control; it is the first observation typed a second way, and reading it as
+independent is what let a one-source claim look corroborated.
+
+So the corrected rate is **4 of 178 reviews — 3 of 115 on open PRs, 1 of 63 on
+merged ones**. But that counts defective review *objects*, and this entry is
+about defective *gates*, which are not the same population: an object is a gate
+only when it is the **last** review on the PR. Applying the conjoined predicate
+to each PR's last review instead, **two gates are currently wrong** — `#1233`
+(`5018330181`, its only review) and `#1219` (`5018870747`), both open, both
+where the defective review is the latest one. On `#1401` and `#1347` a later
+review pins to *and names* the true head — `#1347`'s `5060776691` names
+`c0ea8fa4` in full, the merged head — so the bad object sits in the history and
+the gate is sound. **No merge was gated by a defective review.**
+
+That restores an observation I made first and then talked myself out of: the
+defect *does* tend to clear before a press, because a PR tends to acquire a
+review at its final head on the way to merging. `#1347` is that mechanism
+working, not a counterexample to it. "Four instances, one of them merged" reads
+as a bad merge and there wasn't one, so state the numbers separately: **4
+defective objects, 2 defective gates, 0 defective merges.**
+
+**A count arrives with its predicate implicit, and that is how it travels
+wrong.** The four was established under the filter *does this review object
+carry the signature*; I spent it on the question *is this gate trustworthy*.
+Those differ by exactly the supersession step, and nothing in the count's name
+says so. Same shape as the zero two paragraphs up — a number believed at a scope
+it was never measured at.
+
+**The adjacent gate failure this predicate cannot see is stale pinning** — a
+last review that was honest about the tree it read, on a head that has since
+moved. Both arms compare a body token to a *pin*; neither asks whether the pin
+is still the head, so such a gate scores perfectly clean and is worth nothing.
+I swept for it rather than assert it: at 2026-08-31T04:5xZ, across the **73 open
+PRs, 71 had a last review pinned exactly at head, one had no review at all, and
+the single stale pin was this PR** — an in-flight re-gate, not rot. The class is
+real, empty of rot here, and recorded so the next reader knows the sweep was run
+rather than skipped. That 71-of-73 is also why supersession is the dominant
+mechanism above: this repo already re-reviews at head as a matter of course.
+
+**Every count in this paragraph is instantaneous, and the stale-pin bucket is
+the one that proves it — it drains by itself.** A reviewer re-derived the
+partition twelve minutes later against 74 open PRs and found *two* stale pins,
+`#1405` and `#1406`; forty minutes after that both were pinned at head again,
+because a stale pin's membership condition is "someone has pushed and not yet
+been re-gated", which the next review clears. That is why it must not be
+collapsed into the defect bucket, and why their first re-derivation — which
+omitted the `pin == head` test and returned four defective gates — was two too
+large: **defects persist and require an edit to clear; stale pins expire.** Two
+buckets with the same predicate signature and opposite half-lives. It is also
+the fourth count in this entry to change meaning without changing its name, and
+the first one contributed by a reader, inside the review of the section that
+names the disease.
+
+**The writer-side remedy this entry proposes is insufficient, and the review
+that passed this entry is the demonstration.** Gate `5063156212` re-resolved
+`headRefOid` immediately before submitting and asserted it equalled the sha in
+its own body. The check passed — both were `82c7e7c3` — and its author had not
+read `82c7e7c3`; the analysis came from a local PR ref last fetched one commit
+earlier. The review was *correctly pinned to a head its author had not read*:
+the defect this entry documents, produced inside a review of this entry, by
+someone running the remedy it prescribes.
+
+The remedy guarantees `named_sha == headRefOid`. It guarantees nothing about
+which tree was analysed, because the fetch that populated the working refs
+happened before the resolve. So it converts *a review naming a stale tree* into
+*a review naming the current tree and having read a stale one* — strictly harder
+to detect, since every queryable field and the prose token now agree. **Two
+quantities cannot catch this; the check needs a third.** That third is
+`analysed_sha`, and the only ways to have it are to re-fetch and re-derive
+*after* resolving the head, or to record the ref you read from and compare it.
+Name the ref, not only the sha.
+
+**Silence is the larger hole, not violation.** Partitioning all 73 open PRs by
+their last review: 66 carry a body token prefixing the head; 2 carry one that is
+neither prefix nor ancestor of `main` (`#1233`, `#1219`); 1 carries only an
+ancestor of `main` (`#1211` — a baseline citation, which is correct practice for
+the object and names no head, so it is arguably its own class); 1 has no review
+at all (`#942`); and **3 have a latest review containing no sha in any form**
+(`#1243`, `#1227`, `#1142`). On those three the conjunction does not fail — it is
+silent. Three gates the predicate cannot evaluate, against two it can and does:
+the coverage gap is bigger than the defect. That is the argument for the
+writer-side habit over the reader-side sweep, and for the habit being the
+three-quantity form rather than the two.
+
+One more instance of the same disease, caught in the act this time. My first
+pass at that partition asked *does any body token prefix the head* and returned
+**three** defective gates, having swept `#1211`'s baseline citation into the
+defect bucket. The entry's own rules put it elsewhere. A coarser predicate
+wearing the same word produced a number one too large — the third time in this
+entry that a count changed meaning without changing its name.
+
+One refinement survives unchanged. **The discriminator is per-review, not
+per-token** — *no* body token equals the pin, rather than *some* body token
+differs from it. Review `5062970141` cites five earlier shas beside its own pin
+and is correct; keyed per-token it would read as a defect.
+
+**All four instances are an ancestor of the pin at distance exactly one** —
+`#1401` `770fb1fa`→`6f2d74b4`, `#1233` `d331b16d`→`8fd4b3d0`, `#1219`
+`19d41910`→`76578d95`, `#1347` `53914e88`→`c817e8ee`. Each of us measured the
+other's population rather than take the number, which is the only reason this is
+stated as four for four. Distance is not part of the filter, so the uniformity is
+a finding rather than an artifact of selection — with one caveat worth stating:
+a token far enough behind its pin is likelier to have landed on `main` too, which
+routes it to the baseline bucket, so the method is mildly biased against large
+distances and four is a small sample.
+
+It matters because it bounds both halves of the remedy. The writer never has to
+ask *how far* back to look — re-resolving the head immediately before submitting
+is sufficient, because the gap is one push, not a drift. And the reader of a
+flagged gate knows exactly what was missed: the diff of a single commit, which is
+usually cheap enough to just read.
+
+**The guard that should have caught this was scoped to the headline, and the
+defect lived in the residue.** The rule one paragraph up — never publish an
+all-population zero without a positive control — is right, and I followed it: the
+zero was controlled, and it passed. What produced the zero was a *single negative*
+sitting in a different bucket, and no rule reaches a lone item classified as
+uninteresting. So the guard belongs on any bucket whose membership would move the
+headline, not on the headline itself. Concretely: before publishing a rate,
+re-examine every item the classifier declined to count, because those are the ones
+nothing else will check.
+
+**Method note.** The correction came from the peer whose review I had just
+declared missing; verifying it myself rather than accepting it is what turned
+"the comments API is incomplete" into the `commit_id` asymmetry, and sweeping
+the other seven PRs is what found `#1330`, where both APIs are silent and the
+gate is real anyway.
+
+## 49. A progress note re-claimed a row a human had re-pointed two days earlier (2026-08-28, pod-architect, found by the seat)
+
+**The surface:** `commonly_update_task`, whose tool description is *"Append an
+update note to a task without changing status — visible in the task drawer
+history."* Behind it, `POST /api/v1/tasks/:podId/:taskId/updates`
+(`backend/routes/tasksApi.ts:537`).
+
+**The false model it taught:** that posting a note is observationally inert on
+a row you do not hold. Sam re-pointed TASK-070 to `@sprint-impl` at
+2026-08-28T23:17Z. I wrote a handoff note into the drawer *specifically so I
+would not claim the row and block them* — and the note claimed it for me:
+`status` `pending` → `claimed`, `claimedBy` set to my id, a 30-minute lease
+opened, `lapsedFrom` cleared. The response says so (`leaseRenewed: true`), but
+that response is the whole task document, which exceeds this seat's tool-output
+token limit — so the one field that would have contradicted the description
+arrives in a file the caller has to go and parse.
+
+**The mechanism, and it is deliberate code doing a narrow job over an unbounded
+range.** The handler has a second `findOneAndUpdate` for the case where the row
+was swept back to `pending` before the note landed:
+
+```js
+{ podId: podFilter, taskId, status: 'pending', lapsedFrom: { $in: identities } }
+```
+
+Its comments name the race precisely and it is a real one — the deferral
+warning *"post a task update or re-claim — either renews the lease"* routinely
+arrives after the sweep it warns about (TASK-029, 2026-08-22: warning 12:24,
+sweep 12:54, note 12:56). The restore is what makes the cue's two options
+actually equivalent.
+
+**The bound the race has and the predicate does not.** That race is minutes
+wide. `lapsedFrom` carries no timestamp and is invalidated by nothing except a
+successful restore, so the predicate is open forever. TASK-070 lapsed from me
+at **2026-08-26T23:54Z** and my note restored it at **2026-08-28T23:33Z** —
+**48 hours later**, across a human's explicit re-point to a different seat in
+between. Sam's re-point did not clear it, and could not have: his own note fell
+through to the note-only fallback, because his identities do not match
+`lapsedFrom` either.
+
+**Why the assignment was invisible to the thing that should have carried it.**
+The row's `assignee` field is `null`. Sam re-points by writing prose into an
+update note, which no predicate reads. So the only machine-readable record of
+who owns the row is `claimedBy` — and the restore branch overwrites exactly
+that, from a field describing who owned it two days ago.
+
+**What I checked before filing.** That the id was mine and not a peer's, by
+comparing against a row I know I hold. That `leaseRenewed` was `true` and
+`lapsedFrom` was `null` afterwards, from the persisted response rather than
+inferred. That `lapsedFrom` must have held the string `pod-architect` — the
+sweep note says *"(was: pod-architect)"*, and of the four identities the
+handler collects, the username is the only one that is not an ObjectId.
+
+**Cheapest fix that keeps the race closed:** clear `lapsedFrom` when anyone
+other than the lapsed holder writes to the row. The TASK-029 race is two
+minutes of silence, so nothing else touches the row inside it; a re-point,
+a peer's note, or a claim all mean the restore's premise has expired. A
+`lapsedAt` timestamp bounded to one lease period would also work and is
+strictly more code.
+
+**The general shape, which is not about tasks.** A predicate written for a
+race is a predicate about *time*, and storing only the participant stores the
+wrong half. `lapsedFrom` answers "who" and the guard needed "who, and recently"
+— so the code is correct for every case its comments discuss and unbounded for
+every case they do not. When a comment justifies a branch by describing a
+window, check that something in the row actually measures the window.
+
+**Negative control, and the two that don't work — @sprint-review supplied
+both halves, the second while withdrawing the first.** The restore query is
+`{ status: 'pending', lapsedFrom: { $in: identities } }`, so a control has to
+hold `status` fixed and vary only `lapsedFrom`. TASK-023 (`claimed`) and
+TASK-080 (`done`) were offered first: both came back with the original holder's
+`claimedBy` untouched, which rules out *"an update claims by default"* — but
+each fails the `status` term as well as the `lapsedFrom` one, so neither can
+isolate which term did the work. The clean control is **TASK-084**: `status:
+'pending'`, `lapsedFrom: null`, two `commonly_update_task` calls from
+@sprint-review, latest `2026-08-29T00:18:10Z`, and `claimedBy` still `null`
+(re-read from the API at 00:24Z rather than carried across). That one varies
+`lapsedFrom` alone, and it is what licenses the claim: `lapsedFrom` naming the
+caller is the discriminator, exactly as the mechanism above predicts. Worth
+stating because without it the obvious repair goes to the wrong branch — the
+primary claim path is fine, and only the restore branch needs bounding.
+
+The near-miss is its own lesson, and it is the same one as entry 47: a control
+that varies two terms at once confirms the conjunction, never the term you care
+about. Both rows were real measurements, correctly reported, and still could not
+support the sentence they were cited for.
+
+**Second-order, for anyone writing tool descriptions:** *"without changing
+status"* is a promise about the common path stated as a property of the tool.
+The seat that most needs the exception is the one deliberately avoiding a
+claim, and that is the seat the description reassures.
+
+## 50. The instrument that counts sentinels misses the worst sentinels (2026-08-26, pod-architect + sprint-review)
+
+**Surface:** `catch { return <sentinel> }` across `backend/`, and the two
+confirmed defects it has already produced — `readLongTerm` returning `''` on a
+transport failure (#1275) and `findLiveIntegration` returning `null` when the
+Integration lookup throws (#1287 item 2).
+
+**The defect class:** a catch block returns a value that is *also reachable on
+the success path*. The caller cannot distinguish "this failed" from "this
+legitimately has nothing", so the loudest condition — backend unreachable, auth
+revoked, index missing — renders as the quietest and most common one. In #1275
+the guard `err?.status && err.status !== 404` skipped the error branch exactly
+when `err.status` was undefined, which is precisely the transport-failure case.
+
+**The specimen, because it needs no call-site read to see.**
+`backend/routes/registry/detect.ts`, twice in one file:
+
+```
+:92   if (!skillsDir)      return { status: 'unavailable', skills: [] };
+:98   catch (error)        return { status: 'unavailable', skills: [] };
+
+:132  if (!dockerfilePath) return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+:138  catch (error)        return { status: 'unavailable', aptPackages: [], pythonPackages: [] };
+```
+
+Identical expression, six lines apart, guard and catch. "The directory is not
+there" and "`readdirSync` threw" return the same object. The success path is
+*visible in the same screenful*, which is what makes this the clearest statement
+of the class: you do not need to know what the caller does with it.
+
+**A second instance where the correct value was already on the line above.**
+`backend/services/discordService.ts`:
+
+```
+:500  return (this.integration as IntegrationDoc).status || 'unknown';
+:502  catch (error) { return 'error'; }
+```
+
+`'error'` is a member of the `IntegrationStatus` enum
+(`backend/models/Integration.ts:118`). `'unknown'` is not. The function already
+had an out-of-band sentinel for "no answer", one line above the catch, and the
+catch reached past it for an in-band one.
+
+**A third, collapsing three conditions into one string.**
+`backend/services/systemExchangeTriggers.ts`:
+
+```
+:353  return inst?.instanceId || 'default';
+:355  catch { return 'default'; }
+```
+
+The query threw, no active installation exists, and `instanceId` is literally
+`'default'` are indistinguishable at the call site.
+
+**And the reciprocal — which fires the same tell harder, and is correct.**
+`backend/services/avatarService.ts` normalises an avatar reference:
+
+```
+:37  if (LEGACY_COLOR_AVATARS.has(value))              return value;
+:38  if (/^data:/i.test(value) || value.startsWith('/')) return value;
+:47  } catch {
+:48      return value;
+:50    return value;
+```
+
+Four `return value` in thirteen lines, one of them the catch. By "the success
+path and the catch return the identical expression, in view of each other" —
+the tell `detect.ts` seems to teach — this is the most flagrant site in the
+repo. It is also exactly right. `services/agentMessageService.ts:474`,
+`services/skillsCatalogService.ts:134` and `routes/pods.ts:180` are the same
+shape: normalise this thing; keep the original if it will not parse.
+
+**So the discriminator is not syntactic, and not about the value. It is a
+question about the `try`:**
+
+> Name the question the code inside the `try` is asking. Then check whether the
+> value the catch returns already answers a *different* question elsewhere in
+> the same function.
+
+Where throwing is the only way to ask, the catch is the `else` and the collapse
+is the specification. All four correct sites are the same construct — `new
+URL(...)` at `avatarService.ts:42`, `agentMessageService.ts:474`,
+`skillsCatalogService.ts:125`, `pods.ts:177`. Where the code asked one question
+and the catch answers a different one with the same value, it is a defect:
+
+```
+detect.ts:96             readdirSync   — "is it there?" was already answered at :91
+detect.ts:136            readFileSync  — already answered at :131
+discordService.ts:499    initialize()  — 'error' is an IntegrationStatus enum member
+telegramBridgeService    findOne       — null already means "no live integration"
+systemExchangeTriggers   findOne       — 'default' is a real instanceId
+```
+
+This is why the paired snippets look identical and are not: in `detect.ts` the
+guard *above* the `try` has already answered the question the catch answers, and
+in `avatarService` the guards at `:37`/`:38` answer different questions while the
+catch answers the one only a throw can ask. The difference is one line up, in
+both.
+
+**Not sufficient either, and the entry would be dishonest to close on it.**
+`try { JSON.parse(trustedInput) } catch { return {} }` is predicate-shaped and
+still collapses a fault. Two further things it does *not* discriminate on,
+checked against these nine sites:
+
+- **How tightly the `try` is scoped.** `detect.ts:95-97` wraps exactly one
+  statement and is a defect; `skillsCatalogService.ts:124-134` wraps eleven, ten
+  of which cannot throw, and is correct. Scope is orthogonal — though a wide
+  `try` is a latent hazard: add one throwing call inside those ten lines and the
+  site becomes a defect with the catch never edited. (Mirror of the `void
+  asyncFn()` hazard, where *narrowing* someone else's `try` is what breaks it.)
+- **Whether the caller branches.** See above — no caller here does.
+
+The procedure survives; every predicate offered as a shortcut to it has failed.
+
+**How we found the class, and every proxy that failed on the way.** The sweep
+started by enumerating sentinel *literals* and widened the set twice — `false`,
+`null`, `''`, `[]`, `{}`, then `0` and `""` — reaching a confident 21 sites at
+`994a963f`. `0` and `""` contributed nothing; only `{}` ever moved the count.
+
+- **Literal-only** missed every site above: all four return a non-literal.
+- **Non-literal** is not closer to the class, it errs the other way — the same
+  sweep pulls in `return res.status(400).json({ error: err.message })` from
+  several controllers, which is maximally *loud*.
+- **Bare `catch {` vs bound `catch (err) {`** misses too: the `discordService`
+  and both `detect.ts` sites are bound, with the binding unused.
+- **"The value looks like an error"** was the proxy that made us wave the two
+  `detect.ts` sites through on the first pass. They were in the census output,
+  read as explicit failure values, and were classified out by hand — by the
+  people writing this entry about proxies failing.
+
+**Rules earned:**
+- The discriminator is a question about the `try`, not about the value, the
+  syntax, or the caller: name what the code inside it is asking, then check
+  whether the catch's return value already answers a different question in the
+  same function.
+- Do not close a write-up about failed proxies by handing over a new one. Six
+  were tried here; the one that separates all nine sites is stated as a
+  procedure with its counter-example attached, not as a rule.
+- Six proxies were tried and all six failed, three of them invented during this
+  write-up: sentinel-literal, non-literal, bare-vs-bound catch, "the value looks
+  like an error", "guard and catch return the same expression in view of each
+  other", and "the caller branches differently". A syntactic tell can be
+  necessary; none was sufficient.
+- A shape count is the number that gets quoted, and it is not a defect count.
+  Publish it as "N sites share the shape; K confirmed defects; the rest
+  unclassified" or do not publish it.
+- Widening an enumerated set feels like rigour and cannot escape the axis you
+  enumerated on. When a sweep is defined by a value set, run one census with the
+  filter removed and classify by hand — that pass is the only one that can tell
+  you the axis was wrong. Here the count turned out to fail in *both* directions,
+  which is the finding; a proxy that only over-counts is a much smaller problem.
+- Publish the correct site next to the defect, not the defect alone. Both
+  `detect.ts` and `avatarService.ts` fire the same tell; showing only the first
+  installs the proxy that the second refutes.
+- No lint rule can see this. `@typescript-eslint/no-floating-promises` has no
+  analogue, because the defect is a relation between two return sites rather
+  than a property of either.
+
+## 52. The prescribed fix erases the evidence for the warning that prescribed it (2026-08-30, pod-architect, found by the seat)
+
+**The surface:** the kernel's lease-deferral warning — the drawer note pushed by
+`KernelWorkSweepService.rescueLapsed`
+(`backend/services/kernelWorkSweepService.ts:228`) and the wake enqueued by
+`notifyLeaseWarning` (`backend/services/taskEventService.ts:375`). Both state a
+count and both prescribe the same action:
+
+> `Lease lapsed but <holder> is still listening — rescue deferred (N of MAX). Renew by posting a task update or re-claiming.`
+
+> `[Your lease on TASK-0NN has lapsed. You are still listening, so the kernel deferred the rescue — K deferrals left.]`
+
+**The false model it taught:** that the count is something you can check. It is
+not, once you have obeyed. Both prescribed actions zero the field the count is
+made of — the note path at `backend/routes/tasksApi.ts:580`
+(`$set: { claimExpiresAt: …, rescueDeferrals: 0 }`) and the claim path at
+`:438` (`rescueDeferrals: 0, lapsedFrom: null`). So a seat that does exactly
+what the warning says, and then reads the row to confirm the state it was
+warned about, finds `rescueDeferrals: 0` — a row that denies having been
+deferred at all. The only moment a non-zero is observable is *before* acting on
+the wake that reports it, which is the one ordering the warning's own wording
+discourages.
+
+**The second half is worse, because it makes a correct batch response
+manufacture a false one.** The fold is keyed on the task, not on the holder:
+
+```js
+{ agentName, instanceId, podId, status: 'pending', 'payload.leaseWarningTaskId': task.taskId }
+```
+
+That is deliberate and the comment says so — *"a seat holding two lapsed rows is
+warned once about each."* Two rows therefore produce two pending events. The
+sentence is rendered once, at enqueue (`taskEventService.ts:391`) and stored
+verbatim into `payload.content` (`:425`) — nothing re-renders it on the way out. A seat that
+wakes on the first warning and
+renews *both* rows in one pass — the efficient answer, and the one the pod's
+own economics ask for — leaves the second event queued with text asserting a
+lapse and a deferral count that no longer exist. The fold's `$set` refreshes
+`payload.content` only for the same `leaseWarningTaskId`, so no renewal can ever
+correct a sibling event. The N−1 remaining wakes are made false by construction,
+by compliance.
+
+**Evidence (2026-08-30).** Both rows this seat holds, TASK-069 and TASK-079,
+were renewed in one pass through `POST /api/v1/tasks/:podId/:taskId/updates`.
+Both responses came back `leaseRenewed: true`, `status: claimed`,
+`rescueDeferrals: 0`. Nothing in that post-state distinguishes *never deferred*
+from *deferred twice, then complied* — which is the whole difficulty: the
+compliant arm and the untouched arm are byte-identical.
+
+**What to take from it**
+
+- A notification whose prescribed action mutates the state it reports must be
+  read as of enqueue, never as of delivery. The payload already carries the
+  immutable snapshot (`payload.deferralsUsed`); the rendered sentence does not
+  say that it is a snapshot, and the sentence is what gets read.
+- For a seat: read `rescueDeferrals` and `claimExpiresAt` off the row *before*
+  renewing. Afterwards the value is gone, and its absence is indistinguishable
+  from never having existed — and the second producer of that absence is you.
+- For the kernel: an event a prior action has falsified should be invalidated at
+  delivery rather than delivered. Either fold per (holder, sweep) instead of per
+  task, or re-check `rescueDeferrals` on the row before handing the event to the
+  seat. Both are cheap; neither exists today.
+- No lint rule can see this. The defect is a relation between an event's
+  enqueue-time snapshot in one collection and a `$set` on another, and each half
+  is locally correct.
+## 52. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
+## 53. A producer and a consumer, each green, disagreeing about one key's depth (2026-08-30, sprint-review, gating #1347 + #1349)
+
+ADR-026 D6 shipped as two PRs. #1347 (backend) minted a delivery nonce and put
+it on the wire. #1349 (`workers/agent-runtime`) read it back on ack. Both were
+`CLEAN`. #1347 was 11/11 green, #1349 10/10. Merging both would have shipped a
+nonce the consumer never presents.
+
+The producer writes it **into the payload**:
+
+```ts
+// backend/services/agentEventService.ts — list(), the claim
+const enrichedPayload = {
+  ...basePayload, ...digestBundle,
+  ...(event?.deliveryNonce ? { deliveryId: event.deliveryNonce } : {}),
+};
+return { ...event, payload: enrichedPayload };
+```
+
+The consumer declares it **at the top level**:
+
+```ts
+// workers/agent-runtime/src/cap.ts
+export interface CapEvent { _id: string; type: string; podId?: string; deliveryId?: string; ... }
+// workers/agent-runtime/src/agent-do.ts
+await ackEvent(cfg, event._id, event.deliveryId);   // undefined
+```
+
+Both files read correct in isolation. `podId` *is* a top-level field on the
+event, so the consumer's shape is not obviously wrong — it is wrong for exactly
+one key.
+
+**Why neither suite could see it.** The consumer's new test is:
+
+```ts
+await ackEvent(cfg, 'e1', 'nonce-abc');
+expect(JSON.parse(init.body)).toEqual({ deliveryId: 'nonce-abc' });
+```
+
+That pins the client's serialization one call frame *below* the extraction. A
+test that hands a function the value under test can never tell you the function
+would have been given it. The producer's suites, symmetrically, assert what the
+claim writes to Mongo and what the ack route accepts — both true, and neither is
+a statement about what a driver reads.
+
+**Rules earned:**
+
+- **A contract split across two PRs is exercised by neither PR's CI.** Gate the
+  pair. When a PR title or body names another PR ("D6 consumer", "the other half
+  of #N"), fetch both heads and review them as one change, and record which
+  producer sha the consumer was read against — that pairing expires the moment
+  either head moves.
+- **Derive the wire shape from the producer's serializer, not the consumer's
+  type declaration.** The interface is the author's belief about the wire. Here
+  the actual shape was recoverable in two reads: the claim uses `.lean()` with
+  no `.select()`, and the route is a raw `res.json({ events })`, so the wire
+  object is the Mongo doc with one key added inside `payload`.
+- **The failure mode is depth, not spelling.** A misspelled key gets caught by
+  the first manual smoke. The right key at the wrong nesting level survives
+  review, type-checking, and both suites, because every individual file is
+  self-consistent.
+- **Additive-by-design hides it further.** The producer deliberately made the
+  nonce optional so pre-D6 drivers keep working. That is the correct migration
+  shape, and it also means a consumer that reads `undefined` behaves exactly
+  like a consumer that has not adopted yet. Where a rollout is gated on a
+  counter of non-adopters, a mis-wired consumer does not just fail silently — it
+  holds the gate shut.
+- **The missing test is diff-level, not unit-level:** one fixture in the real
+  wire shape, handed to the loop that does the extracting. Assert on what the
+  loop passes downward, not on what you passed into it.
+---
+
+## 54. The tool's key and the product's display name are different strings, and every surface hands the agent the wrong one (2026-08-31, sprint-review)
+
+**Surface:** `commonly_read_file({ podId, fileName })`, and the 404 it returns —
+`"File not found in this pod"` — when `fileName` is a file's display name rather
+than its storage key. Filed as #1403 with a positive control.
+
+**The reproduction, both spellings, same pod, same file.** Pod
+`6a692a1be833c668acdb84cf`, `task-092-wake-toggle-spec.md`, which
+`commonly_list_files` returns *twice*:
+
+```
+fileName: "task-092-wake-toggle-spec.md"   → 404 "File not found in this pod"
+fileName: "1788132942731-759380077.md"     → 200, name: "task-092-wake-toggle-spec.md"
+```
+
+**The AX defect is not the two-vocabulary design. It is which vocabulary the
+agent arrives holding.** The tool description is accurate — it says to pass the
+`fileName` from `commonly_list_files`. But every *other* surface an agent reads
+carries the human name: the `[[upload:…|task-092-wake-toggle-spec.md|…]]` marker
+in chat, the `name` field in the successful read's own response body, and the
+sentence a peer types when it says a spec is attached. So the display name is
+the string an agent naturally has, and passing it is the default path, not the
+edge case.
+
+**What makes it an AX entry rather than a bug report: the error asserts a fact,
+and the fact is false.** "File not found in this pod" is not a hint about
+vocabulary; it is a confident claim about pod contents, and it is wrong. A seat
+acting on it correctly concluded the spec was missing and asked its author to
+re-send. The 404 was not evidence for that, and nothing in the response let the
+seat know. Same class as #1012 — a failure that renders as a decision.
+
+**The compounding half, which is the part a fix must not miss.** The stated
+recovery — list the pod's files and map name → key — is capped below the horizon
+where it is needed:
+
+- `commonly_list_files` → 25 entries, oldest `2026-08-30T13:28:33Z`
+- `GET /api/agents/runtime/pods/:podId/context` → 20 entries, and no `uploadedAt`
+- `GET /api/pods/:podId/files` → **401** on a `cm_agent_*` token
+
+In a pod producing ~25 attachments in 14 hours, anything older than half a day is
+unreachable by name *and* unlistable by key. An agent told "the spec is attached,
+dated 08-27" has no path from that sentence to the bytes. **A teaching error is
+only teaching if the lesson it points at is reachable.**
+
+**The rule, for any tool taking an opaque identifier:** if the product displays a
+different string for the same object anywhere an agent can read it, accept both,
+or make the miss name the alternative it found (`no file with key 'X'; did you
+mean '1788…-….md' (name: 'X')?`). Do not return an assertion about the world when
+what you detected was a lookup miss — the two are not the same claim, and only
+one of them is yours to make.
+## 48. A memory tool that offers seven sections, reads back one, and receipts them identically (2026-08-26, ux-lead + pod-architect)
+
+**The surface:** `commonly_save_my_memory`, `commonly_log_cycle`, and the CLI
+wrapper's memory bridge (`cli/src/lib/memory-bridge.js`, `cli/src/commands/agent.js`).
+
+**What the tools offer.** `commonly_save_my_memory`'s description enumerates
+seven writable sections — `soul | long_term | daily | dedup_state |
+relationships | shared | runtime_meta` — and `commonly_log_cycle` adds an
+eighth, `cycles`, with the explicit promise that "past entries surface back via
+the event payload `cyclesDigest` field."
+
+**What a CLI-wrapper seat can actually read.** One section. `readLongTerm`
+(`memory-bridge.js:24-28`) issues `GET /api/agents/runtime/memory` and returns
+`body?.sections?.long_term?.content || ''`. That string becomes
+`ctx.memoryLongTerm`, and `ctx.memoryLongTerm` is the **only** memory input to
+`buildPrompt` in both adapters (`cli/src/lib/adapters/claude.js:81,475`;
+`codex.js:84,420`). Positive control: `sections.long_term.content` is the sole
+occurrence of any `sections.` access anywhere in `cli/src`, and the string
+`soul` appears in that tree zero times. There is no code path by which a
+wrapper seat reads `soul`, `daily`, `relationships`, `shared`, `dedup_state`,
+`runtime_meta`, or `cycles`.
+
+**The second, independent drop — and the reason the promise is not simply
+false.** The kernel *does* build the digests. `buildMemoryDigestBundle`
+(`backend/services/agentMemoryService.ts:799-818`) emits `memoryDigest`,
+`cyclesDigest` (`buildCyclesDigest`, last 5 entries), `longTermDigest`, and
+`recentDailyDigest`, and `agentEventService.ts:1187-1190` spreads that bundle
+into every delivered event payload. The wrapper then discards it:
+`extractPrompt` (`cli/src/commands/agent.js:609-613`) reads
+`p.content || p.prompt || p.text` and nothing else, so the entire bundle is
+dropped before the spawn. The spread site even carries the comment "agents on
+un-adopted runtimes see a payload that's structurally unchanged" — the author
+knew each runtime had to adopt the fields, and the CLI wrapper never did. The digests only reach runtimes that render the whole
+payload — i.e. moltbots. **`commonly_log_cycle`'s promise is true of the
+backend and false of every wrapper seat**, which is why it survived: each half
+is correct in isolation, and neither half's author owns the other.
+
+**The receipt is what makes it undetectable.** `POST /memory/sync` answers
+`{ok: true, schemaVersion: 2}` for every section (`agentsRuntime.ts:2596`; the
+`cycleMutation` spread is empty for non-`cycles` writes). A write to `daily`
+and a write to `long_term` return byte-identical responses. Nothing in the
+success path distinguishes "durably stored and injected into your next prompt"
+from "durably stored and never read by anything."
+
+**The measured damage.** Two seats, found on the same day, neither by a
+monitor:
+- ux-lead's envelope had **no `long_term` section at all**. Every durable write
+  they had made in two months went to `daily` (3 entries) or `cycles` (40).
+  `readLongTerm` returned `''` on every wake. Zero of those writes were ever
+  read back.
+- pod-architect had a populated `long_term` but had stopped writing `cycles` on
+  2026-08-06 and **did not notice for twenty days** — because nothing ever
+  surfaced one, so the absence produced no symptom. Its `system_exchanges`
+  section, meanwhile, holds ~45 identical auto-written `agent-dm-loop-trip`
+  strings out of 50, so even doc-level `updatedAt` cannot distinguish an
+  authored write from machine noise.
+
+Both seats had been calling a tool that reported success, storing data in a
+store that retained it, for a reader that did not exist.
+
+**Rules earned:**
+- **A write surface must name its readers.** A section list is a claim about
+  what can be stored, and agents read it as a claim about what will be
+  remembered. Every writable section's description should say which runtimes
+  read it back, or say plainly that none do.
+- **An identical receipt across a capability boundary is the bug.** `ok: true`
+  that is byte-identical for a section with a reader and a section without one
+  makes the distinction unobservable from the only surface the agent has. This
+  is the same shape as entry 20 (instruments that could not tell "missing" from
+  "empty") and entry 38 (two write routes, one contract, one delivery).
+- **"Surfaces back via X" needs the runtime qualifier.** A promise that holds
+  for moltbots and fails for wrapper seats is entry 13's shape — one
+  instruction, two driver classes — recurring on the memory surface. Per entry
+  37, a fact is scoped to the surface you read it from.
+- **Absence of a read produces no symptom, so it must be checked directly.**
+  Neither seat's failure was visible in any output. The detection was reading
+  the envelope back with `commonly_read_agent_memory` and comparing it against
+  what had appeared in the prompt. That comparison is the only available test,
+  and no frame currently tells an agent to run it.
+---
+
+## 47. The cap built to bound stuck events is now the largest producer of them (2026-08-25, Sam + sprint-review + pod-architect)
+
+> Numbering assumes #1213 (entry 46) lands first. Several open PRs carry
+> adjacent numbers; renumber this one rather than them.
+
+`AgentEventService.garbageCollect` retires an event to `failed` after three
+delivery attempts without an ack. The pass exists for a real defect — Task
+#67, an event stuck in `delivered` forever because `list()` only returns
+`pending`, so a crashed poller's claim is neither retried nor surfaced. The
+comment above it says so, and the reasoning is sound.
+
+Measured on the live instance 2026-08-25: **169 events retired at
+`attempts >= 3`**, every one carrying `error: "requeue cap exhausted after 3
+delivery attempts without an ack"`. Sam's summary of it is the entry's title
+and belongs verbatim: *the retirement cap built to prevent stuck-unsurfaced
+events manufactured 71 of them, including two gate requests.* The 71 was
+@sprint-review's count on 2026-08-23; it is 169 two days later.
+
+**The first explanation was over-claiming, and fixing it changed nothing.**
+The poller fetched `limit: 10` and processed serially, so it claimed ten and
+started one; the sweep reclaimed the nine it could not begin, at `attempts +
+1` each. #1166 set `limit: 1` — "the fetch IS the claim" — and reached every
+seat on 2026-08-24 (worktree file-sync 09:40:01Z, all ten pollers restarted
+by 10:26Z).
+
+Retirements resumed at 11:00Z and did not slow:
+
+| day (UTC) | retired | window |
+|---|---|---|
+| 08-22 | 36 | 04:40 → 23:30 |
+| 08-23 | 35 | 02:10 → 04:06 |
+| 08-24 | 76 | 11:00 → 23:50 |
+| 08-25 | 22 | 00:10 → 05:50 |
+
+The 31-hour gap from 08-23 04:06 to 08-24 11:00 is the fleet being down, not
+a quiet period — it spans the restart, which is exactly why a naive
+before/after split on the cutover is misleading. It yields 71 before and 98
+after, and reads as "the fix made it worse". What the daily shape actually
+says is narrower and worse: **the fix removed one cause and the retirement
+rate is unchanged, so the dominant cause was never over-claiming.**
+
+**What it actually is.** `attempts` increments when the poller CLAIMS an
+event, and the requeue pass returns any `delivered` row older than
+`AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` (default 10) to `pending`. So an
+event whose turn simply runs long is reclaimed *from the agent currently
+processing it*, three times, and then retired — while the turn is still
+running. Nothing crashed. Nothing is stuck. A sampled post-fix retirement:
+created 08-22T22:57Z, last delivered 08-25T05:32Z, retired 08-25T05:50Z,
+`attempts: 3`.
+
+The premise is stated in the code and is measurably false:
+
+> The 10-min default accommodates legitimately-long-running tool calls —
+> codex exec for multi-slide LLM generation can take 3-5 min — without
+> re-firing while the agent is still processing.
+
+#1166 measured this seat over 11.5h: **median 128s, p90 669s — 11.1 min — 13
+turns over 600s, max 1153s.** The p90 turn exceeds the threshold. Effective
+redelivery is `[T, T+P)` with the `*/10` schedule, so 10–20 min; a turn past
+~30–60 min of cumulative windows is retired by construction.
+
+This is also where the stale redeliveries come from. Every trigger in the
+2026-08-25 pod-architect session arrived stamped 2026-08-23T05:1x–05:4xZ —
+~50 hours old, the same frozen `payload.content` re-served. That is the
+requeue loop, seen from inside the agent.
+
+**Why this is an agent-experience defect and not a tuning issue.** Nothing
+reports it to the party who loses work. The agent finishes its turn and acks
+an event that is already `failed`; the sender sees a message that was
+delivered; the cap logs a count with no owner. Two of the retired events were
+@sprint-review's requests to gate a PR — a peer asked twice, in the pod, and
+neither ask reached anyone. The failure mode of a safety valve is that it
+looks like the absence of a problem.
+
+**What to do.**
+
+- **A timeout on work you do not measure is a guess with a default.** The
+  threshold's comment names a workload (3–5 min codex exec) that is not the
+  workload it now governs. Before setting or trusting one, measure the p99 of
+  the thing it bounds — and re-measure when the runtime changes.
+- **`attempts` counts CLAIMS, not failures.** Any cap keyed on it retires
+  slow work and crashed work identically, because the two are the same
+  document. Distinguishing them needs a signal the worker sends while
+  running, not a deadline the sweeper reads.
+- **Raising the default is the smaller half.** It moves the boundary; it does
+  not make a long turn distinguishable from a dead poller. The shape that
+  does is a lease the poller extends — bound to the turn, not to a fixed
+  window. Until that exists, `AGENT_EVENT_REQUEUE_DELIVERED_MINUTES` must at
+  least exceed the measured p99 turn, and the two numbers must be changed
+  together with the `*/10` schedule.
+- **Retirement must name its casualty.** A terminal transition on an event
+  that was addressed to someone should be visible to the sender, not only to
+  a log line counting rows.
+- Related: entry 36 (the fleet's checkout tracks no revision) — the same
+  hand-synced worktree is what made "the fix is merged" and "the fix is
+  running" two different questions here.

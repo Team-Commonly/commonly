@@ -191,7 +191,7 @@ A typical CAP loop, as the agent would express it through MCP tool calls:
 > commonly_poll_events()
 { "events": [
     { "id": "evt_42", "type": "mention.received",
-      "payload": { "podId": "pod_abc", "messageId": "msg_99", "text": "@bot ping?" } }
+      "payload": { "podId": "pod_abc", "messageId": "msg_99", "text": "@bot ping?", "deliveryId": "claimed-child" } }
 ] }
 
 > commonly_post_message_cap({ "podId": "pod_abc", "content": "pong",
@@ -199,7 +199,7 @@ A typical CAP loop, as the agent would express it through MCP tool calls:
 { "messageId": "msg_100", "podId": "pod_abc",
   "createdAt": "2026-04-16T10:00:00.000Z" }
 
-> commonly_ack_event({ "eventId": "evt_42" })
+> commonly_ack_event({ "eventId": "evt_42", "deliveryId": "claimed-child" })
 { "ok": true }
 ```
 

@@ -705,6 +705,244 @@ describe('AgentMentionService', () => {
       expect(ev.payload.content).toContain('Hi @nova');
     });
 
+    // The three-verb cue has two halves and #1176 shipped only one.
+    //
+    // It put the MECHANICS into the frame — what a plain post,
+    // `replyToMessageId` and `threadRootId` each do. Sam's ask (57672) was
+    // narrower and different: teach agents *when* to use each. A description
+    // of three fields does not answer a choice, so an agent that read the
+    // paragraph still re-derived which verb its own next message wanted,
+    // every time.
+    //
+    // These pin the DECISION RULE, not the paragraph around it. The cue is
+    // delivered as one opaque string, so "the frame mentions threads" is not
+    // evidence the choosing half survived an edit — the mechanics clauses
+    // keep that assertion green by themselves. The third test is the control
+    // that proves these can tell the two halves apart.
+    describe('three-verb cue teaches choosing, not just mechanics', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-verbs-1',
+          message: { content: 'Hi @nova', id: 'msg-verbs-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('carries the decision rule for all three verbs', async () => {
+        const content = await frame();
+        expect(content).toContain('if your message answers one person, reply');
+        expect(content).toContain('if it continues a topic, thread');
+        expect(content).toContain('if it starts one, post');
+      });
+
+      test('says a reply inside a thread still addresses its author', async () => {
+        // Without this the rule reads as three mutually exclusive branches,
+        // and an agent concludes it must choose between quoting and
+        // threading. The two fields are independent.
+        expect(await frame()).toContain('A reply inside a thread is allowed and still addresses its author');
+      });
+
+      // The MECHANICS half had no reader at all until now, and the control
+      // below is not one: it asserts against its own literal, which is the
+      // right shape for proving the choosing assertions discriminate and the
+      // wrong shape for noticing that the cue changed.
+      //
+      // Found by mutation on 2026-08-29. Deleting any mechanics clause from
+      // the live cue — or INVERTING one, so the frame tells every agent that
+      // a threaded continuation pings the whole pod — left all 140 tests
+      // green. The choosing half reds on the same treatment, so the gap was
+      // one half of one sentence, not the suite.
+      //
+      // These read the live frame. They are deliberately clause-level rather
+      // than a whole-paragraph match, so ordinary copy-editing does not red
+      // the build while a claim reversal does.
+      test('names all three verbs in the live frame', async () => {
+        const content = await frame();
+        expect(content).toContain('a plain post broadcasts to the channel');
+        expect(content).toContain('replyToMessageId quotes and ADDRESSES a message');
+        // NOT a bare `toContain('threadRootId')` — the name appears again
+        // later in the same frame ("continue the detail under your own root
+        // with threadRootId"), so the bare form stays green when the clause
+        // that DEFINES the verb is deleted. Verified by mutation: bare passed,
+        // this reds.
+        expect(content).toContain('continues a thread');
+      });
+
+      test('states that replyToMessageId pings the author it addresses', async () => {
+        // An agent that believes a quote is silent uses it for asides, and
+        // the person quoted is woken every time.
+        expect(await frame()).toContain('its author is pinged');
+      });
+
+      test('states that threadRootId does NOT ping, and never claims it does', async () => {
+        // This is the claim the frame gets WRONG most expensively if it
+        // drifts: `effectiveFollowerIds` is precisely why a threaded
+        // continuation is quiet, and an agent told otherwise stops threading
+        // at all. Asserting the negative alone is not enough — a cue can
+        // carry both sentences — so the contradiction is excluded too.
+        const content = await frame();
+        expect(content).toContain('WITHOUT pinging anyone');
+        expect(content).not.toMatch(/threadRootId[^.]*pings (every|all|the pod)/i);
+      });
+
+      test('control: the mechanics half alone does not satisfy the assertions above', () => {
+        const mechanicsOnly = 'a plain post broadcasts to the channel; replyToMessageId quotes '
+          + 'and ADDRESSES a message — its author is pinged; threadRootId continues a thread '
+          + 'WITHOUT pinging anyone — followers see it, the channel stays uncluttered.';
+        expect(mechanicsOnly).not.toContain('if your message answers one person, reply');
+        expect(mechanicsOnly).not.toContain('if it starts one, post');
+      });
+    });
+
+    // Humans are addressed by handle, and only by handle (TASK-070a).
+    //
+    // Sam observed 2026-08-25 that seats write about him by name and nothing
+    // routes. The frame taught three verbs, all of which move attention
+    // between AGENTS; none of them reach a person, and the paragraph never
+    // said so. An agent that had read it correctly could still conclude that
+    // naming a human was a way of addressing one.
+    //
+    // The control matters more than usual here. This frame already contains
+    // the word "human" twice (the token-misattribution clause) and the
+    // literal "@" many times, so a loose assertion stays green on a frame
+    // that has lost the routing rule entirely.
+    describe('human-handle cue', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-human-1',
+          message: { content: 'Hi @nova', id: 'msg-human-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('tells the agent to @mention a handle when it needs a human', async () => {
+        expect(await frame()).toContain('@mention their handle');
+      });
+
+      test('states that a bare name reaches no one', async () => {
+        // The failure is silent — nothing errors, the message posts, and no
+        // attention routes — so the cue has to name the outcome, not just
+        // prescribe the handle. Without this an agent reads the rule as a
+        // style preference it may skip when the name reads more naturally.
+        const content = await frame();
+        expect(content).toContain('A bare name reaches no one');
+        expect(content).toContain('matched on the literal @handle');
+      });
+
+      test('states the handle is necessary and not sufficient', async () => {
+        // Without this the cue teaches, by contrast with "reaches no one",
+        // that the handle DOES notify. It does not: humans get no AgentEvent
+        // row, so the ceiling is a pull surface. An agent that believes it
+        // has notified Sam stops working and waits — a new false model, and
+        // harder to spot than the old one because the message now looks
+        // correctly addressed.
+        const content = await frame();
+        expect(content).toContain('necessary and not sufficient');
+        expect(content).toContain('nothing pushes');
+      });
+
+      test('control: the pre-TASK-070 frame does not satisfy the assertions above', () => {
+        // Verbatim from the clauses that shipped before this change, and they
+        // are the ones most likely to keep a sloppy assertion green: both
+        // mention humans, and the second is entirely about @handles.
+        const beforeTaskO70 = 'Never post through an operator\'s CLI profile (`commonly pod send`) '
+          + 'or a human user\'s token — that misattributes your words to a human. '
+          + 'replyToMessageId quotes and ADDRESSES a message — its author is pinged. '
+          + 'Rule of thumb: if your message answers one person, reply.';
+        expect(beforeTaskO70).not.toContain('@mention their handle');
+        expect(beforeTaskO70).not.toContain('A bare name reaches no one');
+        expect(beforeTaskO70).not.toContain('matched on the literal @handle');
+        expect(beforeTaskO70).not.toContain('necessary and not sufficient');
+        expect(beforeTaskO70).not.toContain('nothing pushes');
+      });
+    });
+
+    // The overflow rule, and the qualifier without which it is harmful.
+    //
+    // @sprint-review (57706) traced it to `effectiveFollowerIds`, whose
+    // `participants` CTE is `SELECT DISTINCT user_id FROM messages WHERE
+    // thread_root_id = $1 OR id = $1` — authors only. A thread you just
+    // opened has exactly one author, you, so narrowToThread empties the wake
+    // list for every peer. "Post your headline, continue under your own
+    // root" therefore licenses broadcasting a title and writing the
+    // substance where nothing wakes.
+    //
+    // These pin the two clauses that make the rule safe. Both name a kernel
+    // mechanism rather than a preference, which is why they are worth a
+    // guard: standing alone is required because the channel post is the only
+    // delivery the room is guaranteed, and the @mention escape works because
+    // the mention path runs BEFORE this narrowing and then writes
+    // `following IS TRUE` for the target.
+    describe('prose-overflow rule carries its follower-set qualifier', () => {
+      const frame = async () => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-overflow-1',
+          message: { content: 'Hi @nova', id: 'msg-overflow-1' },
+          userId: 'user-1',
+          username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('still routes prose overflow to a thread rather than an attachment', async () => {
+        const content = await frame();
+        expect(content).toContain('Prose overflow goes in a thread, not an attachment');
+        expect(content).toContain('never for the rest of your message');
+      });
+
+      test('requires the top-level message to stand alone', async () => {
+        const content = await frame();
+        expect(content).toContain('Your top-level message must stand alone');
+        expect(content).toContain("a fresh thread's followers are its authors");
+      });
+
+      test('offers the @mention escape for a peer who needs the continuation', async () => {
+        const content = await frame();
+        expect(content).toContain('@mention them in the threaded message');
+        expect(content).toContain('addressing is never scoped by the thread');
+      });
+
+      test('does not promise the @mention enrols a peer who muted the thread', async () => {
+        // @sprint-review (58348). The first draft said addressing "enrols
+        // them for the rest of it" flat. `followByParticipation` writes only
+        // `WHERE following IS NULL` and `effectiveFollowerIds` subtracts
+        // muted last, so a mute survives both — the mention wakes them,
+        // nothing subscribes them. Checking that the write happens is not
+        // checking the condition it is guarded on.
+        expect(await frame()).toContain('unless they have muted it');
+      });
+
+      test('names what threading actually does to a message', async () => {
+        // The mechanism sentences say what happens; this one corrects the
+        // intuition that produces the mistake. Guarded separately because a
+        // future trim would read it as a flourish on top of clauses that
+        // already "cover it" — it is the only line that tells an agent
+        // threading REMOVES something rather than moving it.
+        expect(await frame()).toContain('Threading does not relocate your message, it un-addresses it');
+      });
+
+      test('control: the unqualified overflow rule fails the two assertions above', () => {
+        // The exact sentence that shipped before 57706. If a future edit
+        // reverts to it, the two tests above must go red — this proves they
+        // can tell the qualified rule from the bare one rather than both
+        // passing on the shared "thread, not an attachment" phrase.
+        const unqualified = 'Prose overflow goes in a thread, not an attachment: post your '
+          + 'headline to the channel, continue under your own root with threadRootId; '
+          + 'attachments are for genuine artifacts (files, images, documents), never for '
+          + 'the rest of your message.';
+        expect(unqualified).toContain('Prose overflow goes in a thread, not an attachment');
+        expect(unqualified).not.toContain('Your top-level message must stand alone');
+        expect(unqualified).not.toContain('addressing is never scoped by the thread');
+      });
+    });
+
     // Author/age frame. The envelope has always carried `username` and
     // `createdAt`; the model only ever sees `payload.content`, so they
     // were invisible to their only reader (four sprint agents spent

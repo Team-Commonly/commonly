@@ -14,6 +14,7 @@
     "nav": {
       "pods": "Pod",
       "agents": "智能体",
+      "activity": "动态",
       "community": "社区",
       "settings": "设置",
       "connectors": "连接器"
@@ -23,6 +24,116 @@
       "title": "正在打开社区",
       "text": "正在检查你的访问权限…"
     }
+  },
+  "activity": {
+    "title": "动态",
+    "subtitle": "需要你处理的事项，以及智能体推动的工作。",
+    "controlsAriaLabel": "动态控制项",
+    "windowAriaLabel": "动态时间范围",
+    "windows": {
+      "today": "今天",
+      "7d": "7 天"
+    },
+    "podScopeLabel": "Pod 范围",
+    "allPods": "所有 Pod",
+    "loadFailed": "无法加载动态，请重试。",
+    "openThread": "打开讨论",
+    "openBoard": "打开看板",
+    "compose": {
+      "eyebrow": "发起对话",
+      "title": "告诉你的智能体你在想什么",
+      "podLabel": "发布到",
+      "placeholder": "写一条消息。提及智能体即可唤醒它…",
+      "send": "发送",
+      "sendAriaLabel": "发送消息",
+      "working": "发送中…",
+      "actionFailed": "无法发送消息，请重试。"
+    },
+    "reply": {
+      "placeholder": "在话题中回复…",
+      "send": "发送",
+      "working": "发送中…",
+      "sent": "已回复"
+    },
+    "lastActive": "{{time}}前活跃",
+    "updatesCount_one": "{{count}} 条更新",
+    "updatesCount_other": "{{count}} 条更新",
+    "needsYou": {
+      "eyebrow": "决策队列",
+      "title": "需要你处理",
+      "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
+      "emptyTitle": "没有事项在等待你",
+      "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
+      "kinds": {
+        "mention": "提及",
+        "approval": "审批",
+        "decision": "待你决策",
+        "press": "待你合并"
+      }
+    },
+    "dayZero": {
+      "kind": "开始使用",
+      "guide": {
+        "title": "认识你的向导",
+        "description": "通过简短引导，开始第一次与智能体的对话。",
+        "leaves": "向导回复后，此项会离开。",
+        "cta": "认识你的向导"
+      },
+      "agent": {
+        "title": "聘用你的第一个智能体",
+        "description": "添加一位能和你一起推进工作的队友。",
+        "leaves": "智能体加入工作区后，此项会离开。",
+        "cta": "聘用第一个智能体",
+        "secondary": "连接我自己的"
+      },
+      "task": {
+        "title": "给它一件真正要做的事",
+        "description": "把第一件具体任务放到团队能接手的地方。",
+        "leaves": "任务被认领后，此项会离开。",
+        "cta": "创建任务"
+      }
+    },
+    "approval": {
+      "approve": "批准",
+      "deny": "拒绝",
+      "working": "正在保存…",
+      "actionFailed": "无法更新该审批，请重试。"
+    },
+    "decision": {
+      "ruleOption": "裁定：{{option}}",
+      "working": "正在裁定…",
+      "other": "其他…",
+      "otherPlaceholder": "写下你的裁定…",
+      "sendOther": "发送裁定",
+      "ruled": "✓ {{by}} 已裁定：{{value}}",
+      "actionFailed": "无法保存该裁定，请重试。"
+    },
+    "mention": {
+      "acknowledge": "确认",
+      "working": "正在保存…",
+      "actionFailed": "无法确认该提及，请重试。"
+    },
+    "agents": {
+      "eyebrow": "智能体回顾",
+      "title": "你的智能体做了什么",
+      "description": "按智能体归类的事实更新回顾。",
+      "emptyTitle": "此时间范围内没有智能体更新",
+      "emptyDescription": "智能体在 Pod 中发布更新后，工作会在这里归类显示。"
+    },
+    "board": {
+      "eyebrow": "看板变更",
+      "title": "看板",
+      "description": "此时间范围内发生变化的任务。",
+      "emptyTitle": "此时间范围内没有看板变更",
+      "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
+      "status": {
+        "pending": "待处理",
+        "claimed": "进行中",
+        "blocked": "已阻塞",
+        "done": "已完成"
+      }
+    },
+    "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。"
   },
   "auth": {
     "fields": {
@@ -354,7 +465,19 @@
       "replyFromExpandedThread": "在已展开的话题中回复",
       "replyingInThread": "正在话题中回复："
     },
-    "leadBadge": "负责人"
+    "leadBadge": "负责人",
+    "catchup": {
+      "title": "回顾",
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前",
+      "empty": "还没有摘要",
+      "summarize": "生成摘要",
+      "refresh": "刷新",
+      "working": "正在总结…",
+      "dismiss": "关闭"
+    }
   },
   "landing": {
     "nav": {
@@ -1195,7 +1318,9 @@
       "copy": "复制",
       "copied": "已复制！",
       "goToPod": "前往你的 Pod",
-      "installAnother": "再安装一个"
+      "installAnother": "再安装一个",
+      "runHere": "在这里运行",
+      "starting": "正在启动…"
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
@@ -1233,7 +1358,9 @@
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
-      "importFailed": "导入失败。"
+      "importFailed": "导入失败。",
+      "hostedCap": "你已有一个托管智能体（测试期允许 {{cap}} 个）。如需更多，请自带运行时。",
+      "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。"
     },
     "listen": {
       "title": "还差一步，否则它无法回复你",
@@ -1243,6 +1370,43 @@
       "verified": "✓ {{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "仍未收到 {{name}} 的接入信号。请在 agent 所在的机器上运行上面的命令，本页会自动确认。",
       "ctaWarning": "{{name}} 还没有在监听 —— 在上面的命令运行起来之前，@提及 不会得到回复。"
+    },
+    "mode": {
+      "label": "运行方式",
+      "hosted": "在这里运行",
+      "hostedHint": "由 Commonly 代为运行，无需安装。测试期：每天 {{turns}} 轮。",
+      "byo": "自带运行时",
+      "byoHint": "从你的电脑连接 Claude Code、Cursor 或 Codex。",
+      "recommended": "推荐",
+      "yours": "你的电脑",
+      "hostedMeta": "约 10 秒上线——无需终端与密钥",
+      "byoMeta": "MCP 令牌 + 编辑器代码片段"
+    },
+    "hosted": {
+      "heading": "运行中：",
+      "live": "{{name}} 已在 {{pod}} 上线。在那里 @ 它即可得到回复。",
+      "starting": "正在启动 {{name}}…",
+      "running": "✓ {{name}} 已在监听。",
+      "slow": "{{name}} 尚未签到。可以先 @ 它，启动后会处理消息。",
+      "meter": "测试期限制：每天 {{turns}} 轮，每个账号一个托管智能体。",
+      "statTurns": "轮 / 天",
+      "statAgents": "托管智能体",
+      "latencyHint": "回复通常约十秒内送达。"
+    },
+    "preview": {
+      "title": "你的智能体",
+      "inPod": "位于 {{pod}}",
+      "draft": "尚未创建",
+      "starting": "正在启动…",
+      "live": "监听中",
+      "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
+      "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。"
+    },
+    "persona": {
+      "hiring": "正在雇佣",
+      "change": "更换",
+      "none": "还没有选择同事——这是空白智能体路径。",
+      "browse": "浏览同事"
     }
   },
   "agentProfile": {
@@ -1289,11 +1453,24 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}} 条笔记，分布在 {{count}} 个板块{{updated}}。仅你可见；对公开资料页隐藏。",
-      "updatedClause": " · 更新于 {{time}}",
+      "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有 {{count}} 条",
       "entriesRemembered": "条已记住的条目",
       "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
-      "lastUpdated": "最后更新于 {{time}}。",
+      "lastSaved": "最后保存至 {{section}}，{{time}}。",
+      "kinds": {
+        "durable": "长期记忆",
+        "bookkeeping": "内部记录"
+      },
+      "sections": {
+        "soul": "身份",
+        "long_term": "长期记忆",
+        "dedup_state": "去重状态",
+        "shared": "共享记忆",
+        "runtime_meta": "运行时元数据",
+        "daily": "每日记录",
+        "relationships": "关系"
+      },
       "none": "尚无记忆记录。"
     },
     "activity": {
@@ -1481,11 +1658,12 @@
       "agentCount_one": "{{count}} 个智能体",
       "agentCount_other": "{{count}} 个智能体",
       "projectCount_one": "{{count}} 个项目",
-      "projectCount_other": "{{count}} 个项目"
+      "projectCount_other": "{{count}} 个项目",
+      "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
       "hire": "+ 雇佣智能体",
-      "connectOwn": "连接你自己的智能体",
+      "addComputer": "添加电脑",
       "cancel": "取消"
     },
     "redeem": {
@@ -1508,6 +1686,7 @@
     },
     "card": {
       "inProject": "属于",
+      "lastSaid": "“{{snippet}}”",
       "roleTitle": "角色：{{role}}",
       "profile": "资料页",
       "viewProfileAria": "查看 {{name}} 的资料页",
@@ -1534,6 +1713,16 @@
       "loadFailed": "无法加载你的团队。",
       "redeemFailed": "无法兑换该邀请码。",
       "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
+    },
+    "tiers": {
+      "workingNow": "正在工作",
+      "team": "团队",
+      "quiet": "沉寂",
+      "internal": "内部席位",
+      "quietCount": "沉寂（{{count}}）",
+      "internalCount": "内部席位（{{count}}）",
+      "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
+      "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
     }
   },
   "billing": {
@@ -1563,7 +1752,7 @@
     "pending": "等待频道确认",
     "enableHint": "打开与 Commonly 机器人的私聊",
     "enableHintSend": "，然后发送：",
-    "liveRelay": "实时中继",
+    "liveRelay": "中继",
     "liveRelayHint": "聊天消息会发布到 Pod 并唤醒被提及的智能体；智能体的升级消息会回到频道。",
     "newTitle": "连接频道",
     "podPicker": "要桥接的 Pod",

@@ -87,6 +87,7 @@ export interface IIntegration extends Document {
     linkedUserId?: string;
     leadAgentUsername?: string;
     relayAllAgentMessages?: boolean;
+    relayMutedUntil?: Date;
     relayMap?: {
       tgMessageId: string;
       agentUsername: string;
@@ -175,6 +176,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       linkedUserId: String,
       leadAgentUsername: String,
       relayAllAgentMessages: { type: Boolean, default: false },
+      relayMutedUntil: Date,
       relayMap: [
         {
           tgMessageId: String,

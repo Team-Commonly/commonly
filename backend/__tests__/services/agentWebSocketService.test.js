@@ -10,9 +10,18 @@ jest.mock('../../models/User', () => ({
   updateOne: jest.fn(),
 }));
 
+// ADR-026 Phase 0: WS validation consults the credential ledger first.
+// Default null = legacy token with no row (the fallback the older cases
+// exercise); the revoked-credential case overrides per test.
+jest.mock('../../models/AgentCredential', () => ({
+  findOne: jest.fn().mockResolvedValue(null),
+  findById: jest.fn().mockResolvedValue(null),
+}));
+
 const { hash } = require('../../utils/secret');
 let AgentInstallation = require('../../models/AgentRegistry').AgentInstallation;
 let User = require('../../models/User');
+let AgentCredential = require('../../models/AgentCredential');
 
 describe('agentWebSocketService', () => {
   let agentWebSocketService;
@@ -25,9 +34,37 @@ describe('agentWebSocketService', () => {
     // Re-grab mock references after resetModules to avoid reference drift
     AgentInstallation = require('../../models/AgentRegistry').AgentInstallation;
     User = require('../../models/User');
+    AgentCredential = require('../../models/AgentCredential');
+    AgentCredential.findOne.mockResolvedValue(null);
+    AgentCredential.findById.mockResolvedValue(null);
   });
 
   describe('validateAgentToken', () => {
+    it('rejects a token whose credential row is revoked (ledger gates WS too)', async () => {
+      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-1', kind: 'runtime', status: 'revoked' });
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_revokedtoken');
+      expect(result).toBeNull();
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a child token whose issuing credential is revoked', async () => {
+      AgentCredential.findOne.mockResolvedValue({ _id: 'cred-2', kind: 'runtime', status: 'active', parentId: 'daemon-1' });
+      AgentCredential.findById.mockReturnValue({
+        select: () => ({ lean: () => Promise.resolve({ status: 'revoked' }) }),
+      });
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_childtoken');
+      expect(result).toBeNull();
+    });
+
+    it('rejects a daemon credential before falling back to a legacy token list', async () => {
+      AgentCredential.findOne.mockResolvedValue({ _id: 'daemon-cred', kind: 'daemon', status: 'active' });
+
+      const result = await agentWebSocketService.validateAgentToken('cm_agent_poisoneddaemonhash');
+
+      expect(result).toBeNull();
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
     it('validates cm_agent tokens using hashed runtime tokens', async () => {
       User.findOne.mockResolvedValue(null);
       AgentInstallation.findOne.mockResolvedValue({

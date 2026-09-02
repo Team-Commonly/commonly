@@ -150,6 +150,24 @@ spec:
         - name: COMMUNITY_POD_ID
           value: {{ .Values.backend.env.communityPodId | quote }}
         {{- end }}
+        {{- if .Values.backend.env.hostedRuntimeUrl }}
+        - name: HOSTED_RUNTIME_URL
+          value: {{ .Values.backend.env.hostedRuntimeUrl | quote }}
+        - name: HOSTED_RUNTIME_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hosted-runtime
+              key: HOSTED_RUNTIME_ADMIN_TOKEN
+              optional: true
+        {{- end }}
+        {{- if .Values.backend.env.hostedAgentsPerUser }}
+        - name: HOSTED_AGENTS_PER_USER
+          value: {{ .Values.backend.env.hostedAgentsPerUser | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.hostedTurnsPerDay }}
+        - name: HOSTED_TURNS_PER_DAY
+          value: {{ .Values.backend.env.hostedTurnsPerDay | quote }}
+        {{- end }}
         {{- if .Values.backend.env.retentionExemptPodIds }}
         # Pods the 30-day PG message-retention cron must never touch —
         # publicly-linked rooms (showcase, community HQ) whose history IS the
@@ -337,6 +355,12 @@ spec:
               name: api-keys
               key: telegram-bot-token
               optional: true
+        - name: TELEGRAM_SECRET_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: telegram-secret-token
+              optional: true
         - name: BRAVE_API_KEY
           valueFrom:
             secretKeyRef:
@@ -394,8 +418,19 @@ spec:
               optional: true
         - name: LITELLM_BASE_URL
           value: "http://litellm:4000"
+        # injection-guard only (Sam, 2026-09-01): openai-moderation-enforce
+        # carries a PLACEHOLDER OpenAI key in litellm and 401s EVERY
+        # platform llmService call — summaries emitted the hardcoded
+        # template since the guardrail shipped. Fail-closed proved the
+        # guardrail wiring works; restore moderation only WITH a real
+        # key (see the Sharpen board task).
+        - name: LLMSERVICE_GUARDRAILS
+          value: "injection-guard"
         - name: LITELLM_CHAT_MODEL
-          value: "chatgpt/gpt-5.4-mini"
+          # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
+          # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
+          # entry already exists in LiteLLM with a live key.
+          value: "deepseek-v4-flash"
         # Temporary: bypass LiteLLM's broken chatgpt/ bridge (BerriAI/litellm#25429)
         # and route Codex directly via OpenClaw's native openai-codex-responses handler.
         # Flip to "false" / remove once LiteLLM ships a fix for empty-output responses.

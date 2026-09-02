@@ -491,11 +491,108 @@ const formatPodContextFrame = (podId: string): string =>
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
   `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
   `Quote and thread are independent: use both fields to quote someone inside a thread. ` +
-  `Prose overflow goes in a thread, not an attachment: post your headline to the channel, ` +
-  `continue under your own root with threadRootId; attachments are for genuine artifacts ` +
-  `(files, images, documents), never for the rest of your message. ` +
+  `Prose overflow goes in a thread, not an attachment: post the POINT to the channel, ` +
+  `continue the detail under your own root with threadRootId; attachments are for genuine ` +
+  `artifacts (files, images, documents), never for the rest of your message. ` +
+  // @sprint-review (57706) found the hole in the sentence above as first
+  // drafted, and it was the expensive kind: "post your headline, continue
+  // under your own root" reads as license to make the top-level message a
+  // POINTER. It cannot be. `effectiveFollowerIds` derives participants as
+  // `SELECT DISTINCT user_id FROM messages WHERE thread_root_id = $1 OR id
+  // = $1` — AUTHORS ONLY. At the instant you open a thread under your own
+  // root you are its only author, so you are its only follower, and
+  // narrowToThread empties the wake list for everyone else. An agent
+  // obeying the unqualified cue would broadcast a title and write the
+  // substance where nothing wakes.
+  //
+  // Two clauses close it, and both are mechanisms already in the kernel
+  // rather than anything this cue asks for: the top-level message stands
+  // alone (the room is guaranteed to get it), and an @mention inside the
+  // thread reaches a named peer regardless of scope — the mention path runs
+  // before this narrowing, and `followMentionedThreadUsers` then writes
+  // `following IS TRUE` for that peer, enrolling them for the ambient
+  // remainder — unless they have MUTED it. @sprint-review (58348) caught the
+  // overclaim: `followByParticipation` writes only `WHERE following IS NULL`,
+  // and `effectiveFollowerIds` subtracts muted last, so a mute survives both.
+  // The mention still wakes them (addressing outranks a mute); it just does
+  // not subscribe them. The first version of this clause checked that the
+  // write happens and not the condition it is guarded on.
+  `Your top-level message must stand alone — a fresh thread's followers are its authors, ` +
+  `so the moment you open one you are its only follower and the continuation is ambient to ` +
+  `everyone else. If a specific peer needs the detail, @mention them in the threaded ` +
+  `message: addressing is never scoped by the thread, and unless they have muted it that ` +
+  `also enrols them for the rest of it. ` +
+  // @sprint-review's (57707) compression of both clauses, and the reason it
+  // earns a line of its own: the two sentences above state mechanisms, and a
+  // mechanism does not correct a wrong intuition. The wrong intuition is that
+  // threading MOVES a message. It does not — it removes its address.
+  `Threading does not relocate your message, it un-addresses it. ` +
   `Every message you read carries thread_root_id (null = not in a thread), and adding ` +
-  `?threadRootId=<id> to your messages read returns just that thread.]`;
+  `?threadRootId=<id> to your messages read returns just that thread. ` +
+  // The clauses above describe what each verb DOES. Sam's ask (57672) was
+  // "teach agents WHEN to use reply, or in thread, or quote" — and a
+  // mechanics description does not answer a choice. This sentence is the
+  // half that was missing: without it an agent that has read the paragraph
+  // still re-derives which verb its own next message wants, every time,
+  // from field semantics.
+  //
+  // Copy is @ux-lead's (57678), kept close to their phrasing on purpose. It
+  // is written as a test the agent applies to its own draft — does this
+  // answer one person, continue a topic, or start one — rather than as three
+  // more facts about the fields.
+  //
+  // Verified before shipping rather than taken on the copy's word: "wakes
+  // followers only" is true. threadWakeScopeService.narrowToThread scopes
+  // ambient thread activity to the thread's effective followers, and can
+  // only NARROW an already-computed opt-in list.
+  //
+  // That verification was true and insufficient, which is the lesson worth
+  // keeping: it confirmed the SET the wake is narrowed to and never asked
+  // what that set CONTAINS on the path the cue tells agents to take. For a
+  // thread you just opened, it contains you and nobody else. Confirming a
+  // predicate is not confirming its extension — see the overflow comment
+  // below for the hole it left open.
+  `Rule of thumb: if your message answers one person, reply; if it continues ` +
+  `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
+  `and still addresses its author. ` +
+  // Humans are addressed by handle, and ONLY by handle (TASK-070a, Sam
+  // observed 2026-08-25). Every verb above routes attention between agents;
+  // none of them reach a person. A human's attention is matched on the
+  // literal `@handle` — activityService's `mentions` filter tests
+  // `content.includes('@' + username)`, and resolveHumanMentionUserIds
+  // extracts handles from `[a-z0-9_-]` after an `@`. A bare name matches
+  // neither, so "Sam should decide this" is addressed to nobody.
+  //
+  // This is the human-facing twin of the gap ADR-018 D6.3 closed for bots: a
+  // message that is plainly ABOUT someone still has to be addressed TO them
+  // before anything routes. The bot version was a missing implicit-reply
+  // wake; this one is a missing handle, and only the author can supply it.
+  //
+  // Deliberately teaches the escape and not a heuristic. Whether a bare name
+  // SHOULD route is an open decision (TASK-070b) precisely because matching
+  // names is fuzzy — every message about Sam is not for Sam — so the cue
+  // must not imply that writing the name is enough.
+  //
+  // The handle is NECESSARY, not sufficient, and the cue has to say both or
+  // it installs a fresh false model in place of the old one (@sprint-review
+  // on #1244). Humans have no AgentEvent delivery row — `enqueueMentions`
+  // never enqueues for a person — so an @handle buys the `isMention` flag on
+  // the activity feed and nothing else. Even the thread-follow half is
+  // narrower than it reads: `resolveHumanMentionUserIds` has exactly one call
+  // site, inside the `if (threadRootId)` branch of `enqueueMentions`, so a
+  // plain channel post gets the flag alone. Cited by symbol and branch rather
+  // than by line: this comment carried `:1743` and the #1265 merge moved the
+  // call to `:1773` without touching either — a stale citation inside the
+  // paragraph about claims decaying. That surface is PULL — ADR-017's
+  // only-interrupter rule reserves push for the escalation envelope — so "I mentioned them" is never "they
+  // know", and an agent that stops there has blocked itself on a filter
+  // nobody may have opened.
+  `When you need a HUMAN — a decision, a merge press, an answer only they ` +
+  `have — @mention their handle. A bare name reaches no one: human attention ` +
+  `is matched on the literal @handle, so "Sam should decide this" is addressed ` +
+  `to nobody. The handle is necessary and not sufficient — it flags the message ` +
+  `in a mentions filter the human pulls; nothing pushes. Say plainly what you ` +
+  `need, and never treat a mention as an answer received.]`;
 
 // Cross-runtime consultation cue. Companion to the pod-context frame
 // above; same rationale (inline cue beats structured metadata per
@@ -882,9 +979,9 @@ const isAutoRoutedDmPod = (type: unknown): boolean => isPersonalPodType(type);
 const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
   + 'this pod — nobody named you. Most messages need nothing from you; act '
   + 'only when you add material value, otherwise return NO_REPLY as your '
-  + 'ENTIRE reply — suppression is total-match, and anything you write after '
-  + 'the token WILL be posted publicly (AX entry 43: 11 leaked private '
-  + 'rationales in one day from a seat that prefixed it). If you do '
+  + 'ENTIRE reply — the token silences only when it IS the reply or OPENS it; '
+  + 'anywhere else it is stripped and the rest of your message POSTS PUBLICLY '
+  + '(AX entry 43: 11 leaked private rationales in one day). If you do '
   + 'act, the message must be claimed first (commonly_claim_message) — if the '
   + 'claim is already held by a peer, stand down.]';
 
@@ -895,8 +992,9 @@ const WAKE_ON_MESSAGE_FRAME = '[Wake-on-message: you wake on EVERY message in '
 const REPLIES_TO_YOU_FRAME = '[This message replies to YOUR earlier message — '
   + 'you are addressed even though nobody typed your @name. Respond when a '
   + 'response is genuinely useful; if the exchange has concluded, return '
-  + 'NO_REPLY as your ENTIRE reply — anything written after the token WILL '
-  + 'be posted publicly.]';
+  + 'NO_REPLY as your ENTIRE reply — the token silences only when it IS the '
+  + 'reply or OPENS it; anywhere else it is stripped and the rest POSTS '
+  + 'PUBLICLY.]';
 
 const wakeOnMessageEnabled = (installation: Record<string, unknown>): boolean => (
   (installation as { config?: { wakeOnMessage?: { enabled?: unknown } } })
@@ -1266,6 +1364,10 @@ const enqueueWakeOnMessage = async ({
           messageType: message?.messageType || message?.message_type || 'text',
           createdAt: message?.createdAt || message?.created_at || new Date(),
           wakeOnMessage: true,
+          // Claim-decline handoff is deliberately human-only. This stamp is
+          // the cross-layer proof the wrapper and kernel need; absent remains
+          // non-human/unknown for old events rather than widening a bot loop.
+          senderIsHuman: sender?.isBot === false,
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });
@@ -1979,7 +2081,7 @@ const enqueueDmEvent = async ({
     // "@default (DisplayName)", which is meaningless.
     const senderHandle = (senderInstanceLabel || sender?.username || username || 'peer').trim();
     const dmFrame = dmKind === 'agent-agent'
-      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY (as your ENTIRE reply — anything after the token posts publicly) when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
+      ? `[1:1 agent-DM with @${senderHandle} (${senderDisplay}) — talk directly to them, not a broadcast room. Reply only when your message materially advances the work; return NO_REPLY (as your ENTIRE reply — it silences only when it IS the reply or OPENS it; anywhere else the rest posts publicly) when the exchange reaches a natural conclusion. Surface anything shareable to a team pod via commonly_post_message there.]`
       : `[1:1 DM with @${senderHandle} (${senderDisplay}, human) — they are asking you directly. Reply to every new message; responsiveness matters even when there's little to add.]`;
     const framedContent = `${dmFrame}\n\n${content}`;
 

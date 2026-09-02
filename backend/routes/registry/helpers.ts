@@ -54,6 +54,24 @@ const escapeRegExp = (value: any) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'
 
 const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 
+// `middleware/auth.ts` dispatches on the token and the two branches leave
+// DIFFERENT shapes on `req.user`: the `cm_` API-token path assigns
+// `{ id, username, email, role }` (`:51`), the browser-JWT path assigns
+// `{ id }` (`:81`). Neither errors, so `req.user.username` is simply
+// `undefined` for every browser session — and `publisher.name: undefined`
+// persists into the registry with nothing going red. Load it when the token
+// did not carry it. `routes/marketplace-api.ts` already resolves the same way;
+// this is that resolution moved next to `getUserId`, which both registry
+// writers already import. See AX audit entry 42.
+const resolveUsername = async (req: any): Promise<string | null> => {
+  if (req.user?.username) return req.user.username;
+  if (req.agentUser?.username) return req.agentUser.username;
+  const userId = getUserId(req);
+  if (!userId) return null;
+  const user = await User.findById(userId).select('username').lean();
+  return user?.username || null;
+};
+
 const normalizeConfigMap = (config: any) => {
   if (!config) return null;
   if (config instanceof Map) {
@@ -338,14 +356,40 @@ const resolveDisplayLabelFromUser = (user: any, fallback: string): string => {
   return fallback;
 };
 
+// Internal ops/smoke/demo seats (Wren spec §1.1, BEND-3 follow-up #1377):
+// the roster hides these behind a disclosure. The classification lives HERE,
+// at the boundary, so every consumer reads one `internal: true` flag instead
+// of curating its own name list — the client-side constant this replaces was
+// accepted for exactly one release. An explicit `config.internal: true` on
+// the installation wins; the name patterns cover the seats scripts already
+// create without the flag.
+const INTERNAL_SEAT_EXACT = new Set(['hosted-smoke', 'run-here-smoke', 'commonly-summarizer']);
+const INTERNAL_SEAT_PREFIXES = ['smoke-', 'recorder-', 'adr-', 'demo-'];
+const isInternalSeat = (agentName: any, normalizedConfig: any): boolean => {
+  if (normalizedConfig?.internal === true) return true;
+  const n = String(agentName || '').toLowerCase();
+  return INTERNAL_SEAT_EXACT.has(n) || INTERNAL_SEAT_PREFIXES.some((p) => n.startsWith(p));
+};
+
+// The card shows one line of it; shipping the median 2,700-char agent message
+// per roster row is payload waste, so trim at the boundary.
+const SNIPPET_MAX = 200;
+const toSnippet = (content: any): string => {
+  const collapsed = String(content || '').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+  return collapsed.length > SNIPPET_MAX ? `${collapsed.slice(0, SNIPPET_MAX - 1)}…` : collapsed;
+};
+
 const buildAgentInstallationPayload = (installation: any, {
   profile = null,
   iconUrl = '',
   lastHeartbeatAt = null,
   lastActiveAt = null,
   user = null,
+  lastMessage = null,
 }: {
   profile?: any; iconUrl?: string; lastHeartbeatAt?: any; lastActiveAt?: any; user?: any;
+  lastMessage?: { content?: any; createdAt?: any } | null;
 } = {}) => {
   if (!installation) return null;
   const normalizedConfig = normalizeConfigMap(installation.config);
@@ -381,6 +425,13 @@ const buildAgentInstallationPayload = (installation: any, {
     // connected" for native agents that talked minutes ago (#915).
     lastActiveAt: lastActiveAt || lastHeartbeatAt,
     usage: installation.usage,
+    internal: isInternalSeat(installation.agentName, normalizedConfig),
+    // Wren spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
+    // it has never spoken in this pod (or the PG lookup was skipped/failed —
+    // the roster never fails over a snippet).
+    lastMessage: lastMessage && toSnippet(lastMessage.content)
+      ? { snippet: toSnippet(lastMessage.content), at: lastMessage.createdAt || null }
+      : null,
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
     // Resolved at the boundary so the frontend doesn't need to know
@@ -606,12 +657,15 @@ module.exports = {
   parseVerifiedFilter,
   escapeRegExp,
   getUserId,
+  resolveUsername,
   normalizeConfigMap,
   normalizeRuntimeAuthProfiles,
   normalizeSkillEnvEntries,
   sanitizeRuntimeConfig,
   buildOpenClawIntegrationChannels,
   buildAgentInstallationPayload,
+  isInternalSeat,
+  toSnippet,
   normalizePluginIdentifier,
   getPluginSpecBase,
   normalizeInstanceId,

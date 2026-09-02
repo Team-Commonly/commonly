@@ -420,11 +420,15 @@ export const createClaimKeeper = (client, {
       if (timer && typeof timer.unref === 'function') timer.unref();
     },
 
-    async release() {
+    async release(outcome) {
       stopRenewal();
       if (!acquired || lost) return;
       try {
-        await client.del(path);
+        // Preserve the one-argument legacy call when there is no explicit
+        // outcome. Besides keeping old clients' DELETE shape intact, callers
+        // that assert their transport arguments must not see a synthetic
+        // `undefined` body. An explicit outcome is the new D6.1 contract.
+        await (outcome ? client.del(path, { outcome }) : client.del(path));
       } catch {
         // Best-effort: a miss just means the lease already expired.
       }

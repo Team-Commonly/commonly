@@ -90,6 +90,22 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     const populationRead = SCRIPT.indexOf('count(*)::int AS needs_root');
     expect(ledgerRead).toBeGreaterThan(-1);
     expect(ledgerRead).toBeLessThan(populationRead);
+    // #1149: reading the ledger first is not the property — STOPPING is, and a
+    // position comparison cannot see a `return`. Deleting the early return in
+    // the script's `if (ledger)` branch leaves both indices unchanged and the
+    // script re-measures anyway, which is the exact failure #1148 removed. Pin
+    // the thing that stops it.
+    //
+    // Cited by symbol, not by line. This comment said `:209` and the export of
+    // `main` in this same PR moved it to `:221` — a pointer that rotted inside
+    // the branch that wrote it, caught by @sprint-review reproducing the two
+    // mutation rows. A line number in a comment is a claim about a file's
+    // length, which is the one property every commit is entitled to change.
+    const reportedAndStopped = SCRIPT.slice(
+      SCRIPT.indexOf('already recorded at'),
+      populationRead,
+    );
+    expect(reportedAndStopped).toMatch(/\breturn\b/);
     expect(SCRIPT).toMatch(/already recorded at \$\{ledger\.applied_at\}/);
     expect(SCRIPT).toMatch(/the boundary is not re-measured/);
   });
@@ -106,6 +122,38 @@ describe('the cutoff is measured before it becomes unmeasurable', () => {
     expect(begin).toBeLessThan(update);
     expect(update).toBeLessThan(insert);
     expect(insert).toBeLessThan(commit);
+    // #1149: order is not reachability. A bare `return` between the UPDATE and
+    // the INSERT keeps all four anchors in place and makes the ledger write
+    // unreachable — the mutant that stayed green here. Assert no control-flow
+    // break separates them.
+    expect(SCRIPT.slice(update, insert)).not.toMatch(/\breturn\b|\bthrow\b|process\.exit/);
+    // MEASURED, not predicted (@sprint-review, 2026-08-25): this test is blind
+    // to THE defect it was written for. Gate the ledger INSERT on a never-true
+    // condition and every anchor above stays in place, this file reports 38/38
+    // green, and the run leaves every chain rooted with no cutoff recorded —
+    // which is word for word the harm named four lines up. Not "blind to a
+    // class of mutants": blind to the one.
+    //
+    // The class is the generalisation, and it is the weaker sentence, so it
+    // goes second. A token scan catches mutants that INSERT a control-flow
+    // keyword and misses every mutant that removes reachability without one.
+    // It is false-red-prone in the other direction too: extract a helper
+    // between these two anchors and its `return` fails this.
+    //
+    // The anchors themselves are sound and were checked — `UPDATE messages m`
+    // is unique, and `lastIndexOf` is the correct pick for the INSERT because
+    // the zero-eligible-edges branch above contains a second
+    // `INSERT INTO migration_records` that `indexOf` would grab instead. So
+    // this guard is as good as a source scan can be here; the limit is the
+    // instrument, not the anchors, which is exactly why the property moved to
+    // a tier that runs the code.
+    //
+    // Both halves are now executed elsewhere, and this stays as the cheap
+    // structural check only:
+    //   ledger-first  -> threadingCutoffLedgerFirst.test.js (Tier 0, pg-mem)
+    //   atomicity     -> service/threading.backfillTransaction.test.js (Tier 1)
+    // Atomicity had to go to Tier 1 because pg-mem cannot parse the backfill's
+    // `WITH RECURSIVE`, which threading.derivation.test.js already records.
     expect(SCRIPT).toMatch(/await client\.query\('ROLLBACK'\)/);
     expect(SCRIPT).toMatch(/client\.release\(\)/);
   });

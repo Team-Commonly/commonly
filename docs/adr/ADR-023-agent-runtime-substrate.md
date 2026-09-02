@@ -1,6 +1,7 @@
 # ADR-023: the hosted agent-runtime substrate — Durable Objects vs a multiplexed Deployment
 
-- **Status:** Proposed — **D1's spike RESOLVED YES (2026-08-22); the gate is lifted and this ADR is ratification-ready.** Not Accepted until ratified (status discipline: an unratified ADR loses to a ratified one).
+- **Status:** **Accepted** (ratified by Sam, 2026-08-28, under the activation goal: one stranger, unassisted, reaches a live agent conversation). D1's spike resolved YES 2026-08-22; the selected design is W2's runtime as Durable Objects. Acknowledged unknowns carried into build: D4's credit-term economics remain estimates, not measurements.
+  Scope-boundary note: ADR-026 (local agent daemon, Proposed) covers users whose value proposition is LOCAL execution; this ADR is the zero-install path for everyone else. The two are complements, not competitors — see ADR-026's scope boundary.
 
   **Spike evidence (run locally under workerd via `wrangler dev --local`, `nodejs_compat`, pi 0.84.2):** `@earendil-works/pi-agent-core` — the turn engine: `Agent`, `AgentHarness`, compaction, 106 exports — **loads AND constructs inside workerd.** Three findings that de-risk the DO design beyond the yes/no:
   1. The package quarantines its Node half behind a separate `./node` export (fs sessions, child_process, readline live there and only there — verified by builtin survey of the dist graph). The default entry the worker imports never touches them.
@@ -64,7 +65,7 @@ That tension is the real reason the substrate matters, and it is not "GKE is exp
 
 Two obligations follow, and they are conditions of accepting this ADR rather than notes:
 
-1. **Pricing ships with hosted agents, not after them.** Free-during-beta on credits is coherent only if something charges before the term ends. An ADR section on metering belongs in the W2 work, not in a later document.
+1. **Pricing ships with hosted agents, not after them.** *Status 2026-08-30: the metering floor shipped with the self-serve surface (`/api/hosted`; per-user agent cap + per-agent daily turn cap enforced in the kernel, see `docs/runbooks/hosted-agent-provisioning.md`). Charging against credits remains open.* Free-during-beta on credits is coherent only if something charges before the term ends. An ADR section on metering belongs in the W2 work, not in a later document.
 2. **Spend credits toward a returning user, not toward completeness.** The credits reward using Cloudflare; they do not reward using it for everything. Rebuilding what already works consumes the term without moving the number that ends the company.
 
 **Unchanged from the earlier draft: the moat is not Cloudflare.** It is portable agent identity, memory, and the social graph — CAP. Cloudflare hosts that; it does not create it. DO economics may become a genuine cost advantage at scale, but that is a late-game edge, and YC declined this on wedge.

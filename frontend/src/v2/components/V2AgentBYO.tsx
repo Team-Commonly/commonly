@@ -19,9 +19,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2FeaturePage from './V2FeaturePage';
+import V2Avatar from './V2Avatar';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
+import { PERSONA_CARDS } from '../agents/personaCatalogData';
 
 const DEFAULT_SCOPES = [
   'context:read', 'summaries:read', 'messages:write', 'messages:read',
@@ -35,6 +37,14 @@ const DEFAULT_POD_TYPE = 'chat';
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
 const CLI_INIT_COMMAND = 'commonly agent init --name <n> --pod <podId>';
 const MEMORY_FILE_NAME = 'MEMORY.md';
+const AGENT_KIND = 'agent' as const;
+const HOSTED_STATUS_POLL_MS = 4000;
+const HOSTED_STATUS_MAX_TICKS = 15;
+
+type HostedAvailability = {
+  configured: boolean;
+  caps: { agentsPerUser: number; turnsPerDay: number };
+};
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 
 const sanitizeAgentName = (raw: string): string => raw
@@ -57,8 +67,15 @@ const V2AgentBYO: React.FC = () => {
     return {
       pod: (params.get('pod') || '').replace(/[^a-f0-9]/gi, ''),
       name: sanitizeAgentName(params.get('name') || ''),
+      persona: sanitizeAgentName(params.get('persona') || ''),
     };
   })();
+  // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged here
+  // with no indication of what persona was picked and why. The catalog now
+  // hands the choice over (?persona=<key>); this page shows it, names the
+  // agent after it, and records it on the installation. No param = the
+  // machine-first entry, which says so instead of pretending.
+  const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [podId, setPodId] = useState<string>(prefill.pod);
   // Personalized default: a global-namespace collision guard (#613) means a
@@ -67,6 +84,7 @@ const V2AgentBYO: React.FC = () => {
   const { currentUser } = useAuth();
   const defaultAgentName = (() => {
     const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (personaCard) return u ? `${u}-${personaCard.key}` : personaCard.key;
     return u ? `${u}-agent` : DEFAULT_AGENT_NAME;
   })();
   const [name, setName] = useState<string>(prefill.name || defaultAgentName);
@@ -85,10 +103,53 @@ const V2AgentBYO: React.FC = () => {
   // finish the page, mention the agent, and get silence with no way to know
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
+  // ADR-023 W2 "Run it here" — the zero-terminal path. Offered only when the
+  // instance reports a configured hosted runtime, and the default there: the
+  // stranger this page exists for has no runtime to bring. The kernel mints
+  // the token and hands it to the runtime server-side; nothing secret is
+  // ever rendered on this screen.
+  const [hosting, setHosting] = useState<HostedAvailability | null>(null);
+  const [mode, setMode] = useState<'hosted' | 'byo'>('byo');
+  const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
+  const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
+
+  // Same shape as the listening check below, against the runtime's own
+  // status: the DO reports lastPollAt once its alarm loop has run. ~60s cap,
+  // then honest copy — the agent still picks messages up when it starts.
+  useEffect(() => {
+    if (!hosted) return undefined;
+    let cancelled = false;
+    let ticks = 0;
+    setHostedState('starting');
+    const timer = setInterval(async () => {
+      ticks += 1;
+      try {
+        const data = await api.get<{ runtime?: { lastPollAt?: number | null } }>(
+          `/api/hosted/status?agentName=${encodeURIComponent(hosted.agentName)}`,
+        );
+        if (cancelled) return;
+        if (data?.runtime?.lastPollAt) {
+          setHostedState('running');
+          clearInterval(timer);
+          return;
+        }
+      } catch {
+        // keep polling — a transient status failure is not a stopped runtime
+      }
+      if (ticks >= HOSTED_STATUS_MAX_TICKS) {
+        setHostedState('slow');
+        clearInterval(timer);
+      }
+    }, HOSTED_STATUS_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [api, hosted]);
 
   // Load the user's pods so they can pick which one to install into.
   // We only show pods they're a member of — install requires membership
-  // per the backend's `userHasPodAccess` check.
+  // per the backend's `userHasPodAccess` check. Hosting availability is
+  // fetched AFTER pods in the same effect, deliberately: the request order
+  // at mount is part of this page's test contract (order-based mocks), and
+  // the picker matters more than the mode cards if only one can load.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -126,9 +187,66 @@ const V2AgentBYO: React.FC = () => {
       } catch {
         // Defensive: keep the form usable; user will see the error on submit.
       }
+      try {
+        const availability = await api.get<HostedAvailability>('/api/hosted/availability');
+        if (cancelled) return;
+        if (availability && typeof availability.configured === 'boolean') {
+          setHosting(availability);
+          if (availability.configured) setMode('hosted');
+        }
+      } catch {
+        if (!cancelled) setHosting({ configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } });
+      }
     })();
     return () => { cancelled = true; };
   }, [api, podId, currentUser?._id]);
+
+  // Live preview rail — you see the agent you are about to create. The
+  // avatar is the same character render the pod will show (seeded by
+  // name:instanceId, so the preview face IS the final face), which is what
+  // turns this page from a form into a decision about a teammate.
+  const previewName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
+  const previewPodName = pods.find((p) => p._id === (hosted?.podId || issued?.podId || podId))?.name || '';
+  const previewStatus: 'draft' | 'starting' | 'live' = hosted
+    ? (hostedState === 'running' ? 'live' : 'starting')
+    : (issued && listenState === 'listening' ? 'live' : 'draft');
+  const previewDisplayName = hosted?.agentName || issued?.agentName || previewName;
+
+  // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
+  // answers 403 hosted_cap_reached), then ask the kernel to provision. No
+  // token round-trips through the browser.
+  const submitHosted = async (cleanName: string) => {
+    setSubmitting(true);
+    try {
+      try {
+        await api.post('/api/registry/install', {
+          agentName: cleanName,
+          podId,
+          scopes: DEFAULT_SCOPES,
+          config: { runtime: { runtimeType: 'hosted' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          displayName: personaCard?.name || cleanName,
+        });
+      } catch (installErr) {
+        const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number } } })
+          ?.response?.data;
+        if (data?.code === 'hosted_cap_reached') {
+          setError(t('agentByo.errors.hostedCap', { cap: data.cap ?? hosting?.caps.agentsPerUser ?? 1 }));
+          return;
+        }
+        if (!/already installed/i.test(data?.error || '')) throw installErr;
+      }
+      await api.post('/api/hosted/provision', { agentName: cleanName });
+      setHosted({ agentName: cleanName, podId });
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
+      const code = e.response?.data?.code;
+      setError(code === 'hosted_runtime_unconfigured'
+        ? t('agentByo.errors.hostedUnavailable')
+        : (e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed')));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const submit = async () => {
     setError(null);
@@ -141,6 +259,10 @@ const V2AgentBYO: React.FC = () => {
       setError(t('agentByo.errors.podRequired'));
       return;
     }
+    if (mode === 'hosted') {
+      await submitHosted(cleanName);
+      return;
+    }
     setSubmitting(true);
     try {
       try {
@@ -148,8 +270,8 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_SCOPES,
-          config: { runtime: { runtimeType: 'webhook' } },
-          displayName: cleanName,
+          config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          displayName: personaCard?.name || cleanName,
         });
       } catch (installErr) {
         // "Already installed" is identity continuity (ADR-001), not a
@@ -335,8 +457,68 @@ const V2AgentBYO: React.FC = () => {
       description={t('agentByo.description')}
       showPodsSidebar={false}
     >
-      {!issued && (
+      <div className="v2-byo__layout">
+      <div className="v2-byo__main">
+      {!issued && !hosted && personaCard && (
+        <div className="v2-byo__persona" data-testid="byo-persona-context">
+          <V2Avatar name={personaCard.name} size="md" kind={AGENT_KIND} seed={personaCard.avatarSeed} />
+          <div className="v2-byo__persona-body">
+            <div className="v2-byo__persona-title">
+              {t('agentByo.persona.hiring')} <strong>{personaCard.name}</strong> · {personaCard.role}
+            </div>
+            <div className="v2-byo__persona-line">{personaCard.oneLiner}</div>
+          </div>
+          <button
+            type="button"
+            className="v2-byo__persona-change"
+            onClick={() => navigate('/v2/agents/browse')}
+          >
+            {t('agentByo.persona.change')}
+          </button>
+        </div>
+      )}
+      {!issued && !hosted && !personaCard && (
+        <div className="v2-byo__persona v2-byo__persona--none" data-testid="byo-persona-none">
+          <span>{t('agentByo.persona.none')}</span>
+          <button
+            type="button"
+            className="v2-byo__persona-change"
+            onClick={() => navigate('/v2/agents/browse')}
+          >
+            {t('agentByo.persona.browse')}
+          </button>
+        </div>
+      )}
+      {!issued && !hosted && (
         <div className="v2-byo__form">
+          {hosting?.configured && (
+            <div className="v2-byo__modes" role="group" aria-label={t('agentByo.mode.label')}>
+              <button
+                type="button"
+                className="v2-byo__mode"
+                aria-pressed={mode === 'hosted'}
+                onClick={() => setMode('hosted')}
+                data-testid="byo-mode-hosted"
+              >
+                <span className="v2-byo__mode-kicker">{t('agentByo.mode.recommended')}</span>
+                <span className="v2-byo__mode-title">{t('agentByo.mode.hosted')}</span>
+                <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
+                <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta')}</span>
+              </button>
+              <button
+                type="button"
+                className="v2-byo__mode"
+                aria-pressed={mode === 'byo'}
+                onClick={() => setMode('byo')}
+                data-testid="byo-mode-byo"
+              >
+                <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
+                <span className="v2-byo__mode-title">{t('agentByo.mode.byo')}</span>
+                <span className="v2-byo__hint">{t('agentByo.mode.byoHint')}</span>
+                <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
+              </button>
+            </div>
+          )}
           <label className="v2-byo__field">
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
             <input
@@ -373,7 +555,9 @@ const V2AgentBYO: React.FC = () => {
             disabled={submitting || !podId}
             className="v2-byo__submit"
           >
-            {submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install')}
+            {mode === 'hosted'
+              ? (submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere'))
+              : (submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install'))}
           </button>
           <p className="v2-byo__footnote">
             {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}
@@ -383,6 +567,54 @@ const V2AgentBYO: React.FC = () => {
             {' · '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
+        </div>
+      )}
+
+      {hosted && (
+        <div className="v2-byo__result" data-testid="byo-hosted-result">
+          <div className="v2-byo__result-hero">
+            <V2Avatar name={hosted.agentName} size="lg" kind={AGENT_KIND} seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
+            <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
+          </div>
+          <p>
+            {t('agentByo.hosted.live', {
+              name: hosted.agentName,
+              pod: pods.find((p) => p._id === hosted.podId)?.name || '',
+            })}
+          </p>
+          <p
+            className={hostedState === 'running' ? 'v2-byo__memory-done' : 'v2-byo__listen-note'}
+            data-testid={`byo-hosted-${hostedState}`}
+          >
+            {t(`agentByo.hosted.${hostedState}`, { name: hosted.agentName })}
+          </p>
+          <div className="v2-byo__stats">
+            <div className="v2-byo__stat">
+              <span className="v2-byo__stat-value">{hosting?.caps.turnsPerDay ?? 0}</span>
+              <span className="v2-byo__stat-label">{t('agentByo.hosted.statTurns')}</span>
+            </div>
+            <div className="v2-byo__stat">
+              <span className="v2-byo__stat-value">{hosting?.caps.agentsPerUser ?? 1}</span>
+              <span className="v2-byo__stat-label">{t('agentByo.hosted.statAgents')}</span>
+            </div>
+          </div>
+          <p className="v2-byo__hint">{t('agentByo.hosted.latencyHint')}</p>
+          <div className="v2-byo__cta-row">
+            <button
+              type="button"
+              onClick={() => navigate(`/v2/pods/${hosted.podId}`)}
+              className="v2-byo__submit"
+            >
+              {t('agentByo.actions.goToPod')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHosted(null); }}
+              className="v2-byo__secondary"
+            >
+              {t('agentByo.actions.installAnother')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -528,6 +760,31 @@ const V2AgentBYO: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
+      <aside className="v2-byo__preview" data-testid="byo-preview">
+        <div className="v2-byo__preview-label">{t('agentByo.preview.title')}</div>
+        <div className="v2-byo__preview-card">
+          <V2Avatar
+            name={previewDisplayName}
+            size="lg"
+            kind={AGENT_KIND}
+            seed={`${previewDisplayName}:default`}
+            online={previewStatus === 'live'}
+          />
+          <div className="v2-byo__preview-name">{previewDisplayName}</div>
+          {previewPodName && (
+            <div className="v2-byo__preview-pod">{t('agentByo.preview.inPod', { pod: previewPodName })}</div>
+          )}
+          <div className={`v2-byo__preview-status v2-byo__preview-status--${previewStatus}`}>
+            <span className="v2-byo__preview-dot" />
+            {t(`agentByo.preview.${previewStatus}`)}
+          </div>
+        </div>
+        <p className="v2-byo__preview-note">
+          {mode === 'hosted' ? t('agentByo.preview.noteHosted') : t('agentByo.preview.noteByo')}
+        </p>
+      </aside>
+      </div>
     </V2FeaturePage>
   );
 };

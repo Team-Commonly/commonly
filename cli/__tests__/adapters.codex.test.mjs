@@ -137,7 +137,13 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].args).toContain('--json');
     expect(calls[0].args).toContain('--skip-git-repo-check');
     expect(calls[0].args).toContain('-o');
-    expect(calls[0].args[calls[0].args.length - 1]).toBe('hi');
+    // The invariant is that the prompt occupies the FINAL slot, not that it is
+    // The prompt remains the final argv item. Fresh sessions now also append
+    // the durable-state reminder after the current turn, so pin the turn's
+    // position inside that one prompt rather than falsely requiring it to be
+    // the prompt's final bytes.
+    expect(calls[0].args[calls[0].args.length - 1])
+      .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
   test('environment.mcp servers become -c mcp_servers.* overrides with substituted token/env', async () => {
@@ -187,7 +193,8 @@ describe('codex adapter — spawn()', () => {
     expect(calls[0].opts.env.COMMONLY_AGENT_TOKEN).toBe('cm_agent_secret');
     // Overrides must precede the prompt (last arg) and not disturb -o pairing.
     expect(findOutputFile(args)).toBeTruthy();
-    expect(args[args.length - 1]).toBe('hi');
+    expect(args[args.length - 1])
+      .toContain('=== Current turn ===\nhi\n=== Before this session ends ===');
   });
 
   test('public workspace mode uses a deny-by-default permission profile and never the legacy sandbox or bypass', async () => {
@@ -338,7 +345,7 @@ describe('codex adapter — spawn()', () => {
     // (e.g. -o). Pin the exact position, not just relative ordering.
     expect(calls[0].args.slice(0, 3)).toEqual(['exec', 'resume', sid]);
     // Prompt is still the final argument.
-    expect(calls[0].args[calls[0].args.length - 1]).toBe('keep going');
+    expect(calls[0].args[calls[0].args.length - 1]).toMatch(/keep going$/);
     // -o appears AFTER <sid> — explicit guard against the regression the
     // ordering above prevents.
     const sidIdx = calls[0].args.indexOf(sid);
@@ -362,15 +369,55 @@ describe('codex adapter — spawn()', () => {
     expect(promptArg).toContain('I remember the user prefers dark mode.');
     expect(promptArg).toContain('=== Current turn ===');
     expect(promptArg).toContain('current message');
+    expect(promptArg).toContain('=== Fresh session ===');
+    expect(promptArg).toMatch(/Read the persistent memory context above before acting/i);
+    expect(promptArg).toMatch(/At a natural end to meaningful work/i);
+    expect(promptArg).toContain("section: 'long_term'");
   });
 
-  test('no preamble when memoryLongTerm is empty — prompt passed verbatim', async () => {
+  test('a resumed Codex session does not repeat fresh-session cues', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('current message', {
+      sessionId: 'sid-1',
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    expect(calls[0].args[calls[0].args.length - 1]).not.toContain('=== Fresh session ===');
+  });
+
+  // Same swap as the claude adapter: both delegate to `buildMemoryPreamble`, so
+  // the empty case is a cue rather than a bare prompt. Pinned on both adapters
+  // deliberately — a shared helper is only shared until someone re-inlines one.
+  test('empty memoryLongTerm still emits a cue naming the one readable section', async () => {
     const { impl, calls } = makeSpawnImpl({
       stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
       outputContents: 'ok',
     });
     await codex.spawn('just this', { sessionId: null, memoryLongTerm: '', _spawnImpl: impl });
-    expect(calls[0].args[calls[0].args.length - 1]).toBe('just this');
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).not.toBe('just this');
+    expect(promptArg).toContain('just this');
+    expect(promptArg).toContain('long_term');
+    expect(promptArg).toContain('commonly_save_my_memory');
+  });
+
+  // Same delivery pin as the claude adapter, and pinned on both for the same
+  // reason the empty case is: the coalescing bug was duplicated in both call
+  // sites, so a test on one would have left the other shipping the defect.
+  test('null memoryLongTerm reaches the adapter as UNREADABLE, not as empty', async () => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-1"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('just this', { sessionId: null, memoryLongTerm: null, _spawnImpl: impl });
+    const promptArg = calls[0].args[calls[0].args.length - 1];
+    expect(promptArg).toContain('unreadable');
+    expect(promptArg).toContain('just this');
+    expect(promptArg).not.toContain('commonly_save_my_memory');
   });
 
   test('rejects when codex emits a turn.failed event, surfacing the error message', async () => {

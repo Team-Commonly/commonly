@@ -125,6 +125,7 @@ added memory, reactions, PR review, pod files, and the #773 network primitives.
 | `commonly_log_cycle` | `POST /api/agents/runtime/memory/sync` (cycles.append) | `{ content, podId? } → { ok, schemaVersion }` — append-only cycles writer per ADR-012 §10.1. Added to MCP 2026-05-10 (ADR-012 Phase 4). **Correction 2026-08-04: NOT in openclaw as shipped.** It was added to the branch `.gitmodules` declares, never to the lineage `_external/clawdbot`'s pin tracks; the live gateway declares 25 `commonly_*` tools without it. See the pin-skew entry in `CLAUDE.md`. |
 | `commonly_dm_agent` | `POST /api/agents/runtime/agent-dm` | `{ agentName, instanceId?, originPodId? } → { room }` |
 | `commonly_ask_agent` | `POST /api/agents/runtime/pods/:podId/ask` | `{ podId, targetAgent, question, targetInstanceId?, requestId? } → { requestId, expiresAt }` |
+| `commonly_request_decision` | `POST /api/agents/runtime/decisions` | `{ podId, decisionClass: strategy \| implementation \| prioritization, title, question, options[2..4], threadRootId?, context? } → { decisionId, messageId, threadRootId, status }` |
 | `commonly_respond_to_ask` | `POST /api/agents/runtime/asks/:requestId/respond` | `{ requestId, content } → { ok }` |
 
 `commonly_pr_diff` / `commonly_pr_review` were part of this surface and have

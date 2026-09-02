@@ -57,6 +57,14 @@ body.modern-ui {
   color: #e2e8f0;
 }
 
+/* Public guides live outside V2's component tree but use its light shell.
+   The compound selector also overrides the legacy body.modern-ui gradient. */
+body.guide-canvas,
+body.modern-ui.guide-canvas {
+  background: #f8f8fb;
+  color: #111827;
+}
+
 body.modern-ui ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -103,9 +103,19 @@ export function isNativeRuntimeAvailable(): boolean {
   return resolveLiteLLM() !== null;
 }
 
-// --- tool schema (exactly 5 tools, OpenAI function-calling format) --------
+// --- tool schema (OpenAI function-calling format) -------------------------
+//
+// SOURCE OF TRUTH for the `internal` runtime's tool names. `CommonlyTool`
+// in config/native-agents/types.ts is DERIVED from this array, so adding or
+// renaming an entry here immediately reaches every agent definition that
+// declares tools. Do not restate these names anywhere; a second copy is what
+// this derivation exists to prevent.
+//
+// The count is deliberately not stated here — the previous comment said
+// "exactly 5 tools" while the array held 7, and it was the only prose
+// describing this surface.
 
-const TOOLS = [
+export const TOOLS = [
   {
     type: 'function',
     function: {
@@ -234,7 +244,7 @@ const TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
-];
+] as const;
 
 // ADR-020 D1: the manifest's `tools` list is the capability boundary, and it
 // must be ENFORCED here, not just declared. Before this filter, TOOLS went
@@ -242,7 +252,7 @@ const TOOLS = [
 // was decorative (caught in the 2026-08-13 build recon). Installs that
 // predate tool lists (no cfg.tools) keep the pre-gate surface minus
 // approval proposing, which is opt-in by declaration only.
-export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): typeof TOOLS => {
+export const toolsForConfig = (cfg: { tools?: unknown } | null | undefined): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   if (!declared) {
     return TOOLS.filter((t) => t.function.name !== 'commonly_propose_action');
@@ -508,9 +518,14 @@ export function buildUserMessage(
   //
   // WHAT WAS BROKEN. The branches below compare `trigger.type` against
   // 'mention' / 'chat.message', but the caller passes the RAW event type —
-  // agentEventService:994 forwards `type` verbatim, and the claimable-set gate
-  // at :697 in this same file says so out loud ("raw-type gate mirrors the
-  // wrapper's claimable set"). So `chat.mention` never matched 'mention', and
+  // `agentEventService`'s native dispatch forwards `type` verbatim into
+  // `runAgent`, and the claimable-set gate further down THIS file says so out
+  // loud — grep `Raw-type gate mirrors the wrapper's claimable set`. Cited by
+  // its text rather than its line: that pointer read `:697` and the comment is
+  // at `:740`, forty-three lines adrift, which is a citation that survives
+  // being wrong because nobody follows it.
+  //
+  // So `chat.mention` never matched 'mention', and
   // every message-shaped wake fell through to the generic "Trigger: X, use
   // commonly_read_context" below — which discards the cue entirely and tells
   // the agent to go look around instead.
@@ -801,7 +816,7 @@ export async function runAgent(
   // The claim releases in the same cleanup: typing-stops and lease-release
   // are one moment (D7 — "someone's on it" ends when the turn ends), and
   // emitStop is already called on every terminal path of this function.
-  const emitStop = () => {
+  const emitStop = (claimOutcome?: 'declined' | 'completed') => {
     try {
       const typing = require('./agentTypingService');
       typing.emitAgentTypingStop({ podId, agentName, instanceId });
@@ -813,9 +828,21 @@ export async function runAgent(
       try {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const MessageClaimService = require('./messageClaimService');
+        // A native runtime shares the kernel handoff contract with the CLI:
+        // only a normal, silent human broadcast advances to another original
+        // wake target. Failure keeps legacy release semantics so event
+        // redelivery remains possible.
+        const ClaimReleaseService = claimOutcome === 'declined'
+          ? require('./messageClaimHandoffService')
+          : MessageClaimService;
         // Fire-and-forget: a miss just means the lease already lapsed.
         Promise.resolve(
-          MessageClaimService.release({ messageId: claimMessageId, agentName, instanceId }),
+          ClaimReleaseService.release({
+            messageId: claimMessageId,
+            agentName,
+            instanceId,
+            ...(claimOutcome ? { outcome: claimOutcome } : {}),
+          }),
         ).catch(() => {});
       } catch (err) {
         console.warn('[native-runtime] claim release failed:', (err as Error).message);
@@ -1033,7 +1060,7 @@ export async function runAgent(
         // Post it anyway so the human actually sees a reply.
         try {
           const AgentMessageService = require('./agentMessageService');
-          await AgentMessageService.postMessage({
+          const postResult = await AgentMessageService.postMessage({
             agentName,
             instanceId,
             podId,
@@ -1043,7 +1070,11 @@ export async function runAgent(
             installationConfig: cfg,
             metadata: { source: 'native-runtime', fallback: true },
           });
-          finalMessage = textOut;
+          // The message service suppresses a bare NO_REPLY (and other
+          // silent output) without throwing. That is a normal declined turn,
+          // not a user-visible final message; retaining textOut here would
+          // complete the claim and swallow the human wake a second time.
+          if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
@@ -1066,7 +1097,17 @@ export async function runAgent(
     console.error('[native-runtime] failed to persist AgentRun:', (saveErr as Error).message);
   }
 
-  emitStop();
+  const completedSilently = run.status === 'succeeded'
+    && !finalMessage
+    && !postedViaTool;
+  const claimOutcome = run.status === 'succeeded'
+    ? (trigger.type === 'message.posted'
+      && (trigger.payload as { senderIsHuman?: unknown } | null)?.senderIsHuman === true
+      && completedSilently
+        ? 'declined'
+        : 'completed')
+    : undefined;
+  emitStop(claimOutcome);
 
   return {
     runId,

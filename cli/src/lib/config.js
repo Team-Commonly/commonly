@@ -67,10 +67,19 @@ export const resolveInstance = (identifier = null) => {
   const looksLikeUrl = /^https?:\/\//i.test(identifier);
   if (looksLikeUrl) {
     const normalized = normalizeUrl(identifier);
-    const urlEntry = Object.entries(config.instances)
-      .find(([, v]) => normalizeUrl(v.url) === normalized);
-    if (urlEntry) {
-      const [key, value] = urlEntry;
+    const matches = Object.entries(config.instances)
+      .filter(([, v]) => normalizeUrl(v.url) === normalized);
+    if (matches.length > 0) {
+      // Several keys can share one URL (`dev` and `default` both pointing at
+      // api.commonly.me after a re-login under a new key). The first entry in
+      // file order is then whichever was saved FIRST — the stale one — and
+      // every command that resolves by the token file's instanceUrl
+      // (detach, wake) got a 401 from a token the user had already replaced.
+      // Prefer the active instance, then the most recently saved.
+      const active = matches.find(([key]) => key === config.active);
+      const [key, value] = active || matches
+        .slice()
+        .sort(([, a], [, b]) => String(b.savedAt || '').localeCompare(String(a.savedAt || '')))[0];
       return { key, ...value };
     }
     // Unknown URL — still usable for bootstrapping. Preserve the caller's
@@ -98,13 +107,16 @@ export const resolveInstanceUrl = (instanceArg = null) => {
   return DEFAULT_INSTANCE_URL;
 };
 
-export const saveInstance = ({ key = 'default', url, token, userId, username }) => {
+export const saveInstance = ({ key = 'default', url, token, userId, username, tokenType = null }) => {
   const config = read();
   config.instances[key] = {
     url: url.replace(/\/$/, ''),
     token,
     userId,
     username,
+    // Device bearers are long-lived until revoked. Preserve the explicit kind
+    // so `whoami` can say that without guessing from a future token format.
+    ...(tokenType ? { tokenType } : {}),
     savedAt: new Date().toISOString(),
   };
   config.active = key;

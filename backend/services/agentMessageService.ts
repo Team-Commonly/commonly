@@ -58,6 +58,60 @@ const ATTACH_CLAIM_SCAN_LIMIT = 2000;
 // add an entry here only after observing it as a wrapper artifact in production.
 const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
+const NO_REPLY_SENTINEL = 'NO_REPLY';
+// `trim()` does not remove every invisible Unicode code point. Normalize a
+// decision-only copy before total-match and leading-sentinel checks so one
+// invisible prefix cannot bypass both suppression paths. Do not rewrite the
+// stored payload: U+200D, for example, joins emoji glyphs. U+2800 BRAILLE
+// PATTERN BLANK deliberately stays out: it is a real glyph, not an ignorable
+// formatting character.
+const SENTINEL_DECISION_IGNORABLES = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+
+/**
+ * Word-boundary test for the sentinel scan. Deliberately not `\w` via regex:
+ * this runs character-by-character over user-controlled message text, and the
+ * two callers below must agree exactly on what "bare" means — a leading
+ * sentinel that suppresses and a mid-reply sentinel that is stripped are the
+ * same token under the same boundary rule, differing only in position.
+ */
+const isSentinelWordCharacter = (character: string | undefined): boolean => (
+  character !== undefined
+  && (
+    (character >= 'A' && character <= 'Z')
+    || (character >= 'a' && character <= 'z')
+    || (character >= '0' && character <= '9')
+    || character === '_'
+  )
+);
+
+/**
+ * Does this reply OPEN with a bare sentinel (TASK-067, ratified by Sam
+ * 2026-08-26)?
+ *
+ * The measured failure mode is AX-43: a seat writes
+ * `NO_REPLY.\n\n<private reasoning about why it is staying silent>`,
+ * believing the leading token silences the turn. Under total-match-only the
+ * kernel stripped the token and published the reasoning — 11 times in one day.
+ * At that position the agent's intent is unambiguous, so the whole reply is
+ * suppressed rather than edited.
+ *
+ * Position is the entire discriminator. A sentinel anywhere else keeps the
+ * #785 behaviour (strip and post), because there it really is producer
+ * leakage inside a reply the agent meant to send, and swallowing a genuine
+ * reply is the worse error. Callers must apply this AFTER the outer-fence
+ * unwrap and the total-match check, and it is never reached for a backticked
+ * or fenced sentinel — those remain deliberate mentions.
+ *
+ * Consumes a run (`NO_REPLYNO_REPLY...`) for the same reason the strip loop
+ * does: gateways have historically joined silent blocks without a separator.
+ */
+const opensWithBareSentinel = (trimmed: string): boolean => {
+  if (!trimmed.startsWith(NO_REPLY_SENTINEL)) return false;
+  let end = 0;
+  while (trimmed.startsWith(NO_REPLY_SENTINEL, end)) end += NO_REPLY_SENTINEL.length;
+  return !isSentinelWordCharacter(trimmed[end]);
+};
+
 let PGMessage: unknown = null;
 try {
   // eslint-disable-next-line global-require
@@ -936,7 +990,7 @@ class AgentMessageService {
     if (!agentName || !podId) {
       throw new Error('agentName and podId are required');
     }
-    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content);
+    let sanitizedContent = AgentMessageService.sanitizeAgentContent(content, { agentName, instanceId, podId });
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
     // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
@@ -946,9 +1000,25 @@ class AgentMessageService {
     // spam every pod the agent heartbeats in (~every 30 min). Treat them like a
     // silent reply (empty → skipped below) and log instead, so a degraded
     // community agent fails quietly rather than flooding chat.
+    // WHY the content emptied, kept because the empty path below cannot
+    // otherwise tell a failure from a decision. Both arrive as `''`.
+    //
+    // Read alongside the phantom-upload guard ~160 lines down, which faces the
+    // same question and answers it the other way: it appends a VISIBLE system
+    // note to the message and warns, so the pod and the operator both learn.
+    // This pair warns only. The asymmetry is defensible and is NOT a bug to
+    // "fix" by symmetry — that guard has a message to annotate, and this one
+    // would have to manufacture a post, which is the ~30-minute-per-pod flood
+    // the suppression exists to stop. What was never defensible was the two
+    // guards being written independently in one function with nothing pointing
+    // at each other, so the second author could not see the first had already
+    // decided who hears a failure. (@sprint-review, 2026-08-25.)
+    let suppressedFailure: 'model_failure' | 'tool_failure' | null = null;
+
     if (sanitizedContent && AgentMessageService.isRuntimeModelFailure(sanitizedContent)) {
       console.warn(`[agent-msg] suppressed runtime model-failure from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
       sanitizedContent = '';
+      suppressedFailure = 'model_failure';
     }
 
     // Same treatment for gateway tool-status failure notes ("⚠️ 📝 Edit: ...
@@ -957,6 +1027,7 @@ class AgentMessageService {
     if (sanitizedContent && AgentMessageService.isRuntimeToolFailureNote(sanitizedContent)) {
       console.warn(`[agent-msg] suppressed runtime tool-failure note from agent=${agentName} instance=${instanceId} pod=${podId}: ${sanitizedContent.slice(0, 120)}`);
       sanitizedContent = '';
+      suppressedFailure = 'tool_failure';
     }
 
     // Task #68: detect false-attachment claims. Agents sometimes post
@@ -1110,6 +1181,10 @@ class AgentMessageService {
             if (phantoms.length > 0) {
               const phantomList = phantoms.map((n) => `\`${n}\``).join(', ');
               sanitizedContent += `\n\n⚠️ _(system note: this message references ${phantoms.length === 1 ? 'an upload directive' : 'upload directives'} for ${phantomList} but no matching attachment was found in this pod. The agent may have typed the directive without actually calling \`commonly_attach_file\`. Check the agent's workspace.)_`;
+              // Both audiences on purpose: the note tells the pod, the warn
+              // tells the operator. The runtime-failure suppression at the top
+              // of this function deliberately does only the second — see the
+              // note there for why the two differ and why that is not drift.
               console.warn(`[agent-msg] phantom-upload-directive from agent=${agentName} instance=${instanceId} pod=${podId} — names=${JSON.stringify(phantoms)}`);
             }
           }
@@ -1122,6 +1197,26 @@ class AgentMessageService {
     }
 
     if (!sanitizedContent) {
+      // Two ways to arrive here and they mean opposite things. An intentional
+      // NO_REPLY is the agent DECIDING the exchange is over. A suppressed
+      // runtime failure is the agent never having produced a reply at all —
+      // the model chain was exhausted, or a tool note was relayed as prose.
+      //
+      // Collapsing them cost more than a wrong label. ADR-012 §4 fires here:
+      // in an agent-dm both peers get a `system_exchanges` conclusion entry
+      // whose takeaway is the SENDER's PRECEDING message. So a model-chain
+      // exhaustion used to write "this conversation concluded" into the
+      // record, for both peers, attributing a takeaway the agent never
+      // reached — a failure laundered into a positive semantic event. The
+      // caller meanwhile got the same `silent_or_empty` an intentional
+      // NO_REPLY returns, and the only trace of the failure was a
+      // `console.warn` no agent can read. (@sprint-review, 2026-08-25.)
+      //
+      // So: a failure concludes nothing, and says which failure it was.
+      if (suppressedFailure) {
+        return { success: true, skipped: true, reason: `runtime_${suppressedFailure}_suppressed` };
+      }
+
       // ADR-012 §4: agent-dm-conclusion trigger. The reply is silent
       // (NO_REPLY swallowed by sanitizeAgentContent). If the pod is an
       // agent-dm, both peers get a system_exchanges entry whose takeaway is
@@ -1768,7 +1863,19 @@ class AgentMessageService {
     return BARE_RUNTIME_ARTIFACTS.has(String(content));
   }
 
-  static sanitizeAgentContent(content: unknown): string {
+  /**
+   * `observe` is opt-in and carries the identity for the edit-warning below.
+   * It is deliberately NOT a default: this function is also used as a
+   * read-time predicate (`systemExchangeTriggers.findPreviousNonSilentMessage`
+   * re-sanitizes up to 20 already-stored messages to find the last substantive
+   * one), and a warning there would count historical reads as fresh edits.
+   * Only the posting path — which is the moment an edit actually happens, and
+   * the only place agent/instance/pod are in scope — opts in.
+   */
+  static sanitizeAgentContent(
+    content: unknown,
+    observe?: { agentName?: string; instanceId?: string; podId?: unknown },
+  ): string {
     if (content === null || content === undefined) return '';
     const raw = String(content);
     if (!raw.trim()) return '';
@@ -1776,12 +1883,13 @@ class AgentMessageService {
     const outerFence = raw.match(/^```[^\n]*\n([\s\S]*?)```\s*$/s);
     const stripped = outerFence ? outerFence[1] : raw;
     const trimmed = stripped.trim();
+    const sentinelContent = trimmed.replace(SENTINEL_DECISION_IGNORABLES, '');
 
     // Sentinels are total-match contracts: suppress only when the complete
     // reply consists of NO_REPLY tokens. Gateways have historically joined
     // silent blocks into "NO_REPLYNO_REPLY" (or separated duplicates with
     // whitespace), so retain that compatibility.
-    if (/^(?:NO_REPLY\s*)+$/.test(trimmed)) return '';
+    if (/^(?:NO_REPLY\s*)+$/.test(sentinelContent)) return '';
 
     // A substantive fully fenced reply is explicitly code-formatted even
     // though this sanitizer removes the outer transport fence before storage.
@@ -1789,6 +1897,29 @@ class AgentMessageService {
     // reply was already suppressed above so runtimes cannot bypass silence by
     // wrapping the token in a transport fence.
     if (outerFence) return trimmed;
+
+    // TASK-067. A reply that OPENS with a bare sentinel is intended silence,
+    // not producer leakage, so suppress the whole thing rather than editing
+    // the token out and posting the rest. See `opensWithBareSentinel`.
+    //
+    // This sits below the fence return on purpose: inside a fence the token is
+    // a deliberate mention (the "backtick a sentinel to mention it" rule), and
+    // a fenced sentinel-only reply was already suppressed by the total-match
+    // check above, so nothing can bypass silence by fencing.
+    //
+    // Read-time note: `findPreviousNonSilentMessage` re-sanitizes stored
+    // history, so a legacy message that still opens with a bare sentinel now
+    // reads as silent there too. That is the intended reading of those rows —
+    // and it does not apply to the AX-43 leaks themselves, which were stored
+    // with the token already stripped.
+    if (opensWithBareSentinel(sentinelContent)) {
+      if (observe) {
+        console.warn(
+          `[agent-msg] suppressed a reply opening with a bare sentinel (intended silence, not an edit) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${trimmed.slice(0, 120)}`,
+        );
+      }
+      return '';
+    }
 
     // Bare sentinel tokens inside a substantive reply are producer leakage;
     // matching backtick-delimited spans are deliberate mentions. Pair the
@@ -1831,16 +1962,8 @@ class AgentMessageService {
       }
     }
 
-    const isWordCharacter = (character: string | undefined): boolean => (
-      character !== undefined
-      && (
-        (character >= 'A' && character <= 'Z')
-        || (character >= 'a' && character <= 'z')
-        || (character >= '0' && character <= '9')
-        || character === '_'
-      )
-    );
-    const sentinel = 'NO_REPLY';
+    const isWordCharacter = isSentinelWordCharacter;
+    const sentinel = NO_REPLY_SENTINEL;
     let cleaned = '';
     let cursor = 0;
     let rangeIndex = 0;
@@ -1875,6 +1998,27 @@ class AgentMessageService {
     // (Python, YAML, diffs, markdown nesting) are normal agent traffic, and a
     // line-wise sanitizer previously flattened their indentation.
     const normalized = cleaned.trim();
+
+    // Observability, not behaviour. `cleaned` can only differ from `trimmed`
+    // by a sentinel this loop removed — protected ranges are copied verbatim,
+    // and the total-match case already returned '' far above — so this fires
+    // exactly when we EDITED an agent's substantive reply rather than
+    // suppressing it. That edit is currently invisible: it leaves no trace in
+    // the stored message (the token is gone) and none in the transcript, so
+    // the only occurrences ever noticed were caught by a reader who happened
+    // to know the original text. The two suppressions at the postMessage call
+    // site already warn like this before zeroing content; those discard
+    // operator diagnostics, while this one rewrites an agent's own words, so
+    // it is the one that least deserved to be silent.
+    //
+    // Identity comes from the caller via `observe`, which is also the opt-in:
+    // the two suppressions at the postMessage call site log agent, instance
+    // and pod, and an anonymous line here would be the weakest of the three.
+    if (observe && cleaned !== trimmed) {
+      console.warn(
+        `[agent-msg] stripped bare sentinel from a substantive reply (edit, not suppression) from agent=${observe.agentName} instance=${observe.instanceId} pod=${observe.podId}: ${normalized.slice(0, 120)}`,
+      );
+    }
 
     // Apply the artifact floor after protected inline-code ranges have been
     // copied into `cleaned`; a literal mentioned as code is not runtime noise.

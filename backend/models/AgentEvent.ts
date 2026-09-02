@@ -66,6 +66,12 @@ export interface IAgentEvent extends Document {
   // can bump lastSeenRevision exactly once per event without trusting
   // the client to echo it. `null` for events fetched before §3 shipped.
   memoryRevisionAtDelivery?: number | null;
+  // ADR-026 D6: identifies WHICH delivery is outstanding. Minted at every
+  // pending → delivered claim, echoed to the driver as `deliveryId`, and
+  // required to match on ack. Cleared by the requeue, which is what makes a
+  // superseded child's late ack fail instead of terminating the new child's
+  // delivery. `null` for events claimed before D6 shipped.
+  deliveryNonce?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -82,6 +88,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     deliveredAt: Date,
     error: String,
     memoryRevisionAtDelivery: { type: Number, default: null },
+    deliveryNonce: { type: String, default: null },
     delivery: {
       outcome: {
         type: String,

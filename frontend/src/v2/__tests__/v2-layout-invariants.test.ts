@@ -113,6 +113,36 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
   });
 
+  test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
+    // Day-zero onboarding and approval actions share the queue row. Keeping
+    // their action cluster explicit prevents a later button refactor from
+    // forcing a third column past a 390px viewport.
+    // The desktop declaration shares its rule with the buttons, so it is not
+    // eligible for ruleBody's exact-selector helper.
+    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button,[\s\S]*?\{\n\s*display: flex;[\s\S]*?gap: 6px;/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
+  });
+
+  test('DecisionRequest options are full-width content with one recommended primary choice', () => {
+    // The first build left options inside the narrow actions column. Generic
+    // queue-button CSS then made every non-recommended option blue while the
+    // recommended one looked secondary — exactly backwards for a fork card.
+    const decisionActions = ruleBody(v2, '.v2-activity__queue-row--decision .v2-activity__queue-actions');
+    expect(decisionActions).toContain('grid-column: 1 / -1');
+    expect(decisionActions).toContain('justify-content: flex-start');
+
+    const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
+    expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
+    expect(neutralOption).toContain('background: var(--v2-surface)');
+    expect(neutralOption).toContain('border-radius: 999px');
+
+    const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
+    expect(recommendedOption).toContain('background: var(--v2-accent)');
+    expect(recommendedOption).toContain('color: var(--v2-surface)');
+    expect(v2).toContain('.v2-activity__option-description');
+  });
+
   test('the mobile inspector is a drawer, never display:none — the header avatars button must do something', () => {
     // Below 1024px the pane used display:none while V2Layout still mounted it
     // on tap: the avatar-stack button looked broken and members/files were
@@ -184,6 +214,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // No revision may reintroduce a conversation measure token: that is
     // the corner-of-the-triangle debate re-opening by accident.
     expect(v2).not.toContain('--v2-conv-measure');
+    // v6 (2026-09-01): the var ban was not enough — #1367 reintroduced the
+    // cap as a LITERAL (`max-width: 75ch`) via a craft audit that called it
+    // a P0, and even claimed this test guarded it. Sam's third ruling:
+    // full-width stands. Ban any ch-unit max-width inside the message
+    // content block, not just the token.
+    const msgContentBlock = v2.slice(v2.indexOf('.v2-msg__content {'), v2.indexOf('.v2-msg__content p'));
+    expect(msgContentBlock).not.toMatch(/max-width:\s*\d+ch/);
     // What survives every revision is COHERENCE: messages' and composer's
     // children share the pane's full width and one explicit left edge.
     // margin-inline stays an explicit 0 — a stray auto re-centers a subset
@@ -411,6 +448,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-board__field input:focus')).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
+  test('board cards scroll intact and titles stay scannable in full columns', () => {
+    // A board column is a height-constrained flex container. The cards have
+    // overflow:hidden for rounded clipping, which otherwise permits the
+    // default flex-shrink:1 to crush full columns into unreadable slivers.
+    expect(ruleBody(v2, '.v2-board__card')).toContain('flex-shrink: 0');
+    expect(ruleBody(v2, '.v2-board__col-empty')).toContain('flex-shrink: 0');
+
+    const title = ruleBody(v2, '.v2-board__card-title');
+    expect(title).toContain('display: -webkit-box');
+    expect(title).toContain('-webkit-line-clamp: 3');
+    expect(title).toContain('-webkit-box-orient: vertical');
+    expect(title).toContain('overflow: hidden');
+  });
+
   test('the Community sub-tabs and Discover rows shrink inside the narrow sidebar', () => {
     // Joined/Discover adds a second segmented row beneath the four main
     // filters. Equal minmax(0, 1fr) tracks keep both locale labels on one line,
@@ -421,6 +472,38 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(tabs).toContain('repeat(2, minmax(0, 1fr))');
     expect(tabs).toContain('overflow: hidden');
     expect(row).toContain('34px minmax(0, 1fr) auto');
+  });
+
+  test('Activity cards have shrinkable desktop and mobile layout guards', () => {
+    // The recap is a feature-wide page, but it is still reachable at 390px.
+    // The zero-min grid tracks are the load-bearing no-horizontal-overflow
+    // rule; jsdom cannot observe the scrollbar they prevent.
+    expect(ruleBody(v2, '.v2-activity__agent-grid'))
+      .toContain('repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-activity__queue-row'))
+      .toContain('28px minmax(0, 1fr) auto');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__agent-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
+    // Board rows do not inherit the queue icon column. At 390px that left
+    // only one character of a task title — an overflow-free but unusable
+    // primary identifier, which violates the craft baseline rule.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+  });
+
+  test('Activity queue actions distinguish an action from the thread handoff', () => {
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
+  });
+
+  test('DecisionRequest options remain 44px touch targets when they wrap at 390px', () => {
+    // Options are agent-authored data, not compact task metadata. Keep the
+    // recommended state and the free-text escape hatch visible in the CSS
+    // source because jsdom has no layout engine to catch a narrow regression.
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended'))
+      .toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
 
   test('the shared filter segment uses an unmistakable token-backed selected state', () => {
@@ -680,6 +763,53 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-chat__composer-hint,\n.v2-root:lang(zh) button.v2-inspector__tab');
     expect(floorStart).toBeGreaterThan(-1);
     expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
+  });
+
+  // Connectors v2 (Wren spec §5): platform tint tokens must exist in BOTH
+  // token files (the same-PR rule), and the tile class must consume them.
+  it('chat message text has NO measure cap (Sam overruled craft finding 6, 2026-09-01)', () => {
+    // #1367 pinned a 75ch cap here as the audit's P0. Sam overruled it —
+    // third full-width ruling; worst case was a large screen with the
+    // sidebar collapsed. The rule-2 v6 assertion above owns the ban; this
+    // test flips to the same polarity so the two can never disagree.
+    const block = v2.match(/\.v2-msg__content \{[^}]*\}/);
+    expect(block).not.toBeNull();
+    expect(block![0]).not.toMatch(/max-width:\s*\d+ch/);
+  });
+
+  it('the BEND-1 feature type step exists in v2.css and tokens.css together', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    expect(v2).toContain('--v2-fs-feature: 17px');
+    expect(ds).toContain('--c-fs-feature: 17px');
+    expect(v2).toContain('var(--v2-fs-feature)');
+  });
+
+  it('v2.css braces balance — an unclosed block silently swallows every later rule', () => {
+    // Shipped 2026-08-30: a doubled selector anchor ('.v2-team__tabs {.v2-team__tabs {')
+    // left one brace unclosed; the build tolerated it, the browser dropped
+    // every rule after line ~4023 (header CTAs unstyled, avatar sizing gone).
+    // jsdom can't see the breakage; brace balance is the cheap structural pin.
+    const opens = (v2.match(/\{/g) || []).length;
+    const closes = (v2.match(/\}/g) || []).length;
+    expect(opens).toBe(closes);
+    expect(v2).not.toMatch(/\{[^\n}]*\{/); // two opens on one line = doubled anchor
+  });
+
+  it('featured team card stacks below 640px — the name column never one-chars (spec §5, #568 class)', () => {
+    const mq = v2.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/);
+    expect(mq).not.toBeNull();
+    expect(mq![0]).toContain('.v2-team-feature');
+    expect(mq![0]).toContain('grid-template-columns: 44px minmax(0, 1fr)');
+  });
+
+  it('platform tint tokens exist in v2.css and tokens.css together', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
+      expect(v2).toContain(`--v2-platform-${pf}-soft`);
+      expect(ds).toContain(`--c-platform-${pf}-soft`);
+    }
+    expect(v2).toContain('.v2-connector__tile--telegram');
+    expect(v2).toContain('var(--v2-platform-telegram-soft)');
   });
 
 });

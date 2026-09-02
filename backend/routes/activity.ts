@@ -1,3 +1,9 @@
+// ESM import so CodeQL recognises the limiter on this database-backed read
+// route; it runs before auth and the recap aggregation.
+import rateLimit from 'express-rate-limit';
+import type { Request } from 'express';
+import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
@@ -9,7 +15,13 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const ActivityService = require('../services/activityService');
 // eslint-disable-next-line global-require
+const DecisionRequestService = require('../services/decisionRequestService');
+// eslint-disable-next-line global-require
 const getAuthenticatedUserId = require('../utils/getAuthenticatedUserId');
+// eslint-disable-next-line global-require
+const Pod = require('../models/Pod');
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
 
 interface Req {
   query?: Record<string, string>;
@@ -23,6 +35,20 @@ interface Res {
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
+// Activity queries and actions fan out to multiple projections. Sixty per
+// minute leaves room for normal use without an unbounded hot loop.
+const activityRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: (req: Request) => cloudflareIpRateLimitKeyGenerator(req),
+  handler: (_req: unknown, res: Res) => res.status(429).json({ code: 'rate_limited' }),
+});
+
+router.use(activityRateLimit);
+
 router.get('/feed', auth, async (req: Req, res: Res) => {
   try {
     const { limit = '20', before, filter, mode = 'updates' } = req.query || {};
@@ -32,6 +58,30 @@ router.get('/feed', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error fetching activity feed:', error);
     res.status(500).json({ error: 'Failed to fetch activity feed' });
+  }
+});
+
+router.get('/recap', auth, async (req: Req, res: Res) => {
+  try {
+    const window = req.query?.window;
+    const podId = req.query?.podId;
+    if (window !== undefined && window !== 'today' && window !== '7d') {
+      return res.status(400).json({ error: 'window must be today or 7d' });
+    }
+    if (podId !== undefined && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.getRecap(userId, {
+      window: window === '7d' ? '7d' : 'today',
+      podId,
+    });
+    return res.json(result);
+  } catch (error) {
+    const e = error as { message?: string };
+    if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+    console.error('Error fetching activity recap:', error);
+    return res.status(500).json({ error: 'Failed to fetch activity recap' });
   }
 });
 
@@ -47,6 +97,42 @@ router.get('/pods/:podId', auth, async (req: Req, res: Res) => {
     console.error('Error fetching pod activity:', error);
     if (e.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
     res.status(500).json({ error: 'Failed to fetch pod activity' });
+  }
+});
+
+// Everything concretely waiting on this human: approvals + unacked mentions +
+// board decision/handoff rows. TASK-083: the queue reads FACTS that exist,
+// never name-matching heuristics (TASK-070b stays a design decision).
+router.get('/decision-queue', auth, async (req: Req, res: Res) => {
+  try {
+    const userId = getAuthenticatedUserId(req);
+    res.json(await ActivityService.getDecisionQueue(userId));
+  } catch (error) {
+    console.error('Error fetching decision queue:', error);
+    res.status(500).json({ error: 'Failed to fetch decision queue' });
+  }
+});
+
+// Human-only by construction: this route uses `auth`, not dual auth. The
+// service repeats the isBot + pod-membership checks so a future middleware
+// change cannot turn an agent token into a decision authority.
+router.post('/decisions/:decisionId/choose', auth, async (req: Req, res: Res) => {
+  try {
+    const decisionId = String(req.params?.decisionId || '');
+    const value = (req.body || {}).value;
+    const userId = getAuthenticatedUserId(req);
+    const result = await DecisionRequestService.chooseDecision({
+      decisionId,
+      callerUserId: String(userId || ''),
+      value,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error: any) {
+    if (error instanceof DecisionRequestService.DecisionRequestError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    console.error('Error choosing a decision:', error);
+    return res.status(500).json({ error: 'Failed to choose a decision' });
   }
 });
 
@@ -91,6 +177,19 @@ router.post('/mark-read', auth, async (req: Req, res: Res) => {
   } catch (error) {
     console.error('Error marking activity as read:', error);
     return res.status(500).json({ error: 'Failed to mark activity as read' });
+  }
+});
+
+router.post('/:activityId/acknowledge', auth, async (req: Req, res: Res) => {
+  try {
+    const { activityId } = req.params || {};
+    const userId = getAuthenticatedUserId(req);
+    const result = await ActivityService.acknowledgeMention(userId, String(activityId)) as { success?: boolean; error?: string };
+    if (!result.success) return res.status(400).json({ error: result.error || 'Failed to acknowledge mention' });
+    return res.json(result);
+  } catch (error) {
+    console.error('Error acknowledging activity mention:', error);
+    return res.status(500).json({ error: 'Failed to acknowledge mention' });
   }
 });
 
@@ -152,6 +251,9 @@ router.post('/seed/:podId', auth, async (req: Req, res: Res) => {
   try {
     const { podId } = req.params || {};
     const userId = getAuthenticatedUserId(req);
+    const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can seed activities' });
     const result = await ActivityService.seedPodActivities(podId, userId) as { success?: boolean; error?: string };
     if (!result.success) return res.status(400).json({ error: result.error });
     return res.json(result);
@@ -166,8 +268,23 @@ router.post('/create', auth, async (req: Req, res: Res) => {
     const { type, action, content, podId, target, agentMetadata } = (req.body || {}) as Record<string, unknown>;
     const userId = getAuthenticatedUserId(req);
     if (!type || !action || !podId) return res.status(400).json({ error: 'type, action, and podId are required' });
+    // `approval_needed` is what `getPendingApprovals` selects into a pod's
+    // admins' decision queue. This is the generic client-facing create, so it
+    // must not be able to mint one: the caller supplies no `approval` subdoc
+    // and does not need to, because `Activity.approval.status` defaults to
+    // 'pending' and Mongoose materialises exactly the two fields that filter
+    // selects on.
+    if (type === 'approval_needed') return res.status(400).json({ error: 'approval_needed activities cannot be created through this route' });
+    // `podId` arrives as `unknown` off the body, so it is coerced before it
+    // reaches a query: a raw object would otherwise be interpreted as Mongo
+    // operators rather than an id.
+    const pod = await Pod.findById(String(podId)).select('members createdBy').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    if (!isPodMember(pod, userId)) return res.status(403).json({ error: 'Only pod members can create activities in a pod' });
     const user = await User.findById(userId).select('username').lean() as { username?: string } | null;
-    const activity = await Activity.create({ type, actor: { id: userId, name: user?.username || 'Unknown', type: ActivityService.isAgentUsername(user?.username) ? 'agent' : 'human', verified: false }, action, content, podId, target, agentMetadata });
+    // Store the id of the pod that was actually resolved and authorised, not
+    // the body's copy of it.
+    const activity = await Activity.create({ type, actor: { id: userId, name: user?.username || 'Unknown', type: ActivityService.isAgentUsername(user?.username) ? 'agent' : 'human', verified: false }, action, content, podId: pod._id, target, agentMetadata });
     return res.json({ success: true, activity: { id: activity._id.toString(), type: activity.type, action: activity.action, content: activity.content, createdAt: activity.createdAt } });
   } catch (error) {
     console.error('Error creating activity:', error);

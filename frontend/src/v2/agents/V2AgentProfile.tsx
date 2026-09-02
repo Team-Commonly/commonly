@@ -41,7 +41,13 @@ interface AgentProfile {
   };
   skills: Array<{ name: string; description?: string }>;
   pods: { count: number; public: Array<{ id: string; name: string; lastActive?: string | null }> };
-  memory: { has: boolean; entryCount: number; updatedAt?: string | null };
+  memory: {
+    has: boolean;
+    entryCount: number;
+    // Public profile: coarse kind only. The owner/admin memory index below
+    // carries the exact section.
+    lastAgentWrite?: { kind: 'durable' | 'bookkeeping'; updatedAt: string } | null;
+  };
   activity: Array<{ status: string; trigger?: string; startedAt?: string; turns: number; errorKind?: string }>;
 }
 
@@ -57,7 +63,7 @@ interface PodEntry {
 interface MemoryIndex {
   viewerRole: 'owner' | 'admin';
   totalEntries: number;
-  updatedAt?: string | null;
+  lastAgentWrite?: { section: string; updatedAt: string } | null;
   sections: Array<{ key: string; label: string; kind: string; notes: Array<{ header: string; snippet: string }> }>;
   pods?: PodEntry[];
 }
@@ -232,6 +238,14 @@ const V2AgentProfile: React.FC = () => {
   const runtimeLabel = (agent.runtime || '').toUpperCase();
   const authed = isAuthed();
   const firstName = agent.displayName.split(' ')[0];
+  const memorySectionLabel = (section: string) => t(
+    `agentProfile.memory.sections.${section}`,
+    { defaultValue: section },
+  );
+  const memoryKindLabel = (kind: string) => t(
+    `agentProfile.memory.kinds.${kind}`,
+    { defaultValue: kind },
+  );
 
   return (
     <div className="v2-root v2-aprofile">
@@ -239,21 +253,35 @@ const V2AgentProfile: React.FC = () => {
       <main className="v2-aprofile__main">
         {/* Identity header */}
         <section className="v2-aprofile__hero">
-          <V2Avatar
-            name={agent.displayName}
-            src={agent.profilePicture}
-            size="lg"
-            kind="agent"
-            seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
-          />
-          {canEditAvatar && (
+          {/* The avatar IS the edit control (Sam, 2026-09-01: "a button called
+              change avatar … should be enough just clicking the avatar").
+              Non-owners get the plain avatar; owners get the same avatar as a
+              button with a hover hint, no separate text button. */}
+          {canEditAvatar ? (
             <button
               type="button"
-              className="v2-aprofile__avatar-edit"
+              className="v2-aprofile__avatar-button"
               onClick={() => setAvatarDialogOpen(true)}
+              aria-label="Change avatar"
+              title="Change avatar"
             >
-              Edit avatar
+              <V2Avatar
+                name={agent.displayName}
+                src={agent.profilePicture}
+                size="lg"
+                kind="agent"
+                seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+              />
+              <span className="v2-aprofile__avatar-hint" aria-hidden="true">Edit</span>
             </button>
+          ) : (
+            <V2Avatar
+              name={agent.displayName}
+              src={agent.profilePicture}
+              size="lg"
+              kind="agent"
+              seed={`${agent.agentName}:${agent.instanceId || 'default'}`}
+            />
           )}
           {avatarDialogOpen && (
             <div className="v2-aprofile__avatar-dialog" role="dialog" aria-label="Choose an avatar">
@@ -380,8 +408,11 @@ const V2AgentProfile: React.FC = () => {
                   {t('agentProfile.memory.indexSummary', {
                     notes: memIndex.totalEntries,
                     count: memIndex.sections.length,
-                    updated: memIndex.updatedAt
-                      ? t('agentProfile.memory.updatedClause', { time: timeAgo(memIndex.updatedAt) })
+                    updated: memIndex.lastAgentWrite
+                      ? t('agentProfile.memory.lastSavedClause', {
+                        section: memorySectionLabel(memIndex.lastAgentWrite.section),
+                        time: timeAgo(memIndex.lastAgentWrite.updatedAt),
+                      })
                       : '',
                   })}
                 </p>
@@ -410,7 +441,10 @@ const V2AgentProfile: React.FC = () => {
                 </div>
                 <p className="v2-aprofile__muted">
                   {t('agentProfile.memory.persistent')}
-                  {memory.updatedAt && ` ${t('agentProfile.memory.lastUpdated', { time: timeAgo(memory.updatedAt) })}`}
+                  {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSaved', {
+                    section: memoryKindLabel(memory.lastAgentWrite.kind),
+                    time: timeAgo(memory.lastAgentWrite.updatedAt),
+                  })}`}
                 </p>
               </div>
             ) : (

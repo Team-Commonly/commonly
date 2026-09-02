@@ -20,10 +20,10 @@
  * `--output-last-message` short alias) — cleaner than parsing every
  * event-type variant the model can emit.
  *
- * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
- * it to the prompt as a system-context preamble (§Memory bridge), matching
- * the claude adapter's shape so the run loop's per-event memory plumbing
- * works identically across drivers.
+ * Memory preamble: the adapter prepends the kernel's long-term memory context
+ * on every turn. A fresh underlying session additionally receives the
+ * read-first and durable-state-at-boundary cues, matching the Claude adapter
+ * so the run loop's memory plumbing works identically across drivers.
  *
  * Purity (§Load-bearing invariants #1): input = argv + env + prompt;
  * output = text + session id. No direct network, no direct CAP calls.
@@ -56,6 +56,7 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
+import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -81,10 +82,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = (prompt, memoryLongTerm) => {
-  if (!memoryLongTerm) return prompt;
-  return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
+const buildPrompt = buildMemoryPreamble;
 
 // ── MCP wiring — codex consumes MCP servers via `-c mcp_servers.*` overrides ─
 //
@@ -417,7 +415,15 @@ export default {
   },
 
   async spawn(prompt, ctx = {}) {
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
+    // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
+    // `null || ''` is `''` — which routed the unreadable case straight into
+    // the empty-memory branch and made the whole distinction unreachable from
+    // the only two paths that build a real prompt. buildPrompt handles
+    // undefined and '' as absence itself; it does not need a guard, it needs
+    // the value.
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
+      freshSession: !ctx.sessionId,
+    });
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.

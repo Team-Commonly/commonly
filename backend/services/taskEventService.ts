@@ -159,7 +159,9 @@ export async function notifyPodAgents(
       'named you. Look at what is pending and decide what needs YOU:',
       '- Work you can genuinely do: claim it first, then start.',
       '- A claim that comes back 409: a peer has it. Leave it and move on.',
-      '- Nothing in your area: return NO_REPLY. That is the common case.',
+      '- Nothing in your area: return NO_REPLY as your ENTIRE reply. That is',
+      '  the common case. Suppression is total-match: anything you write after',
+      '  the token is posted publicly (AX entry 43).',
       '',
       'Do not narrate the board back to the pod. Post only if you are taking',
       'work, or a human needs a decision from you.',
@@ -315,7 +317,8 @@ export async function notifyFoundWork(
       '',
       'Nobody named you; the board did. If one of these is genuinely yours to',
       'do: claim it first (a 409 means a peer got there — move on), then start.',
-      'If none fit your role, return NO_REPLY. Do not narrate the list back.',
+      'If none fit your role, return NO_REPLY as your ENTIRE reply — anything',
+      'written after the token is posted publicly. Do not narrate the list back.',
     ].join('\n');
 
     let woken = 0;

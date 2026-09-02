@@ -115,7 +115,8 @@ const WELCOME_CUE = (username: string | undefined, handle: string): string => [
   `End by telling them how to reach you again: they can @${handle} anytime, or reply`,
   'directly to your message. Say it once, plainly, as the last line — not as a menu.',
   '',
-  'If their message needs no reply at all, return NO_REPLY.]',
+  'If their message needs no reply at all, return NO_REPLY as your ENTIRE reply —',
+  'anything written after the token is posted publicly.]',
   '',
   username ? `${username} wrote:` : 'They wrote:',
 ].join('\n');

@@ -20,6 +20,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { LayoutProvider } from './context/LayoutContext';
 import V2App from './v2/V2App';
+import V2CliAuthorize from './v2/components/V2CliAuthorize';
 import V2LandingPage from './v2/landing/V2LandingPage';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
@@ -272,6 +273,8 @@ function App(): React.ReactElement {
                   <NavigationHandler />
                   <div className="App">
                     <Routes>
+                    <Route path="/cli/authorize" element={<V2CliAuthorize />} />
+                    <Route path="/settings/devices" element={<Navigate to="/v2/settings/devices" replace />} />
                     <Route path="/v2/*" element={<V2App />} />
                     <Route path="/" element={<PublicHome />} />
                     {/* Canonical public routes also have static build output. */}

@@ -31,6 +31,68 @@ const {
 // into an accidental count of historical board churn.
 const TASK_UPDATE_CUE_MAX_CURSOR_AGE_MS = 24 * 60 * 60 * 1000;
 
+// ADR-026 D6. Every CLAIM mints one — the list() claim and the
+// native-runtime create, which is born 'delivered'. The value comes from one
+// function rather than two literals that have to agree forever; the design
+// doc listed three writers of `status: 'delivered'`, and reading the third
+// (markPosted) closely corrected that: it annotates the delivery already in
+// flight rather than starting a new one, so minting there would invalidate
+// the nonce held by the very child that just posted.
+//
+// Opaque and unguessable on purpose: a client that never received a delivery
+// cannot fabricate its nonce, which also closes a smaller hole the race work
+// exposed — `acknowledge` authorizes on the token's agentName/instanceId, so
+// before this any holder of an agent's token could ack ANY of that agent's
+// events by id, delivered to it or not.
+const mintDeliveryNonce = (): string => crypto.randomBytes(16).toString('hex');
+
+// The migration on acknowledge() runs in two phases, and BOTH are in this
+// build so the compatibility mode has an end rather than an intention.
+//
+// Phase A (default): a presented nonce must match; an absent one is accepted
+// and counted. Phase B: an absent nonce is refused.
+//
+// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// draft gated the flip on `withoutNonce` reaching zero across everything,
+// which hands a veto to whichever consumer is slowest — and one of them, the
+// openclaw extension, has been parked since 2026-08-20. A parked runtime
+// cannot be the long pole on a live kernel change, so enforcement is keyed on
+// HOW THE ACK ARRIVED:
+//
+//   AGENT_EVENT_REQUIRE_DELIVERY_NONCE=ws,cli,hosted   → those three enforce
+//   AGENT_EVENT_REQUIRE_DELIVERY_NONCE=true  (or `*`)  → everything enforces
+//   unset                                              → Phase A everywhere
+//
+// A consumer key that is not listed stays on Phase A indefinitely, which is
+// the point: migrated paths get the guarantee now, unmigrated ones keep
+// working, and neither waits on the other.
+//
+// Read the counter precisely (review on #1347): it counts ack CALLS, not
+// distinct deliveries — a retry against a vanished event still increments —
+// and it is per-process and resets on restart. With multiple replicas, "zero
+// for this consumer" means zero on EVERY replica since its last restart.
+const ackNonceStats: {
+  withNonce: number;
+  withoutNonce: number;
+  withoutNonceByConsumer: Record<string, number>;
+} = { withNonce: 0, withoutNonce: 0, withoutNonceByConsumer: {} };
+
+const enforcedAckConsumers = (): Set<string> => new Set(
+  String(process.env.AGENT_EVENT_REQUIRE_DELIVERY_NONCE || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+// No consumer argument = "is it required for everyone?" — which is what the
+// service-internal check asks, since acknowledge() cannot see the transport.
+// The per-consumer refusal happens at the ack sites, where the key is known.
+const requireDeliveryNonce = (consumer?: string): boolean => {
+  const enforced = enforcedAckConsumers();
+  if (enforced.has('true') || enforced.has('*')) return true;
+  return consumer ? enforced.has(consumer.toLowerCase()) : false;
+};
+
 interface EventDoc {
   _id?: unknown;
   type?: string;
@@ -43,6 +105,7 @@ interface EventDoc {
   attempts?: number;
   delivery?: DeliveryMeta;
   memoryRevisionAtDelivery?: number | null;
+  deliveryNonce?: string | null;
 }
 
 interface InstallationDoc {
@@ -589,6 +652,26 @@ class AgentEventService {
     };
   }
 
+  // Phase B on? The routes need this BEFORE calling acknowledge: with the
+  // flag set, a nonce-less ack returns null, and null is indistinguishable
+  // from "already gone" — so the route would answer 200 and the driver would
+  // believe it acked while the event rolled into the requeue with no signal
+  // (found in review). A refused ack has to say so.
+  static isDeliveryNonceRequired(consumer?: string): boolean {
+    return requireDeliveryNonce(consumer);
+  }
+
+  // Reads the Phase A migration counter. The flip to a required nonce is
+  // gated on `withoutNonce` being zero at the consumers, so the number has to
+  // be reachable by something other than a grep of the logs.
+  static getAckNonceStats(): {
+    withNonce: number;
+    withoutNonce: number;
+    withoutNonceByConsumer: Record<string, number>;
+  } {
+    return { ...ackNonceStats, withoutNonceByConsumer: { ...ackNonceStats.withoutNonceByConsumer } };
+  }
+
   static logEventLifecycle(action: string, details: Record<string, unknown> = {}): void {
     const parts = [
       `[agent-event] ${action}`,
@@ -650,13 +733,32 @@ class AgentEventService {
           $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
         },
         {
-          $set: { status: 'pending', deliveredAt: null },
+          // ADR-026 D6: clearing the nonce IS the invalidation. The child
+          // whose delivery this was can no longer ack it, whether or not a
+          // replacement has claimed yet — so a supervisor restart can no
+          // longer let a stale child terminate the new child's delivery
+          // mid-turn.
+          $set: { status: 'pending', deliveredAt: null, deliveryNonce: null },
         },
       ) as { modifiedCount?: number };
       requeuedDelivered = requeueResult?.modifiedCount || 0;
       if (requeuedDelivered > 0) {
         console.log(`[agent-event] requeued ${requeuedDelivered} stuck 'delivered' events older than ${requeueDeliveredMinutes}min`);
       }
+
+      // D6 rollout coverage, on the pass that already runs on a schedule —
+      // no new surface, and it lands next to the requeue it is about. This is
+      // the number Phase B is gated on; `without=0` sustained past one requeue
+      // window is the signal to set AGENT_EVENT_REQUIRE_DELIVERY_NONCE.
+      console.log(
+        `[agent-event] ack deliveryId coverage (ack CALLS this process since restart, not distinct deliveries): `
+        + `with=${ackNonceStats.withNonce} without=${ackNonceStats.withoutNonce} `
+        // Naming the holdouts is the whole point of a per-consumer flip: the
+        // operator needs to see WHICH consumer is still nonce-less, not just
+        // that something is.
+        + `withoutBy=${JSON.stringify(ackNonceStats.withoutNonceByConsumer)} `
+        + `enforced=${JSON.stringify([...enforcedAckConsumers()])}`,
+      );
 
       // Retire events that have exhausted the cap. This pass is what makes the
       // cap a bound rather than a leak: `attempts >= cap` fails the requeue
@@ -674,6 +776,7 @@ class AgentEventService {
         {
           $set: {
             status: 'failed',
+            deliveryNonce: null,
             error: `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`,
           },
         },
@@ -974,7 +1077,12 @@ class AgentEventService {
       // entered the pending queue ~10-20 min after creation, guaranteed. The
       // settle handlers below close it — success acks, failure records.
       ...(routedToNative
-        ? { status: 'delivered', deliveredAt: new Date(), attempts: 1 }
+        ? {
+          status: 'delivered',
+          deliveredAt: new Date(),
+          attempts: 1,
+          deliveryNonce: mintDeliveryNonce(),
+        }
         : {}),
     }) as EventDoc;
 
@@ -983,6 +1091,12 @@ class AgentEventService {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { runAgent } = require('./nativeRuntimeService');
         const eventIdStr = String((event._id as { toString?: () => string })?.toString?.() || '');
+        // D6: the native path claims at creation, so THIS is its delivery
+        // nonce — and the settle handlers below are its ack. Without carrying
+        // it, a native run that outlives the requeue threshold settles
+        // nonce-less and terminates whatever replacement has since claimed the
+        // event: the D6 race, on the one path that never polls.
+        const nativeDeliveryId = event.deliveryNonce || null;
         // Fire-and-forget — callers of enqueue() must never block on the
         // loop. Errors are logged but never rethrown.
         // Settle the event on the run's actual outcome. nativeRuntimeService
@@ -1007,6 +1121,8 @@ class AgentEventService {
             agentName,
             instanceId,
             { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+            nativeDeliveryId,
+            'native',
           ).catch((ackErr: Error) => {
             console.warn('[native-runtime] ack after successful run failed:', ackErr?.message || ackErr);
           }),
@@ -1020,6 +1136,7 @@ class AgentEventService {
               agentName,
               instanceId,
               `native runtime error: ${err?.message || String(err)}`,
+              nativeDeliveryId,
             ).catch(() => undefined);
           },
         );
@@ -1052,6 +1169,13 @@ class AgentEventService {
         type: event.type,
         payload: event.payload,
         createdAt: event.createdAt,
+        // D6: present only for a native event, which is born 'delivered' and
+        // therefore already claimed. For every other route this push fires
+        // while the event is still 'pending' — no claim has happened, so no
+        // nonce exists and none can be invented here. The push is a wake
+        // signal, not a delivery: a WS driver still fetches through list(),
+        // and that claim is what hands it the deliveryId to ack with.
+        ...(event.deliveryNonce ? { deliveryId: event.deliveryNonce } : {}),
       });
     }
 
@@ -1170,6 +1294,9 @@ class AgentEventService {
             status: 'delivered',
             memoryRevisionAtDelivery: currentRevision,
             deliveredAt: new Date(),
+            // D6: this claim's identity. A requeue clears it, so the child
+            // this delivery belongs to is the only one whose ack can land.
+            deliveryNonce: mintDeliveryNonce(),
           },
           $inc: { attempts: 1 },
         },
@@ -1187,6 +1314,10 @@ class AgentEventService {
       const enrichedPayload: Record<string, unknown> = {
         ...basePayload,
         ...digestBundle,
+        // ADR-026 D6: the driver echoes this back on ack. Additive — a driver
+        // that ignores it still acks successfully during the migration window
+        // described on acknowledge().
+        ...(event?.deliveryNonce ? { deliveryId: event.deliveryNonce } : {}),
       };
       if (messageId !== undefined && messageId !== null && typeof messageId !== 'string') {
         enrichedPayload.messageId = String(messageId);
@@ -1208,6 +1339,8 @@ class AgentEventService {
     agentName: string,
     instanceId = 'default',
     delivery: DeliveryMeta | null = null,
+    deliveryId: unknown = null,
+    consumer: string | null = null,
   ): Promise<EventDoc | null> {
     // Same NoSQL-injection guard as list() — coerce all caller-supplied query
     // inputs to plain primitives before they reach Mongo.
@@ -1216,17 +1349,48 @@ class AgentEventService {
     const safeAgentName = String(agentName || '').toLowerCase();
     const safeInstanceId = String(instanceId || 'default');
     const normalizedDelivery = this.normalizeDeliveryMeta(delivery || {});
+    // ADR-026 D6 — WHICH delivery is being acked.
+    //
+    // Until this existed the filter below identified an event but not a
+    // delivery, so after the 10-minute requeue a stale child's late ack
+    // matched the NEW child's delivery: both had already spawned, both ran
+    // the turn, and the lastSeenRevision bump used the stale child's
+    // snapshot. Daemon restart (ADR-026) makes that sequence routine.
+    //
+    // Migration, deliberately two-phase: every driver in the fleet acks
+    // without a nonce today — the openclaw extension, @commonlyai/mcp,
+    // cloud-codex, the webhook SDK, the wrapper CLI. Requiring it on day one
+    // breaks all of them at once. So a presented nonce MUST match, and an
+    // absent one is accepted and counted. Phase B flips `absent` to a refusal
+    // only once that counter is zero AT THE CONSUMERS — publishing a client
+    // is not deploying one (AX 34).
+    const safeDeliveryId = typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
+    const safeConsumer = String(consumer || 'unknown').toLowerCase();
+    if (safeDeliveryId) {
+      ackNonceStats.withNonce += 1;
+    } else {
+      ackNonceStats.withoutNonce += 1;
+      ackNonceStats.withoutNonceByConsumer[safeConsumer] = (ackNonceStats.withoutNonceByConsumer[safeConsumer] || 0) + 1;
+      console.warn(
+        `[agent-event] ack without deliveryId from ${safeAgentName}:${safeInstanceId} via ${safeConsumer} — pre-D6 driver`,
+      );
+      // Per-consumer: an unlisted consumer stays on Phase A even while others
+      // enforce, so a parked path cannot hold the flip hostage.
+      if (requireDeliveryNonce(safeConsumer)) return null;
+    }
     const result = await AgentEvent.findOneAndUpdate(
       {
         _id: safeEventId,
         agentName: safeAgentName,
         instanceId: safeInstanceId,
         status: { $in: ['pending', 'delivered'] },
+        ...(safeDeliveryId ? { deliveryNonce: safeDeliveryId } : {}),
       },
       {
         $set: {
           status: 'acked',
           deliveredAt: new Date(),
+          deliveryNonce: null,
           ...(normalizedDelivery ? { delivery: normalizedDelivery } : {}),
         },
         // No $inc here. `attempts` counts deliveries (incremented at the claim
@@ -1304,6 +1468,30 @@ class AgentEventService {
     return result;
   }
 
+  // Did this ack lose to a requeue? Only meaningful when the caller presented
+  // a deliveryId and the gated update matched nothing: the event may be gone,
+  // already acked, or still live under a NEWER nonce. Only the last of those
+  // means "you were superseded — stop working", and a driver cannot act on
+  // that distinction unless we make it.
+  static async isSupersededDelivery(
+    eventId: unknown,
+    agentName: string,
+    instanceId: string,
+    deliveryId: unknown,
+  ): Promise<boolean> {
+    const safeEventId = eventId != null ? String(eventId) : '';
+    const safeDeliveryId = typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
+    if (!safeEventId || !safeDeliveryId) return false;
+    const event = await AgentEvent.findOne({
+      _id: safeEventId,
+      agentName: String(agentName || '').toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+    }).select('status deliveryNonce').lean() as { status?: string; deliveryNonce?: string | null } | null;
+    if (!event) return false;
+    if (event.status === 'acked' || event.status === 'failed') return false;
+    return event.deliveryNonce !== safeDeliveryId;
+  }
+
   static async markPosted(
     eventId: unknown,
     agentName: string,
@@ -1324,8 +1512,33 @@ class AgentEventService {
     // construction, not by trust in the call site.
     const safeAgentName = typeof agentName === 'string' ? agentName.toLowerCase() : '';
     const safeInstanceId = typeof instanceId === 'string' ? instanceId : 'default';
+    // `status: 'delivered'` is load-bearing, not defensive. Ungated, this
+    // write returned an already-terminal event to 'delivered' with a fresh
+    // deliveredAt — exactly the requeue's target population (garbageCollect
+    // selects status 'delivered' by deliveredAt age), so posting a second
+    // message citing a completed event re-delivered it. Same class as the
+    // webhook duplicate-delivery bug described at deliverEventViaWebhook, on
+    // the path that fix did not cover.
+    //
+    // `$ne: 'acked'` was the first attempt and was too loose in two ways
+    // (found in review): a stale child posting after a requeue flipped
+    // 'pending' back to 'delivered' with a null nonce, hiding the event from
+    // list() for another full requeue window; and a 'failed' event retired by
+    // the attempt cap could be resurrected the same way. Annotating a
+    // delivery only makes sense while one is in flight, so the predicate is
+    // the positive state, not the absence of the terminal one.
+    //
+    // It deliberately does NOT mint a delivery nonce. This is an annotation
+    // of the delivery already in flight, not a new claim — minting here would
+    // invalidate the nonce held by the very child that just posted, and its
+    // ack would then be refused as stale. Only a claim mints.
     return AgentEvent.findOneAndUpdate(
-      { _id: eventIdStr, agentName: safeAgentName, instanceId: safeInstanceId },
+      {
+        _id: eventIdStr,
+        agentName: safeAgentName,
+        instanceId: safeInstanceId,
+        status: 'delivered',
+      },
       {
         $set: {
           status: 'delivered',
@@ -1347,12 +1560,27 @@ class AgentEventService {
     agentName: string,
     instanceId: string,
     errorMessage: string,
+    deliveryId: unknown = null,
   ): Promise<EventDoc | null> {
+    // D6, same reasoning as acknowledge(): failing is as terminal as acking,
+    // so a stale runner's failure must not retire a delivery that now belongs
+    // to its replacement. Match-if-present for the same migration reason —
+    // callers that pass nothing behave exactly as before.
+    const safeDeliveryId = typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
     const result = await AgentEvent.findOneAndUpdate(
-      { _id: eventId, agentName: agentName.toLowerCase(), instanceId },
+      {
+        _id: eventId,
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        // Terminal states are terminal in both directions: without this, a
+        // late failure from a runner nobody is waiting for overwrites an
+        // event that was already acked (review on #1347).
+        status: { $in: ['pending', 'delivered'] },
+        ...(safeDeliveryId ? { deliveryNonce: safeDeliveryId } : {}),
+      },
       // No $inc — see acknowledge(). `attempts` is a delivery counter owned by
       // the claim in list(); a terminal transition must not inflate it.
-      { $set: { status: 'failed', error: errorMessage } },
+      { $set: { status: 'failed', error: errorMessage, deliveryNonce: null } },
       { new: true },
     ) as EventDoc | null;
 

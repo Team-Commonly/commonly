@@ -96,6 +96,101 @@ Frontend testing is documented separately at `frontend/TESTING.md`. Contracts te
 ./dev.sh test:integration       # Tier 1 against Docker Compose services (./dev.sh up required)
 ```
 
+## Node 26 kills any suite whose require graph reaches `buffer-equal-constant-time`
+
+Node 26 removed `SlowBuffer`. `buffer-equal-constant-time/index.js:37` reads
+`SlowBuffer.prototype.equal` at **module scope**, so it throws the moment it is
+required — before any test runs:
+
+```
+TypeError: Cannot read properties of undefined (reading 'prototype')
+    at Object.<anonymous> (backend/node_modules/buffer-equal-constant-time/index.js:37:35)
+```
+
+The line one might expect to be at fault, `Buffer.prototype.equal =
+SlowBuffer.prototype.equal = …` at `:31`, sits inside `bufferEq.install` and
+never runs. The unconditional **read** at `:37` is the one that fires.
+
+**`jsonwebtoken` is the common importer, not the failing package.** The chain is
+`jsonwebtoken` → `jws` → `jwa` → `buffer-equal-constant-time`, and both
+`require('jsonwebtoken')` and `require('buffer-equal-constant-time')` throw at
+the identical frame. So a "will this suite die on 26?" check must ask whether
+that leaf is in the require graph — grepping a suite for the string
+`jsonwebtoken` misses every suite that reaches it transitively, and blames the
+wrong package when it hits.
+
+It fails **loudly**: `Tests: 0 total` and a non-zero exit, never a silent skip.
+A red suite here is an environment artifact and not a defect in the change under
+test — do not "fix" a PR against it.
+
+**Upgrading escapes nothing** (@sprint-review), which is the first thing anyone
+tries. Measured against the registry 2026-08-25:
+
+| package | latest | what it pins |
+|---|---|---|
+| `jsonwebtoken` | 9.0.3 | `jws ^4` |
+| `jws` | 4.0.1 | `jwa ^2.0.1` |
+| `jwa` | 2.0.1 | `buffer-equal-constant-time ^1.0.1` |
+| `buffer-equal-constant-time` | **1.0.1** | nothing — zero deps |
+
+The leaf is at its latest published version *and* that version is the one that
+breaks, so the whole chain resolves onto it even fully upgraded. There is no
+fixed release to move to; the package is simply abandoned at the breaking
+version. Don't spend an afternoon on `npm update`.
+
+**Abandoned is not unfixable, though** (@sprint-review). "No fixed release
+exists" reads as a dead end and this one isn't: the two offending lines are
+unreachable from our call path, so they can be replaced wholesale. `jwa`
+imports the package at `index.js:1` and uses it in exactly one place —
+`index.js:141`, the plain `bufferEqual(a, b)` comparison — and `.install()` /
+`.restore()`, the only things lines 36-37 exist to support, are called nowhere
+in `jwa`, `jws`, or `jsonwebtoken`. So a two-line `patch-package` diff, an npm
+`overrides` pin, or a jest `moduleNameMapper` stub that supplies only the
+comparison function is a faithful replacement rather than a test-only shim.
+Note that is a stub of the *leaf*, not of `jsonwebtoken` — the caution below
+about stubbing `jsonwebtoken` doesn't apply, because real signing and verifying
+still run against a real comparison.
+That is the move **if Node 26 ever becomes mandatory** — not now, while 26 is
+optional and Node 22 is the right answer.
+
+Note the remedy has to intercept the `require`. Lines 36-37 are dead by
+*purpose* and live by *execution*: they sit at module top level and run
+unconditionally, so declining to call `install()` does not avoid them.
+
+The leaf is also the tree's only casualty — but check that by **where the
+dereference sits, not by whether the module loads** (@sprint-review). Sixteen
+packages under `backend/node_modules` mention `SlowBuffer`; requiring each one
+and watching it survive proves nothing, because a require-time probe is blind
+to every deref behind a function boundary, which is both the commoner shape and
+the worse failure — it throws at call time rather than at boot. The cheap check
+is the grep:
+
+```bash
+grep -rE 'SlowBuffer[[:space:]]*\.' backend/node_modules
+```
+
+Two hits, and reading them is the whole audit. `buffer-equal-constant-time`
+derefs at module top level, so it breaks. `iconv-lite/lib/extend-node.js:37`
+derefs inside `extendNodeEncodings()`, which early-returns at `:19` on
+`!supportsNodeEncodingsExtension` — `false` on any Node with `Buffer.from` —
+and nothing in this repo calls it. Everything else names `SlowBuffer` in prose,
+type declarations, browser bundles, or changelogs. So one patch covers the
+whole backend.
+
+Fix: run on the version CI uses. `tests.yml` pins **Node 22**.
+
+```bash
+PATH=/opt/homebrew/opt/node@22/bin:$PATH npx jest <suite>
+```
+
+Prefer that over `--moduleNameMapper` stubbing of `jsonwebtoken`: a stub works
+for suites that only import it transitively and silently breaks any suite that
+actually signs or verifies a token, which is most of the runtime-token service
+suites.
+
+Suites with no jwt in their graph are unaffected — `mongoose` and
+`mongodb-memory-server` both load clean on 26.
+
 ## CI
 
 `.github/workflows/tests.yml` defines both tiers:

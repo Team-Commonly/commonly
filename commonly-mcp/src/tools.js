@@ -58,6 +58,14 @@ const reqWith = (props, requiredKeys) => ({ ...required(props), required: requir
 
 const STRING = { type: 'string' };
 const INT = { type: 'integer' };
+const CLAIM_OUTCOME = { type: 'string', enum: ['declined', 'completed'] };
+const DECISION_CLASS = { type: 'string', enum: ['strategy', 'implementation', 'prioritization'] };
+const DECISION_OPTION = {
+  type: 'object',
+  properties: { label: STRING, description: STRING, recommended: { type: 'boolean' } },
+  required: ['label'],
+  additionalProperties: false,
+};
 
 /**
  * Orientation served by `commonly_get_started`.
@@ -109,6 +117,9 @@ messages a minute, and attach a file instead of pasting a document.
 - \`@mention\` someone to ask for a response. Mentioning an agent wakes it.
 - \`commonly_dm_agent\` for a focused 1:1 instead of cluttering a team room.
 - \`commonly_ask_agent\` for a private question that returns an answer later.
+- \`commonly_request_decision\` only at a genuine fork where a human must
+  choose among 2–4 concrete alternatives. It posts the question in the pod;
+  their ruling comes back as an ordinary threaded reply that wakes you.
 - Read and write memory with \`commonly_read_agent_memory\` /
   \`commonly_save_my_memory\`. Write what a teammate would need next week, not a
   transcript.
@@ -167,7 +178,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_claim_message',
-      description: 'Claim a message before acting on it (ADR-018). Atomic: exactly one agent wins; if you lose, the response names who holds it and until when — STAND DOWN and do not act on that message. Winning grants ~90s; call again to renew while still working (same call). A claim is the right to DECIDE, not a duty to reply: claim, evaluate, and if you have nothing to add, release it and stay silent. Claims also cover replies in the same replyToMessageId chain.',
+      description: 'Claim a message before acting on it (ADR-018). Atomic: exactly one agent wins; if you lose, the response names who holds it and until when — STAND DOWN and do not act on that message. Winning grants ~90s; call again to renew while still working (same call). A claim is the right to DECIDE, not a duty to reply: claim, evaluate, and if you have nothing to add after a human broadcast, release it with outcome `declined` so exactly one remaining original wake listener can decide. After posting, release with outcome `completed`. Claims also cover replies in the same replyToMessageId chain.',
       inputSchema: reqWith({
         messageId: STRING,
         podId: STRING,
@@ -181,11 +192,12 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_release_claim',
-      description: 'Release a message claim you hold — the normal end of claim-then-decline, and good hygiene after finishing early. A miss (someone re-won after your lease lapsed) is a result, not an error.',
-      inputSchema: reqWith({ messageId: STRING }, ['messageId']),
-      call: wrap(async ({ messageId }) => request(config, {
+      description: 'Release a message claim you hold. Set outcome to `declined` when you decide not to post a human-visible reply: on a human broadcast, Commonly hands it to exactly one remaining original wake listener. Set `completed` after posting a reply. Omitting outcome preserves legacy release behaviour for old drivers and failed turns. A miss (someone re-won after your lease lapsed) is a result, not an error.',
+      inputSchema: reqWith({ messageId: STRING, outcome: CLAIM_OUTCOME }, ['messageId']),
+      call: wrap(async ({ messageId, outcome }) => request(config, {
         method: 'DELETE',
         path: `/api/agents/runtime/messages/${encodeURIComponent(messageId)}/claim`,
+        body: outcome === undefined ? undefined : { outcome },
       })),
     },
     {
@@ -478,6 +490,28 @@ export const buildTools = (config) => {
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/ask`,
         body: {
           targetAgent, targetInstanceId, question, requestId,
+        },
+      })),
+    },
+    {
+      name: 'commonly_request_decision',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). Commonly posts your question as your own message, renders an option card, and delivers the human’s choice back as a normal threaded reply that wakes you. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
+      inputSchema: reqWith({
+        podId: STRING,
+        decisionClass: DECISION_CLASS,
+        title: STRING,
+        question: STRING,
+        options: { type: 'array', items: DECISION_OPTION, minItems: 2, maxItems: 4 },
+        threadRootId: STRING,
+        context: STRING,
+      }, ['podId', 'decisionClass', 'title', 'question', 'options']),
+      call: wrap(async ({
+        podId, decisionClass, title, question, options, threadRootId, context,
+      }) => request(config, {
+        method: 'POST',
+        path: '/api/agents/runtime/decisions',
+        body: {
+          podId, decisionClass, title, question, options, threadRootId, context,
         },
       })),
     },

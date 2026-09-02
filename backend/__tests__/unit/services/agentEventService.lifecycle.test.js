@@ -255,7 +255,16 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     // that only checked the surviving keys would pass with it still there.
     expect(Object.keys(requeue.filter)).not.toContain('ackedAt');
     expect(requeue.filter).toEqual(expect.objectContaining({ status: 'delivered' }));
-    expect(requeue.update.$set).toEqual({ status: 'pending', deliveredAt: null });
+    expect(requeue.update.$set).toEqual({
+      status: 'pending',
+      deliveredAt: null,
+      // ADR-026 D6: the requeue clearing the nonce IS the invalidation — it is
+      // what stops the superseded child's late ack from terminating the
+      // replacement's delivery. Asserted here as well as in the D6 suite
+      // because this is the test that reads the whole $set exhaustively, so a
+      // future edit that drops the field fails here first.
+      deliveryNonce: null,
+    });
   });
 
   test('a second pass retires cap-exhausted events to the terminal failed state', async () => {
@@ -286,7 +295,8 @@ describe('garbageCollect: the requeue predicate and its cap', () => {
     expect(expire.filter.attempts).toEqual({ $gte: 3 });
   });
 
-  // #993: the requeue at :650 and the pending delete at :698 ran in the same
+  // #993: the requeue (`requeueResult = await AgentEvent.updateMany`) and the
+  // pending delete (`deleteMany({ status: 'pending' ... })`) ran in the same
   // Promise.all against different fields — the requeue sets `status` but not
   // `createdAt`, so an event it had just rescued walked into a `createdAt`-keyed
   // delete carrying its original age. 38 events were destroyed in one measured

@@ -22,6 +22,19 @@ export interface IAgentRuntimeToken {
   expiresAt?: Date;
 }
 
+// A device-login bearer is intentionally one-way: the CLI receives it once,
+// while Mongo stores only this digest. It is long-lived until explicit
+// revocation (there is no expiresAt or transparent refresh) and is separate
+// from the legacy apiToken (which pre-dates per-device revocation) and agent
+// runtime tokens.
+export interface IDeviceToken {
+  tokenHash: string;
+  label: string;
+  createdAt: Date;
+  lastUsedAt?: Date;
+  revokedAt?: Date;
+}
+
 export interface IFollowedThread {
   postId: Types.ObjectId;
   followedAt: Date;
@@ -116,6 +129,8 @@ export interface IUser extends Document {
     capabilities?: string[];
     agentName?: string;
     instanceId?: string;
+    // ADR-026 D3: the machine this identity is bound to (adoption CAS).
+    machineId?: string | null;
     runtime?: string;
     icon?: string;
   };
@@ -139,6 +154,7 @@ export interface IUser extends Document {
     capabilities: AgentCapability[];
   };
   agentRuntimeTokens: IAgentRuntimeToken[];
+  deviceTokens: IDeviceToken[];
   contacts: IContactEntry[];
   subscribedPods: Types.ObjectId[];
   followers: Types.ObjectId[];
@@ -147,6 +163,11 @@ export interface IUser extends Document {
   activityFeed: {
     lastViewedAt: Date;
     readItemIds: string[];
+  };
+  // Queue acknowledgement is deliberately separate from activityFeed read
+  // state. Opening a feed is not the same as resolving a direct mention.
+  activityQueue: {
+    acknowledgedMentionIds: string[];
   };
   digestPreferences: {
     enabled: boolean;
@@ -244,6 +265,8 @@ const userSchema = new Schema<IUser>({
     capabilities: [{ type: String }],
     agentName: { type: String },
     instanceId: { type: String },
+    // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
+    machineId: { type: String, default: null },
   },
   avatarMetadata: {
     style: {
@@ -303,6 +326,21 @@ const userSchema = new Schema<IUser>({
       expiresAt: { type: Date },
     },
   ],
+  // D1 device-code login. Do not mark this select:false: auth middleware must
+  // inspect the digest, and response serializers explicitly omit the whole
+  // array so these records never become an account-profile API surface.
+  deviceTokens: {
+    type: [
+      new Schema<IDeviceToken>({
+        tokenHash: { type: String, required: true },
+        label: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+        lastUsedAt: { type: Date },
+        revokedAt: { type: Date },
+      }, { _id: true }),
+    ],
+    default: [],
+  },
   // Alias-driven contact list — see IContactEntry above. Default empty so
   // existing user rows return `[]` on read (never throws on `.find(...)`).
   contacts: {
@@ -333,6 +371,9 @@ const userSchema = new Schema<IUser>({
     lastViewedAt: { type: Date, default: new Date(0) },
     readItemIds: { type: [String], default: [] },
   },
+  activityQueue: {
+    acknowledgedMentionIds: { type: [String], default: [] },
+  },
   digestPreferences: {
     enabled: { type: Boolean, default: true },
     frequency: { type: String, enum: ['daily', 'weekly', 'never'], default: 'daily' },
@@ -355,6 +396,9 @@ const userSchema = new Schema<IUser>({
 
 // OAuth callback looks users up by (provider, providerId) on every social login.
 userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 });
+// A single index supports authentication by digest and the account's device
+// list. Existing users simply have no array entries, so this is additive.
+userSchema.index({ 'deviceTokens.tokenHash': 1 });
 userSchema.index(
   { digestUnsubscribeToken: 1 },
   {

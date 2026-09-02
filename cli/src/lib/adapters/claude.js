@@ -3,8 +3,9 @@
  *
  * Contract: ADR-005 §Adapter pattern.
  *
- * Memory preamble: if ctx.memoryLongTerm is non-empty, the adapter prepends
- * it to the prompt as a system-context preamble (§Memory bridge).
+ * Memory preamble: the adapter prepends the kernel's long-term memory context
+ * on every turn. A fresh underlying session additionally receives the
+ * read-first and durable-state-at-boundary cues (§Memory bridge).
  *
  * Environment (ADR-008 Phase 1): if ctx.environment is present, the adapter
  * symlinks declared Claude skills into `<cwd>/.claude/skills/`, writes an MCP
@@ -66,6 +67,7 @@ import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
 } from '../sandbox/seatbelt.js';
+import { buildMemoryPreamble } from '../memory-bridge.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -78,10 +80,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 })();
 
-const buildPrompt = (prompt, memoryLongTerm) => {
-  if (!memoryLongTerm) return prompt;
-  return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
-};
+const buildPrompt = buildMemoryPreamble;
 
 const PUBLIC_SANDBOX_MODES = new Set(['workspace', 'read-only']);
 const PUBLIC_DENIED_TOOLS = [
@@ -472,7 +471,13 @@ export default {
   async spawn(prompt, ctx = {}) {
     const isResume = !!ctx.sessionId;
     const sessionId = ctx.sessionId || randomUUID();
-    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm || '');
+    // Passed through UNCOALESCED. `ctx.memoryLongTerm || ''` was here, and
+    // `null || ''` is `''` — which routed the unreadable case straight into
+    // the empty-memory branch and made the whole distinction unreachable from
+    // the only two paths that build a real prompt. buildPrompt handles
+    // undefined and '' as absence itself; it does not need a guard, it needs
+    // the value.
+    const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
     // own default — which is how a fleet of ten agents ended up running three
@@ -484,7 +489,15 @@ export default {
     // present in one but not the other means a retry silently runs a different
     // model than the turn it is replacing — the same drifting-copy shape that
     // has bitten this codebase repeatedly.
-    const modelArgs = ctx.environment?.model ? ['--model', String(ctx.environment.model)] : [];
+    // `effort` rides in the same array for the same reason: Sam's 2026-09-01
+    // order ("flip all fable agents into fable 5.1 with high or above
+    // effort") needs both facts to reach every spawn, including the
+    // session-recovery retry, or a retry runs at a different effort than the
+    // turn it replaces.
+    const modelArgs = [
+      ...(ctx.environment?.model ? ['--model', String(ctx.environment.model)] : []),
+      ...(ctx.environment?.effort ? ['--effort', String(ctx.environment.effort)] : []),
+    ];
     const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
 
     if (ctx.environment && ctx.cwd) {
@@ -540,7 +553,11 @@ export default {
       // session id poisons every subsequent event re-delivery.
       if (isResume && /already in use|no conversation|no session/i.test(String(err.message))) {
         const freshId = randomUUID();
-        const retryBase = ['-p', fullPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
+        // The retry creates a new underlying CLI session. Rebuild its prompt
+        // as fresh too: otherwise a session-recovery path is the one fresh
+        // session that misses the durable-state cue.
+        const freshPrompt = buildPrompt(prompt, ctx.memoryLongTerm, { freshSession: true });
+        const retryBase = ['-p', freshPrompt, '--output-format', 'text', '--session-id', freshId, ...modelArgs];
         const retry = await prepareArgv(retryBase, {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,

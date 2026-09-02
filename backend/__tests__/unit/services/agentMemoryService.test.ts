@@ -7,6 +7,9 @@ const {
   buildSectionsFromLegacyContent,
   mirrorContentFromSections,
   stampSectionsForWrite,
+  getLastAgentMemoryWrite,
+  coarsenAgentMemoryWrite,
+  classifyAgentWriteSection,
   mergePatchSections,
   computeSyncDedupKey,
   isValidYMD,
@@ -192,7 +195,7 @@ describe('stampSectionsForWrite', () => {
     expect(out.soul).toBeUndefined();
   });
 
-  it('stamps daily entries without byteSize/updatedAt (per ADR shape)', () => {
+  it('server-stamps daily entries without byteSize', () => {
     const out = stampSectionsForWrite({
       daily: [{ date: '2026-04-14', content: 'today', visibility: 'pod' }],
     }, FIXED);
@@ -201,7 +204,7 @@ describe('stampSectionsForWrite', () => {
     expect(out.daily[0].content).toBe('today');
     expect(out.daily[0].visibility).toBe('pod');
     expect(out.daily[0].byteSize).toBeUndefined();
-    expect(out.daily[0].updatedAt).toBeUndefined();
+    expect(out.daily[0].updatedAt).toEqual(FIXED);
   });
 
   it('stamps relationships entries with updatedAt but no byteSize', () => {
@@ -226,6 +229,111 @@ describe('stampSectionsForWrite', () => {
     const a = stampSectionsForWrite(input, FIXED);
     const b = stampSectionsForWrite(a, FIXED);
     expect(b).toEqual(a);
+  });
+});
+
+describe('getLastAgentMemoryWrite', () => {
+  it('uses the newest normal agent-save section, not newer automated entries', () => {
+    const latest = getLastAgentMemoryWrite({
+      long_term: { content: 'durable state', updatedAt: new Date('2026-08-26T08:00:00Z') },
+      relationships: [{
+        otherInstanceId: 'architect',
+        notes: 'reviewer',
+        updatedAt: new Date('2026-08-26T09:00:00Z'),
+      }],
+      daily: [{
+        date: '2026-08-26',
+        content: 'shipped memory observability',
+        updatedAt: new Date('2026-08-26T10:00:00Z'),
+      }],
+      system_exchanges: {
+        entries: [],
+        visibility: 'private',
+        updatedAt: new Date('2026-08-26T11:00:00Z'),
+      },
+      cycles: {
+        entries: [],
+        visibility: 'private',
+        updatedAt: new Date('2026-08-26T12:00:00Z'),
+      },
+    });
+
+    expect(latest).toEqual({
+      section: 'daily',
+      updatedAt: new Date('2026-08-26T10:00:00Z'),
+    });
+  });
+
+  it('returns null when the envelope contains only automated or journal writes', () => {
+    expect(getLastAgentMemoryWrite({
+      system_exchanges: {
+        entries: [], visibility: 'private', updatedAt: new Date('2026-08-26T11:00:00Z'),
+      },
+      cycles: {
+        entries: [], visibility: 'private', updatedAt: new Date('2026-08-26T12:00:00Z'),
+      },
+    })).toBeNull();
+  });
+
+  // A tie is the common case: one /memory/sync stamps every section it carries
+  // with the same `now`. The previous fixture here omitted `soul`, so it read as
+  // pinning a preference for long_term when the code was only doing array order
+  // — `soul` sorts first and would have won. Both facts are now stated.
+  // The fixture has to DISCRIMINATE. `soul` and `long_term` are both durable and
+  // both sort ahead of every bookkeeping section, so any tie including them is
+  // won by array order alone and passes with the rule deleted — verified by
+  // mutation, which left an earlier version of this test green. `dedup_state`
+  // (index 2, bookkeeping) ahead of `shared` (index 3, durable) is the only
+  // shape where the two rules disagree.
+  it('gives a tie to a durable section over a bookkeeping one that sorts ahead of it', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      dedup_state: { content: 'message ids', updatedAt },
+      shared: { content: 'durable note', updatedAt },
+    })).toEqual({ section: 'shared', updatedAt });
+    expect(classifyAgentWriteSection('shared')).toBe('durable');
+  });
+
+  it('still reports a bookkeeping section when nothing durable is that recent', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      long_term: { content: 'older', updatedAt: new Date('2026-08-25T10:00:00Z') },
+      dedup_state: { content: 'message ids', updatedAt },
+    })).toEqual({ section: 'dedup_state', updatedAt });
+  });
+
+  it('breaks a durable-vs-durable tie by section order, which nothing may depend on', () => {
+    const updatedAt = new Date('2026-08-26T10:00:00Z');
+    expect(getLastAgentMemoryWrite({
+      soul: { content: 'who I am', updatedAt },
+      long_term: { content: 'durable decision', updatedAt },
+    })).toEqual({ section: 'soul', updatedAt });
+  });
+});
+
+describe('coarsenAgentMemoryWrite', () => {
+  // The profile route is mounted without auth, so it may report THAT an agent
+  // saved and when, never WHICH section. Same max(), two shapes.
+  const updatedAt = new Date('2026-08-26T10:00:00Z');
+
+  it.each(['long_term', 'soul', 'shared', 'daily', 'relationships'])(
+    'reports %s as durable',
+    (section) => {
+      expect(coarsenAgentMemoryWrite({ section, updatedAt })).toEqual({ kind: 'durable', updatedAt });
+    },
+  );
+
+  it.each(['dedup_state', 'runtime_meta'])('reports %s as bookkeeping', (section) => {
+    expect(coarsenAgentMemoryWrite({ section, updatedAt })).toEqual({ kind: 'bookkeeping', updatedAt });
+  });
+
+  it('never carries the section name through', () => {
+    const coarse = coarsenAgentMemoryWrite({ section: 'runtime_meta', updatedAt });
+    expect(Object.keys(coarse).sort()).toEqual(['kind', 'updatedAt']);
+  });
+
+  it('passes a null write straight through', () => {
+    expect(coarsenAgentMemoryWrite(null)).toBeNull();
   });
 });
 

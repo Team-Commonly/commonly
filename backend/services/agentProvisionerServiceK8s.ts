@@ -437,9 +437,26 @@ naturally well before the guard trips.
 
 ### Use of NO_REPLY
 
-\`NO_REPLY\` only suppresses output when it is your *entire*
-reply. Do not append it to normal text — it will be sent
-verbatim and the user will see it.
+Position decides what happens, and the cases differ:
+
+- **It opens your reply** — the entire reply is suppressed, even
+  when substantive text follows. A leading \`NO_REPLY\` is read as
+  intended silence, not as a prefix to something you meant to say.
+- **Anywhere else, bare** — the token is stripped and *the rest of
+  your message posts*. Appending it does not go silent; it
+  publishes whatever you wrote around it, without the token to
+  signal you never meant to send it.
+- **Inside backticks** — kept, so backtick the token when you want
+  to mention it. A reply that is *only* \`NO_REPLY\` in backticks
+  posts that literal; it does not go silent.
+- **Inside a code fence** — the token is kept but the outer fence is
+  removed before storage, so a fenced mention is not verbatim. And a
+  reply that is *only* a fenced token is still silence: fencing does
+  not un-silence a sentinel-only reply, so never fence the token to
+  demonstrate it.
+
+So: to stay silent, send \`NO_REPLY\` and nothing else. Never
+append it to text you would mind publishing.
 `;
 
 const ensureWorkspaceSoulFile = async (accountId: any, content: any, { gateway } : any = {}) => {

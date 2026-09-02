@@ -11,6 +11,7 @@ const express = require('express');
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 const auth = require('../middleware/auth');
 const AgentEventService = require('../services/agentEventService');
+const HostedRuntimeMeter = require('../services/hostedRuntimeService');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentThreadService = require('../services/agentThreadService');
@@ -114,6 +115,7 @@ const {
   describeCycleMutation,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
+const DecisionRequestService = require('../services/decisionRequestService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -350,10 +352,19 @@ router.delete('/messages/:messageId/claim', agentRuntimeAuth, phase4RateLimit, a
   try {
     const { agentName, instanceId } = resolveClaimIdentity(req);
     if (!agentName) return res.status(400).json({ error: 'agent identity unresolved' });
+    const outcome = req.body?.outcome;
+    if (outcome !== undefined && outcome !== 'declined' && outcome !== 'completed') {
+      return res.status(400).json({ error: 'outcome must be declined or completed' });
+    }
+    // An explicit decline advances a human wake to exactly one original
+    // listener. Completion is terminal; omitting outcome retains the legacy
+    // holder-only DELETE for old drivers and failed turns.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const MessageClaimService = require('../services/messageClaimService');
-    const result = await MessageClaimService.release({
-      messageId: req.params.messageId, agentName, instanceId,
+    const ClaimReleaseService = outcome === 'declined'
+      ? require('../services/messageClaimHandoffService')
+      : require('../services/messageClaimService');
+    const result = await ClaimReleaseService.release({
+      messageId: req.params.messageId, agentName, instanceId, ...(outcome ? { outcome } : {}),
     });
     // D7 mirror: releasing the lease ends "someone's on it" immediately
     // (claim-then-decline is a normal, frequent path per D6 — the indicator
@@ -476,6 +487,16 @@ router.get('/events', agentRuntimeAuth, async (req: any, res: any) => {
     const fallbackPodId = podIds.length === 0 && installation?.podId
       ? installation.podId
       : undefined;
+
+    // Hosted-runtime meter (ADR-023 D3.1): once a hosted agent has used its
+    // daily turn budget the feed goes empty for it — the worker idles instead
+    // of spending. Events stay pending and deliver after the UTC reset.
+    if (installation && HostedRuntimeMeter.isHostedInstallation(installation)) {
+      const meter = await HostedRuntimeMeter.meterAllowsTurn(agentName, instanceId);
+      if (!meter.allowed) {
+        return res.json({ events: [], meter });
+      }
+    }
 
     const events = await AgentEventService.list({
       agentName,
@@ -1101,7 +1122,40 @@ router.post('/bot/events/:id/ack', auth, requireApiTokenScopes(['agent:events:ac
       return res.status(403).json({ message: 'Agent token does not match bot user' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(req.params.id, resolvedAgentName, instanceId, delivery);
+    const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
+    const acked = await AgentEventService.acknowledge(
+      req.params.id,
+      resolvedAgentName,
+      instanceId,
+      delivery,
+      deliveryId,
+      ackConsumer,
+    );
+    // ADR-026 D6: only a caller that presented a deliveryId can be told it was
+    // superseded, so pre-D6 drivers see byte-identical behaviour. 409, not 404
+    // — "the event is gone" is idempotent success, "you were replaced" means
+    // stop working.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, resolvedAgentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
 
     return res.json({ success: true });
   } catch (error: any) {
@@ -1125,12 +1179,37 @@ router.post('/events/:id/ack', agentRuntimeAuth, async (req: any, res: any) => {
       return res.status(403).json({ message: 'Agent token not authorized for events' });
     }
     const delivery = req.body?.result || req.body?.delivery || null;
-    await AgentEventService.acknowledge(
+    const deliveryId = req.body?.deliveryId || null;
+    // Which consumer is acking. Phase B is keyed on this rather than flipped
+    // globally, so a migrated client can enforce while a parked one (the
+    // openclaw extension, parked 2026-08-20) keeps working. Clients declare
+    // themselves with `x-commonly-client`; anything that does not is
+    // 'unknown', which is never enforced unless the operator sets `true`/`*`.
+    const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
+    // returns null for a refused nonce-less ack, which is indistinguishable
+    // from "already gone", so answering 200 here would tell the driver it
+    // acked while the event rolled into the requeue unhandled.
+    if (!deliveryId && AgentEventService.isDeliveryNonceRequired(ackConsumer)) {
+      return res.status(400).json({
+        code: 'delivery_id_required',
+        message: 'This instance requires the deliveryId from the event payload on ack',
+      });
+    }
+    const acked = await AgentEventService.acknowledge(
       req.params.id,
       agentName,
       instanceId,
       delivery,
+      deliveryId,
+      ackConsumer,
     );
+    // See the /bot/events ack above: 409 only for nonce-presenting callers.
+    if (!acked && await AgentEventService.isSupersededDelivery(
+      req.params.id, agentName, instanceId, deliveryId,
+    )) {
+      return res.status(409).json({ code: 'stale_delivery', message: 'This delivery was superseded by a requeue' });
+    }
     return res.json({ success: true });
   } catch (error: any) {
     console.error('Error acknowledging agent event:', error);
@@ -3567,6 +3646,80 @@ router.post('/pods/:podId/ask', agentRuntimeAuth, phase4RateLimit, async (req: a
   } catch (err: any) {
     console.error('POST /pods/:podId/ask error:', err);
     return res.status(500).json({ message: 'Failed to ask agent' });
+  }
+});
+
+/**
+ * POST /decisions (agent runtime token auth)
+ *
+ * An agent asks a human member of its pod to choose between 2–4 declared
+ * approaches. This is advisory coordination only: it carries no executable
+ * action payload and therefore cannot substitute for an ApprovalAction.
+ */
+router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    // A human choice here is a normal chat ruling, not a consent grant. Keep
+    // this envelope deliberately closed so an agent cannot smuggle a typed
+    // action, scopes, or a credential reference through the friendlier
+    // decision surface. Privileged work must go through `propose-action`,
+    // whose owner/CAS gate is deliberately stronger.
+    const DECISION_REQUEST_FIELDS = new Set([
+      'podId', 'decisionClass', 'title', 'question', 'options', 'threadRootId', 'context',
+    ]);
+    const unsupportedFields = Object.keys(req.body || {})
+      .filter((field) => !DECISION_REQUEST_FIELDS.has(field));
+    if (unsupportedFields.length) {
+      return res.status(400).json({
+        message: `Unsupported decision request fields: ${unsupportedFields.join(', ')}.`
+          + ' Use propose-action for privileged side effects.',
+        code: 'unsupported_decision_fields',
+      });
+    }
+    const {
+      podId, decisionClass, title, question, options, threadRootId, context,
+    } = req.body || {};
+    if (typeof podId !== 'string' || !podId.trim()) {
+      return res.status(400).json({ message: 'podId is required', code: 'podId_required' });
+    }
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id || !installation?.agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    if (threadRootId !== undefined && typeof threadRootId !== 'string') {
+      return res.status(400).json({ message: 'threadRootId must be a string', code: 'invalid_threadRootId' });
+    }
+    if (context !== undefined && typeof context !== 'string') {
+      return res.status(400).json({ message: 'context must be a string', code: 'invalid_context' });
+    }
+
+    const result = await DecisionRequestService.requestDecision({
+      podId,
+      agentUserId: String(req.agentUser._id),
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      displayName: installation.displayName,
+      installationConfig: installation.config || null,
+      decisionClass,
+      title,
+      question,
+      options,
+      threadRootId,
+      context,
+    });
+    return res.status(201).json(result);
+  } catch (error: any) {
+    if (error instanceof DecisionRequestService.DecisionRequestError) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
+    console.error('POST /decisions error:', error);
+    return res.status(500).json({ message: 'Failed to request a decision' });
   }
 });
 
