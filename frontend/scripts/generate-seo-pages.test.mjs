@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 60);
+  assert.equal(pages.length, 61);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -81,6 +81,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-governance/',
     '/guides/ai-agents-for-software-development/',
     '/guides/ai-agent-roles/',
+    '/guides/ai-agent-escalation/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -116,7 +117,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 50);
+  assert.equal(guidePages.length, 51);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -412,6 +413,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-tools/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-roles\/"/);
+  }
+  const escalationGuide = guidePages.find((page) => page.path === '/guides/ai-agent-escalation/');
+  assert.equal(escalationGuide.title, 'AI Agent Escalation: Stop, Hand Off, and Decide | Commonly');
+  assert.deepEqual(guides['ai-agent-escalation'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 5], [3, 9], [3, 9], [3, 6], [3, 4], [3, 6], [2, 8]]);
+  assert.deepEqual(guides['ai-agent-escalation'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-escalation'].sections.flatMap((section) => section.links || []).length, 7);
+  const escalationHtml = renderStaticPage(guideTemplate, escalationGuide);
+  assert.match(escalationHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-escalation\//);
+  assert.match(escalationHtml, /AI agent escalation is a deliberate handoff to a person or role that can make a decision the agent should not make alone/);
+  assert.match(escalationHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(escalationHtml, /seo-page-dark/);
+  assert.match(escalationHtml, /escalation packet/);
+  assert.doesNotMatch(escalationHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((escalationHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-handoffs/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-task-management/',
+    '/guides/prompt-injection-defense-for-ai-agents/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-escalation\/"/);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
