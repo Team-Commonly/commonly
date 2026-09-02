@@ -1502,10 +1502,15 @@ class ActivityService {
   static async getPendingApprovals(userId: unknown): Promise<unknown[]> {
     try {
       const pods: Array<{ _id: unknown }> = await Pod.find({
-        // Pod.members is an ObjectId[] with no role field. This owner lookup
-        // replaces the inert members.role branch, which implied a nonexistent
-        // admin audience for pending approvals.
-        createdBy: userId,
+        // Pending approvals belong to every pod member. `members` is an
+        // ObjectId[] (not a role-bearing object), so querying
+        // `members.userId` or `members.role` silently excludes members.
+        // Keep createdBy for legacy rows created before creators were added
+        // to members on save.
+        $or: [
+          { createdBy: userId },
+          { members: userId },
+        ],
       })
         .select('_id')
         .lean();
