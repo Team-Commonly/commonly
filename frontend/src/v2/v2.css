@@ -370,6 +370,91 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Layout shell ---------- */
 
+/* Authenticated v2 routes reserve a compact shell row for the email
+   verification reminder. The inner shell/panes must use the remaining space,
+   not 100vh, or the composer and feature-page footers would clip. */
+.v2-authenticated-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.v2-authenticated-shell__content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.v2-authenticated-shell__content > .v2-shell,
+.v2-authenticated-shell__content .v2-pane {
+  height: 100%;
+}
+
+.v2-verification-banner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-warning-soft);
+  color: var(--v2-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.v2-verification-banner__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Resend feedback belongs to the banner's status announcement, but it must
+   not replace the required named-address reminder or consume its 44px phone
+   row. */
+.v2-verification-banner__notice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-verification-banner__resend,
+.v2-root button.v2-verification-banner__dismiss {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.v2-root button.v2-verification-banner__resend {
+  min-height: 32px;
+  padding: 4px 2px;
+}
+
+.v2-root button.v2-verification-banner__dismiss {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-verification-banner__resend:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 .v2-shell {
   display: grid;
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr var(--v2-inspector-w);
@@ -4565,6 +4650,13 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 480px) {
+  .v2-verification-banner {
+    height: 44px;
+    min-height: 44px;
+    padding: 4px 12px;
+    font-size: 16px;
+  }
+
   /* Auth is a primary phone flow: 16px prevents Safari's focus zoom and a
      44px target keeps signup usable with a thumb. */
   .v2-login__input {
@@ -4871,29 +4963,6 @@ body.modern-ui.v2-canvas {
   background: rgba(239, 68, 68, 0.1);
   color: var(--v2-danger);
   font-size: 12px;
-}
-
-.v2-root button.v2-login__resend {
-  min-height: 32px;
-  margin-top: 8px;
-  padding: 6px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.v2-root button.v2-login__resend:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.v2-login__resend-notice {
-  margin-top: 6px;
-  color: var(--v2-text-secondary);
 }
 
 .v2-login__forgot {

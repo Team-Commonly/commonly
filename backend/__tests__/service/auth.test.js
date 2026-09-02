@@ -276,7 +276,7 @@ describe('Auth Routes Integration Tests', () => {
       expect(response.body.verified).toBe(true);
     });
 
-    it('should not login an unverified user', async () => {
+    it('should login an unverified user and return its verification state', async () => {
       // Create an unverified user
       const user = new User({
         username: 'testuser',
@@ -294,9 +294,14 @@ describe('Auth Routes Integration Tests', () => {
       const response = await request(app)
         .post('/api/auth/login')
         .send(loginData)
-        .expect(400);
+        .expect(200);
 
-      expect(response.body.error).toContain('Email not verified');
+      expect(response.body.token).toBeDefined();
+      expect(response.body.verified).toBe(false);
+      expect(response.body.user).toMatchObject({
+        email: 'test@example.com',
+        verified: false,
+      });
     });
 
     it('should not login with incorrect password', async () => {
