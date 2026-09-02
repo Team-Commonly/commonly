@@ -367,6 +367,13 @@
     "cancelReply": "取消回复",
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
+    "agentRoomLiveness": {
+      "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
+      "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
+      "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
+      "waiting": "正在等待 {{agentName}} 回复…",
+      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+    },
     "typing": {
       "one": "{{name}} 正在思考…",
       "two": "{{first}} 和 {{second}} 正在思考…",

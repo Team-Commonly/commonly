@@ -2034,6 +2034,35 @@ body.modern-ui.v2-canvas {
   flex-shrink: 0;
 }
 
+/* A 1:1 agent room must not make a successful POST look like an active
+   agent. The liveness row is deliberately adjacent to, but outside, the
+   composer: it remains visible while someone writes and never becomes part
+   of the scrollable transcript. */
+.v2-chat__agent-room-status {
+  margin: 8px 24px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-chat__agent-room-status--wait {
+  border-color: var(--v2-accent-soft);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-weight: 600;
+}
+
+.v2-chat__agent-room-status--timeout {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-weight: 500;
+}
+
 .v2-chat__starter-prompts {
   display: flex;
   flex-wrap: wrap;

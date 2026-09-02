@@ -367,6 +367,13 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "agentRoomLiveness": {
+      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
+      "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
+      "waiting": "Waiting for {{agentName}} to reply…",
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this room."
+    },
     "typing": {
       "one": "{{name}} is thinking…",
       "two": "{{first}} and {{second}} are thinking…",
