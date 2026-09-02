@@ -12,6 +12,8 @@ const Post = require('../models/Post');
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
 
 let PGMessage: unknown = null;
 try {
@@ -1519,12 +1521,7 @@ class ActivityService {
     const podId = rawPodId?._id || activity.podId;
     const pod = await Pod.findById(podId).select('createdBy members').lean();
     if (!pod) return { success: false, status: 404, error: 'Approval pod not found' };
-    const isCreator = String(pod.createdBy || '') === String(userId);
-    const isMember = Array.isArray(pod.members) && pod.members.some((member: unknown) => {
-      const memberId = member as { _id?: unknown } | undefined;
-      return String(memberId?._id || member) === String(userId);
-    });
-    if (!isCreator && !isMember) {
+    if (!isPodMember(pod, userId)) {
       return { success: false, status: 403, error: 'Only pod members can decide this' };
     }
     return null;
