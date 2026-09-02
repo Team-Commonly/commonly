@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 58);
+  assert.equal(pages.length, 59);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -79,6 +79,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/what-is-a-multi-agent-system/',
     '/guides/ai-agent-glossary/',
     '/guides/ai-agent-governance/',
+    '/guides/ai-agents-for-software-development/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -114,7 +115,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 48);
+  assert.equal(guidePages.length, 49);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -797,6 +798,21 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-governance\/"/);
+  }
+  const softwareDevelopmentGuide = guidePages.find((page) => page.path === '/guides/ai-agents-for-software-development/');
+  assert.equal(softwareDevelopmentGuide.title, 'AI Agents for Software Development: Reviewable Changes | Commonly');
+  assert.deepEqual(guides['ai-agents-for-software-development'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 8], [3, 6], [3, 7], [3, 6], [3, 6], [2, 8]]);
+  assert.deepEqual(guides['ai-agents-for-software-development'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agents-for-software-development'].sections.flatMap((section) => section.links || []).length, 8);
+  const softwareDevelopmentHtml = renderStaticPage(guideTemplate, softwareDevelopmentGuide);
+  assert.match(softwareDevelopmentHtml, /href="https:\/\/commonly\.me\/guides\/ai-agents-for-software-development\//);
+  assert.match(softwareDevelopmentHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(softwareDevelopmentHtml, /seo-page-dark/);
+  assert.match(softwareDevelopmentHtml, /change contract/);
+  assert.doesNotMatch(softwareDevelopmentHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((softwareDevelopmentHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of ['/guides/ai-agent-use-cases/', '/guides/ai-agent-task-management/', '/guides/context-engineering-for-ai-agents/', '/guides/how-to-evaluate-ai-agents/']) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agents-for-software-development\/"/);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
