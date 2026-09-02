@@ -506,8 +506,10 @@ verb, the page moves later.
    has nothing `handleEnableCommand`'s lookup can match, and the webhook route is not edited.
 2. **The claim is the compare-and-set.** One parent row per `(installable, user)` across
    `installing`, `active`, and retained `error` (unique partial index); the parent is claimed by
-   one atomic upsert; only the lock owner runs projectors; every loser gets the existing row —
-   202 while installing, 200 when active — and never invokes a projector.
+   one atomic upsert; **the lock carries a lease** (`claimedAt` + one named TTL) so a dead
+   owner's `installing` row is taken over by the next attempt and swept to `error` by the
+   reconciler, never honoured forever; only the lock owner runs projectors; every loser gets
+   the existing row — 202 while installing, 200 when active — and never invokes a projector.
 3. **Selection is the dispatcher's, scoped by the event's target.** For `chat.message` in pod
    P the dispatcher selects the installations bound to P in one query before any handler runs;
    it never fans out to every tenant and relies on handlers to decline. The bridge's own
