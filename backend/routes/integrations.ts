@@ -262,7 +262,30 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/', auth, async (req: AuthReq, res: Res) => {
+// Token/IP keying shared by every limiter in this file — same shape as
+// routes/messages.ts so NAT'd users don't share a bucket.
+const integrationsRateLimitKey = (req: { get?: (h: string) => string | undefined; ip?: string }): string => {
+  const authHeader = req.get?.('authorization');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
+
+// Write limiter for the create + re-mint paths: each one mints a connect code
+// (a bearer secret) and writes a row, so a burst is either a bug or a probe.
+const writeIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: integrationsRateLimitKey,
+  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 30 writes per 60s' });
+  },
+});
+
+router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
@@ -275,7 +298,7 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
     // authors content into it — a WRITE, so it takes the strict predicate
     // (members + creator; no admin read-bypass — #1302's isPodMember, not
     // DMService.canViewPod). Plain findById: unit mocks resolve a bare doc.
-    const targetPod = await Pod.findById(podId);
+    const targetPod = await Pod.findById(String(podId));
     if (!targetPod || !isPodMember(targetPod, req.user?.id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -441,13 +464,7 @@ const listIntegrationsRateLimit = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: { get?: (h: string) => string | undefined; ip?: string }) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
-  },
+  keyGenerator: integrationsRateLimitKey,
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
   },
@@ -465,7 +482,7 @@ router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, re
 
 // Re-mint the one-time enable code (codes expire after 10 minutes). Only
 // while the chat is still unbound — a connected integration has no code.
-router.post('/:id/connect-code', auth, async (req: AuthReq, res: Res) => {
+router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { chatId?: string } } | null;
