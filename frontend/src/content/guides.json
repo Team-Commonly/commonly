@@ -1220,7 +1220,11 @@
         "label": "AI agent decision packet",
         "path": "/guides/ai-agent-decision-packet/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent review packet",
+        "path": "/guides/ai-agent-review-packet/"
+      }],
     "cta": {
       "title": "Build review into the way the team works",
       "body": "Human-in-the-loop AI teams work best when agents have room to execute and humans have a clear place to decide. Define the handoffs, require a useful decision packet, preserve the outcome, and keep technical controls in the systems that can actually enforce them.",
@@ -6490,7 +6494,11 @@
         "label": "AI agent acceptance criteria",
         "path": "/guides/ai-agent-acceptance-criteria/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent review packet",
+        "path": "/guides/ai-agent-review-packet/"
+      }],
     "cta": {"title":"Let evidence decide how much scope an agent earns","body":"An AI agent should earn a broader role through demonstrated behavior, not through a persuasive demo. Evaluate the real work loop: what triggered the agent, what it knew, what it did, what it left behind, and where it stopped. Test the situations that make collaboration hard, including missing evidence, stale state, duplicate ownership, untrusted input, and an empty queue. Start with one role and one decision type. Make the acceptance criteria visible, run representative tasks under review, test the deployed boundaries, and inspect the team record. That is how evaluation becomes a practical decision tool: it tells a team what an agent can safely own today and exactly what must improve before it owns more tomorrow.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
   },
   "ai-agent-vs-chatbot": {"eyebrow":"Guide","titleTag":"AI Agent vs. Chatbot: What Is the Difference? | Commonly","title":"AI Agent vs. Chatbot: What Is the Difference?","description":"Compare AI agents and chatbots by role, context, tools, state, autonomy, and handoffs—and choose the smallest system that fits the work.","summary":"Compare chatbots and AI agents by their operating model: a useful conversation versus a role-bound, reviewable contribution.","provenance":{"author":"Commonly","reviewer":"Commonly SEO team","datePublished":"2026-09-01","dateModified":"2026-09-01"},"intro":["An AI chatbot primarily helps within a conversation: it answers questions, drafts text, and responds when a person asks. An AI agent is a role-bound participant that can use relevant context and permitted capabilities to complete a bounded piece of work, leave a record, and hand the next decision to the appropriate person or system.","Commonly (commonly.me), the shared workspace where humans and AI agents work together, is built around the work that follows an answer: named participants, tasks, threads, shared memory, and reviewable handoffs. That does not make a chatbot obsolete. It gives a team a way to add an agent when a conversation has become recurring work with an owner, a context boundary, and a result someone else must continue.","The distinction is not whether a system uses a large language model, can call a tool, or sounds proactive. A chatbot can use tools. An agent can have a chat interface. The practical question is whether the work needs an ongoing operating model around the response: a defined role, current state, scoped actions, an evidence trail, and a stop or handoff condition.","This guide compares AI agents and chatbots, shows when each is the simpler choice, and explains how to move from useful conversation to a safe, inspectable agent workflow without treating autonomy as a requirement."],"sections":[
@@ -8858,6 +8866,10 @@
       {
         "label": "AI agent scope creep",
         "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI agent review packet",
+        "path": "/guides/ai-agent-review-packet/"
       }],
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
@@ -9567,6 +9579,10 @@
       {
         "label": "AI agent scope creep",
         "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI agent review packet",
+        "path": "/guides/ai-agent-review-packet/"
       }],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
@@ -12381,6 +12397,708 @@
     "cta": {
       "title": "Let useful work grow only with a visible boundary",
       "body": "AI agent scope creep is easier to prevent when the team treats additional work as a decision rather than a side effect of capability. Give the agent a checkable contract, make new inputs and operations visible, preserve non-goals, and route any material expansion to the owner who can accept it. That lets the team pursue useful follow-on work without losing the ability to review who asked for it, why it matters, and what the agent may do next.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-review-packet": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Review Packet: Evidence, Limits, and Reviewer Decision | Commonly",
+    "title": "AI Agent Review Packet: Give Reviewers the Evidence They Need",
+    "description": "Learn what an AI agent review packet includes: the exact artifact, scope, checks, limits, and requested judgment a reviewer needs to evaluate work without reconstructing it.",
+    "summary": "An AI agent review packet is a compact, inspectable bundle that gives a named reviewer the exact artifact, its task scope, evidence and checks, known limits, and the judgment requested before work moves forward.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent review packet is a compact, inspectable bundle that gives a named reviewer the exact artifact, its task scope, evidence and checks, known limits, and the judgment requested before work moves forward. It turns “please review this” into a bounded question a person can answer without rebuilding the task from chat history, agent summaries, or assumptions.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams practical places to assemble that packet: a task can state outcome, owner, dependency, and reported result; a focused thread can hold the reviewer’s question and answer; an attachment can preserve substantial evidence or an exact draft; and selected shared context can retain the accepted conclusion. Those records make review visible. They do not make an agent’s artifact merged, deployed, published, authorized, or otherwise applied in the target system.",
+      "A review packet is not a generic status update and it is not a substitute for the system that controls an external action. Its purpose is narrower: help the right reviewer evaluate a particular artifact against the agreed work boundary, then accept, request changes, narrow the scope, reject it, or route a new decision.",
+      "This guide explains what an AI agent review packet contains, how to keep its evidence and limits clear, and how to make review a useful handoff rather than a vague request for attention."
+    ],
+    "sections": [
+      {
+        "title": "A review packet is about an artifact and a judgment",
+        "paragraphs": [
+          "Teams use several records while work moves from a request to a result. A review packet has a distinct role: it is centered on the exact work a reviewer must inspect and the response they are being asked to provide.",
+          "For the coordination record around the reviewed work, see AI Agent Task Management."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record",
+              "Primary purpose",
+              "What it may be missing without a review packet"
+            ],
+            "rows": [
+              [
+                "Task update",
+                "Show ownership, current state, progress, or a blocker",
+                "The exact artifact, checks, limits, and reviewer question"
+              ],
+              [
+                "Status summary",
+                "Describe what changed across an area of work",
+                "A bounded decision about one inspectable result"
+              ],
+              [
+                "Decision packet",
+                "Ask an owner to choose among options or resolve one matter",
+                "The exact artifact and evidence needed to evaluate its quality"
+              ],
+              [
+                "Handoff",
+                "Transfer a next step to a new owner",
+                "A structured review request before that next step begins"
+              ],
+              [
+                "Test or research note",
+                "Preserve a check, source, or analysis",
+                "The outcome, scope, and reviewer decision it supports"
+              ],
+              [
+                "Review packet",
+                "Present a specific artifact with its evidence, limits, and requested judgment",
+                "It should be complete enough to review without turning into a full transcript"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Put the minimum complete fields in every packet",
+        "tables": [
+          {
+            "headers": [
+              "Packet field",
+              "What to include",
+              "Why the reviewer needs it"
+            ],
+            "rows": [
+              [
+                "Artifact under review",
+                "Stable link or attachment for the exact draft, analysis, change, or output",
+                "Prevents review of an unclear or moving target"
+              ],
+              [
+                "Requested judgment",
+                "Accept, request changes, narrow scope, reject, or route a separate decision",
+                "Tells the reviewer what answer is useful now"
+              ],
+              [
+                "Outcome and scope",
+                "Intended result, included area, explicit non-goals, and relevant dependency",
+                "Lets the reviewer assess the artifact against the agreed work"
+              ],
+              [
+                "Inputs and evidence",
+                "Relevant source links, provided facts, test outputs, or observed results",
+                "Lets the reviewer inspect the basis instead of trusting a summary"
+              ],
+              [
+                "Checks performed",
+                "What was verified, compared, tested, or reviewed",
+                "Shows what evidence exists and what has not been checked"
+              ],
+              [
+                "Limits and uncertainty",
+                "Missing source, unsupported claim, unrun check, assumption, or conflict",
+                "Keeps fluent work from appearing more certain than it is"
+              ],
+              [
+                "Proposed next action",
+                "What happens after each likely review answer",
+                "Connects judgment to a bounded handoff"
+              ],
+              [
+                "Reviewer and due condition",
+                "Named person or role, plus any meaningful timing or dependency",
+                "Prevents an unowned request sent to a crowd"
+              ],
+              [
+                "Source of record",
+                "Where the exact artifact or external result can be verified",
+                "Separates a reviewable proposal from an applied change"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "The packet should be short enough to review and complete enough to support a decision. It can be an attachment, a structured task update, or a focused review thread, depending on the work. The fields below give a reliable baseline."
+        ]
+      },
+      {
+        "title": "The fields do not need identical formatting",
+        "paragraphs": [
+          "The fields do not need identical formatting in every workflow. The important part is that a reviewer can find the artifact, understand the intended boundary, assess the evidence and limits, and answer one clear question.",
+          "For turning readiness conditions into inspectable checks, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Give the reviewer the exact artifact, not a summary of it",
+        "tables": [
+          {
+            "headers": [
+              "Artifact type",
+              "Useful reference in the packet",
+              "Review question it supports"
+            ],
+            "rows": [
+              [
+                "Research brief",
+                "Attached brief or source-linked document version",
+                "Are the facts, inferences, and recommendation traceable and in scope?"
+              ],
+              [
+                "Draft content",
+                "Exact draft version with its sources and non-goals",
+                "Does the copy meet the brief without unsupported claims or unwanted expansion?"
+              ],
+              [
+                "Proposed code change",
+                "Pull request, diff, or versioned change reference with checks",
+                "Does the change match requirements and meet the stated review condition?"
+              ],
+              [
+                "Triage result",
+                "Structured finding, evidence references, and routed question",
+                "Is the classification supported, and is the next owner correct?"
+              ],
+              [
+                "Project plan",
+                "Versioned plan, dependencies, and decision points",
+                "Does the plan preserve priorities, ownership, and current constraints?"
+              ],
+              [
+                "Decision analysis",
+                "Evidence packet, options, and requested owner answer",
+                "Is the framing complete enough for a decision, and are limits explicit?"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Agent work becomes hard to review when the packet describes an artifact without making the artifact itself stable and accessible. A reviewer should know which version they are evaluating and how the version relates to the task and any target system."
+        ]
+      },
+      {
+        "title": "The review packet should not claim that a draft is current production state",
+        "paragraphs": [
+          "The review packet should not claim that a draft is current production state, that a proposed change was merged, or that a reported check proves an external outcome. Link the repository, deployment platform, document store, or other target system when that external state matters.",
+          "For evaluating agent work before it reaches broader scope, see How to Evaluate AI Agents."
+        ],
+        "links": [
+          {
+            "label": "How to Evaluate AI Agents",
+            "path": "/guides/how-to-evaluate-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Separate evidence from interpretation and recommendation",
+        "tables": [
+          {
+            "headers": [
+              "Label",
+              "What it means",
+              "Example use"
+            ],
+            "rows": [
+              [
+                "Verified fact",
+                "A source-linked observation, record, or completed check",
+                "“The cited source states this behavior” with the source reference"
+              ],
+              [
+                "Reported status",
+                "A person or agent stated an outcome not yet confirmed by the source system",
+                "“The agent reports the check passed” pending the actual result"
+              ],
+              [
+                "Inference",
+                "A reasoned conclusion from available evidence",
+                "“This change may affect the documented workflow”"
+              ],
+              [
+                "Recommendation",
+                "A proposed next step, clearly distinct from approval",
+                "“Recommend requesting a limited source expansion”"
+              ],
+              [
+                "Open question",
+                "Missing information that prevents a sound conclusion",
+                "“Which requirement governs the conflicting sources?”"
+              ],
+              [
+                "Review decision",
+                "The named reviewer’s accepted, rejected, narrowed, or deferred answer",
+                "“Accept the brief with the listed limitation”"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Review is faster when the packet labels the role of each statement. A reviewer can then check the important facts, question the inference, or choose a different recommendation without treating every line as equally established."
+        ]
+      },
+      {
+        "title": "Labels are not ceremony",
+        "paragraphs": [
+          "Labels are not ceremony. They prevent an agent’s concise prose from turning an inference into a fact or a recommendation into an approval. They also help the reviewer decide what needs direct inspection before accepting the artifact.",
+          "For a decision-focused companion that frames options and ownership, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Ask for one review decision at the right boundary",
+        "tables": [
+          {
+            "headers": [
+              "Review moment",
+              "Useful question",
+              "Reviewer response options"
+            ],
+            "rows": [
+              [
+                "First artifact",
+                "Does this meet the agreed outcome and scope well enough to continue?",
+                "Accept, request changes, narrow scope, or stop"
+              ],
+              [
+                "Evidence conflict",
+                "Is the evidence sufficient for this claim or recommendation?",
+                "Choose a governing source, request verification, remove the claim, or escalate"
+              ],
+              [
+                "Technical proposal",
+                "Does this artifact meet the stated acceptance conditions and risk boundary?",
+                "Approve for the next review stage, request changes, split work, or defer"
+              ],
+              [
+                "Public-facing draft",
+                "Is the wording supported and appropriate for the authorized audience?",
+                "Approve for the next owner, revise, remove, or route to policy review"
+              ],
+              [
+                "Scope expansion",
+                "Should this additional input, operation, or outcome be included?",
+                "Approve a limited expansion, create a separate task, or retain current scope"
+              ],
+              [
+                "Completion claim",
+                "Is there enough evidence to treat the work as ready for its declared next step?",
+                "Accept the result, request verification, or mark a precise blocker"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "“Looks good?” is not a useful review request for consequential work. The requested judgment should match the reviewer’s role and the artifact’s current stage. It should be neither so broad that the reviewer must redesign the task nor so narrow that the packet hides a material tradeoff."
+        ]
+      },
+      {
+        "title": "The packet should name the reviewer who can give that answer",
+        "paragraphs": [
+          "The packet should name the reviewer who can give that answer. An agent can prepare the evidence and recommendation; it should not infer that a recent commenter, a task claimant, or the most active participant owns the decision.",
+          "For the role and permission boundaries around review, see AI Agent Governance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Governance",
+            "path": "/guides/ai-agent-governance/"
+          }
+        ]
+      },
+      {
+        "title": "Make limits reviewable, not invisible",
+        "tables": [
+          {
+            "headers": [
+              "Limit or boundary",
+              "State in the packet",
+              "Do not do"
+            ],
+            "rows": [
+              [
+                "Missing source",
+                "Which source is unavailable and how it limits the conclusion",
+                "Write as though the absent source supports the recommendation"
+              ],
+              [
+                "Unrun check",
+                "Which verification has not happened and why it matters",
+                "Call the output complete without labeling the gap"
+              ],
+              [
+                "Conflicting evidence",
+                "The sources that disagree and the decision needed",
+                "Quietly select the convenient source"
+              ],
+              [
+                "Explicit non-goal",
+                "Work that was intentionally excluded from the artifact",
+                "Let the reviewer assume the omission was an error"
+              ],
+              [
+                "Permission boundary",
+                "Operation or external system the agent did not control",
+                "Treat preparation work as execution authority"
+              ],
+              [
+                "Sensitive input",
+                "The restricted handling or owner required, without exposing material unnecessarily",
+                "Copy private or irrelevant information into a broad review thread"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "The most useful packets make the reviewer’s skepticism efficient. Include what the agent could not verify, what was excluded from scope, and what would change the conclusion. A limitation is not an admission that the artifact failed; it is part of the evidence the reviewer needs to decide responsibly."
+        ]
+      },
+      {
+        "title": "This is where review packets prevent a common failure mode",
+        "paragraphs": [
+          "This is where review packets prevent a common failure mode: polished output that gives a reviewer no way to tell which claim, system state, or decision still needs independent confirmation.",
+          "For a linked record of the evidence, review, handoff, and result, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Give the reviewer a direct verification path",
+        "tables": [
+          {
+            "headers": [
+              "Fact to verify",
+              "Primary record",
+              "Supporting context"
+            ],
+            "rows": [
+              [
+                "Current task scope and owner",
+                "Task or approved brief",
+                "Handoff and decision thread"
+              ],
+              [
+                "Exact artifact version",
+                "Versioned attachment, document, pull request, or target-system object",
+                "Review packet summary and task link"
+              ],
+              [
+                "Evidence basis",
+                "Linked source, test output, or research artifact",
+                "Agent’s interpretation and recommendation"
+              ],
+              [
+                "Review answer",
+                "Named reviewer’s response in the designated thread or packet",
+                "Evidence and options considered"
+              ],
+              [
+                "External execution state",
+                "Repository, deployment, identity, delivery, or other target system",
+                "Task result and review record"
+              ],
+              [
+                "Durable conclusion",
+                "Sourced shared memory or maintained project guidance",
+                "Original decision and audit links"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "A packet should point to the place that owns each important fact. The task may show coordination state, an attachment may show the version under review, and a target system may show whether an external action occurred. Naming the primary record prevents a reviewer from relying on the most convenient summary."
+        ]
+      },
+      {
+        "title": "The review packet is a map",
+        "paragraphs": [
+          "The review packet is a map, not a replacement for every record it links. A reviewer should be able to move from a claimed result to the source that can verify it without reconstructing the workflow from messages.",
+          "For choosing the designated record for each kind of fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Assemble a review packet in seven steps",
+        "orderedItems": [
+          "Link the exact artifact or stable version the reviewer is meant to inspect.",
+          "State the task outcome, included scope, explicit non-goals, and relevant dependency.",
+          "Name the reviewer and the one decision or response the packet requests.",
+          "Provide the evidence and checks that materially support the artifact.",
+          "Label missing inputs, uncertainty, conflicts, unrun checks, and permission boundaries.",
+          "Link the source of record for any external state the reviewer must verify.",
+          "State the next action after acceptance, requested changes, rejection, narrowing, or escalation."
+        ]
+      },
+      {
+        "title": "The order is intentional",
+        "paragraphs": [
+          "The order is intentional: the reviewer first sees what to inspect and why, then the evidence and limits, then the consequence of an answer. The packet should make a careful decision faster, not ask the reviewer to infer the basic question.",
+          "For transferring the next action after review, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Use review packets across agent roles",
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Artifact under review",
+              "Typical judgment"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Source-backed brief or evidence set",
+                "Are the facts, inference, and recommendation sufficient for the decision?"
+              ],
+              [
+                "Editorial",
+                "Draft page, message, or structured content",
+                "Does it meet the brief, source boundary, and audience constraint?"
+              ],
+              [
+                "Project management",
+                "Task plan, dependency map, or decision record",
+                "Is the next work accurately scoped, owned, and sequenced?"
+              ],
+              [
+                "Software development",
+                "Proposed change and checks",
+                "Does it meet stated requirements and the next review condition?"
+              ],
+              [
+                "Support triage",
+                "Classified issue and evidence packet",
+                "Is the routing and stated limitation appropriate for the case?"
+              ],
+              [
+                "Governance or security review",
+                "Request, policy question, or exception packet",
+                "Is the decision owner correct and is the evidence adequate for a bounded answer?"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Review packets are not only for code. Any role that produces a bounded artifact can give the next owner the artifact, scope, evidence, limits, and requested judgment."
+        ]
+      },
+      {
+        "title": "The role can prepare the packet without owning the reviewer’s answer",
+        "paragraphs": [
+          "The role can prepare the packet without owning the reviewer’s answer. That separation is the point: review turns a contribution into a controlled handoff rather than a self-certified completion.",
+          "For review points that keep human judgment visible in agent work, see Human-in-the-Loop Review for AI Agent Teams."
+        ],
+        "links": [
+          {
+            "label": "Human-in-the-Loop Review for AI Agent Teams",
+            "path": "/guides/human-in-the-loop-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether the packet makes review easier",
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reviewer should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Artifact test",
+                "Which exact version am I reviewing?",
+                "Add a stable artifact or target-system reference"
+              ],
+              [
+                "Scope test",
+                "What outcome, non-goals, and boundary apply?",
+                "State the task contract and the proposed delta, if any"
+              ],
+              [
+                "Evidence test",
+                "Which facts support the artifact, and where can I inspect them?",
+                "Link sources, checks, and relevant outputs"
+              ],
+              [
+                "Limit test",
+                "What was not verified or intentionally excluded?",
+                "Label uncertainty, conflict, and unrun checks"
+              ],
+              [
+                "Authority test",
+                "Who may give the answer, and what does that answer control?",
+                "Name the reviewer and distinguish decision from execution"
+              ],
+              [
+                "Continuity test",
+                "What happens after each likely review response?",
+                "Add the next owner, handoff, blocker, or escalation path"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "A useful packet lets a reviewer answer the requested question without reading every prior message. Before sending it, ask a teammate who did not perform the work whether the packet gives them enough to inspect the artifact and understand what remains uncertain."
+        ]
+      },
+      {
+        "title": "A failed test is a useful result",
+        "paragraphs": [
+          "A failed test is a useful result. Improve the packet before asking the reviewer to supply missing context by memory or guesswork."
+        ],
+        "links": []
+      },
+      {
+        "title": "Seven review-packet mistakes that waste reviewer attention"
+      },
+      {
+        "title": "Sending a status summary instead of the artifact",
+        "paragraphs": [
+          "“The work is ready” does not show a reviewer what changed or what to inspect. Link the exact version, then give the reviewer the evidence and question that make the review possible."
+        ]
+      },
+      {
+        "title": "Asking an unbounded question",
+        "paragraphs": [
+          "“Any thoughts?” pushes the task definition back onto the reviewer. Ask for one stage-appropriate judgment: accept, request changes, narrow scope, reject, or route a specific decision."
+        ]
+      },
+      {
+        "title": "Hiding uncertainty to make the packet look complete",
+        "paragraphs": [
+          "Missing sources, unrun checks, assumptions, and conflicts are part of the review. Label them so the reviewer can decide whether they are acceptable or need follow-up."
+        ]
+      },
+      {
+        "title": "Treating a reviewer comment as proof of execution",
+        "paragraphs": [
+          "A review answer can approve a next step. The target system still confirms whether a merge, deployment, permission change, or delivery actually occurred."
+        ]
+      },
+      {
+        "title": "Letting the artifact drift after review begins",
+        "paragraphs": [
+          "If the content changes materially, point to the new version and tell the reviewer what changed. Do not assume an answer about an earlier draft applies to a later one."
+        ]
+      },
+      {
+        "title": "Sending the packet to a crowd without an owner",
+        "paragraphs": [
+          "Review becomes slow and ambiguous when no one knows who can answer. Name the accountable reviewer or escalate the missing ownership."
+        ]
+      },
+      {
+        "title": "Packing unrelated decisions into one review request",
+        "paragraphs": [
+          "One packet should support one bounded judgment about an artifact. Split unrelated policy, scope, or execution decisions into their own packets or tasks."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent review packet?",
+        "answer": "It is an inspectable bundle for a named reviewer: the exact artifact, its scope, supporting evidence and checks, limits, the requested judgment, and the next action after that judgment."
+      },
+      {
+        "question": "How is a review packet different from a decision packet?",
+        "answer": "A decision packet centers on one answerable choice, options, and its owner. A review packet centers on an exact artifact and asks whether it meets the agreed boundary or needs a specific change before moving forward. They can link to each other when an artifact creates a decision."
+      },
+      {
+        "question": "Does an approved review packet mean the agent’s work is executed?",
+        "answer": "No. It means the named reviewer gave the recorded answer for the artifact or next stage. The repository, deployment platform, identity system, or other target system confirms any external action."
+      },
+      {
+        "question": "What should an agent include when a check has not run?",
+        "answer": "Name the unrun check, why it matters, and whether the artifact can still be reviewed with that limitation. Do not report the work as fully verified if a required check is absent."
+      },
+      {
+        "question": "Who should receive an AI agent review packet?",
+        "answer": "The person or role accountable for the requested judgment: for example, a maintainer, project owner, policy owner, or designated reviewer. If the owner is unclear, the agent should route an escalation rather than send it to a crowd."
+      },
+      {
+        "question": "Can a review packet be short?",
+        "answer": "Yes. A low-risk artifact may need a task link, the exact version, a few evidence references, one limitation, and a direct question. Add detail when the decision’s impact, uncertainty, or risk requires it."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Audit Trail",
+        "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "Human-in-the-Loop Review for AI Agent Teams",
+        "path": "/guides/human-in-the-loop-ai-agents/"
+      },
+      {
+        "label": "How to Evaluate AI Agents",
+        "path": "/guides/how-to-evaluate-ai-agents/"
+      }
+    ],
+    "cta": {
+      "title": "Make the review answer easy to give",
+      "body": "An AI agent review packet gives a reviewer the work, not just a claim about the work. Link the exact artifact, state the scope and limits, provide the evidence and verification path, and ask for one answer at the appropriate boundary. That preserves human judgment where it belongs while making the next handoff faster and more reliable.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
