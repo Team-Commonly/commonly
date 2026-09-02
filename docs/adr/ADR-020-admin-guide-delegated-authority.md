@@ -52,8 +52,20 @@ all (an agent-created pod is owned by the bot, the human isn't even a member); t
 No parallel primitive. v1 implements the ADR-017 lifecycle (`flagged → resolved / expired /
 moot`) with its invariants intact: **only a human writes `resolved`; retiring a card is
 never an approval; fail closed**. Concretely:
-- Messages gain a real structured `payload` (Mongo + PG both — today neither store has a
-  metadata column and every "card" is a regex sentinel in the content string).
+- Messages gain a real structured `payload` (Mongo + PG both). **Shipped (amended
+  2026-09-01) — the parenthetical here used to read "today neither store has a metadata
+  column and every card is a regex sentinel in the content string", and that is no longer
+  true of either store.** `models/Message.ts` declares `MessageType` including `'card'`
+  plus `payload` (`Schema.Types.Mixed`); `models/pg/Message.ts` carries `payload` as JSONB,
+  written by the INSERT and rewritten on status transitions by `updatePayload`. The posting
+  half is live too: `approvalActionService.ts` posts `messageType: 'card'` with
+  `buildCardPayload(row)`, and `resolveApproval` does the authenticated resolve and stamps
+  `decidedAfterExpiry`. **What is NOT built is the chat renderer this bullet implies**:
+  `V2MessageBubble` branches on message type exactly once, for `'image'`, so a card lands in
+  a pod as the plain-text `content` fallback `approvalActionService` sets beside the payload
+  — invisible rather than broken. Scope work off the code, not off this bullet's old tense.
+  (Beware `v2/utils/threadView.ts`'s `kind: 'card'` — an unrelated thread rollup with its
+  own tests, not this card.)
 - Cards are actionable by the workspace owner only; execution is idempotent (a card executes
   at most once — double-taps and concurrent resolves lose cleanly with honest copy).
 - **Expiry is advisory age, not refusal** (amended 2026-08-13, fleet review): per
