@@ -469,6 +469,11 @@ router.post('/model-policy', auth, adminAuth, async (req: any, res: any) => {
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    if (!GlobalModelConfigService.isSupportedLlmServiceProvider(req.body?.llmService?.provider)) {
+      return res.status(400).json({
+        error: 'Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.',
+      });
+    }
     const modelPolicy = await GlobalModelConfigService.setConfig(req.body || {}, userId);
     return res.json({ success: true, modelPolicy });
   } catch (error) {

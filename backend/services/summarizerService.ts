@@ -59,8 +59,7 @@ class SummarizerService {
       return summaryText;
     } catch (error) {
       console.error('Error generating summary with LLM:', error);
-      console.log(`Falling back to simple summary for ${type}`);
-      return SummarizerService.generateFallbackSummary(content, type);
+      throw error;
     }
   }
 
@@ -122,17 +121,6 @@ Please create an engaging 2-3 sentence overview that:
 - Uses a friendly, welcoming tone
 
 Focus on what people are actually talking about rather than just activity levels.`;
-  }
-
-  static generateFallbackSummary(content: string, type: string): string {
-    const itemCount = content.split('\n').filter((line) => line.trim()).length;
-    if (type === 'posts') {
-      return `${itemCount} posts were shared in the last hour, covering various topics and discussions in the community.`;
-    }
-    if (type === 'integration') {
-      return `${itemCount} messages were shared recently across the linked external channel.`;
-    }
-    return `Activity in ${itemCount} chat rooms with various conversations and community interactions.`;
   }
 
   async summarizePosts(): Promise<unknown> {
@@ -405,16 +393,14 @@ Please create an engaging 3-4 sentence community overview that:
 
 This is for new visitors to understand what the community is all about. Focus on the content and conversations, not just statistics.`;
 
-      let summaryText: string;
       if (now < cache.cooldownUntil) {
-        summaryText = SummarizerService.generateFallbackSummary(content, 'posts');
-      } else {
-        console.log('Generating all-posts summary with LLM...');
-        summaryText = await generateText(prompt, { temperature: 0.4 }) as string;
-        console.log(
-          `✓ LLM returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
-        );
+        throw new Error('All-posts summary generation is cooling down after an LLM rate limit');
       }
+      console.log('Generating all-posts summary with LLM...');
+      const summaryText = await generateText(prompt, { temperature: 0.4 }) as string;
+      console.log(
+        `✓ LLM returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
+      );
 
       const allTags = posts.flatMap((post) => (post.tags as string[]) || []);
       const topTags = SummarizerService.getTopItems(allTags, 8);
@@ -452,23 +438,7 @@ This is for new visitors to understand what the community is all about. Focus on
         SummarizerService.allPostsCache.cooldownUntil = Date.now() + 10 * 60 * 1000;
       }
 
-      const postCount = await Post.find({}).countDocuments() as number;
-      const summary: AllPostsSummary = {
-        title: `Community Overview • ${Math.min(postCount, 10)} recent posts`,
-        content: 'Our community has shared various thoughts, ideas, and discussions. Join the conversation and see what everyone is talking about!',
-        metadata: {
-          totalItems: Math.min(postCount, 10),
-          topTags: [],
-          topUsers: [],
-          timeRange: 'Recent posts',
-        },
-      };
-      SummarizerService.allPostsCache = {
-        summary,
-        createdAt: Date.now(),
-        cooldownUntil: SummarizerService.allPostsCache.cooldownUntil,
-      };
-      return summary;
+      throw error;
     }
   }
 }

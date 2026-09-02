@@ -79,4 +79,33 @@ describe('registry persona generator', () => {
     expect(res.body.persona.specialties).toEqual(['analysis', 'summaries']);
     expect(res.body.exampleInstructions).toContain('Start with a quick summary');
   });
+
+  it('returns a service error instead of inventing a persona when generation fails', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: 'pod-1',
+        createdBy: 'user-1',
+        members: ['user-1'],
+      }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({
+      agentName: 'openclaw',
+      podId: 'pod-1',
+      instanceId: 'default',
+      displayName: 'Cuz',
+    });
+    AgentProfile.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Cuz', purpose: 'Helpful teammate' }),
+    });
+    generateText.mockRejectedValueOnce(new Error('LLM unavailable'));
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/openclaw/persona/generate')
+      .send({ instanceId: 'default' });
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      error: 'Persona generation is temporarily unavailable. Please try again.',
+    });
+  });
 });

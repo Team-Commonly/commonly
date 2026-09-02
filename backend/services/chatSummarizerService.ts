@@ -16,17 +16,9 @@ interface MessageRow {
   username?: string;
 }
 
-interface FallbackAnalyticsResult {
-  timeline: unknown[];
-  quotes: unknown[];
-  insights: unknown[];
-  atmosphere: Record<string, unknown>;
-  participation: Record<string, unknown>;
-}
-
 interface EnhancedSummaryResult {
   summary: string;
-  analytics: FallbackAnalyticsResult | Record<string, unknown>;
+  analytics: Record<string, unknown>;
 }
 
 class ChatSummarizerService {
@@ -36,14 +28,14 @@ class ChatSummarizerService {
       return await generateText(prompt, { temperature: 0.4 }) as string;
     } catch (error) {
       console.error('Error generating chat summary with LLM:', error);
-      return ChatSummarizerService.generateFallbackSummary(content, podName);
+      throw error;
     }
   }
 
   async generateEnhancedSummary(
     content: string,
     podName: string,
-    messages: MessageRow[],
+    _messages: MessageRow[],
   ): Promise<EnhancedSummaryResult> {
     try {
       const prompt = ChatSummarizerService.createEnhancedPrompt(content, podName);
@@ -53,14 +45,8 @@ class ChatSummarizerService {
       try {
         analyticsData = JSON.parse(responseText) as Record<string, unknown>;
       } catch (parseError) {
-        console.warn(
-          'Failed to parse enhanced summary JSON, falling back to basic summary:',
-          parseError,
-        );
-        return {
-          summary: await this.generateSummary(content, podName),
-          analytics: ChatSummarizerService.generateFallbackAnalytics(messages, podName),
-        };
+        console.error('Failed to parse enhanced summary JSON:', parseError);
+        throw new Error('Enhanced chat summary generation returned invalid JSON');
       }
 
       return {
@@ -69,51 +55,8 @@ class ChatSummarizerService {
       };
     } catch (error) {
       console.error('Error generating enhanced chat summary with Gemini:', error);
-      return {
-        summary: ChatSummarizerService.generateFallbackSummary(content, podName),
-        analytics: ChatSummarizerService.generateFallbackAnalytics(messages, podName),
-      };
+      throw error;
     }
-  }
-
-  static generateFallbackAnalytics(messages: MessageRow[], _podName: string): FallbackAnalyticsResult {
-    const userCounts: Record<string, number> = {};
-    messages.forEach((msg) => {
-      if (msg.username) {
-        userCounts[msg.username] = (userCounts[msg.username] || 0) + 1;
-      }
-    });
-
-    const sortedUsers = Object.entries(userCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5);
-
-    return {
-      timeline: [],
-      quotes: [],
-      insights: [],
-      atmosphere: {
-        overall_sentiment: 'neutral',
-        energy_level: messages.length > 10 ? 'medium' : 'low',
-        engagement_quality: 'moderate',
-        community_cohesion: 0.5,
-        topics_diversity: 0.5,
-        dominant_emotions: ['neutral'],
-      },
-      participation: {
-        most_active_users: sortedUsers.map(([username, count]) => ({
-          username,
-          message_count: count,
-          engagement_score: Math.min(count / messages.length, 1),
-          role: 'contributor',
-        })),
-        engagement_patterns: {
-          peak_hours: [],
-          discussion_length_avg: messages.length,
-          response_time_avg: 5,
-        },
-      },
-    };
   }
 
   static createPrompt(content: string, podName: string): string {
@@ -192,11 +135,6 @@ Please provide a JSON response with the following structure:
 }
 
 Focus on extracting meaningful insights, notable quotes, discussion pivots, and community dynamics.`;
-  }
-
-  static generateFallbackSummary(content: string, podName: string): string {
-    const messageCount = content.split('\n').filter((line) => line.trim()).length;
-    return `${messageCount} messages were exchanged in ${podName}, featuring active conversations and community interactions.`;
   }
 
   static async getActivePods(): Promise<string[]> {
