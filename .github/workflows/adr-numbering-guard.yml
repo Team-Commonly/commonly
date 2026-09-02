@@ -1,0 +1,142 @@
+name: ADR Numbering Guard
+
+# An ADR number is a name two documents can claim at once, and every mechanical
+# check we own is blind to it. #1295 and #1268 both added
+# `docs/adr/ADR-025-*.md` under different slugs: different filenames, so no
+# textual conflict, `merge-tree` clean, all checks green — and main carried two
+# ADR-025s from the moment the second merged. It had already happened at
+# ADR-018, where the duplicate lived long enough that #963's author followed
+# the wrong one and shipped a wake-policy regression.
+#
+# Both were found by a human reading a directory listing. This makes the third
+# one go red.
+
+on:
+  pull_request:
+    branches: [ main ]
+    # `edited` catches base-branch retargeting, same reasoning as
+    # package-version-guard.yml: a stacked PR retargeted to main after its
+    # parent merges otherwise enters this population with no event firing.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  adr-numbering:
+    name: ADR numbers are unique
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR HEAD, not the merge ref. `refs/pull/N/merge` is recomputed
+          # lazily and can be badly stale: #1295's merge ref still contained the
+          # duplicate ADR-018 an hour after #1463 renumbered it away on main. A
+          # guard reading that tree fails the PR for a collision somebody else
+          # already fixed — worse than not running, because it teaches authors
+          # that this check is noise. We assemble the post-merge state below
+          # instead, from main as it is right now.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: No two ADRs claim the same number
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # No --depth: a shallow base makes the fork point unreachable and
+          # every comparison below meaningless. Same trap as
+          # package-version-guard.yml (#1113), and no `|| true` for the same
+          # reason — a base we cannot fetch must stop the guard, not pass it.
+          git fetch --no-tags origin main
+          if ! base=$(git merge-base FETCH_HEAD HEAD); then
+            echo "::error::No merge base between origin/main and this PR head. Not passing on a baseline this guard cannot see."
+            exit 1
+          fi
+
+          # Effective tree = main's ADRs right now, with this PR's own ADR
+          # additions, edits and deletions applied on top. That is what main
+          # will hold after the merge, and unlike the merge ref it is fresh as
+          # of this run.
+          eff=$(mktemp -d)
+          mkdir -p "$eff/docs/adr"
+          git archive FETCH_HEAD docs/adr | tar -x -C "$eff"
+
+          # --no-renames so a rename shows up as delete + add; rename detection
+          # would hide exactly the "renumbered but the H1 still says the old
+          # number" case this guard checks for.
+          git diff --no-renames --name-status "$base" HEAD -- docs/adr \
+            | while IFS=$'\t' read -r status file; do
+                case "$status" in
+                  D) rm -f "$eff/$file" ;;
+                  *) mkdir -p "$eff/$(dirname "$file")"
+                     git show "HEAD:$file" > "$eff/$file" ;;
+                esac
+              done
+
+          node scripts/verify-adr-numbering.js --dir "$eff/docs/adr"
+
+      # The check above cannot see a collision between two PRs that are both
+      # still open — neither tree contains the other's file. That is the state
+      # #1295 and #1268 were in for days, and the state a human happened to
+      # catch. Deterministic tiebreak so it is unilaterally fixable: the older
+      # PR keeps the number, the newer renumbers. Both PRs going red would be a
+      # deadlock neither author could clear alone.
+      - name: No OPEN PR is already claiming these numbers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Every gh call is checked. A silent API failure here would yield an
+          # empty ADR list, which reads as "this PR claims nothing" and PASSES
+          # — the guard would be at its most reassuring exactly when it had
+          # gone blind.
+          added_adrs() {
+            local raw
+            if ! raw=$(gh api "repos/$REPO/pulls/$1/files" --paginate \
+                         --jq '.[] | select(.status == "added") | .filename'); then
+              echo "::error::gh api failed reading PR #$1. This guard cannot see the open-PR set; it will not pass on a check it could not run." >&2
+              return 1
+            fi
+            printf '%s\n' "$raw" | sed -n 's#^docs/adr/ADR-\([0-9]\{3\}\)-.*\.md$#\1#p' | sort -u
+          }
+
+          mine=$(added_adrs "$PR")
+          if [ -z "$mine" ]; then
+            echo "· this PR adds no new ADR file"
+            exit 0
+          fi
+          echo "this PR claims: $(echo "$mine" | tr '\n' ' ')"
+
+          # Older = lower PR number. Only an older PR can outrank this one.
+          if ! older=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
+                         --jq ".[] | select(.number < $PR) | .number"); then
+            echo "::error::gh api failed listing open PRs. Not passing on a blind check."
+            exit 1
+          fi
+
+          fail=0
+          for other in $older; do
+            theirs=$(added_adrs "$other")
+            [ -z "$theirs" ] && continue
+            clash=$(comm -12 <(printf '%s\n' "$mine") <(printf '%s\n' "$theirs")) || true
+            [ -z "$clash" ] && continue
+            for n in $clash; do
+              echo "::error file=docs/adr::ADR-$n is already claimed by the older open PR #$other. Two open PRs adding the same number both merge green and leave main with a duplicate — this is how main got two ADR-025s. #$other keeps $n; renumber here."
+            done
+            fail=1
+          done
+
+          if [ "$fail" = "0" ]; then
+            echo "✓ no open PR claims these numbers"
+          fi
+          exit $fail
