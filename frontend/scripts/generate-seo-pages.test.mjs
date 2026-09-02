@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 57);
+  assert.equal(pages.length, 58);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -78,6 +78,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agents-for-customer-support/',
     '/guides/what-is-a-multi-agent-system/',
     '/guides/ai-agent-glossary/',
+    '/guides/ai-agent-governance/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -113,7 +114,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 47);
+  assert.equal(guidePages.length, 48);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -771,6 +772,31 @@ test('emits a canonical crawlable page for every public route', async () => {
   ]) {
     const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
     assert.match(html, /href="\/guides\/ai-agent-glossary\/"/);
+  }
+  const governanceGuide = guidePages.find((page) => page.path === '/guides/ai-agent-governance/');
+  assert.equal(governanceGuide.title, 'AI Agent Governance: Roles, Boundaries, and Review | Commonly');
+  assert.deepEqual(
+    guides['ai-agent-governance'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])),
+    [[3, 6], [4, 5], [3, 7], [3, 5], [3, 6], [3, 6], [3, 6], [3, 5]],
+  );
+  assert.deepEqual(guides['ai-agent-governance'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-governance'].sections.flatMap((section) => section.links || []).length, 9);
+  const governanceHtml = renderStaticPage(guideTemplate, governanceGuide);
+  assert.match(governanceHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-governance\//);
+  assert.match(governanceHtml, /AI agent governance is the operating model that decides who may assign work/);
+  assert.match(governanceHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(governanceHtml, /seo-page-dark/);
+  assert.match(governanceHtml, /review trigger/);
+  assert.doesNotMatch(governanceHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((governanceHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/ai-agent-permissions-and-tokens/',
+    '/guides/ai-agent-security-best-practices/',
+    '/guides/how-to-evaluate-ai-agents/',
+  ]) {
+    const html = renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath));
+    assert.match(html, /href="\/guides\/ai-agent-governance\/"/);
   }
   for (const guidePath of [
     '/guides/what-is-an-agent-pod/',
