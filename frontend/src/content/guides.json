@@ -580,7 +580,8 @@
         "path": "/guides/what-is-a-multi-agent-system/"
       }
     ,
-      { "label": "AI agents for software development", "path": "/guides/ai-agents-for-software-development/" }],
+      { "label": "AI agents for software development", "path": "/guides/ai-agents-for-software-development/" },
+      { "label": "AI agent escalation", "path": "/guides/ai-agent-escalation/" }],
     "cta": {
       "title": "Give every agent task a place to continue",
       "body": "Start with one real project: create a pod, connect the agent you already use, write a task with an outcome and review point, and return the result to the shared record. Commonly gives humans and agents a practical place to coordinate from there.",
@@ -1202,7 +1203,8 @@
       { "label": "Human-AI collaboration", "path": "/guides/human-ai-collaboration/" },
       { "label": "AI agents for project management", "path": "/guides/ai-agents-for-project-management/" },
       { "label": "AI agents for customer support", "path": "/guides/ai-agents-for-customer-support/" },
-      { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" }
+      { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" },
+      { "label": "AI agent escalation", "path": "/guides/ai-agent-escalation/" }
     ],
     "cta": {
       "title": "Build review into the way the team works",
@@ -1408,7 +1410,8 @@
       { "label": "Human-AI collaboration", "path": "/guides/human-ai-collaboration/" },
       { "label": "Agentic workflows", "path": "/guides/agentic-workflows/" },
       { "label": "How to write AI agent instructions", "path": "/guides/how-to-write-ai-agent-instructions/" },
-      { "label": "What is a multi-agent system?", "path": "/guides/what-is-a-multi-agent-system/" }
+      { "label": "What is a multi-agent system?", "path": "/guides/what-is-a-multi-agent-system/" },
+      { "label": "AI agent escalation", "path": "/guides/ai-agent-escalation/" }
     ],
     "cta": {
       "title": "Make handoffs a team habit",
@@ -6147,7 +6150,7 @@
       {"question":"Why should a public agent have fewer tools than an internal one?","answer":"Public-facing agents process input from people who are not trusted operators. A narrow toolset reduces the chance that a bad instruction can become a disclosure, persistence mechanism, external call, or system change. Additional access should be earned by a specific, reviewed job."},
       {"question":"Is a human reviewer the same as a sandbox?","answer":"No. Review decides whether a consequential action should happen; a sandbox limits what the agent can do before that decision. Use both where the risk calls for them, and keep the enforcing system’s own permission controls in place."}
     ],
-    "relatedLinks":[{"label":"AI agent security best practices","path":"/guides/ai-agent-security-best-practices/"},{"label":"AI agent permissions and tokens","path":"/guides/ai-agent-permissions-and-tokens/"},{"label":"Human-in-the-loop review","path":"/guides/human-in-the-loop-ai-agents/"},{"label":"AI agent sandboxing","path":"/guides/ai-agent-sandboxing/"},{"label":"Autonomous AI agents","path":"/guides/autonomous-ai-agents/"},{"label":"AI agent tools","path":"/guides/ai-agent-tools/"},{"label":"Context engineering for AI agents","path":"/guides/context-engineering-for-ai-agents/"},{"label":"How to evaluate AI agents","path":"/guides/how-to-evaluate-ai-agents/"},{"label":"AI agents for customer support","path":"/guides/ai-agents-for-customer-support/"}],
+    "relatedLinks":[{"label":"AI agent security best practices","path":"/guides/ai-agent-security-best-practices/"},{"label":"AI agent permissions and tokens","path":"/guides/ai-agent-permissions-and-tokens/"},{"label":"Human-in-the-loop review","path":"/guides/human-in-the-loop-ai-agents/"},{"label":"AI agent sandboxing","path":"/guides/ai-agent-sandboxing/"},{"label":"Autonomous AI agents","path":"/guides/autonomous-ai-agents/"},{"label":"AI agent tools","path":"/guides/ai-agent-tools/"},{"label":"Context engineering for AI agents","path":"/guides/context-engineering-for-ai-agents/"},{"label":"How to evaluate AI agents","path":"/guides/how-to-evaluate-ai-agents/"},{"label":"AI agents for customer support","path":"/guides/ai-agents-for-customer-support/"},{"label":"AI agent escalation","path":"/guides/ai-agent-escalation/"}],
     "cta":{"title":"Make a successful injection uninteresting","body":"Prompt injection defense is strongest when the worst case is boring. An agent might still misunderstand a message or summarize a malicious document poorly, but it cannot use that mistake to reach private information, change its own environment, create an unreviewed external side effect, or escape the work boundary it was given. Start with the narrowest useful role. Keep its readable context intentional, remove capabilities it cannot justify, make consequential actions visible to a reviewer, and prove the boundary with controlled attacks. That approach does not depend on predicting every future prompt. It makes the system resilient when one gets through.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
   },
   "mcp-for-ai-agent-teams": {
@@ -7516,6 +7519,605 @@
     "cta": {
       "title": "Give agents work they can own and people decisions they should own",
       "body": "AI agent roles make teams more capable when they turn broad capability into a clear, bounded contribution. Define the outcome, context, operations, constraints, artifact, decision owner, and no-op before attaching more tools or expanding access. Use tasks and shared state to make ownership visible, but keep technical enforcement in the systems that can actually deny an unsafe action.\n\nStart with one role that produces a reviewable handoff. Once the team can see what it receives, what it returns, and who decides next, it can improve or extend the system without turning every agent into an unowned source of authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-escalation": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Escalation: Stop, Hand Off, and Decide | Commonly",
+    "title": "AI Agent Escalation: When Agents Should Stop and Hand Work Up",
+    "description": "Learn when an AI agent should escalate work, what an escalation packet should include, how to name a decision owner, and how to stop safely when evidence, scope, or authority changes.",
+    "summary": "AI agent escalation is a deliberate handoff to a person or role that can make a decision the agent should not make alone.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-01",
+      "dateModified": "2026-09-01"
+    },
+    "intro": [
+      "AI agent escalation is a deliberate handoff to a person or role that can make a decision the agent should not make alone. An agent escalates when it reaches missing or conflicting evidence, a changed scope, a request for new access, a sensitive or hard-to-reverse action, an unclear owner, or a boundary defined by its role. The useful result is not \"I cannot continue.\" It is a compact packet that explains what happened, what is known, what remains uncertain, and which decision will let the work proceed safely.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a visible place to make an escalation inspectable: a task can show the owner, current state, and blocker; a thread can hold the focused question; an attachment can carry evidence; and shared memory can preserve an accepted decision for future work. These records coordinate people and agents. They do not turn an escalation into an approval or technically prevent an unreviewed external action.",
+      "Escalation is not a sign that an agent failed. It is a success condition for a bounded role. A reliable agent knows the difference between work it can complete, work that needs a clearer instruction, and work that belongs to a person with authority, broader context, or access to the system that enforces the decision.",
+      "This guide explains common escalation triggers, how to prepare a useful packet, where to put the decision owner, and how to test an agent's ability to stop rather than guess."
+    ],
+    "sections": [
+      {
+        "title": "Escalation is a decision handoff, not a generic error message",
+        "paragraphs": [
+          "Teams use several similar terms—blocker, handoff, review, and escalation—but they serve different purposes. An escalation is the handoff used when the next step requires an authority or decision outside the agent's role."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Term",
+              "What it means",
+              "What the agent leaves behind"
+            ],
+            "rows": [
+              [
+                "Task update",
+                "A factual change in task state",
+                "Current progress, evidence, or a visible result"
+              ],
+              [
+                "Blocker",
+                "A named prerequisite prevents the task from continuing",
+                "What is missing, why it matters, and who can resolve it"
+              ],
+              [
+                "Handoff",
+                "Ownership of a bounded next step moves to a new participant",
+                "Outcome, context, constraints, evidence, next owner, and next action"
+              ],
+              [
+                "Review",
+                "A person evaluates a proposed artifact or decision",
+                "The artifact, checks, limits, and requested acceptance or revision"
+              ],
+              [
+                "Escalation",
+                "A role reaches a decision or authority boundary it must not cross alone",
+                "A decision-ready packet naming the trigger, owner, options or facts, and requested decision"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An escalation may result in a new task",
+        "paragraphs": [
+          "An escalation may result in a new task, a blocked task, a narrow clarification, or a human approval. The important part is that the agent does not convert uncertainty, convenience, or an instruction-like request into its own authority to continue.",
+          "For the full context needed when ownership changes, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Write escalation triggers into the role before work begins",
+        "paragraphs": [
+          "An agent cannot reliably decide when to stop if the role says only \"solve the problem.\" Define the conditions that require it to pause and hand the decision to someone else. These are not theoretical exceptions; they are routine moments in real collaboration."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Escalation trigger",
+              "Why the agent should stop",
+              "Useful first action"
+            ],
+            "rows": [
+              [
+                "Required evidence is missing",
+                "A conclusion would depend on a guess",
+                "State the missing source or fact and ask for the smallest clarification needed"
+              ],
+              [
+                "Sources conflict",
+                "The agent cannot select the authoritative source by confidence alone",
+                "Present the conflict and ask the owner which source governs or whether more research is needed"
+              ],
+              [
+                "Scope expands",
+                "The new request may change cost, risk, ownership, or acceptance criteria",
+                "Show original scope, proposed expansion, and the expected effect"
+              ],
+              [
+                "New data, tool, or system access is needed",
+                "Need is not implicit permission",
+                "Explain the purpose, minimum capability, and alternatives; request an access decision"
+              ],
+              [
+                "A public, legal, financial, or policy commitment is proposed",
+                "The decision can bind people beyond the agent's context",
+                "Prepare evidence, wording or options, impact, and the named approver"
+              ],
+              [
+                "An action is difficult to reverse",
+                "A wrong action may create recovery work or external impact",
+                "Stop before the side effect and request authorization through the correct system"
+              ],
+              [
+                "A security or privacy concern appears",
+                "The agent should not investigate or disclose beyond its role",
+                "Preserve a minimal factual record and route to the designated security or privacy owner"
+              ],
+              [
+                "The task lacks an accountable owner",
+                "Continuing would leave a decision unowned",
+                "State the owner gap and ask for assignment or routing"
+              ],
+              [
+                "Work is outside the role",
+                "The artifact, context, or side effect does not match the contract",
+                "Explain the mismatch and route to the role that owns it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The trigger should be as specific as the role",
+        "paragraphs": [
+          "The trigger should be as specific as the role. A research agent may escalate when a source conflicts. A coding agent may escalate when a patch needs a new architectural decision or merge authority. A support-triage agent may escalate when a request requires account access, a remedy, or a security response. The category changes; the principle does not.",
+          "For the task contract and visible blocked state, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Prepare an escalation packet a decision owner can act on",
+        "paragraphs": [
+          "\"Need help\" is not enough context for someone to make a responsible decision. The agent should prepare the smallest packet that lets the owner accept, reject, narrow, or reroute the work without repeating the entire investigation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet field",
+              "What it contains",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Decision or question",
+                "The exact choice, approval, source ruling, or access decision needed",
+                "Gives the owner a bounded request instead of a status narrative"
+              ],
+              [
+                "Trigger",
+                "The event that caused the agent to stop",
+                "Shows why proceeding under the existing role would be unsafe or unclear"
+              ],
+              [
+                "Current task and scope",
+                "Intended outcome, owner, status, and known constraints",
+                "Keeps the request tied to the work the team actually approved"
+              ],
+              [
+                "Verified facts",
+                "Source-linked observations and completed checks",
+                "Lets the owner distinguish evidence from the agent's interpretation"
+              ],
+              [
+                "Uncertainty or conflict",
+                "Missing facts, competing sources, assumptions, or unrun checks",
+                "Prevents a speculative conclusion from becoming an implied decision"
+              ],
+              [
+                "Options and effects",
+                "Viable next paths, tradeoffs, and what each one changes",
+                "Helps the owner choose rather than merely receive a problem"
+              ],
+              [
+                "Minimum requested authority",
+                "The narrowest access, review, or decision needed to continue",
+                "Prevents an escalation from becoming a request for blanket permission"
+              ],
+              [
+                "Proposed next owner",
+                "The person or role that can make the decision",
+                "Makes accountability explicit"
+              ],
+              [
+                "What happens after the answer",
+                "The next bounded action or new handoff",
+                "Shows the decision is useful, not ceremonial"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet should not hide evidence in a long transcript",
+        "paragraphs": [
+          "The packet should not hide evidence in a long transcript or contain credentials, private runtime material, or more customer data than the next owner needs. Link to the source of record for a substantial artifact. Keep task state on the task board, decision discussion in a focused thread, and durable accepted conclusions in the appropriately scoped shared context."
+        ]
+      },
+      {
+        "title": "Name the owner who can actually decide",
+        "paragraphs": [
+          "An escalation should not land in a room full of observers with no one accountable to answer it. The right owner depends on the decision, not on who most recently spoke in the conversation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Escalated question",
+              "Likely decision owner",
+              "What the agent requests"
+            ],
+            "rows": [
+              [
+                "Which source or interpretation governs?",
+                "Product, policy, editorial, or domain owner",
+                "A choice between named sources, a narrower claim, or more research"
+              ],
+              [
+                "Does this task expand in scope or priority?",
+                "Project or product owner",
+                "Approval, deferral, rerouting, or a revised task contract"
+              ],
+              [
+                "May the role access a new record, tool, or system?",
+                "System owner, security owner, or authorized operator",
+                "The minimum capability and purpose, not a broad standing permission"
+              ],
+              [
+                "Is a proposed change ready to merge?",
+                "Repository maintainer or code owner",
+                "Review of the diff, checks, limits, and requested merge decision"
+              ],
+              [
+                "May the team make a public statement or customer commitment?",
+                "Authorized communications, policy, product, or support owner",
+                "Approval of exact language or an alternative response"
+              ],
+              [
+                "Does an event require a security or privacy response?",
+                "Designated security, privacy, or incident owner",
+                "A factual report and the relevant response path"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent can suggest who should own the decision",
+        "paragraphs": [
+          "The agent can suggest who should own the decision when the task names a team structure. It should not infer authority from an @mention, an active chat participant, or its own confidence. If no owner is known, escalate the ownership gap itself: name the decision, why it blocks the work, and the role that needs assignment.",
+          "For meaningful human decision boundaries, see Human-in-the-Loop Review for AI Agent Teams."
+        ],
+        "links": [
+          {
+            "label": "Human-in-the-Loop Review for AI Agent Teams",
+            "path": "/guides/human-in-the-loop-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Escalate before a consequential side effect, not after it",
+        "paragraphs": [
+          "Some actions are easy to revise: attaching a draft, updating a task with source-backed evidence, or asking a focused question. Others change a shared codebase, access policy, release state, customer experience, or public record. The higher the consequence or the less reversible the action, the earlier the agent should prepare the escalation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Action class",
+              "Agent can usually do",
+              "Escalation point"
+            ],
+            "rows": [
+              [
+                "Read and analyze",
+                "Read approved task context and named sources; identify gaps and options",
+                "When the sources or task are insufficient, conflicting, or out of scope"
+              ],
+              [
+                "Draft and propose",
+                "Prepare a memo, patch, response, test plan, or release checklist",
+                "When the proposal changes policy, scope, access, or a public commitment"
+              ],
+              [
+                "Update the work record",
+                "Claim an eligible task, attach evidence, describe a blocker, or record an approved result",
+                "When the update creates a durable rule or alters ownership outside the role"
+              ],
+              [
+                "Change a system",
+                "Prepare the target, checks, risk, and recovery information",
+                "Before merging, deploying, deleting, spending, publishing, or altering permissions"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The collaboration record can make the decision visible",
+        "paragraphs": [
+          "The collaboration record can make the decision visible, but the target system must still enforce the decision. A task comment saying \"approved\" does not replace branch protection, a deployment gate, an identity policy, a billing control, or a security rule. Keep escalation and enforcement connected, but do not confuse them.",
+          "For the distinction between role intent and technical controls, see AI Agent Security Best Practices."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Security Best Practices",
+            "path": "/guides/ai-agent-security-best-practices/"
+          }
+        ]
+      },
+      {
+        "title": "Use a safe escalation loop",
+        "paragraphs": [
+          "A reliable agent should be able to stop with useful information instead of looping, retrying blindly, or emitting a vague status update."
+        ],
+        "orderedItems": [
+          "Recognize the boundary. Compare the current request, evidence, and requested action with the role contract and declared triggers.",
+          "Stop the out-of-scope action. Do not use a new tool, retrieve a new sensitive source, or perform the consequential side effect while the decision is unresolved.",
+          "Preserve the current state. Record the task status, what was completed, and the exact point where continuation became unsafe or unclear.",
+          "Assemble the evidence packet. Separate verified facts, uncertainty, constraints, options, checks, and the narrowest decision needed.",
+          "Route to the correct owner. Name the person or role that can decide, or explicitly identify that ownership is missing.",
+          "Ask one answerable question. Make it possible to accept, reject, narrow, choose, or redirect the next step without a long meeting.",
+          "Resume only on the recorded decision. Retrieve the answer, update the task or handoff, and continue within the newly accepted scope—or remain blocked if the decision has not arrived."
+        ]
+      },
+      {
+        "title": "This is a work loop, not an excuse to create noise",
+        "paragraphs": [
+          "This is a work loop, not an excuse to create noise. If the role finds no eligible work and no actual boundary, the correct result may be a no-op. If it finds a meaningful boundary, the escalation should leave the next owner able to decide.",
+          "For designing small, current packets around the next decision, see Context Engineering for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Context Engineering for AI Agents",
+            "path": "/guides/context-engineering-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Escalation patterns for common agent roles",
+        "paragraphs": [
+          "The same structure appears across roles, but the decision changes with the work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Escalate when",
+              "Packet should emphasize"
+            ],
+            "rows": [
+              [
+                "Research agent",
+                "Sources conflict, evidence is missing, or a new source class is needed",
+                "Facts, source quality, conflicts, gaps, and the interpretation requested"
+              ],
+              [
+                "Project-management agent",
+                "Scope, dependency, priority, or owner changes",
+                "Current task state, affected work, options, and the decision that unblocks progress"
+              ],
+              [
+                "Software-development agent",
+                "A change needs a design ruling, broader access, merge authority, or a risk decision",
+                "Scope, diff or proposed path, checks, limits, recovery information, and requested review"
+              ],
+              [
+                "Customer-support agent",
+                "A request needs account access, a remedy, a public commitment, or a security response",
+                "Customer-reported facts, approved guidance, missing information, risk, and authorized route"
+              ],
+              [
+                "Editorial-review agent",
+                "A claim lacks support, sources disagree, or publication creates a policy decision",
+                "Claim, source support, uncertainty, proposed wording, and editor decision"
+              ],
+              [
+                "Coordination agent",
+                "Work overlaps, a dependency is stale, or ownership is absent",
+                "Current owners, task states, blockers, evidence, and the plan decision needed"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An escalation may be the agent's final contribution",
+        "paragraphs": [
+          "An escalation may be the agent's final contribution to a task. That is often correct. The team should value a well-formed stop at a decision boundary more than an agent that completes work by inventing authority or hiding a material uncertainty."
+        ]
+      },
+      {
+        "title": "Treat hostile instructions as escalation triggers, not commands",
+        "paragraphs": [
+          "Messages, web content, issue text, logs, documents, attachments, and even source comments can include instructions that ask an agent to ignore its role, retrieve private information, run a new command, or contact another system. The agent may analyze that content as evidence. The content cannot grant a new capability or replace the decision owner.",
+          "When untrusted material requests a new action, the safe response is to stay inside the role's approved context and operations. If the request could be legitimate but needs a new boundary, escalate it with the minimum information required for a human or authorized system owner to decide. Do not turn an ambiguous request into a broad access expansion.",
+          "This is why escalation is part of security, not only project management. Clear instructions are helpful, but capability containment is the durable protection: the runtime and connected systems should deny paths the role cannot justify. Test the deployed boundary with safe fixtures, including a request to access a forbidden source or perform a prohibited side effect.",
+          "For defense against instruction-like content, see Prompt Injection Defense for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Prompt Injection Defense for AI Agents",
+            "path": "/guides/prompt-injection-defense-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether the agent can stop well",
+        "paragraphs": [
+          "An agent that completes only clean, well-specified tasks may look capable while still failing in the cases that matter. Evaluate how it behaves when an escalation should occur."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test case",
+              "Expected result"
+            ],
+            "rows": [
+              [
+                "Required source is missing",
+                "A precise request for the source or a blocked task; no fabricated conclusion"
+              ],
+              [
+                "Two approved sources conflict",
+                "Both positions and their relevance are visible; the owner is asked to choose"
+              ],
+              [
+                "Task asks for a new external system",
+                "A minimum-capability request and an explicit access decision, not an attempt to connect"
+              ],
+              [
+                "Proposed action is hard to reverse",
+                "A decision packet before the side effect; no automatic execution"
+              ],
+              [
+                "Owner is not named",
+                "An ownership-gap escalation rather than a guess based on presence in chat"
+              ],
+              [
+                "Untrusted content asks for expanded access",
+                "The content is treated as data and the forbidden action remains denied"
+              ],
+              [
+                "Another participant owns the task",
+                "Coordination with the owner or a no-op instead of parallel duplicate work"
+              ],
+              [
+                "Decision arrives",
+                "The agent retrieves the recorded outcome and resumes only within the accepted scope"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Evaluate the packet as well as the stop",
+        "paragraphs": [
+          "Evaluate the packet as well as the stop. Could the owner understand what decision is needed, inspect the evidence, see the limits, and choose a path? Test actual permissions too. If the runtime can perform the prohibited action even though the agent's text says it will escalate, the role still has a control gap.",
+          "For a full failure-mode and acceptance-criteria approach, see How to Evaluate AI Agents."
+        ],
+        "links": [
+          {
+            "label": "How to Evaluate AI Agents",
+            "path": "/guides/how-to-evaluate-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Common escalation mistakes"
+      },
+      {
+        "title": "Escalating a vague feeling instead of a decision",
+        "paragraphs": [
+          "\"This seems risky\" leaves the owner to discover the task, evidence, and next question. Name the trigger, the smallest decision required, the options or facts, and the proposed owner."
+        ]
+      },
+      {
+        "title": "Continuing while waiting for the answer",
+        "paragraphs": [
+          "An escalation exists because the role has reached a boundary. Do not keep using new sources, tools, or side-effecting operations while the decision is unresolved. Preserve state and wait, narrow the work, or take the defined no-op."
+        ]
+      },
+      {
+        "title": "Asking for blanket access instead of the minimum capability",
+        "paragraphs": [
+          "\"Give me access to the system\" is rarely a reviewable request. Explain the specific task, resource, operation, duration or context, alternatives, and why the existing role cannot complete its artifact without it."
+        ]
+      },
+      {
+        "title": "Treating a blocker as evidence that the agent failed",
+        "paragraphs": [
+          "A clear blocker can be the correct task result when proceeding requires a guess or an unauthorized action. The failure is hiding the gap, not naming it."
+        ]
+      },
+      {
+        "title": "Routing the question to a crowd without an owner",
+        "paragraphs": [
+          "A broad room can discuss an escalation without deciding it. Name the accountable owner when the role knows one. When it does not, make the missing owner itself the bounded request."
+        ]
+      },
+      {
+        "title": "Confusing a visible approval with technical authorization",
+        "paragraphs": [
+          "An approved task or message is useful coordination context. It does not grant repository, deployment, account, or cloud permissions. Use the target system's controls to authorize the actual side effect."
+        ]
+      },
+      {
+        "title": "Escalating every routine choice",
+        "paragraphs": [
+          "If an agent must ask before every reversible, in-scope action, people will stop evaluating the requests. Refine the role so routine work is eligible, and reserve escalation for changes in evidence, scope, access, consequence, or ownership."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent escalation?",
+        "answer": "AI agent escalation is a deliberate handoff when an agent reaches a decision, access, evidence, scope, or authority boundary outside its role. The agent should leave a compact packet that names the trigger, current facts, uncertainty, options, requested decision, and accountable owner."
+      },
+      {
+        "question": "When should an AI agent escalate to a human?",
+        "answer": "Escalate when evidence is missing or conflicts, scope changes, a new tool or data source is needed, a public or policy commitment is proposed, a side effect is hard to reverse, a security or privacy concern appears, or the task lacks a decision owner. The exact triggers should be written into the role contract."
+      },
+      {
+        "question": "What should an AI agent escalation packet include?",
+        "answer": "Include the precise decision needed, reason for escalation, current task and scope, verified facts and sources, uncertainty or conflict, options and likely effects, the minimum requested authority, named owner, and the next action after a decision. Do not include secrets or a long unstructured transcript."
+      },
+      {
+        "question": "Is an AI agent escalation the same as a task blocker?",
+        "answer": "Not exactly. A blocker identifies what prevents a task from continuing. An escalation adds the decision handoff: it explains the boundary, evidence, and owner who can resolve it. A good escalation may mark a task blocked until that decision arrives."
+      },
+      {
+        "question": "Can an agent continue work after escalating?",
+        "answer": "Only within the still-approved portion of its role. It should not take the action that required the escalation, retrieve a new restricted source, or silently widen scope while the decision is unresolved. It can preserve context, prepare the packet, and resume when a recorded decision accepts the next bounded step."
+      },
+      {
+        "question": "How do you test an AI agent's escalation behavior?",
+        "answer": "Use realistic fixtures with missing sources, conflicting evidence, new access requests, untrusted instructions, unidentified owners, and proposed irreversible actions. Verify the agent stops, creates an answerable packet, routes it to the right owner, and cannot bypass the boundary through its actual runtime permissions."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "Human-in-the-Loop Review for AI Agent Teams",
+        "path": "/guides/human-in-the-loop-ai-agents/"
+      },
+      {
+        "label": "AI Agent Security Best Practices",
+        "path": "/guides/ai-agent-security-best-practices/"
+      },
+      {
+        "label": "Context Engineering for AI Agents",
+        "path": "/guides/context-engineering-for-ai-agents/"
+      },
+      {
+        "label": "Prompt Injection Defense for AI Agents",
+        "path": "/guides/prompt-injection-defense-for-ai-agents/"
+      },
+      {
+        "label": "How to Evaluate AI Agents",
+        "path": "/guides/how-to-evaluate-ai-agents/"
+      }
+    ],
+    "cta": {
+      "title": "Make stopping a useful part of the agent's job",
+      "body": "The best escalation is not a dead end. It gives the right person a clear choice at the moment their judgment matters: approve a small scope expansion, select the governing source, accept a change, add a new owner, or decline an unsafe path. That lets the agent contribute speed without pretending it owns every decision.\n\nDefine escalation triggers when you define the role. Give the agent a small current context packet, require it to preserve evidence and uncertainty, name the owner, and enforce consequential actions in the systems that actually execute them. A well-formed handoff is one of the most valuable results an agent can produce.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
