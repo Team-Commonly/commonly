@@ -99,6 +99,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-msg--grouped');
   });
 
+  test('direct-agent liveness stays above the composer as a stable, readable row', () => {
+    // A successful DM POST is not proof of an active seat. This row keeps
+    // liveness and the bounded reply wait outside the scrollable transcript
+    // and outside the textarea, so both remain visible while composing.
+    const status = ruleBody(v2, '.v2-chat__agent-room-status');
+    expect(status).toContain('margin: 8px 24px 0');
+    expect(status).toContain('font-size: 12px');
+    expect(ruleBody(v2, '.v2-chat__agent-room-status--wait')).toContain('background: var(--v2-accent-soft)');
+  });
+
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
     // The chip shipped in violation of the ratified rule; the craft audit
     // (finding 2) removed it. This pins the removal against reintroduction.
