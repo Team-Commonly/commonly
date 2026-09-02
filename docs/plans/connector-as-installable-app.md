@@ -93,7 +93,8 @@ What it does, in order — this is `installableInstallService.install()`:
    'active', 'error'] }`**. The service never reads-then-writes. It runs one
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
    `status: 'error'`; or `status: 'installing'` with `claimedAt < now − INSTALL_LOCK_TTL_MS`
-   — and whose update sets `status: 'installing'`, `installedBy`, `installableVersion`,
+   — and whose update sets `status: 'installing'`, **`claimId: randomUUID()` — a fresh
+   generation on every claim and every takeover**, `installedBy`, `installableVersion`,
    `installSource: 'ui'`, `grantedScopes = installable.requires` (**descriptive only in Phase 1**
    — it records what the manifest declared at install time, mirroring ADR-001's "declared,
    permissive enforcement"; nothing reads it for authorization, and no route may start to
@@ -102,29 +103,49 @@ What it does, in order — this is `installableInstallService.install()`:
    beside it, a first install inserts, and **a lock whose owner died mid-projection is taken
    over, not honoured forever** (Vera, 2026-09-02: a lock with no expiry left that user unable
    to install again — every retry hit the loser path). The document returned with `status:
-   'installing'` and **our** `claimedAt` is the lock; **only the lock owner runs projectors.**
-   `INSTALL_LOCK_TTL_MS` is one named constant, sized to the projection (two document writes,
-   no network) — 60 s, generous by two orders of magnitude, and short enough that a user who
-   saw a 202 and retries gets a real install on the second click. Takeover is safe because
-   projection is idempotent per installation: the webhook projector create-or-reuses the
-   Integration row by `installationId`, and the only mint is the final activation write. Any other outcome is the loser's path and never invokes a projector: the
+   'installing'` and **our** `claimId` is the lock; **only the lock owner runs projectors, and
+   every write the owner makes is fenced on that generation** (step 6). `INSTALL_LOCK_TTL_MS`
+   is one named constant — 60 s — and it is a **liveness** parameter, not a safety one: it
+   decides how soon a user who saw a 202 gets a real install on retry. Safety is the fence.
+   A takeover during a GC pause is therefore harmless: the paused owner revives holding a
+   generation the row no longer carries, and its writes are refused (Kai 62654, Vera 62655 and
+   62701, 2026-09-02 — the first lease cut had the takeover and not the generation, and the
+   walk was: A stalls, B takes over and mints C_B, A revives and mints C_A over it, the user
+   types C_B and gets "Invalid code" with nothing logged). Any other outcome is the loser's path and never invokes a projector: the
    existing row is returned as-is — **202 while `installing`** (the owner will finish it),
    **200 when `active`**. A duplicate-key error on the upsert (two first-installs racing the
    insert) is the same loser's path. `uninstalled` rows sit outside the index, so re-install
    after uninstall inserts fresh and mints a new Integration row (the binding row is the unit).
    One parent therefore means one projected row (`Integration.installationId` is unique), and
    `findLiveIntegration(podId)` never sees two live rows born from one user's install.
-4. **Iterate `components[]`.** For each, look up `projectors[component.type]` (§3). Missing
+4. **Iterate `components[]`** — as the lock owner, with every parent mutation fenced:
+   component status and `projectionIds` are written with `findOneAndUpdate({ _id, status:
+   'installing', claimId: ours }, …)`, and a `null` result is **`InstallLockLostError`**, which
+   aborts the install without touching the Integration row. For each component, look up
+   `projectors[component.type]` (§3). Missing
    projector → that component's `status: 'error'` with a message naming the type; the parent
    ends `status: 'error'` and the install returns 422 with the parent row — **the row is kept**
    so the half-install is visible (COMMONLY_SCOPE §5 "partial failure visibility"), and a retry
    is idempotent.
 5. Each projector returns `projectionIds`; the service writes them onto the component entry and
    sets it `active`.
-6. **Activate last — and mint last.** Only when every component is `active` does the service,
-   in one write, flip the projected Integration row to `isActive: true` and mint the connect
-   code (`mintConnectCode()`), then set the parent `active`. Until that write the row exists
-   with `isActive: false` and **no code**. This is what makes a partial install safe without
+6. **Activate last — mint last — and fence both.** Only when every component is `active`
+   does the service activate, in two writes whose order is load-bearing:
+   1. **Parent CAS on the generation:** `findOneAndUpdate({ _id, status: 'installing',
+      claimId: ours }, { $set: { status: 'active', activatedByClaimId: ours } })`. The
+      `claimId` term is **required in the filter, never match-if-present** — this write is
+      what hands out a bearer secret. `null` ⇒ `InstallLockLostError`: the owner logs at warn
+      with both generations, mints nothing, and returns **409 `{ code: 'install_lock_lost' }`**
+      to its own caller. The refusal is a distinct error class and a distinct status, never
+      the `null` a no-op would return (Vera 62655: D6's first cut returned null for both and
+      the caller reported success).
+   2. **Integration activation, fenced on its own state:** `findOneAndUpdate({ installationId:
+      String(parent._id), isActive: false }, { $set: { isActive: true, 'config.connectCode':
+      …, 'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
+      inside this write's construction. `null` here means the row is already active (a retry
+      of a winner that crashed between writes 1 and 2 — the only way to get here holding the
+      generation that won write 1): return the existing code, mint nothing.
+   Until write 2 the Integration row exists with `isActive: false` and **no code**. This is what makes a partial install safe without
    touching the enable path: `handleEnableCommand` looks up
    `{ type, isActive: true, 'config.connectCode' }` on main and knows nothing about
    installations — a 422'd install therefore has nothing it can find. A retry of the install
@@ -244,7 +265,9 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
 For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
-the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — the row becomes
+the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — fenced on the
+`claimId` it read, so it cannot race a takeover that happened between its read and its write
+— and the row becomes
 the ordinary retryable case, and the board-facing state stops lying about work in progress.
 The sweep is the backstop; the claim filter above is the primary path, so a stuck lock is
 recoverable by the next install attempt even between sweeps.
@@ -345,9 +368,18 @@ Unit (`backend/__tests__/unit/services/installable/`):
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
    `error` with `'install lock expired'`.
 6b. **Lock takeover.** An `installing` row with a stale `claimedAt` (owner died): the next
-   install claims it (same `_id`, new `claimedAt`, new `installedBy`), runs projectors,
-   reuses the inactive Integration row, activates and mints exactly once. A fresh
+   install claims it (same `_id`, new `claimId`, new `claimedAt`, new `installedBy`), runs
+   projectors, reuses the inactive Integration row, activates and mints exactly once. A fresh
    `installing` row (within the TTL) is not taken over — the second caller gets 202.
+6c. **Stale-owner completion is a refused no-op, and it is visible.** A claims (generation
+   `a`) and stalls; B takes over (generation `b`), activates, mints `C_B`. A revives and runs
+   its activation: write 1 returns `null`, `InstallLockLostError` is thrown, **no mint call
+   happens** (spy on `mintConnectCode`: exactly one call in the whole test, B's), the
+   Integration row still carries `C_B`, and A's caller receives 409 `install_lock_lost` —
+   asserted on the status and the code, not on a null.
+6d. **Winner retry mints once.** B crashes between writes 1 and 2 and retries holding
+   generation `b`: write 2 finds `isActive: false` and mints; a second retry finds
+   `isActive: true`, returns the same code, `mintConnectCode` called once.
 
 Service (`__tests__/service/`):
 7. **Behaviour pins, at the dispatcher.** (a) An agent post into a pod with one live Telegram
