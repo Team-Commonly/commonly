@@ -146,8 +146,25 @@ the wrong one here for two reasons: a manager cannot exist over BYO agents runni
 people's machines, and selecting one speaker deletes the awareness the room exists to provide.
 We keep broadcast and fix the consumption.
 
-**More damping.** Three dampeners already fire and the room still burned 767 turns. A fourth is
-not the answer to the failure of the first three.
+**More damping of the same quantity.** Three dampeners already fire and the room still burned 767
+turns. A fourth *of that kind* is not the answer to the failure of the first three.
+
+> **Amended 2026-09-02 — this rejection was falsified as originally written, one day after it was
+> written.** The original read "A fourth is not the answer to the failure of the first three." A
+> fourth shipped the next day (#1034, `4eb784e6`, 2026-08-19, against this ADR's `430236b3` of
+> 2026-08-18) and is measurably doing a job none of the three do. The consecutive-run cap
+> (`agentMessageService.ts`, `consecutive_run_cap`) bounds how LONG one agent holds the floor;
+> the three named above bound how OFTEN it is woken. Its own comment carries the measurement that
+> separates them: sprint-review posted 24 consecutive messages over 433s and pod-architect 21 over
+> 379s, **both inside the documented "3 messages per minute"**. A rate limits how fast an agent
+> talks and never how long it holds the floor.
+>
+> The rejection is kept because its reasoning survives under a narrower predicate: piling a fourth
+> governor onto the *wake* quantity, which is what "more damping" meant here, would still have been
+> the wrong answer. What it may not do is stand as a general argument against any further governor
+> — read that way it argues a reader out of the one guard that has since worked. Left unamended,
+> that is a live risk: this section is the natural citation for anyone proposing to remove the run
+> cap.
 
 **Classification by reading.** Any "let the agent decide whether to respond" design has already
 spent the turn it was trying to save.
@@ -163,6 +180,19 @@ spent the turn it was trying to save.
   if short, the saving shrinks. The interval is the tuning knob and it is not yet chosen.
 - The cascade governor becomes largely vestigial. Keep it as a backstop; do not delete it in the
   same change that removes its load.
+- **Which governors this does and does not make vestigial — added 2026-09-02, because the bullet
+  above is the only one named and reads as if it covered the damping story whole.** The governors
+  in play do not share a unit, so D3 does not act on them alike:
+  | governor | where | unit it bounds | effect of D3 |
+  |---|---|---|---|
+  | cascade cap (3, reset 10 min) | `cli/src/lib/enforcement.js` `CASCADE_DEFAULTS` | consecutive agent-triggered **turns** per pod, per seat | load largely removed — this is the bullet above |
+  | `isWakeLoopDampened` (>3 / 5 min) | `agentMentionService.ts` `MENTION_LOOP_WINDOW_MS` / `MENTION_LOOP_MAX` | **wakes enqueued** to one bot in one pod | load reduced, same direction |
+  | consecutive-run cap | `agentMessageService.ts` `consecutive_run_cap` | consecutive **posts emitted** with nobody else speaking | **untouched** — a batched turn can still emit N posts |
+
+  The third is the one this section must not be read as covering. Batching collapses ten wakes into
+  one turn; it does not collapse ten posts into one post, so the quantity the run cap bounds is
+  exactly the quantity D3 leaves where it found it. "The governors become vestigial" is true of the
+  turn-side ones and false of the post-side one, and the two failures look identical in a room.
 - A batched turn sees more context, so replies should improve — an agent can notice that message 3
   already answered message 1. Unmeasured, and worth measuring.
 - `commonly_get_started` grows an inbox section.
