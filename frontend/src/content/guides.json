@@ -7553,7 +7553,11 @@
         "label": "AI agent acceptance criteria",
         "path": "/guides/ai-agent-acceptance-criteria/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent scope creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      }],
     "cta": {
       "title": "Give agents work they can own and people decisions they should own",
       "body": "AI agent roles make teams more capable when they turn broad capability into a clear, bounded contribution. Define the outcome, context, operations, constraints, artifact, decision owner, and no-op before attaching more tools or expanding access. Use tasks and shared state to make ownership visible, but keep technical enforcement in the systems that can actually deny an unsafe action.\n\nStart with one role that produces a reviewable handoff. Once the team can see what it receives, what it returns, and who decides next, it can improve or extend the system without turning every agent into an unowned source of authority.",
@@ -8850,6 +8854,10 @@
       {
         "label": "AI agent no-op",
         "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI agent scope creep",
+        "path": "/guides/ai-agent-scope-creep/"
       }],
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
@@ -9555,6 +9563,10 @@
       {
         "label": "AI agent source of record",
         "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI agent scope creep",
+        "path": "/guides/ai-agent-scope-creep/"
       }],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
@@ -10951,7 +10963,11 @@
         "label": "Agentic Workflows",
         "path": "/guides/agentic-workflows/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent scope creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      }],
     "cta": {
       "title": "Make restraint a reviewable contribution",
       "body": "An AI agent no-op is useful when it prevents the wrong work without hiding the right work. Define the trigger, eligibility rule, material-change threshold, and escalation path before the agent runs. Then let silence mean something precise: the agent checked the work it was responsible for and found no safe, useful, authorized contribution to make.",
@@ -11656,6 +11672,715 @@
     "cta": {
       "title": "Make the authoritative fact easy to find",
       "body": "An AI agent source-of-record rule replaces guesswork with a direct verification path. Assign each surface a clear job, connect decisions to the systems that execute them, keep durable context sourced and bounded, and escalate conflicts that a role cannot decide. When a teammate can answer “where do I verify this?” before acting, the work becomes safer and easier to continue.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-scope-creep": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Scope Creep: Keep Work Boundaries Reviewable | Commonly",
+    "title": "AI Agent Scope Creep: Keep Expanding Work Visible and Reviewable",
+    "description": "Learn how AI agent scope creep happens, how to define an agent’s work boundary, and how to surface new inputs, actions, and decisions before they become unreviewed work.",
+    "summary": "AI agent scope creep is the unreviewed expansion of an agent’s assigned outcome, inputs, permitted operations, or decision influence beyond the work that was originally agreed.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent scope creep is the unreviewed expansion of an agent’s assigned outcome, inputs, permitted operations, or decision influence beyond the work that was originally agreed. It often starts with a reasonable-seeming step—read one more file, investigate a neighboring issue, make a related edit, contact another system, or decide a question that should have gone to an owner. The problem is not that work changes. The problem is that the change becomes invisible before someone can review whether it is wanted, safe, and owned.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives a team places to make those boundaries inspectable: a task can state outcome, owner, dependency, and result; a focused thread can hold the question about a proposed change; an attached artifact can show exact evidence or a proposed output; and selected shared context can preserve an accepted decision. Those collaboration records make scope changes visible. They do not grant an agent new authority to merge, deploy, change permissions, or make a commitment in another system.",
+      "Scope creep is not always a failure. A new source can change the right answer, a dependency can make a task too narrow, and a reviewer may deliberately expand an outcome. The safe pattern is to treat the expansion as a decision: name what is changing, why it matters, what it affects, and who can accept the new boundary.",
+      "This guide explains how scope creep appears in AI agent work, how to catch it early, and how to turn a possible expansion into a reviewable decision instead of an accidental new assignment."
+    ],
+    "sections": [
+      {
+        "title": "Scope can expand in more than one direction",
+        "tables": [
+          {
+            "headers": [
+              "Scope dimension",
+              "Original bounded state",
+              "Unreviewed expansion",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "Prepare a source-backed brief",
+                "Rewrite the product plan or choose a launch direction",
+                "The agent moved from preparation into a decision owned elsewhere"
+              ],
+              [
+                "Inputs",
+                "Use the named task sources and approved context",
+                "Search unrelated records or treat a broad chat history as task material",
+                "Relevance, privacy, and uncertainty become harder to assess"
+              ],
+              [
+                "Operations",
+                "Draft a proposed change or evidence packet",
+                "Merge, publish, grant access, or modify an external system",
+                "A collaboration task is mistaken for execution authority"
+              ],
+              [
+                "Audience",
+                "Return an artifact to the named reviewer",
+                "Send commitments or conclusions to a wider group",
+                "The communication boundary changed without review"
+              ],
+              [
+                "Time horizon",
+                "Address the current task and its explicit dependency",
+                "Create an ongoing monitoring obligation or future work stream",
+                "A one-off request quietly becomes a standing role"
+              ],
+              [
+                "Decision influence",
+                "Present alternatives and limits",
+                "Select policy, priority, risk tolerance, or acceptance criteria",
+                "A recommendation is mistaken for an authorized decision"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Teams often notice only output scope: a task that asked for a summary turns into a full plan. But an agent’s effective scope can also grow through the inputs it reads, the systems it touches, the people it addresses, or the judgment it assumes it may make."
+        ]
+      },
+      {
+        "title": "The right boundary is not do as little as possible",
+        "paragraphs": [
+          "The right boundary is not “do as little as possible.” It is “make the agreed contribution completely, then surface any additional work as a choice.” A small, explicit expansion can be valuable. An invisible expansion is hard to review, reverse, or hand off.",
+          "For defining a role before it starts accumulating work, see AI Agent Roles."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Roles",
+            "path": "/guides/ai-agent-roles/"
+          }
+        ]
+      },
+      {
+        "title": "Write the scope contract in fields an agent can check",
+        "tables": [
+          {
+            "headers": [
+              "Scope field",
+              "Question the agent should be able to answer",
+              "Example boundary"
+            ],
+            "rows": [
+              [
+                "Outcome",
+                "What reviewable result is this work meant to produce?",
+                "A source-linked research brief for a named decision"
+              ],
+              [
+                "In scope",
+                "Which topics, artifacts, systems, or work items may the agent consider?",
+                "The task’s attached sources and the cited product area"
+              ],
+              [
+                "Out of scope",
+                "Which adjacent work must not be folded in?",
+                "New feature design, external communication, and production changes"
+              ],
+              [
+                "Inputs",
+                "Which records or sources may inform the result?",
+                "The task, approved memory, and the named evidence set"
+              ],
+              [
+                "Permitted operations",
+                "What may the agent prepare, read, or propose?",
+                "Draft a document and post a decision packet; do not merge or publish"
+              ],
+              [
+                "Decision owner",
+                "Who accepts a material change in scope or tradeoff?",
+                "The project owner for scope and the maintainer for a technical boundary"
+              ],
+              [
+                "Review point",
+                "What must happen before the work reaches the next stage?",
+                "A reviewer inspects the artifact against the stated acceptance criteria"
+              ],
+              [
+                "Stop condition",
+                "When should the agent pause, hand off, or no-op?",
+                "The task lacks a governing source, an owner, or a permitted next action"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Vague instructions make scope creep almost inevitable. A role contract or task should give an agent enough information to recognize both eligible work and work that requires a new decision. The fields do not need to be long, but they should be concrete."
+        ]
+      },
+      {
+        "title": "The contract is not a security control",
+        "paragraphs": [
+          "The contract is not a security control. It clarifies the intended contribution so a reviewer can notice when the agent has a question instead of quietly widening the work.",
+          "For a practical template for outcome, inputs, operations, boundary, artifact, and next owner, see How to Write AI Agent Instructions."
+        ],
+        "links": [
+          {
+            "label": "How to Write AI Agent Instructions",
+            "path": "/guides/how-to-write-ai-agent-instructions/"
+          }
+        ]
+      },
+      {
+        "title": "Watch for early signals that the task is changing",
+        "tables": [
+          {
+            "headers": [
+              "Signal",
+              "What it can mean",
+              "Safe first response"
+            ],
+            "rows": [
+              [
+                "A new question appears while completing the task",
+                "The original outcome may be incomplete or a separate decision may be needed",
+                "State the question and ask whether it belongs in this task or a new one"
+              ],
+              [
+                "The agent needs a source outside the named evidence set",
+                "The evidence may be insufficient or the research boundary may need expansion",
+                "Explain why the source matters and request approval or a scoped addition"
+              ],
+              [
+                "A possible improvement is adjacent to the requested result",
+                "Helpful follow-on work is tempting the agent to broaden the outcome",
+                "Deliver the requested result first; make the improvement a separate proposal"
+              ],
+              [
+                "A task needs a new permission, external action, or system access",
+                "The operation boundary has changed",
+                "Stop and route the requirement to the authorized owner"
+              ],
+              [
+                "The intended audience grows beyond the named reviewer",
+                "A draft is turning into a public or cross-team commitment",
+                "Prepare a reviewable message, but do not send or represent it as approved"
+              ],
+              [
+                "The work repeats at a new cadence",
+                "A one-time assignment may be becoming a standing responsibility",
+                "Ask for a role, trigger, and review policy instead of silently monitoring"
+              ],
+              [
+                "The agent cannot name who accepts the expansion",
+                "The change lacks accountable ownership",
+                "Create a decision question or escalation, not a broader plan"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Scope creep usually arrives as a small deviation, not a dramatic announcement. An agent can catch it by comparing the next step with the original outcome, allowed inputs, and named owner before acting."
+        ]
+      },
+      {
+        "title": "These signals are not reasons to abandon useful work",
+        "paragraphs": [
+          "These signals are not reasons to abandon useful work. They are prompts to preserve the current boundary, state the proposed change, and ask for the smallest decision that lets the work continue safely.",
+          "For keeping task intake, dependencies, and changes in ownership visible, see AI Agents for Project Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agents for Project Management",
+            "path": "/guides/ai-agents-for-project-management/"
+          }
+        ]
+      },
+      {
+        "title": "Make scope expansion an explicit decision",
+        "tables": [
+          {
+            "headers": [
+              "Expansion question",
+              "What the packet should state",
+              "Owner’s possible answer"
+            ],
+            "rows": [
+              [
+                "Does the outcome change?",
+                "Current result, proposed result, and work not included today",
+                "Keep the task narrow, approve the new outcome, or create a follow-on task"
+              ],
+              [
+                "Do inputs need to expand?",
+                "Missing source, relevance, sensitivity, and impact on the conclusion",
+                "Approve a limited source set, supply an alternative, or keep the current evidence boundary"
+              ],
+              [
+                "Does the operation change?",
+                "Current permitted action and requested additional action",
+                "Route to an authorized role, change the plan, or decline the request"
+              ],
+              [
+                "Does the decision boundary change?",
+                "Current owner, new decision needed, and consequence of delay",
+                "Name the new owner, retain current scope, or escalate the conflict"
+              ],
+              [
+                "Does the audience change?",
+                "Intended reader, proposed new audience, and communication risk",
+                "Keep it internal, request review, or authorize a controlled handoff"
+              ],
+              [
+                "Does the task create follow-on work?",
+                "New outcome, dependency, owner, and acceptance condition",
+                "Create a separate task or explicitly extend the current one"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "When new work genuinely belongs near the current task, the agent should prepare an expansion request instead of absorbing it. The request should make the tradeoff legible: what changes, what stays unchanged, what evidence prompted it, and which owner can accept it."
+        ]
+      },
+      {
+        "title": "The goal is not a long approval process",
+        "paragraphs": [
+          "The goal is not a long approval process for every sentence. It is a short, answerable request when the next step changes the work’s scope, authority, risk, or future obligation. The decision owner can then accept a deliberate expansion or preserve the original boundary.",
+          "For a structure that presents evidence, options, and one answerable choice, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Use the right result when expansion cannot proceed",
+        "tables": [
+          {
+            "headers": [
+              "Condition",
+              "Correct result",
+              "What the record should say"
+            ],
+            "rows": [
+              [
+                "Interesting work is outside the task’s outcome",
+                "Deliver current scope; make the idea a separate proposal if useful",
+                "The proposed follow-on and why it is not included in this result"
+              ],
+              [
+                "A new source might help but is not approved",
+                "Ask for a scoped evidence expansion or proceed with the stated limitation",
+                "The source needed, the expected value, and the decision owner"
+              ],
+              [
+                "A required decision or dependency is absent",
+                "Block or escalate the task",
+                "The exact missing item, its effect, and who can resolve it"
+              ],
+              [
+                "The agent lacks authority for the proposed operation",
+                "Route it to the authorized owner",
+                "The requested action and the system or role that controls it"
+              ],
+              [
+                "No eligible contribution remains after the bounded check",
+                "No-op according to the role policy",
+                "What was checked and what future change would make work eligible"
+              ],
+              [
+                "The current task is already covered by another owner",
+                "Avoid duplication; coordinate a distinct contribution only if requested",
+                "The existing record and the non-overlapping result, if any"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "An agent should not force every new possibility into the current task. The appropriate outcome depends on whether the work is ineligible, missing a prerequisite, awaiting an owner, or simply not part of the agreed outcome."
+        ]
+      },
+      {
+        "title": "This is where scope discipline becomes practical",
+        "paragraphs": [
+          "This is where scope discipline becomes practical. A clear no-op, blocker, or handoff keeps the team informed without quietly turning an agent into a general-purpose backlog creator.",
+          "For the distinction between no eligible work and an unresolved prerequisite, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Record an accepted expansion where the next owner can find it",
+        "tables": [
+          {
+            "headers": [
+              "Change made",
+              "Record to update",
+              "Supporting record to link"
+            ],
+            "rows": [
+              [
+                "Outcome or non-goal",
+                "Task description or approved brief",
+                "Decision packet or focused decision thread"
+              ],
+              [
+                "Inputs or source set",
+                "Task context or evidence list",
+                "Source rationale and any handling boundary"
+              ],
+              [
+                "Owner or reviewer",
+                "Task assignee, review field, or handoff",
+                "The acceptance or escalation note"
+              ],
+              [
+                "Dependency",
+                "Task dependency or blocker note",
+                "The upstream task, decision, or target-system condition"
+              ],
+              [
+                "Expected artifact",
+                "Task result definition or review contract",
+                "Example, template, or acceptance criteria"
+              ],
+              [
+                "Reusable convention",
+                "Selected shared memory or maintained project guidance",
+                "Source decision and applicability limit"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Once a scope change is accepted, update the record that coordinates the work and link the evidence that explains the decision. Do not leave the new boundary only in a fleeting chat message or in an agent’s private reasoning. The next owner should be able to find what changed, who accepted it, and what remains outside scope."
+        ]
+      },
+      {
+        "title": "The record should identify the change without overstating it",
+        "paragraphs": [
+          "The record should identify the change without overstating it. “Scope expanded to include source set B after the project owner accepted the evidence request” is specific. “Agent now owns source research” silently creates a broader role.",
+          "For maintaining the active task as the coordination record, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Use a seven-step scope check before acting",
+        "orderedItems": [
+          "Read the requested outcome, in-scope inputs, explicit non-goals, and expected artifact.",
+          "Identify the next action the agent is considering and state which scope field it affects.",
+          "Check whether the action stays inside the role’s permitted operations and named audience.",
+          "Confirm that the required source, owner, dependency, and review path are present.",
+          "If the action expands scope, prepare a concise decision request with the change, evidence, impact, and options.",
+          "Record the owner’s answer in the task, decision packet, or handoff, and update the scope record if accepted.",
+          "If no eligible action remains, return the correct no-op, blocker, or escalation rather than creating adjacent work."
+        ]
+      },
+      {
+        "title": "This loop is useful before a first action",
+        "paragraphs": [
+          "This loop is useful before a first action and after a new signal appears. It makes the cost of checking scope small enough that the team can repeat it without burying useful work in process.",
+          "For evaluating whether the delivered artifact still matches the agreed outcome, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Write a concise scope-expansion request",
+        "tables": [
+          {
+            "headers": [
+              "Request field",
+              "What to state",
+              "Example prompt for the owner"
+            ],
+            "rows": [
+              [
+                "Current boundary",
+                "The agreed outcome, inputs, operations, and non-goals",
+                "“The current task is to prepare a source-backed brief from the listed materials.”"
+              ],
+              [
+                "Proposed change",
+                "One specific expansion, not a bundle of related ideas",
+                "“Add the newly identified source set to resolve the conflicting requirement.”"
+              ],
+              [
+                "Evidence",
+                "What prompted the request and why it affects the result",
+                "“The current sources disagree on the supported behavior.”"
+              ],
+              [
+                "Impact",
+                "What changes in effort, risk, audience, or future obligation",
+                "“The brief will take an additional review cycle but remain internal.”"
+              ],
+              [
+                "Options",
+                "Keep scope, approve the limited change, split the work, or defer it",
+                "“Should this evidence set be added now, or should it become a separate research task?”"
+              ],
+              [
+                "Owner and next action",
+                "Who can decide and what happens after each answer",
+                "“The project owner decides; on approval, the research role returns an updated brief.”"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "The request should be small enough that an owner can answer it without reconstructing the entire task. It does not need every detail of the work; it needs the delta between the agreed boundary and the proposed one."
+        ]
+      },
+      {
+        "title": "A good request makes it easy to preserve the original task",
+        "paragraphs": [
+          "A good request makes it easy to preserve the original task when expansion is not justified. That is often the best decision: the adjacent work remains visible, but it does not delay or silently alter the deliverable already under review."
+        ],
+        "links": []
+      },
+      {
+        "title": "Keep scope clear across handoffs and role boundaries",
+        "tables": [
+          {
+            "headers": [
+              "Handoff moment",
+              "Sender should provide",
+              "Receiver should not assume"
+            ],
+            "rows": [
+              [
+                "Research reveals an adjacent opportunity",
+                "Source-backed finding, relevance, and a proposed decision question",
+                "That the research role approved a product or priority change"
+              ],
+              [
+                "Task dependency changes",
+                "Current state, missing prerequisite, and impact on the outcome",
+                "That the coordination role may reorder commitments without an owner"
+              ],
+              [
+                "Proposed artifact needs a technical choice",
+                "Exact artifact, evidence, tradeoffs, and requested decision",
+                "That the author may merge or select the architecture"
+              ],
+              [
+                "Reviewer asks for broader work",
+                "The explicit revised outcome, owner, and acceptance conditions",
+                "That all original non-goals disappeared automatically"
+              ],
+              [
+                "External action is requested",
+                "Bounded request and the system or role that controls it",
+                "That a task claim or chat approval executes the action"
+              ],
+              [
+                "A standing check becomes useful",
+                "Trigger, eligibility rule, no-op behavior, and reviewer",
+                "That a one-off agent assignment created a permanent monitoring role"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Work often appears to expand because it crosses roles. A research agent uncovers a design question, a project-management role sees a blocked dependency, and a maintainer needs a proposed change. The handoff should preserve the original task boundary while giving the next role exactly the new question it owns."
+        ]
+      },
+      {
+        "title": "Handoffs should make a scope change easy to accept",
+        "paragraphs": [
+          "Handoffs should make a scope change easy to accept, reject, or split. The receiver needs enough context to decide, not an implied obligation to finish every adjacent idea.",
+          "For routing an expansion that needs a different decision owner, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether scope is still reviewable",
+        "paragraphs": [
+          "The team can test scope discipline with a simple question: could a reviewer identify the original request, every accepted expansion, the current non-goals, and the owner of the next decision without reading an entire chat history? If not, the work is becoming harder to inspect.",
+          "For the per-fact record hierarchy that lets a reviewer verify the current scope, see AI Agent Source of Record."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Ask",
+              "Healthy result"
+            ],
+            "rows": [
+              [
+                "Outcome test",
+                "Is the requested result stated separately from useful follow-on ideas?",
+                "The artifact fulfills a bounded outcome before proposing more work"
+              ],
+              [
+                "Input test",
+                "Can the reviewer see which sources and context were allowed?",
+                "New evidence is linked and deliberately added rather than silently absorbed"
+              ],
+              [
+                "Operation test",
+                "Does the record distinguish preparation from external execution?",
+                "The agent does not claim authority it was not given"
+              ],
+              [
+                "Ownership test",
+                "Is there a named owner for every material expansion or decision?",
+                "No scope change relies on an ambient audience or assumed approval"
+              ],
+              [
+                "Boundary test",
+                "Are non-goals and unaccepted ideas still visible?",
+                "Adjacent work can be created separately without confusing the current task"
+              ],
+              [
+                "Continuity test",
+                "Can the next role find the current scope and source of the accepted change?",
+                "Handoffs do not require reconstructing the decision from messages"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Seven scope-creep mistakes that make agent work harder to trust"
+      },
+      {
+        "title": "Treating a helpful idea as an instruction to expand the task",
+        "paragraphs": [
+          "An adjacent improvement can be worth surfacing, but it does not change the current outcome by itself. Deliver the agreed result, then make the new idea a named proposal."
+        ]
+      },
+      {
+        "title": "Reading broader context without a relevance rule",
+        "paragraphs": [
+          "More context is not automatically better context. Use the approved evidence set and request a scoped addition when a new source matters to the decision."
+        ]
+      },
+      {
+        "title": "Turning preparation permission into execution authority",
+        "paragraphs": [
+          "An agent may prepare a change, decision packet, or message. It should not infer permission to merge, deploy, publish, or alter access from that preparation work."
+        ]
+      },
+      {
+        "title": "Letting a direct request override the role contract",
+        "paragraphs": [
+          "A request can introduce a new need, but it does not automatically expand the role’s outcome, allowed inputs, or operations. Check the named owner and boundary first."
+        ]
+      },
+      {
+        "title": "Hiding an expansion inside a handoff",
+        "paragraphs": [
+          "The next owner should receive an explicit new question or task, not a vague bundle of adjacent work. Say what changed, who accepted it, and what remains out of scope."
+        ]
+      },
+      {
+        "title": "Calling a missing decision a no-op",
+        "paragraphs": [
+          "If in-scope work is waiting on approval, evidence, or a dependency, it is blocked or needs escalation. No-op applies when no eligible work remains, not when work is inconvenient to route."
+        ]
+      },
+      {
+        "title": "Measuring success by more output",
+        "paragraphs": [
+          "More artifacts, messages, or tasks do not prove the work improved. Evaluate whether the result met the agreed outcome, kept the review boundary intact, and made a useful next step possible."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent scope creep?",
+        "answer": "It is the unreviewed expansion of an agent’s outcome, inputs, operations, audience, time horizon, or decision influence beyond the original task or role contract."
+      },
+      {
+        "question": "Is all scope expansion bad?",
+        "answer": "No. New evidence or a changed dependency may justify an expanded outcome. The important step is to make the change explicit, name its owner and tradeoff, and update the coordination record if it is accepted."
+      },
+      {
+        "question": "How can an agent flag scope creep without stopping all work?",
+        "answer": "It can complete the original bounded result, isolate the adjacent work, and prepare a short decision request that states the proposed change, evidence, impact, and available options."
+      },
+      {
+        "question": "What should an agent do when it needs a new source or system access?",
+        "answer": "Explain why the addition matters, identify the risk or boundary it changes, and ask the authorized owner to approve a limited expansion or provide an alternative. Do not work around the missing permission or treat it as implied."
+      },
+      {
+        "question": "Is a blocked task the same as scope creep?",
+        "answer": "No. A blocked task has an eligible outcome but is waiting on a named prerequisite. Scope creep is an unreviewed change to what the agent is asked or permitted to do. A scope change can create a blocker if it needs a decision."
+      },
+      {
+        "question": "How do teams preserve an approved scope change?",
+        "answer": "Update the task or approved brief, link the decision record and supporting evidence, name the current owner and review point, and keep any remaining non-goals visible for the next participant."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Roles",
+        "path": "/guides/ai-agent-roles/"
+      },
+      {
+        "label": "How to Write AI Agent Instructions",
+        "path": "/guides/how-to-write-ai-agent-instructions/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }
+    ],
+    "cta": {
+      "title": "Let useful work grow only with a visible boundary",
+      "body": "AI agent scope creep is easier to prevent when the team treats additional work as a decision rather than a side effect of capability. Give the agent a checkable contract, make new inputs and operations visible, preserve non-goals, and route any material expansion to the owner who can accept it. That lets the team pursue useful follow-on work without losing the ability to review who asked for it, why it matters, and what the agent may do next.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
