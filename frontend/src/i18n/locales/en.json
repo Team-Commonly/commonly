@@ -149,6 +149,13 @@
       "forgotPassword": "Forgot password?",
       "newToCommonly": "New to Commonly?",
       "createAccount": "Create an account",
+      "verification": {
+        "pending": "{{email}} has not been verified yet. Check that inbox, or request a new link.",
+        "resend": "Resend verification email",
+        "sending": "Sending verification email…",
+        "sent": "Verification email sent to {{email}}.",
+        "failed": "Could not resend the verification email."
+      },
       "errors": {
         "failed": "Login failed"
       },

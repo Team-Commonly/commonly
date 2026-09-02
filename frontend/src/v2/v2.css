@@ -4565,6 +4565,18 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 480px) {
+  /* Auth is a primary phone flow: 16px prevents Safari's focus zoom and a
+     44px target keeps signup usable with a thumb. */
+  .v2-login__input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .v2-root button.v2-login__submit {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
   .v2-modal__overlay {
     padding: 12px;
   }
@@ -4859,6 +4871,29 @@ body.modern-ui.v2-canvas {
   background: rgba(239, 68, 68, 0.1);
   color: var(--v2-danger);
   font-size: 12px;
+}
+
+.v2-root button.v2-login__resend {
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.v2-root button.v2-login__resend:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.v2-login__resend-notice {
+  margin-top: 6px;
+  color: var(--v2-text-secondary);
 }
 
 .v2-login__forgot {

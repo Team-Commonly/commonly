@@ -149,6 +149,13 @@
       "forgotPassword": "忘记密码？",
       "newToCommonly": "还没有 Commonly 账号？",
       "createAccount": "注册",
+      "verification": {
+        "pending": "{{email}} 尚未验证。请查看该邮箱，或重新请求验证链接。",
+        "resend": "重新发送验证邮件",
+        "sending": "正在发送验证邮件…",
+        "sent": "验证邮件已发送至 {{email}}。",
+        "failed": "无法重新发送验证邮件。"
+      },
       "errors": {
         "failed": "登录失败"
       },
