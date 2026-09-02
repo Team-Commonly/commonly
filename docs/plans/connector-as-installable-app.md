@@ -87,11 +87,18 @@ What it does, in order — this is `installableInstallService.install()`:
 
 1. Load the Installable; 404 if absent or not `active`.
 2. Resolve the target from `scope`: `user` → `targetType: 'user'`, `targetId: req.user.id`.
-   **One active installation per (installableId, user)**: a second call returns the existing
-   row with 200, not a duplicate (unique partial index on `{installableId, targetType, targetId,
-   status: 'active'}`).
-3. Create the **parent** `InstallableInstallation` row: `installableVersion`, `installedBy`,
-   `installSource: 'ui'`, `grantedScopes = installable.requires`, `status: 'installing'`.
+3. **Insert the parent as the compare-and-set** (the #1315 shape). There is no read-then-write:
+   the service inserts the `InstallableInstallation` row (`installableVersion`, `installedBy`,
+   `installSource: 'ui'`, `grantedScopes = installable.requires`, `status: 'installing'`)
+   against a **unique partial index on `{ installableId, targetType, targetId }` filtered to
+   `status: { $in: ['installing', 'active'] }`** — both live states, not just `active`, or two
+   concurrent installs would each pass a read, each create an `installing` parent, and each
+   project a row (Vera, 2026-09-02). A duplicate-key error is the idempotent path: load the
+   existing live row and return it with 200; if it is `installing`, return it as-is — the
+   first caller finishes it. `error` and `uninstalled` rows are outside the filter, so a retry
+   after a failed install inserts fresh and reuses the inactive Integration row (§2 step 6).
+   One parent therefore means one projected row (`Integration.installationId` is unique), and
+   `findLiveIntegration(podId)` never sees two live rows born from one user's install.
 4. **Iterate `components[]`.** For each, look up `projectors[component.type]` (§3). Missing
    projector → that component's `status: 'error'` with a message naming the type; the parent
    ends `status: 'error'` and the install returns 422 with the parent row — **the row is kept**
@@ -247,7 +254,10 @@ Unit (`backend/__tests__/unit/services/installable/`):
    both pointing at the **same** `integrationId`; the Integration row has `installationId ===
    String(parent._id)`, `linkedUserId === installer`, a 32-hex code with expiry, `liveRelay` and
    `relayAllAgentMessages` true, `podId` = the gated pod.
-2. A second install by the same user returns the existing row (200), creates nothing.
+2. A second install by the same user returns the existing row (200), creates nothing — **and
+   two concurrent installs** (fire both before either resolves, real Mongo via
+   mongodb-memory-server so the unique index is exercised) produce exactly one parent, one
+   Integration row, one code; the loser gets the winner's row.
 3. A manifest with an unknown component type yields parent `error`, the row kept, 422 —
    **and the projected Integration row is `isActive: false` with no `connectCode`**, so
    `handleEnableCommand`'s lookup cannot match it (assert `Integration.findOne({ type:
