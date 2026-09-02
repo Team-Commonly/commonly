@@ -160,11 +160,37 @@ are per-user because no surface distinguishes them per-pod, so splitting them
 would create a distinction nothing reads.
 
 **The manifest defaults stop being written on re-hire.** `displayName` moves
-from `$set` to `$setOnInsert` in the installation upsert, and
-`getOrCreateAgentUser` already prefers an existing curated
-`botMetadata.displayName` (`registry/install.ts:390-409` does exactly this for
-the registry path — the hire path should reuse that precedent rather than
-invent one).
+from `$set` to `$setOnInsert` in the installation upsert.
+
+**Ruled 2026-09-02 by Sam: the installation is canonical.** The question this
+document could not settle on its own was which surface owns a curated name,
+because the two paths disagreed. Both read paths already prefer the
+installation label — `agentMessageService.ts:1461` and `dmService.ts:555`, the
+second with a comment saying it does so precisely to stop a sibling pod's name
+leaking through the shared `User` row. The install path preferred the other
+one: at `origin/main`, `registry/install.ts:421-472` ("Task #62 (round 2):
+prefer the curated `User.botMetadata.displayName`") resolves an
+`effectiveDisplayName` from the User row and writes it into
+`AgentInstallation.displayName`, and `:511-548` forwards a name to the identity
+service only when the caller set one explicitly.
+
+The ruling settles it toward the read paths: **`AgentInstallation.displayName`
+is the record; `User.botMetadata.displayName` is a seed, never a preference.**
+Concretely — hire writes the installation label; install seeds a NEW
+installation from the User row only when that installation has no name, and
+never overwrites one that does. `install.ts:421-472` stops preferring the
+curated `botMetadata` value over an installation that already carries a name.
+
+The cost is stated plainly because it is real: that preference exists to fix a
+bug (PR #408, Task #62), where a registry install overwrote a curated name with
+a manifest default. The ruling does not reinstate that bug — the seed-if-empty
+branch still beats a manifest default to the field. What changes is the case
+where BOTH are curated, and there the per-pod value wins.
+
+**Why this could not be deferred.** Left as-is, a re-install re-seeds from a
+stale `User` row and silently reverts a hire-set name — the same §2.1 clobber
+this document catches for manifest defaults one line above. The mechanism it
+names is the mechanism it would have walked into.
 
 ## 4. What this does not decide
 
@@ -180,11 +206,18 @@ invent one).
 
 ## 5. Not verified
 
-- I have not confirmed that `getOrCreateAgentUser`'s existing-name preference
-  behaves as `registry/install.ts:390-409` does when called from the hire path
-  — the precedent is in the registry installer, and the hire path passes
-  `displayName` unconditionally today. That is the one place this proposal
-  assumes a behaviour it has not tested.
+- ~~I have not confirmed that `getOrCreateAgentUser`'s existing-name preference
+  behaves as `registry/install.ts:390-409` does when called from the hire
+  path.~~ **Retired by the ruling above, and the citation had decayed.** The
+  line numbers moved: `:390-409` at `origin/main` is now the cloud-entitlement
+  and hosted-cap gate, not the naming preference, which lives at `:421-472`
+  (`effectiveDisplayName`, written into the installation at `:472`) and
+  `:511-548` (`explicitDisplayName`, spread at `:548`). Re-derived at
+  `origin/main` on 2026-09-02. The question the bullet asked — should the hire
+  path reuse the registry installer's preference — is now answered *no* by
+  ruling rather than left open by measurement.
+- The hire path still passes `displayName` unconditionally today. That is the
+  edit the ruling requires and it is not yet written.
 - No collision has been observed in production. §2.3 is derived from the
   dedup script's own stated rationale, not from a measured incident.
 - Field length limits are proposed, not derived from any existing validator.
