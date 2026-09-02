@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import {
-  fireEvent, render, screen, waitFor,
+  act, fireEvent, render, screen, waitFor,
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
@@ -176,6 +176,106 @@ describe('V2PodChat starter prompts', () => {
 
     renderChat(makeAgentRoom(), { firstRunVisible: true });
     expect(screen.queryByRole('group', { name: 'Conversation starters' })).not.toBeInTheDocument();
+  });
+});
+
+describe('V2PodChat agent-room liveness', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    axios.get.mockResolvedValue({ data: { agents: [] } });
+  });
+
+  test('shows an unknown direct seat before the person sends a message', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'unknown', isOwner: false,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent(
+      "Aria's availability is unknown",
+    );
+  });
+
+  test('a live direct seat shows a wait until it replies', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'listening', isOwner: false,
+        }],
+      },
+    });
+    const sent = {
+      id: 'outgoing-1',
+      pod_id: 'agent-room-1',
+      user_id: 'u1',
+      content: 'Hello Aria',
+      message_type: 'text',
+      created_at: new Date().toISOString(),
+      user: { username: 'solo-user', isBot: false },
+    };
+    const detail = makeAgentRoom({ sendMessage: jest.fn().mockResolvedValue(sent) });
+    const view = renderChat(detail);
+
+    fireEvent.change(screen.getByPlaceholderText('Message Aria…'), { target: { value: 'Hello Aria' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByTestId('agent-reply-wait')).toHaveTextContent('Waiting for Aria to reply');
+    expect(screen.queryByTestId('agent-room-liveness')).not.toBeInTheDocument();
+
+    const reply = {
+      id: 'agent-reply-1',
+      pod_id: 'agent-room-1',
+      user_id: 'agent-1',
+      content: 'Hi!',
+      message_type: 'text',
+      created_at: new Date(Date.now() + 1_000).toISOString(),
+      user: { username: 'openclaw-aria', isBot: true },
+    };
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2PodChat detail={{ ...detail, messages: [sent, reply] }} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    await waitFor(() => expect(screen.queryByTestId('agent-reply-wait')).not.toBeInTheDocument());
+  });
+
+  test('turns an unanswered direct-message wait into a timeout message', async () => {
+    jest.useFakeTimers();
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'listening', isOwner: false,
+        }],
+      },
+    });
+    const sent = {
+      id: 'outgoing-timeout',
+      pod_id: 'agent-room-1',
+      user_id: 'u1',
+      content: 'Hello Aria',
+      message_type: 'text',
+      created_at: new Date().toISOString(),
+      user: { username: 'solo-user', isBot: false },
+    };
+    renderChat(makeAgentRoom({ sendMessage: jest.fn().mockResolvedValue(sent) }));
+
+    fireEvent.change(screen.getByPlaceholderText('Message Aria…'), { target: { value: 'Hello Aria' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('agent-reply-wait')).toHaveTextContent('Waiting for Aria to reply');
+
+    act(() => { jest.advanceTimersByTime(120_000); });
+    expect(screen.getByTestId('agent-reply-wait')).toHaveTextContent("Aria hasn't replied yet");
+    jest.useRealTimers();
   });
 });
 

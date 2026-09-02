@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
+import axios from '../../utils/axiosConfig';
 
 interface LocationState {
   from?: { pathname?: string };
@@ -31,10 +32,15 @@ const V2Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
+    setUnverifiedEmail(null);
+    setResendNotice(null);
     setSubmitting(true);
     try {
       await login(email.trim(), password);
@@ -49,10 +55,33 @@ const V2Login: React.FC = () => {
       const dest = next && next.startsWith('/') ? next : fallback;
       navigate(dest, { replace: true });
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string } }; message?: string };
+      const e1 = err as { response?: { data?: { error?: string; msg?: string; code?: string } }; message?: string };
+      if (e1.response?.data?.code === 'EMAIL_UNVERIFIED') {
+        setUnverifiedEmail(email.trim());
+      }
       setLocalError(e1.response?.data?.error || e1.response?.data?.msg || e1.message || t('auth.login.errors.failed'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail) return;
+    setResending(true);
+    setResendNotice(null);
+    try {
+      await axios.post('/api/auth/resend-verification', { email: unverifiedEmail });
+      setResendNotice(t('auth.login.verification.sent', { email: unverifiedEmail }));
+    } catch (err) {
+      const e1 = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
+      setResendNotice(
+        e1.response?.data?.error
+        || e1.response?.data?.message
+        || e1.message
+        || t('auth.login.verification.failed'),
+      );
+    } finally {
+      setResending(false);
     }
   };
 
@@ -110,7 +139,24 @@ const V2Login: React.FC = () => {
           <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.login.forgotPassword')}</Link>
         </div>
 
-        {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
+        {unverifiedEmail ? (
+          <div className="v2-login__error" role="alert">
+            <div>
+              {t('auth.login.verification.pending', { email: unverifiedEmail })}
+            </div>
+            <button
+              type="button"
+              className="v2-login__resend"
+              onClick={handleResendVerification}
+              disabled={resending}
+            >
+              {resending
+                ? t('auth.login.verification.sending')
+                : t('auth.login.verification.resend')}
+            </button>
+            {resendNotice && <div className="v2-login__resend-notice" role="status">{resendNotice}</div>}
+          </div>
+        ) : errorMessage && <div className="v2-login__error" role="alert">{errorMessage}</div>}
 
         <V2OAuthButtons next={nextPath} />
 

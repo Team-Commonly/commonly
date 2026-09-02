@@ -199,6 +199,11 @@ interface ListOptions {
   instanceId?: string;
 }
 
+interface InboxPage {
+  events: EventDoc[];
+  inboxCount: number;
+}
+
 interface AvailableIntegration {
   id?: string;
   type?: string;
@@ -1217,9 +1222,22 @@ class AgentEventService {
   // and moves on. AgentMemory.revision is read once per fetch batch (the
   // revision captured per event reflects the moment of claim, not the moment
   // of fetch-batch-start; bounded staleness — see ADR-012 §3 last paragraph).
-  static async list({
+  static async list(options: ListOptions): Promise<EventDoc[]> {
+    // Legacy consumers intentionally replay across every pod in their access
+    // scope. The one-pod partition is opt-in through listInboxPage(), for any
+    // HTTP poller whose batch becomes one pod-contextual model turn.
+    return (await this.claimPage(options)).events;
+  }
+
+  // The HTTP poller needs the true pending count for its inbox header even
+  // when it copies only a bounded number of event bodies into one turn.
+  static async listInboxPage(options: ListOptions): Promise<InboxPage> {
+    return this.claimPage(options, { onePod: true, includeInboxCount: true });
+  }
+
+  private static async claimPage({
     agentName, podId, podIds, limit = 20, instanceId = 'default',
-  }: ListOptions): Promise<EventDoc[]> {
+  }: ListOptions, { onePod = false, includeInboxCount = false } = {}): Promise<InboxPage> {
     // Coerce caller-supplied identifiers to plain strings before they reach
     // any Mongo query — guards against NoSQL-injection-shaped inputs (e.g.
     // `{$ne: null}`) sneaking through. CodeQL flags any data flow from
@@ -1240,17 +1258,55 @@ class AgentEventService {
       query.podId = podId;
     }
 
-    // First collect candidate _ids (non-mutating). We then claim them one by
-    // one with status-gated findOneAndUpdate so concurrent pollers can't
-    // double-claim. Limit applies to candidates; the actually-claimed set may
-    // be smaller if a sibling poller wins some races.
-    const candidates = await AgentEvent.find(query)
+    let batchQuery = query;
+    let inboxCount = 0;
+    if (onePod) {
+      // An agent's inbox is scoped to a place. Pick its oldest pending event,
+      // then claim a batch from THAT pod only. Returning a mixed-pod batch
+      // would force a driver to either leak one pod's context into another or
+      // launch multiple turns after having marked all of them delivered — the
+      // over-claim/requeue failure ADR-024 D3 was written to remove.
+      //
+      // This first read is deliberately non-mutating. The conditional updates
+      // below remain the claim: a sibling poller may still win either the head
+      // or any later candidate, in which case it is filtered out normally.
+      // `podId` is required by the schema, but legacy/corrupt rows can still
+      // exist in Mongo. Never let one become the chronological head: it has
+      // no safe one-pod partition and would otherwise strand this inbox
+      // behind a row no poller can process. Keep the caller's scope inside
+      // the same `$and` so this exclusion only narrows access.
+      const headQuery = {
+        $and: [query, { podId: { $exists: true, $ne: null } }],
+      };
+      const [head] = await AgentEvent.find(headQuery)
+        .sort({ createdAt: 1 })
+        .limit(1)
+        .select({ _id: 1, podId: 1 })
+        .lean() as Array<{ _id: unknown, podId?: unknown }>;
+
+      if (!head) return { events: [], inboxCount: 0 };
+
+      // `head` came from the already-access-checked and pod-qualified query
+      // above, so replacing a possible `$in` pod filter with its stored pod id
+      // narrows rather than widens the caller's scope.
+      batchQuery = { ...query, podId: head.podId };
+      // Count before this driver's conditional claims. The number is advisory
+      // metadata (other pollers may win a race immediately after it), but it
+      // is truthful at the batch boundary and never crosses pod boundaries.
+      inboxCount = await AgentEvent.countDocuments(batchQuery);
+    }
+
+    const candidates = await AgentEvent.find(batchQuery)
       .sort({ createdAt: 1 })
       .limit(limit)
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
 
-    if (candidates.length === 0) return [];
+    // A sibling poller can claim every candidate after our pre-claim count.
+    // The page is empty, but the count still describes what this reader saw
+    // at the batch boundary; returning zero would falsely say the inbox was
+    // empty under contention.
+    if (candidates.length === 0) return { events: [], inboxCount };
 
     // Read AgentMemory once for the digest bundle. The envelope captured here
     // reflects the state at the moment of claim — close enough to the per-doc
@@ -1305,7 +1361,7 @@ class AgentEventService {
       if (updated) claimed.push(updated);
     }
 
-    return claimed.map((event) => {
+    const events = claimed.map((event) => {
       const messageId = event?.payload?.messageId;
       const basePayload = event?.payload || {};
       // Spread digest bundle into payload. Each sub-field is undefined when
@@ -1324,6 +1380,7 @@ class AgentEventService {
       }
       return { ...event, payload: enrichedPayload };
     });
+    return { events, inboxCount: includeInboxCount ? inboxCount : events.length };
   }
 
   // ADR-012 §3: acknowledge is status-gated. Lifecycle:
