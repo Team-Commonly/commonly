@@ -7,8 +7,10 @@
  * + 404 above it already rejects anything that is not a real id. It does not.
  * Mongoose casts an operator object in a filter position rather than throwing,
  * so `Pod.findById({ $ne: null })` MATCHES the first pod in the collection and
- * the 404 never fires — the raw object then reaches four Mongoose filters on
- * this route, one of which (`AgentProfile.findOneAndUpdate`) is an upsert key.
+ * the 404 never fires — the raw object then reaches every Mongoose filter
+ * below, one of which (`AgentProfile.findOneAndUpdate`) is an upsert key.
+ * The route's own comment says why that set is stated as a position rather
+ * than a count: podId also flows through helpers which query on it again.
  *
  * The first test is the positive control for that premise: it asserts the
  * upstream guard really does match, so a later refactor cannot quietly turn

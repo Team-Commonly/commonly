@@ -133,15 +133,22 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
     }
 
-    // podId reaches four Mongoose filters on this route unchanged
-    // (`Pod.findById` below, the already-installed `AgentInstallation.findOne`,
-    // the installation displayName lookup, and the `AgentProfile` upsert key).
     // Mongoose does not reject an operator object in a filter position — a
-    // `{$ne: null}` here casts cleanly and MATCHES, so the 404 below is not a
-    // guard against one. Reject a non-string at the entry point, the same
-    // shape agentName already uses above, so no query below can be handed a
-    // query operator. `undefined` is left to fall through to the existing
-    // 404 / self-serve 400 so no legitimate path changes status code.
+    // `{$ne: null}` here casts cleanly and MATCHES, so the `Pod.findById`
+    // 404 below is not a guard against one. Reject a non-string at the entry
+    // point, the same shape agentName already uses above, so no query below
+    // can be handed a query operator. `undefined` is left to fall through to
+    // the existing 404 / self-serve 400 so no legitimate path changes status
+    // code.
+    //
+    // Deliberately no count of the filters downstream. podId reaches them
+    // both directly and through helpers that fan it out again —
+    // `AgentInstallation.install` (a `findOne` AND a `create`),
+    // `AgentIdentityService.ensureAgentInPod` (a third `Pod.findById`),
+    // `AgentMessageService.postMessage` — so any number is a claim about how
+    // far the reader followed the value, and it decays on the next refactor.
+    // The property that actually holds is positional: this returns before
+    // every one of them.
     if (podId !== undefined && podId !== null && typeof podId !== 'string') {
       return res.status(400).json({ error: 'podId must be a string' });
     }
