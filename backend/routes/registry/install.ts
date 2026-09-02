@@ -447,7 +447,7 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       try {
         const existingInstallation = await AgentInstallation.findOne({
           agentName: agent.agentName,
-          podId,
+          podId: String(podId),
           instanceId: normalizedInstanceId,
         }).select('displayName').lean() as { displayName?: string } | null;
         if (existingInstallation?.displayName) {
