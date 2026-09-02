@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 63);
+  assert.equal(pages.length, 64);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -84,6 +84,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-escalation/',
     '/guides/ai-agent-acceptance-criteria/',
     '/guides/ai-agent-decision-packet/',
+    '/guides/ai-agent-audit-trail/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -119,7 +120,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 53);
+  assert.equal(guidePages.length, 54);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -478,6 +479,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/context-engineering-for-ai-agents/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-decision-packet\//);
+  }
+  const auditTrailGuide = guidePages.find((page) => page.path === '/guides/ai-agent-audit-trail/');
+  assert.equal(auditTrailGuide.title, 'AI Agent Audit Trail: Make Work and Decisions Inspectable | Commonly');
+  assert.deepEqual(guides['ai-agent-audit-trail'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 6], [3, 8], [3, 6], [3, 6], [3, 6], [3, 6], [3, 5], [3, 6]]);
+  assert.deepEqual(guides['ai-agent-audit-trail'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-audit-trail'].sections.flatMap((section) => section.links || []).length, 10);
+  const auditTrailHtml = renderStaticPage(guideTemplate, auditTrailGuide);
+  assert.match(auditTrailHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-audit-trail\//);
+  assert.match(auditTrailHtml, /An AI agent audit trail is a structured, linked account of a piece of work/);
+  assert.match(auditTrailHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(auditTrailHtml, /seo-page-dark/);
+  assert.match(auditTrailHtml, /source-of-record/);
+  assert.doesNotMatch(auditTrailHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((auditTrailHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-governance/',
+    '/guides/ai-agent-memory/',
+    '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-task-management/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-audit-trail\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
