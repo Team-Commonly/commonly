@@ -12,6 +12,14 @@ name: ADR Numbering Guard
 # one go red.
 
 on:
+  # The PR arms below cannot fire on base movement, and a PR's green is frozen
+  # at its last event. So a pair that were each green when last run can still
+  # merge into a duplicate. This arm cannot prevent that — nothing triggered by
+  # PR events can — but it makes main say so within a minute instead of waiting
+  # for someone to read a directory listing, which is how both known duplicates
+  # were actually found.
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main ]
     # `edited` catches base-branch retargeting, same reasoning as
@@ -24,12 +32,27 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # github.ref, not the PR number: on a push event there is no PR to key on and
+  # every main build would share one group and cancel its predecessor.
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Detection, not prevention. If a duplicate reaches main, this reds main —
+  # which is loud, and deliberately so: a duplicated ADR number silently
+  # mis-routes every citation of it, and #963 shipped a wake-policy regression
+  # because an author followed the wrong member of the ADR-018 pair.
+  adr-numbering-main:
+    name: main carries no duplicate ADR number
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/verify-adr-numbering.js
+
   adr-numbering:
     name: ADR numbers are unique
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
