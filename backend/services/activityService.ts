@@ -132,7 +132,7 @@ class ActivityService {
         { 'members.userId': userId },
         { members: userId },
       ],
-    }).select('_id name type createdBy').lean();
+    }).select('_id name type').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
     const scopedPods = requestedPodId
@@ -141,16 +141,6 @@ class ActivityService {
     if (requestedPodId && scopedPods.length === 0) {
       throw new Error('Access denied');
     }
-    // Membership grants read access to the activity projection. Approval is
-    // different: ADR-020 D3 assigns its side effect to the workspace owner.
-    // Keep that distinction in the queue itself so a member never receives a
-    // button whose server-side write must be refused.
-    const ownedPodIds = new Set(
-      scopedPods
-        .filter((pod) => String(pod.createdBy || '') === String(userId))
-        .map((pod) => String(pod._id)),
-    );
-
     const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
     // filter: 'agents' — the recap is about agent WORK. Without it, the
     // 100-slot feed budget was consumed entirely by `summary` activities
@@ -290,7 +280,7 @@ class ActivityService {
       new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
     );
     const approvalQueue = Array.from(queueCandidates.values())
-      .filter((activity) => isPendingApproval(activity) && ownedPodIds.has(String(activity.pod?.id || '')))
+      .filter(isPendingApproval)
       .sort(newestFirst);
     const mentionQueue = Array.from(queueCandidates.values())
       .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
@@ -503,14 +493,9 @@ class ActivityService {
         { 'members.userId': userId },
         { members: userId },
       ],
-    }).select('_id name type createdBy').lean();
+    }).select('_id name type').lean();
     const podIds = pods.map((p) => p._id);
     const podName = new Map(pods.map((p) => [String(p._id), p.name as string]));
-    const ownedPodIds = new Set(
-      pods
-        .filter((pod) => String(pod.createdBy || '') === String(userId))
-        .map((pod) => String(pod._id)),
-    );
 
     type QueueItem = {
       kind: 'approval' | 'mention' | 'decision' | 'press';
@@ -537,9 +522,6 @@ class ActivityService {
         agentMetadata?: { agentName?: string };
       }>;
       for (const a of approvals) {
-        // A member may read a pending approval, but it is Needs-you work only
-        // for the workspace owner. The write side enforces the same rule.
-        if (!ownedPodIds.has(String(a.podId || ''))) continue;
         items.push({
           kind: 'approval',
           // RAW Activity id — the existing Activity actions key on it.
@@ -1487,8 +1469,8 @@ class ActivityService {
         return { success: false, error: 'Activity is not an approval request' };
       }
 
-      const ownershipError = await ActivityService.requireActivityApprovalOwner(activity, userId);
-      if (ownershipError) return ownershipError;
+      const membershipError = await ActivityService.requireActivityApprovalMember(activity, userId);
+      if (membershipError) return membershipError;
 
       await activity.approve(userId, notes);
       return { success: true, status: 'approved' };
@@ -1510,8 +1492,8 @@ class ActivityService {
         return { success: false, error: 'Activity is not an approval request' };
       }
 
-      const ownershipError = await ActivityService.requireActivityApprovalOwner(activity, userId);
-      if (ownershipError) return ownershipError;
+      const membershipError = await ActivityService.requireActivityApprovalMember(activity, userId);
+      if (membershipError) return membershipError;
 
       await activity.reject(userId, notes);
       return { success: true, status: 'rejected' };
@@ -1524,20 +1506,26 @@ class ActivityService {
 
   /**
    * Legacy Activity approval rows predate ApprovalAction.ownerUserId. Their
-   * only durable workspace authority is the owning pod's creator. Do this at
-   * write time (not just in the queue projection): a stale or forged client
-   * must not turn member read access into approval authority.
+   * read rule is pod membership (with the creator fallback for old rows), so
+   * write authorization must use the identical predicate. Do this at write
+   * time: a stale or forged client must not turn an Activity id into broad
+   * authenticated approval authority.
    */
-  private static async requireActivityApprovalOwner(
+  private static async requireActivityApprovalMember(
     activity: { podId?: unknown },
     userId: unknown,
   ): Promise<Record<string, unknown> | null> {
     const rawPodId = activity.podId as { _id?: unknown } | undefined;
     const podId = rawPodId?._id || activity.podId;
-    const pod = await Pod.findById(podId).select('createdBy').lean();
+    const pod = await Pod.findById(podId).select('createdBy members').lean();
     if (!pod) return { success: false, status: 404, error: 'Approval pod not found' };
-    if (!pod.createdBy || String(pod.createdBy) !== String(userId)) {
-      return { success: false, status: 403, error: 'Only the workspace owner can decide this' };
+    const isCreator = String(pod.createdBy || '') === String(userId);
+    const isMember = Array.isArray(pod.members) && pod.members.some((member: unknown) => {
+      const memberId = member as { _id?: unknown } | undefined;
+      return String(memberId?._id || member) === String(userId);
+    });
+    if (!isCreator && !isMember) {
+      return { success: false, status: 403, error: 'Only pod members can decide this' };
     }
     return null;
   }

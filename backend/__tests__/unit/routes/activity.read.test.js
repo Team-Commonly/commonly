@@ -60,16 +60,16 @@ describe('activity read routes', () => {
     expect(ActivityService.acknowledgeMention).toHaveBeenCalledWith('user123', 'mention-1');
   });
 
-  it('preserves an owner-gate 403 from the approval writer', async () => {
+  it('preserves a membership-gate 403 from the approval writer', async () => {
     ActivityService.approveActivity.mockResolvedValueOnce({
       success: false,
       status: 403,
-      error: 'Only the workspace owner can decide this',
+      error: 'Only pod members can decide this',
     });
 
     await request(app)
       .post('/api/activity/approval-1/approve')
       .send({ notes: 'Approve via Activity' })
-      .expect(403, { error: 'Only the workspace owner can decide this' });
+      .expect(403, { error: 'Only pod members can decide this' });
   });
 });

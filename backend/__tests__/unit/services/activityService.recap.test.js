@@ -8,7 +8,7 @@ const User = require('../../../models/User');
 const ActivityService = require('../../../services/activityService');
 
 const ownerId = 'owner-1';
-const pod = { _id: 'pod-1', name: 'Activity source pod', type: 'team', createdBy: ownerId };
+const pod = { _id: 'pod-1', name: 'Activity source pod', type: 'team', createdBy: ownerId, members: [ownerId, 'member-1'] };
 
 const podQuery = (pods) => ({
   select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(pods) }),
@@ -145,7 +145,7 @@ describe('ActivityService.getRecap', () => {
     })]);
   });
 
-  test('does not put another workspace owner’s approval in a member’s needs-you queue', async () => {
+  test('puts a member’s approval in the needs-you queue', async () => {
     Pod.find.mockReturnValue(podQuery([{ ...pod, createdBy: 'other-owner' }]));
     spy.mockResolvedValue({
       activities: [{
@@ -156,9 +156,9 @@ describe('ActivityService.getRecap', () => {
       }],
     });
 
-    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+    const result = await ActivityService.getRecap('member-1', { window: 'today' });
 
-    expect(result.needsYou).toEqual([]);
+    expect(result.needsYou).toEqual([expect.objectContaining({ id: 'approval-1', kind: 'approval' })]);
   });
 
   test('keeps a pending approval older than the recap window and absent from the sampled feed', async () => {
@@ -247,29 +247,42 @@ describe('ActivityService.getRecap', () => {
     expect(approve).toHaveBeenCalledWith(ownerId, 'Approved in Activity');
   });
 
-  test('fails closed when a non-owner attempts a legacy Activity approval', async () => {
+  test('allows a pod member to approve a legacy Activity approval', async () => {
     const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
     const approve = jest.fn().mockResolvedValue();
     storedApproval.approve = approve;
     findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
     Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
 
-    const result = await ActivityService.approveActivity(String(storedApproval._id), 'member-2', 'Nope');
+    const result = await ActivityService.approveActivity(String(storedApproval._id), 'member-1', 'Approved');
 
-    expect(result).toEqual({ success: false, status: 403, error: 'Only the workspace owner can decide this' });
+    expect(result).toEqual({ success: true, status: 'approved' });
+    expect(approve).toHaveBeenCalledWith('member-1', 'Approved');
+  });
+
+  test('fails closed when a non-member attempts a legacy Activity approval', async () => {
+    const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
+    const approve = jest.fn().mockResolvedValue();
+    storedApproval.approve = approve;
+    findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
+    Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
+
+    const result = await ActivityService.approveActivity(String(storedApproval._id), 'non-member', 'Nope');
+
+    expect(result).toEqual({ success: false, status: 403, error: 'Only pod members can decide this' });
     expect(approve).not.toHaveBeenCalled();
   });
 
-  test('fails closed when a non-owner attempts a legacy Activity rejection', async () => {
+  test('fails closed when a non-member attempts a legacy Activity rejection', async () => {
     const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
     const reject = jest.fn().mockResolvedValue();
     storedApproval.reject = reject;
     findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
     Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
 
-    const result = await ActivityService.rejectActivity(String(storedApproval._id), 'member-2', 'Nope');
+    const result = await ActivityService.rejectActivity(String(storedApproval._id), 'non-member', 'Nope');
 
-    expect(result).toEqual({ success: false, status: 403, error: 'Only the workspace owner can decide this' });
+    expect(result).toEqual({ success: false, status: 403, error: 'Only pod members can decide this' });
     expect(reject).not.toHaveBeenCalled();
   });
 });
