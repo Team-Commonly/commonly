@@ -8304,6 +8304,8 @@ body.modern-ui.v2-canvas {
 .v2-activity__controls {
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .v2-activity__window {
@@ -8375,55 +8377,11 @@ body.modern-ui.v2-canvas {
 /* The page's default is the scannable, sectioned surface: attention first,
    then two independent evidence lenses. Timeline is an opt-in projection of
    those same facts, not a competing feed or a second activity data source. */
-.v2-activity__view-switcher {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: -18px;
-  color: var(--v2-text-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.v2-root button.v2-activity__view-button {
-  min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.v2-root button.v2-activity__view-button:hover:not(:disabled) {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-root button.v2-activity__view-button--active {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-}
-
 .v2-activity__sectioned {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 30px;
-}
-
-.v2-activity__sectioned .v2-activity__section-heading {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.v2-activity__sectioned .v2-activity__section-heading > p {
-  text-align: left;
+  gap: 38px;
 }
 
 .v2-activity__compose {
@@ -8989,11 +8947,12 @@ body.modern-ui.v2-canvas {
 
   .v2-activity__controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
   .v2-activity__window { width: 100%; }
   .v2-root button.v2-activity__window-button { flex: 1 1 0; }
+  .v2-activity__scope { grid-column: 1 / -1; }
   .v2-activity__scope select { width: 100%; max-width: none; }
   .v2-activity__compose-heading,
   .v2-activity__compose-entry { align-items: stretch; flex-direction: column; }
@@ -9001,11 +8960,6 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-activity__compose button { width: 100%; }
   .v2-activity__section-heading > p { text-align: left; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
-  .v2-activity__sectioned { grid-template-columns: minmax(0, 1fr); }
-  .v2-activity__view-switcher {
-    justify-content: flex-start;
-    margin-top: -22px;
-  }
 
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__board-row { grid-template-columns: minmax(0, 1fr); }

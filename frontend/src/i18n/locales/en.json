@@ -73,7 +73,6 @@
     },
     "views": {
       "ariaLabel": "Activity view",
-      "label": "Show",
       "sections": "Sections",
       "timeline": "Timeline"
     },

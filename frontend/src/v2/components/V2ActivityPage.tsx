@@ -367,6 +367,19 @@ const V2ActivityPage: React.FC = () => {
               </button>
             ))}
           </div>
+          <div className="v2-activity__window" role="group" aria-label={t('activity.views.ariaLabel')}>
+            {(['sections', 'timeline'] as ActivityView[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`v2-activity__window-button${view === value ? ' v2-activity__window-button--active' : ''}`}
+                onClick={() => setView(value)}
+                aria-pressed={view === value}
+              >
+                {t(`activity.views.${value}`)}
+              </button>
+            ))}
+          </div>
           <label className="v2-activity__scope">
             <span className="v2-sr-only">{t('activity.podScopeLabel')}</span>
             <select value={podId} onChange={(event) => setPodId(event.target.value)}>
@@ -585,21 +598,6 @@ const V2ActivityPage: React.FC = () => {
             </div>
             {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
           </section>
-
-          <div className="v2-activity__view-switcher" role="group" aria-label={t('activity.views.ariaLabel')}>
-            <span>{t('activity.views.label')}</span>
-            {(['sections', 'timeline'] as ActivityView[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`v2-activity__view-button${view === value ? ' v2-activity__view-button--active' : ''}`}
-                onClick={() => setView(value)}
-                aria-pressed={view === value}
-              >
-                {t(`activity.views.${value}`)}
-              </button>
-            ))}
-          </div>
 
           {view === 'sections' ? (
           <div className="v2-activity__sectioned">

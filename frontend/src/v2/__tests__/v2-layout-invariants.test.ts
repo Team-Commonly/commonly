@@ -492,12 +492,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Activity keeps attention first and uses a responsive sectioned evidence layout', () => {
     // Needs-you remains a full-width first section. The lower evidence lenses
-    // earn two balanced desktop tracks, then collapse before a 390px capture
-    // can turn either agent recap or board change into a narrow side column.
+    // stack full-width too: a split makes long agent evidence and board titles
+    // truncate at desktop widths before the user has any reason to expect it.
     const sectioned = ruleBody(v2, '.v2-activity__sectioned');
-    expect(sectioned).toContain('repeat(2, minmax(0, 1fr))');
+    expect(sectioned).toContain('grid-template-columns: minmax(0, 1fr)');
     expect(sectioned).toContain('align-items: start');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__sectioned \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 
     // Timeline is an opt-in projection that stays in the same shrinkable
     // column grammar as the sectioned surface; it cannot create page-wide

@@ -73,7 +73,6 @@
     },
     "views": {
       "ariaLabel": "动态视图",
-      "label": "显示",
       "sections": "分区",
       "timeline": "时间线"
     },
