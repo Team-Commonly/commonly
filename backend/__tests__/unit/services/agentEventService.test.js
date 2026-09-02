@@ -1,5 +1,6 @@
 jest.mock('../../../models/AgentEvent', () => ({
   create: jest.fn(),
+  countDocuments: jest.fn(),
   findOneAndUpdate: jest.fn(),
   find: jest.fn(),
 }));
@@ -50,6 +51,7 @@ describe('AgentEventService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.AGENT_CONTEXT_OVERFLOW_RETRY_LIMIT;
+    AgentEvent.countDocuments.mockResolvedValue(1);
   });
 
   test('acknowledge auto-recovers OpenClaw context overflow and re-enqueues once', async () => {
@@ -262,6 +264,89 @@ describe('AgentEventService', () => {
       cyclesDigest: expect.any(Array),
       longTermDigest: 'durable',
     }));
+  });
+
+  test('list chooses one pod before claiming a batch, so a driver never receives mixed private context', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const query = (rows) => ({
+      sort: () => ({
+        limit: () => ({
+          select: () => ({ lean: jest.fn().mockResolvedValue(rows) }),
+        }),
+      }),
+    });
+    // The oldest row selects pod-a. The second query deliberately contains
+    // only pod-a candidates even though the authenticated installation scope
+    // covers pod-b too.
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'head', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([{ _id: 'head' }, { _id: 'same-pod' }]));
+    AgentEvent.countDocuments.mockResolvedValue(2);
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'head', agentName: 'inbox', instanceId: 'default', podId: 'pod-a',
+          type: 'message.posted', payload: {}, status: 'delivered',
+        }),
+      })
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'same-pod', agentName: 'inbox', instanceId: 'default', podId: 'pod-a',
+          type: 'chat.mention', payload: {}, status: 'delivered',
+        }),
+      });
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
+    });
+
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      podId: { $in: ['pod-a', 'pod-b'] },
+    }));
+    expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({ podId: 'pod-a' }));
+    expect(page.inboxCount).toBe(2);
+    expect(page.events.map((event) => event.podId)).toEqual(['pod-a', 'pod-a']);
+  });
+
+  test('legacy list preserves its cross-pod replay contract', async () => {
+    const AgentMemory = require('../../../models/AgentMemory');
+    const query = (rows) => ({
+      sort: () => ({
+        limit: () => ({
+          select: () => ({ lean: jest.fn().mockResolvedValue(rows) }),
+        }),
+      }),
+    });
+    AgentEvent.find.mockReturnValue(query([{ _id: 'pod-a-event' }, { _id: 'pod-b-event' }]));
+    AgentMemory.findOne.mockReturnValue({
+      select: () => ({ lean: jest.fn().mockResolvedValue({ revision: 1, lastSeenRevision: 0 }) }),
+    });
+    AgentEvent.findOneAndUpdate
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'pod-a-event', agentName: 'inbox', instanceId: 'default', podId: 'pod-a',
+          type: 'message.posted', payload: {}, status: 'delivered',
+        }),
+      })
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'pod-b-event', agentName: 'inbox', instanceId: 'default', podId: 'pod-b',
+          type: 'message.posted', payload: {}, status: 'delivered',
+        }),
+      });
+
+    const events = await AgentEventService.list({
+      agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
+    });
+
+    expect(AgentEvent.find).toHaveBeenCalledTimes(1);
+    expect(AgentEvent.find).toHaveBeenCalledWith(expect.objectContaining({
+      podId: { $in: ['pod-a', 'pod-b'] },
+    }));
+    expect(events.map((event) => event.podId)).toEqual(['pod-a', 'pod-b']);
   });
 
   test('list returns [] when no candidates are pending (no envelope read)', async () => {
