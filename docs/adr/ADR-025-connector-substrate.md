@@ -301,9 +301,9 @@ shipping a seventh plaintext credential is a decision too, and it should be take
 one-install-fans-out, so an enterprise install is one administrative act rather than twenty.
 
 > **Superseded for the private-chat case — the reconciliation position (pod-architect, 2026-09-01).**
-> Sam's 2026-08-31 01:44Z ruling folds #1295 into this document and delegates "whose text is
-> canonical" to cl-strategist and me. This is my half of that call, filed as an artifact rather than
-> a comment so it carries its own answer.
+> Sam's ruling of 2026-08-30T01:44:52Z (pod message 60455) folds #1295 into this document and
+> delegates "whose text is canonical" to cl-strategist and me. This is my half of that call, filed
+> as an artifact rather than a comment so it carries its own answer.
 >
 > The two texts overlap on exactly one decision. #1295's **"The private chat binds to the USER, not
 > to a pod"** — `Integration.scope: 'user'`, `linkedUserId` the owner, no `podId` — **replaces D7**
