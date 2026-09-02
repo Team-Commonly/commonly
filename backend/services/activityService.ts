@@ -635,7 +635,12 @@ class ActivityService {
         const isHandoff = !!(last && HANDOFF_RE.test(String(last.text || '')));
         if (!isBlocked && !isHandoff) continue;
         items.push({
-          kind: 'press',
+          // A blocked row is a standing DECISION (no options — the fork owner
+          // should convert it to a DecisionRequest); only an explicit human
+          // handoff in the latest update is a PRESS. #1470 collapsed both to
+          // 'press', which put "ADR-024 D3: batch the poller tick" under
+          // "Ready for your press" — a mislabel Sam noticed the same morning.
+          kind: isHandoff ? 'press' : 'decision',
           id: `task_${t.taskId}`,
           title,
           detail: last ? String(last.text || '').slice(0, 160) : undefined,
