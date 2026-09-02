@@ -5,12 +5,13 @@ proposals for Sam (audit re-derived after sprint-review falsified the first vers
 nothing here is ratified, and D1–D7 should not be cited as settled). **D8–D16** are the
 channel-routing decisions folded in from #1295 (Proposed 2026-08-26; folded 2026-09-02 under Sam's
 ruling of 2026-08-30T01:44:52Z, pod message 60455 — one ADR-025, not two). D8 supersedes D7 for the
-private-chat case (see D7's note). Acknowledged unknowns in the folded half: the inbound
+private-chat case (see D7's note). **D17** (the connector as an installable app) is the one **ruled**
+decision in this document — Sam, 2026-09-02, by decision card — and is cited as settled. Acknowledged unknowns in the folded half: the inbound
 bare-message routing default (D12) and the digest cadence (D13) are guesses until measured. The
 landscape section is deliberately unfilled pending cl-strategist's comparison memo (TASK-078); the
 current-state audit and the shape proposal do not depend on it, so they are written now rather than
 held.
-**Date:** 2026-08-26 (substrate audit) · 2026-08-26 (channel routing, #1295) · folded 2026-09-02
+**Date:** 2026-08-26 (substrate audit) · 2026-08-26 (channel routing, #1295) · folded 2026-09-02 · D17 ruled 2026-09-02
 **Author:** pod-architect (Lily Shen) — D1–D7 and the audit; cl-strategist (Lily Shen) — D8–D16
 **Companions:** [`ADR-001`](ADR-001-installable-taxonomy.md) (the Installable model this should
 become a component of), [`ADR-004`](ADR-004-commonly-agent-protocol.md) (CAP — the driver-facing
@@ -462,6 +463,66 @@ Commander is disabled or down.
   the #1289 impersonation hole.
 
 ---
+
+## The connector as an installable app (D17)
+
+> **Provenance.** TASK-005 in the Connectors v2 pod. Sam's directive of 2026-09-02 (pod message
+> 62429) asked for the shape to be ruled by decision card; the card (6a9812803f95024de5f7bf4e,
+> thread 62468) offered three shapes with evidence, and Sam ruled **A** at 2026-09-02T22:34:37Z
+> (pod message 62584). The evidence memo (`task-005-connector-as-app-decision.md`, attached in
+> the pod) and the implementation plan
+> ([`docs/plans/connector-as-installable-app.md`](../plans/connector-as-installable-app.md), #1509)
+> carry the detail; this decision is the record.
+
+**D17 — The connector is an Installable, the Connectors page is its install surface, and
+there is one install verb (ruled: Sam, 2026-09-02).** The Telegram connector becomes a
+builtin [`ADR-001`](ADR-001-installable-taxonomy.md) Installable — `kind: 'app'`, `source:
+'builtin'`, `scope: 'user'` per D8, with a `webhook` component on the mounted route and an
+`event-handler` component on `chat.message` — and **"Add a channel" on `/v2/connectors` is the
+install verb**, backed by an `InstallableInstallation` parent whose projection *is* the existing
+`Integration` row (`Integration.installationId` is the back-pointer). ADR-001's invariant 6
+("one install record → N component projections"), unimplemented for every component type at
+the time of ruling (`routes/registry/install.ts` reads no `components[]`), is built here for
+two types against the two behaviours that already ship: the webhook route and the outbound
+relay hook at `agentMessageService.ts`. A Browse card is a **second door to the same verb**
+and lands only when the Apps marketplace unlocks; nothing in D17 depends on it.
+
+Three shapes were on the card. **B — a Browse listing only** — lost because the marketplace
+is locked, off the nav rail, and its `/browse` query excludes `source: 'builtin'`, so the
+listing would have been invisible and would have installed by navigation — the dead end the
+marketplace's connector strip already has. **C — listing plus folding the Connectors page into
+the marketplace** — lost because it moves the milestone's entry point onto that locked surface
+and fights [`ADR-022`](ADR-022-persona-colleagues.md) D2 (Browse sells personas; apps are the
+other aisle); it remains the right end state *if* the marketplace becomes the one front door,
+which is a marketplace ruling, not a connector one, and A leaves it open — same rows, same
+verb, the page moves later.
+
+**Four invariants the ruling carries**, each earned by review on #1509 (Vera and Kai,
+2026-09-02) and pinned by an acceptance test in the plan:
+
+1. **Mint last.** No projector mints the connect code. The projected `Integration` row is
+   created `isActive: false` with no code; the install service's final write — after every
+   component is active — flips `isActive` and mints in one step. A partial install therefore
+   has nothing `handleEnableCommand`'s lookup can match, and the webhook route is not edited.
+2. **The claim is the compare-and-set.** One parent row per `(installable, user)` across
+   `installing`, `active`, and retained `error` (unique partial index); the parent is claimed by
+   one atomic upsert; only the lock owner runs projectors; every loser gets the existing row —
+   202 while installing, 200 when active — and never invokes a projector.
+3. **Selection is the dispatcher's, scoped by the event's target.** For `chat.message` in pod
+   P the dispatcher selects the installations bound to P in one query before any handler runs;
+   it never fans out to every tenant and relies on handlers to decline. The bridge's own
+   `findLiveIntegration(podId)` stays as defence in depth until D8's inversion replaces it.
+4. **Phasing is honest about D8.** The Installable declares `scope: 'user'` because that is
+   what the product is; until D8's three schema consequences ship (`Integration.scope`, optional
+   `podId`, the pod → members → connector lookup), the projected row keeps today's pod binding
+   as the first gate row. The install verb's API does not change between the phases.
+
+**What D17 does not decide:** slash-command components for the Telegram control plane (the
+handlers stay in the webhook route until the slash-command track reactivates under ADR-011);
+unifying `NativeAgentTrigger` and the `event-handler` vocabulary (D17 reuses the trigger name
+and stops there); external `webhook:https://…` and `agent:` handlers (ADR-006's path); the
+marketplace unlock. D6 (credentials behind a reference) still gates any *new* connector; D17
+re-platforms the existing one and its Installable row carries no secret.
 
 ## What this ADR does not decide
 
