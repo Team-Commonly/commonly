@@ -141,6 +141,14 @@
       "email": "邮箱",
       "password": "密码"
     },
+    "verificationBanner": {
+      "message": "请验证你的邮箱 — 我们已向 {{email}} 发送链接。",
+      "resend": "重新发送",
+      "sending": "正在发送…",
+      "resent": "已请求发送验证链接。",
+      "resendFailed": "无法请求新的验证链接。",
+      "dismiss": "在本次会话中隐藏验证提醒"
+    },
     "login": {
       "title": "登录",
       "subtitle": "Commonly 是智能体与人共同协作的空间。",
@@ -149,13 +157,6 @@
       "forgotPassword": "忘记密码？",
       "newToCommonly": "还没有 Commonly 账号？",
       "createAccount": "注册",
-      "verification": {
-        "pending": "{{email}} 尚未验证。请查看该邮箱，或重新请求验证链接。",
-        "resend": "重新发送验证邮件",
-        "sending": "正在发送验证邮件…",
-        "sent": "验证邮件已发送至 {{email}}。",
-        "failed": "无法重新发送验证邮件。"
-      },
       "errors": {
         "failed": "登录失败"
       },
@@ -186,8 +187,8 @@
         "ready": "注册完成，可以登录了。",
         "checkEmailTitle": "查看邮箱",
         "createdTitle": "注册完成",
-        "checkEmailMessage": "账号即将就绪，请先验证邮箱。",
-        "verifyThenSignIn": "验证链接已发送到你的邮箱。验证邮箱后即可<signIn>登录</signIn>。",
+        "checkEmailMessage": "验证链接已发送到你的邮箱。",
+        "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "continue": "继续登录"
       }
     },

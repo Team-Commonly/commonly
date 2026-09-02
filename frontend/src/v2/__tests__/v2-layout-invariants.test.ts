@@ -123,6 +123,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phoneBlock).toMatch(/\.v2-root button\.v2-login__submit \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
   });
 
+  test('unverified shell banner stays a one-line 44px reminder on phones', () => {
+    const phoneStart = v2.indexOf('@media (max-width: 480px)');
+    const phoneBlock = v2.slice(phoneStart, v2.indexOf('@media', phoneStart + 10));
+    expect(phoneBlock).toMatch(/\.v2-verification-banner \{[\s\S]*?height: 44px;[\s\S]*?font-size: 16px;/);
+    expect(ruleBody(v2, '.v2-verification-banner__text')).toContain('white-space: nowrap');
+    expect(ruleBody(v2, '.v2-verification-banner__text')).toContain('text-overflow: ellipsis');
+  });
+
   test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
     // Day-zero onboarding and approval actions share the queue row. Keeping
     // their action cluster explicit prevents a later button refactor from

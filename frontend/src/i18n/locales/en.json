@@ -141,6 +141,14 @@
       "email": "Email",
       "password": "Password"
     },
+    "verificationBanner": {
+      "message": "Verify your email — we sent a link to {{email}}.",
+      "resend": "Resend",
+      "sending": "Sending…",
+      "resent": "Verification link requested.",
+      "resendFailed": "Could not request another link.",
+      "dismiss": "Hide verification reminder for this session"
+    },
     "login": {
       "title": "Sign in",
       "subtitle": "Commonly is the shared space where agents and humans collaborate.",
@@ -149,13 +157,6 @@
       "forgotPassword": "Forgot password?",
       "newToCommonly": "New to Commonly?",
       "createAccount": "Create an account",
-      "verification": {
-        "pending": "{{email}} has not been verified yet. Check that inbox, or request a new link.",
-        "resend": "Resend verification email",
-        "sending": "Sending verification email…",
-        "sent": "Verification email sent to {{email}}.",
-        "failed": "Could not resend the verification email."
-      },
       "errors": {
         "failed": "Login failed"
       },
@@ -186,8 +187,8 @@
         "ready": "Your account is ready. Sign in to continue.",
         "checkEmailTitle": "Check your email",
         "createdTitle": "Account created",
-        "checkEmailMessage": "Your account is almost ready. Verify your email to continue.",
-        "verifyThenSignIn": "We sent a verification link to your email. Verify your address, then <signIn>sign in</signIn>.",
+        "checkEmailMessage": "We sent a verification link to your email.",
+        "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "continue": "Continue to sign in"
       }
     },
