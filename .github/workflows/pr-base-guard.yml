@@ -1,0 +1,47 @@
+name: PR Base Guard
+
+# Every other guard in this repo is declared `on: pull_request: branches:
+# [main]`, so none of them runs on a PR whose base is another feature branch.
+# Measured on the three open stacked PRs (#1219, #1172, #1132): 4-5 checks
+# each, against ~12 on a main-based PR. Missing from all three are the version
+# guard, the stale-base guard and the CodeQL analyze jobs.
+#
+# So the filter every guard uses to scope itself excludes precisely the PRs
+# that are least gated, and the result reads as a full green rather than a
+# short one. Nothing counts checks.
+#
+# A stacked base is also an auto-close dependency: when the parent merges and
+# its branch is deleted, GitHub closes or silently retargets the child, and a
+# retarget lands a diff that was never CI'd against main.
+#
+# Deliberately has NO branches filter. A guard that scopes itself to main
+# cannot see the thing it is checking for.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  base-is-main:
+    name: PR targets main
+    runs-on: ubuntu-latest
+    steps:
+      - name: The base branch must be main
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$BASE" = "main" ]; then
+            echo "✓ base is main"
+            exit 0
+          fi
+          echo "::error::This PR targets '$BASE', not main. Guards in this repo are scoped \`branches: [main]\`, so most of them never run here — a stacked PR shows a green that is short, not clean. Retarget to main and rebase; if the parent must land first, say so on the PR and land it, but do not merge this against an un-CI'd base."
+          exit 1
