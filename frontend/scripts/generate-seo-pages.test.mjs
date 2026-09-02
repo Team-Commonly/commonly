@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 70);
+  assert.equal(pages.length, 71);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -91,6 +91,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-review-packet/',
     '/guides/ai-agent-blockers/',
     '/guides/ai-agent-status-updates/',
+    '/guides/ai-agent-work-contract/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -126,7 +127,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 60);
+  assert.equal(guidePages.length, 61);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -632,6 +633,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-status-updates\//);
+  }
+  const workContractGuide = guidePages.find((page) => page.path === '/guides/ai-agent-work-contract/');
+  assert.equal(workContractGuide.title, 'AI Agent Work Contract: Outcome, Inputs, Operations, and Stop | Commonly');
+  assert.deepEqual(guides['ai-agent-work-contract'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[4, 6], [3, 9], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(guides['ai-agent-work-contract'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-work-contract'].sections.flatMap((section) => section.links || []).length, 9);
+  const workContractHtml = renderStaticPage(guideTemplate, workContractGuide);
+  assert.match(workContractHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-work-contract\//);
+  assert.match(workContractHtml, /An AI agent work contract is a task-level agreement/);
+  assert.match(workContractHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(workContractHtml, /seo-page-dark/);
+  assert.match(workContractHtml, /permitted operations/);
+  assert.doesNotMatch(workContractHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((workContractHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-roles/',
+    '/guides/how-to-write-ai-agent-instructions/',
+    '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-scope-creep/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-work-contract\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
