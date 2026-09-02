@@ -44,7 +44,7 @@ message side, and its two hardest lessons transfer whole:
 - **Attribution is the security boundary.** Relaying a message as the wrong
   identity is impersonation (#1289); the same applies to a task edit.
 - **The mapping table IS the router.** relayMap on the integration, not
-  heuristics at read time (ADR-025 D3).
+  heuristics at read time (ADR-025 D10).
 
 **Portability is the other half of adoption safety.** A team that brings its
 board wants to know it can leave, and that its agents are not hostage to our
@@ -70,7 +70,7 @@ is never a one-way door.
 or Paperclip is one adapter file (design rule 6), never a schema change. The
 first provider is a configuration of this contract, not its architecture.
 
-**D2 — Transport is kernel; judgment is agent (inherits ADR-025 D2).** Sync
+**D2 — Transport is kernel; judgment is agent (inherits ADR-025 D9).** Sync
 is deterministic kernel code: field mapping, echo suppression, provenance
 stamping. Agents act ON the board (claim, complete, comment) and their acts
 project like anyone else's; they never carry the sync bytes, so a hung seat
@@ -269,7 +269,7 @@ promise we make only when asked to keep it.
 
 - **Per-tool bespoke integrations** — three tools deep you have three
   schemas and no ledger; the wedge inverts into maintenance.
-- **Agent-as-transport** (an agent that "watches Notion") — ADR-025 D2's
+- **Agent-as-transport** (an agent that "watches Notion") — ADR-025 D9's
   rejection, same reasons, plus rate limits bind to a seat's cadence.
 - **One-time import/migration** — answers the demo, not the wedge; teams
   live in both tools during the entire adoption window, which is exactly
