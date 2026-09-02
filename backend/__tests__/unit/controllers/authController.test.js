@@ -7,7 +7,11 @@ const WaitlistRequest = require('../../../models/WaitlistRequest');
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../../../services/emailService', () => ({
+  sendEmail: jest.fn().mockResolvedValue({ data: { succeeded: 1 } }),
+}));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
+const { sendEmail } = require('../../../services/emailService');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
@@ -47,6 +51,9 @@ describe('Auth Controller Tests', () => {
   afterEach(async () => {
     await clearMongoDb();
     jest.clearAllMocks();
+    delete process.env.SMTP2GO_API_KEY;
+    delete process.env.SMTP2GO_FROM_EMAIL;
+    delete process.env.FRONTEND_URL;
   });
 
   describe('register', () => {
@@ -315,6 +322,7 @@ describe('Auth Controller Tests', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           error: expect.stringContaining('Email not verified'),
+          code: 'EMAIL_UNVERIFIED',
         }),
       );
     });
@@ -377,6 +385,48 @@ describe('Auth Controller Tests', () => {
           error: expect.stringContaining('User not found'),
         }),
       );
+    });
+  });
+
+  describe('resendVerification', () => {
+    it('sends a fresh verification link for an unverified human account', async () => {
+      process.env.SMTP2GO_API_KEY = 'smtp-key';
+      process.env.SMTP2GO_FROM_EMAIL = 'mail@example.com';
+      process.env.FRONTEND_URL = 'https://commonly.example';
+      const user = {
+        _id: 'unverified-user',
+        email: 'person@example.com',
+        verified: false,
+      };
+      User.findOne = jest.fn().mockResolvedValueOnce(user);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.resendVerification({ body: { email: 'Person@Example.com' } }, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        email: 'person@example.com',
+        isBot: { $ne: true },
+      });
+      expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+        to: 'person@example.com',
+        subject: 'Verify Your Email - Commonly',
+        textBody: expect.stringContaining('https://commonly.example/verify-email?token=test-jwt-token'),
+      }));
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'If that email has an unverified account, a verification link is on its way.',
+      });
+    });
+
+    it('answers generically without sending for a verified or unknown address', async () => {
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.resendVerification({ body: { email: 'nobody@example.com' } }, res);
+
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({
+        message: 'If that email has an unverified account, a verification link is on its way.',
+      });
     });
   });
 

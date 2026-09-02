@@ -113,6 +113,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
   });
 
+  test('signup controls meet the 44px / 16px phone floor', () => {
+    // Task-103: the full-register form was 39px tall with 14px text at 390px,
+    // a tap target and Safari zoom regression on the first real-user path.
+    const phoneStart = v2.indexOf('@media (max-width: 480px)');
+    const phoneBlock = v2.slice(phoneStart, v2.indexOf('@media', phoneStart + 10));
+    expect(phoneStart).toBeGreaterThan(-1);
+    expect(phoneBlock).toMatch(/\.v2-login__input \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
+    expect(phoneBlock).toMatch(/\.v2-root button\.v2-login__submit \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
+  });
+
   test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
     // Day-zero onboarding and approval actions share the queue row. Keeping
     // their action cluster explicit prevents a later button refactor from
