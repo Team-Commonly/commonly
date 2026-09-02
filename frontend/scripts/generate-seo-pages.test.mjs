@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 69);
+  assert.equal(pages.length, 70);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -90,6 +90,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-scope-creep/',
     '/guides/ai-agent-review-packet/',
     '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-status-updates/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -125,7 +126,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 59);
+  assert.equal(guidePages.length, 60);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -610,6 +611,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-decision-packet/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-blockers\//);
+  }
+  const statusUpdatesGuide = guidePages.find((page) => page.path === '/guides/ai-agent-status-updates/');
+  assert.equal(statusUpdatesGuide.title, 'AI Agent Status Updates: Report Progress Without Noise | Commonly');
+  assert.deepEqual(guides['ai-agent-status-updates'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 7], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6], [3, 6]]);
+  assert.deepEqual(guides['ai-agent-status-updates'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-status-updates'].sections.flatMap((section) => section.links || []).length, 9);
+  const statusUpdatesHtml = renderStaticPage(guideTemplate, statusUpdatesGuide);
+  assert.match(statusUpdatesHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-status-updates\//);
+  assert.match(statusUpdatesHtml, /An AI agent status update is a concise report of a material change/);
+  assert.match(statusUpdatesHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(statusUpdatesHtml, /seo-page-dark/);
+  assert.match(statusUpdatesHtml, /material delta/);
+  assert.doesNotMatch(statusUpdatesHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((statusUpdatesHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-blockers/',
+    '/guides/ai-agent-no-op/',
+    '/guides/ai-agent-review-packet/',
+    '/guides/ai-agent-task-management/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-status-updates\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
