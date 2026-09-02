@@ -1270,7 +1270,15 @@ class AgentEventService {
       // This first read is deliberately non-mutating. The conditional updates
       // below remain the claim: a sibling poller may still win either the head
       // or any later candidate, in which case it is filtered out normally.
-      const [head] = await AgentEvent.find(query)
+      // `podId` is required by the schema, but legacy/corrupt rows can still
+      // exist in Mongo. Never let one become the chronological head: it has
+      // no safe one-pod partition and would otherwise strand this inbox
+      // behind a row no poller can process. Keep the caller's scope inside
+      // the same `$and` so this exclusion only narrows access.
+      const headQuery = {
+        $and: [query, { podId: { $exists: true, $ne: null } }],
+      };
+      const [head] = await AgentEvent.find(headQuery)
         .sort({ createdAt: 1 })
         .limit(1)
         .select({ _id: 1, podId: 1 })
@@ -1278,19 +1286,9 @@ class AgentEventService {
 
       if (!head) return { events: [], inboxCount: 0 };
 
-      // `head` came from the already-access-checked query above, so replacing
-      // a possible `$in` pod filter with its stored pod id narrows rather than
-      // widens the caller's scope. A malformed head has no safe partition:
-      // returning `query` here would turn one model turn into mixed private
-      // context. Leave it pending and log for repair rather than fail open.
-      if (head.podId == null) {
-        console.warn('[agent-events] Inbox head has no podId; left pending rather than widening a one-pod batch', {
-          eventId: String(head._id || ''),
-          agentName: safeAgentName,
-          instanceId: safeInstanceId,
-        });
-        return { events: [], inboxCount: 0 };
-      }
+      // `head` came from the already-access-checked and pod-qualified query
+      // above, so replacing a possible `$in` pod filter with its stored pod id
+      // narrows rather than widens the caller's scope.
       batchQuery = { ...query, podId: head.podId };
       // Count before this driver's conditional claims. The number is advisory
       // metadata (other pollers may win a race immediately after it), but it

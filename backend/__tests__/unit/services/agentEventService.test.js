@@ -304,14 +304,17 @@ describe('AgentEventService', () => {
     });
 
     expect(AgentEvent.find).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      podId: { $in: ['pod-a', 'pod-b'] },
+      $and: expect.arrayContaining([
+        expect.objectContaining({ podId: { $in: ['pod-a', 'pod-b'] } }),
+        { podId: { $exists: true, $ne: null } },
+      ]),
     }));
     expect(AgentEvent.find).toHaveBeenNthCalledWith(2, expect.objectContaining({ podId: 'pod-a' }));
     expect(page.inboxCount).toBe(2);
     expect(page.events.map((event) => event.podId)).toEqual(['pod-a', 'pod-a']);
   });
 
-  test('listInboxPage leaves a malformed no-pod head pending instead of widening into a mixed-pod batch', async () => {
+  test('listInboxPage excludes malformed no-pod rows when selecting its one-pod head', async () => {
     const query = (rows) => ({
       sort: () => ({
         limit: () => ({
@@ -319,8 +322,7 @@ describe('AgentEventService', () => {
         }),
       }),
     });
-    AgentEvent.find.mockReturnValue(query([{ _id: 'missing-pod', podId: null }]));
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    AgentEvent.find.mockReturnValue(query([]));
 
     const page = await AgentEventService.listInboxPage({
       agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
@@ -328,13 +330,19 @@ describe('AgentEventService', () => {
 
     expect(page).toEqual({ events: [], inboxCount: 0 });
     expect(AgentEvent.find).toHaveBeenCalledTimes(1);
+    expect(AgentEvent.find).toHaveBeenCalledWith({
+      $and: [
+        {
+          agentName: 'inbox',
+          instanceId: 'default',
+          status: 'pending',
+          podId: { $in: ['pod-a', 'pod-b'] },
+        },
+        { podId: { $exists: true, $ne: null } },
+      ],
+    });
     expect(AgentEvent.countDocuments).not.toHaveBeenCalled();
     expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('Inbox head has no podId'),
-      expect.objectContaining({ eventId: 'missing-pod' }),
-    );
-    warn.mockRestore();
   });
 
   test('listInboxPage preserves its pre-claim count when a sibling wins every candidate', async () => {
