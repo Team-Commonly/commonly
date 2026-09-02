@@ -140,6 +140,29 @@ relay flags, relayMap) is one record today and splitting it would invent a migra
 behaviour. `Integration.installationId` — already declared with a unique sparse index and
 written by nothing — becomes the back-pointer: `String(installation._id)`.
 
+**Prerequisite, and it is a must-fix before the first write lands (@sprint-review, 2026-09-02).**
+"Written by nothing" is true of writes only. The field has **two readers**, both in
+`backend/routes/discord.ts` on `origin/main`, and this spec is the first writer either has ever
+had — so shipping the back-pointer arms both of them in the same commit:
+
+- `:80`, inside `handleInstallationEvent` — `Integration.findOne({ installationId })`, an
+  already-installed short-circuit. Its input comes from Discord (`interaction.id`, a numeric
+  snowflake) and ours would be a 24-hex ObjectId string, so the value spaces are disjoint and
+  this reader stays inert. Stated because it is the explanation that has to be killed, not
+  because it is safe by design.
+- `:208`, `DELETE /api/discord/uninstall/:installationId` — same `findOne({ installationId })`
+  with **no `type: 'discord'` filter**, gated by `canManageIntegration` (pod creator, pod admin,
+  or `createdBy`), body `DiscordIntegration.findOneAndDelete` + `Integration.findByIdAndDelete`.
+  A **hard delete**, and its id comes from the *caller's* URL, so the disjointness that protects
+  `:80` does not reach it. Once a Telegram or Slack connector carries an `installationId`, any
+  caller who passes that gate can hard-delete it through the Discord route — bypassing this
+  spec's uninstall entirely, which is soft by design ("nothing is deleted", below).
+
+The convention already exists one route down: `POST /api/discord/register-commands/:integrationId`
+returns 400 on `integration.type !== 'discord'`. So the fix is to match it — add the `type:
+'discord'` term to the `:208` filter — and it is correct on its own merits, before and
+independently of this spec. **Nothing here writes `installationId` until that term is in.**
+
 **Uninstall — `DELETE /api/installables/:installableId/install`:** the target is resolved
 **from the caller's identity exactly as install resolves it** — `scope: 'user'` → `targetType:
 'user'`, `targetId: req.user.id` — and from nothing else: the route takes no installation id
