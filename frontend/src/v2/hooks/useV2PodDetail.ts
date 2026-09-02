@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useV2Api } from './useV2Api';
 import { V2Pod, V2PodMember } from './useV2Pods';
 import { useSocket } from '../../context/SocketContext';
@@ -231,10 +231,28 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [sendError, setSendError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // A request for the room we just left can resolve after the next room has
+  // started loading. Keep both the pre-paint reset and every async write bound
+  // to the currently selected pod, so no previous room's messages can flash
+  // under a new DM header.
+  const activePodIdRef = useRef<string | null>(podId);
+  const refreshSequenceRef = useRef(0);
+
+  useLayoutEffect(() => {
+    activePodIdRef.current = podId;
+    refreshSequenceRef.current += 1;
+    setPod(null);
+    setMessages([]);
+    setAgents([]);
+    setError(null);
+    setSendError(null);
+    setHasMore(false);
+    setLoadingOlder(false);
+  }, [podId]);
 
   const fetchPod = useCallback(async (id: string) => {
     const result = await api.get<V2Pod>(`/api/pods/${id}`, { timeout: REQUEST_TIMEOUT_MS });
-    setPod(result);
+    if (activePodIdRef.current === id) setPod(result);
   }, [api]);
 
   const fetchMessages = useCallback(async (id: string) => {
@@ -244,13 +262,14 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         { timeout: REQUEST_TIMEOUT_MS },
       );
       const list = Array.isArray(data) ? data : [];
+      if (activePodIdRef.current !== id) return;
       setMessages(chronologicalMessages(list.map(normalizeMessage)));
       // This endpoint returns a bare array with no envelope, so end-of-history
       // is inferred: a short page means there is nothing older behind it.
       setHasMore(list.length >= PAGE_SIZE);
     } catch (err) {
       const e = err as { response?: { status?: number } };
-      if (e.response?.status === 404) {
+      if (e.response?.status === 404 && activePodIdRef.current === id) {
         setMessages([]);
         setHasMore(false);
       } else throw err;
@@ -284,8 +303,10 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         setHasMore(false);
         return;
       }
-      setMessages((prev) => mergeMessagesById(older, prev));
-      setHasMore(older.length >= PAGE_SIZE);
+      if (activePodIdRef.current === podId) {
+        setMessages((prev) => mergeMessagesById(older, prev));
+        setHasMore(older.length >= PAGE_SIZE);
+      }
     } catch {
       // Leave hasMore alone so the same button can be retried.
     } finally {
@@ -305,13 +326,14 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         ...a,
         agentName: a.agentName || a.name || '',
       }));
-      setAgents(normalized);
+      if (activePodIdRef.current === id) setAgents(normalized);
     } catch {
-      setAgents([]);
+      if (activePodIdRef.current === id) setAgents([]);
     }
   }, [api]);
 
   const refresh = useCallback(async () => {
+    const refreshSequence = ++refreshSequenceRef.current;
     if (!podId) {
       setPod(null);
       setMessages([]);
@@ -328,6 +350,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         fetchMessages(podId),
         fetchAgents(podId),
       ]);
+      if (refreshSequence !== refreshSequenceRef.current || activePodIdRef.current !== podId) return;
       if (messagesResult.status === 'rejected') {
         setMessages([]);
         const e = messagesResult.reason as { response?: { status?: number; data?: { error?: string; msg?: string } }; message?: string };
@@ -343,6 +366,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         }
       }
     } catch (err) {
+      if (refreshSequence !== refreshSequenceRef.current || activePodIdRef.current !== podId) return;
       const e = err as { response?: { status?: number; data?: { error?: string; msg?: string } }; message?: string };
       const status = e.response?.status;
       if (status === 401 || status === 403) {
@@ -351,7 +375,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         setError(e.response?.data?.error || e.response?.data?.msg || e.message || 'Failed to load pod');
       }
     } finally {
-      setLoading(false);
+      if (refreshSequence === refreshSequenceRef.current && activePodIdRef.current === podId) {
+        setLoading(false);
+      }
     }
   }, [podId, fetchPod, fetchMessages, fetchAgents]);
 

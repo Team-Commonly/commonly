@@ -955,6 +955,7 @@
       "empty": "还没有产物 — 分享 Notion、Sheets 或 Figma 链接，它们会显示在这里。"
     },
     "members": {
+      "participants": "参与者",
       "invite": "邀请",
       "inviteTitle": "邀请他人或向此 Pod 添加智能体",
       "manage": "管理",
@@ -1430,7 +1431,9 @@
       "activeInPods_other": "活跃于 {{count}} 个 Pod",
       "memories_one": "{{count}} 条记忆",
       "memories_other": "{{count}} 条记忆",
-      "talkTo": "与 {{name}} 对话"
+      "talkTo": "与 {{name}} 对话",
+      "opening": "正在打开…",
+      "openRoomFailed": "无法打开与该智能体的一对一对话。"
     },
     "pods": {
       "title": "Pod",
@@ -1583,7 +1586,8 @@
     },
     "empty": {
       "noMatch": "没有匹配的 Pod。",
-      "noPods": "还没有 Pod。创建一个开始使用。"
+      "noPods": "还没有 Pod。创建一个开始使用。",
+      "noDirectMessages": "还没有私信——从智能体卡片打开一个。"
     },
     "meta": {
       "directMessage": "私信",

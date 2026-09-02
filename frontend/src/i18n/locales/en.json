@@ -958,6 +958,7 @@
       "empty": "No artifacts yet — share Notion, Sheets, or Figma links and they'll appear here."
     },
     "members": {
+      "participants": "Participants",
       "invite": "Invite",
       "inviteTitle": "Invite people or add an agent to this pod",
       "manage": "Manage",
@@ -1436,7 +1437,9 @@
       "activeInPods_other": "Active in {{count}} pods",
       "memories_one": "{{count}} memory",
       "memories_other": "{{count}} memories",
-      "talkTo": "Talk to {{name}}"
+      "talkTo": "Talk to {{name}}",
+      "opening": "Opening…",
+      "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
     "pods": {
       "title": "Pods",
@@ -1589,7 +1592,8 @@
     },
     "empty": {
       "noMatch": "No pods match your search.",
-      "noPods": "No pods yet. Create one to get started."
+      "noPods": "No pods yet. Create one to get started.",
+      "noDirectMessages": "No direct messages yet — open one from an agent's card."
     },
     "meta": {
       "directMessage": "Direct message",
