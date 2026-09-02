@@ -1205,6 +1205,11 @@
       { "label": "AI agents for customer support", "path": "/guides/ai-agents-for-customer-support/" },
       { "label": "AI agent governance", "path": "/guides/ai-agent-governance/" },
       { "label": "AI agent escalation", "path": "/guides/ai-agent-escalation/" }
+    ,
+      {
+        "label": "AI agent decision packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      }
     ],
     "cta": {
       "title": "Build review into the way the team works",
@@ -1412,6 +1417,11 @@
       { "label": "How to write AI agent instructions", "path": "/guides/how-to-write-ai-agent-instructions/" },
       { "label": "What is a multi-agent system?", "path": "/guides/what-is-a-multi-agent-system/" },
       { "label": "AI agent escalation", "path": "/guides/ai-agent-escalation/" }
+    ,
+      {
+        "label": "AI agent decision packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      }
     ],
     "cta": {
       "title": "Make handoffs a team habit",
@@ -6396,7 +6406,12 @@
       {"label":"How to write AI agent instructions","path":"/guides/how-to-write-ai-agent-instructions/"},
       {"label":"AI agents for research","path":"/guides/ai-agents-for-research/"}
     ,
-      { "label": "AI agents for software development", "path": "/guides/ai-agents-for-software-development/" }],
+      { "label": "AI agents for software development", "path": "/guides/ai-agents-for-software-development/" },
+      {
+        "label": "AI agent decision packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      }
+    ],
     "cta": {"title":"Design the context before expanding the agent","body":"An AI agent becomes dependable when each decision has the right state behind it: a clear role, current task ownership, focused discussion, relevant durable memory, named evidence, permitted tools, and an explicit handoff. That is context engineering in practice. Start by mapping one recurring decision. Identify the exact information it needs, where each item belongs, who can see it, how long it remains valid, and what the agent should do when it is missing. Then test the retrieval path with real edge cases. As the team expands the agent’s role, this discipline keeps the context useful, current, and safe instead of merely large.","primary":{"label":"Create a shared workspace","path":"/v2/register"},"secondary":{"label":"Explore Commonly’s guides","path":"/guides/"}}
   },
   "how-to-evaluate-ai-agents": {
@@ -8129,6 +8144,11 @@
         "label": "AI agent acceptance criteria",
         "path": "/guides/ai-agent-acceptance-criteria/"
       }
+    ,
+      {
+        "label": "AI agent decision packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      }
     ],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -8809,6 +8829,707 @@
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
       "body": "Good acceptance criteria make an agent's contribution easy to inspect and hard to overstate. They define the result a next owner needs, the evidence that supports it, the boundary that limits it, and the decision that follows. They also make stopping useful when the evidence, scope, or authority is not there.\n\nStart with one role and one handoff. Write the observable artifact, source and scope boundary, evidence, owner, and stop condition before the agent begins. Then test the real cases where the agent should clarify, block, escalate, or remain silent. That is how a team gets useful automation without making fluency look like acceptance.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-decision-packet": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Decision Packet: Evidence, Options, and Ownership | Commonly",
+    "title": "AI Agent Decision Packet: Give the Right Owner One Answerable Choice",
+    "description": "Learn what an AI agent decision packet is, what it should include, and how to turn evidence, uncertainty, options, and ownership into an answerable handoff.",
+    "summary": "An AI agent decision packet is a compact, evidence-backed artifact that gives a named person or role one answerable choice.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent decision packet is a compact, evidence-backed artifact that gives a named person or role one answerable choice. It states the decision needed, the current task and scope, verified facts, uncertainty or conflict, viable options, relevant impact, and the next action after an answer. It is how an agent turns research, triage, implementation preparation, or a blocker into a handoff that someone can actually decide.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a durable place to assemble and inspect these packets: a task can show the outcome, owner, state, dependency, and result; a focused thread can hold the decision; an attachment can carry the substantial evidence; and selected shared memory can preserve the accepted conclusion. Those records make a decision legible. They do not make an agent's recommendation authoritative or replace the repository, deployment, identity, or other system that enforces an approved action.",
+      "The goal of a decision packet is not to make a team more formal. It is to reduce the time a decision owner spends reconstructing the question, sorting fact from inference, finding the missing constraint, and discovering who is meant to act next. A good packet is smaller than a transcript and more useful than a status update.",
+      "This guide explains the structure of an AI agent decision packet, when to use one, how to keep evidence and authority separate, and how to test whether a packet supports a real decision."
+    ],
+    "sections": [
+      {
+        "title": "A decision packet is a request for one decision, not a summary of activity",
+        "paragraphs": [
+          "Agents and teams generate many artifacts: task updates, status summaries, research notes, pull requests, handoffs, and review comments. A decision packet has a narrower purpose. It equips a particular owner to make a defined choice at a meaningful boundary."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Artifact",
+              "Primary purpose",
+              "What it may be missing without a decision packet"
+            ],
+            "rows": [
+              [
+                "Task update",
+                "Show current ownership, state, evidence, or blocker",
+                "The exact decision, alternatives, and owner needed to move work forward"
+              ],
+              [
+                "Status summary",
+                "Describe what changed in a work area",
+                "A single bounded question someone can accept or reject"
+              ],
+              [
+                "Research memo",
+                "Preserve sources, findings, and analysis",
+                "A clear recommendation, tradeoff, and requested decision"
+              ],
+              [
+                "Pull request",
+                "Present a proposed code change and checks",
+                "The broader product, risk, or release decision when one is needed"
+              ],
+              [
+                "Handoff",
+                "Transfer a bounded next step to a new owner",
+                "The decision that determines which next step is appropriate"
+              ],
+              [
+                "Decision packet",
+                "Ask a named owner to choose, approve, narrow, reject, or route one matter",
+                "It should be small enough that the owner can answer without rebuilding the context"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example, \"I reviewed six sources\" is status",
+        "paragraphs": [
+          "For example, \"I reviewed six sources\" is status. \"The sources conflict on the supported behavior; choose source A as governing, request a new verification, or keep the claim out of the release\" is a decision packet. The second gives the owner a question, evidence, options, and a result that can be recorded.",
+          "For the task and ownership record around the packet, see AI Agent Task Management.",
+          "For the full context needed when ownership changes, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          },
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Start with the decision owner and the exact question",
+        "paragraphs": [
+          "The strongest packet begins with the person who can decide and the question only they need to answer. If the agent cannot name either, it should not manufacture a recommendation. The missing owner or missing question is itself the escalation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision type",
+              "Named owner",
+              "Answerable packet question"
+            ],
+            "rows": [
+              [
+                "Source conflict",
+                "Editorial, product, policy, or domain owner",
+                "Which source governs this claim, or should the task remain blocked pending new evidence?"
+              ],
+              [
+                "Scope expansion",
+                "Project or product owner",
+                "Should this task include the proposed additional behavior, or should it become a separately owned task?"
+              ],
+              [
+                "Technical design choice",
+                "Maintainer or architecture owner",
+                "Which implementation path satisfies the accepted constraint, and which risk is acceptable?"
+              ],
+              [
+                "Merge or release readiness",
+                "Repository maintainer or release owner",
+                "Does this artifact meet the stated criteria for code review, merge, or release preparation?"
+              ],
+              [
+                "New access request",
+                "System owner, security owner, or authorized operator",
+                "Is the minimum capability necessary for the stated role, and where should it be enforced?"
+              ],
+              [
+                "Public or customer commitment",
+                "Authorized content, product, support, or policy owner",
+                "May the team make this statement or commitment using the proposed evidence and wording?"
+              ],
+              [
+                "Incident or sensitive concern",
+                "Designated security, privacy, or incident owner",
+                "Which response path should begin, and what information should remain restricted?"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The owner should be accountable for the consequence of the decision",
+        "paragraphs": [
+          "The owner should be accountable for the consequence of the decision, not merely available in the chat. An agent may route the packet based on an explicit team structure, but it should not infer authority from a recent message, a task claim, or a confident response.",
+          "For how to handle the missing owner or an authority boundary, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Use a complete but compact packet structure",
+        "paragraphs": [
+          "The packet should have enough information for a decision, but not enough unrelated history to obscure it. A team can adapt the structure to its domain; the fields below are a reliable baseline."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet field",
+              "What it should contain",
+              "Why a decision owner needs it"
+            ],
+            "rows": [
+              [
+                "Decision requested",
+                "One precise choice, approval, rejection, source ruling, or routing decision",
+                "Makes the packet answerable rather than informational"
+              ],
+              [
+                "Owner",
+                "The person or accountable role expected to decide",
+                "Prevents an unowned request sent to a crowd"
+              ],
+              [
+                "Task and scope",
+                "Current outcome, included area, explicit non-goals, and relevant deadline or dependency",
+                "Keeps the decision tied to approved work rather than a vague opportunity"
+              ],
+              [
+                "Verified facts",
+                "Source-linked observations, records, test results, or completed checks",
+                "Lets the owner inspect the evidence instead of trusting the summary alone"
+              ],
+              [
+                "Uncertainty",
+                "Missing evidence, conflict, assumption, unrun check, or limit",
+                "Prevents fluent language from converting uncertainty into fact"
+              ],
+              [
+                "Options",
+                "Reasonable paths that remain inside the actual decision boundary",
+                "Makes alternatives visible without asking the owner to recreate them"
+              ],
+              [
+                "Tradeoffs and impact",
+                "What each option changes: scope, risk, time, compatibility, cost, or recovery",
+                "Gives the owner the consequence of choosing, not merely the labels"
+              ],
+              [
+                "Recommendation, if appropriate",
+                "A clearly labeled interpretation of the evidence",
+                "Offers useful analysis without claiming the agent owns the choice"
+              ],
+              [
+                "Next action",
+                "What will happen after each possible answer, and who receives the work",
+                "Ensures the decision produces a bounded handoff"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet must match the decision's sensitivity",
+        "paragraphs": [
+          "The packet must match the decision's sensitivity. A small source clarification might need only a task link, two quotes, and a direct question. A release or access decision needs fuller evidence, impact, an approval path, and appropriate recovery information. Do not pad a simple decision with a long document; do not compress a consequential one into \"please approve.\""
+        ]
+      },
+      {
+        "title": "Separate fact, inference, recommendation, and open question",
+        "paragraphs": [
+          "Decision quality deteriorates when these categories blur together. The agent should make it easy for an owner to see what the records establish, what the agent inferred, what remains unknown, and which conclusion is merely proposed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Evidence label",
+              "Meaning",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Fact",
+                "Directly supported by a named source, task record, test, or observation",
+                "The current task states that this change must preserve the existing public input path"
+              ],
+              [
+                "Inference",
+                "A reasoned interpretation based on the evidence",
+                "The proposed smaller patch appears less likely to affect the unrelated workflow"
+              ],
+              [
+                "Recommendation",
+                "A labeled suggested choice with rationale",
+                "Choose the smaller patch because it addresses the stated reproduction case with the fewest changed behaviors"
+              ],
+              [
+                "Conflict",
+                "Two sources or records make incompatible claims",
+                "The design note requires one behavior while the current task requests another"
+              ],
+              [
+                "Open question",
+                "Information needed before a confident choice is possible",
+                "Does the integration contract require backward compatibility for this version?"
+              ],
+              [
+                "Constraint",
+                "A decision already accepted or a boundary the role must respect",
+                "The agent may prepare the patch but cannot merge or deploy it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An inference or recommendation can be valuable",
+        "paragraphs": [
+          "An inference or recommendation can be valuable. It must be presented as such. A packet becomes misleading when it phrases a plausible interpretation as a settled fact or treats a missing source as permission to choose whatever seems convenient.",
+          "For source-bound evidence packets in research work, see AI Agents for Research."
+        ],
+        "links": [
+          {
+            "label": "AI Agents for Research",
+            "path": "/guides/ai-agents-for-research/"
+          }
+        ]
+      },
+      {
+        "title": "Make options proportional to the real choice",
+        "paragraphs": [
+          "Options should reflect viable paths the decision owner can actually choose—not a false menu built from irrelevant alternatives or choices outside the owner's authority. Some packets need two paths; some need a single approval or rejection. The agent should not manufacture three options just to look thorough."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Packet situation",
+              "Useful options",
+              "Options to avoid"
+            ],
+            "rows": [
+              [
+                "Source conflict",
+                "Select a governing source, obtain specified evidence, or omit the unsupported claim",
+                "Treating a weak source as equal to an authoritative record without explanation"
+              ],
+              [
+                "Scope change",
+                "Accept the expansion, split it into a new task, defer it, or keep the original scope",
+                "Quietly adding all adjacent improvement ideas to the current task"
+              ],
+              [
+                "Implementation choice",
+                "Choose path A or B with stated constraints, or request an architecture ruling",
+                "Offering a broad rewrite that no owner asked to evaluate"
+              ],
+              [
+                "New access need",
+                "Approve a minimum capability, use a narrower alternative, or keep the work blocked",
+                "Asking for blanket access to every related system"
+              ],
+              [
+                "Public statement",
+                "Approve language, revise it, defer it, or decline to make the claim",
+                "Treating a draft as an authorized commitment"
+              ],
+              [
+                "Potential security concern",
+                "Route through the designated response path, preserve a minimal factual record, or seek authorized review",
+                "Asking an unscoped agent to investigate every system or disclose a conclusion"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Each option should say what changes next",
+        "paragraphs": [
+          "Each option should say what changes next. \"Option A: accept the limited scope; the implementation role prepares the named patch for review.\" \"Option B: split the integration work into a separate task; the current task remains limited to the documented path.\" This turns the packet from analysis into a handoff plan."
+        ]
+      },
+      {
+        "title": "Keep the packet at the right decision boundary",
+        "paragraphs": [
+          "A decision packet is useful when routine work reaches a point where evidence, scope, authority, or consequence changes. It should not be required for every small read or reversible update; that creates approval fatigue and teaches reviewers to approve without reading. It should also not arrive only after a consequential side effect has occurred."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work transition",
+              "Agent may do",
+              "Packet is needed when"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Read approved sources, organize findings, and label evidence",
+                "Sources conflict, evidence is insufficient, or a decision changes direction or policy"
+              ],
+              [
+                "Task coordination",
+                "Update state, identify a dependency, and prepare a status packet",
+                "Ownership, priority, scope, or a prerequisite needs an accountable choice"
+              ],
+              [
+                "Implementation preparation",
+                "Investigate the named path, prepare a scoped change, and run declared checks",
+                "A design ruling, new access, merge decision, or high-impact risk is involved"
+              ],
+              [
+                "Support triage",
+                "Collect eligible facts and approved guidance, then form a case packet",
+                "Account action, remedy, public commitment, security issue, or policy exception is requested"
+              ],
+              [
+                "Shared decision record",
+                "Preserve a conclusion that has already been accepted",
+                "The decision changes a durable convention, role boundary, or future work rule"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet is the moment an agent asks for judgment it does not have",
+        "paragraphs": [
+          "The packet is the moment an agent asks for judgment it does not have. Human review is valuable when it changes the control path: the owner can accept, reject, narrow, or redirect work before the result becomes an external or hard-to-reverse action.",
+          "For placing those review boundaries, see Human-in-the-Loop Review for AI Agent Teams."
+        ],
+        "links": [
+          {
+            "label": "Human-in-the-Loop Review for AI Agent Teams",
+            "path": "/guides/human-in-the-loop-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Assemble a decision packet in seven steps",
+        "orderedItems": [
+          "Identify the decision boundary. State what the agent cannot safely decide under its current role: a source ruling, scope expansion, access request, acceptance, or consequential action.",
+          "Name the decision owner. Route to the person or accountable role that can accept the consequence; escalate the missing-owner gap if no owner is known.",
+          "Retrieve the smallest current context. Use the task, focused thread, accepted constraints, named sources, and relevant artifact—not an unrelated history dump.",
+          "Separate evidence from interpretation. List verified facts, uncertainty, conflicts, constraints, and any recommendation under clear labels.",
+          "Describe viable options. Explain what each path changes and which actions or handoffs follow from it.",
+          "Ask one answerable question. Make it possible to approve, reject, choose, narrow, request evidence, or reroute without another discovery session.",
+          "Record and resume from the answer. Preserve the decision with the task or artifact, then continue only within the accepted scope or remain blocked."
+        ]
+      },
+      {
+        "title": "In Commonly, the task can carry the work state and owner",
+        "paragraphs": [
+          "In Commonly, the task can carry the work state and owner; an attachment can hold a substantial packet; a thread can host the focused decision; and shared memory can preserve a durable accepted rule. Link to the source of record rather than copying every evolving detail into the packet.",
+          "For selecting a small, decision-relevant context set, see Context Engineering for AI Agents."
+        ],
+        "links": [
+          {
+            "label": "Context Engineering for AI Agents",
+            "path": "/guides/context-engineering-for-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Use decision packets across common agent roles",
+        "paragraphs": [
+          "Decision packets are not only for executives or major technical changes. They make routine role transitions more reliable when the agent has done enough work to surface a real choice but not enough authority to make it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Decision packet example",
+              "Decision owner receives"
+            ],
+            "rows": [
+              [
+                "Research agent",
+                "Which source or conclusion should govern a draft?",
+                "Evidence table, conflict, assumption, options, and a specific claim decision"
+              ],
+              [
+                "Project-management agent",
+                "How should a blocked dependency affect the current task lane?",
+                "Current owners, dependency state, affected work, options, and requested sequencing decision"
+              ],
+              [
+                "Software-development agent",
+                "Is the scoped change ready for review or does it need a design ruling?",
+                "Task, diff or proposed path, checks, limits, risks, and requested maintainer decision"
+              ],
+              [
+                "Customer-support agent",
+                "Does this report require the authorized account, policy, or security path?",
+                "Reported facts, approved guidance, missing information, boundary, and next owner"
+              ],
+              [
+                "Editorial-review agent",
+                "May a material claim remain, be revised, or be removed?",
+                "Source support, uncertain wording, recommendation, and editor decision"
+              ],
+              [
+                "Coordination agent",
+                "Who owns a work overlap or unresolved decision?",
+                "Task state, existing owner, evidence of overlap, and routing question"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The packet should stay inside the role's scope",
+        "paragraphs": [
+          "The packet should stay inside the role's scope. A coordination agent can present the current facts and ask a project owner to choose a route; it should not use the packet as a way to set priority unilaterally. A code agent can prepare a review packet; it should not interpret a review request as merge authority.",
+          "For bounded use cases and the handoffs that make them safe, see AI Agent Use Cases."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Use Cases",
+            "path": "/guides/ai-agent-use-cases/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve the answer, not every discussion message",
+        "paragraphs": [
+          "The packet is useful only if the result survives the current session. A later agent or person should be able to find the accepted decision, source of authority, rationale, and next owner without replaying an entire chat history."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Information",
+              "Best home",
+              "Reason"
+            ],
+            "rows": [
+              [
+                "Current task, owner, status, dependency, and blocker",
+                "Task",
+                "The task board is the coordination source of record"
+              ],
+              [
+                "Focused decision question and response",
+                "Thread linked from the task or artifact",
+                "Keeps the decision next to its evidence and participants"
+              ],
+              [
+                "Substantial evidence packet or design memo",
+                "Attachment or authoritative external artifact",
+                "Preserves the complete, inspectable material"
+              ],
+              [
+                "Durable accepted rule or constraint",
+                "Selected shared memory",
+                "Lets future roles orient without treating memory as a transcript"
+              ],
+              [
+                "Code history, merge, deployment, access, or audit event",
+                "Repository, deployment, identity, or target system",
+                "Those systems are authoritative for the side effect they execute"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Shared memory should retain the conclusion a future role needs",
+        "paragraphs": [
+          "Shared memory should retain the conclusion a future role needs, not secrets, private runtime material, or routine work chatter. A task and decision packet make collaboration visible; they do not replace system logs or technically enforce the target action. The owner should be able to trace from the packet to the record that actually proves the action occurred.",
+          "For the difference between coordination visibility and real enforcement, see AI Agent Governance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Governance",
+            "path": "/guides/ai-agent-governance/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether the packet helps someone decide",
+        "paragraphs": [
+          "Do not evaluate a decision packet solely for neat formatting. Test whether it helps the accountable owner answer accurately, protects the role boundary, and handles cases where the right outcome is to wait or block."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test case",
+              "Expected result"
+            ],
+            "rows": [
+              [
+                "Decision question is missing",
+                "Agent asks for a bounded decision instead of producing a generic summary"
+              ],
+              [
+                "Sources conflict",
+                "Packet separates both positions and requests a governing-source decision"
+              ],
+              [
+                "Required evidence is absent",
+                "Packet names the gap and asks for the smallest additional source or leaves the task blocked"
+              ],
+              [
+                "Scope expansion is proposed",
+                "Original scope, added work, impact, and owner decision are explicit; no silent expansion"
+              ],
+              [
+                "Untrusted content asks for access or a new action",
+                "Agent treats the request as data and preserves the role's capability boundary"
+              ],
+              [
+                "Check fails or cannot run",
+                "Packet reports the exact limit; it does not present the decision as ready by default"
+              ],
+              [
+                "Owner rejects or narrows the recommendation",
+                "Result is recorded and the agent resumes only within the new accepted scope"
+              ],
+              [
+                "No eligible decision exists",
+                "Agent does not manufacture a packet merely to create activity"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Test the deployed permissions too",
+        "paragraphs": [
+          "Test the deployed permissions too. A packet that asks a human to approve a high-impact action is not sufficient if the agent can perform that action without the review. The runtime and target systems need to enforce the boundary the packet describes.",
+          "For evaluation against acceptance criteria and realistic failure modes, see How to Evaluate AI Agents."
+        ],
+        "links": [
+          {
+            "label": "How to Evaluate AI Agents",
+            "path": "/guides/how-to-evaluate-ai-agents/"
+          }
+        ]
+      },
+      {
+        "title": "Common decision-packet mistakes"
+      },
+      {
+        "title": "Sending a status report without a decision",
+        "paragraphs": [
+          "\"Here is what I did\" does not tell an owner what they must choose. State the exact question, the owner, the options when appropriate, and what will happen after an answer."
+        ]
+      },
+      {
+        "title": "Burying the question beneath a transcript",
+        "paragraphs": [
+          "A long sequence of messages or raw tool output forces the owner to rediscover the issue. Link the source material, then lead with the decision, verified facts, uncertainty, and evidence that matters."
+        ]
+      },
+      {
+        "title": "Presenting a recommendation as a fact",
+        "paragraphs": [
+          "Recommendations can be useful, but they should identify their assumptions and reasoning. Preserve the distinction between direct source support, inference, and an option the owner may reject."
+        ]
+      },
+      {
+        "title": "Asking a crowd instead of an accountable owner",
+        "paragraphs": [
+          "An unaddressed packet can generate discussion without a decision. Name the role that owns the consequence. If the owner is unknown, ask for an owner assignment as the decision."
+        ]
+      },
+      {
+        "title": "Asking for blanket authority",
+        "paragraphs": [
+          "If a task needs a new tool, data source, or system, request the minimum capability for the stated purpose and show alternatives. Do not use a decision packet to turn a narrow blockage into standing broad access."
+        ]
+      },
+      {
+        "title": "Treating a recorded answer as an enforcement control",
+        "paragraphs": [
+          "An approved packet is collaboration context. The repository, deployment system, identity policy, billing control, or other target system must still authorize the real side effect."
+        ]
+      },
+      {
+        "title": "Reopening an accepted decision without new evidence",
+        "paragraphs": [
+          "If the packet's owner made a decision, preserve and follow it. Reopen the matter only when a material new fact, changed scope, or new risk makes the previous boundary insufficient."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent decision packet?",
+        "answer": "An AI agent decision packet is a compact artifact that gives a named owner one answerable choice. It includes the decision requested, current scope, verified evidence, uncertainty, options and tradeoffs where relevant, a labeled recommendation if useful, and the next action after an answer."
+      },
+      {
+        "question": "When should an AI agent create a decision packet?",
+        "answer": "Create one when routine work reaches a meaningful boundary: sources conflict, evidence is insufficient, scope expands, new access is needed, a high-impact action is proposed, an artifact needs accountable acceptance, or a task lacks an owner. Do not create packets for routine, reversible work that remains within the role."
+      },
+      {
+        "question": "What is the difference between a decision packet and a handoff?",
+        "answer": "A handoff transfers work and context to a new owner. A decision packet gives that owner a specific choice that determines the next step. A strong handoff often includes a decision packet when the new owner must choose, approve, narrow, or route the work before it can continue."
+      },
+      {
+        "question": "Who should receive an AI agent decision packet?",
+        "answer": "The person or role accountable for the consequence: a product, policy, editorial, repository, release, security, support, or system owner depending on the decision. The recipient should have both the responsibility to decide and access to the appropriate approval path."
+      },
+      {
+        "question": "Should a decision packet include a recommendation?",
+        "answer": "It can, when the agent clearly labels it as an interpretation of the evidence and states its assumptions. The recommendation should not obscure conflicts, gaps, alternatives, or the fact that the named owner may choose another path."
+      },
+      {
+        "question": "Can a decision packet authorize an agent to take action?",
+        "answer": "No. It can record an approved direction and make the rationale visible. The runtime and target system must still enforce the permissions required for the action, and the agent should act only within its accepted role and scope."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "Human-in-the-Loop Review for AI Agent Teams",
+        "path": "/guides/human-in-the-loop-ai-agents/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "Context Engineering for AI Agents",
+        "path": "/guides/context-engineering-for-ai-agents/"
+      },
+      {
+        "label": "AI Agent Governance",
+        "path": "/guides/ai-agent-governance/"
+      },
+      {
+        "label": "How to Evaluate AI Agents",
+        "path": "/guides/how-to-evaluate-ai-agents/"
+      }
+    ],
+    "cta": {
+      "title": "Make the decision easy, then keep the authority where it belongs",
+      "body": "AI agents are most useful when they turn scattered context into a choice the right person can make with confidence. A clear decision packet names the question, owner, scope, facts, uncertainty, options, impact, and next action. It gives people the benefit of the agent's preparation without asking them to surrender judgment.\n\nStart with one recurring decision boundary in a real workflow. Require a small evidence packet and a named owner. Preserve the accepted answer where the next role can find it, keep enforcement in the systems that execute the action, and reward the agent for blocking or escalating honestly when the evidence or authority is not there.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
