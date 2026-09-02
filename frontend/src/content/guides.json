@@ -589,6 +589,10 @@
       {
         "label": "AI agent source of record",
         "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI agent blockers",
+        "path": "/guides/ai-agent-blockers/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -8178,6 +8182,10 @@
       {
         "label": "AI agent no-op",
         "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI agent blockers",
+        "path": "/guides/ai-agent-blockers/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -9583,6 +9591,10 @@
       {
         "label": "AI agent review packet",
         "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI agent blockers",
+        "path": "/guides/ai-agent-blockers/"
       }],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
@@ -10983,6 +10995,10 @@
       {
         "label": "AI agent scope creep",
         "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI agent blockers",
+        "path": "/guides/ai-agent-blockers/"
       }],
     "cta": {
       "title": "Make restraint a reviewable contribution",
@@ -13099,6 +13115,709 @@
     "cta": {
       "title": "Make the review answer easy to give",
       "body": "An AI agent review packet gives a reviewer the work, not just a claim about the work. Link the exact artifact, state the scope and limits, provide the evidence and verification path, and ask for one answer at the appropriate boundary. That preserves human judgment where it belongs while making the next handoff faster and more reliable.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-blockers": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Blockers: Missing Prerequisites, Effect, and Owner | Commonly",
+    "title": "AI Agent Blockers: State the Missing Prerequisite and Its Owner",
+    "description": "Learn how AI agents should report blockers: name the eligible work, missing prerequisite, effect, decision owner, and next review point—without confusing a blocker with a no-op or escalation.",
+    "summary": "An AI agent blocker is a precise record that an eligible, in-scope outcome cannot safely advance because a necessary prerequisite is missing, unresolved, or controlled by another owner.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent blocker is a precise record that an eligible, in-scope outcome cannot safely advance because a necessary prerequisite is missing, unresolved, or controlled by another owner. A useful blocker states the work affected, the exact missing input, decision, dependency, permission, or source, the effect on the current task, the person or system that can resolve it, and what should happen when that prerequisite changes.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a place to keep that coordination visible: tasks carry a status, assignee, activity timeline, dependency, and result; focused threads can hold the question for an owner; attachments can preserve evidence; and selected shared context can retain a decision once it is resolved. A blocker makes a work constraint visible. It does not grant an agent authority to bypass the missing approval, fabricate a source, alter an external system, or decide the tradeoff itself.",
+      "Not every pause is a blocker. If no eligible work exists, the correct result can be a no-op. If the work needs a decision outside the agent’s role, the agent should escalate a focused question. A blocker describes the prerequisite that prevents an active, eligible task from proceeding; an escalation is one way to route that blocker to the person who can answer it.",
+      "This guide explains how to write AI agent blockers that help the next owner act, how to distinguish blockers from no-ops and escalations, and how to keep blocked work reviewable rather than letting it disappear into silence."
+    ],
+    "sections": [
+      {
+        "title": "A blocker, no-op, and escalation answer different questions",
+        "tables": [
+          {
+            "headers": [
+              "Result",
+              "What it means",
+              "What the agent should leave behind"
+            ],
+            "rows": [
+              [
+                "Blocker",
+                "An eligible task cannot continue because a named prerequisite is missing or unresolved",
+                "The affected outcome, missing item, effect, owner or source, and next review condition"
+              ],
+              [
+                "No-op",
+                "No eligible work or material change requires the role’s action",
+                "Silence or a concise policy-required result explaining what was checked"
+              ],
+              [
+                "Escalation",
+                "A question, risk, or decision needs an owner beyond the agent’s boundary",
+                "A focused decision request, evidence, and named route to the accountable role"
+              ],
+              [
+                "Dependency wait",
+                "An upstream task or external condition has not reached the needed state",
+                "The dependency reference, required state, and impact on the current work"
+              ],
+              [
+                "Requested clarification",
+                "The task is too vague or incomplete to establish an eligible outcome",
+                "The smallest question needed to make the work actionable"
+              ],
+              [
+                "Rejected expansion",
+                "Proposed adjacent work is outside the current task’s boundary",
+                "The current scope, proposed follow-on, and owner who may create separate work"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "All three outcomes can end an agent’s current turn without the requested final artifact. They should not be used interchangeably. The difference is whether eligible work exists, whether a prerequisite is missing, and whether an accountable owner needs a decision."
+        ]
+      },
+      {
+        "title": "For example, “No pending research task matches this role” is a no-op",
+        "paragraphs": [
+          "For example, “No pending research task matches this role” is a no-op. “The assigned research task has a complete brief but lacks the source that governs the claim” is a blocker. “The sources conflict, and a policy owner must choose which governs” is an escalation that can route the blocker.",
+          "For the standard task states that make blocked work visible, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Start with the work that is blocked",
+        "tables": [
+          {
+            "headers": [
+              "Blocker field",
+              "What to state",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Affected outcome",
+                "The current task result that cannot advance",
+                "“Prepare the source-backed support brief for the approved issue.”"
+              ],
+              [
+                "Current state",
+                "Work completed so far and the exact point where progress stopped",
+                "“The agent reviewed the supplied sources and identified a conflict.”"
+              ],
+              [
+                "Missing prerequisite",
+                "One decision, source, dependency, permission, or input",
+                "“A governing source for the conflicting requirement.”"
+              ],
+              [
+                "Effect",
+                "What cannot be concluded, reviewed, or executed until it is resolved",
+                "“The brief cannot make the requested claim without an unsupported choice.”"
+              ],
+              [
+                "Owner or source",
+                "Person, role, task, or system that can supply the prerequisite",
+                "“The policy owner chooses the governing source.”"
+              ],
+              [
+                "Next review condition",
+                "What event should cause the work to resume or be rerouted",
+                "“Resume when the source ruling is recorded in the decision thread.”"
+              ],
+              [
+                "Safe interim result",
+                "What the agent can still return without pretending the work is complete",
+                "“A short evidence note that labels the conflict and remaining question.”"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "The first line of a blocker should identify the eligible outcome that cannot move, not merely the condition that feels inconvenient. “Waiting on approval” leaves the team to reconstruct what is waiting, why it matters, and who should respond. A useful blocker anchors the missing prerequisite to a bounded task."
+        ]
+      },
+      {
+        "title": "This structure gives an owner something they can actually resolve",
+        "paragraphs": [
+          "This structure gives an owner something they can actually resolve. It also helps the agent continue any safe, bounded preparation without quietly converting a partial artifact into a completed result.",
+          "For defining the acceptance boundary a blocker prevents the work from meeting, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Name the prerequisite, not a vague risk label",
+        "tables": [
+          {
+            "headers": [
+              "Missing prerequisite type",
+              "Useful blocker wording",
+              "What to avoid"
+            ],
+            "rows": [
+              [
+                "Decision",
+                "“The task needs the project owner’s scope decision before the proposed behavior can be included.”",
+                "“Waiting for sign-off.”"
+              ],
+              [
+                "Source or evidence",
+                "“The requested conclusion needs the primary source that resolves the cited conflict.”",
+                "“Need more research.”"
+              ],
+              [
+                "Upstream dependency",
+                "“This task depends on the linked artifact reaching its stated review condition.”",
+                "“Blocked by another team.”"
+              ],
+              [
+                "Permission or operation",
+                "“The proposed external action requires an authorized operator in the target system.”",
+                "“Agent needs more access.”"
+              ],
+              [
+                "Review owner",
+                "“The artifact is ready for review, but no accountable reviewer has been named.”",
+                "“Needs review.”"
+              ],
+              [
+                "Input quality",
+                "“The report lacks the affected area and reproduction evidence required for triage.”",
+                "“Bad ticket.”"
+              ],
+              [
+                "Scope boundary",
+                "“The requested follow-on expands the task beyond the accepted outcome and needs a separate owner decision.”",
+                "“Too much work.”"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "A blocker should be specific enough that a new participant can tell what changed it. Labels such as “at risk,” “needs attention,” or “waiting” may communicate urgency, but they do not identify the prerequisite or the next owner."
+        ]
+      },
+      {
+        "title": "Specific wording avoids two failure modes",
+        "paragraphs": [
+          "Specific wording avoids two failure modes: agents that wait indefinitely because no one knows what they need, and teams that expand the task casually just to make a warning disappear.",
+          "For the evidence and option structure that makes a missing decision answerable, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Show the effect without inventing a deadline or priority",
+        "tables": [
+          {
+            "headers": [
+              "Effect category",
+              "What the blocker can report",
+              "What it should not infer"
+            ],
+            "rows": [
+              [
+                "Evidence effect",
+                "A conclusion, recommendation, or claim remains unsupported",
+                "That the missing evidence makes the issue urgent or unimportant"
+              ],
+              [
+                "Scope effect",
+                "The original outcome cannot include the proposed additional work",
+                "That the team accepted a new scope or abandoned the old one"
+              ],
+              [
+                "Review effect",
+                "The reviewer lacks the required artifact, check, or decision context",
+                "That the reviewer rejected the work without an answer"
+              ],
+              [
+                "Execution effect",
+                "An external action cannot be prepared or confirmed in the current boundary",
+                "That the action will fail, succeed, or be authorized later"
+              ],
+              [
+                "Dependency effect",
+                "The current task cannot reach its stated next stage",
+                "That the upstream owner is at fault or has a particular priority"
+              ],
+              [
+                "Continuity effect",
+                "The next owner cannot safely continue without a named answer or record",
+                "That the agent should take over the other owner’s responsibility"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "An agent can explain what a missing prerequisite prevents: a claim cannot be verified, a reviewer cannot assess an artifact, a dependency cannot be completed, or a handoff cannot be safely made. It should not invent business urgency, a release date, or a priority that the task and owner have not established."
+        ]
+      },
+      {
+        "title": "The effect is a fact about the work’s current boundary",
+        "paragraphs": [
+          "The effect is a fact about the work’s current boundary. That is enough to help an owner decide whether to supply the prerequisite, change scope, split the task, or accept a different result.",
+          "For keeping those status and dependency facts visible without changing their owner, see AI Agents for Project Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agents for Project Management",
+            "path": "/guides/ai-agents-for-project-management/"
+          }
+        ]
+      },
+      {
+        "title": "Route the blocker to the owner who can resolve it",
+        "tables": [
+          {
+            "headers": [
+              "Blocker concerns",
+              "Likely resolution owner",
+              "What the agent can prepare"
+            ],
+            "rows": [
+              [
+                "Task scope, priority, or a new work stream",
+                "Project or product owner",
+                "Current boundary, proposed change, impact, and options"
+              ],
+              [
+                "Source conflict, policy, or public claim",
+                "Domain, editorial, policy, or legal owner as designated by the team",
+                "Sources, conflict summary, and precise question"
+              ],
+              [
+                "Technical design or merge readiness",
+                "Maintainer, architecture owner, or release owner",
+                "Proposed artifact, checks, limits, and decision request"
+              ],
+              [
+                "Permission, identity, or external operation",
+                "Authorized operator, system owner, or security owner",
+                "Minimum requirement, reason, and target system to inspect"
+              ],
+              [
+                "Missing reviewer",
+                "Team lead or owner of the review process",
+                "The artifact, requested judgment, and role needed"
+              ],
+              [
+                "Dependency task",
+                "Owner of the linked prerequisite or the person who can change the plan",
+                "Dependency reference, required state, and effect"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "A blocker is more useful when it identifies the resolution path. The appropriate owner depends on the prerequisite, not on who happens to be active in the thread. When the owner is unknown, identifying that ambiguity is part of the blocker."
+        ]
+      },
+      {
+        "title": "Do not name an owner by guesswork",
+        "paragraphs": [
+          "Do not name an owner by guesswork. If the task contract, role structure, and current records do not establish who can decide, route that as an escalation. The agent can narrow the question; it should not create authority by assigning someone who merely replied.",
+          "For the stop-and-hand-up pattern when ownership or authority is missing, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Turn vague status into a reviewable blocker",
+        "tables": [
+          {
+            "headers": [
+              "Vague update",
+              "Reviewable blocker",
+              "Why it is better"
+            ],
+            "rows": [
+              [
+                "“Blocked.”",
+                "“The release note draft cannot be finalized because the approved audience is not recorded; the content owner needs to confirm the audience before review.”",
+                "Names the artifact, missing decision, owner, and condition to resume"
+              ],
+              [
+                "“Waiting on access.”",
+                "“The requested external verification requires a system owner to perform or authorize the check; the current role can prepare the evidence but cannot complete it.”",
+                "Distinguishes preparation from permission and execution"
+              ],
+              [
+                "“Need more info.”",
+                "“The triage task lacks the affected product area and reproduction evidence required by its contract; request those two inputs from the reporter.”",
+                "Makes the missing inputs finite and actionable"
+              ],
+              [
+                "“Dependency issue.”",
+                "“This task depends on the linked source review reaching a recorded decision; until then, the claim remains excluded from the artifact.”",
+                "Links the prerequisite to the work effect"
+              ],
+              [
+                "“Can’t proceed.”",
+                "“The proposed scope expansion needs the project owner to choose whether to add the new source set or create separate work.”",
+                "Converts a stop into a decision with options"
+              ],
+              [
+                "“Need approval.”",
+                "“The artifact is ready for a maintainer’s review decision on the stated acceptance criteria; no external action is requested or implied.”",
+                "Identifies the reviewer and protects the authority boundary"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Teams can improve a blocker quickly by replacing generic status language with the affected work, missing prerequisite, effect, and next owner. The goal is not a more alarming message; it is a record that makes the next action obvious."
+        ]
+      },
+      {
+        "title": "A well-written blocker can reduce unnecessary follow-up messages",
+        "paragraphs": [
+          "A well-written blocker can reduce unnecessary follow-up messages because the next owner can answer it directly. It should be short enough to scan and detailed enough to resolve.",
+          "For keeping the blocker’s records and resolution path linked over time, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the blocker attached to the right record",
+        "tables": [
+          {
+            "headers": [
+              "Fact",
+              "Record that should carry it",
+              "Supporting reference"
+            ],
+            "rows": [
+              [
+                "Blocked task state and current owner",
+                "Task record",
+                "Activity note or blocker summary"
+              ],
+              [
+                "Missing decision",
+                "Focused decision thread or decision packet",
+                "Evidence and options considered"
+              ],
+              [
+                "Missing source or check",
+                "Attached evidence note or target-system reference",
+                "Task scope and the claim affected"
+              ],
+              [
+                "Upstream prerequisite",
+                "Linked dependency task or target-system condition",
+                "Current state and required transition"
+              ],
+              [
+                "Accepted resolution",
+                "Decision record and updated task",
+                "Sourced durable context when the decision will recur"
+              ],
+              [
+                "External execution after resolution",
+                "Repository, deployment, identity, or other target system",
+                "Task result and review record"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "The task is usually the coordination record for a blocked outcome, but the evidence, decision, or external state that explains the blocker may live elsewhere. Link the primary record for each fact instead of copying changing information across every surface."
+        ]
+      },
+      {
+        "title": "The agent should report the blocker it can verify",
+        "paragraphs": [
+          "The agent should report the blocker it can verify, not guess the current state of a system it cannot inspect. If a target system is the source of record for the prerequisite, link it or name the owner who can check it.",
+          "For selecting the authoritative record for each fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Write a blocker in seven steps",
+        "orderedItems": [
+          "Name the eligible task outcome that is currently affected.",
+          "State what work or evidence is complete and the exact point where progress stopped.",
+          "Identify one missing prerequisite: decision, source, dependency, permission, reviewer, or input.",
+          "Explain the effect on the artifact, claim, review, handoff, or next stage without inventing priority.",
+          "Link the record or evidence that lets the next owner inspect the condition.",
+          "Name the owner or system that can resolve it, or explicitly state that the owner is unknown.",
+          "State the resume condition, safe interim result, or escalation path that applies after the answer."
+        ]
+      },
+      {
+        "title": "This pattern works whether the blocker appears",
+        "paragraphs": [
+          "This pattern works whether the blocker appears in a task update, a focused thread, or a decision packet. It preserves enough context for the owner to act while letting the agent stop work that would otherwise become speculation or unauthorized expansion.",
+          "For handing the unresolved question to the next accountable participant, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Use blockers across roles without turning them into blame",
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Useful blocker",
+              "Next owner’s useful response"
+            ],
+            "rows": [
+              [
+                "Research",
+                "“The conclusion needs the source that governs the conflicting requirement.”",
+                "Provide the source, choose a governing source, or narrow the claim"
+              ],
+              [
+                "Editorial",
+                "“The draft needs an approved audience and supporting evidence for the proposed statement.”",
+                "Confirm audience, supply source, remove the statement, or route review"
+              ],
+              [
+                "Project management",
+                "“The task cannot advance until the linked dependency has a recorded outcome.”",
+                "Resolve, reorder, split work, or change the plan"
+              ],
+              [
+                "Software development",
+                "“The proposed change needs a maintainer decision on the stated technical boundary.”",
+                "Choose a path, request changes, or create a separate design task"
+              ],
+              [
+                "Support triage",
+                "“The report lacks the inputs required to classify and route it safely.”",
+                "Provide the missing facts, route to a specialist, or close with a stated limitation"
+              ],
+              [
+                "Governance or security review",
+                "“The requested operation needs an authorized system owner and a minimum requirement.”",
+                "Grant nothing by default; decide whether to approve a scoped path or change the plan"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "A blocker records a condition in the work, not a verdict about the person who owns the next step. The wording should help different roles supply the missing prerequisite without implying that a teammate failed or that the agent is entitled to take over."
+        ]
+      },
+      {
+        "title": "This framing lets a team use blockers to preserve ownership",
+        "paragraphs": [
+          "This framing lets a team use blockers to preserve ownership. The agent contributes a precise record and supporting evidence; the accountable owner supplies the decision, input, or operation the role is not meant to improvise.",
+          "For keeping eligibility boundaries visible when the right result is no action, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether a blocker can be resolved without reconstruction",
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "A useful blocker lets the reader answer",
+              "If it fails"
+            ],
+            "rows": [
+              [
+                "Outcome test",
+                "What eligible work is actually blocked?",
+                "Add the task outcome and current state"
+              ],
+              [
+                "Prerequisite test",
+                "What exact decision, source, dependency, permission, or input is missing?",
+                "Replace generic waiting language with the finite missing item"
+              ],
+              [
+                "Effect test",
+                "What cannot safely happen until the prerequisite changes?",
+                "State the artifact, claim, review, or next stage affected"
+              ],
+              [
+                "Ownership test",
+                "Who or which system can resolve or verify the condition?",
+                "Name the role, source system, or unknown-owner escalation"
+              ],
+              [
+                "Evidence test",
+                "Where can the reader inspect the condition?",
+                "Link the task, evidence, decision record, or target-system reference"
+              ],
+              [
+                "Resume test",
+                "What event restarts, reroutes, or closes the work?",
+                "Add a clear next review condition or safe interim result"
+              ]
+            ]
+          }
+        ],
+        "paragraphs": [
+          "Before posting a blocker, ask whether a reviewer who did not perform the work could act on it. If they must read a long transcript to learn the task, missing prerequisite, effect, or owner, the blocker needs a clearer link or a more specific statement."
+        ]
+      },
+      {
+        "title": "A blocker that passes these tests may still require a difficult decision",
+        "paragraphs": [
+          "A blocker that passes these tests may still require a difficult decision. Its value is that the difficulty is now visible, bounded, and owned rather than hidden behind an agent’s silence or a vague status label."
+        ],
+        "links": []
+      },
+      {
+        "title": "Seven blocker mistakes that keep work stuck"
+      },
+      {
+        "title": "Writing “blocked” without naming the work or prerequisite",
+        "paragraphs": [
+          "The status alone does not tell anyone what needs to change. Connect the missing item to the eligible outcome and the effect on progress."
+        ]
+      },
+      {
+        "title": "Treating a missing owner as an invisible wait",
+        "paragraphs": [
+          "If the team cannot identify who can decide, that is a real part of the blocker. Escalate the ownership question instead of waiting for an ambient answer."
+        ]
+      },
+      {
+        "title": "Calling a no-op a blocker",
+        "paragraphs": [
+          "When no eligible work exists, a blocker creates unnecessary urgency and task noise. Use the role’s no-op policy until a qualifying task or material change appears."
+        ]
+      },
+      {
+        "title": "Calling a blocker a no-op",
+        "paragraphs": [
+          "When a live task is waiting on a source, decision, dependency, or permission, quiet behavior conceals work that needs an owner. Record the prerequisite and route it."
+        ]
+      },
+      {
+        "title": "Inventing priority, blame, or a deadline",
+        "paragraphs": [
+          "An agent can report the effect of a missing prerequisite. It should not infer a business commitment, fault another owner, or create urgency without a source."
+        ]
+      },
+      {
+        "title": "Working around a missing permission or decision",
+        "paragraphs": [
+          "Preparation work does not authorize external action. Keep the task within the permitted boundary and ask the system owner or decision owner to resolve the requirement."
+        ]
+      },
+      {
+        "title": "Leaving the blocker stale after it is resolved",
+        "paragraphs": [
+          "When the prerequisite changes, update the task, decision, or handoff and point to the new source of record. An old blocker can mislead the next participant long after work resumed."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent blocker?",
+        "answer": "It is a precise record that an eligible, in-scope task cannot advance because a named prerequisite—such as a decision, source, dependency, permission, reviewer, or input—is missing or unresolved."
+      },
+      {
+        "question": "Is a blocker the same as an escalation?",
+        "answer": "No. A blocker describes the prerequisite preventing progress. An escalation routes a focused question or risk to an owner beyond the agent’s boundary. A blocker may require escalation when the decision owner is missing or must choose a path."
+      },
+      {
+        "question": "Is a blocker the same as a no-op?",
+        "answer": "No. A no-op means the agent found no eligible work requiring action. A blocker means eligible work exists but cannot continue until a stated prerequisite changes."
+      },
+      {
+        "question": "What should an agent do while work is blocked?",
+        "answer": "It may return a safe interim artifact, such as a source note or draft that clearly labels its limit, if that work remains inside scope. It should not fabricate the prerequisite, silently expand the task, or perform an unauthorized external action."
+      },
+      {
+        "question": "Who should own a blocker?",
+        "answer": "The task owner maintains the coordination record, while the person, role, or system capable of resolving the missing prerequisite owns the answer. If that owner is unknown, the blocker should escalate the ownership question."
+      },
+      {
+        "question": "How can teams tell whether a blocker is useful?",
+        "answer": "A new reviewer should be able to identify the affected outcome, exact missing item, effect, evidence, resolution owner, and resume condition without reading a long conversation."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }
+    ],
+    "cta": {
+      "title": "Make the missing answer easy to supply",
+      "body": "An AI agent blocker should turn a stop into an answerable next step. Name the eligible work, the finite prerequisite, its effect, the source or owner that can resolve it, and the condition for resuming. That keeps a team from confusing silence with progress, pressure with authority, or a partial artifact with a completed result.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
