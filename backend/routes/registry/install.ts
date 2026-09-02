@@ -133,6 +133,19 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       return res.status(400).json({ error: 'Invalid agentName: must match /^(@[a-z0-9-]+\\/)?[a-z0-9-]+$/' });
     }
 
+    // podId reaches four Mongoose filters on this route unchanged
+    // (`Pod.findById` below, the already-installed `AgentInstallation.findOne`,
+    // the installation displayName lookup, and the `AgentProfile` upsert key).
+    // Mongoose does not reject an operator object in a filter position — a
+    // `{$ne: null}` here casts cleanly and MATCHES, so the 404 below is not a
+    // guard against one. Reject a non-string at the entry point, the same
+    // shape agentName already uses above, so no query below can be handed a
+    // query operator. `undefined` is left to fall through to the existing
+    // 404 / self-serve 400 so no legitimate path changes status code.
+    if (podId !== undefined && podId !== null && typeof podId !== 'string') {
+      return res.status(400).json({ error: 'podId must be a string' });
+    }
+
     // Fetched once and reused for the #609 owner-scoping decision below and
     // the cloud-entitlement gate further down.
     const installerUser = await User.findById(userId).select('role entitlements isBot').lean();
