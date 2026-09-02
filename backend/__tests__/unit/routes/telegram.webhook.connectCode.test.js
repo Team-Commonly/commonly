@@ -12,6 +12,10 @@ jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }))
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../services/telegramBridgeService', () => ({ relayTelegramMessageToPod: jest.fn() }));
+jest.mock('../../../models/WebhookDelivery', () => ({
+  create: jest.fn(),
+  deleteOne: jest.fn(),
+}));
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
@@ -38,6 +42,13 @@ describe('/commonly-enable hardening', () => {
     resetEnableAttempts();
     process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
     delete process.env.TELEGRAM_SECRET_TOKEN;
+    // Verification is fail-closed on main (hardening H1); these tests exercise
+    // the enable handler, not auth, so they run with the explicit dev override
+    // and a stubbed delivery-claim store, same as telegram.webhook.test.js.
+    process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
+    const WebhookDelivery = require('../../../models/WebhookDelivery');
+    WebhookDelivery.create.mockResolvedValue({});
+    WebhookDelivery.deleteOne.mockResolvedValue({});
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});
     Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Test Pod' }) });
   });
