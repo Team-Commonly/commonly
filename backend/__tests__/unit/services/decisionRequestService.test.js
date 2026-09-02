@@ -152,14 +152,21 @@ describe('DecisionRequestService', () => {
     expect(mockPGMessage.create).not.toHaveBeenCalled();
   });
 
-  test('refuses bot and non-member callers before claiming the decision', async () => {
+  test('refuses a bot caller before it reads pod membership or claims the decision', async () => {
     mockDecision.findById.mockResolvedValue(pending());
     mockUser.findById.mockReturnValue(userChain({ _id: 'bot-1', username: 'bot', isBot: true }));
-    expect(await chooseDecision({ decisionId: 'decision-1', callerUserId: 'bot-1', value: 'Canary' })).toMatchObject({ status: 403 });
+    await expect(chooseDecision({ decisionId: 'decision-1', callerUserId: 'bot-1', value: 'Canary' }))
+      .resolves.toEqual({ status: 403, body: { error: 'Only a human can rule on this decision' } });
+    expect(mockPod.findById).not.toHaveBeenCalled();
+    expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
+  });
 
+  test('refuses a non-member caller before claiming the decision', async () => {
+    mockDecision.findById.mockResolvedValue(pending());
     mockUser.findById.mockReturnValue(userChain({ _id: 'stranger', username: 'Stranger', isBot: false }));
     mockPod.findById.mockReturnValue(podChain({ createdBy: 'owner', members: ['member'], type: 'team' }));
-    expect(await chooseDecision({ decisionId: 'decision-1', callerUserId: 'stranger', value: 'Canary' })).toMatchObject({ status: 403 });
+    await expect(chooseDecision({ decisionId: 'decision-1', callerUserId: 'stranger', value: 'Canary' }))
+      .resolves.toEqual({ status: 403, body: { error: 'Only human pod members can rule on this decision' } });
     expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
   });
 });
