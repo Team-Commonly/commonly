@@ -1,0 +1,284 @@
+# The connector as an installable app — implementation spec (TASK-005, ruling A)
+
+**Status:** Ruled by Sam 2026-09-02 (pod message 62584, decision card 6a9812803f95024de5f7bf4e):
+**A — one install verb, two doors; Connectors keeps the page.** This document turns the ruling
+into buildable work. Owner of the build: Kai. Design review: Wren. Verification: Vera.
+**ADR text:** ADR-025 gains **D17** with the decision below once #1295 (the D8–D16 fold) lands;
+this file is the implementation plan D17 points at, not a second decision record.
+
+Evidence behind the ruling: `task-005-connector-as-app-decision.md` (attached in the
+Connectors v2 pod, 2026-09-02). The load-bearing facts, re-stated so this plan is self-contained:
+
+1. **No installer reads `components[]`.** `routes/registry/install.ts:108` is agent-only and
+   writes `AgentInstallation`; `InstallableInstallation` has zero production writers. ADR-001
+   invariant 6 ("one install record → N component projections") is unimplemented for every
+   component type. This plan builds it — for two types, against two behaviours that already ship.
+2. **The connector already has both components, hardcoded.** Inbound Webhook =
+   `routes/webhooks/telegram.ts` (one fixed path, mounted at `server.ts:207`). Outbound
+   EventHandler = the `require('./telegramBridgeService')` at `agentMessageService.ts:1787`,
+   fired after every agent post. `COMMONLY_SCOPE.md` §4.6 (the Discord bridge) is this exact
+   shape, written in April.
+3. **The Connectors page is the install surface** (`/v2/connectors`, nav slot, #1290/#1304). The
+   Apps marketplace is `MARKETPLACE_LOCKED`, off the rail, and `/api/marketplace/browse` filters
+   `source: 'marketplace'` — a builtin app is invisible there. The Browse card is a second door
+   that lands when the marketplace unlocks and calls the same verb; nothing here depends on it.
+4. **Scope is `user`** (ADR-025 D8, folded and Vera-verified): the private chat binds to the
+   user, not to a pod. The pod-scoped connector (D7) is the dormant team-group case and is out of
+   scope here.
+
+## 1. The manifest
+
+One builtin Installable, seeded idempotently at boot the way `seed-native-agents.ts` seeds the
+first-party apps (§4 below names the seeder). Field names are `models/Installable.ts`'s, not
+the prose names in ADR-001.
+
+```jsonc
+{
+  "installableId": "telegram",
+  "name": "Telegram",
+  "description": "Link your Telegram chat to Commonly — every pod you're in gets a voice where you already talk.",
+  "version": "1.0.0",
+  "kind": "app",            // Apps aisle, verb "Install" (ADR-001 §3.8)
+  "source": "builtin",
+  "scope": "user",          // ADR-025 D8 — one install per user, never per pod
+  "status": "active",
+  "requires": ["chat:read", "chat:write", "integrations:manage"],
+  "components": [
+    {
+      "name": "telegram-webhook",
+      "type": "webhook",
+      "webhookPath": "/api/webhooks/telegram",
+      "webhookEvents": ["message", "edited_message"],
+      "addresses": [{ "mode": "webhook", "identifier": "/api/webhooks/telegram" }],
+      "scopes": ["chat:write"]
+    },
+    {
+      "name": "telegram-relay",
+      "type": "event-handler",
+      "eventType": "chat.message",             // NativeAgentTrigger's name — no third vocabulary
+      "eventHandler": "internal:telegram.relay",
+      "addresses": [{ "mode": "event", "identifier": "chat.message" }],
+      "scopes": ["chat:read"]
+    }
+  ]
+}
+```
+
+Rules the manifest carries:
+
+- **No credential in the row.** The bot token stays in env (today) and behind H3's reference
+  (tomorrow). `requires` declares grants; it never carries material. (ADR-025 D6.)
+- **`eventType` reuses `NativeAgentTrigger`'s `chat.message`.** Two vocabularies exist for one
+  idea (the closed trigger union that is live, and the open `event-handler` string that is dead);
+  this plan adds the first real event-handler dispatch and must not add a third name. Unifying
+  the two is named as follow-up, not done here.
+- **Provider truth stays in the registry.** `backend/integrations/manifests.ts` remains the
+  source for `configSchema` / `capabilities`. The Installable is the *package*; the provider
+  manifest is the *driver contract*. The seeder derives display fields from the registry entry
+  so the two cannot drift (ADR-025 D4's direction: registry wins).
+
+## 2. The install verb
+
+**`POST /api/installables/:installableId/install`** (auth; rate-limited with the integrations
+write limiter's key function). Body: `{ podId }` in Phase 1 (see §5), nothing else that the
+server owns.
+
+What it does, in order — this is `installableInstallService.install()`:
+
+1. Load the Installable; 404 if absent or not `active`.
+2. Resolve the target from `scope`: `user` → `targetType: 'user'`, `targetId: req.user.id`.
+   **One active installation per (installableId, user)**: a second call returns the existing
+   row with 200, not a duplicate (unique partial index on `{installableId, targetType, targetId,
+   status: 'active'}`).
+3. Create the **parent** `InstallableInstallation` row: `installableVersion`, `installedBy`,
+   `installSource: 'ui'`, `grantedScopes = installable.requires`, `status: 'installing'`.
+4. **Iterate `components[]`.** For each, look up `projectors[component.type]` (§3). Missing
+   projector → that component's `status: 'error'` with a message naming the type; the parent
+   ends `status: 'error'` and the install returns 422 with the parent row — **the row is kept**
+   so the half-install is visible (COMMONLY_SCOPE §5 "partial failure visibility"), and a retry
+   is idempotent.
+5. Each projector returns `projectionIds`; the service writes them onto the component entry and
+   sets it `active`. When all components are active the parent is `active`.
+6. Response: `{ installation, integration }` — the page needs the Integration row (connect code)
+   immediately, exactly as it gets it from `POST /api/integrations` today.
+
+**The projection IS the Integration row.** No new projection table. Both components project
+onto the *same* `Integration` document, because the connector's runtime state (chat binding,
+relay flags, relayMap) is one record today and splitting it would invent a migration for no
+behaviour. `Integration.installationId` — already declared with a unique sparse index and
+written by nothing — becomes the back-pointer: `String(installation._id)`.
+
+**Uninstall — `DELETE /api/installables/:installableId/install`:** parent → `uninstalled`;
+each projector's `unproject` runs (Integration `isActive: false`, connect code cleared,
+relayMap kept for audit); nothing is deleted. Re-install mints a new Integration row — Vera's
+ruling on the design spec stands (the binding row is the unit; relayMap and gates are never
+reused).
+
+**The legacy `POST /api/integrations` stays.** It is the pod-scoped path (buffer / summary
+integrations, and the dormant D7 connector). Additive, not destructive: the Connectors page
+stops calling it for Telegram; nothing else changes.
+
+## 3. The dispatcher — two projectors, one registry
+
+`backend/services/installable/projectors/` — one file per component type, registered in an
+index the install service reads. Interface:
+
+```ts
+interface ComponentProjector {
+  type: ComponentType;
+  project(component: IComponent, ctx: ProjectionContext): Promise<Record<string, Types.ObjectId | string>>;
+  unproject(component: IComponent, ctx: ProjectionContext, projectionIds: Map<string, unknown>): Promise<void>;
+}
+// ctx = { installation, installable, installedBy, config }
+```
+
+**`webhook` projector (`internal` webhooks only in Phase 1).** For a builtin whose
+`webhookPath` is a route this server mounts, projection means: resolve the provider from the
+registry by path (`telegram`), and create-or-reuse the Integration row for this installation
+with the same server-owned defaults `POST /api/integrations` applies today — `mintConnectCode()`,
+`relayAllAgentMessages: true`, `liveRelay: true`, `linkedUserId = installedBy` (stamped after the
+default, the #1297 ordering), `createdBy = installedBy`, `installationId`. Returns
+`{ integrationId }`. **No new route table**: the route is already mounted; the projector
+records the binding, it does not register HTTP. A `webhookPath` the server does not mount is a
+projector error (that is the external-webhook case — ADR-006's, not this plan's).
+
+**`event-handler` projector.** `eventHandler: 'internal:<name>'` resolves against an
+in-process handler map (`backend/services/installable/eventHandlers.ts`), initially
+`{ 'telegram.relay': telegramBridgeService.relayAgentMessageToTelegram }`. Projection records
+`{ integrationId }` (shared with the webhook projector — same row) and marks the handler
+subscribed for this installation. **The dispatch replaces the hardcoded `require`** at
+`agentMessageService.ts:1787`: the message service calls
+`eventHandlers.dispatch('chat.message', payload)`; the dispatcher resolves active
+`event-handler` component installations for `chat.message` and invokes each handler with the
+same payload the bridge takes today (`{ podId, agentUsername, displayName, content,
+podMessageId }`), fire-and-forget, one `try/catch` per handler so one bridge cannot fail the
+post. **Behaviour pin:** for a pod with one live Telegram row, exactly one relay fires per post,
+with the same arguments as before. That is the test that proves invariant 6 landed without
+moving the product.
+
+Unknown `eventHandler` prefix (`agent:`, `webhook:`) → projector error in Phase 1. Those are
+the slash-command / external-webhook tracks; naming them here keeps the enum honest.
+
+**Reconciler.** A boot-time sweep (`installableReconciler.sweep()`), idempotent: for every
+`active` installation, every component's `projectionIds` must resolve to a live row; a missing
+row marks the component `stale` (never re-creates silently — a stale connector must not mint a
+code nobody asked for). For every `uninstalled` installation, projections must be inactive.
+Log a count line, the H3 pattern: the exit condition is the number reaching zero.
+
+## 4. Seeding
+
+`backend/scripts/seed-builtin-connectors.ts`, run from the same boot hook as
+`seed-native-agents.ts`. Upserts the manifest in §1 keyed on `installableId`, `$set`s display
+fields from the provider registry entry, `$setOnInsert`s stats. It does **not** create
+installations — a builtin app is available, not installed, until a user installs it. (This is
+where the seeder differs from the first-party agents, which are also auto-installed into the
+demo pod; a connector auto-installed for every user would mint connect codes nobody asked for.)
+
+## 5. Phasing — what changes now, what waits for D8's schema
+
+ADR-025 D8's three schema consequences are unbuilt (`Integration.scope` does not exist;
+`podId` is `required: true`; `findLiveIntegration(podId)` resolves from the pod and cannot see a
+row without one). This plan does not gate on them; it lands the install substrate first and
+makes D8's flip a projector change.
+
+**Phase 1 — install substrate (this plan).** Installation is user-scoped (`targetType: 'user'`,
+one per user). The projected Integration row keeps today's pod binding: the page's pod picker
+becomes the **first gate row**, and its pod is written to `Integration.podId` — the "active pod"
+of D12, honestly labelled as the single pod this connector relays until D8 fans out. Relay
+behaviour is byte-for-byte today's. The `Integration.podId` write on install is gated by
+`isPodMember(pod, installer)` — the #1297 write gate, reused.
+
+**Phase 2 — D8's schema (separate PR, after this lands).** `Integration.scope: 'user'`,
+`podId` optional under a conditional validator, `config.gates[podId]`, and the outbound lookup
+inverted to pod → members → each member's personal connector. The projectors do not change
+shape; only what they write does. The install verb's API does not change at all.
+
+Phase 1 is honest about D8 without pretending to have built it: the Installable declares
+`scope: 'user'` because that is what the product is, and the one place the schema still says
+"pod" is the gate row the user picked.
+
+## 6. The page
+
+`V2ConnectorsPage.tsx`, "Add a channel" (`createTelegram`, line ~131): the POST moves from
+`/api/integrations` to `/api/installables/telegram/install` with `{ podId }`. Everything
+downstream reads the same Integration row it reads today (`/api/integrations/user/all`), so
+the code step, the polling, the expired-code re-mint (#1297), the relay/mode toggles, and
+disconnect are unchanged — except **disconnect** calls the uninstall verb instead of
+`PATCH isActive: false`, so the parent row's lifecycle stays true.
+
+Card copy does not change. The design spec (rev 5, §2.1–2.4) already describes a personal
+connector card with pod gates beneath it; Phase 1 renders one gate row (the picked pod),
+Phase 2 renders them all.
+
+**Browse card (later, not this plan):** `V2MarketplacePage`'s Install button posts
+`agentName` to `/api/registry/install` for every kind — it must branch on `kind === 'app'`
+to the install verb above before any app is listed there. That branch is a one-line seam this
+plan leaves for the marketplace-unlock PR, and the `/browse` filter must admit `source:
+'builtin'` for the card to exist at all.
+
+## 7. Security carry-over (from #1297, none of it optional)
+
+- `linkedUserId` is stamped from the installer, after the relay default, never from the body.
+- Connect code is minted server-side (`mintConnectCode`); the body cannot supply one.
+- The chosen pod is gated by `isPodMember` (write predicate, no admin read-bypass).
+- The install and uninstall verbs sit behind the integrations write limiter's shared key.
+- The Installable row carries no secret; H3's credential reference is the only future home.
+- Enable-time refusal of a group bind, the string-`'true'` coercion, and the attempt limiter
+  are untouched — they live on the webhook route, which this plan does not edit.
+
+## 8. Acceptance — what Vera verifies
+
+Unit (`backend/__tests__/unit/services/installable/`):
+1. `install('telegram')` creates one parent row with two component entries, both `active`,
+   both pointing at the **same** `integrationId`; the Integration row has `installationId ===
+   String(parent._id)`, `linkedUserId === installer`, a 32-hex code with expiry, `liveRelay` and
+   `relayAllAgentMessages` true, `podId` = the gated pod.
+2. A second install by the same user returns the existing row (200), creates nothing.
+3. A manifest with an unknown component type yields parent `error`, the row kept, 422.
+4. `uninstall` sets parent `uninstalled`, Integration `isActive: false`, code fields unset,
+   relayMap preserved.
+5. Non-member of the chosen pod → 403, nothing written.
+6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
+   creates nothing.
+
+Service (`__tests__/service/`):
+7. **Behaviour pin.** An agent post into a pod with one live Telegram row triggers exactly one
+   `relayAgentMessageToTelegram` call via the dispatcher, with the same five fields the
+   hardcoded hook passed. Zero calls for a pod without one. A throwing handler does not fail
+   the post.
+8. `telegramBridgeService.attribution` and `telegram.webhook.*` suites pass unchanged — the
+   route is not edited.
+
+Frontend (`V2ConnectorsPage.test.tsx`):
+9. "Add a channel" posts to `/api/installables/telegram/install` with `{ podId }`.
+10. Disconnect calls the uninstall verb.
+
+Lint: `npm run lint:ts` 0 errors (the CI gate). New `.js` tests inherit the known-red corpus;
+do not add `global-require` inside test bodies (hoist, per #1297).
+
+## 9. Sequencing and sizes
+
+| Step | Depends on | Owner | Size |
+|---|---|---|---|
+| ADR-025 D17 amendment (the decision text + pointer here) | #1295 merged | Wren | S |
+| Projector interface + registry + install/uninstall verbs + seeder (§2–4) | #1297 merged (reuses its helpers) | Kai | M |
+| Event dispatcher replacing the hardcoded hook + behaviour pin (§3, test 7) | same PR or next | Kai | S |
+| Page: install verb + uninstall verb (§6) | verbs live | Kai | S |
+| Reconciler + tests 1–6 | projectors | Kai | S |
+| D8 schema flip (Phase 2) | all of the above | Kai, Wren for the gate UI | M |
+| Browse card + `kind` branch + builtin filter | marketplace unlock (a marketplace ruling) | — | S |
+
+Two PRs is the intended shape: (1) verbs + projectors + seeder + dispatcher + tests,
+(2) the page. The ADR amendment is its own docs PR.
+
+## 10. Not decided here (named so nothing inherits them silently)
+
+- Slash-command components for `/mode` `/status` `/mute` `/unmute` `/tldr` `/help` — the
+  handlers stay hardcoded in the webhook route until the slash-command track (paused, ADR-011)
+  reactivates. The command-handler group gate (#1287) is a route fix, independent of this.
+- Unifying `NativeAgentTrigger` and `event-handler` vocabularies — this plan reuses the
+  trigger name and stops there.
+- External webhooks (`webhook:https://…`) and `agent:` handlers — the ADR-006 path.
+- Whether `'skill'` should be added to `ComponentInstallation.componentType` (it is missing
+  from the enum, pre-existing) — note filed; not this PR.
+- The marketplace unlock and the Browse aisle — a marketplace ruling; the seam is left ready.
