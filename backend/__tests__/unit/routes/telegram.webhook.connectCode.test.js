@@ -19,6 +19,7 @@ jest.mock('../../../models/WebhookDelivery', () => ({
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
+const WebhookDelivery = require('../../../models/WebhookDelivery');
 const telegramService = require('../../../services/telegramService');
 const { resetEnableAttempts, ENABLE_ATTEMPT_LIMIT } = require('../../../services/telegramConnectCode');
 const telegramRoutes = require('../../../routes/webhooks/telegram');
@@ -46,7 +47,6 @@ describe('/commonly-enable hardening', () => {
     // the enable handler, not auth, so they run with the explicit dev override
     // and a stubbed delivery-claim store, same as telegram.webhook.test.js.
     process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED = 'true';
-    const WebhookDelivery = require('../../../models/WebhookDelivery');
     WebhookDelivery.create.mockResolvedValue({});
     WebhookDelivery.deleteOne.mockResolvedValue({});
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});

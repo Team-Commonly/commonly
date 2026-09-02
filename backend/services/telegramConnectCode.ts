@@ -35,9 +35,21 @@ export const isConnectCodeExpired = (
 // AND `autoscaling.backend.enabled: false` (values.yaml). Enabling backend
 // autoscaling silently makes the effective limit ENABLE_ATTEMPT_LIMIT × replicas
 // — move this window to Redis in the same change.
+// The key is attacker-supplied (any chat id), so the map is bounded: past
+// ENABLE_ATTEMPT_MAX_CHATS keys, every chat whose window has fully slid out is
+// evicted before a new key is added. A chat that attempts once and never
+// returns costs one slot for one window, not forever.
+export const ENABLE_ATTEMPT_MAX_CHATS = 10_000;
 const attempts = new Map<string, number[]>();
 
+const sweepIdleChats = (now: number): void => {
+  attempts.forEach((stamps, key) => {
+    if (!stamps.some((t) => now - t < ENABLE_ATTEMPT_WINDOW_MS)) attempts.delete(key);
+  });
+};
+
 export const registerEnableAttempt = (chatId: string, now: number = Date.now()): boolean => {
+  if (!attempts.has(chatId) && attempts.size >= ENABLE_ATTEMPT_MAX_CHATS) sweepIdleChats(now);
   const recent = (attempts.get(chatId) || []).filter((t) => now - t < ENABLE_ATTEMPT_WINDOW_MS);
   if (recent.length >= ENABLE_ATTEMPT_LIMIT) {
     attempts.set(chatId, recent);
@@ -54,6 +66,7 @@ module.exports = {
   CONNECT_CODE_TTL_MS,
   ENABLE_ATTEMPT_WINDOW_MS,
   ENABLE_ATTEMPT_LIMIT,
+  ENABLE_ATTEMPT_MAX_CHATS,
   mintConnectCode,
   isConnectCodeExpired,
   registerEnableAttempt,
