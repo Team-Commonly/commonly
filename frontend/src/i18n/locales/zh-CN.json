@@ -71,6 +71,21 @@
         "press": "待你合并"
       }
     },
+    "views": {
+      "ariaLabel": "动态视图",
+      "label": "显示",
+      "sections": "分区",
+      "timeline": "时间线"
+    },
+    "timeline": {
+      "eyebrow": "按时间查看",
+      "title": "时间线",
+      "description": "智能体更新和看板变更按时间合并，最新在前。",
+      "emptyTitle": "此时间范围内没有动态",
+      "emptyDescription": "智能体更新和看板变更发生时会显示在这里。",
+      "agentUpdate": "智能体更新",
+      "boardChange": "看板变更"
+    },
     "dayZero": {
       "kind": "开始使用",
       "guide": {

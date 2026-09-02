@@ -6,6 +6,7 @@ import V2Avatar from './V2Avatar';
 import { requestFirstRunGuide } from '../firstRunGuide';
 
 type ActivityWindow = 'today' | '7d';
+type ActivityView = 'sections' | 'timeline';
 
 interface ActivityUpdate {
   id: string;
@@ -53,6 +54,17 @@ interface BoardItem {
   lastUpdate: { text: string; author: string; createdAt: string | null } | null;
 }
 
+interface TimelineItem {
+  id: string;
+  kind: 'agent' | 'board';
+  title: string;
+  detail: string;
+  podId: string | null;
+  podName: string;
+  timestamp: string | null;
+  status?: BoardItem['status'];
+}
+
 interface ActivityRecap {
   pods: Array<{ id: string; name: string }>;
   needsYou: NeedsYouItem[];
@@ -75,6 +87,7 @@ const V2ActivityPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [window, setWindow] = useState<ActivityWindow>('today');
+  const [view, setView] = useState<ActivityView>('sections');
   const [podId, setPodId] = useState('all');
   const [recap, setRecap] = useState<ActivityRecap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -304,6 +317,35 @@ const V2ActivityPage: React.FC = () => {
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
+  // The timeline is a second projection of the existing recap facts. It
+  // deliberately adds no feed endpoint or event semantics: the sectioned
+  // view remains the default because it preserves the agent and board lens.
+  const timeline: TimelineItem[] = recap ? [
+    ...recap.agents.flatMap((agent) => agent.updates.map((update) => ({
+      id: `agent-${agent.id}-${update.id}`,
+      kind: 'agent' as const,
+      title: agent.name,
+      detail: update.content,
+      podId: update.podId,
+      podName: update.podName,
+      timestamp: update.timestamp,
+    }))),
+    ...recap.board.map((item) => ({
+      id: `board-${item.id}`,
+      kind: 'board' as const,
+      title: item.title,
+      detail: item.lastUpdate
+        ? `${item.lastUpdate.author ? `${item.lastUpdate.author}: ` : ''}${item.lastUpdate.text}`
+        : item.taskId,
+      podId: item.podId,
+      podName: item.podName,
+      timestamp: item.updatedAt,
+      status: item.status,
+    })),
+  ].sort((left, right) => (
+    new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
+  )) : [];
+
   return (
     <div className="v2-activity" aria-busy={loading}>
       <header className="v2-activity__header">
@@ -339,36 +381,6 @@ const V2ActivityPage: React.FC = () => {
       {!loading && error && <div className="v2-activity__error" role="alert">{error}</div>}
       {!loading && !error && recap && (
         <>
-          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
-            <div className="v2-activity__compose-heading">
-              <div>
-                <div className="v2-activity__eyebrow">{t('activity.compose.eyebrow')}</div>
-                <h2 id="activity-compose-title">{t('activity.compose.title')}</h2>
-              </div>
-              <label className="v2-activity__compose-pod">
-                <span>{t('activity.compose.podLabel')}</span>
-                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
-                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="v2-activity__compose-entry">
-              <textarea
-                aria-label={t('activity.compose.placeholder')}
-                rows={3}
-                placeholder={t('activity.compose.placeholder')}
-                value={composeDraft}
-                onChange={(event) => setComposeDraft(event.target.value)}
-                onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
-                disabled={composing || !composePodId}
-              />
-              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
-                {composing ? t('activity.compose.working') : t('activity.compose.send')}
-              </button>
-            </div>
-            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
-          </section>
-
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
@@ -544,6 +556,53 @@ const V2ActivityPage: React.FC = () => {
             {actionError && <div className="v2-activity__action-error" role="alert">{actionError}</div>}
           </section>
 
+          <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
+            <div className="v2-activity__compose-heading">
+              <div>
+                <div className="v2-activity__eyebrow">{t('activity.compose.eyebrow')}</div>
+                <h2 id="activity-compose-title">{t('activity.compose.title')}</h2>
+              </div>
+              <label className="v2-activity__compose-pod">
+                <span>{t('activity.compose.podLabel')}</span>
+                <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
+                  {(recap.pods || []).map((pod) => <option key={pod.id} value={pod.id}>{pod.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="v2-activity__compose-entry">
+              <textarea
+                aria-label={t('activity.compose.placeholder')}
+                rows={3}
+                placeholder={t('activity.compose.placeholder')}
+                value={composeDraft}
+                onChange={(event) => setComposeDraft(event.target.value)}
+                onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
+                disabled={composing || !composePodId}
+              />
+              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
+                {composing ? t('activity.compose.working') : t('activity.compose.send')}
+              </button>
+            </div>
+            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
+          </section>
+
+          <div className="v2-activity__view-switcher" role="group" aria-label={t('activity.views.ariaLabel')}>
+            <span>{t('activity.views.label')}</span>
+            {(['sections', 'timeline'] as ActivityView[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`v2-activity__view-button${view === value ? ' v2-activity__view-button--active' : ''}`}
+                onClick={() => setView(value)}
+                aria-pressed={view === value}
+              >
+                {t(`activity.views.${value}`)}
+              </button>
+            ))}
+          </div>
+
+          {view === 'sections' ? (
+          <div className="v2-activity__sectioned">
           <section className="v2-activity__section" aria-labelledby="activity-agents">
             <div className="v2-activity__section-heading">
               <div>
@@ -620,6 +679,46 @@ const V2ActivityPage: React.FC = () => {
               </div>
             )}
           </section>
+          </div>
+          ) : (
+          <section className="v2-activity__section v2-activity__timeline-section" aria-labelledby="activity-timeline">
+            <div className="v2-activity__section-heading">
+              <div>
+                <div className="v2-activity__eyebrow">{t('activity.timeline.eyebrow')}</div>
+                <h2 id="activity-timeline">{t('activity.timeline.title')}</h2>
+              </div>
+              <p>{t('activity.timeline.description')}</p>
+            </div>
+            {timeline.length === 0 ? (
+              <div className="v2-activity__empty">
+                <strong>{t('activity.timeline.emptyTitle')}</strong>
+                <span>{t('activity.timeline.emptyDescription')}</span>
+              </div>
+            ) : (
+              <ol className="v2-activity__timeline">
+                {timeline.map((item) => (
+                  <li key={item.id} className={`v2-activity__timeline-row v2-activity__timeline-row--${item.kind}`}>
+                    <span className="v2-activity__timeline-mark" aria-hidden="true" />
+                    <button type="button" onClick={() => openPod(item.podId)} disabled={!item.podId}>
+                      <span className="v2-activity__timeline-meta">
+                        {item.kind === 'board' && item.status && (
+                          <span className={`v2-activity__status v2-activity__status--${item.status}`}>
+                            {t(`activity.board.status.${item.status}`)}
+                          </span>
+                        )}
+                        <span>{item.kind === 'agent' ? t('activity.timeline.agentUpdate') : t('activity.timeline.boardChange')}</span>
+                        <span>{item.podName}</span>
+                        {item.timestamp && <span>{relativeTime(item.timestamp)}</span>}
+                      </span>
+                      <strong>{item.title}</strong>
+                      <span className="v2-activity__timeline-detail">{item.detail}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+          )}
           </div>
         </>
       )}

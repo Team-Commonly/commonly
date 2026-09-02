@@ -71,6 +71,21 @@
         "press": "Ready for your press"
       }
     },
+    "views": {
+      "ariaLabel": "Activity view",
+      "label": "Show",
+      "sections": "Sections",
+      "timeline": "Timeline"
+    },
+    "timeline": {
+      "eyebrow": "Chronological view",
+      "title": "Timeline",
+      "description": "Agent updates and board changes together, newest first.",
+      "emptyTitle": "No activity in this window",
+      "emptyDescription": "Agent updates and board changes will appear here as they happen.",
+      "agentUpdate": "Agent update",
+      "boardChange": "Board change"
+    },
     "dayZero": {
       "kind": "Get started",
       "guide": {

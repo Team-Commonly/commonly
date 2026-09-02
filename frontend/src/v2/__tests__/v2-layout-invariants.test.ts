@@ -490,6 +490,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
   });
 
+  test('Activity keeps attention first and uses a responsive sectioned evidence layout', () => {
+    // Needs-you remains a full-width first section. The lower evidence lenses
+    // earn two balanced desktop tracks, then collapse before a 390px capture
+    // can turn either agent recap or board change into a narrow side column.
+    const sectioned = ruleBody(v2, '.v2-activity__sectioned');
+    expect(sectioned).toContain('repeat(2, minmax(0, 1fr))');
+    expect(sectioned).toContain('align-items: start');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__sectioned \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+
+    // Timeline is an opt-in projection that stays in the same shrinkable
+    // column grammar as the sectioned surface; it cannot create page-wide
+    // horizontal scrolling from a long pod, task, or agent name.
+    const timelineRow = ruleBody(v2, '.v2-activity__timeline-row');
+    expect(timelineRow).toContain('14px minmax(0, 1fr)');
+    expect(timelineRow).toContain('min-width: 0');
+  });
+
   test('Activity queue actions distinguish an action from the thread handoff', () => {
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');

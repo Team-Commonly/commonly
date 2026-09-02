@@ -8372,8 +8372,62 @@ body.modern-ui.v2-canvas {
   margin-top: 30px;
 }
 
+/* The page's default is the scannable, sectioned surface: attention first,
+   then two independent evidence lenses. Timeline is an opt-in projection of
+   those same facts, not a competing feed or a second activity data source. */
+.v2-activity__view-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: -18px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-activity__view-button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-root button.v2-activity__view-button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-root button.v2-activity__view-button--active {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+}
+
+.v2-activity__sectioned {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 30px;
+}
+
+.v2-activity__sectioned .v2-activity__section-heading {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v2-activity__sectioned .v2-activity__section-heading > p {
+  text-align: left;
+}
+
 .v2-activity__compose {
-  margin-top: 22px;
+  margin-top: 0;
   padding: 16px;
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
@@ -8832,6 +8886,89 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
+.v2-activity__timeline {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  list-style: none;
+  overflow: hidden;
+}
+
+.v2-activity__timeline-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--v2-surface);
+}
+
+.v2-activity__timeline-row + .v2-activity__timeline-row {
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-activity__timeline-mark {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+}
+
+.v2-activity__timeline-row--board .v2-activity__timeline-mark {
+  background: var(--v2-text-muted);
+}
+
+.v2-root .v2-activity__timeline button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  color: var(--v2-text-primary);
+  text-align: left;
+}
+
+.v2-root .v2-activity__timeline button:hover:not(:disabled) strong {
+  color: var(--v2-accent-text);
+}
+
+.v2-activity__timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-activity__timeline-meta > span + span::before {
+  margin-right: 6px;
+  color: var(--v2-border-strong);
+  content: '·';
+}
+
+.v2-activity__timeline-meta .v2-activity__status + span::before {
+  content: none;
+}
+
+.v2-activity__timeline button strong,
+.v2-activity__timeline-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.v2-activity__timeline button strong {
+  font-size: 14px;
+}
+
+.v2-activity__timeline-detail {
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .v2-activity__footer {
   margin-top: 34px;
   color: var(--v2-text-muted);
@@ -8864,6 +9001,11 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-activity__compose button { width: 100%; }
   .v2-activity__section-heading > p { text-align: left; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
+  .v2-activity__sectioned { grid-template-columns: minmax(0, 1fr); }
+  .v2-activity__view-switcher {
+    justify-content: flex-start;
+    margin-top: -22px;
+  }
 
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__board-row { grid-template-columns: minmax(0, 1fr); }

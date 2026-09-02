@@ -100,7 +100,12 @@ describe('V2ActivityPage', () => {
     // findBy, not getBy: the header renders unconditionally, so awaiting it
     // proves nothing about data arrival — and the queue+recap Promise.all
     // adds a microtask hop the old single-request race happened to win.
-    expect(await screen.findByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
+    const needsYouHeading = await screen.findByRole('heading', { name: 'Needs you' });
+    expect(needsYouHeading).toBeInTheDocument();
+    // The human decision queue is the first activity surface; composing a
+    // new message must not bury an existing ask below another card.
+    const composeHeading = screen.getByRole('heading', { name: 'Tell your agents what is on your mind' });
+    expect(needsYouHeading.compareDocumentPosition(composeHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText('Review requested')).toBeInTheDocument();
     // A board press remains an Open-board action; DecisionRequest cards use
     // their declared options rather than deriving actions from task prose.
@@ -135,6 +140,37 @@ describe('V2ActivityPage', () => {
     // findAll: the window change reloads both requests and the rows remount.
     fireEvent.click((await screen.findAllByRole('button', { name: 'Open thread' }))[0]);
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+  });
+
+  test('keeps the sectioned evidence view as the default and projects the same facts into an opt-in timeline', async () => {
+    const timelineRecap = {
+      ...recap,
+      agents: [{
+        ...recap.agents[0],
+        updates: [{ ...recap.agents[0].updates[0], timestamp: '2026-08-26T10:00:00.000Z' }],
+      }],
+      board: [{ ...recap.board[0], updatedAt: '2026-08-26T11:00:00.000Z' }],
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === '/api/activity/decision-queue' ? decisionQueue : timelineRecap,
+    }));
+    renderPage();
+    await screen.findByText('Review requested');
+
+    expect(screen.getByRole('button', { name: 'Sections' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'What your agents did' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Board' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+    expect(screen.getByRole('button', { name: 'Timeline' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Timeline' })).toBeInTheDocument();
+    expect(screen.getByText('Agent update')).toBeInTheDocument();
+    expect(screen.getByText('Board change')).toBeInTheDocument();
+    expect(screen.getByText('Checks passed.')).toBeInTheDocument();
+    expect(screen.getByText('Activity tab')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'What your agents did' })).not.toBeInTheDocument();
+    const timelineText = screen.getByRole('list').textContent || '';
+    expect(timelineText.indexOf('Activity tab')).toBeLessThan(timelineText.indexOf('Checks passed.'));
   });
 
   test('acknowledges a mention explicitly instead of treating a feed read as acknowledgement', async () => {
