@@ -10,6 +10,8 @@ const Summary = require('../models/Summary');
 const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
+// eslint-disable-next-line global-require
+const DecisionRequest = require('../models/DecisionRequest');
 
 let PGMessage: unknown = null;
 try {
@@ -438,11 +440,9 @@ class ActivityService {
 
   /**
    * The decision queue: everything concretely waiting on THIS human, from
-   * facts that exist today (TASK-083 defect 1's fix): pending approval
-   * requests, unacknowledged direct mentions, and board rows that name a
-   * human decision — DECIDE-titled tasks, blocked tasks, and tasks whose
-   * latest update hands off to a human press/ruling. No inference, no
-   * name-matching heuristics (TASK-070b stays open by design).
+   * stored facts: existing approval requests, unacknowledged direct mentions,
+   * agent-authored DecisionRequests, and explicit board press handoffs.
+   * A board title is never parsed into a decision surface.
    */
   /**
    * Every message in the user's pods that @mentions them, threads included,
@@ -506,11 +506,17 @@ class ActivityService {
       podId: string | null;
       podName?: string;
       taskId?: string;
+      options?: Array<{ label: string; description?: string; recommended?: boolean }>;
+      messageId?: string;
+      threadRootId?: string;
       createdAt: Date | string | null;
     };
     const items: QueueItem[] = [];
+    let composePodId: string | null = null;
 
-    // 1. Pending approvals — the authoritative reader already exists.
+    // 1. Existing binary approvals stay on their established Activity path.
+    // DecisionRequest is additive; it does not widen or replace the
+    // owner-scoped ApprovalAction flow.
     try {
       const approvals = await ActivityService.getPendingApprovals(userId) as Array<{
         _id: { toString(): string }; content?: string; podId?: unknown; createdAt?: Date;
@@ -519,8 +525,7 @@ class ActivityService {
       for (const a of approvals) {
         items.push({
           kind: 'approval',
-          // RAW activity id — the act endpoints (/api/activity/:id/approve)
-          // key on it, so a prefixed id here would break the buttons.
+          // RAW Activity id — the existing Activity actions key on it.
           id: String(a._id),
           title: a.agentMetadata?.agentName ? `${a.agentMetadata.agentName} requests approval` : 'Approval requested',
           detail: String(a.content || '').slice(0, 160),
@@ -544,6 +549,9 @@ class ActivityService {
     try {
       const mentions = await ActivityService.getMentionsForUser(userId, podIds);
       for (const m of mentions) {
+        // The query is newest-first, so its first result is the closest
+        // factual default for "tell them what is on my mind".
+        if (!composePodId) composePodId = m.podId;
         items.push({
           kind: 'mention',
           id: m.id,
@@ -561,9 +569,47 @@ class ActivityService {
       console.warn('[decision-queue] mentions read failed:', (err as Error).message);
     }
 
-    // 3. Board facts. Concrete, not inferred: a DECIDE-titled open row IS a
-    // decision request; a blocked row is waiting on someone; a latest update
-    // that says "human press" / "Sam's ruling" is an explicit handoff.
+    // 3. Agent-authored DecisionRequest rows. The asking runtime supplied
+    // the title, question, and alternatives at the fork; this reader neither
+    // parses task prose nor reconstructs context from a board title.
+    try {
+      const decisions = await DecisionRequest.find({
+        podId: { $in: podIds },
+        status: 'pending',
+        messageId: { $exists: true, $ne: null },
+      }).sort({ createdAt: -1 }).limit(50).lean() as Array<{
+        _id: { toString(): string }; podId?: unknown; title?: string; question?: string;
+        context?: string; options?: Array<{ label?: string; description?: string; recommended?: boolean }>;
+        messageId?: string; threadRootId?: string; createdAt?: Date;
+      }>;
+      for (const decision of decisions) {
+        const options = (decision.options || [])
+          .filter((option) => option && typeof option.label === 'string')
+          .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
+          .map((option) => ({
+            label: String(option.label),
+            ...(option.description ? { description: String(option.description) } : {}),
+            ...(option.recommended ? { recommended: true } : {}),
+          }));
+        items.push({
+          kind: 'decision',
+          id: String(decision._id),
+          title: String(decision.title || 'Decision requested'),
+          detail: String(decision.question || decision.context || '').slice(0, 1000),
+          podId: decision.podId ? String(decision.podId) : null,
+          podName: decision.podId ? podName.get(String(decision.podId)) : undefined,
+          options,
+          messageId: decision.messageId,
+          threadRootId: decision.threadRootId || decision.messageId,
+          createdAt: decision.createdAt || null,
+        });
+      }
+    } catch (err) {
+      console.warn('[decision-queue] decision request read failed:', (err as Error).message);
+    }
+
+    // 4. Board handoffs still need an open-board affordance, but task prose
+    // is never an option source. DECIDE rows remain ordinary board rows.
     try {
       const HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
       // Freshness cutoff (Sam, 2026-09-01: "some of those activities seem
@@ -585,12 +631,11 @@ class ActivityService {
         const title = String(t.title || '');
         const updates = (t.updates as Array<{ text?: string; createdAt?: Date }> | undefined) || [];
         const last = updates[updates.length - 1];
-        const isDecide = /^DECIDE\b/i.test(title);
         const isBlocked = t.status === 'blocked';
         const isHandoff = !!(last && HANDOFF_RE.test(String(last.text || '')));
-        if (!isDecide && !isBlocked && !isHandoff) continue;
+        if (!isBlocked && !isHandoff) continue;
         items.push({
-          kind: isHandoff && !isDecide ? 'press' : 'decision',
+          kind: 'press',
           id: `task_${t.taskId}`,
           title,
           detail: last ? String(last.text || '').slice(0, 160) : undefined,
@@ -604,13 +649,11 @@ class ActivityService {
       console.warn('[decision-queue] board read failed:', (err as Error).message);
     }
 
-    // Attention order, then recency, then a hard cap. Approvals and presses
-    // are actionable in one click; mentions need a reply; standing decisions
-    // (incl. the old blocked backlog) come last — 32 undifferentiated rows
-    // is a wall, not a queue (#1306's live verify). The count still reports
-    // the full total so the cap is visible, not silent.
+    // Attention order, then recency, then a hard cap. The option card is the
+    // direct decision surface; existing approvals and board presses retain
+    // their prior precedence and mentions stay bounded below action rows.
     const KIND_PRIORITY: Record<string, number> = {
-      approval: 0, press: 1, mention: 2, decision: 3,
+      approval: 0, decision: 1, press: 2, mention: 3,
     };
     items.sort((a, b) => {
       const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
@@ -618,9 +661,9 @@ class ActivityService {
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
     // Per-kind soft cap. Live after #1464: 40+ thread mentions filled all
-    // 12 slots and the four standing decisions vanished below the cap —
-    // the opposite of "decision pending on me" being visible. Mentions
-    // take at most 8 of the 12; whatever is left goes to the other kinds
+    // 12 slots and direct decision cards vanished below the cap — the
+    // opposite of "decision pending on me" being visible. Mentions take at
+    // most 8 of the 12; whatever is left goes to the other kinds
     // in attention order. `count` still reports the full total.
     const MENTION_SLOTS = 8;
     const picked: QueueItem[] = [];
@@ -638,16 +681,20 @@ class ActivityService {
       if (picked.length >= 12) break;
       picked.push(it);
     }
-    // Restore attention order within the final page (approval, press,
-    // mention, decision), recency inside each kind — the loop above kept
-    // the sorted order for everything it picked, so a stable re-sort is
-    // enough.
+    // Restore attention order within the final page, recency inside each
+    // kind — the loop above kept the sorted order for everything it picked,
+    // so a stable re-sort is enough.
     picked.sort((a, b) => {
       const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
       if (kindDelta !== 0) return kindDelta;
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-    return { items: picked, count: items.length };
+    return {
+      items: picked,
+      count: items.length,
+      // No mention yet is not an error; the page falls back to its first pod.
+      composePodId,
+    };
   }
 
   static async getPodFeed(

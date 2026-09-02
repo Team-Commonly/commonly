@@ -115,6 +115,7 @@ const {
   describeCycleMutation,
 } = require('../services/agentMemoryService');
 const AgentAskService = require('../services/agentAskService');
+const DecisionRequestService = require('../services/decisionRequestService');
 const DMService = require('../services/dmService');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
@@ -3645,6 +3646,80 @@ router.post('/pods/:podId/ask', agentRuntimeAuth, phase4RateLimit, async (req: a
   } catch (err: any) {
     console.error('POST /pods/:podId/ask error:', err);
     return res.status(500).json({ message: 'Failed to ask agent' });
+  }
+});
+
+/**
+ * POST /decisions (agent runtime token auth)
+ *
+ * An agent asks a human member of its pod to choose between 2–4 declared
+ * approaches. This is advisory coordination only: it carries no executable
+ * action payload and therefore cannot substitute for an ApprovalAction.
+ */
+router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    // A human choice here is a normal chat ruling, not a consent grant. Keep
+    // this envelope deliberately closed so an agent cannot smuggle a typed
+    // action, scopes, or a credential reference through the friendlier
+    // decision surface. Privileged work must go through `propose-action`,
+    // whose owner/CAS gate is deliberately stronger.
+    const DECISION_REQUEST_FIELDS = new Set([
+      'podId', 'decisionClass', 'title', 'question', 'options', 'threadRootId', 'context',
+    ]);
+    const unsupportedFields = Object.keys(req.body || {})
+      .filter((field) => !DECISION_REQUEST_FIELDS.has(field));
+    if (unsupportedFields.length) {
+      return res.status(400).json({
+        message: `Unsupported decision request fields: ${unsupportedFields.join(', ')}.`
+          + ' Use propose-action for privileged side effects.',
+        code: 'unsupported_decision_fields',
+      });
+    }
+    const {
+      podId, decisionClass, title, question, options, threadRootId, context,
+    } = req.body || {};
+    if (typeof podId !== 'string' || !podId.trim()) {
+      return res.status(400).json({ message: 'podId is required', code: 'podId_required' });
+    }
+    const installation = resolveInstallationForPod(
+      req.agentInstallations,
+      req.agentInstallation,
+      podId,
+    );
+    if (!ensurePodMatch(req.agentInstallations || installation, podId, req.agentAuthorizedPodIds)) {
+      return res.status(403).json({ message: 'Agent token not authorized for this pod' });
+    }
+    if (!req.agentUser?._id || !installation?.agentName) {
+      return res.status(403).json({ message: 'Could not resolve agent identity' });
+    }
+    if (threadRootId !== undefined && typeof threadRootId !== 'string') {
+      return res.status(400).json({ message: 'threadRootId must be a string', code: 'invalid_threadRootId' });
+    }
+    if (context !== undefined && typeof context !== 'string') {
+      return res.status(400).json({ message: 'context must be a string', code: 'invalid_context' });
+    }
+
+    const result = await DecisionRequestService.requestDecision({
+      podId,
+      agentUserId: String(req.agentUser._id),
+      agentName: installation.agentName,
+      instanceId: installation.instanceId || 'default',
+      displayName: installation.displayName,
+      installationConfig: installation.config || null,
+      decisionClass,
+      title,
+      question,
+      options,
+      threadRootId,
+      context,
+    });
+    return res.status(201).json(result);
+  } catch (error: any) {
+    if (error instanceof DecisionRequestService.DecisionRequestError) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
+    console.error('POST /decisions error:', error);
+    return res.status(500).json({ message: 'Failed to request a decision' });
   }
 });
 

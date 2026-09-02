@@ -34,11 +34,15 @@ const decisionQueue = {
       podId: 'pod-1', podName: 'Launch pod', taskId: 'TASK-059', createdAt: '2026-08-26T10:00:00.000Z',
     },
     {
-      id: 'task_TASK-024', kind: 'decision', title: 'DECIDE: eslint scope', detail: 'filed',
-      podId: 'pod-1', podName: 'Launch pod', taskId: 'TASK-024', createdAt: '2026-08-26T09:00:00.000Z',
+      id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
+      podId: 'pod-1', podName: 'Launch pod', messageId: '700', threadRootId: '695', options: [
+        { label: 'Ship now', description: 'Release the bounded change.', recommended: true },
+        { label: 'Hold for review', description: 'Wait for a second pass.' },
+      ], createdAt: '2026-08-26T09:00:00.000Z',
     },
   ],
   count: 3,
+  composePodId: 'pod-1',
 };
 
 const recap = {
@@ -98,12 +102,15 @@ describe('V2ActivityPage', () => {
     // adds a microtask hop the old single-request race happened to win.
     expect(await screen.findByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
     expect(screen.getByText('Review requested')).toBeInTheDocument();
-    // TASK-083: board facts land in the queue — a human-press handoff and a
-    // DECIDE row, each with an Open board action.
+    // A board press remains an Open-board action; DecisionRequest cards use
+    // their declared options rather than deriving actions from task prose.
     expect(screen.getByText('Retention ledger')).toBeInTheDocument();
     expect(screen.getByText('Ready for your press')).toBeInTheDocument();
-    expect(screen.getByText('DECIDE: eslint scope')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Open board' })).toHaveLength(2);
+    expect(screen.getByText('Choose the eslint scope')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rule: Ship now' })).toBeInTheDocument();
+    expect(screen.getByText('Release the bounded change.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open board' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
     expect(screen.getByRole('heading', { name: 'What your agents did' })).toBeInTheDocument();
     expect(screen.getByText('release-agent')).toBeInTheDocument();
@@ -173,16 +180,22 @@ describe('V2ActivityPage', () => {
   });
 
   test('keeps an approval actionable and refreshes the fact after approval', async () => {
-    const approvalRecap = {
-      ...recap,
-      needsYou: [{
+    const approvalQueue = {
+      items: [{
         id: 'approval-1', kind: 'approval', title: 'Approval requested', detail: 'Deploy the change.',
-        podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
       }],
+      count: 1,
+      composePodId: 'pod-1',
     };
-    mockGet
-      .mockResolvedValueOnce({ data: approvalRecap })
-      .mockResolvedValue({ data: { ...approvalRecap, needsYou: [] } });
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? approvalQueue : { items: [], count: 0, composePodId: 'pod-1' } });
+      }
+      return Promise.resolve({ data: { ...recap, needsYou: [] } });
+    });
     mockPost.mockResolvedValue({ data: { success: true } });
     renderPage();
 
@@ -196,22 +209,78 @@ describe('V2ActivityPage', () => {
   });
 
   test('offers Reject as the approval secondary action', async () => {
-    const approvalRecap = {
-      ...recap,
-      needsYou: [{
+    const approvalQueue = {
+      items: [{
         id: 'approval-2', kind: 'approval', title: 'Approval requested', detail: 'Deploy the change.',
-        podId: 'pod-1', podName: 'Launch pod', timestamp: '2026-08-26T11:00:00.000Z',
+        podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
       }],
+      count: 1,
+      composePodId: 'pod-1',
     };
-    mockGet.mockResolvedValue({ data: approvalRecap });
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? approvalQueue : { ...recap, needsYou: [] } }));
     mockPost.mockResolvedValue({ data: { success: true } });
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Deny' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/activity/approval-2/reject',
       { notes: 'Rejected via Activity' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
+  });
+
+  test('posts a one-tap decision ruling and refreshes the factual queue', async () => {
+    let queueReads = 0;
+    mockGet.mockImplementation((url: string) => {
+      if (url === '/api/activity/decision-queue') {
+        queueReads += 1;
+        return Promise.resolve({ data: queueReads === 1 ? decisionQueue : { items: [], count: 0, composePodId: 'pod-1' } });
+      }
+      return Promise.resolve({ data: recap });
+    });
+    mockPost.mockResolvedValue({ data: { ok: true } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/activity/decisions/decision-024/choose',
+      { value: 'Ship now' },
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Rule: Ship now' })).not.toBeInTheDocument());
+  });
+
+  test('sends an Other ruling verbatim to the same DecisionRequest endpoint', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === '/api/activity/decision-queue' ? decisionQueue : recap,
+    }));
+    mockPost.mockResolvedValue({ data: { ok: true } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Other…' }));
+    const input = screen.getByRole('textbox', { name: 'Write your ruling…' });
+    fireEvent.change(input, { target: { value: 'Hold for customer evidence' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send ruling' }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/activity/decisions/decision-024/choose',
+      { value: 'Hold for customer evidence' },
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+  });
+
+  test('composes an ordinary pod message into the most recently addressed pod', async () => {
+    mockPost.mockResolvedValue({ data: { id: 123 } });
+    renderPage();
+
+    const composer = await screen.findByRole('textbox', { name: 'Write a message. Mention an agent to wake it…' });
+    fireEvent.change(composer, { target: { value: '@release-agent please check this' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/messages/pod-1',
+      { content: '@release-agent please check this' },
+      expect.objectContaining({ headers: expect.any(Object) }),
+    ));
+    expect(composer).toHaveValue('');
   });
 });

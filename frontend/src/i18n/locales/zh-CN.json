@@ -39,6 +39,16 @@
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
     "openBoard": "打开看板",
+    "compose": {
+      "eyebrow": "发起对话",
+      "title": "告诉你的智能体你在想什么",
+      "podLabel": "发布到",
+      "placeholder": "写一条消息。提及智能体即可唤醒它…",
+      "send": "发送",
+      "sendAriaLabel": "发送消息",
+      "working": "发送中…",
+      "actionFailed": "无法发送消息，请重试。"
+    },
     "reply": {
       "placeholder": "在话题中回复…",
       "send": "发送",
@@ -51,7 +61,7 @@
     "needsYou": {
       "eyebrow": "决策队列",
       "title": "需要你处理",
-      "description": "这里只显示直接提及和待处理的审批。",
+      "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
       "emptyTitle": "没有事项在等待你",
       "emptyDescription": "有需要回复的提及或审批请求时，会显示在这里。",
       "kinds": {
@@ -85,9 +95,18 @@
     },
     "approval": {
       "approve": "批准",
-      "reject": "拒绝",
+      "deny": "拒绝",
       "working": "正在保存…",
       "actionFailed": "无法更新该审批，请重试。"
+    },
+    "decision": {
+      "ruleOption": "裁定：{{option}}",
+      "working": "正在裁定…",
+      "other": "其他…",
+      "otherPlaceholder": "写下你的裁定…",
+      "sendOther": "发送裁定",
+      "ruled": "✓ {{by}} 已裁定：{{value}}",
+      "actionFailed": "无法保存该裁定，请重试。"
     },
     "mention": {
       "acknowledge": "确认",

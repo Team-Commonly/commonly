@@ -45,4 +45,26 @@ describe('activity route identity handling', () => {
       expect.objectContaining({ all: true }),
     );
   });
+
+  it('passes an exact human choice through the Activity route to DecisionRequest', async () => {
+    jest.doMock('../../../middleware/auth', () => (req, res, next) => {
+      req.userId = 'human-1';
+      next();
+    });
+    jest.doMock('../../../services/decisionRequestService', () => ({
+      chooseDecision: jest.fn(async () => ({ status: 200, body: { ok: true, decision: { id: 'decision-1' } } })),
+      DecisionRequestError: class DecisionRequestError extends Error {},
+    }));
+    const DecisionRequestService = require('../../../services/decisionRequestService');
+    const app = buildApp();
+
+    await request(app)
+      .post('/api/activity/decisions/decision-1/choose')
+      .send({ value: 'Ship now' })
+      .expect(200, { ok: true, decision: { id: 'decision-1' } });
+
+    expect(DecisionRequestService.chooseDecision).toHaveBeenCalledWith({
+      decisionId: 'decision-1', callerUserId: 'human-1', value: 'Ship now',
+    });
+  });
 });

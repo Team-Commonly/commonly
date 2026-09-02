@@ -8372,6 +8372,91 @@ body.modern-ui.v2-canvas {
   margin-top: 30px;
 }
 
+.v2-activity__compose {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+}
+
+.v2-activity__compose-heading,
+.v2-activity__compose-entry,
+.v2-activity__compose-pod {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.v2-activity__compose-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.v2-activity__compose h2 {
+  font-size: 17px;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.v2-activity__compose-pod {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v2-activity__compose-pod select {
+  min-height: 36px;
+  max-width: 220px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-weight: 500;
+}
+
+.v2-root .v2-activity__compose textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: vertical;
+  padding: 10px 11px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.v2-root .v2-activity__compose textarea:focus-visible,
+.v2-activity__compose-pod select:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 1px;
+}
+
+.v2-root .v2-activity__compose button {
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid var(--v2-accent);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.v2-root .v2-activity__compose button:hover:not(:disabled) {
+  border-color: var(--v2-accent-strong);
+  background: var(--v2-accent-strong);
+}
+
 .v2-activity__section-heading {
   display: flex;
   align-items: end;
@@ -8544,6 +8629,79 @@ body.modern-ui.v2-canvas {
   color: var(--v2-accent-text);
 }
 
+/* DecisionRequest alternatives are content, not row actions: a decision gets
+   its own full-width action line below the question. A neutral base prevents
+   an arbitrary non-recommended choice from inheriting the queue's primary
+   CTA treatment; the recommended choice is the only emphasized pill. */
+.v2-activity__queue-row--decision .v2-activity__queue-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option {
+  border: 1px solid var(--v2-border);
+  border-radius: 999px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-surface);
+}
+
+.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
+  border-style: dashed;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-activity__option-choice {
+  display: grid;
+  flex: 0 1 220px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.v2-activity__option-choice button {
+  width: 100%;
+  justify-content: center;
+}
+
+.v2-activity__option-description {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.v2-activity__decision-other {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  flex-basis: 100%;
+  gap: 8px;
+  align-items: end;
+}
+
+.v2-activity__decision-other textarea {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.v2-activity__decision-ruled {
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .v2-activity__action-error {
   margin-top: 10px;
   color: var(--v2-danger);
@@ -8700,6 +8858,10 @@ body.modern-ui.v2-canvas {
   .v2-activity__window { width: 100%; }
   .v2-root button.v2-activity__window-button { flex: 1 1 0; }
   .v2-activity__scope select { width: 100%; max-width: none; }
+  .v2-activity__compose-heading,
+  .v2-activity__compose-entry { align-items: stretch; flex-direction: column; }
+  .v2-activity__compose-pod select { max-width: none; width: 100%; }
+  .v2-root .v2-activity__compose button { width: 100%; }
   .v2-activity__section-heading > p { text-align: left; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
 
@@ -8710,6 +8872,11 @@ body.modern-ui.v2-canvas {
   .v2-activity__queue-actions { grid-column: 2; }
 
   .v2-activity__queue-actions { flex-wrap: wrap; }
+  /* Options are one-tap decisions. Keep their touch targets honest even
+     when a 390px viewport makes the pills wrap onto separate rows. */
+  .v2-root .v2-activity__queue-actions button { min-height: 44px; }
+  .v2-activity__option-choice { flex-basis: min(100%, 220px); }
+  .v2-activity__decision-other { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__board-meta {
     grid-column: 1;
@@ -8756,6 +8923,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-team__title,
 .v2-root:lang(zh) .v2-activity__title,
+.v2-root:lang(zh) .v2-activity__compose h2,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
 .v2-root:lang(zh) .v2-activity__board-row h3,

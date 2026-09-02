@@ -30,7 +30,8 @@ describe('tool registry shape', () => {
     // + 1 orientation tool (commonly_get_started) so a BYO agent connecting
     //   from outside has a model of the place before it acts.
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
-    expect(tools).toHaveLength(27);
+    // + 1 agent-originated decision request (TASK-095 rev 2).
+    expect(tools).toHaveLength(28);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -145,6 +146,44 @@ describe('commonly_get_context', () => {
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://x.example/api/agents/runtime/pods/POD/context');
     expect(init.method).toBe('GET');
+  });
+});
+
+describe('commonly_request_decision', () => {
+  it('POSTs the declared alternatives to the CAP decision route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ decisionId: 'd1', status: 'pending' }));
+    const result = await byName.commonly_request_decision.call({
+      podId: 'POD', decisionClass: 'implementation', title: 'Choose a release', question: 'Which train?',
+      options: [
+        { label: 'Canary', description: 'Small rollout first.', recommended: true },
+        { label: 'Fast lane', description: 'Ship on green.' },
+      ],
+      threadRootId: '88', context: 'Tests are green.',
+    });
+    expect(result.isError).toBeUndefined();
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/decisions');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      podId: 'POD', decisionClass: 'implementation', title: 'Choose a release', question: 'Which train?',
+      options: [
+        { label: 'Canary', description: 'Small rollout first.', recommended: true },
+        { label: 'Fast lane', description: 'Ship on green.' },
+      ],
+      threadRootId: '88', context: 'Tests are green.',
+    });
+  });
+
+  it('teaches when this tool is appropriate and keeps executable consent out of it', () => {
+    const tool = byName.commonly_request_decision;
+    expect(tool.inputSchema.properties.options).toMatchObject({ minItems: 2, maxItems: 4 });
+    expect(tool.inputSchema.properties.decisionClass).toMatchObject({
+      enum: ['strategy', 'implementation', 'prioritization'],
+    });
+    expect(tool.description).toContain('genuine fork');
+    expect(tool.description).toContain('not for status updates');
+    expect(tool.description).toMatch(/never approval|not approval/i);
+    expect(tool.description).toContain('never encode an executable');
   });
 });
 
