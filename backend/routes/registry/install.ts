@@ -418,20 +418,54 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
       ...AUTO_GRANTED_INTEGRATION_SCOPES,
     ]));
 
-    // Task #62 (round 2): prefer the curated User.botMetadata.displayName
-    // for the SAME agentName + instanceId over the registry-default
-    // (`agent.displayName` e.g. "Cuz 🦞" / "Codex"). PR #408 fixed this
-    // seam on the intro-post path; this is the install-path equivalent.
-    // Without this, installing an existing agent identity (e.g. openclaw:nova)
-    // into a NEW pod writes "Cuz 🦞" to both AgentInstallation.displayName
-    // AND AgentProfile.name — and the V2 member list reads AgentProfile FIRST,
-    // so users see "Cuz" on every member row even though the underlying
-    // identity has the right name. Order: explicit caller intent > existing
-    // identity > registry default. Resolve the existing identity through the
-    // same leak guard every display surface uses: historical rows may contain
-    // a runtime-shaped displayName such as "openclaw (nova)", which must not
-    // become a higher-precedence installation or profile label.
+    // TASK-032, ruled 2026-09-02: AgentInstallation is canonical for a
+    // display name. `User.botMetadata.displayName` is a SEED for an
+    // installation that has none — never a preference over one that does.
+    //
+    // Precedence: explicit caller intent > this pod's existing installation
+    // > the curated identity on the User row > registry default
+    // (`agent.displayName` e.g. "Cuz 🦞" / "Codex").
+    //
+    // The installation term is the new one and it is what the ruling adds.
+    // Without it a re-install re-seeded the per-pod label from the shared
+    // User row, so a name curated for THIS pod silently reverted — while
+    // the read paths (agentMessageService, dmService) already preferred the
+    // installation precisely to stop a sibling pod's name leaking through.
+    //
+    // Task #62 / PR #408 is NOT reinstated by this reordering: the User-row
+    // seed still beats the registry default, so installing an existing
+    // identity (e.g. openclaw:nova) into a NEW pod — where there is no
+    // installation yet — still writes "Aria" rather than "Cuz 🦞" to both
+    // AgentInstallation.displayName and AgentProfile.name. What changes is
+    // only the case where BOTH are curated, and there the per-pod value wins.
+    // The seed is still read through the same leak guard every display
+    // surface uses: historical rows may contain a runtime-shaped displayName
+    // such as "openclaw (nova)", which must not become a higher-precedence
+    // installation or profile label.
     let effectiveDisplayName: string = displayName || '';
+    if (!effectiveDisplayName) {
+      try {
+        const existingInstallation = await AgentInstallation.findOne({
+          agentName: agent.agentName,
+          podId,
+          instanceId: normalizedInstanceId,
+        }).select('displayName').lean() as { displayName?: string } | null;
+        if (existingInstallation?.displayName) {
+          effectiveDisplayName = existingInstallation.displayName;
+        }
+      } catch (lookupErr) {
+        // Non-fatal — fall through to the User-row seed below. Logged with
+        // the agent identity so an operator chasing "the name reverted on
+        // re-install" can correlate the attempt, in the CodeQL-safe shape
+        // used by the sibling handlers (identifiers as arguments, not in
+        // the format-string slot).
+        console.warn('[install] installation displayName lookup failed', {
+          agent: agent.agentName,
+          instance: normalizedInstanceId,
+          error: (lookupErr as Error).message,
+        });
+      }
+    }
     if (!effectiveDisplayName) {
       try {
         const existingAgentUser = await User.findOne({
@@ -609,31 +643,17 @@ installRouter.post('/install', installRateLimit, auth, async (req: any, res: any
         // getOrCreateAgentUser. If we pass the AgentRegistry default
         // ("Cuz 🦞" / "Codex"), the User row's curated per-instance
         // displayName ("Aria") gets clobbered or sticky-dedup-suffixed
-        // to "Cuz 🦞 (Aria)". Resolve the intro display label by
-        // preferring the live agent identity (User.botMetadata.displayName)
-        // first, so we never overwrite a curated label with a registry default.
-        let displayName: string;
-        try {
-          const existingBot = await User.findOne({
-            isBot: true,
-            'botMetadata.agentName': agent.agentName,
-            'botMetadata.instanceId': normalizedInstanceId,
-          }).select('botMetadata').lean() as { botMetadata?: { displayName?: string } } | null;
-          displayName = existingBot?.botMetadata?.displayName
-            || installation.displayName
-            || agent.displayName;
-        } catch (lookupErr: unknown) {
-          // Fall back to the legacy chain if the identity lookup blew up —
-          // don't take down the intro flow on a transient mongo hiccup.
-          // Log with agent identity for operator correlation.
-          // Same CodeQL-safe shape as the install-path log above.
-          console.warn('[install] intro displayName lookup failed', {
-            agent: agent.agentName,
-            instance: normalizedInstanceId,
-            error: (lookupErr as Error).message,
-          });
-          displayName = installation.displayName || agent.displayName;
-        }
+        // to "Cuz 🦞 (Aria)".
+        //
+        // This used to re-query User.botMetadata and prefer it. Under
+        // TASK-032's ruling the installation is canonical, and
+        // `installation.displayName` was resolved a few lines above through
+        // the full precedence chain (explicit > installation > User-row seed
+        // > registry default) — so it already carries the curated label and
+        // the second lookup could only disagree with the row we just wrote.
+        // Reading it here keeps the intro post and the member list on one
+        // source of truth, and drops a per-install User query.
+        const displayName: string = installation.displayName || agent.displayName;
         const blurb = (agent.description || '').trim().replace(/\s+/g, ' ');
         // Skip the blurb when it just repeats the name (the publish step in
         // older CLI versions seeded description from displayName, producing
