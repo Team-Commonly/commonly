@@ -311,6 +311,53 @@ describe('AgentEventService', () => {
     expect(page.events.map((event) => event.podId)).toEqual(['pod-a', 'pod-a']);
   });
 
+  test('listInboxPage leaves a malformed no-pod head pending instead of widening into a mixed-pod batch', async () => {
+    const query = (rows) => ({
+      sort: () => ({
+        limit: () => ({
+          select: () => ({ lean: jest.fn().mockResolvedValue(rows) }),
+        }),
+      }),
+    });
+    AgentEvent.find.mockReturnValue(query([{ _id: 'missing-pod', podId: null }]));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
+    });
+
+    expect(page).toEqual({ events: [], inboxCount: 0 });
+    expect(AgentEvent.find).toHaveBeenCalledTimes(1);
+    expect(AgentEvent.countDocuments).not.toHaveBeenCalled();
+    expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Inbox head has no podId'),
+      expect.objectContaining({ eventId: 'missing-pod' }),
+    );
+    warn.mockRestore();
+  });
+
+  test('listInboxPage preserves its pre-claim count when a sibling wins every candidate', async () => {
+    const query = (rows) => ({
+      sort: () => ({
+        limit: () => ({
+          select: () => ({ lean: jest.fn().mockResolvedValue(rows) }),
+        }),
+      }),
+    });
+    AgentEvent.find
+      .mockReturnValueOnce(query([{ _id: 'head', podId: 'pod-a' }]))
+      .mockReturnValueOnce(query([]));
+    AgentEvent.countDocuments.mockResolvedValue(3);
+
+    const page = await AgentEventService.listInboxPage({
+      agentName: 'inbox', instanceId: 'default', podIds: ['pod-a', 'pod-b'], limit: 10,
+    });
+
+    expect(page).toEqual({ events: [], inboxCount: 3 });
+    expect(AgentEvent.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   test('legacy list preserves its cross-pod replay contract', async () => {
     const AgentMemory = require('../../../models/AgentMemory');
     const query = (rows) => ({

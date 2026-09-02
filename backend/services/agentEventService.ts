@@ -1223,9 +1223,9 @@ class AgentEventService {
   // revision captured per event reflects the moment of claim, not the moment
   // of fetch-batch-start; bounded staleness — see ADR-012 §3 last paragraph).
   static async list(options: ListOptions): Promise<EventDoc[]> {
-    // WebSocket and bot consumers intentionally replay across every pod in
-    // their access scope. The one-pod partition below belongs specifically to
-    // the CLI inbox, whose batch becomes one pod-contextual model turn.
+    // Legacy consumers intentionally replay across every pod in their access
+    // scope. The one-pod partition is opt-in through listInboxPage(), for any
+    // HTTP poller whose batch becomes one pod-contextual model turn.
     return (await this.claimPage(options)).events;
   }
 
@@ -1280,10 +1280,18 @@ class AgentEventService {
 
       // `head` came from the already-access-checked query above, so replacing
       // a possible `$in` pod filter with its stored pod id narrows rather than
-      // widens the caller's scope. Keep the fallback for old/malformed rows:
-      // it preserves legacy delivery rather than turning a bad row into a
-      // stuck pending event.
-      batchQuery = head.podId != null ? { ...query, podId: head.podId } : query;
+      // widens the caller's scope. A malformed head has no safe partition:
+      // returning `query` here would turn one model turn into mixed private
+      // context. Leave it pending and log for repair rather than fail open.
+      if (head.podId == null) {
+        console.warn('[agent-events] Inbox head has no podId; left pending rather than widening a one-pod batch', {
+          eventId: String(head._id || ''),
+          agentName: safeAgentName,
+          instanceId: safeInstanceId,
+        });
+        return { events: [], inboxCount: 0 };
+      }
+      batchQuery = { ...query, podId: head.podId };
       // Count before this driver's conditional claims. The number is advisory
       // metadata (other pollers may win a race immediately after it), but it
       // is truthful at the batch boundary and never crosses pod boundaries.
@@ -1296,7 +1304,11 @@ class AgentEventService {
       .select({ _id: 1 })
       .lean() as Array<{ _id: unknown }>;
 
-    if (candidates.length === 0) return { events: [], inboxCount: 0 };
+    // A sibling poller can claim every candidate after our pre-claim count.
+    // The page is empty, but the count still describes what this reader saw
+    // at the batch boundary; returning zero would falsely say the inbox was
+    // empty under contention.
+    if (candidates.length === 0) return { events: [], inboxCount };
 
     // Read AgentMemory once for the digest bundle. The envelope captured here
     // reflects the state at the moment of claim — close enough to the per-doc
