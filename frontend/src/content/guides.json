@@ -8202,6 +8202,10 @@
       {
         "label": "AI agent blockers",
         "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI agent resume conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -11031,6 +11035,10 @@
       {
         "label": "AI agent follow-on work",
         "path": "/guides/ai-agent-follow-on-work/"
+      },
+      {
+        "label": "AI agent resume conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
       }],
     "cta": {
       "title": "Make restraint a reviewable contribution",
@@ -13870,6 +13878,10 @@
       {
         "label": "AI agent status updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent resume conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
       }],
     "cta": {
       "title": "Make the missing answer easy to supply",
@@ -14571,6 +14583,10 @@
       {
         "label": "AI agent verification path",
         "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI agent resume conditions",
+        "path": "/guides/ai-agent-resume-conditions/"
       }],
     "cta": {
       "title": "Report the change that lets work continue",
@@ -16694,6 +16710,696 @@
     "cta": {
       "title": "Make every consequential claim checkable",
       "body": "An AI agent verification path turns “trust the update” into “follow this record.” State the claim narrowly, link the artifact and evidence, name the decision and source of record when they matter, and say what remains unverified. That lets a reviewer confirm the work without confusing coordination history, preparation, or approval with the external system’s actual state.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-resume-conditions": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Resume Conditions: Restart Work Safely | Commonly",
+    "title": "AI Agent Resume Conditions: Restart Work When the Required State Changes",
+    "description": "Learn how to define AI agent resume conditions: the specific evidence, decision, dependency, or source-of-record change that lets blocked or paused work safely continue.",
+    "summary": "AI agent resume conditions are the specific, checkable facts that make previously blocked or paused work eligible to continue. They identify what changed, where that change can be verified, who can act next, and which bounded step may restart. A useful condition is not “try again later.” It is “resume after the named owner records a source ruling,” “resume when dependency X reaches its required state,” or “resume after the target system shows the requested access is available.”",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent resume conditions are the specific, checkable facts that make previously blocked or paused work eligible to continue. They identify what changed, where that change can be verified, who can act next, and which bounded step may restart. A useful condition is not “try again later.” It is “resume after the named owner records a source ruling,” “resume when dependency X reaches its required state,” or “resume after the target system shows the requested access is available.”",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams places to record that coordination: tasks carry a status, owner, dependency, activity, and result; focused threads hold questions and decisions; attachments preserve substantial evidence; and selected shared memory can retain sourced durable context. Those records can show that a team has cleared a condition. They do not grant a new permission, prove an external action, or replace the target system that owns an external fact.",
+      "Resume conditions make waiting productive. Instead of repeatedly probing the same unavailable source or drifting into adjacent work, an agent can state the missing prerequisite, record the evidence that will resolve it, and stop until the condition changes. When it does, the next owner can restart only the task’s agreed next step and preserve its original scope, review point, and authority boundary.",
+      "This guide explains how to write AI agent resume conditions, distinguish them from blockers and no-ops, and restart work without converting a changed condition into an implied authorization."
+    ],
+    "sections": [
+      {
+        "title": "A resume condition is a checkable change, not a promise to continue",
+        "paragraphs": [
+          "A task may wait because it lacks a decision, source, dependency state, review answer, or target-system fact. The resume condition names the exact change that matters. It should be observable enough that the next owner can tell the difference between “the task may resume” and “the task is still waiting.”"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Resume condition",
+              "What may restart"
+            ],
+            "rows": [
+              [
+                "Conflicting sources govern a task",
+                "The named policy owner records which source governs the question",
+                "The bounded analysis using that source"
+              ],
+              [
+                "A dependency is unfinished",
+                "The linked task reaches the stated required result",
+                "The dependent task’s next agreed step"
+              ],
+              [
+                "A reviewer needs changes",
+                "The revised artifact addresses the named comments and is ready for the reviewer",
+                "The specified review, not all downstream work"
+              ],
+              [
+                "Required access is unavailable",
+                "The target system or authorized owner confirms the needed access state",
+                "The permitted operation that requires that access"
+              ],
+              [
+                "Evidence is incomplete",
+                "The named source, observation, or check is attached and labeled",
+                "The recommendation or decision packet that depends on it"
+              ],
+              [
+                "A task was deliberately deferred",
+                "The recorded review date or decision trigger occurs",
+                "Reconsideration by the designated owner"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "“The agent has time now” and “someone replied” are usually not resume conditions.",
+        "paragraphs": [
+          "“The agent has time now” and “someone replied” are usually not resume conditions. They may be useful context, but they do not say whether the prerequisite changed or whether the task’s boundary remains valid.",
+          "For the record of a missing prerequisite and its effect on active work, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Separate a blocker, a no-op, and a resume condition",
+        "paragraphs": [
+          "These outcomes work together but are not interchangeable. A blocker describes why currently eligible work cannot proceed. A no-op records that no eligible contribution is needed now. A resume condition identifies the fact that would change the first two outcomes for a particular task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Result",
+              "What it says now",
+              "What it needs next"
+            ],
+            "rows": [
+              [
+                "Blocker",
+                "A required prerequisite is missing, unavailable, or unresolved",
+                "A named owner, source, decision, or dependency must change state"
+              ],
+              [
+                "No-op",
+                "No bounded, eligible contribution should be made now",
+                "A material condition would have to create eligible work"
+              ],
+              [
+                "Resume condition",
+                "A particular change will make a bounded next step eligible",
+                "The referenced change must be recorded or verified"
+              ],
+              [
+                "Escalation",
+                "The task needs an owner or authority outside the current role",
+                "The right decision-maker must answer a focused question"
+              ],
+              [
+                "Follow-on task",
+                "A distinct possible contribution belongs outside the active task",
+                "An owner must decide whether it enters the plan"
+              ],
+              [
+                "Status update",
+                "A material state changed and the next action is visible",
+                "The update should link the relevant record, not substitute for it"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An agent should not call a task blocked merely because it has nothing useful to do, or no-op merely because a blocker is uncomfortable to name.",
+        "paragraphs": [
+          "An agent should not call a task blocked merely because it has nothing useful to do, or no-op merely because a blocker is uncomfortable to name. The distinction helps the team know whether to wait, decide, supply evidence, or stop.",
+          "For the deliberate quiet result when no eligible work exists, see AI Agent No-Op.",
+          "When the missing condition is an answer only an owner outside the current role can provide, frame that answer as a focused escalation rather than repeatedly attempting the work. See AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          },
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Write the condition in terms of the required state",
+        "paragraphs": [
+          "A resume condition should describe the required state, its source of truth, and the specific work that becomes eligible. This makes it possible for a different agent or person to check readiness without inferring it from a long conversation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Weak wording",
+              "Checkable resume condition",
+              "Why it is stronger"
+            ],
+            "rows": [
+              [
+                "“Wait for approval.”",
+                "“Resume after the release owner records accept, request changes, narrow, reject, or route for the named artifact.”",
+                "It names the owner, answer, and artifact"
+              ],
+              [
+                "“Try when data arrives.”",
+                "“Resume after the attached source set includes the named reporting period and its provenance is recorded.”",
+                "It identifies the evidence needed"
+              ],
+              [
+                "“Blocked by another team.”",
+                "“Resume when the linked dependency records the required interface decision or is explicitly declined.”",
+                "It creates a visible dependency boundary"
+              ],
+              [
+                "“Come back next week.”",
+                "“Reassess on the recorded date only if the stated review trigger applies.”",
+                "It avoids unbounded polling"
+              ],
+              [
+                "“Need access.”",
+                "“Resume the permitted lookup after the target system confirms the requested role’s access state.”",
+                "It avoids treating a chat promise as permission"
+              ],
+              [
+                "“Need more context.”",
+                "“Resume after the named task owner supplies the missing input or narrows the outcome.”",
+                "It turns vague context into an answerable request"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The condition should not claim the desired final result.",
+        "paragraphs": [
+          "The condition should not claim the desired final result. “Resume after deployment is verified” is different from “deployment is complete.” The first names what work can begin; the second needs evidence from the deployment system.",
+          "For choosing the record that is authoritative for each fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Link the condition to the task that is waiting",
+        "paragraphs": [
+          "The task record should make the connection visible: what is blocked or paused, what prerequisite matters, what source will show the change, and what the owner should do next. A detached message such as “all clear” is too easy to lose, misapply, or mistake for a broad instruction."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Task field or record",
+              "Include",
+              "Avoid"
+            ],
+            "rows": [
+              [
+                "Current state",
+                "Whether the task is blocked, paused by decision, or otherwise not eligible",
+                "Marking work complete because it cannot proceed"
+              ],
+              [
+                "Blocker note",
+                "Missing prerequisite, effect on the task, and known owner",
+                "A generic “waiting” label without a reason"
+              ],
+              [
+                "Dependency",
+                "Linked task or required external state, plus the required result",
+                "Assuming that the dependency’s existence means it is satisfied"
+              ],
+              [
+                "Resume condition",
+                "Precise fact that changes eligibility and where to verify it",
+                "“Resume when ready” or another subjective signal"
+              ],
+              [
+                "Next contribution",
+                "First bounded step after the condition is met",
+                "Restarting every previously proposed activity at once"
+              ],
+              [
+                "Update or result",
+                "Evidence that the condition was checked and what happened",
+                "A confidence-only claim that the issue is resolved"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task remains the coordination record, not the proof of every external event.",
+        "paragraphs": [
+          "The task remains the coordination record, not the proof of every external event. If its condition points to a repository, delivery service, identity system, or other target system, the task should link that source rather than restate it as proven.",
+          "For task state, ownership, dependencies, and result coordination, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Preserve the original work contract when work resumes",
+        "paragraphs": [
+          "Changed conditions can make the next task step eligible; they do not automatically enlarge its outcome, inputs, operations, owner, or acceptance standard. If the new evidence or decision requires a different contribution, record a scoped change or create a separate follow-on task instead of silently restarting with a broader mandate."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Condition changed",
+              "Resume within the existing contract when",
+              "Change or split the contract when"
+            ],
+            "rows": [
+              [
+                "A source ruling arrives",
+                "The ruling resolves the original question using the approved source boundary",
+                "It introduces a new audience, policy question, or evidence set"
+              ],
+              [
+                "A dependency completes",
+                "The completed result meets the prerequisite named by the task",
+                "The result changes the intended outcome or creates new operations"
+              ],
+              [
+                "A reviewer replies",
+                "The answer requests revisions already inside the acceptance criteria",
+                "The answer asks for a different artifact, owner, or decision path"
+              ],
+              [
+                "Access becomes available",
+                "The task already permits the specific lookup or preparation step",
+                "The requested operation would create a new external side effect"
+              ],
+              [
+                "A blocker is clarified",
+                "The clarification lets the stated next step continue",
+                "The clarification reveals a separate project or unresolved policy issue"
+              ],
+              [
+                "A review date arrives",
+                "The task only needs the planned reconsideration",
+                "New evidence requires a new decision before work continues"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The restart should be legible to a reviewer: “the source ruling met condition A, so the research role is preparing the originally requested comparison.”",
+        "paragraphs": [
+          "The restart should be legible to a reviewer: “the source ruling met condition A, so the research role is preparing the originally requested comparison.” It should not read as “the source ruling lets us now change the system.”",
+          "For the task-level boundary that defines outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Verify the condition before changing the task state",
+        "paragraphs": [
+          "Before resuming, inspect the record named by the condition. A message that says a dependency is finished may be useful, but the linked task, decision, artifact, or target system may show a narrower result, a remaining limitation, or a later revision. Verification prevents stale context from reopening work prematurely."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Condition type",
+              "Verify",
+              "Record after checking"
+            ],
+            "rows": [
+              [
+                "Owner decision",
+                "Named answer, artifact considered, scope boundary, and decision owner",
+                "What the answer permits next and what remains outside scope"
+              ],
+              [
+                "Dependency",
+                "Linked task’s required state, result, and unresolved limitations",
+                "Whether the dependent step is now eligible"
+              ],
+              [
+                "Evidence arrival",
+                "Exact source, provenance, date or version, and relevance to the claim",
+                "Which question the evidence now supports or still leaves open"
+              ],
+              [
+                "Review revision",
+                "Exact artifact version and whether named review comments are addressed",
+                "Whether it returns to review or needs a new decision"
+              ],
+              [
+                "Target-system fact",
+                "The system-native record for the claimed state",
+                "The verified state, not a paraphrase of it"
+              ],
+              [
+                "Timed reconsideration",
+                "Recorded date plus the condition that made review worthwhile",
+                "Whether to resume, defer again, no-op, or escalate"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the condition is only partly satisfied, record that honestly.",
+        "paragraphs": [
+          "If the condition is only partly satisfied, record that honestly. The right result may be a narrower resumed step, a continuing blocker, or a new decision question rather than a clean transition back to active work.",
+          "For criteria that make an artifact or result ready for the next review, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Make the restart visible to the next owner",
+        "paragraphs": [
+          "Once the condition is met, record the transition, evidence, and next bounded action where the next person can use them. That update should be concise enough to scan and specific enough to prevent the team from re-litigating the same condition or repeating an already completed check."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Restart record",
+              "State",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Condition met",
+                "The exact fact and source that changed",
+                "“The policy owner selected source B in the linked decision.”"
+              ],
+              [
+                "Scope preserved",
+                "The original outcome and any continuing non-goals",
+                "“The task remains a comparison brief; implementation is out of scope.”"
+              ],
+              [
+                "Next action",
+                "The single eligible contribution and its owner",
+                "“Research prepares the comparison packet for editorial review.”"
+              ],
+              [
+                "Remaining limits",
+                "What is still unverified, unavailable, or awaiting a later owner",
+                "“No claim about production behavior is supported by this review.”"
+              ],
+              [
+                "Review point",
+                "Who will assess the resumed artifact and against what condition",
+                "“Editorial owner reviews the brief against the named acceptance criteria.”"
+              ],
+              [
+                "New blocker",
+                "Any prerequisite discovered during verification",
+                "“Target-system confirmation remains a separate blocker for release work.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Avoid announcing “unblocked” without the reason.",
+        "paragraphs": [
+          "Avoid announcing “unblocked” without the reason. An update that includes the condition, source, and next action is more useful than a celebration because another owner can verify why the task became eligible.",
+          "For material updates that report a changed state without creating authority, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Use resume conditions across different kinds of work",
+        "paragraphs": [
+          "The pattern applies across roles, but each role needs a condition matched to its contribution and source of truth. Reusing an engineering-style “green check” for research or a review answer for target-system execution can hide the evidence that actually matters."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Typical waiting condition",
+              "Safe resumed step"
+            ],
+            "rows": [
+              [
+                "Research",
+                "A governing source or missing evidence is supplied",
+                "Analyze the approved source set and label remaining uncertainty"
+              ],
+              [
+                "Editorial",
+                "The brief, source boundary, or reviewer answer is clarified",
+                "Revise the named draft for the next review"
+              ],
+              [
+                "Project management",
+                "A dependency records its required result or owner decision",
+                "Update the plan and route the next bounded task"
+              ],
+              [
+                "Software development",
+                "Maintainer feedback or a required check is available",
+                "Prepare the stated revision or review packet"
+              ],
+              [
+                "Support triage",
+                "Classification evidence or the accountable owner is identified",
+                "Route the report with its limits and requested decision"
+              ],
+              [
+                "Governance or security",
+                "The system owner provides a decision or source record",
+                "Prepare the allowed evidence packet or handoff, not an external change"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A role may be able to resume preparation while a different owner must still perform execution.",
+        "paragraphs": [
+          "A role may be able to resume preparation while a different owner must still perform execution. The condition should name that separation rather than let “resumed” imply end-to-end authority.",
+          "For a bounded transfer that tells the next person what to verify and do, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Add a resume condition in seven steps",
+        "orderedItems": [
+          "State the blocked or paused task’s precise outcome and the next step that cannot currently proceed.",
+          "Name the missing prerequisite: a decision, dependency state, evidence set, review answer, access state, or timed reconsideration.",
+          "Define the required state in observable terms rather than asking the agent to “try again later.”",
+          "Link the task, source of record, decision, artifact, or target system that can verify the change.",
+          "Identify the owner who can supply, decide, or confirm the prerequisite, without assuming authority they do not have.",
+          "Write the first bounded action that may resume and the limits that still apply after it does.",
+          "When the condition changes, verify it, record the evidence and next action, then resume, remain blocked, no-op, split, or escalate as the record supports."
+        ]
+      },
+      {
+        "title": "The goal is a safe state transition, not perpetual optimism.",
+        "paragraphs": [
+          "The goal is a safe state transition, not perpetual optimism. A good resume condition gives an agent a clear reason to stop waiting and a clear reason to stay stopped when the prerequisite is still missing."
+        ]
+      },
+      {
+        "title": "Test whether the condition is ready to use",
+        "paragraphs": [
+          "Before relying on a condition, ask whether someone new to the work could verify it and take the next step without guessing. If the answer depends on private context, a vague phrase, or an implied permission, the condition needs more structure."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Specificity test",
+                "What exact fact changes eligibility?",
+                "Replace “when ready” with the required state"
+              ],
+              [
+                "Evidence test",
+                "Which record confirms that fact?",
+                "Link the source of record, decision, artifact, or target system"
+              ],
+              [
+                "Ownership test",
+                "Who can provide or verify the prerequisite?",
+                "Name the owner or escalate the missing authority"
+              ],
+              [
+                "Boundary test",
+                "Which single task step may restart?",
+                "State the original contract and the first resumed contribution"
+              ],
+              [
+                "Limit test",
+                "What remains blocked, unverified, or outside scope?",
+                "Record the continuing limits and separate follow-on work"
+              ],
+              [
+                "Continuity test",
+                "Where will the next owner find the condition and update?",
+                "Put it in the task, packet, handoff, or durable record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A condition that fails a test is valuable diagnostic information.",
+        "paragraphs": [
+          "A condition that fails a test is valuable diagnostic information. It tells the team whether it needs evidence, a decision, an owner, or a smaller task before work can resume responsibly."
+        ]
+      },
+      {
+        "title": "Seven resume-condition mistakes that restart work too early"
+      },
+      {
+        "title": "Treating a chat acknowledgment as the required decision",
+        "paragraphs": [
+          "An acknowledgement can show that someone saw a message. It does not necessarily answer the named question, change the task boundary, or authorize the next operation."
+        ]
+      },
+      {
+        "title": "Calling a dependency resolved without checking its required result",
+        "paragraphs": [
+          "The linked task may be complete but still not deliver the state the dependent task requires. Verify the result and limitations, not only the status label."
+        ]
+      },
+      {
+        "title": "Using a scheduled date as proof that work is eligible",
+        "paragraphs": [
+          "A review date can trigger reconsideration. It does not prove that new evidence arrived or that an owner has accepted the work."
+        ]
+      },
+      {
+        "title": "Resuming every planned activity at once",
+        "paragraphs": [
+          "Resume the next bounded step named by the condition. Later operations may still need another review, decision, or target-system confirmation."
+        ]
+      },
+      {
+        "title": "Letting a changed condition silently expand scope",
+        "paragraphs": [
+          "New context may reveal a useful opportunity, but the agent should preserve the existing contract or create a visible follow-on task. A cleared blocker is not a blank check."
+        ]
+      },
+      {
+        "title": "Treating preparation access as execution authority",
+        "paragraphs": [
+          "Access to inspect, draft, or prepare evidence does not establish permission to make an external change. State the operation that is actually allowed."
+        ]
+      },
+      {
+        "title": "Leaving the old blocker note in place after verification",
+        "paragraphs": [
+          "When the condition changes, update the task with the evidence, next action, and any remaining limit. Otherwise the next owner cannot tell whether the work is still waiting or has already resumed."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent resume conditions?",
+        "answer": "They are specific, checkable facts that make a blocked or paused task eligible to continue. They name the required state, the record that can verify it, the owner involved, and the bounded next step that may resume."
+      },
+      {
+        "question": "Is a resume condition the same as an unblock message?",
+        "answer": "No. An unblock message may report a change, but a resume condition defines which change matters and how to verify it. The task should be resumed only after the named record supports the required state."
+      },
+      {
+        "question": "Can an agent resume work when a dependency is marked done?",
+        "answer": "Only when the dependency’s actual result meets the required state for the task. A done label may be insufficient if the task needs a particular artifact, decision, check, or target-system fact."
+      },
+      {
+        "question": "Does meeting a resume condition give the agent more authority?",
+        "answer": "No. It changes task eligibility, not permissions. The resumed work remains bound by its role, work contract, permitted operations, review requirements, and the target system’s own controls."
+      },
+      {
+        "question": "What if the condition is partially met?",
+        "answer": "Record the evidence and limitation. Resume only the portion that is now eligible, keep the remaining blocker visible, or route a new decision, follow-on task, or escalation instead of treating partial evidence as full resolution."
+      },
+      {
+        "question": "Who should update a resume condition?",
+        "answer": "The owner responsible for the task’s current contribution should keep the task’s coordination record current. The person or system that owns the prerequisite remains responsible for its own decision, evidence, or execution fact."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      }
+    ],
+    "cta": {
+      "title": "Resume work from evidence, not momentum",
+      "body": "AI agent resume conditions make waiting explicit and restarting reviewable. Name the missing prerequisite, define the state that resolves it, link the record that verifies it, and restart only the next bounded task step. That keeps a changed condition from becoming a vague instruction, a hidden scope expansion, or a claim of authority the task and target system do not provide.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
