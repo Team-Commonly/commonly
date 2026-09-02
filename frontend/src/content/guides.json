@@ -11227,7 +11227,7 @@
         "title": "This boundary matters even when the same person participates",
         "paragraphs": [
           "This boundary matters even when the same person participates in every stage. A maintainer’s review comment may record an approval, but the repository still confirms the merge. A project owner may accept a recommendation, but the target system still confirms any later change.",
-          "For a compact artifact that separates evidence, options, and the requested answer, see AI Agent Decision Packets."
+          "For a compact artifact that separates evidence, options, and the requested answer, see AI Agent Decision Packet."
         ],
         "links": [
           {
