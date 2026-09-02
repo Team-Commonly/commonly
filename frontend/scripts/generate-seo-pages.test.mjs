@@ -19,7 +19,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 62);
+  assert.equal(pages.length, 63);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
@@ -83,6 +83,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-roles/',
     '/guides/ai-agent-escalation/',
     '/guides/ai-agent-acceptance-criteria/',
+    '/guides/ai-agent-decision-packet/',
   ]);
   assert.deepEqual(pages[0].schema['@graph'].map((item) => item['@type']), [
     'Organization',
@@ -118,7 +119,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/ai-agent-task-management/',
     '/guides/connect-claude-codex-shared-workspace/',
   ]);
-  assert.equal(guidePages.length, 52);
+  assert.equal(guidePages.length, 53);
   for (const guide of guidePages) {
     assert.equal(guide.ogType, 'article');
     const article = guide.schema['@graph'].find((item) => item['@type'] === 'Article');
@@ -456,6 +457,27 @@ test('emits a canonical crawlable page for every public route', async () => {
     '/guides/how-to-write-ai-agent-instructions/',
   ]) {
     assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-acceptance-criteria\//);
+  }
+  const decisionPacketGuide = guidePages.find((page) => page.path === '/guides/ai-agent-decision-packet/');
+  assert.equal(decisionPacketGuide.title, 'AI Agent Decision Packet: Evidence, Options, and Ownership | Commonly');
+  assert.deepEqual(guides['ai-agent-decision-packet'].sections.flatMap((section) => (section.tables || []).map((table) => [table.headers.length, table.rows.length])), [[3, 6], [3, 7], [3, 9], [3, 6], [3, 6], [3, 5], [3, 6], [3, 5], [2, 8]]);
+  assert.deepEqual(guides['ai-agent-decision-packet'].sections.filter((section) => section.orderedItems).map((section) => section.orderedItems.length), [7]);
+  assert.equal(guides['ai-agent-decision-packet'].sections.flatMap((section) => section.links || []).length, 9);
+  const decisionPacketHtml = renderStaticPage(guideTemplate, decisionPacketGuide);
+  assert.match(decisionPacketHtml, /href="https:\/\/commonly\.me\/guides\/ai-agent-decision-packet\//);
+  assert.match(decisionPacketHtml, /An AI agent decision packet is a compact, evidence-backed artifact that gives a named person or role one answerable choice/);
+  assert.match(decisionPacketHtml, /Commonly \(commonly\.me\), the shared workspace where humans and AI agents work together/);
+  assert.doesNotMatch(decisionPacketHtml, /seo-page-dark/);
+  assert.match(decisionPacketHtml, /answerable choice/);
+  assert.doesNotMatch(decisionPacketHtml, /cm_agent_[A-Za-z0-9]{8,}/);
+  assert.equal((decisionPacketHtml.match(/<h2>Frequently asked questions<\/h2>/g) || []).length, 1);
+  for (const guidePath of [
+    '/guides/ai-agent-escalation/',
+    '/guides/ai-agent-handoffs/',
+    '/guides/human-in-the-loop-ai-agents/',
+    '/guides/context-engineering-for-ai-agents/',
+  ]) {
+    assert.match(renderStaticPage(guideTemplate, pages.find((page) => page.path === guidePath)), /href="\/guides\/ai-agent-decision-packet\//);
   }
   for (const guidePath of [
     '/guides/what-is-an-ai-agent-runtime/',
