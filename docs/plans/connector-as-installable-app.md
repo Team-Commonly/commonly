@@ -94,7 +94,10 @@ What it does, in order — this is `installableInstallService.install()`:
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
    `status: 'error'`; or `status: 'installing'` with `claimedAt < now − INSTALL_LOCK_TTL_MS`
    — and whose update sets `status: 'installing'`, `installedBy`, `installableVersion`,
-   `installSource: 'ui'`, `grantedScopes = installable.requires`, `claimedAt: now`. So a
+   `installSource: 'ui'`, `grantedScopes = installable.requires` (**descriptive only in Phase 1**
+   — it records what the manifest declared at install time, mirroring ADR-001's "declared,
+   permissive enforcement"; nothing reads it for authorization, and no route may start to
+   without a decision that says so), `claimedAt: now`. So a
    retry after a failed install **claims the retained `error` row** instead of inserting
    beside it, a first install inserts, and **a lock whose owner died mid-projection is taken
    over, not honoured forever** (Vera, 2026-09-02: a lock with no expiry left that user unable
@@ -137,9 +140,16 @@ relay flags, relayMap) is one record today and splitting it would invent a migra
 behaviour. `Integration.installationId` — already declared with a unique sparse index and
 written by nothing — becomes the back-pointer: `String(installation._id)`.
 
-**Uninstall — `DELETE /api/installables/:installableId/install`:** parent → `uninstalled`;
-each projector's `unproject` runs (Integration `isActive: false`, connect code cleared,
-relayMap kept for audit); nothing is deleted. Re-install mints a new Integration row — Vera's
+**Uninstall — `DELETE /api/installables/:installableId/install`:** the target is resolved
+**from the caller's identity exactly as install resolves it** — `scope: 'user'` → `targetType:
+'user'`, `targetId: req.user.id` — and from nothing else: the route takes no installation id
+and no body field, so there is no way to name someone else's row. (Vera, 2026-09-02: install
+gated the pod by `isPodMember` while uninstall had no matching gate — a co-member could have
+torn down another member's connector.) The live row for that key (`installing` or `active`)
+goes → `uninstalled`; each projector's `unproject` runs (Integration `isActive: false`, connect
+code cleared, relayMap kept for audit); nothing is deleted; no row → 404. Uninstalling an
+`installing` row is allowed and is the human escape hatch for a stuck lock in addition to the
+lease. Re-install mints a new Integration row — Vera's
 ruling on the design spec stands (the binding row is the unit; relayMap and gates are never
 reused).
 
@@ -274,6 +284,10 @@ plan leaves for the marketplace-unlock PR, and the `/browse` filter must admit `
 - Connect code is minted server-side (`mintConnectCode`); the body cannot supply one, and it
   is minted only by the final activation write — never by a projector (§2 step 6).
 - The chosen pod is gated by `isPodMember` (write predicate, no admin read-bypass).
+- Install and uninstall both resolve their target from the caller's identity; neither accepts
+  an installation id or a target from the body, so a caller can only ever act on their own row.
+- `grantedScopes` is descriptive, not enforced (Phase 1). Authorization is `auth` +
+  `isPodMember` + identity-derived targets, nothing else.
 - The install and uninstall verbs sit behind the integrations write limiter's shared key.
 - The Installable row carries no secret; H3's credential reference is the only future home.
 - Enable-time refusal of a group bind, the string-`'true'` coercion, and the attempt limiter
@@ -299,6 +313,10 @@ Unit (`backend/__tests__/unit/services/installable/`):
    installation). A retry that succeeds activates the same row and mints once.
 4. `uninstall` sets parent `uninstalled`, Integration `isActive: false`, code fields unset,
    relayMap preserved.
+4b. **Uninstall is identity-scoped.** User B, a member of the same pod as user A's connector,
+   calls `DELETE /api/installables/telegram/install`: A's row is untouched (B gets 404 with no
+   install of their own, or uninstalls only their own). A body containing another
+   installation's id changes nothing.
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
