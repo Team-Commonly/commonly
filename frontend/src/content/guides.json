@@ -597,6 +597,10 @@
       {
         "label": "AI agent status updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent follow-on work",
+        "path": "/guides/ai-agent-follow-on-work/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -11019,6 +11023,10 @@
       {
         "label": "AI agent status updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent follow-on work",
+        "path": "/guides/ai-agent-follow-on-work/"
       }],
     "cta": {
       "title": "Make restraint a reviewable contribution",
@@ -12433,6 +12441,10 @@
       {
         "label": "AI agent work contract",
         "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI agent follow-on work",
+        "path": "/guides/ai-agent-follow-on-work/"
       }],
     "cta": {
       "title": "Let useful work grow only with a visible boundary",
@@ -15258,10 +15270,721 @@
         "label": "AI Agent No-Op",
         "path": "/guides/ai-agent-no-op/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent follow-on work",
+        "path": "/guides/ai-agent-follow-on-work/"
+      }],
     "cta": {
       "title": "Give every contribution a clear boundary",
       "body": "An AI agent work contract makes a task easier to start, review, and hand off because it names the intended contribution before the agent begins. Define the outcome, inputs, operations, artifact, owner, acceptance condition, and stop path. Then let new work become an explicit decision instead of a quiet expansion of capability into authority.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-follow-on-work": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Follow-On Work: Turn Adjacent Ideas Into Owned Tasks | Commonly",
+    "title": "AI Agent Follow-On Work: Turn Adjacent Ideas Into Owned Tasks",
+    "description": "Learn how AI agents should create follow-on work from an adjacent discovery: define a new outcome, evidence, owner, dependency, and stop condition instead of silently expanding the active task.",
+    "summary": "AI agent follow-on work is a separately defined task created when an agent or reviewer discovers a useful next contribution outside the active task’s agreed boundary. It preserves the value of the discovery without silently changing the current outcome, inputs, operations, owner, or review condition. A good follow-on task has its own outcome, evidence, owner, dependency, acceptance condition, and stop rule.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent follow-on work is a separately defined task created when an agent or reviewer discovers a useful next contribution outside the active task’s agreed boundary. It preserves the value of the discovery without silently changing the current outcome, inputs, operations, owner, or review condition. A good follow-on task has its own outcome, evidence, owner, dependency, acceptance condition, and stop rule.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a place to keep that separation visible: a task can carry a description, owner, status, dependency, activity, and result; a focused thread can hold the decision to create or defer new work; attachments can preserve the evidence that prompted it; and selected shared context can retain an accepted conclusion. A new task organizes future work. It does not make the new work approved, prioritized, authorized, or already complete.",
+      "Follow-on work is not a dumping ground for every interesting observation. The task should exist because the adjacent contribution is relevant enough to name, bounded enough to own, and ready for a reviewer or decision owner to consider. If no eligible next contribution exists, the agent should no-op. If the current task cannot proceed, it needs a blocker or escalation instead of a vague future-work note.",
+      "This guide explains how AI agents should turn a discovery into follow-on work, how to distinguish it from scope creep and blockers, and how to write a new task someone can actually own."
+    ],
+    "sections": [
+      {
+        "title": "Follow-on work preserves a boundary instead of stretching it",
+        "paragraphs": [
+          "An adjacent idea can lead to several different results. The right choice depends on whether it belongs inside the current contract, blocks the current task, requires a decision, or is simply a separate possible contribution."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Correct result",
+              "Why"
+            ],
+            "rows": [
+              [
+                "The work is required to produce the active task’s agreed outcome",
+                "Keep it inside the current task",
+                "It is already part of the accepted boundary"
+              ],
+              [
+                "The work would add a new outcome, audience, source set, operation, or ongoing obligation",
+                "Propose a separate follow-on task",
+                "It changes the current contract and needs distinct ownership"
+              ],
+              [
+                "The active task cannot continue without a prerequisite",
+                "Record a blocker or escalation",
+                "The issue affects eligible work now, not a hypothetical future contribution"
+              ],
+              [
+                "A reviewer accepts a limited expansion of the active task",
+                "Update the current contract and task",
+                "The owner deliberately changed the existing boundary"
+              ],
+              [
+                "An interesting idea has no clear outcome, owner, or evidence yet",
+                "Keep it as a noted observation or no-op",
+                "A task would create noise without actionable work"
+              ],
+              [
+                "A related task is already active or owned",
+                "Link it and avoid duplication",
+                "The discovery may support existing work rather than create a parallel effort"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The distinction protects the active task from “while we are here” work",
+        "paragraphs": [
+          "The distinction protects the active task from “while we are here” work. A research agent can surface a related question; it should not quietly start a new research program because the question looks useful.",
+          "For recognizing unreviewed expansion before it changes an active task, see AI Agent Scope Creep."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Scope Creep",
+            "path": "/guides/ai-agent-scope-creep/"
+          }
+        ]
+      },
+      {
+        "title": "Give the new task its own work contract",
+        "paragraphs": [
+          "Follow-on work needs more than a title such as “look into this later.” The task should make its proposed contribution reviewable and independent enough that another owner can accept, revise, defer, or decline it without reconstructing the original work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Follow-on field",
+              "What to state",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Why it exists",
+                "The discovery or changed condition that prompted the task",
+                "“The review found a separate source conflict outside the original brief.”"
+              ],
+              [
+                "Outcome",
+                "One bounded, reviewable artifact or result",
+                "“Prepare an evidence packet that compares the two governing sources.”"
+              ],
+              [
+                "Relationship",
+                "How it connects to the current task without changing it",
+                "“This supports a possible follow-up decision; it does not alter the released brief.”"
+              ],
+              [
+                "Evidence",
+                "Links to the source, artifact, decision, or observation that warrants the work",
+                "“See the attached review note and cited conflicting sources.”"
+              ],
+              [
+                "Owner",
+                "Person or role responsible for the new task’s next step",
+                "“The research role prepares the packet; the policy owner decides.”"
+              ],
+              [
+                "Dependency",
+                "What must be true before the task starts or completes",
+                "“Begin after the current source ruling is recorded.”"
+              ],
+              [
+                "Acceptance condition",
+                "What makes the new artifact ready for review",
+                "“Sources are linked, differences labeled, and one decision question named.”"
+              ],
+              [
+                "Stop condition",
+                "When the task should no-op, block, split, hand off, or escalate",
+                "“Stop if the evidence set cannot be expanded without a new authorized owner.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is a work contract, not a promise",
+        "paragraphs": [
+          "This is a work contract, not a promise that every follow-on task will be funded or completed. It makes the proposed contribution visible enough for the team to decide whether it belongs in the plan.",
+          "For the task-level agreement that defines outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract.",
+          "For the task record that carries ownership, dependencies, activity, and results, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          },
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Create follow-on work only from a meaningful signal",
+        "paragraphs": [
+          "An agent should not convert every observation into a new task. The discovery should be relevant to a team outcome, supported by a record, and specific enough to state a bounded contribution. The table below helps distinguish a meaningful trigger from routine activity."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Signal",
+              "Follow-on work is justified when",
+              "Do not create a task when"
+            ],
+            "rows": [
+              [
+                "New evidence",
+                "It changes a possible decision, reveals a separately owned question, or needs a bounded verification artifact",
+                "It repeats a fact already captured or does not affect any work boundary"
+              ],
+              [
+                "Adjacent improvement",
+                "The improvement has a defined outcome and a plausible owner",
+                "It is only a vague wish to make something “better”"
+              ],
+              [
+                "Repeated issue",
+                "The pattern is supported by linked observations and needs a discrete investigation or decision",
+                "One unverified report is being generalized into a backlog item"
+              ],
+              [
+                "Scope conflict",
+                "The current task cannot include the new work without a separate owner decision",
+                "The change is already explicitly inside the active contract"
+              ],
+              [
+                "New dependency",
+                "A new prerequisite creates a distinct task that can be owned and checked",
+                "The dependency is merely an unresolved blocker on the active task"
+              ],
+              [
+                "Review finding",
+                "A reviewer identifies a separate artifact, question, or risk outside the present review",
+                "The reviewer is requesting a revision needed to finish the current artifact"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The evidence does not need to prove that the follow-on task is the team’s highest priority",
+        "paragraphs": [
+          "The evidence does not need to prove that the follow-on task is the team’s highest priority. It needs to explain why the task is worth considering and make the next decision smaller than “should we do everything related to this?”",
+          "For using task intake and dependency records without turning them into automatic prioritization, see AI Agents for Project Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agents for Project Management",
+            "path": "/guides/ai-agents-for-project-management/"
+          }
+        ]
+      },
+      {
+        "title": "Keep the active task and the new task connected but separate",
+        "paragraphs": [
+          "The relationship should be visible, especially when the follow-on task depends on the current result or carries an idea discovered during review. Link the work; do not copy all of its history or let the new task rewrite the old task’s scope."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Relationship",
+              "What to record",
+              "What to avoid"
+            ],
+            "rows": [
+              [
+                "Follow-up after completion",
+                "The completed artifact or result that prompted the new work",
+                "Reopening the finished task for a different outcome without an owner decision"
+              ],
+              [
+                "Dependency",
+                "The prerequisite task, decision, or external state and the condition needed",
+                "Assuming the follow-on is ready merely because the earlier task exists"
+              ],
+              [
+                "Split scope",
+                "Which work remains in the active task and which moves to the new one",
+                "Leaving two owners to produce the same artifact"
+              ],
+              [
+                "Supporting evidence",
+                "Specific source, review note, or decision reference",
+                "Copying a long transcript without identifying the relevant finding"
+              ],
+              [
+                "Superseded idea",
+                "The decision that deferred or declined the new work",
+                "Treating a parked idea as active ownership"
+              ],
+              [
+                "Shared convention",
+                "The durable context that applies to both tasks, with source",
+                "Using memory as a substitute for task-specific scope and ownership"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The current task should still be able to reach its own stated result",
+        "paragraphs": [
+          "The current task should still be able to reach its own stated result. The follow-on should be able to wait, be prioritized, or be declined without making the original task appear incomplete.",
+          "For keeping task state, evidence, and result records linked across work, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Ask the right owner whether the follow-on belongs in the plan",
+        "paragraphs": [
+          "Creating a well-formed follow-on task does not settle priority, budget, risk tolerance, or scope. The owner’s decision may be to proceed, defer, merge the work into a later plan, narrow it, or decline it. The agent should prepare the relevant evidence and question rather than treating task creation as approval."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision needed",
+              "Packet should make clear",
+              "Owner’s possible answer"
+            ],
+            "rows": [
+              [
+                "Whether to create the task",
+                "Discovery, proposed outcome, impact, and current task boundary",
+                "Create it, retain it as an observation, or decline it"
+              ],
+              [
+                "Who owns it",
+                "Required role, review owner, and handoff boundary",
+                "Assign a role, keep it unassigned, or route it differently"
+              ],
+              [
+                "Whether it starts now",
+                "Dependency, current priority context, and cost of delay",
+                "Start, defer, or wait for a defined condition"
+              ],
+              [
+                "Whether it should split",
+                "Existing work, new outcome, and risk of duplication",
+                "Keep together with an updated contract or make separate tasks"
+              ],
+              [
+                "Whether a new input is allowed",
+                "Source or system requested, relevance, and handling boundary",
+                "Approve a limited addition, provide an alternative, or keep the task narrow"
+              ],
+              [
+                "Whether it needs escalation",
+                "Missing authority, policy, or system owner",
+                "Route a focused decision or keep the work blocked"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent’s recommendation can be useful",
+        "paragraphs": [
+          "The agent’s recommendation can be useful, especially when it explains the tradeoff. The owner still decides whether the task exists as active work and what it is allowed to change.",
+          "For a compact request that gives an owner one answerable choice, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Give the follow-on task a safe starting point",
+        "paragraphs": [
+          "A new task should start with enough context to be understood on its own. That does not mean copying every message from the prior work. It means linking the evidence, stating the boundary, and naming the first review or stop condition the new owner should use."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Starting element",
+              "Include",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Current fact",
+                "The exact finding, artifact, or decision that prompted the task",
+                "A new owner can verify the reason the work exists"
+              ],
+              [
+                "Source of record",
+                "Where the current state or external fact can be confirmed",
+                "The task does not rely on a stale summary"
+              ],
+              [
+                "Initial scope",
+                "Outcome, in-scope inputs, and explicit non-goals",
+                "The follow-on does not inherit unlimited work from its predecessor"
+              ],
+              [
+                "First artifact",
+                "Evidence packet, draft, dependency check, or review question",
+                "The owner knows what a useful first contribution looks like"
+              ],
+              [
+                "Review owner",
+                "Person or role for the first judgment",
+                "The work does not stall in an unaddressed queue"
+              ],
+              [
+                "Stop rule",
+                "No-op, blocker, scope split, or escalation condition",
+                "The agent does not keep searching for work after the task is no longer eligible"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The task can grow later through a visible change decision",
+        "paragraphs": [
+          "The task can grow later through a visible change decision. Starting small makes it easier to evaluate whether the follow-on is useful before it accumulates more context, dependencies, and expectations.",
+          "For making the artifact and requested judgment ready for a reviewer, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Write the first contribution as a bounded task",
+        "paragraphs": [
+          "The title and first artifact should describe what a new owner can actually produce. They should not sound like a permanent mandate, a broad project name, or an instruction to repeat the original work at a larger scale."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Vague follow-on",
+              "Bounded first contribution",
+              "Boundary it preserves"
+            ],
+            "rows": [
+              [
+                "“Research this more”",
+                "“Compare the two linked governing sources and return one evidence packet for the policy owner.”",
+                "One question and one reviewer, not an open-ended investigation"
+              ],
+              [
+                "“Improve onboarding”",
+                "“Prepare a review note on the named onboarding step, with the current artifact and one proposed change.”",
+                "The new task does not own the entire onboarding program"
+              ],
+              [
+                "“Fix related issues”",
+                "“Classify the two linked reports and state whether either requires a separately owned technical task.”",
+                "Discovery precedes implementation and prioritization"
+              ],
+              [
+                "“Monitor this area”",
+                "“At the agreed cadence, inspect the named condition and report only a material change, blocker, or defined no-op.”",
+                "A one-off finding does not create unlimited monitoring"
+              ],
+              [
+                "“Handle the rest”",
+                "“List the remaining out-of-scope questions with evidence and an owner decision for each.”",
+                "The original task’s non-goals remain visible"
+              ],
+              [
+                "“Follow up with the team”",
+                "“Route the linked decision packet to the named owner and record whether a new task is accepted.”",
+                "Communication does not become an implied commitment"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Clear first work gives the team a chance to decide",
+        "paragraphs": [
+          "Clear first work gives the team a chance to decide whether the follow-on deserves further investment. It also gives the agent a genuine stop condition if the initial evidence does not justify a larger task."
+        ],
+        "links": []
+      },
+      {
+        "title": "Add a follow-on task in seven steps",
+        "orderedItems": [
+          "Identify the bounded discovery, evidence, or changed condition that is outside the active task’s contract.",
+          "Confirm that the active task can continue or close without absorbing the new work.",
+          "Write one outcome and the first reviewable artifact for the new task.",
+          "Link the source, artifact, decision, or review note that supports creating it.",
+          "Name the proposed owner, reviewer, and any dependency or source-of-record path.",
+          "State the acceptance and stop conditions, including when the task should block, no-op, split, or escalate.",
+          "Ask the appropriate owner to create, defer, narrow, merge, or decline the task, then record the answer."
+        ]
+      },
+      {
+        "title": "The seven steps make a follow-on task a proposal for bounded work",
+        "paragraphs": [
+          "The seven steps make a follow-on task a proposal for bounded work rather than an automatic expansion of the agent’s agenda. The team can now compare it with other work using a clear outcome and evidence, not just the agent’s confidence that it seems helpful.",
+          "For keeping readiness conditions visible before work moves to the next stage, see AI Agent Acceptance Criteria.",
+          "For the quiet result when no eligible contribution is ready to become a task, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          },
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Hand off follow-on work without creating an implied obligation",
+        "paragraphs": [
+          "A handoff should tell the next owner what they are receiving and why, but it should not imply that they must accept every adjacent task an agent creates. Make the first action and decision boundary explicit so the recipient can inspect, accept, reroute, or decline it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Handoff situation",
+              "Sender should provide",
+              "Receiver should be able to decide"
+            ],
+            "rows": [
+              [
+                "Research finding becomes a task",
+                "Source-linked finding, proposed question, and scope limit",
+                "Whether the evidence merits a separate investigation"
+              ],
+              [
+                "Review identifies a future improvement",
+                "Exact review finding, current artifact boundary, and proposed outcome",
+                "Whether to create the follow-on or retain the present scope"
+              ],
+              [
+                "Dependency creates later work",
+                "Linked prerequisite, required state, and intended first artifact",
+                "Whether to wait, split, or alter the plan"
+              ],
+              [
+                "Owner changes",
+                "Current contract, evidence, and acceptance condition",
+                "Whether the new role can take the bounded contribution"
+              ],
+              [
+                "Task is deferred",
+                "Reason, decision owner, and condition for revisiting",
+                "Whether the work remains relevant when the condition changes"
+              ],
+              [
+                "Task is declined",
+                "Evidence and decision record, if retained",
+                "Whether a future proposal would need new evidence or scope"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The handoff should preserve the line between a proposed next step and a commitment",
+        "paragraphs": [
+          "The handoff should preserve the line between a proposed next step and a commitment. If the recipient is not the decision owner, route the question to the person who can accept the new work.",
+          "For transferring a bounded next contribution with evidence and ownership, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether the follow-on task is worth creating",
+        "paragraphs": [
+          "Before creating a new task, ask whether someone who did not perform the original work could understand and own it. If the task only makes sense after reading a long conversation, it needs a clearer outcome, evidence link, or relationship to the active task."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Boundary test",
+                "Why is this work outside the active task instead of a required revision?",
+                "State the original scope and the proposed delta"
+              ],
+              [
+                "Outcome test",
+                "What artifact or result would make the follow-on useful?",
+                "Replace the vague idea with one reviewable outcome"
+              ],
+              [
+                "Evidence test",
+                "What finding or record justifies considering the task?",
+                "Link the source, artifact, decision, or review note"
+              ],
+              [
+                "Ownership test",
+                "Who can accept, perform, or review the new work?",
+                "Name the role and decision owner or escalate the missing owner"
+              ],
+              [
+                "Dependency test",
+                "What must happen before the task can start or close?",
+                "Add the prerequisite and its source of record"
+              ],
+              [
+                "Stop test",
+                "When should the agent no-op, block, split, or stop working?",
+                "Add a finite stop condition rather than an open-ended mandate"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A task that fails the test may still hold a valuable idea",
+        "paragraphs": [
+          "A task that fails the test may still hold a valuable idea. Keep the observation with its evidence until an owner can turn it into bounded work; do not let a weakly defined ticket create artificial backlog pressure."
+        ],
+        "links": []
+      },
+      {
+        "title": "Seven follow-on-work mistakes that quietly expand an agent’s agenda"
+      },
+      {
+        "title": "Creating a task for every interesting observation",
+        "paragraphs": [
+          "Not every idea is actionable work. Require a bounded outcome, evidence, ownership path, and a reason the contribution matters before adding a task."
+        ]
+      },
+      {
+        "title": "Reopening a completed task for a different outcome",
+        "paragraphs": [
+          "If the original result is complete, a new goal should usually become a separate task. Reopening the old one can erase the boundary that made its completion reviewable."
+        ]
+      },
+      {
+        "title": "Copying the old task’s scope into the new one without review",
+        "paragraphs": [
+          "The follow-on may need different inputs, operations, owner, and acceptance conditions. Write a new contract rather than inheriting an unlimited version of the prior task."
+        ]
+      },
+      {
+        "title": "Treating task creation as priority approval",
+        "paragraphs": [
+          "A task can make a proposal visible. The project or product owner still decides whether it starts now, is deferred, narrowed, or declined."
+        ]
+      },
+      {
+        "title": "Using a follow-on task to hide a blocker",
+        "paragraphs": [
+          "If the current eligible task cannot proceed without a prerequisite, state the blocker and route it. A future-work ticket does not resolve the missing decision, source, or permission."
+        ]
+      },
+      {
+        "title": "Duplicating work another owner already has",
+        "paragraphs": [
+          "Check linked tasks and current ownership before creating a parallel task. If a distinct contribution is useful, define the non-overlapping artifact and merge point."
+        ]
+      },
+      {
+        "title": "Leaving the relationship to the original task implicit",
+        "paragraphs": [
+          "Link the discovery, current result, dependency, or decision that prompted the new work. Otherwise the next owner cannot see whether it is a necessary continuation, a proposed improvement, or an outdated idea."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is AI agent follow-on work?",
+        "answer": "It is a separately defined, owned task created from a useful discovery or adjacent contribution outside the active task’s current boundary. It has its own outcome, evidence, owner, dependency, acceptance condition, and stop rule."
+      },
+      {
+        "question": "When should an agent create a follow-on task instead of expanding the current task?",
+        "answer": "Create a separate task when the new work changes the outcome, input set, operations, audience, time horizon, or decision boundary of the active contract. Keep it in the current task only when the owner explicitly accepts a limited scope change."
+      },
+      {
+        "question": "Is follow-on work the same as a blocker?",
+        "answer": "No. A blocker prevents an eligible active task from proceeding because a prerequisite is missing. Follow-on work is a distinct possible contribution outside the current task. A blocker may eventually lead to a follow-on task after an owner changes the plan."
+      },
+      {
+        "question": "Can an agent assign follow-on work to another person?",
+        "answer": "It can propose an owner or prepare a handoff based on an explicit role structure, but it should not assume authority to assign people, create commitments, or change priorities. The designated owner decides whether and how the task enters the plan."
+      },
+      {
+        "question": "What should a follow-on task link to?",
+        "answer": "Link the source, artifact, review finding, decision, dependency, or target-system record that explains why the work exists. Link only the material evidence; do not copy an entire conversation without a clear reason."
+      },
+      {
+        "question": "What if the follow-on idea is not ready for a task?",
+        "answer": "Keep it as a concise, sourced observation or no-op result until an owner can define a bounded outcome, evidence set, and review path. Do not create a vague ticket merely to preserve the idea."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Scope Creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Handoffs",
+        "path": "/guides/ai-agent-handoffs/"
+      }
+    ],
+    "cta": {
+      "title": "Let future work start with a visible choice",
+      "body": "AI agent follow-on work turns a useful adjacent discovery into a task the team can inspect, own, and decide about. Keep the active contract intact, give the new contribution its own outcome and evidence, name the owner and stop condition, and let a responsible person choose whether it belongs in the plan. That preserves useful ideas without quietly converting an agent’s curiosity into an unreviewed commitment.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
