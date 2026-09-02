@@ -91,13 +91,20 @@ What it does, in order — this is `installableInstallService.install()`:
    ask, 2026-09-02). One row per `(installableId, targetType, targetId)` across every
    non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
    'active', 'error'] }`**. The service never reads-then-writes. It runs one
-   `findOneAndUpdate` with `upsert: true` whose filter is the key plus `status: { $in:
-   ['error'] }` or no-row, and whose update sets `status: 'installing'`, `installedBy`,
-   `installableVersion`, `installSource: 'ui'`, `grantedScopes = installable.requires`,
-   `claimedAt: now` — so a retry after a failed install **claims the retained `error` row**
-   instead of inserting beside it, and a first install inserts. The document returned with
-   `status: 'installing'` and our `claimedAt` is the lock; **only the lock owner runs
-   projectors.** Any other outcome is the loser's path and never invokes a projector: the
+   `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
+   `status: 'error'`; or `status: 'installing'` with `claimedAt < now − INSTALL_LOCK_TTL_MS`
+   — and whose update sets `status: 'installing'`, `installedBy`, `installableVersion`,
+   `installSource: 'ui'`, `grantedScopes = installable.requires`, `claimedAt: now`. So a
+   retry after a failed install **claims the retained `error` row** instead of inserting
+   beside it, a first install inserts, and **a lock whose owner died mid-projection is taken
+   over, not honoured forever** (Vera, 2026-09-02: a lock with no expiry left that user unable
+   to install again — every retry hit the loser path). The document returned with `status:
+   'installing'` and **our** `claimedAt` is the lock; **only the lock owner runs projectors.**
+   `INSTALL_LOCK_TTL_MS` is one named constant, sized to the projection (two document writes,
+   no network) — 60 s, generous by two orders of magnitude, and short enough that a user who
+   saw a 202 and retries gets a real install on the second click. Takeover is safe because
+   projection is idempotent per installation: the webhook projector create-or-reuses the
+   Integration row by `installationId`, and the only mint is the final activation write. Any other outcome is the loser's path and never invokes a projector: the
    existing row is returned as-is — **202 while `installing`** (the owner will finish it),
    **200 when `active`**. A duplicate-key error on the upsert (two first-installs racing the
    insert) is the same loser's path. `uninstalled` rows sit outside the index, so re-install
@@ -203,6 +210,11 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 `active` installation, every component's `projectionIds` must resolve to a live row; a missing
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
+For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
+the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — the row becomes
+the ordinary retryable case, and the board-facing state stops lying about work in progress.
+The sweep is the backstop; the claim filter above is the primary path, so a stuck lock is
+recoverable by the next install attempt even between sweeps.
 Log a count line, the H3 pattern: the exit condition is the number reaching zero.
 
 ## 4. Seeding
@@ -289,7 +301,12 @@ Unit (`backend/__tests__/unit/services/installable/`):
    relayMap preserved.
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
-   creates nothing.
+   creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
+   `error` with `'install lock expired'`.
+6b. **Lock takeover.** An `installing` row with a stale `claimedAt` (owner died): the next
+   install claims it (same `_id`, new `claimedAt`, new `installedBy`), runs projectors,
+   reuses the inactive Integration row, activates and mints exactly once. A fresh
+   `installing` row (within the TTL) is not taken over — the second caller gets 202.
 
 Service (`__tests__/service/`):
 7. **Behaviour pins, at the dispatcher.** (a) An agent post into a pod with one live Telegram
