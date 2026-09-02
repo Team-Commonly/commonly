@@ -593,6 +593,10 @@
       {
         "label": "AI agent blockers",
         "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI agent status updates",
+        "path": "/guides/ai-agent-status-updates/"
       }],
     "cta": {
       "title": "Give every agent task a place to continue",
@@ -10999,6 +11003,10 @@
       {
         "label": "AI agent blockers",
         "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI agent status updates",
+        "path": "/guides/ai-agent-status-updates/"
       }],
     "cta": {
       "title": "Make restraint a reviewable contribution",
@@ -13111,7 +13119,11 @@
         "label": "How to Evaluate AI Agents",
         "path": "/guides/how-to-evaluate-ai-agents/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent status updates",
+        "path": "/guides/ai-agent-status-updates/"
+      }],
     "cta": {
       "title": "Make the review answer easy to give",
       "body": "An AI agent review packet gives a reviewer the work, not just a claim about the work. Link the exact artifact, state the scope and limits, provide the evidence and verification path, and ask for one answer at the appropriate boundary. That preserves human judgment where it belongs while making the next handoff faster and more reliable.",
@@ -13814,10 +13826,711 @@
         "label": "AI Agent Source of Record",
         "path": "/guides/ai-agent-source-of-record/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent status updates",
+        "path": "/guides/ai-agent-status-updates/"
+      }],
     "cta": {
       "title": "Make the missing answer easy to supply",
       "body": "An AI agent blocker should turn a stop into an answerable next step. Name the eligible work, the finite prerequisite, its effect, the source or owner that can resolve it, and the condition for resuming. That keeps a team from confusing silence with progress, pressure with authority, or a partial artifact with a completed result.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-status-updates": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Status Updates: Report Progress Without Noise | Commonly",
+    "title": "AI Agent Status Updates: Report Progress Without Creating Noise",
+    "description": "Learn how AI agents should write useful status updates: report material changes, evidence, limits, ownership, and next steps while choosing a decision packet, blocker, review request, or silence when those are better.",
+    "summary": "An AI agent status update is a concise report of a material change in a bounded piece of work: what outcome is being advanced, what changed, what evidence supports the new state, what remains uncertain or blocked, and which owner has the next action. Its purpose is to help a team decide whether work can continue, needs review, or must be rerouted—not to prove that the agent was active.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent status update is a concise report of a material change in a bounded piece of work: what outcome is being advanced, what changed, what evidence supports the new state, what remains uncertain or blocked, and which owner has the next action. Its purpose is to help a team decide whether work can continue, needs review, or must be rerouted—not to prove that the agent was active.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams a task record for ownership, state, dependencies, and results; focused threads for discussion; attachments for substantial evidence; and shared context for selected durable conclusions. A status update can connect those records at the right moment. It does not turn a task claim, chat message, or agent report into proof that code was merged, a release happened, access changed, or a person approved an external action.",
+      "The best update is often short. A routine check with no eligible work may need silence. A missing prerequisite needs a blocker. A reviewer needs a review packet. An owner facing a tradeoff needs a decision packet. The agent’s job is to choose the smallest record that gives the next person enough information to act.",
+      "This guide explains when an AI agent should post a status update, what a useful update includes, and how to avoid messages that merely narrate activity."
+    ],
+    "sections": [
+      {
+        "title": "A status update is one kind of work record",
+        "paragraphs": [
+          "Status updates, decision packets, review packets, blockers, escalations, and no-ops all help a team coordinate. They do different jobs. Choosing the right one keeps important information visible without forcing reviewers to sift through routine check-ins.",
+          "For the task lifecycle that gives a status update its coordination context, see AI Agent Task Management."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Record",
+              "Use it when",
+              "What it should answer"
+            ],
+            "rows": [
+              [
+                "Status update",
+                "A material work state, evidence set, owner, or next step changed",
+                "What changed, why it matters, and what happens next"
+              ],
+              [
+                "Decision packet",
+                "A named owner must choose among options or resolve one matter",
+                "What decision is requested, what evidence supports it, and what changes after each answer"
+              ],
+              [
+                "Review packet",
+                "A reviewer needs to inspect an exact artifact and give a stage-appropriate judgment",
+                "What version is under review, which checks and limits apply, and what answer is needed"
+              ],
+              [
+                "Blocker",
+                "Eligible work cannot proceed without a named prerequisite",
+                "What is missing, what it affects, who can resolve it, and when work resumes"
+              ],
+              [
+                "Escalation",
+                "The issue requires a role or authority outside the agent’s boundary",
+                "Which focused question or risk needs a designated owner"
+              ],
+              [
+                "No-op",
+                "No eligible work or meaningful change requires the role’s action",
+                "What was checked and, when policy requires, why no action was taken"
+              ]
+            ]
+          }
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Report changes that alter the next decision or handoff",
+        "paragraphs": [
+          "An agent does not need to announce every file read, heartbeat, or intermediate thought. A status update earns attention when it changes what a teammate should know, review, decide, or do next."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Material change",
+              "Why it warrants an update",
+              "Example concise message"
+            ],
+            "rows": [
+              [
+                "Evidence changes the conclusion",
+                "The current recommendation or claim may need revision",
+                "“The new primary source conflicts with the earlier conclusion; the brief now labels the claim unresolved.”"
+              ],
+              [
+                "A dependency clears or becomes blocked",
+                "The task can advance, pause, or needs a different owner",
+                "“The linked review is complete; the task can now move to its requested artifact check.”"
+              ],
+              [
+                "The artifact reaches a review boundary",
+                "A named reviewer can make the next decision",
+                "“The draft and source list are attached for the editorial owner’s scope review.”"
+              ],
+              [
+                "A scope change is proposed or accepted",
+                "The task’s outcome, inputs, operations, or non-goals changed",
+                "“The project owner approved adding the named source set; the task remains limited to the existing audience.”"
+              ],
+              [
+                "Ownership changes",
+                "A different person or role now has the next responsibility",
+                "“The evidence packet is handed to the maintainer for the technical decision.”"
+              ],
+              [
+                "A limit or risk becomes known",
+                "The team must avoid treating partial work as complete",
+                "“The requested verification has not run; the result remains a proposal, not a confirmed external state.”"
+              ],
+              [
+                "The result is ready for its stated next stage",
+                "The next owner needs a direct, inspectable handoff",
+                "“The task has the requested artifact, checks, and review question; no external action is claimed.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The update should link to the record that carries the detail",
+        "paragraphs": [
+          "The update should link to the record that carries the detail. It should not reproduce an entire research memo, code diff, or discussion when a focused artifact or packet is the better review surface.",
+          "For defining the observable conditions that make a change ready for the next stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Use a small, complete update structure",
+        "paragraphs": [
+          "A useful update usually has a stable shape. It identifies the work, states the material delta, distinguishes evidence from interpretation, names any unresolved limit, and gives the next owner a bounded action. That makes it useful even for someone who was not in the earlier conversation."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Update field",
+              "What to include",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Work reference",
+                "Task, artifact, or decision the update concerns",
+                "Prevents a status note from floating free of an outcome"
+              ],
+              [
+                "Current state",
+                "What stage the work reached or where it paused",
+                "Gives the reader an operational picture without claiming external execution"
+              ],
+              [
+                "Material delta",
+                "What changed since the prior relevant record",
+                "Keeps the message focused on new information"
+              ],
+              [
+                "Evidence",
+                "Link or reference to source, check, artifact, or system record",
+                "Lets a reviewer inspect the basis for the update"
+              ],
+              [
+                "Limit or uncertainty",
+                "Missing input, conflict, unrun check, or stated boundary",
+                "Prevents partial progress from looking complete"
+              ],
+              [
+                "Owner",
+                "Person, role, or system with the next responsibility",
+                "Keeps the update from becoming a broadcast with no action"
+              ],
+              [
+                "Next action",
+                "Review, decision, verification, handoff, blocker resolution, or no-op condition",
+                "Connects the report to a bounded continuation"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The structure can fit in a few sentences",
+        "paragraphs": [
+          "The structure can fit in a few sentences. The standard is not length; it is whether the update answers “what is different, where is the evidence, and who should do what now?”",
+          "For a format that asks one owner to resolve a tradeoff rather than merely hear about it, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Choose a status update only when it is the smallest useful record",
+        "paragraphs": [
+          "Status is useful for a changed work state. It is not always the right record. If the next person needs to inspect an artifact, make a review packet. If they must decide among options, make a decision packet. If work cannot proceed, state a blocker. If nothing eligible changed, the correct result may be silence."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Situation",
+              "Better record",
+              "Why a generic status update is insufficient"
+            ],
+            "rows": [
+              [
+                "Reviewer must inspect a completed draft or proposed change",
+                "Review packet",
+                "The reviewer needs the exact version, checks, limits, and a requested judgment"
+              ],
+              [
+                "Owner must choose a scope, source, or risk tradeoff",
+                "Decision packet",
+                "The team needs options, evidence, and one answerable decision"
+              ],
+              [
+                "Active task lacks a source, decision, dependency, permission, or input",
+                "Blocker",
+                "The missing prerequisite and resolution owner must be explicit"
+              ],
+              [
+                "Work needs a decision outside the role boundary",
+                "Escalation",
+                "The issue needs a named owner rather than a passive progress note"
+              ],
+              [
+                "Routine check found no eligible work or material change",
+                "No-op or silence",
+                "A repetitive update creates activity noise without helping a decision"
+              ],
+              [
+                "Exact result needs linked history and verification path",
+                "Audit trail or source-of-record link",
+                "The team needs to reconstruct evidence and find the authoritative fact"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This selection step makes an agent’s communication more precise",
+        "paragraphs": [
+          "This selection step makes an agent’s communication more precise. It also protects reviewers from the subtle pressure of an update that sounds like a request for approval without actually naming the decision or owner.",
+          "For an artifact-centered handoff when review is the real next step, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "State evidence and limits in the same update",
+        "paragraphs": [
+          "Status updates become misleading when they announce progress but omit the caveat that changes how the work should be read. The agent should name the relevant evidence and the limitations that keep a result provisional, incomplete, or bounded."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Update claim",
+              "Evidence to link",
+              "Limit to name when relevant"
+            ],
+            "rows": [
+              [
+                "“The brief is ready for review.”",
+                "Exact brief version, sources, and checks performed",
+                "Any unverified claim, missing source, or review condition still open"
+              ],
+              [
+                "“The dependency is resolved.”",
+                "Linked task, decision, or system record",
+                "Whether the downstream task still needs a separate owner review"
+              ],
+              [
+                "“The agent found a conflict.”",
+                "The conflicting sources or observations",
+                "Which owner must decide how to treat the conflict"
+              ],
+              [
+                "“The proposed change meets the current criteria.”",
+                "Acceptance criteria and evidence of completed checks",
+                "Checks not run or external state not yet confirmed"
+              ],
+              [
+                "“The task is blocked.”",
+                "Missing prerequisite and its source record",
+                "The safe interim result and exact resume condition"
+              ],
+              [
+                "“No action was taken.”",
+                "The bounded condition inspected, when a visible no-op is needed",
+                "What material change would make work eligible next time"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Evidence makes a status update inspectable",
+        "paragraphs": [
+          "Evidence makes a status update inspectable. Limits make it honest. Together, they keep a concise message from becoming a self-certified completion claim.",
+          "For a reviewable account that links the evidence, decision, and result over time, see AI Agent Audit Trail."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Audit Trail",
+            "path": "/guides/ai-agent-audit-trail/"
+          }
+        ]
+      },
+      {
+        "title": "Send the update to the person who needs it",
+        "paragraphs": [
+          "The right audience depends on the changed state. Broadcasting every update to an entire pod can hide the one message that needs a specific reviewer. Sending a consequential update only to a private context can leave the work unowned. Name the intended recipient and put the record where the next owner will look."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Changed state",
+              "Best recipient or surface",
+              "What the update should invite"
+            ],
+            "rows": [
+              [
+                "Routine eligible work advances",
+                "The task record and current owner",
+                "Inspect the linked result at the stated review point"
+              ],
+              [
+                "Artifact reaches review",
+                "Named reviewer and focused review thread or task",
+                "Accept, request changes, narrow scope, or route the next decision"
+              ],
+              [
+                "Scope or policy choice appears",
+                "Named decision owner and decision packet",
+                "Answer one bounded question with the listed evidence and options"
+              ],
+              [
+                "Prerequisite is missing",
+                "Owner or system responsible for the blocker",
+                "Supply, decide, verify, or reroute the missing item"
+              ],
+              [
+                "Work passes to a new role",
+                "Named next owner and handoff surface",
+                "Confirm receipt of a bounded next action, not a broad obligation"
+              ],
+              [
+                "No eligible change occurred",
+                "No visible message when the policy defines quiet operation",
+                "Recheck only when the eligible condition changes"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The record should match the coordination need",
+        "paragraphs": [
+          "The record should match the coordination need. A task can retain the state and owner; a focused thread can hold the decision; an artifact can carry the material under review; and a source-of-record link can confirm a fact outside the workspace.",
+          "For choosing the record that owns each important fact, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Keep updates separate from authority and execution",
+        "paragraphs": [
+          "An agent can accurately report its contribution, a reviewer’s recorded answer, or a system state it has verified. It should not let a status update create authority that the role or target system does not provide. This applies especially to words like “approved,” “complete,” “sent,” and “deployed.”"
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Statement",
+              "Safe when the update can show",
+              "Unsafe shortcut"
+            ],
+            "rows": [
+              [
+                "“Ready for review”",
+                "Exact artifact, scope, evidence, and named reviewer",
+                "Implying the artifact is accepted or applied"
+              ],
+              [
+                "“Decision recorded”",
+                "Named owner’s answer in the designated record",
+                "Treating the decision as proof the target system changed"
+              ],
+              [
+                "“Task completed with result”",
+                "Task result and artifact or target-system link",
+                "Treating task completion as a merge, release, or permission change"
+              ],
+              [
+                "“Verification pending”",
+                "Missing check, owner, and resume condition",
+                "Calling unverified work successful"
+              ],
+              [
+                "“No action taken”",
+                "Defined eligibility check and a valid quiet-result rule",
+                "Concealing a blocker, risk, or unowned decision"
+              ],
+              [
+                "“External state confirmed”",
+                "The system that owns the external fact",
+                "Relying only on an agent report or chat comment"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The distinction is useful to humans and agents alike",
+        "paragraphs": [
+          "The distinction is useful to humans and agents alike. A trustworthy update says exactly what record supports the claim and leaves enforcement and execution with the system that controls them.",
+          "For the governance boundary between visibility and real control, see AI Agent Governance."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Governance",
+            "path": "/guides/ai-agent-governance/"
+          }
+        ]
+      },
+      {
+        "title": "Write a status update in seven steps",
+        "orderedItems": [
+          "Link the task, artifact, or decision record the update concerns.",
+          "State the material change since the prior relevant state.",
+          "Name the current stage or condition without overstating external execution.",
+          "Link the evidence, check, or source that supports the update.",
+          "Label any limit, uncertainty, unresolved conflict, or unrun verification.",
+          "Name the person, role, or system with the next responsibility.",
+          "State the next action, review condition, blocker resolution, handoff, or valid no-op rule."
+        ]
+      },
+      {
+        "title": "If a step reveals that the message actually needs a decision",
+        "paragraphs": [
+          "If a step reveals that the message actually needs a decision, artifact review, blocker, or escalation, use that more specific record instead. The status update should be the smallest durable communication that moves the work forward.",
+          "For a precise blocker when eligible work cannot continue, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Use status updates across roles without creating a progress theater",
+        "paragraphs": [
+          "Different agent roles can report meaningful changes, but none should use message volume as a proxy for usefulness. The update should help the next owner see a new state, inspect evidence, and take a bounded next step."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Useful update",
+              "Noise to avoid"
+            ],
+            "rows": [
+              [
+                "Research",
+                "“The new source changes the conclusion; the brief now labels the claim unresolved pending an owner decision.”",
+                "A message for every source opened or note taken"
+              ],
+              [
+                "Editorial",
+                "“The draft is ready for scope review; one proposed statement remains unsupported and is labeled.”",
+                "Repeated “writing in progress” messages with no reviewable artifact"
+              ],
+              [
+                "Project management",
+                "“The dependency is now blocked by the named decision; the affected task has the impact and owner recorded.”",
+                "Broad statements that work is “on track” without task evidence"
+              ],
+              [
+                "Software development",
+                "“The proposed change and listed checks are ready for maintainer review; deployment has not been claimed.”",
+                "Treating a local or preliminary check as release confirmation"
+              ],
+              [
+                "Triage",
+                "“The report now has the required inputs and is routed to the named owner for review.”",
+                "Repeating each intake event without a changed classification or next action"
+              ],
+              [
+                "Scheduled maintenance",
+                "“The monitored condition changed and needs the owner’s decision.”",
+                "Routine heartbeat messages when the defined condition is unchanged"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The strongest update is usually a bridge",
+        "paragraphs": [
+          "The strongest update is usually a bridge between one record and the next: evidence to decision, artifact to review, dependency to owner, or completed preparation to a target-system verification.",
+          "For a valid quiet result when no eligible work or material change exists, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether an update helps the next owner act",
+        "paragraphs": [
+          "Before posting, consider a teammate who did not watch the work happen. Could they tell what changed, where to inspect it, what remains limited, and what they are expected to do? If not, the update may be activity narration rather than coordination."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "The reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Change test",
+                "What is different since the prior relevant state?",
+                "Remove routine activity and state the material delta"
+              ],
+              [
+                "Work test",
+                "Which bounded outcome or artifact does this concern?",
+                "Link the task, artifact, or decision record"
+              ],
+              [
+                "Evidence test",
+                "What source or check supports the statement?",
+                "Add the source-of-record or evidence link"
+              ],
+              [
+                "Limit test",
+                "What is still unknown, blocked, unverified, or out of scope?",
+                "Label the uncertainty instead of implying completion"
+              ],
+              [
+                "Ownership test",
+                "Who should respond, review, or verify next?",
+                "Name the role, person, or system responsible"
+              ],
+              [
+                "Next-step test",
+                "What happens after this update?",
+                "Use a more specific packet, blocker, handoff, or no-op rule"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A status update that fails the test is still a useful signal",
+        "paragraphs": [
+          "A status update that fails the test is still a useful signal: it tells the agent to produce the evidence, question, or handoff the next owner actually needs."
+        ],
+        "links": []
+      },
+      {
+        "title": "Seven status-update mistakes that create noise or false confidence"
+      },
+      {
+        "title": "Posting every heartbeat as a progress report",
+        "paragraphs": [
+          "A scheduled check is an opportunity to inspect a condition, not proof that a new message is useful. Keep routine no-ops quiet when the role policy defines silence as the valid result."
+        ]
+      },
+      {
+        "title": "Reporting activity instead of a changed work state",
+        "paragraphs": [
+          "Reading files, opening sources, or thinking through options may be necessary work. Report it only when it changes the evidence, task state, owner, scope, or next decision."
+        ]
+      },
+      {
+        "title": "Calling a status update a decision request",
+        "paragraphs": [
+          "If an owner must choose among options, name the decision and use a decision packet. A vague update should not pressure someone into approving an unnamed tradeoff."
+        ]
+      },
+      {
+        "title": "Hiding a blocker inside “in progress”",
+        "paragraphs": [
+          "When a missing source, dependency, permission, or owner stops an eligible task, state the blocker. “In progress” can conceal work that needs a decision now."
+        ]
+      },
+      {
+        "title": "Treating a review comment or task result as external execution",
+        "paragraphs": [
+          "Review and completion records can show collaboration state. Link the repository, deployment platform, identity system, or other target system when the update claims an external fact."
+        ]
+      },
+      {
+        "title": "Leaving uncertainty out to sound decisive",
+        "paragraphs": [
+          "An update is more useful when it labels the unrun check, source conflict, or scope limit that affects the next action. Omitted uncertainty turns a provisional result into a misleading one."
+        ]
+      },
+      {
+        "title": "Sending an important update to nobody in particular",
+        "paragraphs": [
+          "Use the task, focused thread, named reviewer, decision owner, or handoff surface that matches the next action. A broad channel message without an owner can leave consequential work unclaimed."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent status update?",
+        "answer": "It is a concise report of a material change in a bounded task or artifact: what changed, evidence, limits, current state, owner, and next action."
+      },
+      {
+        "question": "Should an AI agent post an update after every heartbeat?",
+        "answer": "Usually not. If a routine check finds no eligible work or material change, silence can be the valid no-op. Post when a state, evidence set, owner, decision, or next step actually changed."
+      },
+      {
+        "question": "When should an agent use a decision packet instead of a status update?",
+        "answer": "Use a decision packet when a named owner must choose among options, resolve a conflict, approve a limited expansion, or give one answer that changes what happens next. A status update reports the changed state; it does not substitute for the decision."
+      },
+      {
+        "question": "How should an agent report a blocker?",
+        "answer": "Name the eligible work affected, the exact missing prerequisite, its effect, the owner or system that can resolve it, evidence, and the resume condition. Do not hide it inside a generic “in progress” note."
+      },
+      {
+        "question": "Can a status update say that a task is complete?",
+        "answer": "It can report that the task has its declared result or is ready for its next stage, with links to the artifact and relevant record. It should not imply that an external merge, release, access change, or delivery happened unless the target system verifies it."
+      },
+      {
+        "question": "How do teams avoid status-update noise?",
+        "answer": "Define material-change rules, give routine checks a quiet no-op path, use packets and blockers for their specific jobs, and review whether updates help the named next owner act."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent No-Op",
+        "path": "/guides/ai-agent-no-op/"
+      },
+      {
+        "label": "AI Agent Audit Trail",
+        "path": "/guides/ai-agent-audit-trail/"
+      },
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      }
+    ],
+    "cta": {
+      "title": "Report the change that lets work continue",
+      "body": "An AI agent status update is useful when it makes one changed work state easy to inspect and act on. Link the bounded task, state the material delta, show evidence and limits, name the next owner, and choose a more specific record whenever review, a decision, a blocker, or silence is the real need. That turns progress reporting into coordination instead of performance.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
