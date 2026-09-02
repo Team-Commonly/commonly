@@ -8898,6 +8898,10 @@
       {
         "label": "AI agent work contract",
         "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI agent verification path",
+        "path": "/guides/ai-agent-verification-path/"
       }],
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
@@ -11728,7 +11732,11 @@
         "label": "Context Engineering for AI Agents",
         "path": "/guides/context-engineering-for-ai-agents/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent verification path",
+        "path": "/guides/ai-agent-verification-path/"
+      }],
     "cta": {
       "title": "Make the authoritative fact easy to find",
       "body": "An AI agent source-of-record rule replaces guesswork with a direct verification path. Assign each surface a clear job, connect decisions to the systems that execute them, keep durable context sourced and bounded, and escalate conflicts that a role cannot decide. When a teammate can answer “where do I verify this?” before acting, the work becomes safer and easier to continue.",
@@ -13151,6 +13159,10 @@
       {
         "label": "AI agent status updates",
         "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI agent verification path",
+        "path": "/guides/ai-agent-verification-path/"
       }],
     "cta": {
       "title": "Make the review answer easy to give",
@@ -14555,7 +14567,11 @@
         "label": "AI Agent Source of Record",
         "path": "/guides/ai-agent-source-of-record/"
       }
-    ],
+    ,
+      {
+        "label": "AI agent verification path",
+        "path": "/guides/ai-agent-verification-path/"
+      }],
     "cta": {
       "title": "Report the change that lets work continue",
       "body": "An AI agent status update is useful when it makes one changed work state easy to inspect and act on. Link the bounded task, state the material delta, show evidence and limits, name the next owner, and choose a more specific record whenever review, a decision, a blocker, or silence is the real need. That turns progress reporting into coordination instead of performance.",
@@ -15985,6 +16001,699 @@
     "cta": {
       "title": "Let future work start with a visible choice",
       "body": "AI agent follow-on work turns a useful adjacent discovery into a task the team can inspect, own, and decide about. Keep the active contract intact, give the new contribution its own outcome and evidence, name the owner and stop condition, and let a responsible person choose whether it belongs in the plan. That preserves useful ideas without quietly converting an agent’s curiosity into an unreviewed commitment.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-verification-path": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Verification Path: Trace Claims to Evidence | Commonly",
+    "title": "AI Agent Verification Path: Trace a Claim to the Record That Proves It",
+    "description": "Learn how to create an AI agent verification path from a reported result to the artifact, decision, source of record, or target-system evidence that can confirm it.",
+    "summary": "An AI agent verification path is the explicit route from a claim about work to the record that can support or confirm it. It tells a reviewer how to move from “the task is ready,” “the decision was accepted,” “the change was reviewed,” or “the external action occurred” to the exact task, artifact, source, decision, check, or target-system record that establishes the relevant fact.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "An AI agent verification path is the explicit route from a claim about work to the record that can support or confirm it. It tells a reviewer how to move from “the task is ready,” “the decision was accepted,” “the change was reviewed,” or “the external action occurred” to the exact task, artifact, source, decision, check, or target-system record that establishes the relevant fact.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams useful links in that route: tasks for coordination state and reported results, focused threads for questions and decisions, attachments for substantial evidence, and selected shared memory for sourced durable context. Those records can show how people and agents coordinated. They do not replace a repository’s merge history, a deployment platform’s release record, an identity system’s permission state, or another target system’s own evidence of execution.",
+      "A verification path is not an extra report that repeats every detail. It is a reviewable chain of references that lets someone check the precise claim at issue. The path should be short, specific, and proportional: a low-risk draft may need one artifact and one reviewer answer; a consequential external claim may need a decision, evidence, and a direct target-system reference.",
+      "This guide explains how to build AI agent verification paths, what records belong in them, and how to keep a claimed result from being mistaken for a proven external fact."
+    ],
+    "sections": [
+      {
+        "title": "A verification path is not the same as an audit trail or a source of record",
+        "paragraphs": [
+          "These concepts reinforce one another but serve different purposes. The source of record is the authoritative place for a kind of fact. The audit trail connects the history of request, evidence, decision, handoff, and result. The verification path is the direct route a reviewer uses to test one claim now."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Concept",
+              "Main purpose",
+              "Question it answers"
+            ],
+            "rows": [
+              [
+                "Source of record",
+                "Name the designated authority for a specific fact",
+                "Where is the current authoritative record for this fact?"
+              ],
+              [
+                "Audit trail",
+                "Connect the history and reasoning around work",
+                "How did this request, evidence, decision, and result relate over time?"
+              ],
+              [
+                "Verification path",
+                "Link a particular claim to its supporting or confirming records",
+                "How can I check whether this statement is supported or true?"
+              ],
+              [
+                "Review packet",
+                "Give a reviewer an exact artifact, evidence, limits, and requested judgment",
+                "What should I inspect and decide before the next stage?"
+              ],
+              [
+                "Decision packet",
+                "Give an owner one answerable choice with evidence and options",
+                "What answer changes the work, and who should give it?"
+              ],
+              [
+                "Status update",
+                "Report a material changed state and next action",
+                "What changed, and who should do what now?"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "For example, a task may say that an artifact is ready for review",
+        "paragraphs": [
+          "For example, a task may say that an artifact is ready for review. The verification path points to the exact artifact version, the stated acceptance conditions, and the named reviewer. If the claim is that code was merged, the path must also reach the repository record that confirms the merge.",
+          "For the hierarchy that names the authoritative record by fact type, see AI Agent Source of Record."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Source of Record",
+            "path": "/guides/ai-agent-source-of-record/"
+          }
+        ]
+      },
+      {
+        "title": "Start with a claim that can actually be checked",
+        "paragraphs": [
+          "“Everything is complete” is too broad for a useful verification path. Break a report into claims a reviewer can confirm: a task state, an artifact version, a completed check, an accepted decision, a dependency condition, or an external action. Each claim can then point to the system or evidence that owns it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Claim",
+              "Verification question",
+              "Likely record to inspect"
+            ],
+            "rows": [
+              [
+                "Task is assigned or blocked",
+                "What is the current coordination state and owner?",
+                "Task record and its current activity or blocker note"
+              ],
+              [
+                "Artifact is ready for review",
+                "Which exact version is in scope, and what checks or limits apply?",
+                "Versioned artifact, review packet, and acceptance conditions"
+              ],
+              [
+                "Evidence supports a recommendation",
+                "Which sources, observations, or checks support the stated conclusion?",
+                "Attached evidence, research brief, or source-linked analysis"
+              ],
+              [
+                "Decision was accepted",
+                "Who gave which answer, and what did it authorize for the work?",
+                "Named decision thread or decision packet"
+              ],
+              [
+                "Dependency is resolved",
+                "Which prerequisite reached the required state?",
+                "Linked task, decision record, or target-system condition"
+              ],
+              [
+                "External action occurred",
+                "Which system actually performed and records the action?",
+                "Repository, deployment, identity, delivery, or other target system"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The wording should match the evidence",
+        "paragraphs": [
+          "The wording should match the evidence. An agent can report “the task has a proposed change and checks attached” when that is what the record shows. It should not report “the change is live” until the appropriate target-system record can confirm it.",
+          "For task state, ownership, and result coordination, see AI Agent Task Management."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Task Management",
+            "path": "/guides/ai-agent-task-management/"
+          }
+        ]
+      },
+      {
+        "title": "Build a short chain from claim to evidence",
+        "paragraphs": [
+          "The path should make each handoff of confidence visible: from the claim, to the artifact or decision that supports it, to the source that can confirm the state. Avoid a long, unlabelled list of links. Each link should answer why it belongs in the chain."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Path element",
+              "What it contributes",
+              "Example"
+            ],
+            "rows": [
+              [
+                "Claim",
+                "The precise statement under review",
+                "“The research brief is ready for editorial review.”"
+              ],
+              [
+                "Work reference",
+                "The task or contract that defines the intended outcome",
+                "The task with its scope, owner, and review point"
+              ],
+              [
+                "Artifact or evidence",
+                "The exact output, source set, test result, or analysis being evaluated",
+                "The attached brief with linked sources and labeled limits"
+              ],
+              [
+                "Decision or review record",
+                "The answer that accepted, rejected, or redirected the next stage",
+                "The named reviewer’s response in a focused thread"
+              ],
+              [
+                "Source of record",
+                "The system or object that owns the fact being confirmed",
+                "The document version, repository, or target-system record"
+              ],
+              [
+                "Limitation",
+                "What the path does not confirm or what remains open",
+                "“Deployment state is not yet verified by the release system.”"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Not every claim needs every element",
+        "paragraphs": [
+          "Not every claim needs every element. A no-op may need only the inspected condition and its eligibility rule. A release claim should include the task, reviewed artifact, approval record if applicable, and the release system that confirms the actual state.",
+          "For an artifact-centered request that gathers these elements before review, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Match the evidence to the type of claim",
+        "paragraphs": [
+          "The same artifact cannot prove every statement about work. A task is useful evidence of coordination; a reviewer comment is useful evidence of a review answer; a system-native record is useful evidence of an external action. Matching evidence to claim type prevents a polished update from overstating what it knows."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Claim type",
+              "Strongest confirming evidence",
+              "Supporting but insufficient evidence"
+            ],
+            "rows": [
+              [
+                "Current task status",
+                "The task’s current state, owner, dependency, and result",
+                "An older chat summary or agent memory of the state"
+              ],
+              [
+                "Exact artifact version",
+                "Versioned artifact, document, pull request, or target-system object",
+                "A prose description of what the artifact contains"
+              ],
+              [
+                "Completed check",
+                "The check output, source observation, or designated system record",
+                "“The agent says it passed” without inspectable evidence"
+              ],
+              [
+                "Review decision",
+                "Named reviewer’s recorded answer and the artifact considered",
+                "An implied approval from a reaction or unrelated comment"
+              ],
+              [
+                "Scope change",
+                "Owner’s recorded decision plus updated task or work contract",
+                "A new suggestion that was never accepted"
+              ],
+              [
+                "External execution",
+                "The repository, deployment, identity, delivery, or executing system",
+                "Task completion, draft, agent report, or review comment alone"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The path can include supporting context",
+        "paragraphs": [
+          "The path can include supporting context, but it should label it correctly. A reviewer should know whether a link is a verified fact, a reported status, an inference, a recommendation, or an unresolved question.",
+          "For the evidence labels and review conditions that help evaluate an agent’s result, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Include the decision and its boundary when it matters",
+        "paragraphs": [
+          "Some claims depend on a decision: a source was chosen, scope was narrowed, a reviewer accepted an artifact, or a new task was approved. The verification path should link that answer and identify what it did—and did not—authorize. A decision can change the task’s next step without proving that an external system performed the subsequent action."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Decision claim",
+              "Path should show",
+              "It should not imply"
+            ],
+            "rows": [
+              [
+                "Source ruling",
+                "The conflicting sources, named owner, and accepted governing source",
+                "That every downstream claim is now automatically verified"
+              ],
+              [
+                "Scope decision",
+                "Existing boundary, proposed change, and owner’s answer",
+                "That new operations or permissions were granted by default"
+              ],
+              [
+                "Review acceptance",
+                "Exact artifact version, reviewer, and accepted next stage",
+                "That the artifact was merged, deployed, or published"
+              ],
+              [
+                "Follow-on task decision",
+                "Discovery, task contract, owner, and decision to create, defer, or decline",
+                "That the new task is prioritized or already underway"
+              ],
+              [
+                "Blocker resolution",
+                "Missing prerequisite, source of resolution, and resumed task state",
+                "That unrelated work or risks were also resolved"
+              ],
+              [
+                "External-action approval",
+                "Decision owner and target-system action that still needs confirmation",
+                "That an approval message itself executed the action"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "This is a useful discipline for agents",
+        "paragraphs": [
+          "This is a useful discipline for agents: record the answer, link the evidence, and hand off the next action. Do not write as though a collaboration decision is the system of enforcement.",
+          "For a packet that makes the owner’s answer and options explicit, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "State what the path does not verify",
+        "paragraphs": [
+          "Verification is more trustworthy when the path names its boundary. A link to a task may confirm that the team marked work ready for review, but not that a release was deployed. A test result may confirm a particular check, but not every condition in an unrelated environment. Saying what remains unverified prevents a reviewer from relying on the path beyond its evidence."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Path boundary",
+              "State clearly",
+              "Safer follow-on"
+            ],
+            "rows": [
+              [
+                "Draft versus applied state",
+                "“This path confirms the proposed artifact, not an external change.”",
+                "Link the target system after the action occurs"
+              ],
+              [
+                "Partial check",
+                "“This result covers the named check; other conditions remain unverified.”",
+                "Add a separate verification or route a reviewer"
+              ],
+              [
+                "Reported agent result",
+                "“The agent reported this outcome; the source system has not yet confirmed it.”",
+                "Keep the status provisional and request the relevant record"
+              ],
+              [
+                "Decision versus execution",
+                "“The owner accepted the next step; execution remains for the authorized system or role.”",
+                "Hand off or verify the external action separately"
+              ],
+              [
+                "Historical note",
+                "“This memory item describes a past decision and links its source.”",
+                "Check for a newer governing decision or current system state"
+              ],
+              [
+                "Missing evidence",
+                "“The path cannot establish this claim because the required source is unavailable.”",
+                "Record a blocker, narrow the claim, or escalate the question"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A path with a stated limit can still be useful",
+        "paragraphs": [
+          "A path with a stated limit can still be useful. It tells the reviewer what the agent has actually established and where more work, a decision, or target-system access is needed.",
+          "For a precise record when a missing prerequisite prevents verification, see AI Agent Blockers."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Blockers",
+            "path": "/guides/ai-agent-blockers/"
+          }
+        ]
+      },
+      {
+        "title": "Put the path where the next reviewer can use it",
+        "paragraphs": [
+          "The path should travel with the work. A task can link its result, a review packet can link the artifact and checks, a decision packet can link the owner’s answer, and a handoff can name the next verification step. Do not leave the only proof path in a private session summary or an unlinked message that the next owner will not find."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Work stage",
+              "Where to place the path",
+              "What the next person needs"
+            ],
+            "rows": [
+              [
+                "Active task",
+                "Task description, update, or result field",
+                "Current scope, state, evidence, and owner"
+              ],
+              [
+                "Artifact review",
+                "Review packet and focused review thread",
+                "Exact version, checks, limits, and reviewer response"
+              ],
+              [
+                "Decision",
+                "Decision packet and named decision record",
+                "Options, accepted answer, and next action"
+              ],
+              [
+                "Blocked work",
+                "Task blocker note and linked prerequisite",
+                "Missing item, effect, resolution owner, and resume condition"
+              ],
+              [
+                "Handoff",
+                "Handoff record with direct source links",
+                "What to verify before taking the next bounded action"
+              ],
+              [
+                "Durable conclusion",
+                "Sourced memory or maintained project document",
+                "Original decision, applicability boundary, and current source to check"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The path should be maintained when the work changes",
+        "paragraphs": [
+          "The path should be maintained when the work changes. If an artifact is superseded or a decision is revised, update the primary link and retain the earlier record as context rather than leaving the next owner to choose between stale copies.",
+          "For the transfer that makes the next contribution and its evidence explicit, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Build a verification path in seven steps",
+        "orderedItems": [
+          "Write the precise claim the agent, task, or reviewer is making.",
+          "Identify the task or contract that defines the relevant outcome and boundary.",
+          "Link the exact artifact, evidence set, check, or observation that supports the claim.",
+          "Add the decision or review record if an owner’s answer changes the claim’s next stage.",
+          "Name the source of record or target system that can confirm the fact at issue.",
+          "State any limit, missing evidence, unrun check, or distinction between preparation and execution.",
+          "Put the path in the task, packet, handoff, or durable record where the next reviewer can inspect it."
+        ]
+      },
+      {
+        "title": "The aim is not to create paperwork around every sentence",
+        "paragraphs": [
+          "The aim is not to create paperwork around every sentence. It is to make consequential claims falsifiable enough that a reviewer can verify them without relying on the agent’s fluency or reconstructing the entire work history.",
+          "For a status record that reports only material changes with evidence and limits, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Use verification paths across roles",
+        "paragraphs": [
+          "Every role can produce a claim that needs a path, but the evidence and target system vary. The path should match the contribution rather than impose a generic set of links on unrelated work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Claim to verify",
+              "Useful path"
+            ],
+            "rows": [
+              [
+                "Research",
+                "“This recommendation follows from the supplied evidence.”",
+                "Task scope → source-linked brief → evidence labels → decision owner"
+              ],
+              [
+                "Editorial",
+                "“This draft meets the approved brief and source boundary.”",
+                "Task → exact draft → source list and review packet → reviewer answer"
+              ],
+              [
+                "Project management",
+                "“This dependency is the current constraint on the milestone.”",
+                "Task → linked dependency → current blocker or decision record → next owner"
+              ],
+              [
+                "Software development",
+                "“This proposed change is ready for maintainer review.”",
+                "Task → exact change and checks → review packet → maintainer response"
+              ],
+              [
+                "Support triage",
+                "“This report is ready to route to the named owner.”",
+                "Task → input evidence → classification and limitation → receiving owner"
+              ],
+              [
+                "Governance or security review",
+                "“This request needs the system owner’s decision.”",
+                "Task → minimum requirement → decision packet → target-system verification if approved"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The agent does not need to personally control every source in the path",
+        "paragraphs": [
+          "The agent does not need to personally control every source in the path. It needs to make the limitation and next owner visible when verification requires a system or authority outside its boundary.",
+          "For the shared workspace practices that make those review records visible across people and agents, see Human–AI Collaboration."
+        ],
+        "links": [
+          {
+            "label": "Human–AI Collaboration",
+            "path": "/guides/human-ai-collaboration/"
+          }
+        ]
+      },
+      {
+        "title": "Test whether a reviewer can verify the claim",
+        "paragraphs": [
+          "Before stating a result as ready, ask a teammate who did not perform the work to follow the path. If they cannot find the precise claim, artifact, evidence, decision, current source, and limitations, the path needs a clearer link or a narrower claim."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reviewer should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Claim test",
+                "What exact statement am I checking?",
+                "Split a broad status claim into smaller verifiable facts"
+              ],
+              [
+                "Artifact test",
+                "Which version, evidence set, or check supports it?",
+                "Link the exact artifact or source record"
+              ],
+              [
+                "Decision test",
+                "Which owner answer matters, and what did it change?",
+                "Add the named decision record and its boundary"
+              ],
+              [
+                "Authority test",
+                "Which system proves the external or current-state fact?",
+                "Link the target-system record or label the claim provisional"
+              ],
+              [
+                "Limit test",
+                "What does this path not establish?",
+                "State missing checks, evidence, or execution confirmation"
+              ],
+              [
+                "Continuity test",
+                "Where does the next owner find and update the path?",
+                "Put it in the task, packet, handoff, or durable record"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A verification path that fails a test is still useful feedback",
+        "paragraphs": [
+          "A verification path that fails a test is still useful feedback. It identifies the next evidence, decision, or system check the team needs instead of allowing a convenient summary to become the final word."
+        ],
+        "links": []
+      },
+      {
+        "title": "Seven verification-path mistakes that make claims hard to trust"
+      },
+      {
+        "title": "Linking a task and calling the external action proven",
+        "paragraphs": [
+          "A task can show coordination state and a reported result. It is not automatically the record that proves a merge, deployment, permission change, delivery, or other external action."
+        ]
+      },
+      {
+        "title": "Using the newest message as the evidence",
+        "paragraphs": [
+          "Recency is not authority. A current chat update may summarize work, but the path should reach the source, artifact, decision, or target system that can support the specific claim."
+        ]
+      },
+      {
+        "title": "Pointing to a draft instead of the reviewed version",
+        "paragraphs": [
+          "The artifact under review must be identifiable. If the content changed after review began, link the new version and state what changed instead of assuming an older answer still applies."
+        ]
+      },
+      {
+        "title": "Hiding a missing check behind a confident status",
+        "paragraphs": [
+          "An unrun verification or unavailable source changes what the path can establish. Label the gap and route the missing prerequisite rather than calling the claim complete."
+        ]
+      },
+      {
+        "title": "Treating an approval as execution",
+        "paragraphs": [
+          "An owner’s decision can authorize the next work stage. The executing system still confirms whether the action occurred and what its current state is."
+        ]
+      },
+      {
+        "title": "Giving a reviewer a long transcript instead of a path",
+        "paragraphs": [
+          "More links do not automatically make verification easier. Start from one claim and connect only the records that establish or limit it."
+        ]
+      },
+      {
+        "title": "Leaving the path stale after the work changes",
+        "paragraphs": [
+          "When a task, artifact, decision, or external state changes, update the primary link and next action. A stale verification path can cause a new owner to rely on a record that no longer applies."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What is an AI agent verification path?",
+        "answer": "It is the explicit route from a claim about agent work to the task, artifact, evidence, decision, source of record, or target system that can support or confirm that claim."
+      },
+      {
+        "question": "Is a verification path the same as an audit trail?",
+        "answer": "No. An audit trail connects the history of work and decisions. A verification path is the direct, claim-specific route a reviewer follows to test a particular statement now."
+      },
+      {
+        "question": "What should an agent do when it cannot verify a claim?",
+        "answer": "State the limitation, narrow the claim to what the available evidence supports, and create a blocker or escalation for the missing source, check, decision, or system owner. Do not report a provisional result as a confirmed fact."
+      },
+      {
+        "question": "Can a task be part of the verification path?",
+        "answer": "Yes. A task is usually useful for scope, owner, coordination state, dependency, and reported result. For external execution or current state, the path should also reach the system that actually owns that fact."
+      },
+      {
+        "question": "How long should a verification path be?",
+        "answer": "Only as long as the claim requires. A low-risk artifact may need a task, exact version, and reviewer answer. A consequential external claim may need evidence, a decision record, and a direct target-system reference."
+      },
+      {
+        "question": "Who maintains the verification path?",
+        "answer": "The task owner or role responsible for the current contribution should keep its coordination links current, while each target system remains responsible for its own execution facts. A handoff should tell the next owner what to verify next."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Source of Record",
+        "path": "/guides/ai-agent-source-of-record/"
+      },
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      },
+      {
+        "label": "AI Agent Blockers",
+        "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI Agent Task Management",
+        "path": "/guides/ai-agent-task-management/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      }
+    ],
+    "cta": {
+      "title": "Make every consequential claim checkable",
+      "body": "An AI agent verification path turns “trust the update” into “follow this record.” State the claim narrowly, link the artifact and evidence, name the decision and source of record when they matter, and say what remains unverified. That lets a reviewer confirm the work without confusing coordination history, preparation, or approval with the external system’s actual state.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
