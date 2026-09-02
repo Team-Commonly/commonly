@@ -77,7 +77,7 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(result.items.find((item) => item.taskId === 'TASK-024')).toBeUndefined();
   });
 
-  test('keeps ordinary blocked and press board rows as open-board items', async () => {
+  test('a blocked row is a standing decision, a human handoff is a press — both open-board items', async () => {
     Task.find.mockReturnValue(taskChain([
       {
         taskId: 'TASK-016', podId: 'pod-1', status: 'blocked', title: 'Fix release gate',
@@ -90,7 +90,7 @@ describe('ActivityService.getDecisionQueue', () => {
     ]));
     const result = await ActivityService.getDecisionQueue('u1');
     expect(result.items.map((item) => [item.taskId, item.kind])).toEqual([
-      ['TASK-016', 'press'], ['TASK-059', 'press'],
+      ['TASK-016', 'decision'], ['TASK-059', 'press'],
     ]);
   });
 
