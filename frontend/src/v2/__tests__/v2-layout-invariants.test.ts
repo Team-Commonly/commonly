@@ -133,12 +133,25 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phoneBlock).toMatch(/\.v2-root button\.v2-login__submit \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
   });
 
-  test('unverified shell banner stays a one-line 44px reminder on phones', () => {
+  test('unverified shell banner keeps the named address visible on phones', () => {
     const phoneStart = v2.indexOf('@media (max-width: 480px)');
     const phoneBlock = v2.slice(phoneStart, v2.indexOf('@media', phoneStart + 10));
-    expect(phoneBlock).toMatch(/\.v2-verification-banner \{[\s\S]*?height: 44px;[\s\S]*?font-size: 16px;/);
-    expect(ruleBody(v2, '.v2-verification-banner__text')).toContain('white-space: nowrap');
-    expect(ruleBody(v2, '.v2-verification-banner__text')).toContain('text-overflow: ellipsis');
+    const shell = ruleBody(v2, '.v2-authenticated-shell');
+    const banner = ruleBody(v2, '.v2-verification-banner');
+    const text = ruleBody(v2, '.v2-verification-banner__text');
+    const notice = ruleBody(v2, '.v2-verification-banner__notice');
+
+    expect(shell).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(banner).toContain('grid-template-columns: minmax(0, 1fr) auto auto');
+    expect(banner).toContain('min-width: 0');
+    expect(text).toContain('overflow-wrap: anywhere');
+    expect(text).not.toContain('white-space: nowrap');
+    expect(text).not.toContain('text-overflow: ellipsis');
+    expect(notice).not.toContain('position: absolute');
+    expect(phoneBlock).toMatch(/\.v2-verification-banner \{[\s\S]*?grid-template-areas:[\s\S]*?"content dismiss"[\s\S]*?"resend resend"[\s\S]*?font-size: 16px;/);
+    expect(phoneBlock).toMatch(/\.v2-root button\.v2-verification-banner__resend \{[\s\S]*?justify-self: start;/);
+    expect(ruleBody(v2, '.v2-root button.v2-verification-banner__resend,\n.v2-root button.v2-verification-banner__dismiss')).toContain('min-height: 44px');
+    expect(v2).toMatch(/\.v2-root button\.v2-verification-banner__dismiss \{[\s\S]*?width: 44px;/);
   });
 
   test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {

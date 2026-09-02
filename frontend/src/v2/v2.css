@@ -375,6 +375,7 @@ body.modern-ui.v2-canvas {
    not 100vh, or the composer and feature-page footers would clip. */
 .v2-authenticated-shell {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
@@ -382,6 +383,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-authenticated-shell__content {
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -393,9 +395,12 @@ body.modern-ui.v2-canvas {
 
 .v2-verification-banner {
   box-sizing: border-box;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "content resend dismiss";
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 40px;
   padding: 4px 16px;
   border-bottom: 1px solid var(--v2-border-soft);
@@ -405,29 +410,30 @@ body.modern-ui.v2-canvas {
   line-height: 20px;
 }
 
-.v2-verification-banner__text {
+.v2-verification-banner__content {
+  grid-area: content;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* Resend feedback belongs to the banner's status announcement, but it must
-   not replace the required named-address reminder or consume its 44px phone
-   row. */
+.v2-verification-banner__text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* Resend feedback stays in the visible status reminder so a sighted person
+   receives the same confirmation as assistive technology. */
 .v2-verification-banner__notice {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+  display: block;
+  margin-top: 2px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .v2-root button.v2-verification-banner__resend,
 .v2-root button.v2-verification-banner__dismiss {
   flex: none;
+  min-height: 44px;
   border: 0;
   background: transparent;
   color: var(--v2-accent-text);
@@ -437,14 +443,15 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-verification-banner__resend {
-  min-height: 32px;
-  padding: 4px 2px;
+  grid-area: resend;
+  padding: 4px 4px;
 }
 
 .v2-root button.v2-verification-banner__dismiss {
+  grid-area: dismiss;
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   place-items: center;
   color: var(--v2-text-secondary);
@@ -4651,10 +4658,19 @@ body.modern-ui.v2-canvas {
 
 @media (max-width: 480px) {
   .v2-verification-banner {
-    height: 44px;
-    min-height: 44px;
-    padding: 4px 12px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "content dismiss"
+      "resend resend";
+    align-items: start;
+    gap: 6px 8px;
+    min-height: 0;
+    padding: 8px 12px;
     font-size: 16px;
+  }
+
+  .v2-root button.v2-verification-banner__resend {
+    justify-self: start;
   }
 
   /* Auth is a primary phone flow: 16px prevents Safari's focus zoom and a

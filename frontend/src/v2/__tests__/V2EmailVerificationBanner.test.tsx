@@ -41,7 +41,7 @@ describe('V2EmailVerificationBanner', () => {
     jest.clearAllMocks();
   });
 
-  test('is a session-dismissible status reminder and resends without exposing an alert', async () => {
+  test('is a session-dismissible status reminder with a visible resend confirmation', async () => {
     (axios.post as jest.Mock).mockResolvedValueOnce({ data: { message: 'sent' } });
     const view = renderBanner();
 
@@ -54,7 +54,7 @@ describe('V2EmailVerificationBanner', () => {
       '/api/auth/resend-verification',
       { email: 'person@example.com' },
     ));
-    expect(banner).toHaveTextContent('Verification link requested.');
+    expect(screen.getByText('Verification link requested.')).toHaveClass('v2-verification-banner__notice');
 
     fireEvent.click(screen.getByRole('button', { name: /hide verification reminder/i }));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();

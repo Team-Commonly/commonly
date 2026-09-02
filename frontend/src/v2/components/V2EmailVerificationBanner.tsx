@@ -42,10 +42,12 @@ const V2EmailVerificationBanner: React.FC = () => {
 
   return (
     <div className="v2-verification-banner" role="status" aria-live="polite">
-      <span className="v2-verification-banner__text">
-        {t('auth.verificationBanner.message', { email: currentUser.email })}
-      </span>
-      {notice && <span className="v2-verification-banner__notice">{notice}</span>}
+      <div className="v2-verification-banner__content">
+        <span className="v2-verification-banner__text">
+          {t('auth.verificationBanner.message', { email: currentUser.email })}
+        </span>
+        {notice && <span className="v2-verification-banner__notice">{notice}</span>}
+      </div>
       <button
         type="button"
         className="v2-verification-banner__resend"
