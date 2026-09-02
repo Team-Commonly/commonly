@@ -139,9 +139,19 @@ router.delete('/:messageId/reactions/:emoji', reactionRateLimit, dualAuth, remov
 // reactions use it: an agent following a thread is first-class, and gating on
 // req.userId alone silently excludes every agent.
 //
-// Registered above the greedy `GET /:podId` on purpose. `/threads/following`
-// is two segments so it does not currently collide, but the collision is one
-// route rename away and the ordering costs nothing.
+// NOT protected by ordering — `GET /:podId` is registered at :85, sixty-odd
+// lines ABOVE this, and Express matches in registration order. An earlier
+// version of this comment claimed the opposite and named `/threads/following`,
+// a path that has never existed on this router (the closest real thing is
+// `/following/threads` on posts.ts, different router, `auth` not `dualAuth`).
+//
+// What protects it is SEGMENT COUNT: `/:podId` compiles to a single-segment
+// pattern and `/threads/state` is two. Rename this to one segment and
+// `getMessages` swallows it under `auth`, so agents get a 401 on a route that
+// looks registered and reads correct. The toggles below survive for a second
+// independent reason — their verbs (POST/DELETE/PUT on two segments) are not
+// ones the greedy route registers. Pinned, executing, in
+// __tests__/unit/routes/messages.threadStateOrdering.test.js.
 //
 // Any message in a thread may be followed — the root is resolved server-side.
 // Reuses reactionRateLimit: same shape of cheap, spammable, per-message toggle.

@@ -1,7 +1,8 @@
 // @ts-nocheck
-// Connectors page: lists the user's channel bridges, surfaces the one-time
-// /commonly-enable code while pending, and toggles live relay via PATCH with
-// linkedUserId set to the toggler (the bridge's attribution identity).
+// Connectors page (Wren spec rev 5 subset): platform cards with dot-status,
+// grouped enable code + copy-command, add-flow tiles with an open-relay pod
+// guard, and the relay controls — liveRelay toggle plus the mirror/attention
+// segment. linkedUserId stays server-derived (never sent by the client).
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -81,13 +82,14 @@ const renderPage = () => render(
 describe('V2ConnectorsPage', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('lists connectors with pod, status, and the enable code while pending', async () => {
+  it('lists connectors with grouped code, copy command, and dot status', async () => {
     mockGets();
     renderPage();
-    // The pod name renders in the card AND as a picker option — assert on both.
     expect((await screen.findAllByText('Rewire Live Demo')).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/\/commonly-enable abc123/)).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
+    // Code renders grouped in 4s (spec §2.3) under a copy-command primary.
+    expect(screen.getByText('abc1 23')).toBeInTheDocument();
+    expect(screen.getByText('Copy command')).toBeInTheDocument();
+    expect(screen.getByText(/Connected · Relay off/)).toBeInTheDocument();
     expect(screen.getByText(/Rewire crew/)).toBeInTheDocument();
   });
 
@@ -96,7 +98,8 @@ describe('V2ConnectorsPage', () => {
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
     expect(await screen.findByText(/code expired/i)).toBeInTheDocument();
-    expect(screen.queryByText(/\/commonly-enable abc123/)).not.toBeInTheDocument();
+    expect(screen.queryByText('abc1 23')).not.toBeInTheDocument();
+    expect(screen.queryByText('Copy command')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /new code/i }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/integrations/i-pending/connect-code',
@@ -105,7 +108,7 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('toggling live relay PATCHes liveRelay only — linkedUserId is server-derived', async () => {
+  it('toggling relay PATCHes liveRelay only — linkedUserId is server-derived', async () => {
     mockGets();
     axios.patch.mockResolvedValue({ data: {} });
     renderPage();
@@ -113,17 +116,37 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
       '/api/integrations/i-live',
-      // No linkedUserId: the server stamps the authenticated caller and
-      // rejects a client-supplied value (impersonation guard, #1290 review).
       { config: { liveRelay: true } },
       expect.anything(),
     ));
   });
 
-  it('excludes public pods from the bridge target picker', async () => {
+  it('mirror/attention segment PATCHes relayAllAgentMessages', async () => {
+    mockGets([
+      {
+        _id: 'i-live',
+        type: 'telegram',
+        status: 'connected',
+        config: { chatTitle: 'Rewire crew', liveRelay: true, relayAllAgentMessages: false },
+        podId: { _id: 'p2', name: 'Ops' },
+      },
+    ]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const mirrorBtn = await screen.findByRole('button', { name: 'Mirror' });
+    fireEvent.click(mirrorBtn);
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-live',
+      { config: { relayAllAgentMessages: true } },
+      expect.anything(),
+    ));
+  });
+
+  it('ghost empty state opens the add flow and excludes public pods', async () => {
     mockGets([]);
     renderPage();
-    await screen.findByText(/No connectors yet/);
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
     const picker = screen.getByLabelText('Pod to bridge');
     const options = Array.from(picker.querySelectorAll('option')).map((o) => o.textContent);
     expect(options).toContain('Rewire Live Demo');
@@ -134,12 +157,21 @@ describe('V2ConnectorsPage', () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { integration: { _id: 'new' } } });
     renderPage();
-    await screen.findByText(/No connectors yet/);
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
     fireEvent.click(screen.getByText('New Telegram connector'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/integrations',
       { podId: 'p1', type: 'telegram', config: {} },
       expect.anything(),
     ));
+  });
+
+  it('SOON platforms are not buttons', async () => {
+    mockGets([]);
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    expect(screen.queryByRole('button', { name: /Slack/ })).toBeNull();
+    expect(screen.getAllByText('SOON').length).toBeGreaterThanOrEqual(1);
   });
 });

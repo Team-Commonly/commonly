@@ -22,6 +22,7 @@ import http from 'http';
 // a fresh temp directory for each test suite run.
 
 const configTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-config-test-'));
+const configFile = path.join(configTmpDir, '.commonly', 'config.json');
 
 await jest.unstable_mockModule('os', () => {
   const actual = os;
@@ -36,6 +37,7 @@ await jest.unstable_mockModule('os', () => {
 const {
   resolveInstanceUrl,
   saveInstance,
+  setActive,
   getToken,
   listInstances,
   DEFAULT_URL,
@@ -51,8 +53,6 @@ const {
 // ── config.js tests ───────────────────────────────────────────────────────────
 
 describe('config.js', () => {
-  const configFile = path.join(configTmpDir, '.commonly', 'config.json');
-
   beforeEach(() => {
     // Remove any leftover config between tests
     if (fs.existsSync(configFile)) fs.unlinkSync(configFile);
@@ -152,6 +152,61 @@ describe('config.js', () => {
     });
     expect(resolveInstanceUrl('dev')).toBe('https://api-dev.commonly.me');
     expect(getToken('dev')).toBe('cm_dev');
+  });
+
+  test('getToken("https://...") prefers the ACTIVE instance when several keys share the URL', () => {
+    // Real config shape on 2026-08-29: `dev` (saved in July, stale token) and
+    // `default` (fresh login) both at api.commonly.me. `.find` returned `dev`
+    // and `commonly agent detach` / `agent wake` got HTTP 401 from a token
+    // the user had already replaced.
+    saveInstance({
+      key: 'dev', url: 'https://api.commonly.me', token: 'cm_stale',
+      userId: 'u1', username: 'sam',
+    });
+    saveInstance({
+      key: 'default', url: 'https://api.commonly.me', token: 'cm_fresh',
+      userId: 'u1', username: 'sam',
+    });
+    // saveInstance sets active = last saved key ('default')
+    expect(getToken('https://api.commonly.me')).toBe('cm_fresh');
+  });
+
+  test('prefers an explicitly-active match over a NEWER one', () => {
+    // Discriminates the `active` branch from the savedAt sort: the active
+    // key is the OLDER save, so only the active preference can pick it.
+    // (The test above is satisfied by savedAt alone — sprint-review mutated
+    // `active` to null and it stayed green.)
+    saveInstance({
+      key: 'old', url: 'https://api.commonly.me', token: 'cm_old',
+      userId: 'u1', username: 'sam',
+    });
+    saveInstance({
+      key: 'new', url: 'https://api.commonly.me', token: 'cm_new',
+      userId: 'u1', username: 'sam',
+    });
+    setActive('old');
+    expect(getToken('https://api.commonly.me')).toBe('cm_old');
+  });
+
+  test('getToken("https://...") falls back to the most recently saved match when none is active', () => {
+    saveInstance({
+      key: 'old', url: 'https://api.commonly.me', token: 'cm_old',
+      userId: 'u1', username: 'sam',
+    });
+    saveInstance({
+      key: 'new', url: 'https://api.commonly.me', token: 'cm_new',
+      userId: 'u1', username: 'sam',
+    });
+    // Point `active` somewhere that does NOT share the URL.
+    saveInstance({
+      key: 'local', url: 'http://localhost:5000', token: 'cm_local',
+      userId: 'u1', username: 'sam',
+    });
+    const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    cfg.instances.old.savedAt = '2026-07-10T05:10:00Z';
+    cfg.instances.new.savedAt = '2026-08-26T22:40:12Z';
+    fs.writeFileSync(configFile, JSON.stringify(cfg));
+    expect(getToken('https://api.commonly.me')).toBe('cm_new');
   });
 
   test('resolveInstanceUrl matches saved URL case-insensitively (and preserves unknown URL case)', () => {
@@ -405,8 +460,9 @@ describe('poller.js', () => {
     expect(received[1]._id).toBe('e2');
   });
 
-  test('posts to /api/agents/runtime/events/acknowledge after each event', async () => {
+  test('binds an ack to the delivery id returned by the poll', async () => {
     const events = [makeEvent('ack-1')];
+    events[0].payload.deliveryId = 'delivery-abc';
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
     createClient.mockReturnValue({ get: mockGet, post: mockPost });
@@ -424,7 +480,10 @@ describe('poller.js', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/ack-1/ack',
-      expect.objectContaining({ result: { outcome: 'acknowledged' } }),
+      expect.objectContaining({
+        result: { outcome: 'acknowledged' },
+        deliveryId: 'delivery-abc',
+      }),
     );
   });
 

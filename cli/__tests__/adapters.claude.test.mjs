@@ -107,8 +107,14 @@ describe('claude adapter — spawn()', () => {
     expect(res.newSessionId).toBe('sid-123');
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('claude');
-    expect(calls[0].args).toEqual(
-      ['-p', 'hello world', '--output-format', 'text', '--resume', 'sid-123'],
+    // The prompt slot is asserted by containment, not equality: an empty
+    // `memoryLongTerm` now carries the empty-memory cue, and pinning the exact
+    // string here would make this session-flag test fail on any wording change
+    // to a preamble it is not about.
+    expect(calls[0].args[0]).toBe('-p');
+    expect(calls[0].args[1]).toContain('hello world');
+    expect(calls[0].args.slice(2)).toEqual(
+      ['--output-format', 'text', '--resume', 'sid-123'],
     );
     // Explicit: must NOT use --session-id on resume path — the whole point.
     expect(calls[0].args).not.toContain('--session-id');
@@ -142,6 +148,9 @@ describe('claude adapter — spawn()', () => {
     // Second attempt used --session-id with a FRESH UUID (not the stale one)
     expect(calls[1].args).toContain('--session-id');
     expect(calls[1].args).not.toContain('abc-123');
+    // Recovery creates an underlying session, so it must receive the same
+    // fresh-session memory cues as an initial spawn.
+    expect(calls[1].args[1]).toContain('=== Fresh session ===');
     // newSessionId returned is the fresh one so the wrapper persists it next turn
     expect(res.newSessionId).not.toBe('abc-123');
     expect(res.newSessionId).toMatch(/^[0-9a-f]{8}-/);
@@ -170,12 +179,53 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain('I remember the user prefers dark mode.');
     expect(promptArg).toContain('=== Current turn ===');
     expect(promptArg).toContain('current message');
+    expect(promptArg).not.toContain('=== Fresh session ===');
   });
 
-  test('no preamble when memoryLongTerm is empty — prompt passed verbatim', async () => {
+  test('a fresh Claude session receives read-first and durable-state cues', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('current message', {
+      memoryLongTerm: 'open gate: #123',
+      _spawnImpl: impl,
+    });
+
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('=== Fresh session ===');
+    expect(promptArg).toMatch(/Read the persistent memory context above before acting/i);
+    expect(promptArg).toMatch(/At a natural end to meaningful work/i);
+    expect(promptArg).toContain("section: 'long_term'");
+  });
+
+  // Replaces an assertion that empty memory passed the prompt verbatim. That
+  // made two different states byte-identical from inside the session — an agent
+  // that has never saved anything, and a runtime with no memory bridge at all —
+  // so a seat could not adopt a habit whose surface it had no evidence existed.
+  test('empty memoryLongTerm still emits a cue naming the one readable section', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
     await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: '', _spawnImpl: impl });
-    expect(calls[0].args[1]).toBe('just this');
+    const promptArg = calls[0].args[1];
+    expect(promptArg).not.toBe('just this');
+    expect(promptArg).toContain('just this');
+    // `long_term` is the ONLY section read back, so the cue has to name it: a
+    // write to `daily` succeeds, returns 200, and is never seen again.
+    expect(promptArg).toContain('long_term');
+    expect(promptArg).toContain('commonly_save_my_memory');
+  });
+
+  // The delivery pin for the unreadable case. The helper's own tests exercise
+  // buildMemoryPreamble directly, which is exactly why they could not see that
+  // the call site coalesced `null` to `''` before the helper ever ran: the
+  // branch was correct, tested, and unreachable from production. Assert here on
+  // the argv the adapter actually spawns.
+  test('null memoryLongTerm reaches the adapter as UNREADABLE, not as empty', async () => {
+    const { impl, calls } = makeSpawnImpl({ stdout: 'ok' });
+    await claude.spawn('just this', { sessionId: 'sid-1', memoryLongTerm: null, _spawnImpl: impl });
+    const promptArg = calls[0].args[1];
+    expect(promptArg).toContain('unreadable');
+    expect(promptArg).toContain('just this');
+    // Telling a seat whose read failed to go save its memory would prompt it to
+    // overwrite state it may already hold with whatever it can reconstruct.
+    expect(promptArg).not.toContain('commonly_save_my_memory');
   });
 
   test('rejects when claude exits non-zero, surfacing stderr', async () => {

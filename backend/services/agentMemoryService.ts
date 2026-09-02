@@ -167,8 +167,8 @@ export function mirrorContentFromSections(
 // preserves siblings, so siblings keep their previous stamp.
 //
 // Phase 1 array-section semantics (`daily`, `relationships`) are **whole-array
-// replace**: sending `{ relationships: [...] }` replaces the entire stored
-// array with the one in the payload, and every entry gets `updatedAt = now`.
+// replace**: sending either array replaces the stored array, and every entry
+// gets `updatedAt = now`.
 // This is consistent with the way the per-key dotted-$set merge in the PUT
 // handler stores arrays. A client that wants to add one entry must currently
 // resend all pre-existing entries. Phase 2's POST /memory/sync with explicit
@@ -201,6 +201,7 @@ export function stampSectionsForWrite(
         date: d.date,
         content: d.content ?? '',
         visibility: (d.visibility ?? 'private') as MemoryVisibility,
+        updatedAt: now,
       }));
       continue;
     }
@@ -223,6 +224,101 @@ export function stampSectionsForWrite(
     );
   }
   return out;
+}
+
+export interface LastAgentMemoryWrite {
+  section: AgentWritableSection;
+  updatedAt: Date;
+}
+
+// The envelope timestamp is deliberately NOT an activity signal: automatic
+// system_exchanges writes update it even when the agent has saved no memory.
+// Limit this view to the normal agent-save surface. `cycles` is likewise
+// excluded: it is an agent journal, not one of the durable sections exposed by
+// commonly_save_my_memory. Ties keep AGENT_WRITABLE_SECTIONS declaration
+// order, which deliberately places long_term before bookkeeping sections.
+// Legacy entries without a server stamp are skipped rather than assigned a
+// fabricated time during hydration.
+/**
+ * Sections that are internal housekeeping rather than authored memory. The
+ * memory view already excludes them from snippets; naming them is fine for an
+ * owner/admin, and is operational detail about the runtime on a public page.
+ */
+export const BOOKKEEPING_SECTIONS: ReadonlySet<AgentWritableSection> = new Set<AgentWritableSection>([
+  'dedup_state',
+  'runtime_meta',
+]);
+
+export type AgentWriteKind = 'durable' | 'bookkeeping';
+
+export function classifyAgentWriteSection(section: AgentWritableSection): AgentWriteKind {
+  return BOOKKEEPING_SECTIONS.has(section) ? 'bookkeeping' : 'durable';
+}
+
+export interface LastAgentMemoryWriteKind {
+  kind: AgentWriteKind;
+  updatedAt: Date;
+}
+
+/**
+ * One computation, two shapes. `/api/agents/:name/profile` is mounted WITHOUT
+ * auth, so it gets the coarse kind; the owner/admin memory view keeps the exact
+ * section. Coarsening here rather than at each caller keeps the two surfaces
+ * derived from the same max() rather than from two selection rules.
+ */
+export function coarsenAgentMemoryWrite(
+  write: LastAgentMemoryWrite | null,
+): LastAgentMemoryWriteKind | null {
+  if (!write) return null;
+  return { kind: classifyAgentWriteSection(write.section), updatedAt: write.updatedAt };
+}
+
+export function getLastAgentMemoryWrite(
+  sections: IAgentMemorySections | undefined,
+): LastAgentMemoryWrite | null {
+  let latest: LastAgentMemoryWrite | null = null;
+  const consider = (section: AgentWritableSection, value: unknown) => {
+    const updatedAt = value instanceof Date ? value : new Date(String(value || ''));
+    if (Number.isNaN(updatedAt.getTime())) return;
+    if (!latest) {
+      latest = { section, updatedAt };
+      return;
+    }
+    if (updatedAt.getTime() > latest.updatedAt.getTime()) {
+      latest = { section, updatedAt };
+      return;
+    }
+    // Exact ties are the common case, not the corner: one /memory/sync stamps
+    // every section it carries with the same `now`. Falling back to array order
+    // there would report `dedup_state` for a write that also saved `long_term`,
+    // which is the misreading this whole selection rule exists to prevent. So a
+    // durable section takes a tie from a bookkeeping one. Among two durables the
+    // winner is still array order and that is arbitrary — nothing may depend on
+    // it: the public surface coarsens both to `durable`, and the owner view is
+    // naming a section that genuinely holds content this recent either way.
+    if (updatedAt.getTime() === latest.updatedAt.getTime()
+      && classifyAgentWriteSection(latest.section) === 'bookkeeping'
+      && classifyAgentWriteSection(section) === 'durable') {
+      latest = { section, updatedAt };
+    }
+  };
+
+  for (const section of AGENT_WRITABLE_SECTIONS) {
+    const value = sections?.[section];
+    if (section === 'daily') {
+      for (const entry of (value as IDailySection[] | undefined) || []) {
+        consider(section, entry?.updatedAt);
+      }
+    } else if (section === 'relationships') {
+      for (const entry of (value as IRelationshipNote[] | undefined) || []) {
+        consider(section, entry?.updatedAt);
+      }
+    } else {
+      consider(section, (value as IMemorySection | undefined)?.updatedAt);
+    }
+  }
+
+  return latest;
 }
 
 // GH#632 Tier-1 foundation: provenance + capped version history on section
@@ -462,11 +558,22 @@ export interface AppendSystemExchangeArgs {
   peers?: string[];
   takeaway?: string;
   ts?: Date;
+  // Opt-in repeat suppression for kinds whose payload is a CONSTANT. Skip the
+  // append when the newest entry already carries the same
+  // (kind, surfacePodId, takeaway) and is younger than this many ms.
+  //
+  // This exists because `entries` is a fixed-size ring
+  // (SYSTEM_EXCHANGE_ENTRY_CAP = 50) and a repeat writer with an unvarying
+  // payload evicts precisely the entries the ring exists to preserve. Measured
+  // on one live envelope: 50 entries, ~45 of them byte-identical loop-trip
+  // notices, leaving two entries of any other kind. Off by default — a caller
+  // whose takeaway carries real per-event content must keep every append.
+  dedupeWindowMs?: number;
 }
 
 export async function appendSystemExchange(
   args: AppendSystemExchangeArgs,
-): Promise<{ revision: number } | null> {
+): Promise<{ revision: number; deduped?: boolean } | null> {
   const {
     agentName,
     instanceId,
@@ -476,6 +583,7 @@ export async function appendSystemExchange(
     peers = [],
     takeaway = '',
     ts = new Date(),
+    dedupeWindowMs = 0,
   } = args;
 
   if (!agentName || !instanceId) {
@@ -496,6 +604,36 @@ export async function appendSystemExchange(
     peers: Array.isArray(peers) ? peers.filter((p) => typeof p === 'string') : [],
     takeaway: truncateTakeaway(takeaway),
   };
+
+  // Repeat suppression, when the caller opted in. Deliberately a read-then-
+  // decide rather than a filtered update: the update below is an UPSERT, and a
+  // filter that fails to match would insert a second envelope rather than do
+  // nothing. So this races — two simultaneous trips can both see no duplicate
+  // and both append. That is a bounded loss of exactly the property being
+  // bought (2 entries instead of 1) and it is not the failure this guards
+  // against, which is 45 identical entries accumulated one at a time over days.
+  if (dedupeWindowMs > 0) {
+    const existing = await AgentMemory.findOne({ agentName, instanceId })
+      .select({ revision: 1, 'sections.system_exchanges.entries': { $slice: 1 } })
+      .lean<{
+        revision?: number;
+        sections?: { system_exchanges?: { entries?: ISystemExchangeEntry[] } };
+      } | null>();
+    const newest = existing?.sections?.system_exchanges?.entries?.[0];
+    if (newest
+      && newest.kind === entry.kind
+      && String(newest.surfacePodId) === entry.surfacePodId
+      && String(newest.takeaway ?? '') === entry.takeaway) {
+      const newestTs = newest.ts instanceof Date ? newest.ts : new Date(String(newest.ts || ''));
+      const age = entry.ts.getTime() - newestTs.getTime();
+      // `age >= 0` matters: an out-of-order `ts` (a backfill, a clock skew)
+      // yields a negative age, and treating that as "within the window" would
+      // silently drop a genuinely older entry the ring should still receive.
+      if (!Number.isNaN(newestTs.getTime()) && age >= 0 && age < dedupeWindowMs) {
+        return { revision: existing?.revision ?? 1, deduped: true };
+      }
+    }
+  }
 
   // Single atomic op — works whether the doc exists, the `sections` envelope
   // exists, or `sections.system_exchanges` exists. Mongo auto-creates

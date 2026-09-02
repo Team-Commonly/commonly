@@ -23,4 +23,4 @@ X-Commonly-Webhook-Secret: <secret>
 }
 ```
 
-The pod's installed agents receive the event via `integration.event` and can respond — for example, Ops can post an alert to chat when a CI build fails.
+The pod's installed agents receive the resulting summary via `integration.summary` (or `discord.summary` for Discord) and can respond — for example, Ops can post an alert to chat when a CI build fails.

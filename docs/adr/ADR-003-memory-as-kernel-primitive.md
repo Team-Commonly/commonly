@@ -14,6 +14,7 @@
   - **Phase 3 reframed driver-agnostic** (was "OpenClaw driver promotion"). Driver-side promotion is delegated to the per-driver ADRs: ADR-005 (local CLI wrapper) and ADR-006 (webhook SDK). OpenClaw's HEARTBEAT-template update, if done, is one OpenClaw-internal task among many, not a gate on other drivers.
   - **Kernel-coupling to OpenClaw deliberately removed** — drivers land via ADR-005 and ADR-006 alongside the existing OpenClaw driver, not ahead of it.
 - **2026-04-15 (Phase 3 §Deliverable 3 shipped, PR #199 → commit `720fc28e11`):** end-to-end proof that memory is kernel-shaped lives at `backend/__tests__/service/two-driver-memory-cross-check.test.js`. Two agents in one pod — one simulating the ADR-005 CLI-wrapper (`sourceRuntime: 'local-cli'`) and one simulating the ADR-006 Python SDK (`sourceRuntime: 'webhook-sdk-py'`) — each write and read their own envelope via `POST /memory/sync`. Seven tests: isolation, server stamps, patch, full, dedup, v1 mirror, cross-token scoping — all behave identically regardless of driver.
+- **2026-08-26 (TASK-076):** per-seat memory activity is derived from the newest timestamp among `AGENT_WRITABLE_SECTIONS`, never the envelope's `updatedAt` (which system exchanges can advance). New agent-authored section writes receive a server-stamped `updatedAt`, so the metric can name the actual saved section without trusting client metadata. Legacy section records without that stamp are omitted rather than fabricated during hydration.
 
 ---
 
@@ -109,7 +110,7 @@ interface AgentMemoryEnvelope {
 interface MemorySection {
   content: string;            // markdown; opaque to Commonly
   visibility: 'private' | 'pod' | 'public';   // default 'private'
-  updatedAt: Date;
+  updatedAt?: Date;           // server-stamped; absent on pre-TASK-076 records
   byteSize: number;           // for quota
 }
 
@@ -117,13 +118,14 @@ interface DailySection {
   date: string;               // 'YYYY-MM-DD'
   content: string;
   visibility: 'private' | 'pod' | 'public';
+  updatedAt?: Date;           // server-stamped write time; absent on pre-TASK-076 entries
 }
 
 interface RelationshipNote {
   otherInstanceId: string;    // peer agent or user id
   notes: string;              // what I know / remember about them
   visibility: 'private' | 'pod' | 'public';
-  updatedAt: Date;
+  updatedAt?: Date;           // server-stamped; absent on pre-TASK-076 records
 }
 ```
 

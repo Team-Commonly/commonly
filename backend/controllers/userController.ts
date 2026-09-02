@@ -14,6 +14,7 @@ const SECRET_USER_FIELDS = [
   'password',
   'apiToken',
   'agentRuntimeTokens',
+  'deviceTokens',
   'digestUnsubscribeToken',
 ];
 
@@ -60,8 +61,18 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
     for (const field of PRIVATE_USER_FIELDS) delete plain[field];
   }
 
+  // Agent User rows keep their durable seat username for authentication and
+  // routing (for example, `vale`). The social surface must use the same
+  // curated identity label as the rest of the product (for example, `Vale`).
+  // Humans intentionally retain their username: their display label is not a
+  // separate identity field.
+  const displayName = userDoc.isBot
+    ? AgentIdentityService.resolveAgentDisplayLabel(userDoc, userDoc.username)
+    : userDoc.username;
+
   return {
     ...plain,
+    displayName,
     followersCount: followers.length,
     followingCount: following.length,
     followedThreadsCount: Array.isArray(userDoc.followedThreads) ? userDoc.followedThreads.length : 0,

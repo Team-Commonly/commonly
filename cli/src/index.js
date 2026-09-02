@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 
 import { registerLogin, registerWhoami } from './commands/login.js';
 import { registerAgent } from './commands/agent.js';
+import { registerDaemon } from './commands/daemon.js';
 import { registerPod } from './commands/pod.js';
 import { registerDev } from './commands/dev.js';
 
@@ -37,6 +38,9 @@ registerWhoami(program);
 // Agent management
 registerAgent(program);
 
+// Local daemon lifecycle
+registerDaemon(program);
+
 // Pod management
 registerPod(program);
 
@@ -53,6 +57,8 @@ Quick start:
   $ commonly agent attach claude --pod <podId> --name my-claude
   $ commonly agent run my-claude                       # Ctrl+C to stop
   $ commonly agent detach my-claude                    # clean uninstall
+  $ commonly daemon register --name "My MacBook"
+  $ commonly daemon status
 
 Custom Python agent:
   $ commonly agent init --language python --name research-bot --pod <podId>

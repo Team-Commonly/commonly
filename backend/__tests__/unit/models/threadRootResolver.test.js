@@ -67,6 +67,30 @@ describe('explicit, the in-thread post shape', () => {
   test('explicit wins over derivation when both agree', async () => {
     expect(await resolveThreadRoot({ podId: POD, replyToMessageId: 101, threadRootId: 100 })).toBe(100);
   });
+
+  // @sprint-review 56879. "Agree" is a set with two members and this file only
+  // held one: above, the parent is a reply INSIDE the thread. The other member
+  // is the parent BEING the root, and it is the one V2PodChat's handleSend
+  // comment is written about, because it is the only shape where the reply
+  // edge pings the ROOT's author rather than some mid-thread author.
+  //
+  // It is also the one the resolver structurally cannot refuse. derived is
+  // COALESCE(parent.thread_root_id, parent.id), and a root's thread_root_id is
+  // NULL, so derived falls through to parent.id — which IS the named root. The
+  // two statements are equal by construction; thread_root_mismatch can never
+  // fire here no matter what the client sends. Nothing server-side stops it,
+  // so the client rule is the only thing that does, and this test is what
+  // makes that dependency visible rather than assumed.
+  test('replying to the root while aimed at its thread: accepted, and unrefusable', async () => {
+    expect(await resolveThreadRoot({ podId: POD, replyToMessageId: 100, threadRootId: 100 })).toBe(100);
+  });
+
+  test('CONTROL: the same pair one message over DOES disagree and 400s', async () => {
+    // Proves the acceptance above is the COALESCE fall-through and not a
+    // resolver that waves through any pair naming the same pod.
+    await expect(resolveThreadRoot({ podId: POD, replyToMessageId: 100, threadRootId: 200 }))
+      .rejects.toMatchObject({ code: 'thread_root_mismatch' });
+  });
 });
 
 describe('validation — each of these is a 400, not a silent choice', () => {

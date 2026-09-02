@@ -41,7 +41,6 @@ interface FormattedMessage extends MessageRow {
 interface ActivityHintResult {
   count: number;
   lastAt: unknown;
-  recentMessages: Array<{ id: string; username: string; content: string; createdAt: unknown }>;
 }
 
 interface PodActivityEntry {
@@ -444,43 +443,41 @@ class Message {
     return { deleted, reRooted };
   }
 
+  /**
+   * Counts and a last-seen stamp for the heartbeat's pod-selection pass.
+   *
+   * Metadata ONLY, and deliberately so. This used to run a second query — the
+   * three most recent messages, joined to `users` for a username — because
+   * 089d0058 shipped them into `activityHint.recentMessages` for the model to
+   * read. 8608060d removed that field 23 minutes later ("agents fetch chat
+   * messages themselves via commonly_get_messages"), but removed it only from
+   * the CONSUMER. The producer kept running the join, per pod, per heartbeat
+   * tick, for five months, and nothing in the repo ever read the result.
+   *
+   * Found by @sprint-review (57711) auditing this query for a MISSING column
+   * (`thread_root_id`). The right answer was that adding one would have been
+   * adding a field to dead code. Worth remembering when a projection looks
+   * incomplete: check that it has a reader before deciding what it owes them.
+   */
   static async findActivityHint(podId: unknown, since: unknown): Promise<ActivityHintResult> {
     const podIdStr = (podId as { toString(): string } | undefined)?.toString();
-    if (!podIdStr) return { count: 0, lastAt: null, recentMessages: [] };
+    if (!podIdStr) return { count: 0, lastAt: null };
     try {
-      const [statsResult, recentResult] = await Promise.all([
-        (pool as PgPool).query(
-          `SELECT COUNT(*) AS count, MAX(created_at) AS last_at
+      const statsResult = await (pool as PgPool).query(
+        `SELECT COUNT(*) AS count, MAX(created_at) AS last_at
            FROM messages
-           WHERE pod_id = $1 AND created_at >= $2 AND message_type != 'system'`,
-          [podIdStr, since],
-        ),
-        (pool as PgPool).query(
-          `SELECT m.id, m.content, u.username, m.created_at
-           FROM messages m
-           LEFT JOIN users u ON m.user_id = u._id
-           WHERE m.pod_id = $1 AND m.created_at >= $2 AND m.message_type != 'system'
-           ORDER BY m.created_at DESC LIMIT 3`,
-          [podIdStr, since],
-        ),
-      ]);
+          WHERE pod_id = $1 AND created_at >= $2 AND message_type != 'system'`,
+        [podIdStr, since],
+      );
       const stats = (statsResult.rows[0] || {}) as { count?: string; last_at?: unknown };
-      const recentMessages = (recentResult.rows as Array<{ id?: unknown; username?: string; content?: string; created_at?: unknown }>)
-        .slice().reverse().map((m) => ({
-          id: m.id?.toString() || '',
-          username: m.username || 'unknown',
-          content: (m.content || '').slice(0, 120),
-          createdAt: m.created_at,
-        }));
       return {
         count: parseInt(String(stats.count || 0), 10),
         lastAt: stats.last_at || null,
-        recentMessages,
       };
     } catch (error) {
       const e = error as { message?: string };
       console.error('Error in findActivityHint:', e.message);
-      return { count: 0, lastAt: null, recentMessages: [] };
+      return { count: 0, lastAt: null };
     }
   }
 
@@ -507,6 +504,37 @@ class Message {
     } catch (error) {
       const e = error as { message?: string };
       console.error('Error in findMostRecentPodActivity:', e.message);
+      return [];
+    }
+  }
+
+  // One row per user: each given user's most-recent non-system message in ONE
+  // pod. Powers the Your Team featured card's line 2 (last-message snippet) —
+  // the inverse shape of findLastMessageByUserPerPod below.
+  static async findLastMessagePerUserInPod(
+    podId: unknown,
+    userIds: unknown[],
+  ): Promise<Array<{ userId: string; content: string; createdAt: unknown }>> {
+    if (!podId || !userIds || !userIds.length) return [];
+    try {
+      const pid = (podId as { toString(): string }).toString();
+      const userIdStrs = userIds.map((id) => (id as { toString(): string } | undefined)?.toString()).filter(Boolean);
+      if (!userIdStrs.length) return [];
+      const result = await (pool as PgPool).query(
+        `SELECT DISTINCT ON (user_id) user_id, content, created_at
+         FROM messages
+         WHERE pod_id = $1 AND user_id = ANY($2) AND message_type != 'system'
+         ORDER BY user_id, created_at DESC`,
+        [pid, userIdStrs],
+      );
+      return (result.rows as Array<{ user_id: string; content: string; created_at: unknown }>).map((r) => ({
+        userId: r.user_id,
+        content: r.content,
+        createdAt: r.created_at,
+      }));
+    } catch (error) {
+      const e = error as { message?: string };
+      console.error('Error in findLastMessagePerUserInPod:', e.message);
       return [];
     }
   }

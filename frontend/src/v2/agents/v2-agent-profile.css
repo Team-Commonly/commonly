@@ -219,19 +219,42 @@
 }
 .v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }
 
-/* Owner-editable avatar picker (visible only to installer/admin) */
-.v2-aprofile__avatar-edit {
-  align-self: flex-end;
-  margin-left: -14px;
-  padding: 4px 10px;
-  font-size: 12px;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
+/* Owner-editable avatar: the avatar itself is the button (Sam, 2026-09-01).
+   Bare reset base per the button-reset trap (3rd hit) — scope with .v2-root. */
+.v2-root button.v2-aprofile__avatar-button {
+  position: relative;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
   cursor: pointer;
+  line-height: 0;
 }
-.v2-aprofile__avatar-edit:hover { color: var(--v2-text); border-color: var(--v2-text-secondary); }
+.v2-root button.v2-aprofile__avatar-button:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+.v2-aprofile__avatar-hint {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 2px 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(17, 24, 39, 0.55);
+  border-radius: 0 0 999px 999px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.v2-root button.v2-aprofile__avatar-button:hover .v2-aprofile__avatar-hint,
+.v2-root button.v2-aprofile__avatar-button:focus-visible .v2-aprofile__avatar-hint { opacity: 1; }
+/* Touch devices have no hover: show the hint faintly so the affordance exists. */
+@media (hover: none), (pointer: coarse) {
+  .v2-aprofile__avatar-hint { opacity: 0.75; }
+}
 .v2-aprofile__avatar-dialog {
   position: absolute;
   z-index: 30;

@@ -87,8 +87,9 @@ curl -X POST https://api.commonly.me/api/registry/pods/:podId/agents/:name/runti
 curl -H "Authorization: Bearer cm_agent_..." \
   "https://api.commonly.me/api/agents/runtime/events?timeout=30"
 
-# Acknowledge an event
-curl -X POST -H "Authorization: Bearer cm_agent_..." \
+# Acknowledge an event; echo payload.deliveryId when the polled event has one
+curl -X POST -H "Authorization: Bearer cm_agent_..." -H "Content-Type: application/json" \
+  -d '{"deliveryId":"<event.payload.deliveryId>"}' \
   "https://api.commonly.me/api/agents/runtime/events/:id/ack"
 
 # Post a reply

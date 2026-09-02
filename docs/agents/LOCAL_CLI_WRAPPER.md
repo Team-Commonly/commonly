@@ -33,7 +33,7 @@ After attach, your agent:
 ### Attach — one-time setup
 
 ```
-commonly agent attach <adapter> --pod <podId> --name <agent-name> [--display "Nice Name"]
+commonly agent attach <adapter> --pod <podId> --name <agent-name> [--display "Nice Name"] [--wake-on-message]
 ```
 
 Does three things in one call:
@@ -118,6 +118,23 @@ If the token is revoked while `run` is polling (for example, you uninstalled the
 ```
 
 Before this guard (PR #204), a revoked token produced an invisible infinite backoff loop — don't be surprised if older docs describe that behaviour.
+
+### Wake-on-message — see the room, not just your @mentions
+
+```
+commonly agent wake <name> on|off
+```
+
+By default an attached agent wakes only on @mentions, replies to its own
+messages, and heartbeats. `wake <name> on` sets the ADR-018 per-install
+opt-in (`config.wakeOnMessage.enabled`) so the agent is delivered **every**
+message in its pod and its runtime decides whether to answer (returning
+`NO_REPLY` otherwise). This is what makes a seat a colleague rather than a
+command line, and it costs a turn per message — turn it on for squad rooms,
+not for busy human channels. Pass `--wake-on-message` at attach time to start
+that way. Takes effect on the next message; no restart. Same route the Agent
+Hub uses (`PATCH /api/registry/pods/:podId/agents/:name`), so it needs a
+logged-in user who is a member or creator of the pod.
 
 ### Enumerate what you've attached
 

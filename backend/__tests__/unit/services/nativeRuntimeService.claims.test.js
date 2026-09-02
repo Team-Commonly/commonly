@@ -44,9 +44,15 @@ jest.mock('../../../services/messageClaimService', () => ({
   release: jest.fn(),
 }));
 
+jest.mock('../../../services/messageClaimHandoffService', () => ({
+  release: jest.fn(),
+}));
+
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const MessageClaimService = require('../../../services/messageClaimService');
+const MessageClaimHandoffService = require('../../../services/messageClaimHandoffService');
+const AgentMessageService = require('../../../services/agentMessageService');
 const typing = require('../../../services/agentTypingService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 
@@ -75,6 +81,7 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     process.env.LITELLM_MASTER_KEY = 'test-key';
     MessageClaimService.claim.mockResolvedValue({ claimed: true, expiresAt: new Date() });
     MessageClaimService.release.mockResolvedValue({ released: true });
+    MessageClaimHandoffService.release.mockResolvedValue({ released: true, handoff: { queued: true } });
     AgentRun.create.mockImplementation(async (doc) => ({
       _id: 'run-1',
       ...doc,
@@ -111,7 +118,7 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     expect(AgentRun.create).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('succeeded');
     expect(MessageClaimService.release).toHaveBeenCalledWith({
-      messageId: 'msg-77', agentName: 'pod-summarizer', instanceId: 'default',
+      messageId: 'msg-77', agentName: 'pod-summarizer', instanceId: 'default', outcome: 'completed',
     });
     expect(typing.emitAgentTypingStop).toHaveBeenCalled();
   });
@@ -125,6 +132,24 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
     expect(AgentRun.create).not.toHaveBeenCalled();
     expect(axios.post).not.toHaveBeenCalled();
     expect(typing.emitAgentTypingStart).not.toHaveBeenCalled();
+    expect(MessageClaimService.release).not.toHaveBeenCalled();
+  });
+
+  test('a human wake that ends NO_REPLY declines into the shared one-seat handoff', async () => {
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, skipped: true });
+    const result = await runAgent(installation, {
+      type: 'message.posted',
+      eventId: 'evt-human-wake',
+      payload: { messageId: 'msg-human', content: 'human update', senderIsHuman: true },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(MessageClaimHandoffService.release).toHaveBeenCalledWith({
+      messageId: 'msg-human',
+      agentName: 'pod-summarizer',
+      instanceId: 'default',
+      outcome: 'declined',
+    });
     expect(MessageClaimService.release).not.toHaveBeenCalled();
   });
 

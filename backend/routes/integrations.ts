@@ -1,5 +1,9 @@
 // eslint-disable-next-line global-require
 const express = require('express');
+// ESM import (not require) so CodeQL's js/missing-rate-limiting query
+// recognizes the limiter (same pattern as routes/messages.ts).
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
@@ -29,7 +33,7 @@ const { hash, randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
-const DMService = require('../services/dmService');
+const isPodMember = require('../utils/isPodMember');
 
 // Bridge attribution + binding fields are server-owned. linkedUserId is the
 // identity every inbound live-relay message is AUTHORED as; chatId/chatType
@@ -40,6 +44,21 @@ const SERVER_OWNED_CONFIG_KEYS = ['linkedUserId', 'connectCode', 'connectCodeExp
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
   SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  return next;
+};
+
+// liveRelay / relayAllAgentMessages are declared Boolean paths, so Mongoose
+// casts the string 'true' to true on the way in while the guards below compare
+// strictly. Coerce at the edge so a string can never skip the linkedUserId
+// stamp or the group refusal (#1293: on PATCH, liveRelay:'true' carried the
+// previous owner's linkedUserId forward and switched the relay on as them).
+const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
+const coerceRelayFlags = (config: Record<string, unknown>): Record<string, unknown> => {
+  const next = { ...config };
+  RELAY_FLAG_KEYS.forEach((k) => {
+    if (next[k] === 'true') next[k] = true;
+    else if (next[k] === 'false') next[k] = false;
+  });
   return next;
 };
 
@@ -253,15 +272,28 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
     // Membership gate: an integration relays a pod's content outward and
-    // authors content into it. Only members, the pod creator, or admins may
-    // create one. (Plain findById: unit mocks resolve a bare doc.)
-    const targetPod = await Pod.findById(podId) as { type?: string; members?: unknown[]; createdBy?: { toString: () => string } } | null;
-    const isPodCreator = Boolean(targetPod?.createdBy && targetPod.createdBy.toString() === String(req.user?.id));
-    if (!targetPod || !(isPodCreator || await DMService.canViewPod(req.user?.id, targetPod))) {
+    // authors content into it — a WRITE, so it takes the strict predicate
+    // (members + creator; no admin read-bypass — #1302's isPodMember, not
+    // DMService.canViewPod). Plain findById: unit mocks resolve a bare doc.
+    const targetPod = await Pod.findById(podId);
+    if (!targetPod || !isPodMember(targetPod, req.user?.id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const nextConfig: Record<string, unknown> = stripServerOwnedConfig(config);
+    const nextConfig: Record<string, unknown> = coerceRelayFlags(stripServerOwnedConfig(config));
     if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
+    // First-run default: mirror. A fresh connector has no leadAgentUsername
+    // and its agents use no escalation markers, so attention mode relays
+    // NOTHING — a new user's first experience of the bridge would be silence.
+    // Mirror shows everything; the Connected message teaches /mode attention.
+    if (type === 'telegram' && nextConfig.relayAllAgentMessages === undefined) {
+      nextConfig.relayAllAgentMessages = true;
+      if (nextConfig.liveRelay === undefined) nextConfig.liveRelay = true;
+    }
+    // Ordering is load-bearing: the default above may have just switched
+    // liveRelay on, and a live relay with no linkedUserId authors nothing
+    // inbound (the bridge fails closed on a missing linked user) while still
+    // streaming outbound. The creator IS the authenticated caller, so the
+    // defaulted case is stamped exactly like an explicit liveRelay:true.
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
@@ -402,9 +434,28 @@ router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/user/all', auth, async (req: AuthReq, res: Res) => {
+// Read limiter for the connector listing — same token/IP keying as
+// routes/messages.ts so NAT'd users don't share a bucket.
+const listIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: { get?: (h: string) => string | undefined; ip?: string }) => {
+    const authHeader = req.get?.('authorization');
+    if (authHeader) {
+      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
+  },
+});
+
+router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
-    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').populate('platformIntegration').sort({ createdAt: -1 });
+    const integrations = await Integration.find({ createdBy: req.user?.id, isActive: true }).populate('podId', 'name type').sort({ createdAt: -1 });
     res.json(integrations);
   } catch (error) {
     console.error('Error fetching user integrations:', error);
@@ -450,8 +501,9 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
-    const nextConfig = config ? { ...currentConfig, ...stripServerOwnedConfig(config) } : currentConfig;
-    if (config && config.liveRelay === true) {
+    const incoming = config ? coerceRelayFlags(stripServerOwnedConfig(config)) : null;
+    const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
+    if (incoming && incoming.liveRelay === true) {
       // Relay authors inbound as linkedUserId and streams outbound to chatId;
       // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
       if (nextConfig.chatId && nextConfig.chatType !== 'private') {

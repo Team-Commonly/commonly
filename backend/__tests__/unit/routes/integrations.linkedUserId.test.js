@@ -20,7 +20,11 @@ jest.mock('../../../models/DiscordIntegration', () => function DiscordIntegratio
 });
 jest.mock('../../../services/discordService', () => jest.fn());
 jest.mock('../../../models/Integration', () => {
-  function Integration(data) { Object.assign(this, data); }
+  function Integration(data) {
+    Object.assign(this, data);
+    this._id = this._id || 'integration-new';
+    this.save = jest.fn().mockResolvedValue(this);
+  }
   Integration.findById = jest.fn();
   Integration.findByIdAndUpdate = jest.fn();
   Integration.aggregate = jest.fn().mockResolvedValue([]);
@@ -71,6 +75,17 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     const res = await request(app)
       .patch('/api/integrations/integration-1')
       .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.config.liveRelay).toBe(true);
+    expect(update.config.linkedUserId).toBe('user-1');
+  });
+
+  it("derives linkedUserId when liveRelay arrives as the string 'true' (#1293)", async () => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-1')
+      .send({ config: { liveRelay: 'true' } });
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
@@ -156,6 +171,14 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
+  it("refuses the same flip when liveRelay arrives as the string 'true' (#1293)", async () => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-1')
+      .send({ config: { liveRelay: 'true' } });
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('ignores client-supplied chatId on PATCH', async () => {
     const res = await request(app)
       .patch('/api/integrations/integration-1')
@@ -164,5 +187,48 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.config.chatId).toBe('42');
     expect(update.config.leadAgentUsername).toBe('theo');
+  });
+});
+
+describe('POST /api/integrations — telegram first-run defaults', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Pod.findById.mockResolvedValue({ _id: 'pod-1', type: 'private', members: ['user-1'] });
+  });
+
+  // A fresh connector must never default into the silence trap: attention
+  // mode with no lead configured relays nothing, so mirror is the first-run
+  // default and the Connected message teaches /mode attention.
+  it('defaults a new telegram connector to liveRelay + mirror', async () => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: {} });
+    expect(res.status).toBe(201);
+    const created = res.body.integration;
+    expect(created.config.relayAllAgentMessages).toBe(true);
+    expect(created.config.liveRelay).toBe(true);
+    expect(created.config.connectCode).toBeTruthy();
+    // The default switched liveRelay on, so the stamp must follow it: a live
+    // relay with no linkedUserId authors nothing inbound and still streams
+    // outbound (ordering ruled at the #1297 gate).
+    expect(created.config.linkedUserId).toBe('user-1');
+  });
+
+  it('respects an explicit liveRelay:false at create and does not stamp', async () => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: { liveRelay: false } });
+    expect(res.status).toBe(201);
+    expect(res.body.integration.config.liveRelay).toBe(false);
+    expect(res.body.integration.config.relayAllAgentMessages).toBe(true);
+    expect(res.body.integration.config.linkedUserId).toBeUndefined();
+  });
+
+  it('respects an explicit attention-mode choice at create', async () => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: { relayAllAgentMessages: false } });
+    expect(res.status).toBe(201);
+    expect(res.body.integration.config.relayAllAgentMessages).toBe(false);
   });
 });

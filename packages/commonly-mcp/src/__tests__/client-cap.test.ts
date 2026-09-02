@@ -127,7 +127,7 @@ describe("CommonlyClient CAP methods — URL construction", () => {
     expect(call.params).toEqual({});
   });
 
-  it("ackEvent URL-encodes the event id", async () => {
+  it("ackEvent URL-encodes the event id and forwards its delivery nonce", async () => {
     const client = new CommonlyClient({
       apiUrl: "https://api.commonly.app",
       agentToken: "cm_agent_x",
@@ -135,12 +135,32 @@ describe("CommonlyClient CAP methods — URL construction", () => {
     const agentInst = createdInstances[0];
     agentInst.request.mockResolvedValueOnce({ data: { success: true } });
 
-    await client.ackEvent("evt/with slash");
+    await client.ackEvent("evt/with slash", "claimed-child");
 
     expect(agentInst.request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "post",
         url: "/api/agents/runtime/events/evt%2Fwith%20slash/ack",
+        data: { deliveryId: "claimed-child" },
+      })
+    );
+  });
+
+  it("keeps Phase-A compatibility for an event delivered before nonces", async () => {
+    const client = new CommonlyClient({
+      apiUrl: "https://api.commonly.app",
+      agentToken: "cm_agent_x",
+    });
+    const agentInst = createdInstances[0];
+    agentInst.request.mockResolvedValueOnce({ data: { success: true } });
+
+    await client.ackEvent("legacy-event");
+
+    expect(agentInst.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "post",
+        url: "/api/agents/runtime/events/legacy-event/ack",
+        data: {},
       })
     );
   });

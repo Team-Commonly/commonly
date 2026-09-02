@@ -27,11 +27,43 @@ await jest.unstable_mockModule('os', () => {
 
 const {
   performAttach,
+  setWakeOnMessage,
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
   bootstrapAgentRecordFromEnv,
 } = await import('../src/commands/agent.js');
+
+describe('setWakeOnMessage', () => {
+  const record = {
+    agentName: 'juno', podId: 'pod-9', instanceId: 'default', runtimeToken: 'cm_agent_j',
+  };
+
+  test('PATCHes the installation config through the registry route', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    const result = await setWakeOnMessage({ client, record, enabled: true });
+    expect(client.patch).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno',
+      { instanceId: 'default', config: { wakeOnMessage: { enabled: true } } },
+    );
+    expect(result).toEqual({
+      agentName: 'juno', podId: 'pod-9', instanceId: 'default', enabled: true,
+    });
+  });
+
+  test('off sends enabled:false (not a delete) so the read side sees an explicit value', async () => {
+    const client = { patch: jest.fn(async () => ({ success: true })) };
+    await setWakeOnMessage({ client, record, enabled: false });
+    expect(client.patch.mock.calls[0][1].config.wakeOnMessage).toEqual({ enabled: false });
+  });
+
+  test('refuses a token record without a pod', async () => {
+    const client = { patch: jest.fn() };
+    await expect(setWakeOnMessage({ client, record: { agentName: 'x' }, enabled: true }))
+      .rejects.toThrow(/podId/);
+    expect(client.patch).not.toHaveBeenCalled();
+  });
+});
 
 const makeClient = ({ publishOk = true, runtimeToken = null } = {}) => {
   const post = jest.fn(async (route, body) => {
@@ -102,6 +134,28 @@ describe('performAttach', () => {
             host: 'byo',
           }),
         }),
+      }),
+    );
+  });
+
+  test('omits config.wakeOnMessage by default (ADR-018 ambient wake is opt-in)', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({
+      client, adapterName: 'stub', agentName: 'quiet', podId: 'pod-1',
+    });
+    const installBody = client.post.mock.calls.find(([route]) => route === '/api/registry/install')[1];
+    expect(installBody.config).not.toHaveProperty('wakeOnMessage');
+  });
+
+  test('--wake-on-message sets config.wakeOnMessage.enabled on install', async () => {
+    const client = makeClient({ runtimeToken: 'cm_agent_x' });
+    await performAttach({
+      client, adapterName: 'stub', agentName: 'ambient', podId: 'pod-1', wakeOnMessage: true,
+    });
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/registry/install',
+      expect.objectContaining({
+        config: expect.objectContaining({ wakeOnMessage: { enabled: true } }),
       }),
     );
   });

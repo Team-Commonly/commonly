@@ -44,13 +44,8 @@ const inviteWriteRateLimit = rateLimit({
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 invite writes per 60s' }),
 });
 
-const isPodMember = (pod: any, userId: string) => {
-  if (!pod || !userId) return false;
-  if (pod.createdBy?.toString?.() === userId.toString()) return true;
-  return (pod.members || []).some((m: any) => (
-    (m?._id?.toString?.() || m?.toString?.() || '') === userId.toString()
-  ));
-};
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
 
 // POST /api/pods/:podId/invites — issue a fresh invite token. Caller must
 // be a member or creator. Body: { expiresInHours?, maxUses? } — both

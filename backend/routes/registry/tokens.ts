@@ -53,10 +53,36 @@ const normalizeContextPolicy = (policy: any) => {
  * @param {Object} installation - Optional installation to also store token on (for backward compat)
  * @returns {Object} - { token, label, existing, createdAt }
  */
-const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null) => {
+// issuer (ADR-026 Phase 0): { ownerUserId, parentId?, machineId? } — when
+// present, the mint dual-writes an AgentCredential row alongside the legacy
+// embedded record, giving the token per-record status, lineage, and
+// revocability. Callers that do not pass it keep minting legacy-only tokens
+// (additive migration; auth falls back for those).
+const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
   // Check if agent already has a runtime token (reuse existing)
   if (agentUser.agentRuntimeTokens?.length > 0) {
     const existingToken = agentUser.agentRuntimeTokens[0];
+    // Backfill a credential row for the pre-substrate token so the existing
+    // fleet becomes listable and cascade-revocable (Vera on #1312: without
+    // this the collection stays near-empty while coverage looks fine).
+    // Provenance is unknown, so no parent lineage is claimed.
+    if (issuer?.ownerUserId) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentCredential = require('../../models/AgentCredential');
+      await AgentCredential.updateOne(
+        { tokenHash: existingToken.tokenHash },
+        {
+          $setOnInsert: {
+            kind: 'runtime',
+            ownerUserId: issuer.ownerUserId,
+            agentUserId: agentUser._id,
+            label: existingToken.label || 'Runtime token',
+            status: 'active',
+          },
+        },
+        { upsert: true },
+      ).catch((err: Error) => console.warn('Credential backfill failed:', err.message));
+    }
     return {
       existing: true,
       label: existingToken.label,
@@ -73,6 +99,25 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
     label: label || 'Runtime token',
     createdAt: new Date(),
   };
+
+  // Credential row FIRST, then the embedded record (Vera on #1312:
+  // warn-and-continue after issuing would hand out a working token with no
+  // row — invisible to listing, unreachable by cascade, lineage-free. If
+  // the ledger write fails, the mint fails; no token exists without a row
+  // when an issuer is known).
+  if (issuer?.ownerUserId) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentCredential = require('../../models/AgentCredential');
+    await AgentCredential.create({
+      tokenHash: tokenRecord.tokenHash,
+      kind: 'runtime',
+      ownerUserId: issuer.ownerUserId,
+      agentUserId: agentUser._id,
+      parentId: issuer.parentId || null,
+      machineId: issuer.machineId || null,
+      label: tokenRecord.label,
+    });
+  }
 
   // Store on User model (primary - shared across pods)
   agentUser.agentRuntimeTokens = agentUser.agentRuntimeTokens || [];

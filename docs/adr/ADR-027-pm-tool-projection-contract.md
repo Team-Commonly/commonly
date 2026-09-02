@@ -1,0 +1,276 @@
+# ADR-027: PM-tool projection contract — structured work items across tool boundaries
+
+**Status:** Proposed (2026-08-31, Wren; commissioned by Sam). Acknowledged
+unknowns: per-provider sync transport (webhook vs poll) and custom-status
+fidelity limits, and **Notion's editor-attribution granularity** — D3/D6
+need a resolvable actor per change, Notion may expose it only page-level;
+this must be confirmed against the live API before the adapter is built,
+and if page-level is the truth, D6's anonymous-regression parking is
+per-page on provider #1 and the adapter doc must say so. Ratifying this
+ADR does not settle any of these. The first
+provider is a WORKING ASSUMPTION, not a decision of this ADR: **Notion
+first, Linear second** (Sam, 2026-08-31, ship-and-measure; interviews
+dropped as the gate). The contract stays provider-agnostic by construction
+(D1/D9), so a veto of that assumption costs one plugin, never this
+architecture.
+
+**Scope boundary:** this ADR governs how STRUCTURED work items (tasks, their
+status, assignees, provenance) project two-way between a Commonly pod and an
+external PM surface. It is the sibling of ADR-025, which governs the same
+boundary for MESSAGES (channel routing); a reader designing a channel bridge
+wants ADR-025, a reader syncing a board wants this one. It does not govern
+the attention gate (ADR-017/018), and it uses — not changes — the Installable
+taxonomy (ADR-001) and the task board (`/api/v1/tasks`).
+
+## Context
+
+Teams do not arrive tool-less. The adoption wedge is the opposite of rip-and-
+replace: agents plug into the PM surface a team already runs, and Commonly is
+the ledger above the tools — the place where agent and human work is one
+board, whatever surface each participant happens to look at. The ratified
+doctrine (operator strategy note, 2026-08-31): **we route attention, we do
+not compete for it.** External tools remain the human attention layer; the
+kernel owns what deserves attention (ADR-018) and the ledger owns the
+decision moment. Evidence this
+is the wedge and not a hunch: a biomed team's first question was whether
+agents could work their existing PM software "same or better" (operator
+outreach note, 2026-08-31); the Dock "Company Brain" cadence makes the same
+demand from the ops side; and ACP convergence (Lody/Bloome) says the
+ecosystem is standardizing agent↔tool seams now.
+
+The Telegram bridge (#1282–#1290, ADR-025) already proved the shape on the
+message side, and its two hardest lessons transfer whole:
+
+- **Attribution is the security boundary.** Relaying a message as the wrong
+  identity is impersonation (#1289); the same applies to a task edit.
+- **The mapping table IS the router.** relayMap on the integration, not
+  heuristics at read time (ADR-025 D3).
+
+**Portability is the other half of adoption safety.** A team that brings its
+board wants to know it can leave, and that its agents are not hostage to our
+runtime: the same agent identity and memory runs BYO on a laptop or hosted
+(ADR-023), and one-command migration between the two is a stated goal of
+this track — stated with its test, since teams will hold us to it (Vera
+61304). ADR-026 supplies the machinery: identity and memory survive by
+rule 8, and moving a seat is release + rebind (ADR-026 D3) plus a
+credential mint. The equality claim that makes "migration" true: after the
+move, the agent's User row id, memory head revision, pod memberships, and
+display identity are IDENTICAL — the only rows that changed are the
+machine binding and the runtime credential. The acceptance test snapshots
+those four before, migrates, and diffs; anything else changing fails it.
+A projection that can be turned off without data loss and an agent that can
+walk between runtimes are the same promise at two layers: adopting Commonly
+is never a one-way door.
+
+## Decision
+
+**D1 — Projection is a pod-scoped kernel object; the provider is a plugin.**
+`Projection { podId, provider, externalRef, fieldMap, identityMap, status }`.
+`provider` selects a driver behind one interface (D8); adding Notion, Linear,
+or Paperclip is one adapter file (design rule 6), never a schema change. The
+first provider is a configuration of this contract, not its architecture.
+
+**D2 — Transport is kernel; judgment is agent (inherits ADR-025 D2).** Sync
+is deterministic kernel code: field mapping, echo suppression, provenance
+stamping. Agents act ON the board (claim, complete, comment) and their acts
+project like anyone else's; they never carry the sync bytes, so a hung seat
+never stalls the projection.
+
+**D3 — The projection map is the ledger, and provenance is the loop
+breaker.** Per item: `{ taskId, externalId, lastSyncedAt, lastSyncedHash,
+origin }` on the Projection row; nothing is matched by title or heuristics.
+Messages are append-only but work items are MUTABLE — a duplicated message
+is noise, a looped status write is silent corruption — so echo suppression
+cannot rest on content hashes alone (a provider that reformats on write
+changes the hash and the loop survives). Two layers, and the second is the
+invariant: (a) skip when the inbound hash equals lastSyncedHash; (b) every
+outbound write carries the projection's own provenance identity, and **an
+inbound edit whose actor is that identity is dropped, unconditionally** —
+stated as an invariant with a mutation test (delete the drop and the
+round-trip test must catch the loop). Drivers must make the acting identity RESOLVABLE for this check — on the
+event itself or via one follow-up read (Notion exposes last_edited_by on a
+read, not the webhook; that satisfies the invariant). A provider where the
+actor cannot be resolved at all falls back to **outbound-only projection**
+— no inbound edits means no loop to break — rather than being excluded;
+two-way sync is gated on resolvability, the contract is not (Vera
+61313/61315).
+
+**D4 — Identity maps are explicit; unmapped actors annotate, never author.**
+`identityMap: externalUserId ↔ { commonlyUserId | agentUserId }`, curated by
+the projection's installer. An edit by an unmapped external actor lands as a
+provenance annotation ("changed in Linear by J. Ortiz") on a system-attributed
+change — it is NEVER written as a mapped user, and there is no fuzzy match
+by display name or email (the #1289 rule for rows). Agent identities project
+outward as real assignees where the tool supports them, else as a tagged
+marker in the item body.
+
+**D5 — One canonical item schema; lossy maps are declared, not discovered.
+And the projected record is a pointer, never the payload** (build-level
+study, 2026-08-31; openly licensed sources, ideas not code): outward we
+project `{ title, status, assignee, awaitingSince, backlink }` — `awaitingSince`
+is the kernel's needs-a-human signal, ONE concept defined where the ledger
+defines it (ADR-028; the study's awaitingUserSince). This ADR projects
+that field and never redefines it; if ADR-028 lands a different name, this
+line follows it — plus
+counts and a stable content hash **keyed per projection** (HMAC with a
+per-projection secret, never a bare digest — the hash sits in a database
+the whole external workspace reads, and over tiny input spaces like
+status/assignee an unsalted hash is a lookup table away from disclosing
+exactly what this rule keeps in the ledger; Vera 61647) — description bodies, attachments, and
+work artifacts stay in the ledger and are served on demand behind the
+backlink. This is what keeps a projection an attention surface rather than
+a data pipe, keeps the one-database scope (D8) small, and makes the
+link-back acceptance rule cheap — the item links to the ledger without
+shipping the ledger. Rendering a projected row must never require opening
+the underlying document. Canonical (full, for the phase-2 inbound map):
+`{ title, description, status, assignee, labels, links }` with
+status ∈ Task's own enum. Each driver declares its status map both
+directions; a state with no mapping parks the item with an explicit marker
+and syncs the rest — silent drops and silent coercions are both defects.
+Round-trip invariant, scoped to the PROJECTED field set (Vera 61646 —
+unprojected fields like description cannot round-trip by construction):
+for every field the projection carries outward, project out then in with
+no external edit = no change. A driver is conformant when the projected
+set round-trips exactly and the unprojected set is untouched on both
+sides.
+
+**D6 — Conflict resolution (phase 2; designed now, built on the phase-2
+trigger).** "Newest wins" is user-facing phrasing, NOT the algorithm — two
+systems with unsynced clocks are never compared by timestamp (a few seconds
+of skew silently makes one side always win). The algorithm decides WHO
+changed against `lastSyncedAt`:
+
+- **One side changed since the last sync → that side wins**, no timestamp
+  comparison. This is nearly every write. Two exceptions when the changed
+  side is external: a terminal-state regression (done → in-progress) whose
+  actor is unmapped (D4) parks with a marker instead of applying; and
+  deletion NEVER propagates (below).
+- **Both sides changed since the last sync → a real conflict**, and the
+  tiebreak is not a timestamp: **the Commonly value stands** for every
+  field class (the board is the ledger; external boards are views — see
+  Consequences), and the external value is parked in the item's provenance
+  trail with a surfaced conflict marker. The trail is the appeal; no merge
+  dialogs.
+- **Existence is not a field**: creation propagates both ways; deletion
+  auto-propagates in NEITHER direction — the counterpart archives with a
+  provenance marker. A delete across a mapping bug is unrecoverable; an
+  archive is not.
+
+**D7 — Claims do not project; assignees do.** ADR-018 claims are attention
+leases, not assignments. Outward we project `assignee` only; an external
+assignee change maps to Commonly `assignee` and never creates or breaks a
+claim. Tools with no agent-assignee concept get D4's marker.
+
+**D8 — Declared scope, enforced by the kernel, not inherited from the
+token.** Provider tokens are routinely over-broad (a Notion integration
+token grants the workspace). The Projection declares its exact external
+scope (`externalRef`: one database / one project / one board) at install,
+the kernel refuses to read or write outside it regardless of what the token
+allows, and `verify()` reports the token's actual grant so the Connectors
+surface can show "token exceeds declared scope" as a warning state. Scope
+widening is a new install decision, never a drift. Two further
+hardening properties bind here (same study): provider credentials are held
+in the encrypted credential store behind a `credentialId` — never inline in
+the Projection row, never returned by any API (ADR-025 D6 shape); and the
+Projection's config schema is enforced at the persistence boundary with
+unknown keys rejected, while runtime state (the projection map, cursors)
+lives in its own store with its own lifecycle, never inside config.
+`verify()` failures write the projection's `status`/`errorMessage`, which
+the Connectors surface renders — a broken projection is never silent.
+
+**D9 — The driver interface is four verbs**, mirroring CAP's shape:
+`pull(since)`, `push(changes)`, `mapIdentity(actor)`, `verify()` (health +
+scope-grant report, per D8). Everything provider-specific lives behind
+these; the kernel sync loop is provider-blind. Webhook vs poll is a driver
+property declared by `verify()`, not a kernel branch.
+
+**D9's outbound half is the hardened send contract, built once in the
+SDK.** Every `push()` send carries an idempotency key **derived from the item
+change (the event), never the attempt** — a per-attempt key turns every
+retry into a new provider message (retries never double-post) and resolves through the three-way error taxonomy: throttled →
+sleep the provider's retry-after and retry within budget; definitive
+rejection → fail fast into the projection's status; ambiguous → verify then
+retry. Adapter authors implement provider calls, never delivery policy —
+the policy ships once as the SDK's normalized outbound message (pattern
+per the operator engineering study, 2026-08-31; openly licensed sources
+only, ideas not code).
+
+**D9 is transport-agnostic, and ACP is a supported binding.** The ecosystem
+is converging on ACP for agent↔tool session transport (operator strategy
+note, 2026-08-30; multiple independent adoptions). The four verbs carry no
+provider SDK assumptions: a driver may be implemented over an ACP
+connection exactly as over a REST client — we already run an ACP-family
+adapter in production (the acpx path, ADR-005 lineage), so this is a
+compatibility statement, not an aspiration. The strategic read is stated
+here so the ADR carries it: ACP commoditizes the transport; what it does
+NOT carry — identity, memory, membership, and this contract's provenance
+ledger — is the half Commonly holds. This ADR is deliberately a
+specification of that half.
+
+## Staging (added at ratification, GTM convergence 2026-08-31)
+
+Five independent seats converged on the same must-not-build for v1: two-way
+sync. This ADR adopts that as its staging, not as a scope cut:
+
+- **Phase 1 — outbound-only.** The ledger projects OUT: tasks, status,
+  assignees, provenance markers appear in the external tool; nothing is read
+  back except `verify()`. One command, zero settings. This is D3's
+  unresolvable-actor fallback promoted to the default: no inbound edits, no
+  loop to break, no conflict resolution, no inbound identity mapping, and
+  the Notion attribution unknown does not gate shipping.
+  **Outbound-only is not rule-free — three decisions bind in phase 1:**
+  D8's declared scope (the kernel writes only inside the declared
+  database/project, whatever the token grants); D4's agent-assignee
+  projection (real assignee where the tool supports it, tagged marker where
+  not — attribution rules do not wait for two-way); and the existence rule's
+  outward half: **a task deleted or archived in Commonly never deletes the
+  external row — it archives it with a marker.** Deletion is the only
+  irreversible operation this contract touches, and it is exactly the rule
+  a reader would misfile under phase-2 machinery; it is phase 1.
+  **Acceptance rule (doctrine carve-out, ratified 2026-08-31): every
+  projected item carries a link back to its ledger view in Commonly.** The
+  decision moment — gate approvals, claim conflicts, the digest — is the
+  one surface the ledger keeps, because it needs agent identity, claim
+  state, and the decision trail the external tool cannot render. Outbound-
+  only makes this trivially satisfiable: project out, link back; a
+  projected item with no backlink is a failing acceptance test. Two
+  constraints on the link itself (Vera 61560): it points at the normal
+  authenticated route — never a signed/capability URL, so a leaked external
+  board leaks no access; and the visible link text is a deliberate
+  disclosure decision — the default carries no pod name ("Open in
+  Commonly"), and putting the pod name in outward-facing text is a
+  per-projection opt-in, because the external tool's audience is not the
+  pod's membership.
+- **Phase 2 — two-way.** Everything D3–D7 specifies for inbound (resolvable
+  actor, field-class conflict rules, lastSyncedAt algorithm, parking) is
+  DOCUMENTED NOW and built only when outbound-only measurably fails a real
+  team — the trigger is a team telling us the external board is where they
+  edit, with the specific edit that got lost. The contract is written so
+  phase 2 adds a capability to the same Projection row; it does not migrate
+  it.
+
+Phase 1 makes the wedge sentence honest: "your board, visible where your
+team already looks" — reconciliation in someone else's product is a phase-2
+promise we make only when asked to keep it.
+
+## Consequences
+
+- The interview answers pick provider #1 by filling in one driver — the
+  contract, map storage, sync loop, and provenance UI are shared.
+- The task board becomes the canonical store for projected items; external
+  boards are views. Teams who leave keep everything (portability promise).
+- The Connectors surface grows a "Boards" section beside channels — same
+  card anatomy, same gate model (per-pod projection instead of per-pod
+  relay); design follows the connectors-v2 spec patterns.
+- Provenance UI: every synced item shows its origin chain; this is new
+  shell work and gates GA, not the first driver.
+
+## Alternatives rejected
+
+- **Per-tool bespoke integrations** — three tools deep you have three
+  schemas and no ledger; the wedge inverts into maintenance.
+- **Agent-as-transport** (an agent that "watches Notion") — ADR-025 D2's
+  rejection, same reasons, plus rate limits bind to a seat's cadence.
+- **One-time import/migration** — answers the demo, not the wedge; teams
+  live in both tools during the entire adoption window, which is exactly
+  when sync must be trustworthy.

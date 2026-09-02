@@ -10,6 +10,7 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
   const notFoundPage = await readFile(resolve(frontendDir, 'public/404.html'), 'utf8');
 
+  assert.match(config, /absolute_redirect\s+off;/);
   assert.match(config, /location \/ \{\s*try_files \$uri \$uri\/ =404;/s);
   assert.match(config, /error_page\s+404\s+\/404\.html;/);
   assert.match(config, /location = \/404\.html\s*\{\s*internal;/s);

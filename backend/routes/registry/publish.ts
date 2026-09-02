@@ -4,7 +4,7 @@ const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentRegistry } = require('../../models/AgentRegistry');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { getUserId } = require('./helpers');
+const { getUserId, resolveUsername } = require('./helpers');
 const {
   ManifestValidationError,
   normalizePublishPayload,
@@ -69,7 +69,7 @@ publishRouter.post('/publish', auth, async (req: any, res: any) => {
         registry: 'commonly-community',
         publisher: {
           userId,
-          name: req.user.username,
+          name: await resolveUsername(req),
         },
         categories,
         tags,

@@ -39,6 +39,7 @@
 
   /* ---------- Semantic ---------- */
   --c-success:         #10b981;
+  --c-success-text: #0f7a53; /* text-on-soft success — mirrors --v2-success-text */
   --c-success-soft:    #e3f6ec;
   --c-success-ring:    rgba(16, 185, 129, 0.40); /* live-activity pulse */
   --c-success-ring-strong: rgba(16, 185, 129, 0.50);
@@ -129,7 +130,9 @@
   --c-fs-md:  13px;   /* default UI text */
   --c-fs-base:14px;   /* messages, inputs */
   --c-fs-lg:  15px;   /* section titles */
-  --c-fs-xl:  16px;   /* sidebar titles */
+  --c-fs-xl:  16px;
+  /* Featured-card name step (BEND-1, Sam-approved 2026-08-30) — mirrors --v2-fs-feature. */
+  --c-fs-feature: 17px;   /* sidebar titles */
   --c-fs-2xl: 20px;   /* chat header */
   --c-fs-3xl: 24px;   /* feature page title */
 
@@ -142,6 +145,25 @@
   --c-lh-tight:    1.25;
   --c-lh-base:     1.45;
   --c-lh-comfy:    1.55;
+  /* Platform brand + tint tokens (connectors) — mirror of --v2-platform-* in
+     src/v2/v2.css; the two move together. */
+  --c-platform-telegram: #2aabee;
+  --c-platform-telegram-soft: #e4f3fb;
+  --c-platform-slack: #611f69;
+  --c-platform-slack-soft: #f3e9f4;
+  --c-platform-discord: #5865f2;
+  --c-platform-discord-soft: #eaecfe;
+  --c-platform-whatsapp: #1fa855;
+  --c-platform-whatsapp-soft: #e5f6ec;
+  --c-platform-x: #111827;
+  --c-platform-x-soft: #eef0f3;
+  --c-platform-instagram: #d62976;
+  --c-platform-instagram-soft: #fbe9f1;
+  --c-platform-messenger: #0084ff;
+  --c-platform-messenger-soft: #e5f2ff;
+  --c-platform-groupme: #00aff0;
+  --c-platform-groupme-soft: #e3f5fd;
+
 }
 
 /* ============================================================

@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
+import { hashDeviceCredential } from '../services/deviceAuthorizationService';
 
 // User.lastActive was only ever set at account creation, which made every
 // activity-based metric (returned D1/D7 in /api/admin/analytics/funnel,
@@ -36,11 +37,37 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
     return res.status(401).json({ msg: 'No token, authorization denied' });
   }
 
+  // Machine and runtime bearers live in AgentCredential, never on User. Make
+  // that boundary explicit instead of relying on their value never colliding
+  // with User.apiToken; those credentials must use daemonAuth/agentRuntimeAuth.
+  if (token.startsWith('cm_daemon_') || token.startsWith('cm_agent_')) {
+    return res.status(401).json({ msg: 'Daemon and agent tokens cannot authenticate user routes' });
+  }
+
   if (token.startsWith('cm_')) {
     try {
-      const user = await User.findOne({ apiToken: token }).select(
+      // `apiToken` is the historical single plaintext bearer. Device-login
+      // bearers share its public cm_ prefix but are stored only as a hash so a
+      // database read cannot impersonate a CLI session.
+      let user: any = await User.findOne({ apiToken: token }).select(
         '_id username email role apiTokenScopes apiTokenCreatedAt banned',
       );
+
+      let isDeviceToken = false;
+      const deviceTokenHash = hashDeviceCredential(token);
+      if (!user) {
+        user = await User.findOne({
+          deviceTokens: {
+            $elemMatch: {
+              tokenHash: deviceTokenHash,
+              // `{ $in: [null] }` deliberately covers both an older array
+              // entry with no field and a current entry with explicit null.
+              revokedAt: { $in: [null] },
+            },
+          },
+        }).select('_id username email role banned');
+        isDeviceToken = Boolean(user);
+      }
 
       if (!user) return res.status(401).json({ msg: 'Invalid API token' });
       if ((user as unknown as { banned?: boolean }).banned) {
@@ -54,9 +81,20 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         email: user.email,
         role: user.role,
       };
-      req.authType = 'apiToken';
+      req.authType = isDeviceToken ? 'deviceToken' : 'apiToken';
       req.apiTokenScopes = user.apiTokenScopes || [];
       req.apiTokenCreatedAt = user.apiTokenCreatedAt || null;
+      if (isDeviceToken) {
+        // A usage stamp is an audit convenience, not an auth dependency: the
+        // request stays valid if this best-effort write loses a race.
+        void User.updateOne(
+          {
+            _id: user._id,
+            deviceTokens: { $elemMatch: { tokenHash: deviceTokenHash, revokedAt: { $in: [null] } } },
+          },
+          { $set: { 'deviceTokens.$.lastUsedAt': new Date() } },
+        ).catch(() => undefined);
+      }
       touchLastActive(user._id.toString());
       return next();
     } catch (err: unknown) {
@@ -79,6 +117,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
 
     req.userId = id;
     req.user = { id };
+    req.authType = 'jwt';
     touchLastActive(id);
     next();
   } catch (err: unknown) {

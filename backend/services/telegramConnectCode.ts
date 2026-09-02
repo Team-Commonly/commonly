@@ -31,6 +31,10 @@ export const isConnectCodeExpired = (
 // Per-chat sliding window for /commonly-enable attempts. In-memory is enough:
 // a code lives 10 minutes and the backend runs one replica; a restart resets
 // the window, which is the failure mode we accept over a Redis dependency.
+// COUPLING: the "one replica" premise is `replicaCount: 1` in the Helm values
+// AND `autoscaling.backend.enabled: false` (values.yaml). Enabling backend
+// autoscaling silently makes the effective limit ENABLE_ATTEMPT_LIMIT × replicas
+// — move this window to Redis in the same change.
 const attempts = new Map<string, number[]>();
 
 export const registerEnableAttempt = (chatId: string, now: number = Date.now()): boolean => {

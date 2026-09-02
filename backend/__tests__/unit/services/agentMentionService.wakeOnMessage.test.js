@@ -146,6 +146,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
       type: 'message.posted',
     });
     expect(wakes[0].payload.wakeOnMessage).toBe(true);
+    expect(wakes[0].payload.senderIsHuman).toBe(true);
     expect(wakes[0].payload.messageId).toBe('msg-9');
     // The inline cue is the contract: not named, silence default, claim first.
     expect(wakes[0].payload.content).toContain('Wake-on-message');
@@ -224,6 +225,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
     expect(res.woken).toEqual(['seat-b']);
     expect(wakeCalls().map((c) => c.agentName)).toEqual(['seat-b']);
+    expect(wakeCalls()[0].payload.senderIsHuman).toBe(false);
   });
 
   test('bot-authored wake storms are dampened on the message.posted count', async () => {

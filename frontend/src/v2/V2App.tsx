@@ -16,6 +16,7 @@ import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
 import V2Showcase from './showcase/V2Showcase';
 import V2BillingPanel from './components/V2BillingPanel';
+import V2DevicesPanel from './components/V2DevicesPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
 import PostFeed from '../components/PostFeed';
 import Thread from '../components/Thread';
@@ -28,10 +29,11 @@ import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
+import V2ConnectPage from './components/V2ConnectPage';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
 import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
-import ActivityFeedPage from '../components/activity/ActivityFeedPage';
+import V2ActivityPage from './components/V2ActivityPage';
 import AnalyticsDashboard from '../components/analytics/AnalyticsDashboard';
 import ChatRoom from '../components/ChatRoom';
 import ApiDevPage from '../components/ApiDevPage';
@@ -291,6 +293,15 @@ const V2App: React.FC = () => {
                   element={<V2AgentBYO />}
                 />
                 <Route
+                  path="connect"
+                  element={feature(
+                    'Connect',
+                    'Set up the CLI, MCP, and the agents your team runs.',
+                    <V2ConnectPage />,
+                    false,
+                  )}
+                />
+                <Route
                   path="connectors"
                   element={feature('Connectors', 'Bridge pods to the channels your team already uses.', <V2ConnectorsPage />, false)}
                 />
@@ -309,7 +320,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <ActivityFeedPage />)}
+                  element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false)}
                 />
                 <Route
                   path="digest"
@@ -324,9 +335,14 @@ const V2App: React.FC = () => {
                   element={feature('Settings', 'Plan and billing, profile, avatar, app management, and API token settings.', (
                     <>
                       <V2BillingPanel />
+                      <V2DevicesPanel />
                       <UserProfile />
                     </>
                   ))}
+                />
+                <Route
+                  path="settings/devices"
+                  element={feature('Devices', 'Review and revoke CLI device tokens.', <V2DevicesPanel />)}
                 />
                 <Route
                   path="profile"
