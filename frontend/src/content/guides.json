@@ -8206,6 +8206,10 @@
       {
         "label": "AI agent resume conditions",
         "path": "/guides/ai-agent-resume-conditions/"
+      },
+      {
+        "label": "AI agent review decisions",
+        "path": "/guides/ai-agent-review-decisions/"
       }],
     "cta": {
       "title": "Make stopping a useful part of the agent's job",
@@ -8906,6 +8910,10 @@
       {
         "label": "AI agent verification path",
         "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI agent review decisions",
+        "path": "/guides/ai-agent-review-decisions/"
       }],
     "cta": {
       "title": "Evaluate the next decision, not the agent's performance theater",
@@ -9623,6 +9631,10 @@
       {
         "label": "AI agent blockers",
         "path": "/guides/ai-agent-blockers/"
+      },
+      {
+        "label": "AI agent review decisions",
+        "path": "/guides/ai-agent-review-decisions/"
       }],
     "cta": {
       "title": "Make the decision easy, then keep the authority where it belongs",
@@ -13171,6 +13183,10 @@
       {
         "label": "AI agent verification path",
         "path": "/guides/ai-agent-verification-path/"
+      },
+      {
+        "label": "AI agent review decisions",
+        "path": "/guides/ai-agent-review-decisions/"
       }],
     "cta": {
       "title": "Make the review answer easy to give",
@@ -17400,6 +17416,706 @@
     "cta": {
       "title": "Resume work from evidence, not momentum",
       "body": "AI agent resume conditions make waiting explicit and restarting reviewable. Name the missing prerequisite, define the state that resolves it, link the record that verifies it, and restart only the next bounded task step. That keeps a changed condition from becoming a vague instruction, a hidden scope expansion, or a claim of authority the task and target system do not provide.",
+      "primary": {
+        "label": "Create a shared workspace",
+        "path": "/v2/register"
+      },
+      "secondary": {
+        "label": "Explore Commonly’s guides",
+        "path": "/guides/"
+      }
+    }
+  },
+  "ai-agent-review-decisions": {
+    "eyebrow": "Guide",
+    "titleTag": "AI Agent Review Decisions: Five Clear Answers | Commonly",
+    "title": "AI Agent Review Decisions: Accept, Request Changes, Narrow, Reject, or Route",
+    "description": "Learn how to make AI agent review decisions explicit: accept, request changes, narrow, reject, or route an artifact while preserving task scope, evidence, ownership, and authority boundaries.",
+    "summary": "AI agent review decisions are the explicit answers a reviewer gives after inspecting a bounded artifact and its evidence: accept it, request changes, narrow the work, reject it, or route the question to a different owner. Each answer should state what was reviewed, why the answer applies, what changes in the task, and what remains outside the decision. A useful review does not end with “looks good.” It creates a checkable next state.",
+    "provenance": {
+      "author": "Commonly",
+      "reviewer": "Commonly SEO team",
+      "datePublished": "2026-09-02",
+      "dateModified": "2026-09-02"
+    },
+    "intro": [
+      "AI agent review decisions are the explicit answers a reviewer gives after inspecting a bounded artifact and its evidence: accept it, request changes, narrow the work, reject it, or route the question to a different owner. Each answer should state what was reviewed, why the answer applies, what changes in the task, and what remains outside the decision. A useful review does not end with “looks good.” It creates a checkable next state.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, gives teams places to make that state visible: tasks hold scope, owner, status, dependency, and result; focused threads hold the question and answer; attachments preserve the artifact and evidence; and selected shared memory can retain a sourced conclusion. These records show collaboration and review. They do not prove an external action occurred or override the target system, role permissions, or approval process that governs it.",
+      "The five answers reduce ambiguous feedback. An accepted research brief may be ready for its named next review but not published. A request for changes may send an artifact back to revision without reopening the whole task. Narrowing may protect a boundary. Rejection may close the proposed path while preserving the evidence. Routing may send a question to the owner who can actually decide it.",
+      "This guide explains how to make AI agent review decisions useful, record what each answer does to a task, and keep a reviewer’s visible answer separate from execution authority."
+    ],
+    "sections": [
+      {
+        "title": "Review decisions answer a bounded question, not the entire project",
+        "paragraphs": [
+          "Before choosing an answer, the reviewer should know the artifact, the task’s outcome, the evidence supplied, the acceptance conditions, and the precise decision requested. A review can only be as clear as the question it answers."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review input",
+              "Reviewer needs",
+              "Why it matters"
+            ],
+            "rows": [
+              [
+                "Task boundary",
+                "Outcome, in-scope inputs, non-goals, and stop condition",
+                "The answer does not silently enlarge the task"
+              ],
+              [
+                "Exact artifact",
+                "The version or evidence packet under review",
+                "The reviewer can identify what the answer applies to"
+              ],
+              [
+                "Acceptance conditions",
+                "Criteria for the current review stage",
+                "“Accept” has a defined meaning rather than a feeling"
+              ],
+              [
+                "Evidence and limits",
+                "Sources, checks, uncertainty, and open questions",
+                "The reviewer does not mistake an inference for a verified fact"
+              ],
+              [
+                "Decision request",
+                "One question and the available answers",
+                "The response changes a specific next state"
+              ],
+              [
+                "Decision owner",
+                "The role allowed to make this kind of judgment",
+                "Feedback is not treated as authority it does not carry"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The review can be brief",
+        "paragraphs": [
+          "The review can be brief once these elements are present. The objective is not ceremony; it is to make the transition understandable to the next owner and defensible when someone later asks why the work moved forward, changed, stopped, or moved elsewhere.",
+          "For the artifact, evidence, limits, and requested judgment assembled for review, see AI Agent Review Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Review Packet",
+            "path": "/guides/ai-agent-review-packet/"
+          }
+        ]
+      },
+      {
+        "title": "The five review answers have different task effects",
+        "paragraphs": [
+          "The reviewer should choose the smallest answer that accurately describes what happens next. These answers are not grades for the agent; they are routing and scope decisions for the work."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Review answer",
+              "What it means",
+              "Task effect"
+            ],
+            "rows": [
+              [
+                "Accept",
+                "The reviewed artifact meets the stated condition for this stage",
+                "Move to the named next step or record the result"
+              ],
+              [
+                "Request changes",
+                "A defined revision is needed within the current boundary",
+                "Return the artifact to the owner with exact revision conditions"
+              ],
+              [
+                "Narrow",
+                "The proposed work or conclusion exceeds the accepted boundary",
+                "Remove or defer the named scope and continue only the allowed portion"
+              ],
+              [
+                "Reject",
+                "The artifact or proposed path should not proceed in its current form",
+                "Stop that path, record the reason, and preserve any useful evidence"
+              ],
+              [
+                "Route",
+                "A different owner, role, or system must answer the question",
+                "Hand off the bounded question with its evidence and decision request"
+              ],
+              [
+                "Defer",
+                "A valid decision should wait for a stated condition or date",
+                "Keep the work waiting with a clear resume condition"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "An accept decision should name the review stage",
+        "paragraphs": [
+          "An accept decision should name the review stage it accepts. Accepting a draft for editorial review is not the same as accepting a release, an external action, or a permanent policy. A request for changes should likewise name what needs revision rather than leave the owner to guess.",
+          "For the conditions that define what makes an artifact ready for a given stage, see AI Agent Acceptance Criteria."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Acceptance Criteria",
+            "path": "/guides/ai-agent-acceptance-criteria/"
+          }
+        ]
+      },
+      {
+        "title": "Accept an artifact only for the stated next stage",
+        "paragraphs": [
+          "Acceptance is strongest when it identifies the version reviewed, the conditions met, the decision owner, and the next bounded action. It should also state any remaining limitation that becomes relevant later."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Accept decision",
+              "Record",
+              "Do not imply"
+            ],
+            "rows": [
+              [
+                "Research brief accepted",
+                "Source set, evidence labels, decision owner, and next review",
+                "That every recommendation is externally proven"
+              ],
+              [
+                "Draft accepted for editing",
+                "Exact draft version and requested editorial next step",
+                "That the page is published or its claims are complete"
+              ],
+              [
+                "Plan accepted",
+                "Scope, dependency assumptions, and planning owner",
+                "That every task is authorized or already underway"
+              ],
+              [
+                "Review packet accepted",
+                "Artifact, checks, limits, and reviewer answer",
+                "That a target system executed the proposed change"
+              ],
+              [
+                "Task result accepted",
+                "Result field, acceptance criteria, and any follow-on",
+                "That adjacent work is included without a new decision"
+              ],
+              [
+                "Decision packet accepted",
+                "Chosen option, owner, and permitted next contribution",
+                "That the decision itself changes an external system"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The wording can be simple",
+        "paragraphs": [
+          "The wording can be simple: “Accepted for the named editorial review; source conflict remains labeled; publication is outside this decision.” That single boundary keeps a visible answer from being promoted into a broader claim.",
+          "For the task-level agreement the reviewer should use to identify the intended outcome and limits, see AI Agent Work Contract."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Work Contract",
+            "path": "/guides/ai-agent-work-contract/"
+          }
+        ]
+      },
+      {
+        "title": "Request changes that are concrete and still in scope",
+        "paragraphs": [
+          "A request for changes should turn feedback into a bounded revision. The reviewer should name the gap, the expected correction, the evidence or criterion that matters, and the point at which the revised artifact returns for review. Vague comments create repeated work and invite agents to improvise new scope."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Feedback is too vague",
+              "Bounded request for changes",
+              "Review return point"
+            ],
+            "rows": [
+              [
+                "“Needs more detail”",
+                "“Add the linked source comparison for the named claim and label unresolved conflict.”",
+                "Return the revised evidence packet to the policy owner"
+              ],
+              [
+                "“Improve the draft”",
+                "“Revise the opening answer to match the approved definition and retain the stated non-goals.”",
+                "Return the exact draft to editorial review"
+              ],
+              [
+                "“Check this more”",
+                "“Run or attach the named check; if it is unavailable, record the limitation and blocker.”",
+                "Return the result with check evidence or a precise blocker"
+              ],
+              [
+                "“This is risky”",
+                "“State the operation boundary and remove the unsupported external-action claim.”",
+                "Return the packet for governance review"
+              ],
+              [
+                "“Can you fix it?”",
+                "“Correct the two cited inconsistencies without adding a new audience or source set.”",
+                "Return the artifact to the same reviewer"
+              ],
+              [
+                "“Please handle the rest”",
+                "“List remaining out-of-scope questions as follow-on proposals; do not change the active outcome.”",
+                "Return the task result and proposed separate work"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "If the requested change needs a different owner",
+        "paragraphs": [
+          "If the requested change needs a different owner, a new operation, or a new outcome, the correct answer may be narrow or route rather than “request changes.” The review should protect the existing contract instead of turning one comment into an unbounded mandate.",
+          "For task updates that make revision state and next action visible, see AI Agent Status Updates."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Status Updates",
+            "path": "/guides/ai-agent-status-updates/"
+          }
+        ]
+      },
+      {
+        "title": "Narrow work when the evidence or scope does not support the full claim",
+        "paragraphs": [
+          "Narrowing is a positive review answer when part of the work is sound but the proposed conclusion, input set, operation, or audience is too broad. The reviewer keeps the useful part moving while making the excluded portion explicit."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Proposed scope",
+              "Narrowed decision",
+              "What continues"
+            ],
+            "rows": [
+              [
+                "“This source proves the whole recommendation”",
+                "Accept only the claim supported by the linked source and label the rest open",
+                "The source-limited recommendation"
+              ],
+              [
+                "“Publish the full draft”",
+                "Accept the factual definition section; route disputed claims for source review",
+                "The bounded edit of accepted content"
+              ],
+              [
+                "“Make all related fixes”",
+                "Limit work to the two issues in the active task",
+                "The named corrections and their review"
+              ],
+              [
+                "“Use every available system”",
+                "Permit only the stated preparation or lookup step",
+                "The allowed evidence-gathering action"
+              ],
+              [
+                "“Assign the work broadly”",
+                "Route the single decision to the named role owner",
+                "The focused decision packet"
+              ],
+              [
+                "“Resolve the project risk”",
+                "Record the identified risk and create a separately owned follow-on proposal",
+                "The current task’s limited result"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Narrowing should say what was excluded",
+        "paragraphs": [
+          "Narrowing should say what was excluded and why. An agent can then complete the allowed contribution without treating the reviewer’s silence about unrelated work as approval.",
+          "For preventing adjacent work from silently changing an active task, see AI Agent Scope Creep."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Scope Creep",
+            "path": "/guides/ai-agent-scope-creep/"
+          }
+        ]
+      },
+      {
+        "title": "Reject a path without erasing the work that informed it",
+        "paragraphs": [
+          "Rejection can be the clearest outcome when the artifact does not meet the stated condition, evidence does not support the conclusion, the proposed operation is outside the contract, or another option better fits the task. The reviewer should record the reason and any reusable evidence without pretending the rejected approach never existed."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Reason to reject",
+              "Record",
+              "Useful next state"
+            ],
+            "rows": [
+              [
+                "Evidence does not support the proposed conclusion",
+                "The evidence gap and any valid narrower facts",
+                "Block, narrow, or request a new source decision"
+              ],
+              [
+                "Artifact does not meet acceptance conditions",
+                "The unmet conditions and exact artifact version",
+                "Request bounded changes or close the path"
+              ],
+              [
+                "Work is outside the agreed outcome",
+                "The contract boundary and proposed delta",
+                "Create a separate follow-on proposal or decline it"
+              ],
+              [
+                "Requested action exceeds role authority",
+                "The authority boundary and accountable owner",
+                "Route or escalate the decision"
+              ],
+              [
+                "Duplicate work already exists",
+                "The existing task, owner, and non-overlap",
+                "Link the evidence to that task and stop the duplicate"
+              ],
+              [
+                "The question is no longer relevant",
+                "The changed fact or decision that removed the need",
+                "Record a no-op or completed closure with source"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The rejected item can remain useful",
+        "paragraphs": [
+          "The rejected item can remain useful as a source of context. Preserve the artifact, evidence, and reason so a future owner does not repeat the same invalid path, but do not let that record become a dormant instruction to continue it.",
+          "For the valid outcome when no bounded contribution should proceed, see AI Agent No-Op."
+        ],
+        "links": [
+          {
+            "label": "AI Agent No-Op",
+            "path": "/guides/ai-agent-no-op/"
+          }
+        ]
+      },
+      {
+        "title": "Route decisions to the owner who can answer them",
+        "paragraphs": [
+          "Routing is not a failure to review. It is the correct answer when the reviewer cannot legitimately decide the question, when the work needs a different domain owner, or when the target system itself must confirm the relevant fact. A good route carries the smallest answerable question and the evidence needed to answer it."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Route situation",
+              "Send",
+              "Receiving owner decides"
+            ],
+            "rows": [
+              [
+                "Policy conflict",
+                "Source comparison, affected task boundary, and governing-source question",
+                "Which source or rule governs the work"
+              ],
+              [
+                "Security or permissions question",
+                "Minimum requirement, operation boundary, and relevant evidence",
+                "Whether the requested access or action is allowed"
+              ],
+              [
+                "External execution claim",
+                "Artifact and claimed action, with target-system reference needed",
+                "Whether the system-native record confirms the state"
+              ],
+              [
+                "Product priority question",
+                "Proposed outcome, impact evidence, and current plan context",
+                "Whether to start, defer, narrow, or decline the work"
+              ],
+              [
+                "Cross-team dependency",
+                "Required state, linked task, and effect of waiting",
+                "Who owns resolution and whether the prerequisite is met"
+              ],
+              [
+                "Specialist review",
+                "Exact artifact, criterion, and limitation",
+                "Whether the artifact meets the specialist’s threshold"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "The sending agent may recommend an answer",
+        "paragraphs": [
+          "The sending agent may recommend an answer, but it should not write as though the receiving owner has already agreed. Name the requested decision and preserve the task’s state until that answer is actually recorded.",
+          "For a focused handoff when the current role lacks the required decision authority, see AI Agent Escalation."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Escalation",
+            "path": "/guides/ai-agent-escalation/"
+          }
+        ]
+      },
+      {
+        "title": "Record the decision where the next step can use it",
+        "paragraphs": [
+          "The review answer should travel with the task and artifact. A reviewer’s conclusion hidden in an unrelated chat message forces the next owner to reconstruct scope, evidence, and authority. Record the exact answer, the object it applies to, and the task effect in a focused location.",
+          "Put a current task effect in the task update or result: the answer, exact artifact, decision owner, and next state. Put the review question, evidence links, response, and boundary in the focused review thread. When the answer was a distinct choice, retain the options and tradeoff in its decision packet; when it changes hands, name the next action, owner, and verification path in a handoff.",
+          "Record only the material reasoning. A review does not need a transcript of every thought, but it should leave enough evidence that a later owner can distinguish “accepted for this stage” from “the work is permanently approved.” A rejected or narrowed contribution can become a separately owned follow-on task only when that task has its own outcome, evidence, owner, and stop condition.",
+          "For a record that makes the owner’s choice, evidence, and options inspectable, see AI Agent Decision Packet."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Decision Packet",
+            "path": "/guides/ai-agent-decision-packet/"
+          }
+        ]
+      },
+      {
+        "title": "Make review decisions across roles without self-certification",
+        "paragraphs": [
+          "Every role can prepare a reviewable artifact, but the final answer should come from the designated reviewer or target system where the task requires one. An agent can check its own work against criteria; it should not represent that self-check as an independent acceptance."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Role",
+              "Reviewable contribution",
+              "Appropriate decision boundary"
+            ],
+            "rows": [
+              [
+                "Research",
+                "Evidence packet or source comparison",
+                "Policy or domain owner accepts the governing conclusion"
+              ],
+              [
+                "Editorial",
+                "Draft with sources and stated non-goals",
+                "Editor accepts the next publication-stage action"
+              ],
+              [
+                "Project management",
+                "Dependency summary and proposed plan update",
+                "Project owner decides priority, scope, or sequencing"
+              ],
+              [
+                "Software development",
+                "Change, checks, and review packet",
+                "Maintainer reviews the exact change; target systems confirm execution"
+              ],
+              [
+                "Support triage",
+                "Classified report and routing recommendation",
+                "Accountable owner accepts the route or requests more evidence"
+              ],
+              [
+                "Governance or security",
+                "Requirement analysis and decision packet",
+                "Authorized owner decides the policy or system boundary"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Self-review remains useful as preparation",
+        "paragraphs": [
+          "Self-review remains useful as preparation: it can find missing evidence, clarify limits, and make the packet easier to inspect. The task should still show who supplied the independent review answer and what that answer did to the work.",
+          "For transferring the artifact, limits, and decision boundary to a new owner, see AI Agent Handoffs."
+        ],
+        "links": [
+          {
+            "label": "AI Agent Handoffs",
+            "path": "/guides/ai-agent-handoffs/"
+          }
+        ]
+      },
+      {
+        "title": "Make a review decision in seven steps",
+        "orderedItems": [
+          "Identify the exact artifact, version, evidence set, and task boundary under review.",
+          "Restate the single decision question and the acceptance condition for this stage.",
+          "Check the evidence, limitations, and any source-of-record or target-system facts relevant to the claim.",
+          "Choose the smallest accurate answer: accept, request changes, narrow, reject, route, or defer.",
+          "State why that answer applies and what it does not decide, authorize, or prove.",
+          "Name the next bounded action, owner, review point, and any continuing blocker or resume condition.",
+          "Record the answer with the task and artifact so the next owner can verify and act on it."
+        ]
+      },
+      {
+        "title": "The procedure makes the review useful",
+        "paragraphs": [
+          "The procedure makes the review useful even when the answer is not acceptance. A clear narrow, reject, or route decision prevents work from lingering in a vague “needs attention” state."
+        ]
+      },
+      {
+        "title": "Test whether the review decision is actionable",
+        "paragraphs": [
+          "Before posting the answer, ask whether a new owner could tell what changed without reading the whole discussion. If they cannot identify the artifact, answer, reason, boundary, and next step, make the decision more specific."
+        ],
+        "tables": [
+          {
+            "headers": [
+              "Test",
+              "Reader should be able to answer",
+              "If not"
+            ],
+            "rows": [
+              [
+                "Object test",
+                "Which exact artifact or evidence set was reviewed?",
+                "Link or name the precise version"
+              ],
+              [
+                "Answer test",
+                "Which of the five review answers applies?",
+                "Replace ambiguous praise or concern with a clear decision"
+              ],
+              [
+                "Reason test",
+                "Which criterion, evidence, or boundary explains the answer?",
+                "State the supporting fact and any limitation"
+              ],
+              [
+                "Scope test",
+                "What part of the task may proceed, change, or stop?",
+                "Name the bounded next state and non-goals"
+              ],
+              [
+                "Authority test",
+                "Who made this decision, and what can they decide?",
+                "Route or escalate the unanswered portion"
+              ],
+              [
+                "Continuity test",
+                "Where does the next owner find the record and next action?",
+                "Put it in the task, packet, handoff, or durable source"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "title": "A decision that fails a test can still be useful",
+        "paragraphs": [
+          "A decision that fails a test can still be a useful comment, but it is not yet a safe state change for an agent task. Keep the task waiting or route the question until the answer is clear enough to act on."
+        ]
+      },
+      {
+        "title": "Seven review-decision mistakes that leave work ambiguous"
+      },
+      {
+        "title": "Saying “looks good” without naming the accepted stage",
+        "paragraphs": [
+          "Positive feedback does not tell the next owner whether an artifact is ready for another review, publication, implementation, or closure. Name the exact stage and any continuing limit."
+        ]
+      },
+      {
+        "title": "Requesting changes without a bounded correction",
+        "paragraphs": [
+          "Feedback such as “improve this” invites scope expansion. Name the gap, criterion, evidence, and return point so the revision remains reviewable."
+        ]
+      },
+      {
+        "title": "Letting acceptance imply external execution",
+        "paragraphs": [
+          "An accepted artifact can be ready for its next task stage. The repository, deployment, identity, delivery, or other target system remains the source that confirms external action."
+        ]
+      },
+      {
+        "title": "Using narrow feedback to create hidden follow-on work",
+        "paragraphs": [
+          "When an excluded improvement is valuable, state it as a separately owned proposal. Do not imply that the current owner must complete it after the review."
+        ]
+      },
+      {
+        "title": "Rejecting an artifact without preserving the reason",
+        "paragraphs": [
+          "Record the unmet condition, evidence gap, authority boundary, or changed fact. Otherwise another agent may reproduce the same path without knowing why it was rejected."
+        ]
+      },
+      {
+        "title": "Routing an undefined question to another owner",
+        "paragraphs": [
+          "The receiver needs one answerable choice, its evidence, and the task effect. “Please decide” without a boundary is only transferred ambiguity."
+        ]
+      },
+      {
+        "title": "Treating self-review as independent acceptance",
+        "paragraphs": [
+          "An agent can prepare and check its own work, but the record should distinguish that preparation from the reviewer or target-system confirmation the task actually requires."
+        ]
+      }
+    ],
+    "faq": [
+      {
+        "question": "What are AI agent review decisions?",
+        "answer": "They are explicit reviewer answers that change a bounded task state: accept, request changes, narrow, reject, route, or defer an artifact or decision question. They state what was reviewed, why the answer applies, and what happens next."
+      },
+      {
+        "question": "What is the difference between accept and approve?",
+        "answer": "Accept should be tied to a particular artifact and review stage. Approval may have a broader organizational or system meaning, so the record should name exactly what is accepted and what it does not authorize or prove."
+      },
+      {
+        "question": "When should a reviewer request changes instead of narrowing the task?",
+        "answer": "Request changes when the needed revision fits the current task’s outcome and acceptance conditions. Narrow when the proposed artifact or conclusion exceeds the agreed boundary and the useful portion can proceed without the excluded work."
+      },
+      {
+        "question": "Can an agent accept its own work?",
+        "answer": "It can self-check against stated criteria, but it should not represent that as an independent review when the task requires a different reviewer, owner, or target-system confirmation."
+      },
+      {
+        "question": "What should happen after a review decision is rejected or routed?",
+        "answer": "Record the reason, evidence, and task effect. A rejection may close the path, create a blocker, or produce a separate follow-on proposal. A routed decision should give the receiving owner one clear question and the supporting packet."
+      },
+      {
+        "question": "Does a review decision prove an external change happened?",
+        "answer": "No. It establishes a collaboration decision about an artifact or next task stage. The target system that performed the action remains responsible for confirming its own current state."
+      }
+    ],
+    "relatedLinks": [
+      {
+        "label": "AI Agent Review Packet",
+        "path": "/guides/ai-agent-review-packet/"
+      },
+      {
+        "label": "AI Agent Acceptance Criteria",
+        "path": "/guides/ai-agent-acceptance-criteria/"
+      },
+      {
+        "label": "AI Agent Work Contract",
+        "path": "/guides/ai-agent-work-contract/"
+      },
+      {
+        "label": "AI Agent Status Updates",
+        "path": "/guides/ai-agent-status-updates/"
+      },
+      {
+        "label": "AI Agent Scope Creep",
+        "path": "/guides/ai-agent-scope-creep/"
+      },
+      {
+        "label": "AI Agent Escalation",
+        "path": "/guides/ai-agent-escalation/"
+      },
+      {
+        "label": "AI Agent Decision Packet",
+        "path": "/guides/ai-agent-decision-packet/"
+      }
+    ],
+    "cta": {
+      "title": "Turn feedback into a clear next state",
+      "body": "AI agent review decisions give work a legible answer: accept it for the stated stage, request a bounded revision, narrow it to supported scope, reject the unsupported path, or route the decision to its proper owner. By linking the artifact, evidence, boundary, and next action, a reviewer makes progress visible without granting authority or treating collaboration records as proof of execution.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
