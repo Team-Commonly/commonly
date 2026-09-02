@@ -39,29 +39,54 @@ export const SOURCE_RUNTIME = 'local-cli';
  * and is never seen again; the write and the silence are indistinguishable from
  * a correct round trip. Naming the section is the whole point of the cue.
  */
-export const buildMemoryPreamble = (prompt, memoryLongTerm) => {
+export const buildMemoryPreamble = (prompt, memoryLongTerm, { freshSession = false } = {}) => {
   // `null` is the UNREADABLE signal, and it is deliberately not the same value
   // as `''`. Telling a seat whose token was revoked that "nothing has ever been
   // saved here" is a false claim about its own history, and it is the same
   // defect this cue exists to fix — one state over. When we could not read, say
   // that, and say nothing about what is stored.
+  let context;
   if (memoryLongTerm === null) {
-    return `=== Context (your persistent memory) ===\n`
+    context = `=== Context (your persistent memory) ===\n`
       + `(unreadable this turn — the memory read failed, so this says NOTHING `
       + `about what you have saved. Do not treat it as empty and do not re-save `
-      + `state you may already hold.)\n`
-      + `=== Current turn ===\n${prompt}`;
+      + `state you may already hold.)`;
+  } else if (memoryLongTerm) {
+    context = `=== Context (your persistent memory) ===\n${memoryLongTerm}`;
+  } else {
+    context = `=== Context (your persistent memory) ===\n`
+      + `(empty — nothing has ever been saved here)\n`
+      + `Only the \`long_term\` section is read back into this prompt. To make `
+      + `something survive your next session, call commonly_save_my_memory({ `
+      + `section: 'long_term', content: '...' }). A write to any other section `
+      + `succeeds and is never shown to you again.`;
   }
-  if (memoryLongTerm) {
-    return `=== Context (your persistent memory) ===\n${memoryLongTerm}\n=== Current turn ===\n${prompt}`;
+
+  if (!freshSession) return `${context}\n=== Current turn ===\n${prompt}`;
+
+  // This belongs on a fresh underlying CLI session, rather than every turn:
+  // a resumed session already carries the earlier instruction in its own
+  // transcript. Repeating it on each wake spends prompt budget while making
+  // the cue easier to ignore. The wrapper cannot know the final event of a
+  // session in advance, so it gives the end-of-session reminder while the
+  // agent can still act on it.
+  const freshReadCue = '=== Fresh session ===\n'
+    + 'This is a fresh session. Read the persistent memory context above before acting; '
+    + 'it carries durable state from prior sessions.\n';
+  let sessionEndCue = '=== Before this session ends ===\n';
+  if (memoryLongTerm === null) {
+    sessionEndCue += 'Memory was unreadable on this fresh session. Do not treat it as empty or '
+      + 'write a replacement based on this cue.';
+  } else if (memoryLongTerm) {
+    sessionEndCue += 'At a natural end to meaningful work, save durable working state — '
+      + 'gates held, decisions pending, and task context, not a transcript — with '
+      + "commonly_save_my_memory({ section: 'long_term', content: '...' }).";
+  } else {
+    sessionEndCue += 'At a natural end to meaningful work, save durable working state — '
+      + 'gates held, decisions pending, and task context, not a transcript — using '
+      + 'the long_term write above.';
   }
-  return `=== Context (your persistent memory) ===\n`
-    + `(empty — nothing has ever been saved here)\n`
-    + `Only the \`long_term\` section is read back into this prompt. To make `
-    + `something survive your next session, call commonly_save_my_memory({ `
-    + `section: 'long_term', content: '...' }). A write to any other section `
-    + `succeeds and is never shown to you again.\n`
-    + `=== Current turn ===\n${prompt}`;
+  return `${context}\n${freshReadCue}\n=== Current turn ===\n${prompt}\n${sessionEndCue}`;
 };
 
 export const readLongTerm = async (client, { onError } = {}) => {
