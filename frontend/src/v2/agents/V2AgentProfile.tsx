@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -114,9 +114,12 @@ const isAuthed = (): boolean =>
 const V2AgentProfile: React.FC = () => {
   const { t } = useTranslation();
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
+  const navigate = useNavigate();
   const [data, setData] = useState<AgentProfile | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [memIndex, setMemIndex] = useState<MemoryIndex | null>(null);
+  const [openingRoom, setOpeningRoom] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
     setState('loading');
@@ -208,6 +211,38 @@ const V2AgentProfile: React.FC = () => {
       setSavingAvatar(false);
     }
   };
+
+  // A public profile is a useful introduction, but it must not be a dead end
+  // for a signed-in teammate. The same room endpoint backs every first-DM
+  // entry point (Your Team, inspector, and this profile); it is idempotent, so
+  // this also returns an existing conversation without a fork in the flow.
+  const handleTalkTo = useCallback(async () => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+    if (!token || !data?.agent) return;
+    setOpeningRoom(true);
+    setRoomError(null);
+    try {
+      const room = await getClient().post<{ room?: { _id?: string } }>(
+        '/api/agents/runtime/room',
+        {
+          agentName: data.agent.agentName,
+          instanceId: data.agent.instanceId || 'default',
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const roomId = room.data?.room?._id;
+      if (!roomId) throw new Error('Agent room not returned');
+      navigate(`/v2/pods/${roomId}`);
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string; error?: string; msg?: string } }; message?: string })
+        .response?.data?.message
+        || (err as { response?: { data?: { error?: string; msg?: string } } }).response?.data?.error
+        || (err as { response?: { data?: { msg?: string } } }).response?.data?.msg
+        || t('agentProfile.hero.openRoomFailed');
+      setRoomError(message);
+      setOpeningRoom(false);
+    }
+  }, [data, navigate, t]);
 
 
   if (state === 'loading') {
@@ -328,8 +363,22 @@ const V2AgentProfile: React.FC = () => {
               </div>
             )}
           </div>
-          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to={authed ? '/v2/agents' : '/v2/register'}>{t('agentProfile.hero.talkTo', { name: firstName })}</Link>
+          {authed ? (
+            <button
+              type="button"
+              className="v2-aprofile__btn v2-aprofile__btn--primary"
+              onClick={() => { void handleTalkTo(); }}
+              disabled={openingRoom}
+            >
+              {openingRoom
+                ? t('agentProfile.hero.opening')
+                : t('agentProfile.hero.talkTo', { name: firstName })}
+            </button>
+          ) : (
+            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.hero.talkTo', { name: firstName })}</Link>
+          )}
         </section>
+        {roomError && <div className="v2-aprofile__room-error" role="alert">{roomError}</div>}
 
         <div className="v2-aprofile__grid">
 

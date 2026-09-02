@@ -23,19 +23,21 @@ describe('ActivityService.getPendingApprovals', () => {
     jest.clearAllMocks();
   });
 
-  it('queries only pods created by the queue owner', async () => {
-    const ownerUserId = 'queue-owner';
+  it('queries approvals from both creator and membership pods', async () => {
+    const memberUserId = 'queue-member';
     Pod.find.mockReturnValue(podFindResult([{ _id: 'owner-pod' }]));
     Activity.getPendingApprovals.mockResolvedValue([{ _id: 'approval-1' }]);
 
-    await expect(ActivityService.getPendingApprovals(ownerUserId)).resolves.toEqual([
+    await expect(ActivityService.getPendingApprovals(memberUserId)).resolves.toEqual([
       { _id: 'approval-1' },
     ]);
 
-    // ADR-020 D3 and TASK-095 v1.4 keep this legacy queue owner-scoped. Do
-    // not reintroduce the removed members.role branch: Pod.members is an
-    // ObjectId[] and has no role-bearing member objects.
-    expect(Pod.find).toHaveBeenCalledWith({ createdBy: ownerUserId });
+    expect(Pod.find).toHaveBeenCalledWith({
+      $or: [
+        { createdBy: memberUserId },
+        { members: memberUserId },
+      ],
+    });
     expect(Activity.getPendingApprovals).toHaveBeenCalledWith(['owner-pod']);
   });
 });

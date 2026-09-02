@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2AgentProfile from '../agents/V2AgentProfile';
 import i18n, { i18nReady } from '../../i18n';
 
 jest.mock('axios', () => {
-  const profileClient = { get: jest.fn() };
+  const profileClient = { get: jest.fn(), post: jest.fn() };
   return {
     __esModule: true,
     default: { create: jest.fn(() => profileClient) },
@@ -20,7 +20,7 @@ jest.mock('../components/V2Avatar', () => ({
   default: () => null,
 }));
 
-const profileClient = (jest.requireMock('axios') as { __profileClient: { get: jest.Mock } }).__profileClient;
+const profileClient = (jest.requireMock('axios') as { __profileClient: { get: jest.Mock; post: jest.Mock } }).__profileClient;
 
 const renderProfile = () => render(
   <MemoryRouter initialEntries={['/v2/agents/claude-code/observer']}>
@@ -61,9 +61,11 @@ describe('V2AgentProfile memory-write visibility', () => {
   beforeEach(() => {
     window.localStorage.clear();
     jest.clearAllMocks();
-    profileClient.get.mockResolvedValue(
-      profilePayload({ kind: 'durable', updatedAt: twoHoursAgo() }),
-    );
+    profileClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/agent-memory/')) return Promise.reject(new Error('not owner'));
+      return Promise.resolve(profilePayload({ kind: 'durable', updatedAt: twoHoursAgo() }));
+    });
+    profileClient.post.mockResolvedValue({ data: { room: { _id: 'room-scout' } } });
   });
 
   it('reports the kind of the latest agent-authored write', async () => {
@@ -73,13 +75,27 @@ describe('V2AgentProfile memory-write visibility', () => {
   });
 
   it('reports a housekeeping write without naming the section', async () => {
-    profileClient.get.mockResolvedValue(
-      profilePayload({ kind: 'bookkeeping', updatedAt: twoHoursAgo() }),
-    );
+    profileClient.get.mockImplementation((url: string) => {
+      if (url.startsWith('/api/agent-memory/')) return Promise.reject(new Error('not owner'));
+      return Promise.resolve(profilePayload({ kind: 'bookkeeping', updatedAt: twoHoursAgo() }));
+    });
     renderProfile();
 
     expect(await screen.findByText(/Last saved to internal bookkeeping \d+h ago\./)).toBeInTheDocument();
     // No section name reaches this page for any kind.
     expect(screen.queryByText(/Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
+  });
+
+  it('opens the same 1:1 room endpoint for a signed-in visitor', async () => {
+    window.localStorage.setItem('token', 'viewer-token');
+    renderProfile();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to Observer' }));
+
+    await waitFor(() => expect(profileClient.post).toHaveBeenCalledWith(
+      '/api/agents/runtime/room',
+      { agentName: 'claude-code', instanceId: 'observer' },
+      { headers: { Authorization: 'Bearer viewer-token' } },
+    ));
   });
 });

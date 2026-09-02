@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -120,4 +121,65 @@ jobs:
             fi
           done
 
+          exit $fail
+
+      # The check above compares this PR against the base. It cannot see a
+      # SECOND open PR bumping the same package to the same version, because
+      # neither branch contains the other's commit — and that pair merges
+      # CLEAN. Measured, not assumed: two branches both taking cli 0.1.30 to
+      # 0.1.31 while touching different files under cli/src merge with no
+      # conflict, and the result is one 0.1.31 holding both PRs' source. Each
+      # PR's guard was green the whole time. npm then has a version that maps
+      # to an artifact neither PR alone produced, which is the exact defect
+      # #979 and #1017 were.
+      #
+      # Older PR keeps the version, newer picks the next one — so it is always
+      # fixable by one author alone. Failing both would be a deadlock.
+      - name: No older open PR is taking this package to the same version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Every gh call is checked. An unchecked failure yields an empty
+          # version list, which reads as "this PR bumps nothing" and PASSES —
+          # the guard at its most reassuring exactly when it has gone blind.
+          # Same reason the `|| true` came off the fetch above.
+          proposed() {
+            local pr="$1" pkg="$2" patch
+            if ! patch=$(gh api "repos/$REPO/pulls/$pr/files" --paginate \
+                           --jq ".[] | select(.filename == \"$pkg/package.json\") | .patch"); then
+              echo "::error::gh api failed reading PR #$pr. Not passing on a check that could not run." >&2
+              return 1
+            fi
+            # Only an ADDED version line counts. A PR that merely carries an
+            # old package.json (every stale branch does) proposes nothing.
+            printf '%s\n' "$patch" | sed -n 's/^+.*"version": "\([^"]*\)".*/\1/p' | head -1
+          }
+
+          if ! older=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
+                         --jq ".[] | select(.number < $PR) | .number"); then
+            echo "::error::gh api failed listing open PRs. Not passing on a blind check."
+            exit 1
+          fi
+
+          fail=0
+          for pkg in cli commonly-mcp; do
+            mine=$(proposed "$PR" "$pkg")
+            [ -z "$mine" ] && { echo "· $pkg: this PR proposes no version"; continue; }
+            echo "· $pkg: this PR proposes $mine"
+            for other in $older; do
+              theirs=$(proposed "$other" "$pkg")
+              [ "$theirs" = "$mine" ] || continue
+              echo "::error file=$pkg/package.json::$pkg $mine is already claimed by the older open PR #$other. Both bumps merge clean — git sees the same line changed the same way — so npm would carry one $mine built from both PRs' source. #$other keeps $mine; pick the next version here."
+              fail=1
+            done
+          done
+
+          if [ "$fail" = "0" ]; then
+            echo "✓ no older open PR claims these versions"
+          fi
           exit $fail

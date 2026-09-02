@@ -2034,6 +2034,35 @@ body.modern-ui.v2-canvas {
   flex-shrink: 0;
 }
 
+/* A 1:1 agent room must not make a successful POST look like an active
+   agent. The liveness row is deliberately adjacent to, but outside, the
+   composer: it remains visible while someone writes and never becomes part
+   of the scrollable transcript. */
+.v2-chat__agent-room-status {
+  margin: 8px 24px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.v2-chat__agent-room-status--wait {
+  border-color: var(--v2-accent-soft);
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent-text);
+  font-weight: 600;
+}
+
+.v2-chat__agent-room-status--timeout {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  font-weight: 500;
+}
+
 .v2-chat__starter-prompts {
   display: flex;
   flex-wrap: wrap;
@@ -4536,6 +4565,18 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 480px) {
+  /* Auth is a primary phone flow: 16px prevents Safari's focus zoom and a
+     44px target keeps signup usable with a thumb. */
+  .v2-login__input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .v2-root button.v2-login__submit {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
   .v2-modal__overlay {
     padding: 12px;
   }
@@ -4830,6 +4871,29 @@ body.modern-ui.v2-canvas {
   background: rgba(239, 68, 68, 0.1);
   color: var(--v2-danger);
   font-size: 12px;
+}
+
+.v2-root button.v2-login__resend {
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.v2-root button.v2-login__resend:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.v2-login__resend-notice {
+  margin-top: 6px;
+  color: var(--v2-text-secondary);
 }
 
 .v2-login__forgot {

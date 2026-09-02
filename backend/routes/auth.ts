@@ -20,6 +20,7 @@ const {
   requestWaitlist,
   redeemInvitation,
   forgotPassword,
+  resendVerification,
   resetPassword,
 } = require('../controllers/authController');
 // eslint-disable-next-line global-require
@@ -154,6 +155,18 @@ const forgotLimiter = rateLimit({
   handler: rateLimitHandler('rate limit exceeded: 5 password-reset requests per hour'),
 });
 
+// Like password reset, a resend can amplify outbound mail. It has a separate
+// bucket so asking for a verification link never starves password recovery.
+const resendVerificationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: rateLimitHandler('rate limit exceeded: 5 verification emails per hour'),
+});
+
 // Social login shares the credential-stuffing posture of /login: each attempt
 // is one provider round-trip, so 30/15min/IP leaves room for retries without
 // letting a bot farm state rows.
@@ -255,6 +268,7 @@ router.post('/redeem-invitation', loginLimiter, auth, redeemInvitation);
 // and always 200s, so it's an outbound-mail amplifier); reset consumes a
 // signed token so the login limiter's posture suffices.
 router.post('/forgot-password', forgotLimiter, forgotPassword);
+router.post('/resend-verification', resendVerificationLimiter, resendVerification);
 router.post('/reset-password', loginLimiter, resetPassword);
 router.post('/refresh', auth, (req: AuthReq, res: Res) => {
   if (!requireBrowserJwt(req, res)) return;

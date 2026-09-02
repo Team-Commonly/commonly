@@ -12,6 +12,8 @@ const Post = require('../models/Post');
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
 
 let PGMessage: unknown = null;
 try {
@@ -141,7 +143,6 @@ class ActivityService {
     if (requestedPodId && scopedPods.length === 0) {
       throw new Error('Access denied');
     }
-
     const scopedPodIds = new Set(scopedPods.map((pod) => String(pod._id)));
     // filter: 'agents' — the recap is about agent WORK. Without it, the
     // 100-slot feed budget was consumed entirely by `summary` activities
@@ -1470,6 +1471,9 @@ class ActivityService {
         return { success: false, error: 'Activity is not an approval request' };
       }
 
+      const membershipError = await ActivityService.requireActivityApprovalMember(activity, userId);
+      if (membershipError) return membershipError;
+
       await activity.approve(userId, notes);
       return { success: true, status: 'approved' };
     } catch (error) {
@@ -1490,6 +1494,9 @@ class ActivityService {
         return { success: false, error: 'Activity is not an approval request' };
       }
 
+      const membershipError = await ActivityService.requireActivityApprovalMember(activity, userId);
+      if (membershipError) return membershipError;
+
       await activity.reject(userId, notes);
       return { success: true, status: 'rejected' };
     } catch (error) {
@@ -1499,13 +1506,39 @@ class ActivityService {
     }
   }
 
+  /**
+   * Legacy Activity approval rows predate ApprovalAction.ownerUserId. Their
+   * read rule is pod membership (with the creator fallback for old rows), so
+   * write authorization must use the identical predicate. Do this at write
+   * time: a stale or forged client must not turn an Activity id into broad
+   * authenticated approval authority.
+   */
+  private static async requireActivityApprovalMember(
+    activity: { podId?: unknown },
+    userId: unknown,
+  ): Promise<Record<string, unknown> | null> {
+    const rawPodId = activity.podId as { _id?: unknown } | undefined;
+    const podId = rawPodId?._id || activity.podId;
+    const pod = await Pod.findById(podId).select('createdBy members').lean();
+    if (!pod) return { success: false, status: 404, error: 'Approval pod not found' };
+    if (!isPodMember(pod, userId)) {
+      return { success: false, status: 403, error: 'Only pod members can decide this' };
+    }
+    return null;
+  }
+
   static async getPendingApprovals(userId: unknown): Promise<unknown[]> {
     try {
       const pods: Array<{ _id: unknown }> = await Pod.find({
-        // Pod.members is an ObjectId[] with no role field. This owner lookup
-        // replaces the inert members.role branch, which implied a nonexistent
-        // admin audience for pending approvals.
-        createdBy: userId,
+        // Pending approvals belong to every pod member. `members` is an
+        // ObjectId[] (not a role-bearing object), so querying
+        // `members.userId` or `members.role` silently excludes members.
+        // Keep createdBy for legacy rows created before creators were added
+        // to members on save.
+        $or: [
+          { createdBy: userId },
+          { members: userId },
+        ],
       })
         .select('_id')
         .lean();
