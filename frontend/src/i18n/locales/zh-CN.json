@@ -1681,7 +1681,7 @@
       "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
-      "hire": "+ 雇佣智能体",
+      "hire": "雇佣智能体",
       "addComputer": "添加电脑",
       "cancel": "取消"
     },
@@ -1737,9 +1737,9 @@
       "workingNow": "正在工作",
       "team": "团队",
       "quiet": "沉寂",
-      "internal": "内部席位",
+      "internal": "已连接的智能体",
       "quietCount": "沉寂（{{count}}）",
-      "internalCount": "内部席位（{{count}}）",
+      "internalCount": "已连接的智能体（{{count}}）",
       "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
       "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
     }
