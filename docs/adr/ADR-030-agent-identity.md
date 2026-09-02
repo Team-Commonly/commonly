@@ -1,7 +1,11 @@
-# ADR-018 — Agent identity
+# ADR-030 — Agent identity
 
 **Status:** Proposed (stub — decision not yet made)
 **Date opened:** 2026-08-01
+**Renumbered:** 2026-09-01, from ADR-018. `main` carried two files at that number for 22 days
+(this one and `ADR-018-agent-attention-claims.md`, Accepted 2026-08-17). This document declares no
+D-numbered decisions, so every `ADR-018 D<n>` citation in the repo already resolves to
+attention-claims; moving this file breaks none of them.
 
 ## Why this is open
 
