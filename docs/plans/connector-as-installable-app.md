@@ -87,16 +87,21 @@ What it does, in order — this is `installableInstallService.install()`:
 
 1. Load the Installable; 404 if absent or not `active`.
 2. Resolve the target from `scope`: `user` → `targetType: 'user'`, `targetId: req.user.id`.
-3. **Insert the parent as the compare-and-set** (the #1315 shape). There is no read-then-write:
-   the service inserts the `InstallableInstallation` row (`installableVersion`, `installedBy`,
-   `installSource: 'ui'`, `grantedScopes = installable.requires`, `status: 'installing'`)
-   against a **unique partial index on `{ installableId, targetType, targetId }` filtered to
-   `status: { $in: ['installing', 'active'] }`** — both live states, not just `active`, or two
-   concurrent installs would each pass a read, each create an `installing` parent, and each
-   project a row (Vera, 2026-09-02). A duplicate-key error is the idempotent path: load the
-   existing live row and return it with 200; if it is `installing`, return it as-is — the
-   first caller finishes it. `error` and `uninstalled` rows are outside the filter, so a retry
-   after a failed install inserts fresh and reuses the inactive Integration row (§2 step 6).
+3. **Claim the parent atomically — the claim is the compare-and-set** (the #1315 shape; Kai's
+   ask, 2026-09-02). One row per `(installableId, targetType, targetId)` across every
+   non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
+   'active', 'error'] }`**. The service never reads-then-writes. It runs one
+   `findOneAndUpdate` with `upsert: true` whose filter is the key plus `status: { $in:
+   ['error'] }` or no-row, and whose update sets `status: 'installing'`, `installedBy`,
+   `installableVersion`, `installSource: 'ui'`, `grantedScopes = installable.requires`,
+   `claimedAt: now` — so a retry after a failed install **claims the retained `error` row**
+   instead of inserting beside it, and a first install inserts. The document returned with
+   `status: 'installing'` and our `claimedAt` is the lock; **only the lock owner runs
+   projectors.** Any other outcome is the loser's path and never invokes a projector: the
+   existing row is returned as-is — **202 while `installing`** (the owner will finish it),
+   **200 when `active`**. A duplicate-key error on the upsert (two first-installs racing the
+   insert) is the same loser's path. `uninstalled` rows sit outside the index, so re-install
+   after uninstall inserts fresh and mints a new Integration row (the binding row is the unit).
    One parent therefore means one projected row (`Integration.installationId` is unique), and
    `findLiveIntegration(podId)` never sees two live rows born from one user's install.
 4. **Iterate `components[]`.** For each, look up `projectors[component.type]` (§3). Missing
@@ -269,10 +274,12 @@ Unit (`backend/__tests__/unit/services/installable/`):
    both pointing at the **same** `integrationId`; the Integration row has `installationId ===
    String(parent._id)`, `linkedUserId === installer`, a 32-hex code with expiry, `liveRelay` and
    `relayAllAgentMessages` true, `podId` = the gated pod.
-2. A second install by the same user returns the existing row (200), creates nothing — **and
-   two concurrent installs** (fire both before either resolves, real Mongo via
+2. A second install by the same user returns the existing row — 200 when active, **202 while
+   installing** — creates nothing and **invokes no projector** (spy on the projector registry).
+   **Two concurrent installs** (fire both before either resolves, real Mongo via
    mongodb-memory-server so the unique index is exercised) produce exactly one parent, one
-   Integration row, one code; the loser gets the winner's row.
+   Integration row, one code, one set of projector calls; the loser gets the winner's row. A
+   retry after a 422 **claims the retained `error` row** (same `_id`), never a second parent.
 3. A manifest with an unknown component type yields parent `error`, the row kept, 422 —
    **and the projected Integration row is `isActive: false` with no `connectCode`**, so
    `handleEnableCommand`'s lookup cannot match it (assert `Integration.findOne({ type:
