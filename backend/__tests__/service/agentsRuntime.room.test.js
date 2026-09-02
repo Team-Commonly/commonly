@@ -157,6 +157,31 @@ describe('POST /api/agents/runtime/room — dual-auth (ADR-010 Phase 1)', () => 
       expect(await Pod.countDocuments({ type: 'agent-room' })).toBe(1);
     });
 
+    it('reopens the room when its reactive installation is the only one left', async () => {
+      const first = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(first.status).toBe(200);
+
+      // The room's reactive installation is the only surviving projection.
+      // It remains a valid legacy selection so reopening the existing 1:1
+      // never turns into a false "multiple installations" failure.
+      await AgentInstallation.deleteOne({
+        agentName: 'alice',
+        podId: pod._id,
+        status: 'active',
+      });
+      expect(await AgentInstallation.countDocuments({ agentName: 'alice', status: 'active' })).toBe(1);
+
+      const second = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(second.status).toBe(200);
+      expect(String(second.body.room._id)).toBe(String(first.body.room._id));
+    });
+
     it('asks for podId when two workspace installations share an instance', async () => {
       const first = await request(app)
         .post('/api/agents/runtime/room')
