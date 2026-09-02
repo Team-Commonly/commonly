@@ -168,13 +168,28 @@ in-process handler map (`backend/services/installable/eventHandlers.ts`), initia
 `{ integrationId }` (shared with the webhook projector — same row) and marks the handler
 subscribed for this installation. **The dispatch replaces the hardcoded `require`** at
 `agentMessageService.ts:1787`: the message service calls
-`eventHandlers.dispatch('chat.message', payload)`; the dispatcher resolves active
-`event-handler` component installations for `chat.message` and invokes each handler with the
-same payload the bridge takes today (`{ podId, agentUsername, displayName, content,
-podMessageId }`), fire-and-forget, one `try/catch` per handler so one bridge cannot fail the
-post. **Behaviour pin:** for a pod with one live Telegram row, exactly one relay fires per post,
-with the same arguments as before. That is the test that proves invariant 6 landed without
-moving the product.
+`eventHandlers.dispatch('chat.message', payload)`. **Selection is the dispatcher's, and it is
+scoped by the event's target — never "every active handler for this event type."** The
+dispatcher's selector for `chat.message` in pod P resolves the installations whose projection
+is bound to P: in Phase 1 that is one query, `Integration.find({ installationId: { $exists },
+isActive: true, 'config.liveRelay': true, podId: P })`, joined to their parents — the same O(1)
+cost the hardcoded hook has today (the comment at `agentMessageService.ts:1783` promises that,
+and the promise moves up a layer with the call). The dispatcher then invokes each selected
+handler with the same payload the bridge takes today (`{ podId, agentUsername, displayName,
+content, podMessageId }`) plus the selected `integration`, fire-and-forget, one `try/catch` per
+handler so one bridge cannot fail the post. The bridge's own `findLiveIntegration(podId)` stays
+in Phase 1 as defence in depth, not as the selector: an install must be filtered out **before**
+its handler runs, not inside it — a dispatcher that fans out to every tenant and relies on each
+handler to decline is a multi-tenant leak waiting for a handler that does not (Vera,
+2026-09-02). In Phase 2 the selector becomes D8's inversion — pod → members → each member's
+user-scoped install — and the bridge lookup is deleted; the handler signature does not change.
+
+**Behaviour pins:** (a) for a pod with one live Telegram row, exactly one relay fires per post,
+with the same arguments as before; (b) **two tenants**: user A's install bound to pod P and
+user B's bound to pod Q — a post in P invokes A's handler once and B's zero times, measured at
+the dispatcher (a spy on the handler map), not at the bridge; (c) a pod with no install costs
+one selector query and zero invocations. Those are the tests that prove invariant 6 landed
+without moving the product or widening it.
 
 Unknown `eventHandler` prefix (`agent:`, `webhook:`) → projector error in Phase 1. Those are
 the slash-command / external-webhook tracks; naming them here keeps the enum honest.
@@ -270,10 +285,13 @@ Unit (`backend/__tests__/unit/services/installable/`):
    creates nothing.
 
 Service (`__tests__/service/`):
-7. **Behaviour pin.** An agent post into a pod with one live Telegram row triggers exactly one
-   `relayAgentMessageToTelegram` call via the dispatcher, with the same five fields the
-   hardcoded hook passed. Zero calls for a pod without one. A throwing handler does not fail
-   the post.
+7. **Behaviour pins, at the dispatcher.** (a) An agent post into a pod with one live Telegram
+   row triggers exactly one `relayAgentMessageToTelegram` call via the dispatcher, with the same
+   five fields the hardcoded hook passed. (b) **Multi-tenant:** two active installs — user A's
+   bound to pod P, user B's bound to pod Q — and a post in P: A's handler is invoked once, B's
+   zero times, asserted on a spy at the handler map (the bridge's own lookup is stubbed out so
+   it cannot be what filtered B). (c) A pod with no install: one selector query, zero
+   invocations. (d) A throwing handler does not fail the post.
 8. `telegramBridgeService.attribution` and `telegram.webhook.*` suites pass unchanged — the
    route is not edited.
 
