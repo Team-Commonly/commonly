@@ -58,6 +58,8 @@
 /* `.v2-root a { color: inherit }` (0,1,1) beats the single-class rules — re-assert. */
 .v2-root .v2-aprofile__btn--primary { color: #ffffff; }
 .v2-root .v2-aprofile__btn--ghost { color: var(--v2-text-primary); }
+.v2-root button.v2-aprofile__btn:disabled { cursor: wait; opacity: 0.72; }
+.v2-aprofile__room-error { margin: 12px 0 0; color: var(--v2-danger); font-size: 14px; }
 
 /* Main + centered states */
 .v2-aprofile__main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }

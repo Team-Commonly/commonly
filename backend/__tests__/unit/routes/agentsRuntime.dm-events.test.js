@@ -3,9 +3,14 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => next());
 jest.mock('../../../middleware/apiTokenScopes', () => ({
   requireApiTokenScopes: () => (req, res, next) => next(),
 }));
+// The route's authentication middleware is mocked above. Its import graph
+// still reaches uploads.ts, which imports jsonwebtoken; keep that unrelated
+// Node-26-incompatible dependency out of this polling-scope unit test.
+jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: jest.fn() }));
 
 jest.mock('../../../services/agentEventService', () => ({
   list: jest.fn(),
+  listInboxPage: jest.fn(),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
@@ -65,7 +70,7 @@ describe('agentsRuntime DM and event pod coverage', () => {
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([{ _id: 'dm-pod-1' }]),
     });
-    AgentEventService.list.mockResolvedValue([]);
+    AgentEventService.listInboxPage.mockResolvedValue({ events: [], inboxCount: 0 });
 
     const req = {
       query: {},
@@ -80,12 +85,12 @@ describe('agentsRuntime DM and event pod coverage', () => {
 
     await handler(req, res);
 
-    expect(AgentEventService.list).toHaveBeenCalledWith(expect.objectContaining({
+    expect(AgentEventService.listInboxPage).toHaveBeenCalledWith(expect.objectContaining({
       agentName: 'openclaw',
       instanceId: 'liz',
       podIds: ['pod-1', 'dm-pod-1'],
     }));
-    expect(res.json).toHaveBeenCalledWith({ events: [] });
+    expect(res.json).toHaveBeenCalledWith({ events: [], inboxCount: 0 });
   });
 
   it('creates or returns DM pod via POST /dm', async () => {

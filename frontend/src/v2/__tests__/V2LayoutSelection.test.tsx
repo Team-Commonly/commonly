@@ -151,4 +151,17 @@ describe('V2Layout default pod selection', () => {
       expect(localStorage.getItem('v2:lastPodId')).toBe('workspace');
     });
   });
+
+  test('refreshes the membership-backed sidebar when navigation lands in a newly-created room', async () => {
+    mockPodsState.pods = [];
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/new-room']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mockPodsState.refresh).toHaveBeenCalledTimes(1));
+  });
 });

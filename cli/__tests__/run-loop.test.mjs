@@ -105,15 +105,13 @@ describe('performRun', () => {
       expect.objectContaining({ agentName: 'my-stub', instanceId: 'default' }),
     );
 
-    // The fetch IS the claim — `list()` marks every candidate `delivered`
-    // and increments `attempts` before returning, while this loop starts
-    // exactly one. Asking for more claims work it cannot begin, and the
-    // backend's requeue sweep then reclaims the remainder at `attempts + 1`
-    // until the poison cap retires them unread. Pinned as its own assertion
-    // because the previous value (10) looked like a harmless batch size.
-    expect(mockGet.mock.calls[0][1].limit).toBe(1);
+    // ADR-024 D3: the server now chooses one pod before claiming this page,
+    // so the whole page reaches one composite turn instead of aging untouched
+    // behind a prior single-event turn.
+    expect(mockGet.mock.calls[0][1].limit).toBe(10);
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn.mock.calls[0][0]).toBe('hello from tester');
+    expect(spawn.mock.calls[0][0]).toContain('[Inbox batch: 1 new event');
+    expect(spawn.mock.calls[0][0]).toContain('hello from tester');
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
@@ -122,6 +120,93 @@ describe('performRun', () => {
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
       { result: { outcome: 'posted' }, deliveryId: 'delivery-abc' },
+    );
+  });
+
+  test('one same-pod inbox page becomes one turn, carries the true count, and claims binding items before spawn', async () => {
+    const events = [
+      makeEvent({ _id: 'evt-batch-a', type: 'message.posted', payload: { content: 'first context', messageId: 'msg-a' } }),
+      makeEvent({ _id: 'evt-batch-b', type: 'message.posted', payload: { content: 'second context', messageId: 'msg-b' } }),
+    ];
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/claim')) return { claimed: true, expiresAt: 'later' };
+      return {};
+    });
+    const del = jest.fn(async () => ({ released: true }));
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return { events, inboxCount: 7 };
+    });
+    createClient.mockReturnValue({ get, post, del });
+    const spawn = jest.fn(async () => {
+      expect(post.mock.calls.filter(([route]) => route.endsWith('/claim'))).toHaveLength(2);
+      return { text: 'one considered response' };
+    });
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('[Inbox batch: 7 new events');
+    expect(spawn.mock.calls[0][0]).toContain('first context');
+    expect(spawn.mock.calls[0][0]).toContain('second context');
+    expect(spawn.mock.calls[0][0]).toContain('[5 more events arrived.');
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-batch-a/ack', { result: { outcome: 'posted' } },
+    );
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-batch-b/ack', { result: { outcome: 'posted' } },
+    );
+  });
+
+  test('a lost binding item stays read-only context while another batch item may run', async () => {
+    const events = [
+      makeEvent({
+        _id: 'evt-held', type: 'message.posted',
+        payload: { content: 'peer owns this decision', messageId: 'msg-held' },
+      }),
+      makeEvent({ _id: 'evt-heartbeat', type: 'heartbeat', payload: { content: 'check the rest of the inbox' } }),
+    ];
+    const post = jest.fn(async (route) => {
+      if (route.endsWith('/claim')) return { claimed: false, claimedBy: 'nova' };
+      return {};
+    });
+    const get = jest.fn(async (route) => {
+      if (route === '/api/agents/runtime/memory') return { sections: {} };
+      if (route.endsWith('/messages')) return { messages: [] };
+      return { events };
+    });
+    createClient.mockReturnValue({ get, post, del: jest.fn() });
+    const spawn = jest.fn(async () => ({ text: 'handled the heartbeat' }));
+
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('@nova holds message msg-held');
+    expect(spawn.mock.calls[0][0]).toContain('read-only context');
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-held/ack',
+      { result: { outcome: 'no_action', reason: 'claim-held' } },
+    );
+    expect(post).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-heartbeat/ack',
+      { result: { outcome: 'posted' } },
     );
   });
 
@@ -216,8 +301,10 @@ describe('performRun', () => {
     stop();
 
     expect(spawn).toHaveBeenCalledWith(
-      'Make a warm first impression.',
-      expect.objectContaining({ metadata: { event: events[0] } }),
+      expect.stringContaining('Make a warm first impression.'),
+      expect.objectContaining({ metadata: { event: expect.objectContaining({
+        type: 'inbox.batch', payload: expect.objectContaining({ batchEventIds: ['evt-first-contact'] }),
+      }) } }),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
@@ -492,8 +579,10 @@ describe('performRun', () => {
     stop();
 
     expect(spawn).toHaveBeenCalledWith(
-      'Run your heartbeat checklist.',
-      expect.objectContaining({ metadata: { event: events[0] } }),
+      expect.stringContaining('Run your heartbeat checklist.'),
+      expect.objectContaining({ metadata: { event: expect.objectContaining({
+        type: 'inbox.batch', payload: expect.objectContaining({ hasHeartbeat: true }),
+      }) } }),
     );
     expect(mockPost).not.toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
@@ -846,6 +935,7 @@ describe('performRun', () => {
       adapter,
       agentName: 'my-stub',
       retryJitterRatio: 0,
+      inboxBatchLimit: 1,
       setTimeoutImpl: (callback, delayMs) => {
         scheduled.push({ callback, delayMs });
         return 0;
@@ -937,7 +1027,7 @@ describe('performRun', () => {
     expect(errors[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
   });
 
-  test('a no-op event does not erase the model failure streak', async () => {
+  test('a batch spawn failure leaves its no-op sibling unacked for coherent retry', async () => {
     let poll = 0;
     const mockGet = jest.fn(async (route) => {
       if (route === '/api/agents/runtime/events') {
@@ -979,7 +1069,10 @@ describe('performRun', () => {
 
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(scheduled[0].delayMs).toBe(10000);
-    expect(mockPost).toHaveBeenCalledWith(
+    // Acknowledge happens after the single composite turn. The no-op sibling
+    // must therefore remain pending with the failed spawn, not disappear
+    // while the rest of the batch is retried.
+    expect(mockPost).not.toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-no-prompt/ack',
       { result: { outcome: 'no_action', reason: 'no-prompt' } },
     );
@@ -1048,6 +1141,7 @@ describe('performRun', () => {
       token: 'cm_agent_test',
       adapter,
       agentName: 'my-stub',
+      inboxBatchLimit: 1,
       setTimeoutImpl: noopTimeout,
     });
     await drainMicrotasks();
@@ -1076,6 +1170,7 @@ describe('performRun', () => {
       token: 'cm_agent_test',
       adapter,
       agentName: 'my-stub',
+      inboxBatchLimit: 1,
       setTimeoutImpl: noopTimeout,
     });
     await drainMicrotasks();
@@ -1453,7 +1548,7 @@ describe('performRun', () => {
     expect(call).toBeGreaterThan(1);
   });
 
-  test('stop() prevents subsequent events within the same cycle from being processed', async () => {
+  test('stop() does not create a second spawn inside a fetched inbox batch', async () => {
     const events = [makeEvent({ _id: 'e1' }), makeEvent({ _id: 'e2' })];
     const mockGet = jest.fn().mockResolvedValue({ events });
     const mockPost = jest.fn().mockResolvedValue({});
@@ -1476,12 +1571,12 @@ describe('performRun', () => {
     });
     await drainMicrotasks();
 
-    // Only the first event was processed; the second skipped due to stop().
+    // One spawn saw both items before stop. There is no second per-event turn.
     expect(spawn).toHaveBeenCalledTimes(1);
     const ackCalls = mockPost.mock.calls.filter(
       ([route]) => route.includes('/events/') && route.endsWith('/ack'),
     );
-    expect(ackCalls).toHaveLength(1);
+    expect(ackCalls).toHaveLength(2);
     expect(ackCalls[0][0]).toContain('/events/e1/ack');
   });
 
@@ -1559,6 +1654,11 @@ describe('performRun — ADR-018 enforcement', () => {
     token: 'cm_agent_test',
     adapter,
     agentName: 'my-stub',
+    // The ADR-018 unit cases below exercise per-event claim/cascade semantics.
+    // D3's composite behavior has dedicated tests; pinning this seam at one
+    // keeps those historical contracts readable instead of duplicating each
+    // assertion against a batch prompt.
+    inboxBatchLimit: 1,
     setTimeoutImpl: noopTimeout,
     ...opts,
   });
@@ -1707,7 +1807,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(post.mock.calls.some(([r]) => r.endsWith('/claim'))).toBe(false);
   });
 
-  test('cascade cap: agent-DM chat.mentions beyond the cap are declined without a spawn or a claim', async () => {
+  test('cascade cap prices an agent-DM inbox page as one turn, not one turn per item', async () => {
     const { post } = makeClient({
       events: [
         makeClaimEvent({ _id: 'evt-a', payload: { content: 'hello', messageId: 'msg-1', dmKind: 'agent-agent' } }),
@@ -1720,7 +1820,8 @@ describe('performRun — ADR-018 enforcement', () => {
       ],
     });
     const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
-    // DM-backed chat.mentions stay locally bounded when grace is disabled.
+    // DM-backed chat.mentions stay locally bounded when grace is disabled,
+    // but this pair is one inbox turn.
     const { stop } = run(
       { name: 'stub', detect: stubAdapter.detect, spawn },
       { cascadeCap: 1, cascadeAddressedGrace: 0 },
@@ -1728,35 +1829,19 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // First agent-triggered turn runs; the second hits the cap.
+    // Both claim CASes happen before the one turn; neither is dropped merely
+    // because it was the second event in the page.
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      {
-        result: {
-          outcome: 'no_action',
-          reason: 'cascade-cap',
-          details: {
-            messageId: 'msg-2',
-            streak: 1,
-            cap: 1,
-            addressedGrace: 0,
-            resetMs: 600000,
-            addressed: true,
-            graceApplied: false,
-          },
-        },
-      },
+      { result: { outcome: 'no_action' } },
     );
-    // The declined event never reached the claim step.
-    expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(1);
+    expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(2);
   });
 
-  test('cascade cap: the env vars reach the governor, not just the run() params', async () => {
-    // Pins the DELIVERY, not the constant. Extracting the literals into a
-    // resolver is worth nothing if the run loop keeps its own copy — and a
-    // resolver-only unit test cannot tell the difference. Same scenario as the
-    // test above, with the two values arriving from the environment instead.
+  test('a batch avoids manufacturing cascade refusals from its own sibling events', async () => {
+    // Two legacy direct-address events used to create two turns and price the
+    // second against the first. The page now has one admission decision.
     const prior = {
       cap: process.env.COMMONLY_CASCADE_CAP,
       grace: process.env.COMMONLY_CASCADE_ADDRESSED_GRACE,
@@ -1781,22 +1866,7 @@ describe('performRun — ADR-018 enforcement', () => {
 
       expect(spawn).toHaveBeenCalledTimes(1);
       expect(post).toHaveBeenCalledWith(
-        '/api/agents/runtime/events/evt-b/ack',
-        {
-          result: {
-            outcome: 'no_action',
-            reason: 'cascade-cap',
-            details: {
-              messageId: 'msg-2',
-              streak: 1,
-              cap: 1,
-              addressedGrace: 0,
-              resetMs: 600000,
-              addressed: true,
-              graceApplied: false,
-            },
-          },
-        },
+        '/api/agents/runtime/events/evt-b/ack', { result: { outcome: 'no_action' } },
       );
     } finally {
       if (prior.cap === undefined) delete process.env.COMMONLY_CASCADE_CAP;
@@ -1806,7 +1876,7 @@ describe('performRun — ADR-018 enforcement', () => {
     }
   });
 
-  test('cascade cap: a legacy direct-address event gets a bounded grace, then is capped too', async () => {
+  test('one composite turn admits all legacy direct-address items in its page', async () => {
     // Mention types are producer-dampened and exempted separately. Legacy
     // direct-address vocabulary remains on the local bounded-grace path.
     const { post } = makeClient({
@@ -1829,25 +1899,10 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // cap 1 + grace 1 = two addressed turns admitted, the third declined.
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-c/ack',
-      {
-        result: {
-          outcome: 'no_action',
-          reason: 'cascade-cap',
-          details: {
-            messageId: 'msg-3',
-            streak: 2,
-            cap: 1,
-            addressedGrace: 1,
-            resetMs: 600000,
-            addressed: true,
-            graceApplied: true,
-          },
-        },
-      },
+      { result: { outcome: 'no_action' } },
     );
   });
 
@@ -1882,15 +1937,11 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // The mention is the second spawn. Before the exemption it was refused at
-    // the cap; without the completion-time record the final broadcast would
-    // instead be admitted.
-    expect(spawn).toHaveBeenCalledTimes(2);
+    // The whole page is one turn. The named item still remains visible beside
+    // both broadcasts, rather than arriving through a special blind path.
+    expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
-      '/api/agents/runtime/events/evt-broadcast-after/ack',
-      expect.objectContaining({
-        result: expect.objectContaining({ outcome: 'no_action', reason: 'cascade-cap' }),
-      }),
+      '/api/agents/runtime/events/evt-broadcast-after/ack', { result: { outcome: 'no_action' } },
     );
   });
 
@@ -1933,10 +1984,9 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // Two agent turns run: the first builds the streak, the third is admitted
-    // because the lost-claim human turn in between reset it. Before the fix
-    // the third was refused and this was 1.
-    expect(spawn).toHaveBeenCalledTimes(2);
+    // The human item resets before claim partition; the two remaining agent
+    // items share the single composite turn.
+    expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).not.toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-c/ack',
       { result: { outcome: 'no_action', reason: 'cascade-cap' } },
@@ -1966,29 +2016,13 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // The refusal happened — without this the assertion below passes vacuously
-    // on a run where nothing was ever capped.
+    // One page is one turn, so no sibling is refused by the cap.
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
-      {
-        result: {
-          outcome: 'no_action',
-          reason: 'cascade-cap',
-          details: {
-            messageId: 'msg-2',
-            streak: 1,
-            cap: 1,
-            addressedGrace: 0,
-            resetMs: 600000,
-            addressed: true,
-            graceApplied: false,
-          },
-        },
-      },
+      { result: { outcome: 'no_action' } },
     );
     const refusal = log.mock.calls.map(([l]) => l).find((l) => l.includes('cascade cap:'));
-    expect(refusal).toBeDefined();
-    expect(refusal).not.toContain('addressed grace');
+    expect(refusal).toBeUndefined();
   });
 
   test('cascade: the resolved triple is logged at boot, marked as defaults', async () => {
@@ -2065,7 +2099,7 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-b/ack',
       { result: { outcome: 'no_action' } },
@@ -2218,10 +2252,10 @@ describe('performRun — ADR-018 enforcement', () => {
     await drainMicrotasks();
     stop();
 
-    // First race: no handicap. Second race, same pod, after a win: yielded.
-    expect(spawn).toHaveBeenCalledTimes(2);
-    expect(sleeps).toHaveLength(1);
-    expect(sleeps[0]).toBeGreaterThanOrEqual(3000);
+    // Both races entered the same batch before either could become a prior
+    // winner; the handicap applies to the NEXT inbox page, not a sibling.
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(sleeps).toHaveLength(0);
     expect(post.mock.calls.filter(([r]) => r.endsWith('/claim'))).toHaveLength(2);
   });
 

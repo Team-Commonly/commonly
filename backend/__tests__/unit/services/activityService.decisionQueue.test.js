@@ -105,6 +105,19 @@ describe('ActivityService.getDecisionQueue', () => {
     ]));
   });
 
+  test('presents a member with an approval they can decide', async () => {
+    Pod.find.mockReturnValue({ select: () => ({ lean: async () => [POD] }) });
+    jest.spyOn(ActivityService, 'getPendingApprovals').mockResolvedValue([
+      { _id: 'activity-approval-1', content: 'Deploy?', podId: 'pod-1', createdAt: new Date() },
+    ]);
+
+    const result = await ActivityService.getDecisionQueue('member-1');
+
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'approval', id: 'activity-approval-1' }),
+    ]));
+  });
+
   test('mentions are still thread-aware and cap at eight without hiding decision cards', async () => {
     DecisionRequest.find.mockReturnValue(decisionChain(Array.from({ length: 4 }, (_, index) => decision({
       _id: `decision-${index}`, messageId: `${700 + index}`, createdAt: new Date(Date.now() - index * 1000),

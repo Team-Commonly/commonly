@@ -99,6 +99,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-msg--grouped');
   });
 
+  test('direct-agent liveness stays above the composer as a stable, readable row', () => {
+    // A successful DM POST is not proof of an active seat. This row keeps
+    // liveness and the bounded reply wait outside the scrollable transcript
+    // and outside the textarea, so both remain visible while composing.
+    const status = ruleBody(v2, '.v2-chat__agent-room-status');
+    expect(status).toContain('margin: 8px 24px 0');
+    expect(status).toContain('font-size: 12px');
+    expect(ruleBody(v2, '.v2-chat__agent-room-status--wait')).toContain('background: var(--v2-accent-soft)');
+  });
+
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
     // The chip shipped in violation of the ratified rule; the craft audit
     // (finding 2) removed it. This pins the removal against reintroduction.
@@ -111,6 +121,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // must keep its !important (it has to beat per-component sizes including
     // a legacy 15px !important).
     expect(v2).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{[\s\S]*?\.v2-root input,\n\s*\.v2-root textarea,\n\s*\.v2-root select \{\n\s*font-size: 16px !important;/);
+  });
+
+  test('signup controls meet the 44px / 16px phone floor', () => {
+    // Task-103: the full-register form was 39px tall with 14px text at 390px,
+    // a tap target and Safari zoom regression on the first real-user path.
+    const phoneStart = v2.indexOf('@media (max-width: 480px)');
+    const phoneBlock = v2.slice(phoneStart, v2.indexOf('@media', phoneStart + 10));
+    expect(phoneStart).toBeGreaterThan(-1);
+    expect(phoneBlock).toMatch(/\.v2-login__input \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
+    expect(phoneBlock).toMatch(/\.v2-root button\.v2-login__submit \{[\s\S]*?min-height: 44px;[\s\S]*?font-size: 16px;/);
   });
 
   test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {

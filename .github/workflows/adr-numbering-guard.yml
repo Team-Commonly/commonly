@@ -102,7 +102,23 @@ jobs:
                 esac
               done
 
-          node scripts/verify-adr-numbering.js --dir "$eff/docs/adr"
+          # The checker itself has to be resolved the same way as the ADRs, and
+          # for the same reason. On a `pull_request` event GitHub takes the
+          # WORKFLOW from the merge ref but this job checks out the PR HEAD —
+          # so every PR branched before this guard landed has the workflow file
+          # and not the script, and `node scripts/...` died with
+          # MODULE_NOT_FOUND. That reds the PR with no ADR output at all, which
+          # reads as a broken guard rather than a real collision (#1504).
+          # Effective content: the PR's version if it changed the script,
+          # otherwise main's.
+          bin=$(mktemp -d)
+          if git cat-file -e "HEAD:scripts/verify-adr-numbering.js" 2>/dev/null; then
+            git show "HEAD:scripts/verify-adr-numbering.js" > "$bin/verify-adr-numbering.js"
+          else
+            git show "FETCH_HEAD:scripts/verify-adr-numbering.js" > "$bin/verify-adr-numbering.js"
+          fi
+
+          node "$bin/verify-adr-numbering.js" --dir "$eff/docs/adr"
 
       # The check above cannot see a collision between two PRs that are both
       # still open — neither tree contains the other's file. That is the state

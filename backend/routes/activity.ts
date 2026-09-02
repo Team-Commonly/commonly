@@ -224,8 +224,8 @@ router.post('/:activityId/approve', auth, async (req: Req, res: Res) => {
     const { activityId } = req.params || {};
     const { notes } = (req.body || {}) as { notes?: string };
     const userId = getAuthenticatedUserId(req);
-    const result = await ActivityService.approveActivity(activityId, userId, notes) as { success?: boolean; error?: string };
-    if (!result.success) return res.status(400).json({ error: result.error });
+    const result = await ActivityService.approveActivity(activityId, userId, notes) as { success?: boolean; error?: string; status?: number };
+    if (!result.success) return res.status(result.status || 400).json({ error: result.error });
     return res.json(result);
   } catch (error) {
     console.error('Error approving activity:', error);
@@ -238,8 +238,8 @@ router.post('/:activityId/reject', auth, async (req: Req, res: Res) => {
     const { activityId } = req.params || {};
     const { notes } = (req.body || {}) as { notes?: string };
     const userId = getAuthenticatedUserId(req);
-    const result = await ActivityService.rejectActivity(activityId, userId, notes) as { success?: boolean; error?: string };
-    if (!result.success) return res.status(400).json({ error: result.error });
+    const result = await ActivityService.rejectActivity(activityId, userId, notes) as { success?: boolean; error?: string; status?: number };
+    if (!result.success) return res.status(result.status || 400).json({ error: result.error });
     return res.json(result);
   } catch (error) {
     console.error('Error rejecting activity:', error);
