@@ -98,8 +98,18 @@ What it does, in order — this is `installableInstallService.install()`:
    so the half-install is visible (COMMONLY_SCOPE §5 "partial failure visibility"), and a retry
    is idempotent.
 5. Each projector returns `projectionIds`; the service writes them onto the component entry and
-   sets it `active`. When all components are active the parent is `active`.
-6. Response: `{ installation, integration }` — the page needs the Integration row (connect code)
+   sets it `active`.
+6. **Activate last — and mint last.** Only when every component is `active` does the service,
+   in one write, flip the projected Integration row to `isActive: true` and mint the connect
+   code (`mintConnectCode()`), then set the parent `active`. Until that write the row exists
+   with `isActive: false` and **no code**. This is what makes a partial install safe without
+   touching the enable path: `handleEnableCommand` looks up
+   `{ type, isActive: true, 'config.connectCode' }` on main and knows nothing about
+   installations — a 422'd install therefore has nothing it can find. A retry of the install
+   reuses the inactive row and activates it; the reconciler treats an inactive row under an
+   `error` parent as expected, not stale. (Vera, 2026-09-02: "mint last, or teach enable the
+   parent status" — mint last, so the route is not edited.)
+7. Response: `{ installation, integration }` — the page needs the Integration row (connect code)
    immediately, exactly as it gets it from `POST /api/integrations` today.
 
 **The projection IS the Integration row.** No new projection table. Both components project
@@ -135,10 +145,13 @@ interface ComponentProjector {
 **`webhook` projector (`internal` webhooks only in Phase 1).** For a builtin whose
 `webhookPath` is a route this server mounts, projection means: resolve the provider from the
 registry by path (`telegram`), and create-or-reuse the Integration row for this installation
-with the same server-owned defaults `POST /api/integrations` applies today — `mintConnectCode()`,
+with the same server-owned defaults `POST /api/integrations` applies today —
 `relayAllAgentMessages: true`, `liveRelay: true`, `linkedUserId = installedBy` (stamped after the
-default, the #1297 ordering), `createdBy = installedBy`, `installationId`. Returns
-`{ integrationId }`. **No new route table**: the route is already mounted; the projector
+default, the #1297 ordering), `createdBy = installedBy`, `installationId` — **created
+`isActive: false` and without a connect code.** The projector never mints: the code is the one
+bearer secret in the system and it is minted by the install service's final activation write
+(§2 step 6), so no component failure after this projector can leave a redeemable code behind.
+Returns `{ integrationId }`. **No new route table**: the route is already mounted; the projector
 records the binding, it does not register HTTP. A `webhookPath` the server does not mount is a
 projector error (that is the external-webhook case — ADR-006's, not this plan's).
 
@@ -219,7 +232,8 @@ plan leaves for the marketplace-unlock PR, and the `/browse` filter must admit `
 ## 7. Security carry-over (from #1297, none of it optional)
 
 - `linkedUserId` is stamped from the installer, after the relay default, never from the body.
-- Connect code is minted server-side (`mintConnectCode`); the body cannot supply one.
+- Connect code is minted server-side (`mintConnectCode`); the body cannot supply one, and it
+  is minted only by the final activation write — never by a projector (§2 step 6).
 - The chosen pod is gated by `isPodMember` (write predicate, no admin read-bypass).
 - The install and uninstall verbs sit behind the integrations write limiter's shared key.
 - The Installable row carries no secret; H3's credential reference is the only future home.
@@ -234,7 +248,11 @@ Unit (`backend/__tests__/unit/services/installable/`):
    String(parent._id)`, `linkedUserId === installer`, a 32-hex code with expiry, `liveRelay` and
    `relayAllAgentMessages` true, `podId` = the gated pod.
 2. A second install by the same user returns the existing row (200), creates nothing.
-3. A manifest with an unknown component type yields parent `error`, the row kept, 422.
+3. A manifest with an unknown component type yields parent `error`, the row kept, 422 —
+   **and the projected Integration row is `isActive: false` with no `connectCode`**, so
+   `handleEnableCommand`'s lookup cannot match it (assert `Integration.findOne({ type:
+   'telegram', isActive: true, 'config.connectCode': { $exists: true } })` is null for that
+   installation). A retry that succeeds activates the same row and mints once.
 4. `uninstall` sets parent `uninstalled`, Integration `isActive: false`, code fields unset,
    relayMap preserved.
 5. Non-member of the chosen pod → 403, nothing written.
