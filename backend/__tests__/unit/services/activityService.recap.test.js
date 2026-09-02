@@ -1,4 +1,4 @@
-jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../models/Task', () => ({ find: jest.fn() }));
 
 const Pod = require('../../../models/Pod');
@@ -8,7 +8,7 @@ const User = require('../../../models/User');
 const ActivityService = require('../../../services/activityService');
 
 const ownerId = 'owner-1';
-const pod = { _id: 'pod-1', name: 'Activity source pod', type: 'team' };
+const pod = { _id: 'pod-1', name: 'Activity source pod', type: 'team', createdBy: ownerId };
 
 const podQuery = (pods) => ({
   select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(pods) }),
@@ -31,6 +31,7 @@ describe('ActivityService.getRecap', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Pod.find.mockReturnValue(podQuery([pod]));
+    Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
     Task.find.mockReturnValue(taskQuery([{
       _id: 'board-1',
       podId: 'pod-1',
@@ -144,6 +145,22 @@ describe('ActivityService.getRecap', () => {
     })]);
   });
 
+  test('does not put another workspace owner’s approval in a member’s needs-you queue', async () => {
+    Pod.find.mockReturnValue(podQuery([{ ...pod, createdBy: 'other-owner' }]));
+    spy.mockResolvedValue({
+      activities: [{
+        id: 'approval-1', type: 'approval_needed', actor: { id: 'agent-1', name: 'release-agent', type: 'agent' },
+        action: 'approval_needed', preview: 'Approve access to Production.', timestamp: new Date(),
+        pod: { id: 'pod-1', name: pod.name }, approval: { status: 'pending' },
+        flags: { isAgentAction: true, isMention: false },
+      }],
+    });
+
+    const result = await ActivityService.getRecap(ownerId, { window: 'today' });
+
+    expect(result.needsYou).toEqual([]);
+  });
+
   test('keeps a pending approval older than the recap window and absent from the sampled feed', async () => {
     spy.mockResolvedValue({ activities: [] });
     pendingApprovalsSpy.mockResolvedValue([{
@@ -228,5 +245,31 @@ describe('ActivityService.getRecap', () => {
 
     expect(result).toEqual({ success: true, status: 'approved' });
     expect(approve).toHaveBeenCalledWith(ownerId, 'Approved in Activity');
+  });
+
+  test('fails closed when a non-owner attempts a legacy Activity approval', async () => {
+    const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
+    const approve = jest.fn().mockResolvedValue();
+    storedApproval.approve = approve;
+    findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
+    Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
+
+    const result = await ActivityService.approveActivity(String(storedApproval._id), 'member-2', 'Nope');
+
+    expect(result).toEqual({ success: false, status: 403, error: 'Only the workspace owner can decide this' });
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when a non-owner attempts a legacy Activity rejection', async () => {
+    const storedApproval = new Activity({ type: 'approval_needed', action: 'approval_needed', podId: pod._id });
+    const reject = jest.fn().mockResolvedValue();
+    storedApproval.reject = reject;
+    findByIdSpy = jest.spyOn(Activity, 'findById').mockResolvedValue(storedApproval);
+    Pod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(pod) })) });
+
+    const result = await ActivityService.rejectActivity(String(storedApproval._id), 'member-2', 'Nope');
+
+    expect(result).toEqual({ success: false, status: 403, error: 'Only the workspace owner can decide this' });
+    expect(reject).not.toHaveBeenCalled();
   });
 });

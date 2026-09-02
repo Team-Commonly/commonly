@@ -59,4 +59,17 @@ describe('activity read routes', () => {
     await request(app).post('/api/activity/mention-1/acknowledge').expect(200);
     expect(ActivityService.acknowledgeMention).toHaveBeenCalledWith('user123', 'mention-1');
   });
+
+  it('preserves an owner-gate 403 from the approval writer', async () => {
+    ActivityService.approveActivity.mockResolvedValueOnce({
+      success: false,
+      status: 403,
+      error: 'Only the workspace owner can decide this',
+    });
+
+    await request(app)
+      .post('/api/activity/approval-1/approve')
+      .send({ notes: 'Approve via Activity' })
+      .expect(403, { error: 'Only the workspace owner can decide this' });
+  });
 });

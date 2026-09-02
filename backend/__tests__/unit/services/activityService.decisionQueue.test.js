@@ -23,7 +23,7 @@ const User = require('../../../models/User');
 const DecisionRequest = require('../../../models/DecisionRequest');
 const { pool } = require('../../../config/db-pg');
 
-const POD = { _id: 'pod-1', name: 'Sprint HQ', type: 'team' };
+const POD = { _id: 'pod-1', name: 'Sprint HQ', type: 'team', createdBy: 'u1' };
 const userChain = (doc) => ({ select: () => ({ lean: async () => doc }) });
 const taskChain = (rows) => ({ sort: () => ({ limit: () => ({ lean: async () => rows }) }) });
 const decisionChain = (rows) => ({ sort: () => ({ limit: () => ({ lean: async () => rows }) }) });
@@ -102,6 +102,19 @@ describe('ActivityService.getDecisionQueue', () => {
     expect(getPendingApprovals).toHaveBeenCalledWith('u1');
     expect(result.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'approval', id: 'activity-approval-1', title: 'scout requests approval' }),
+    ]));
+  });
+
+  test('does not present a member with an approval they cannot decide', async () => {
+    Pod.find.mockReturnValue({ select: () => ({ lean: async () => [{ ...POD, createdBy: 'owner-1' }] }) });
+    jest.spyOn(ActivityService, 'getPendingApprovals').mockResolvedValue([
+      { _id: 'activity-approval-1', content: 'Deploy?', podId: 'pod-1', createdAt: new Date() },
+    ]);
+
+    const result = await ActivityService.getDecisionQueue('member-1');
+
+    expect(result.items).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'approval', id: 'activity-approval-1' }),
     ]));
   });
 
