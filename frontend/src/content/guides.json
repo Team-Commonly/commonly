@@ -16787,7 +16787,7 @@
         ]
       },
       {
-        "title": "“The agent has time now” and “someone replied” are usually not resume conditions.",
+      "title": "Context is not a resume condition",
         "paragraphs": [
           "“The agent has time now” and “someone replied” are usually not resume conditions. They may be useful context, but they do not say whether the prerequisite changed or whether the task’s boundary remains valid.",
           "For the record of a missing prerequisite and its effect on active work, see AI Agent Blockers."
@@ -16847,7 +16847,7 @@
         ]
       },
       {
-        "title": "An agent should not call a task blocked merely because it has nothing useful to do, or no-op merely because a blocker is uncomfortable to name.",
+      "title": "An agent should not call a task blocked merely because it has nothing useful to do",
         "paragraphs": [
           "An agent should not call a task blocked merely because it has nothing useful to do, or no-op merely because a blocker is uncomfortable to name. The distinction helps the team know whether to wait, decide, supply evidence, or stop.",
           "For the deliberate quiet result when no eligible work exists, see AI Agent No-Op.",
@@ -16912,7 +16912,7 @@
         ]
       },
       {
-        "title": "The condition should not claim the desired final result.",
+      "title": "The condition should not claim the desired final result",
         "paragraphs": [
           "The condition should not claim the desired final result. “Resume after deployment is verified” is different from “deployment is complete.” The first names what work can begin; the second needs evidence from the deployment system.",
           "For choosing the record that is authoritative for each fact, see AI Agent Source of Record."
@@ -16972,7 +16972,7 @@
         ]
       },
       {
-        "title": "The task remains the coordination record, not the proof of every external event.",
+      "title": "The task remains the coordination record",
         "paragraphs": [
           "The task remains the coordination record, not the proof of every external event. If its condition points to a repository, delivery service, identity system, or other target system, the task should link that source rather than restate it as proven.",
           "For task state, ownership, dependencies, and result coordination, see AI Agent Task Management."
@@ -17032,7 +17032,7 @@
         ]
       },
       {
-        "title": "The restart should be legible to a reviewer: “the source ruling met condition A, so the research role is preparing the originally requested comparison.”",
+      "title": "The restart should be legible to a reviewer",
         "paragraphs": [
           "The restart should be legible to a reviewer: “the source ruling met condition A, so the research role is preparing the originally requested comparison.” It should not read as “the source ruling lets us now change the system.”",
           "For the task-level boundary that defines outcome, inputs, operations, artifact, owner, and stop, see AI Agent Work Contract."
@@ -17092,7 +17092,7 @@
         ]
       },
       {
-        "title": "If the condition is only partly satisfied, record that honestly.",
+      "title": "If the condition is only partly satisfied",
         "paragraphs": [
           "If the condition is only partly satisfied, record that honestly. The right result may be a narrower resumed step, a continuing blocker, or a new decision question rather than a clean transition back to active work.",
           "For criteria that make an artifact or result ready for the next review, see AI Agent Acceptance Criteria."
@@ -17152,7 +17152,7 @@
         ]
       },
       {
-        "title": "Avoid announcing “unblocked” without the reason.",
+      "title": "Avoid announcing unblocked without the reason",
         "paragraphs": [
           "Avoid announcing “unblocked” without the reason. An update that includes the condition, source, and next action is more useful than a celebration because another owner can verify why the task became eligible.",
           "For material updates that report a changed state without creating authority, see AI Agent Status Updates."
@@ -17212,7 +17212,7 @@
         ]
       },
       {
-        "title": "A role may be able to resume preparation while a different owner must still perform execution.",
+      "title": "A role may be able to resume preparation",
         "paragraphs": [
           "A role may be able to resume preparation while a different owner must still perform execution. The condition should name that separation rather than let “resumed” imply end-to-end authority.",
           "For a bounded transfer that tells the next person what to verify and do, see AI Agent Handoffs."
@@ -17237,7 +17237,7 @@
         ]
       },
       {
-        "title": "The goal is a safe state transition, not perpetual optimism.",
+      "title": "The goal is a safe state transition",
         "paragraphs": [
           "The goal is a safe state transition, not perpetual optimism. A good resume condition gives an agent a clear reason to stop waiting and a clear reason to stay stopped when the prerequisite is still missing."
         ]
@@ -17290,7 +17290,7 @@
         ]
       },
       {
-        "title": "A condition that fails a test is valuable diagnostic information.",
+      "title": "A condition that fails a test is valuable diagnostic information",
         "paragraphs": [
           "A condition that fails a test is valuable diagnostic information. It tells the team whether it needs evidence, a decision, an owner, or a smaller task before work can resume responsibly."
         ]
