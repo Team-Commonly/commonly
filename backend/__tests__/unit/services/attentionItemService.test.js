@@ -7,7 +7,8 @@ const mockUserFind = jest.fn();
 
 jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, updateMany: mockUpdateMany, find: mockFind }));
 jest.mock('../../../models/Pod', () => ({ findById: mockPodFindById, find: mockPodFind }));
-jest.mock('../../../models/User', () => ({ find: mockUserFind }));
+const mockUserFindById = jest.fn();
+jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
 
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
 const AttentionItemService = require('../../../services/attentionItemService');
@@ -32,6 +33,18 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
     expect(mockUpdateOne.mock.calls[0][0]).toEqual({ recipientUserId: 'sam', 'source.type': 'message', 'source.id': '42' });
     expect(mockUpdateOne.mock.calls[0][1].$setOnInsert).toMatchObject({ kind: 'mention', title: 'Ada mentioned you', messageId: '42' });
+  });
+
+  it('names the author from the User row when the message carries only user_id (PG rows)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'owner', username: 'owner', isBot: false },
+      { _id: 'sam', username: 'Sam', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain({ _id: 'owner', username: 'ada', botMetadata: { displayName: 'Ada Lovelace' } }));
+    await AttentionItemService.recordMentionedUsers({ id: 43, pod_id: 'pod-1', user_id: 'owner', content: '@sam one more' });
+    expect(mockUserFindById).toHaveBeenCalledWith('owner');
+    expect(mockUpdateOne.mock.calls[0][1].$setOnInsert).toMatchObject({ title: 'Ada Lovelace mentioned you', actorName: 'Ada Lovelace' });
   });
 
   it('does not read pod membership for a message with no mention marker', async () => {
