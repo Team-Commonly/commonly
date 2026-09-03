@@ -164,26 +164,18 @@ filesRouter.post('/pods/:podId/agents/:name/persona/generate', auth, async (req:
       'Keep specialties and boundaries concrete and short. Avoid emojis.',
     ].join('\n');
 
-    let generated = null;
+    let generated: Record<string, unknown> | null = null;
     try {
       const text = await generateText(prompt, { temperature: 0.7 });
-      generated = parseJsonFromText(text);
+      generated = parseJsonFromText(text) as Record<string, unknown> | null;
     } catch (error: unknown) {
-      console.warn('Persona generation failed, using fallback:', (error as Error).message);
+      console.error('Persona generation failed:', (error as Error).message);
+      return res.status(503).json({ error: 'Persona generation is temporarily unavailable. Please try again.' });
     }
 
     if (!generated || typeof generated !== 'object') {
-      generated = {
-        tone: 'friendly',
-        specialties: ['insight synthesis', 'clear explanations', 'actionable next steps'],
-        boundaries: ['avoid speculation', 'ask clarifying questions when unsure', 'be concise'],
-        customInstructions: 'Keep answers practical and structured.',
-        exampleInstructions: [
-          '- Summarize the key points first.',
-          '- Ask one clarifying question if needed.',
-          '- Offer a concrete next step.',
-        ].join('\n'),
-      };
+      console.error('Persona generation returned invalid JSON');
+      return res.status(502).json({ error: 'Persona generation returned an invalid response. Please try again.' });
     }
 
     return res.json({

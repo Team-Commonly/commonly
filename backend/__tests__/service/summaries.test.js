@@ -275,21 +275,18 @@ describe('Summaries Routes Integration Tests', () => {
   });
 
   describe('GET /api/summaries/all-posts', () => {
-    test('should get all posts summary', async () => {
+    test('fails closed with 503 when no LLM can generate the summary', async () => {
+      // No LLM is reachable in tests. The old behaviour fabricated a
+      // "Community Overview" filler summary here; fail-closed means the route
+      // reports unavailability and never invents content.
       const response = await request(app)
         .get('/api/summaries/all-posts')
         .set('Authorization', `Bearer ${authToken}`);
 
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('title');
-      expect(response.body.title).toContain('Community Overview');
-      expect(response.body.title).toContain('3 recent posts'); // We created 3 test posts
-      expect(response.body).toHaveProperty('content');
-      expect(response.body.metadata.totalItems).toBe(3);
-      // Since Gemini API is not available in tests, the fallback won't have tags
-      expect(response.body.metadata).toHaveProperty('topTags');
-      expect(response.body.metadata).toHaveProperty('topUsers');
-      expect(response.body.metadata.timeRange).toBe('Recent posts');
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({ error: 'summary_unavailable' });
+      expect(response.body).not.toHaveProperty('title');
+      expect(response.body).not.toHaveProperty('content');
     });
   });
 

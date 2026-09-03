@@ -6,6 +6,7 @@ jest.mock('../../../services/summarizerService');
 
 const Integration = require('../../../models/Integration');
 const DiscordCommandService = require('../../../services/discordCommandService');
+const summarizerService = require('../../../services/summarizerService');
 
 describe('DiscordCommandService', () => {
   beforeEach(() => {
@@ -92,5 +93,22 @@ describe('DiscordCommandService', () => {
         }),
       );
     });
+  });
+
+  it('reports an unavailable AI summary instead of fabricating a Discord recap', async () => {
+    const service = new DiscordCommandService({});
+    summarizerService.generateSummary.mockRejectedValueOnce(new Error('LLM unavailable'));
+
+    const summary = await service.createDiscordSummary(
+      [
+        { author: 'lily', content: 'A real discussion happened.' },
+        { author: 'kai', content: 'Here is a second real message.' },
+        { author: 'juno', content: 'A third message makes this a summary request.' },
+      ],
+      new Date('2026-09-02T00:00:00Z'),
+      new Date('2026-09-02T01:00:00Z'),
+    );
+
+    expect(summary.content).toBe('⚠️ AI summary is temporarily unavailable. Please try again shortly.');
   });
 });

@@ -326,7 +326,6 @@ class DiscordCommandService {
     endTime: Date,
   ): Promise<DiscordSummaryData> {
     const userMessages = messages.filter((msg) => msg.author && msg.content);
-    const uniqueUsers = [...new Set(userMessages.map((msg) => msg.author as string))];
 
     let content: string;
     if (userMessages.length === 0) {
@@ -342,8 +341,7 @@ class DiscordCommandService {
         content = await summarizerService.generateSummary(messageContent, 'discord') as string;
       } catch (error) {
         console.error('Failed to generate AI summary for Discord messages:', error);
-        const topUsers = uniqueUsers.slice(0, 3);
-        content = `Active discussion with ${uniqueUsers.length} participants (${topUsers.join(', ')}${uniqueUsers.length > 3 ? ' and others' : ''}).`;
+        content = '⚠️ AI summary is temporarily unavailable. Please try again shortly.';
       }
     }
 

@@ -25,6 +25,7 @@ jest.mock('../../../services/socialPolicyService', () => ({
 }));
 jest.mock('../../../services/globalModelConfigService', () => ({
   getConfig: jest.fn(),
+  isSupportedLlmServiceProvider: jest.fn(),
   setConfig: jest.fn(),
 }));
 jest.mock('../../../services/externalFeedService', () => ({
@@ -73,6 +74,7 @@ describe('admin global integrations route', () => {
         fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
       },
     });
+    GlobalModelConfigService.isSupportedLlmServiceProvider.mockReturnValue(true);
   });
 
   it('uses follows.read in default OAuth scopes for X OAuth start', async () => {
@@ -304,6 +306,24 @@ describe('admin global integrations route', () => {
           fallbackModels: ['google/gemini-2.5-flash-lite'],
         },
       },
+    });
+  });
+
+  it('rejects a backend provider that the LLM service cannot execute', async () => {
+    const handler = getRouteHandler('/model-policy', 'post');
+    const req = {
+      userId: 'admin-1',
+      body: { llmService: { provider: 'anthropic' } },
+    };
+    const res = createRes();
+    GlobalModelConfigService.isSupportedLlmServiceProvider.mockReturnValueOnce(false);
+
+    await handler(req, res);
+
+    expect(GlobalModelConfigService.setConfig).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.',
     });
   });
 });

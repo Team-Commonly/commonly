@@ -194,8 +194,7 @@ export class DailyDigestService {
       return await generateText(prompt, { temperature: 0.4 }) as string;
     } catch (error) {
       console.error('Error generating digest content with AI:', error);
-      const insights = DailyDigestService.extractCrossConversationInsights([]);
-      return DigestTemplateService.createFallbackDigest(user, insights, new Date(), new Date());
+      throw error;
     }
   }
 
@@ -450,38 +449,6 @@ This might be a great time to start a new conversation or share something intere
     return 'evening';
   }
 
-  static generateFallbackDigest(organizedData: OrganizedData, user: { username: string }): string {
-    const { byPod } = organizedData;
-    const podCount = Object.keys(byPod).length;
-    const totalMessages = Object.values(byPod).reduce(
-      (sum, pod) => sum + pod.totalMessages,
-      0,
-    );
-
-    const engagementLabel = (() => {
-      if (totalMessages > 50) return 'High';
-      if (totalMessages > 20) return 'Medium';
-      return 'Low';
-    })();
-
-    return `# Daily Digest - ${new Date().toDateString()}
-
-Good ${DailyDigestService.getTimeOfDayGreeting()}, ${user.username}!
-
-## Community Overview
-- **Active Communities**: ${podCount}
-- **Total Messages**: ${totalMessages}
-- **Engagement**: ${engagementLabel}
-
-${Object.entries(byPod)
-    .map(
-      ([podName, data]) => `### ${podName}\n${data.summaries.map((s) => `- ${s.content}`).join('\n')}`,
-    )
-    .join('\n\n')}
-
----
-*Your personalized daily digest • Generated with love by Commonly AI*`;
-  }
 }
 
 export default new DailyDigestService();
