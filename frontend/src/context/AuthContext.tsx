@@ -9,6 +9,7 @@ interface User {
   profilePicture?: string;
   role?: string;
   isBot?: boolean;
+  verified?: boolean;
   [key: string]: unknown;
 }
 

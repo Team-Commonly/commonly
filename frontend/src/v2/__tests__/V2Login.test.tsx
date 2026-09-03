@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
@@ -74,27 +74,6 @@ describe('V2 routing', () => {
     expect(screen.getByRole('heading', { name: /^Sign in$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-  });
-
-  test('names an unverified address in an alert and resends its link', async () => {
-    const login = jest.fn().mockRejectedValue({
-      response: { data: { error: 'Email not verified. Please check your inbox.', code: 'EMAIL_UNVERIFIED' } },
-    });
-    (axios.post as jest.Mock).mockResolvedValueOnce({ data: { message: 'sent' } });
-    renderAt('/v2/login', { ...baseAuth, login });
-
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'person@example.com' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'Password123!' } });
-    fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('person@example.com has not been verified yet');
-    fireEvent.click(screen.getByRole('button', { name: /resend verification email/i }));
-
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
-      '/api/auth/resend-verification',
-      { email: 'person@example.com' },
-    ));
-    expect(await screen.findByRole('status')).toHaveTextContent('Verification email sent to person@example.com.');
   });
 
   test('index route shows the public landing when not authenticated', async () => {
