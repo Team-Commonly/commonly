@@ -466,7 +466,7 @@ const V2ActivityPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {item.kind === 'decision' && (
+                      {item.kind === 'decision' && (item.options || []).length > 0 && (
                         <>
                           {ruledDecisions[item.id] ? (
                             <span className="v2-activity__decision-ruled" role="status">

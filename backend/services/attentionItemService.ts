@@ -1,6 +1,6 @@
 // Recipient-owned attention is written beside its authoritative source. It is
 // intentionally not rebuilt from message history or task prose at read time.
-// There is no historical backfill: facts start materializing when this ships.
+// A one-time direct-source backfill materializes facts that predate adoption.
 // eslint-disable-next-line global-require
 const AttentionItem = require('../models/AttentionItem');
 // eslint-disable-next-line global-require
@@ -8,8 +8,12 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 
-type SourceType = 'message' | 'approval' | 'decision_request';
+type SourceType = 'message' | 'approval' | 'decision_request' | 'task';
 type Kind = 'mention' | 'approval' | 'decision';
+type MentionOptions = {
+  isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
+};
+type TaskAttentionOptions = { includeBlocked?: boolean };
 
 const compact = (value: unknown, max = 220): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 const sourceKey = (type: SourceType, id: unknown): string => String(id || '').trim();
@@ -56,17 +60,22 @@ const recordForRecipients = async (
   )));
 };
 
-export const recordMentionedUsers = async (message: any): Promise<void> => {
+export const recordMentionedUsers = async (message: any, options: MentionOptions = {}): Promise<void> => {
   try {
     const podId = message?.podId || message?.pod_id;
     const messageId = message?._id || message?.id;
     if (!podId || messageId === undefined || messageId === null) return;
     const authorId = message?.userId?._id || message?.userId || message?.user_id;
     const content = String(message?.content || message?.text || '');
+    // Message delivery invokes this writer for every post. Avoid two Mongo
+    // reads on the common no-mention path; every valid @mention contains this
+    // sentinel, so the guard cannot hide a recipient.
+    if (!content.includes('@')) return;
     const members = await currentHumanMembers(podId);
     const recipients = members.filter((member) => {
       const handle = String(member.username || '').trim();
       if (!handle || String(member._id) === String(authorId)) return false;
+      if (options.isAlreadyAcknowledged?.(member._id, 'msg_' + String(messageId))) return false;
       return new RegExp(`(^|[^A-Za-z0-9_-])@${handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'i').test(content);
     });
     if (!recipients.length) return;
@@ -118,6 +127,46 @@ export const recordDecision = async (decision: any): Promise<void> => {
     });
   } catch (error) {
     console.warn('[attention] decision materialization failed:', (error as Error).message);
+  }
+};
+
+// A task may be ordinary board history, or it may state a concrete blocked /
+// handoff fact. Capture only the latter at the write boundary; no reader
+// should parse arbitrary historic task prose into a queue card.
+export const TASK_HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
+
+export const recordTaskAttention = async (task: any, options: TaskAttentionOptions = {}): Promise<void> => {
+  try {
+    const last = Array.isArray(task?.updates) ? task.updates[task.updates.length - 1] : null;
+    const blocked = task?.status === 'blocked';
+    const handoff = Boolean(last && TASK_HANDOFF_RE.test(String(last.text || '')));
+    if (!task?.podId || (!handoff && !(options.includeBlocked && blocked))) return;
+    const recipients = await currentHumanMembers(task.podId);
+    const pod = await Pod.findById(task.podId).select('name').lean();
+    const taskKey = String(task._id || task.taskId);
+    const sequence = String(last?._id || last?.createdAt?.getTime?.() || task.updatedAt?.getTime?.() || taskKey);
+    await recordForRecipients(recipients, {
+      podId: task.podId, kind: 'decision' as Kind, sourceType: 'task' as SourceType,
+      sourceId: `${taskKey}:${sequence}`,
+      title: String(task.title || 'Task needs attention'), detail: compact(last?.text || task.notes, 220),
+      podName: pod?.name || 'Pod',
+    });
+  } catch (error) {
+    console.warn('[attention] task materialization failed:', (error as Error).message);
+  }
+};
+
+export const resolveTaskAttention = async (task: any): Promise<void> => {
+  const taskKey = String(task?._id || task?.taskId || '').trim();
+  if (!taskKey) return;
+  try {
+    const escaped = taskKey.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+    await AttentionItem.updateMany(
+      { 'source.type': 'task', 'source.id': { $regex: new RegExp('^' + escaped + ':') }, status: 'open' },
+      { $set: { status: 'resolved', resolvedAt: new Date() } },
+    );
+  } catch (error) {
+    console.warn('[attention] task resolution storage failed; leaving item visible:', (error as Error).message);
   }
 };
 
@@ -178,6 +227,6 @@ export const acknowledgeMention = async (recipientUserId: unknown, attentionItem
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export default { recordMentionedUsers, recordApproval, recordDecision, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+export default { recordMentionedUsers, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, recordApproval, recordDecision, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+module.exports = { recordMentionedUsers, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };

@@ -32,6 +32,18 @@ describe('AttentionItem', () => {
       source: { type: 'message', id: '42' },
     });
   });
+
+  it('accepts a task source as a recipient-owned board attention fact', async () => {
+    const row = new AttentionItem({
+      recipientUserId: recipient,
+      podId: pod,
+      kind: 'decision',
+      source: { type: 'task', id: 'task-1:update-1' },
+      title: 'Choose a deploy shape',
+    });
+
+    await expect(row.validate()).resolves.toBeUndefined();
+  });
 });
   beforeAll(async () => { await setupMongoDb(); });
   afterAll(async () => { await closeMongoDb(); });
