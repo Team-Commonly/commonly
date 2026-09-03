@@ -1491,16 +1491,42 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) 
       return clamp(parsed, 1, max);
     };
 
-    // Resolve context token budget from model config
+    // Resolve context token budget from model config.
+    //
+    // `maxContextTokens: 0` means UNCAPPED to PodContextService (its guard is
+    // `if (maxContextTokens > 0)`), so 0 must never also be a failure value —
+    // it previously had three producers that all landed there and all meant
+    // something different: a config-store outage, an unconfigured contextLimit,
+    // and a malformed `?maxContextTokens=`. Each removed the budget entirely
+    // and returned the whole context untrimmed, which is fail-OPEN.
     let maxContextTokens = 0;
+    let contextBudgetSource: 'query' | 'model-config' | 'unconfigured' | 'config-unavailable' = 'unconfigured';
     if (req.query.maxContextTokens) {
+      // A caller who ASKED for a budget and mistyped it must not silently get
+      // no budget at all. parseLimit's NaN fallback is 0 = uncapped here.
+      const requested = Number.parseInt(req.query.maxContextTokens as string, 10);
+      if (Number.isNaN(requested)) {
+        return res.status(400).json({ error: 'maxContextTokens must be an integer' });
+      }
       maxContextTokens = parseLimit(req.query.maxContextTokens, 0, 200000);
+      contextBudgetSource = 'query';
     } else {
-      const modelConfig = await GlobalModelConfigService.getConfig().catch(() => null);
-      const contextLimit = modelConfig?.llmService?.contextLimit || 0;
-      // Reserve 25% of model context for system prompt + output
-      if (contextLimit > 0) {
-        maxContextTokens = Math.floor(contextLimit * 0.75);
+      const modelConfig = await GlobalModelConfigService.getConfig().catch((configErr: Error) => {
+        // Mirrors llmService.generateText, which logs the identical failure of
+        // the identical call. Silent here meant an outage was indistinguishable
+        // from "no contextLimit configured".
+        console.warn('[agents-runtime] Failed to load model config for context budget:', configErr?.message);
+        return null;
+      });
+      if (!modelConfig) {
+        contextBudgetSource = 'config-unavailable';
+      } else {
+        const contextLimit = modelConfig?.llmService?.contextLimit || 0;
+        // Reserve 25% of model context for system prompt + output
+        if (contextLimit > 0) {
+          maxContextTokens = Math.floor(contextLimit * 0.75);
+          contextBudgetSource = 'model-config';
+        }
       }
     }
 
@@ -1518,7 +1544,13 @@ router.get('/pods/:podId/context', agentRuntimeAuth, async (req: any, res: any) 
       maxContextTokens,
     });
 
-    return res.json(context);
+    // PodContextService attaches tokenEstimate/tokenBudget to `stats` only when
+    // a budget applied, so an absent budget was invisible to the caller AND
+    // unattributable. Say which of the four states produced it.
+    return res.json({
+      ...(context as Record<string, unknown>),
+      contextBudget: { applied: maxContextTokens > 0, source: contextBudgetSource },
+    });
   } catch (error: any) {
     let statusCode = 500;
     if (error.status) statusCode = error.status;

@@ -75,7 +75,15 @@ interface HeartbeatActivityHint {
   messageCount: number;
   postCount: number;
   totalSignals: number;
-  hasRecentActivity: boolean;
+  /**
+   * `null` means WE DO NOT KNOW, not "no activity". The chat-message arm reads
+   * Postgres and returns `count: 0` on failure, which is the same value a quiet
+   * pod returns; this hint is shipped verbatim into the heartbeat payload the
+   * agent reads, so a store outage used to tell every agent the pod was quiet.
+   */
+  hasRecentActivity: boolean | null;
+  /** True when the message-count arm failed, so `messageCount` is not a measurement. */
+  messageCountUnavailable: boolean;
   lastMessageAt: string | null;
   lastPostAt: string | null;
   generatedAt: string;
@@ -884,7 +892,7 @@ class SchedulerService {
     const since = new Date(now.getTime() - (lookbackMinutes * 60 * 1000));
 
     const [pgMsgHint, postStats]: [
-      { count: number; lastAt?: string | Date },
+      { count: number; lastAt?: string | Date; unavailable?: boolean },
       Array<{ _id: unknown; count: number; lastAt?: Date }>
     ] = await Promise.all([
       PGMessage.findActivityHint(podId, since),
@@ -895,8 +903,15 @@ class SchedulerService {
     ]);
 
     const messageCount = pgMsgHint.count;
+    const messageCountUnavailable = pgMsgHint.unavailable === true;
     const postCount = Number(postStats?.[0]?.count || 0);
     const totalSignals = messageCount + postCount;
+
+    // A positive signal is still positive even if the other arm failed; only a
+    // ZERO is unknowable, because we did not manage to look.
+    const hasRecentActivity = totalSignals > 0
+      ? true
+      : (messageCountUnavailable ? null : false);
 
     return {
       lookbackMinutes,
@@ -904,7 +919,8 @@ class SchedulerService {
       messageCount,
       postCount,
       totalSignals,
-      hasRecentActivity: totalSignals > 0,
+      hasRecentActivity,
+      messageCountUnavailable,
       lastMessageAt: pgMsgHint.lastAt ? new Date(pgMsgHint.lastAt).toISOString() : null,
       lastPostAt: postStats?.[0]?.lastAt ? new Date(postStats[0].lastAt).toISOString() : null,
       generatedAt: now.toISOString(),

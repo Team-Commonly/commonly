@@ -159,6 +159,9 @@ class AgentAvatarService {
           source: 'svg',
           model: null,
           fallbackUsed: true,
+          // null when the model's design actually parsed. `fallbackUsed` alone
+          // could not distinguish these: it is set to true on this path either way.
+          designFallbackReason: (avatarDesign as { fallbackReason?: string })?.fallbackReason || null,
         },
       };
     } catch (error: any) {
@@ -306,7 +309,7 @@ class AgentAvatarService {
       return this.parseDesignDescription(designDescription);
     } catch (error) {
       console.error('Error generating avatar design:', error);
-      return this.getDefaultDesign(style, colorScheme);
+      return { ...this.getDefaultDesign(style, colorScheme), fallbackReason: 'design-generation-failed' };
     }
   }
 
@@ -411,8 +414,16 @@ Keep it suitable for a clean vector avatar (flat shapes, gradients, and simple d
       }
       throw new Error('No JSON found in response');
     } catch (error) {
-      // Fallback to default design
-      return this.getDefaultDesign('banana', 'vibrant');
+      // Fallback to default design. This catch was previously the only fully
+      // silent one in this file: it never logged, and its throw never reached
+      // the outer catch at generateAvatar, so a hardcoded banana was returned
+      // under `metadata.fallbackUsed: true` — the same value a successful SVG
+      // generation sets. Log it, and TAG the design so the caller can say which.
+      console.warn(
+        '[agent-avatar] could not parse design description, using default:',
+        (error as Error).message,
+      );
+      return { ...this.getDefaultDesign('banana', 'vibrant'), fallbackReason: 'design-parse-failed' };
     }
   }
 

@@ -97,8 +97,15 @@ export const loadCatalog = (source = DEFAULT_SOURCE): Catalog => {
     });
     return catalog;
   } catch (error) {
-    console.warn(`[skills-catalog] Failed to read ${catalogPath}:`, (error as Error).message);
-    return { source, updatedAt: null, items: [] };
+    // FAIL LOUD. `{ items: [] }` is exactly what a legitimately empty catalog
+    // returns (and what the two guards above return for "no path configured"
+    // and "file absent"), so swallowing here answered `GET /api/skills/catalog`
+    // with 200 "no skills" for an unreadable or malformed catalog file. The
+    // route's existing catch turns this throw into a 500, which is the honest
+    // answer: we do not know what skills exist.
+    const message = (error as Error).message;
+    console.error(`[skills-catalog] Failed to read ${catalogPath}:`, message);
+    throw new Error(`skills catalog unreadable at ${catalogPath}: ${message}`);
   }
 };
 
@@ -108,8 +115,15 @@ export const loadCatalog = (source = DEFAULT_SOURCE): Catalog => {
  * "Last updated X minutes ago" indicator on the frontend.
  */
 export const getLastRefreshedAt = (source = DEFAULT_SOURCE): { localRefreshedAt: string | null; upstreamRefreshedAt: string | null } => {
-  // Force a cache warm-up so we pick up the current on-disk values.
-  loadCatalog(source);
+  // Force a cache warm-up so we pick up the current on-disk values. This is a
+  // best-effort refresh of a display timestamp, not the catalog read itself —
+  // loadCatalog now throws on an unreadable file and that must surface from the
+  // CATALOG call, not from here, or a broken file would be reported twice.
+  try {
+    loadCatalog(source);
+  } catch {
+    // already logged inside loadCatalog; fall through to whatever is cached
+  }
   const cached = catalogCache.get(source);
   if (!cached) {
     return { localRefreshedAt: null, upstreamRefreshedAt: null };

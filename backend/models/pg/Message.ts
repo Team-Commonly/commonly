@@ -41,6 +41,13 @@ interface FormattedMessage extends MessageRow {
 interface ActivityHintResult {
   count: number;
   lastAt: unknown;
+  /**
+   * True when the query FAILED and `count: 0` is therefore not a measurement.
+   * Without this the caller cannot tell a Postgres outage from a quiet pod —
+   * they return byte-identical values, and the quiet-pod reading is shipped
+   * into every agent's heartbeat prompt (schedulerService.buildHeartbeatActivityHint).
+   */
+  unavailable?: boolean;
 }
 
 interface PodActivityEntry {
@@ -477,7 +484,7 @@ class Message {
     } catch (error) {
       const e = error as { message?: string };
       console.error('Error in findActivityHint:', e.message);
-      return { count: 0, lastAt: null };
+      return { count: 0, lastAt: null, unavailable: true };
     }
   }
 

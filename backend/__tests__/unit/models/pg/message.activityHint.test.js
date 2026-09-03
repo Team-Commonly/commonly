@@ -63,6 +63,25 @@ describe('Message.findActivityHint', () => {
   it('a query failure degrades to a zero hint rather than throwing', async () => {
     // The heartbeat's pod-selection pass must not die because the hint did.
     pool.query.mockRejectedValueOnce(new Error('connection terminated'));
-    await expect(Message.findActivityHint(POD, SINCE)).resolves.toEqual({ count: 0, lastAt: null });
+    await expect(Message.findActivityHint(POD, SINCE))
+      .resolves.toEqual({ count: 0, lastAt: null, unavailable: true });
+  });
+
+  // TASK-099. Degrading is right; degrading INDISTINGUISHABLY is the defect.
+  // `count: 0` is exactly what a genuinely quiet pod returns, so without a
+  // discriminator the caller — and, through the heartbeat prompt, every agent —
+  // reads a Postgres outage as "nothing happened here".
+  it('a real zero and a failed zero are distinguishable', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ count: '0', last_at: null }] });
+    const quiet = await Message.findActivityHint(POD, SINCE);
+
+    pool.query.mockRejectedValueOnce(new Error('connection terminated'));
+    const broken = await Message.findActivityHint(POD, SINCE);
+
+    expect(quiet.count).toBe(0);
+    expect(broken.count).toBe(0);
+    expect(quiet.unavailable).toBeUndefined();
+    expect(broken.unavailable).toBe(true);
+    expect(quiet).not.toEqual(broken);
   });
 });
