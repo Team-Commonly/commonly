@@ -32,6 +32,17 @@ body.modern-ui.v2-canvas {
   --v2-text-tertiary: #7b8494;
   --v2-text-muted: #8a93a3;
 
+  /* TASK-122 Phase A (Sam ruled 2026-09-03): the tint step. The shell ground
+     sits behind rail, pods and inspector; the content pane is an inset white
+     card. Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
+  --v2-shell-bg: #f1f1f4;
+  --v2-content-radius: 14px;
+  /* Ink primary — filled buttons are ink; blue stays for links, mention marks
+     and the focus halo. Mirrors --c-ink / --c-ink-hover / --c-on-ink. */
+  --v2-ink: #111827;
+  --v2-ink-hover: #1f2937;
+  --v2-on-ink: #ffffff;
+
   /* BEND-1 (Wren spec 2026-08-30, Sam-approved): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
      design-system/tokens.css; the two move together. */
@@ -86,26 +97,33 @@ body.modern-ui.v2-canvas {
   --v2-sky: #60a5fa;
   --v2-rose: #fb7185;
 
-  /* Typography — SF-first stack. SF loads natively on Apple devices via
-     -apple-system / BlinkMacSystemFont; non-Apple fallbacks (Segoe / Inter)
-     keep weights and metrics close. No webfont download. */
-  --v2-font: "SF Pro Text", -apple-system, BlinkMacSystemFont, "SF Pro",
-    "Helvetica Neue", "Segoe UI", "Inter", Roboto, sans-serif;
-  --v2-font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont,
-    "SF Pro", "Helvetica Neue", "Segoe UI", "Inter", sans-serif;
+  /* Typography — Inter (variable, self-hosted via @fontsource-variable/inter,
+     imported in V2App.tsx above this sheet). SF Pro is the fallback only while
+     the woff2 loads or if it fails. One face: display weight comes from
+     font-weight, not a second family. Mirrors --c-font-sans. */
+  --v2-font: "Inter Variable", "Inter", "SF Pro Text", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --v2-font-display: var(--v2-font);
+  --v2-fs-body: 14px;
+  --v2-lh-body: 20px;
+  --v2-fs-meta: 12px;
+  --v2-lh-meta: 16px;
+  --v2-fs-label: 11px;
+  --v2-lh-label: 14px;
   --v2-font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
     "JetBrains Mono", "Fira Code", monospace;
 
   /* Geometry */
-  --v2-radius-sm: 8px;
+  --v2-radius-sm: 6px;
   --v2-radius: 10px;
-  --v2-radius-lg: 12px;
+  --v2-radius-lg: 14px;
   --v2-radius-pill: 999px;
 
   /* Elevation */
   --v2-shadow-sm: none;
   --v2-shadow: none;
   --v2-shadow-lg: none;
+  --v2-shadow-pending: 0 1px 2px rgba(15, 23, 42, 0.06); /* the one chrome-card shadow: a PENDING decision or approval only */
 
   /* Layout */
   --v2-rail-w: 76px;
@@ -131,8 +149,8 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
   min-width: 0;
 }
 
@@ -468,6 +486,7 @@ body.modern-ui.v2-canvas {
   grid-template-rows: 1fr;
   height: 100vh;
   width: 100%;
+  background: var(--v2-shell-bg);
 }
 
 .v2-shell--no-inspector {
@@ -487,12 +506,12 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
+  border-right: 1px solid transparent; /* the content card's ring replaces the pane hairlines */
+  background: var(--v2-shell-bg);
 }
 
 .v2-pane--rail {
-  background: var(--v2-bg-subtle);
+  background: var(--v2-shell-bg);
   /* The rail is only 76px wide, so its language dropdown (a wider floating
      menu) must be allowed to escape the pane instead of being clipped by the
      base .v2-pane `overflow: hidden`. The rail's own content is self-contained
@@ -500,15 +519,32 @@ body.modern-ui.v2-canvas {
   overflow: visible;
 }
 
+/* The content pane is the inset card: 8px gutter top/right/bottom, 1px ring,
+   14px radius (TASK-122). Height subtracts the gutters; the banner variant beats
+   `.v2-authenticated-shell__content .v2-pane { height: 100% }` on specificity. */
 .v2-pane--main {
+  margin: 8px 8px 8px 0;
+  height: calc(100vh - 16px);
   background: #ffffff;
-  border-right: none;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-content-radius);
+  overflow: hidden;
+}
+
+.v2-authenticated-shell .v2-pane--main {
+  height: calc(100% - 16px);
+}
+
+/* Inspector open: the card meets the inspector gutter. --feature-wide has no
+   inspector column, so it keeps its right gutter. */
+.v2-shell:not(.v2-shell--no-inspector):not(.v2-shell--feature):not(.v2-shell--feature-wide) .v2-pane--main {
+  margin-right: 0;
 }
 
 .v2-pane--inspector {
   border-right: none;
   border-left: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface-tint);
+  background: var(--v2-shell-bg);
 }
 
 /* Mobile pods-drawer affordances — hidden on desktop, where the pods sidebar
@@ -5120,7 +5156,7 @@ body.modern-ui.v2-canvas {
 
 .v2-feature {
   min-width: 0;
-  background: var(--v2-page-bg);
+  background: #ffffff; /* inside the card the ground is white; the card is the tint step */
 }
 
 .v2-feature__header {
@@ -5826,6 +5862,16 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
+  /* Phones: the card fills the screen; the drawers keep the shell tint. Both
+     selectors, or the banner variant keeps the desktop height. */
+  .v2-pane--main,
+  .v2-authenticated-shell .v2-pane--main {
+    margin: 0;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
   .v2-shell,
   .v2-shell--no-inspector,
   .v2-shell--feature {
@@ -8448,8 +8494,9 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__title {
   font-size: clamp(26px, 3vw, 34px);
+  font-weight: 700; /* 850 was tuned for SF Pro Display; Inter reads right at 700 */
   line-height: 1.08;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.03em;
 }
 
 .v2-activity__subtitle,
@@ -8518,7 +8565,7 @@ body.modern-ui.v2-canvas {
   min-height: 118px;
   gap: 4px;
   padding: 20px;
-  border: 1px solid var(--v2-border-soft);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   color: var(--v2-text-secondary);
   text-align: center;
@@ -8542,9 +8589,13 @@ body.modern-ui.v2-canvas {
 .v2-activity__compose {
   margin-top: 22px;
   padding: 16px;
-  border: 1px solid var(--v2-border-soft);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
+}
+
+.v2-activity__compose:focus-within {
+  border-color: var(--v2-border-strong);
 }
 
 .v2-activity__compose-heading,
@@ -8572,8 +8623,10 @@ body.modern-ui.v2-canvas {
   align-items: flex-start;
   gap: 4px;
   color: var(--v2-text-muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--v2-fs-label);
+  line-height: var(--v2-lh-label);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .v2-activity__compose-pod select {
@@ -8592,36 +8645,41 @@ body.modern-ui.v2-canvas {
   flex: 1 1 auto;
   min-width: 0;
   resize: vertical;
-  padding: 10px 11px;
+  padding: 10px 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
   background: var(--v2-surface);
   color: var(--v2-text-primary);
   font: inherit;
-  font-size: 14px;
-  line-height: 1.45;
 }
 
-.v2-root .v2-activity__compose textarea:focus-visible,
+/* Halo focus (TASK-122): the global `.v2-root textarea:focus-visible` rule
+   carries the box-shadow halo; this only gives it an edge. <select> is outside
+   that global list, so the pod picker carries its own halo. No hard outline. */
+.v2-root .v2-activity__compose textarea:focus-visible {
+  border-color: var(--v2-accent);
+}
+
 .v2-activity__compose-pod select:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 1px;
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
+  border-color: var(--v2-accent);
 }
 
 .v2-root .v2-activity__compose button {
   min-height: 44px;
-  padding: 0 15px;
-  border: 1px solid var(--v2-accent);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: var(--v2-surface);
+  padding: 0 16px;
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .v2-root .v2-activity__compose button:hover:not(:disabled) {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-strong);
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
 }
 
 .v2-activity__section-heading {
@@ -8652,14 +8710,20 @@ body.modern-ui.v2-canvas {
   letter-spacing: -0.02em;
 }
 
-.v2-activity__queue,
 .v2-activity__board-list {
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
   overflow: hidden;
 }
 
-.v2-activity__queue-row,
+/* Needs-you rows: no box, no dividers (Sam ruled 2026-09-03, TASK-122). Each
+   row carries a permanent transparent 1px border and changes only its fill on
+   hover, so nothing shifts by a pixel. Board rows keep their box until Phase B. */
+.v2-activity__queue {
+  display: grid;
+  gap: 2px;
+}
+
 .v2-activity__board-row {
   display: grid;
   align-items: center;
@@ -8669,13 +8733,51 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface);
 }
 
-.v2-activity__queue-row + .v2-activity__queue-row,
 .v2-activity__board-row + .v2-activity__board-row {
   border-top: 1px solid var(--v2-border-soft);
 }
 
 .v2-activity__queue-row {
+  display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--v2-radius);
+  background: transparent;
+  transition: background 80ms ease;
+}
+
+.v2-activity__queue-row:hover {
+  background: var(--v2-surface-hover);
+}
+
+/* Decision elevation: a pending decision or approval sits one step above the
+   settled rows — the one shadow allowed on a chrome card, and only while
+   pending. Hover does not move it; it is already up. */
+.v2-activity__queue-row--decision,
+.v2-activity__queue-row--approval {
+  background: var(--v2-surface);
+  border-color: var(--v2-border);
+  box-shadow: var(--v2-shadow-pending);
+}
+
+.v2-activity__queue-row--decision:hover,
+.v2-activity__queue-row--approval:hover {
+  background: var(--v2-surface);
+}
+
+/* A ruled decision has settled: it drops back to the flat row. */
+.v2-activity__queue-row--settled {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.v2-activity__queue-row--settled:hover {
+  background: var(--v2-surface-hover);
 }
 
 .v2-activity__queue-mark {
@@ -8714,7 +8816,8 @@ body.modern-ui.v2-canvas {
 .v2-activity__task-id,
 .v2-activity__update-time {
   color: var(--v2-text-muted);
-  font-size: 12px;
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
 }
 
 .v2-activity__queue-copy strong,
@@ -8729,15 +8832,16 @@ body.modern-ui.v2-canvas {
   display: block;
   margin-top: 2px;
   color: var(--v2-text-primary);
-  font-size: 14px;
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
 }
 
 .v2-activity__queue-copy p,
 .v2-activity__board-row p {
   margin: 3px 0;
   color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
 }
 
 .v2-activity__queue-actions,
@@ -8760,15 +8864,15 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-activity__queue-actions button {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent);
-  color: var(--v2-surface);
+  border-color: var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
 }
 
 .v2-root .v2-activity__queue-actions button:hover:not(:disabled) {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-strong);
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary {
@@ -8814,9 +8918,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option--recommended {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent);
-  color: var(--v2-surface);
+  border-color: var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
@@ -8889,7 +8993,7 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__agent-card {
   padding: 16px;
-  border: 1px solid var(--v2-border-soft);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
 }
@@ -9388,18 +9492,17 @@ body.modern-ui.v2-canvas {
   flex: 1 1 auto;
   min-width: 0;
   resize: vertical;
-  padding: 6px 8px;
+  padding: 8px 10px;
   font: inherit;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--v2-text);
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
+  color: var(--v2-text-primary);
   background: var(--v2-surface);
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-radius-sm);
 }
 .v2-root textarea.v2-activity__reply-input:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 1px;
+  border-color: var(--v2-accent); /* the global halo carries the ring; no hard outline */
 }
 @media (max-width: 640px) {
   .v2-activity__reply { flex-basis: 100%; }

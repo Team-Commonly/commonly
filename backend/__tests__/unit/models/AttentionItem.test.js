@@ -7,6 +7,11 @@ describe('AttentionItem', () => {
   const pod = new mongoose.Types.ObjectId();
 
   it('keeps a recipient/source fact unique and persists source snapshots', async () => {
+    // The uniqueness this test asserts lives in an index, and Mongoose builds
+    // indexes in the background after the model is first used. Without waiting
+    // for the build, the duplicate insert below races the index and resolves
+    // instead of rejecting (main went red on exactly that, 2026-09-03).
+    await AttentionItem.syncIndexes();
     await AttentionItem.create({
       recipientUserId: recipient,
       podId: pod,
