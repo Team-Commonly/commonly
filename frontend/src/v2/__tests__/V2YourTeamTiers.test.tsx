@@ -113,6 +113,23 @@ describe('Your Team tiers', () => {
     expect(sageCard.querySelector('.v2-team-card__talk')).toBeNull();
   });
 
+  test('a compact card puts UNVERIFIABLE on its own label line above its pod', async () => {
+    renderPage([
+      ...agents,
+      { name: 'newest-1', instanceId: 'default', displayName: 'Newest 1', lastActiveAt: minutesAgo(1) },
+      { name: 'newest-2', instanceId: 'default', displayName: 'Newest 2', lastActiveAt: minutesAgo(2) },
+      { name: 'newest-3', instanceId: 'default', displayName: 'Newest 3', lastActiveAt: minutesAgo(3) },
+      { name: 'silent-but-live', instanceId: 'default', displayName: 'Silent but live', lastActiveAt: minutesAgo(5), outputState: 'unverifiable' },
+    ]);
+
+    const card = (await screen.findByText('Silent but live')).closest('.v2-team-card');
+    const output = card.querySelector('.v2-team-card__output-state');
+    const pod = card.querySelector('.v2-team-card__pod');
+    expect(output).toHaveTextContent('UNVERIFIABLE — no message in the last 30 minutes');
+    expect(pod).toHaveTextContent('in Workspace · 5m ago');
+    expect(pod).not.toHaveTextContent('UNVERIFIABLE');
+  });
+
   test('quiet agents collapse behind a count when more than 3, expand on toggle', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Fable')).toBeInTheDocument());

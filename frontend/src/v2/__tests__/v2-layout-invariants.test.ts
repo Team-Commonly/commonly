@@ -70,6 +70,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).not.toContain('white-space: nowrap');
   });
 
+  test('UNVERIFIABLE gets its own wrapping label line on compact team cards', () => {
+    // The pod line deliberately stays one-line-ellipsized. A live seat with
+    // no recent output must therefore render its state before that line, or
+    // either the state or the relative time disappears at narrow widths.
+    const state = ruleBody(v2, '.v2-team-card__output-state');
+    expect(state).toContain('font-size: 11px');
+    expect(state).toContain('line-height: 14px');
+    expect(state).toContain('font-weight: 600');
+    expect(state).toContain('overflow-wrap: anywhere');
+    expect(yourTeam.indexOf('v2-team-card__output-state'))
+      .toBeLessThan(yourTeam.indexOf('v2-team-card__pod'));
+  });
+
   test('sidebar pod name WRAPS — it never loses to its own timestamp (craft audit finding 8)', () => {
     // "Sharpen — pod m…", "Team Orchestra…": the name shared its line with the
     // relative time and ellipsized at desktop width. Same primary-identifier

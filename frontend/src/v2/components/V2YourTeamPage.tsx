@@ -410,15 +410,14 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__name-row">
             <span className="v2-team-card__name">{display}</span>
           </div>
+          {a.outputState === 'unverifiable' ? (
+            <div className="v2-team-card__output-state" data-testid="team-output-unverifiable">
+              {t('yourTeam.card.outputUnverifiable')}
+            </div>
+          ) : null}
           <div className="v2-team-card__pod">
             {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
             {' · '}
-            {a.outputState === 'unverifiable' ? (
-              <>
-                <span data-testid="team-output-unverifiable">{t('yourTeam.card.outputUnverifiable')}</span>
-                {' · '}
-              </>
-            ) : null}
             {lastSeen}
           </div>
         </div>

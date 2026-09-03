@@ -6225,6 +6225,15 @@ body.modern-ui.v2-canvas {
 /* .v2-team-card__runtime removed 2026-08-22: runtime vocabulary on cards
    violated ratified ADR-022 D1 (craft audit finding 2). */
 
+.v2-team-card__output-state {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: #5f6470;
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
 .v2-team-card__pod {
   font-size: 13px;
   color: #5f6470;
