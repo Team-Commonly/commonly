@@ -90,9 +90,10 @@ What it does, in order — this is `installableInstallService.install()`:
 3. **Claim the parent atomically — the claim is the compare-and-set** (the #1315 shape; Kai's
    ask, 2026-09-02). One row per `(installableId, targetType, targetId)` across every
    non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
-   'active', 'error'] }`**. The service never reads-then-writes. It runs one
+   'activating', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
-   `status: 'error'`; or `status: 'installing'` with `claimedAt < now − INSTALL_LOCK_TTL_MS`
+   `status: 'error'`; or `status: { $in: ['installing', 'activating'] }` with `claimedAt <
+   now − INSTALL_LOCK_TTL_MS`
    — and whose update sets `status: 'installing'`, **`claimId: randomUUID()` — a fresh
    generation on every claim and every takeover**, `installedBy`, `installableVersion`,
    `installSource: 'ui'`, `grantedScopes = installable.requires` (**descriptive only in Phase 1**
@@ -102,8 +103,9 @@ What it does, in order — this is `installableInstallService.install()`:
    retry after a failed install **claims the retained `error` row** instead of inserting
    beside it, a first install inserts, and **a lock whose owner died mid-projection is taken
    over, not honoured forever** (Vera, 2026-09-02: a lock with no expiry left that user unable
-   to install again — every retry hit the loser path). The document returned with `status:
-   'installing'` and **our** `claimId` is the lock; **only the lock owner runs projectors, and
+   to install again — every retry hit the loser path). The document returned with **our** `claimId` is
+   the lock (its `status` tells the owner where to resume: `installing` → run projectors;
+   `activating` → skip projectors, resume at step 6 write 2); **only the lock owner runs projectors, and
    every write the owner makes is fenced on that generation** (step 6). `INSTALL_LOCK_TTL_MS`
    is one named constant — 60 s — and it is a **liveness** parameter, not a safety one: it
    decides how soon a user who saw a 202 gets a real install on retry. Safety is the fence.
@@ -112,7 +114,7 @@ What it does, in order — this is `installableInstallService.install()`:
    62701, 2026-09-02 — the first lease cut had the takeover and not the generation, and the
    walk was: A stalls, B takes over and mints C_B, A revives and mints C_A over it, the user
    types C_B and gets "Invalid code" with nothing logged). Any other outcome is the loser's path and never invokes a projector: the
-   existing row is returned as-is — **202 while `installing`** (the owner will finish it),
+   existing row is returned as-is — **202 while `installing` or `activating`** (the owner will finish it),
    **200 when `active`**. A duplicate-key error on the upsert (two first-installs racing the
    insert) is the same loser's path. `uninstalled` rows sit outside the index, so re-install
    after uninstall inserts fresh and mints a new Integration row (the binding row is the unit).
@@ -130,31 +132,43 @@ What it does, in order — this is `installableInstallService.install()`:
 5. Each projector returns `projectionIds`; the service writes them onto the component entry and
    sets it `active`.
 6. **Activate last — mint last — and fence both.** Only when every component is `active`
-   does the service activate, in two writes whose order is load-bearing:
-   1. **Parent CAS on the generation:** `findOneAndUpdate({ _id, status: 'installing',
-      claimId: ours }, { $set: { status: 'active', activatedByClaimId: ours } })`. The
-      `claimId` term is **required in the filter, never match-if-present** — this write is
-      what hands out a bearer secret. `null` ⇒ `InstallLockLostError`: the owner logs at warn
-      with both generations, mints nothing, **does nothing else — no unproject, no status
-      write, no cleanup of any kind** — and returns **409 `{ code: 'install_lock_lost' }`**
-      to its own caller. A refusal means "someone else owns this row now"; a loser that
-      tidies up deletes the winner's work (Vera 62703 — D6's `markPosted` gate made exactly
-      that mistake). The same rule holds for every fenced write in step 4: on `null`, stop. The refusal is a distinct error class and a distinct status, never
-      the `null` a no-op would return (Vera 62655: D6's first cut returned null for both and
-      the caller reported success).
+   does the service activate. The parent and the projected row are two documents, so the
+   activation is a **split commit**, and the split is bridged by a recoverable state rather
+   than pretended away (Kai 62709, 2026-09-03: with `active` written before the mint, a crash
+   between the writes made every retry return 200 with no code). Three writes, order
+   load-bearing:
+   1. **Parent CAS on the generation → `activating`:** `findOneAndUpdate({ _id, status:
+      'installing', claimId: ours }, { $set: { status: 'activating', activatedByClaimId:
+      ours } })`. The `claimId` term is **required in the filter, never match-if-present** —
+      this is the write that commits to handing out a bearer secret. `null` ⇒
+      `InstallLockLostError`: the owner logs at warn with both generations, mints nothing,
+      **does nothing else — no unproject, no status write, no cleanup of any kind** — and
+      returns **409 `{ code: 'install_lock_lost' }`** to its own caller. A refusal means
+      "someone else owns this row now"; a loser that tidies up deletes the winner's work
+      (Vera 62703 — D6's `markPosted` gate made exactly that mistake). The same rule holds
+      for every fenced write in step 4: on `null`, stop. The refusal is a distinct error
+      class and a distinct status, never the `null` a no-op would return (Vera 62655: D6's
+      first cut returned null for both and the caller reported success). `activating` is a
+      live state: it sits inside the unique index and inside the claim filter (lease takeover
+      applies), and **the idempotent-return path never treats it as success** — a retry or a
+      takeover that finds `activating` skips the projectors and resumes at write 2.
    2. **Integration activation, fenced on its own state:** `findOneAndUpdate({ installationId:
       String(parent._id), isActive: false }, { $set: { isActive: true, 'config.connectCode':
       …, 'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
-      inside this write's construction. `null` here means the row is already active (a retry
-      of a winner that crashed between writes 1 and 2 — the only way to get here holding the
-      generation that won write 1): return the existing code, mint nothing.
-   Until write 2 the Integration row exists with `isActive: false` and **no code**. This is what makes a partial install safe without
-   touching the enable path: `handleEnableCommand` looks up
-   `{ type, isActive: true, 'config.connectCode' }` on main and knows nothing about
-   installations — a 422'd install therefore has nothing it can find. A retry of the install
-   reuses the inactive row and activates it; the reconciler treats an inactive row under an
-   `error` parent as expected, not stale. (Vera, 2026-09-02: "mint last, or teach enable the
-   parent status" — mint last, so the route is not edited.)
+      inside this write's construction. `null` here means the row is already active (a
+      resume after a crash between writes 2 and 3): read the existing code, mint nothing.
+   3. **Parent CAS → `active`:** `findOneAndUpdate({ _id, status: 'activating', claimId:
+      ours }, { $set: { status: 'active' } })`, fenced like every other owner write; `null` ⇒
+      `InstallLockLostError`, do nothing (the row's code, if any, belongs to whoever holds
+      the generation now).
+   Until write 2 the Integration row exists with `isActive: false` and **no code**; until
+   write 3 the parent is `activating`, and **only `active` ever returns 200 with a code.**
+   This is what makes a partial install safe without touching the enable path:
+   `handleEnableCommand` looks up `{ type, isActive: true, 'config.connectCode' }` on main and
+   knows nothing about installations — a 422'd install therefore has nothing it can find. A
+   retry of the install reuses the inactive row and activates it; the reconciler treats an
+   inactive row under an `error` parent as expected, not stale. (Vera, 2026-09-02: "mint
+   last, or teach enable the parent status" — mint last, so the route is not edited.)
 7. Response: `{ installation, integration }` — the page needs the Integration row (connect code)
    immediately, exactly as it gets it from `POST /api/integrations` today.
 
@@ -279,7 +293,8 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 `active` installation, every component's `projectionIds` must resolve to a live row; a missing
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
-For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
+For every **`installing` or `activating`** installation whose `claimedAt` is older than
+`INSTALL_LOCK_TTL_MS`,
 the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — fenced on the
 `claimId` it read, so it cannot race a takeover that happened between its read and its write
 — and the row becomes
@@ -394,9 +409,16 @@ Unit (`backend/__tests__/unit/services/installable/`):
    `Integration` model: B's writes only), the Integration row still carries `C_B` and stays
    `isActive: true`, and A's caller receives 409 `install_lock_lost` — asserted on the status
    and the code, not on a null.
-6d. **Winner retry mints once.** B crashes between writes 1 and 2 and retries holding
-   generation `b`: write 2 finds `isActive: false` and mints; a second retry finds
-   `isActive: true`, returns the same code, `mintConnectCode` called once.
+6d. **The split commit is recoverable, never reported as success.** (i) B crashes between
+   writes 1 and 2: the parent is `activating`, the Integration row inactive with no code. A
+   retry within the TTL gets **202**, not 200 — never 200-with-no-code. After the TTL the
+   next attempt takes over (new `claimId`), finds `activating`, runs no projector, performs
+   write 2 (mints once) and write 3, returns 200 with the code. (ii) B crashes between writes
+   2 and 3: the code exists on an active Integration row under an `activating` parent; the
+   takeover's write 2 returns `null`, the existing code is read, write 3 completes,
+   `mintConnectCode` called exactly once across the whole test. (iii) The enable path cannot
+   redeem in (i) — no code exists — and in (ii) the code is the one the retry hands back, so
+   the user never holds a code the row does not.
 
 Service (`__tests__/service/`):
 7. **Behaviour pins, at the dispatcher.** (a) An agent post into a pod with one live Telegram
