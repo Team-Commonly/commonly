@@ -286,12 +286,13 @@ describe('Auth Controller Tests', () => {
             username: 'testuser',
             email: 'test@example.com',
             profilePicture: expect.any(String),
+            verified: true,
           }),
         }),
       );
     });
 
-    it('should not login an unverified user', async () => {
+    it('starts a session for an unverified user and marks it in the response', async () => {
       // Mock an unverified user
       const user = {
         _id: 'testUserId',
@@ -318,13 +319,17 @@ describe('Auth Controller Tests', () => {
 
       await authController.login(req, res);
 
-      expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: expect.stringContaining('Email not verified'),
-          code: 'EMAIL_UNVERIFIED',
+          token: 'test-jwt-token',
+          verified: false,
+          user: expect.objectContaining({
+            email: 'test@example.com',
+            verified: false,
+          }),
         }),
       );
+      expect(res.status).not.toHaveBeenCalled();
     });
 
     it('should not login with incorrect password', async () => {

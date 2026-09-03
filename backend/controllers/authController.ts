@@ -686,15 +686,9 @@ exports.login = async (req: any, res: any) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
-    // Verify the password before exposing an account's verification state.
-    // A genuine signer gets an actionable code; an attacker gets the same
-    // invalid-credential result for every account state.
-    if (!user.verified) {
-      return res.status(400).json({
-        error: 'Email not verified. Please check your inbox.',
-        code: 'EMAIL_UNVERIFIED',
-      });
-    }
+    // Verification is a post-login reminder, not an authentication wall.
+    // A correct password always starts a session; the shell receives the
+    // verified bit and keeps the user informed until their email is confirmed.
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: '7d',
@@ -709,6 +703,7 @@ exports.login = async (req: any, res: any) => {
         email: user.email,
         profilePicture: user.profilePicture,
         role: user.role,
+        verified: user.verified,
       },
     });
   } catch (err: any) {
