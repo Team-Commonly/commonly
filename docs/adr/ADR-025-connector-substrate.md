@@ -512,7 +512,9 @@ verb, the page moves later.
    forever — and **every write the owner makes is fenced on the generation**, the activate-and-
    mint write above all, so a stale owner that revives after a takeover is refused with a
    distinct error rather than minting a second code over the one the user was handed (the
-   ADR-026 D6 nonce, one layer up); only the lock owner runs projectors; every loser gets the
+   ADR-026 D6 nonce, one layer up); the parent-then-projection activation is a split commit
+   bridged by a recoverable `activating` state, so a crash between the two writes is resumed
+   at the mint on retry and never reported as success; only the lock owner runs projectors; every loser gets the
    existing row — 202 while installing, 200 when active — and never invokes a projector.
 3. **Selection is the dispatcher's, scoped by the event's target.** For `chat.message` in pod
    P the dispatcher selects the installations bound to P in one query before any handler runs;
