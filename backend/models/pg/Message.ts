@@ -152,7 +152,11 @@ class Message {
         'UPDATE pods SET updated_at = CURRENT_TIMESTAMP WHERE id = $1',
         [podId],
       );
-      return result.rows[0] as unknown as MessageRow;
+      const row = result.rows[0] as unknown as MessageRow;
+      // eslint-disable-next-line global-require
+      const { recordMentionedUsers } = require('../../services/attentionItemService');
+      await recordMentionedUsers({ ...row, podId, userId, content, threadRootId: resolvedThreadRootId });
+      return row;
     } catch (error) {
       const e = error as { message?: string };
       console.error('SQL Error in Message.create:', e.message);
@@ -280,13 +284,21 @@ class Message {
   static async delete(id: string): Promise<MessageRow | undefined> {
     const query = `DELETE FROM messages WHERE id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [id]);
-    return result.rows[0] as unknown as MessageRow | undefined;
+    const deleted = result.rows[0] as unknown as MessageRow | undefined;
+    // eslint-disable-next-line global-require
+    const { resolve } = require('../../services/attentionItemService');
+    await resolve('message', id);
+    return deleted;
   }
 
   static async deleteByPodId(podId: string): Promise<MessageRow[]> {
     const query = `DELETE FROM messages WHERE pod_id = $1 RETURNING *`;
     const result = await (pool as PgPool).query(query, [podId]);
-    return result.rows as unknown as MessageRow[];
+    const rows = result.rows as unknown as MessageRow[];
+    // eslint-disable-next-line global-require
+    const { resolveMany } = require('../../services/attentionItemService');
+    await resolveMany('message', rows.map((row) => row.id));
+    return rows;
   }
 
   /**
@@ -411,6 +423,9 @@ class Message {
     const deleted = typeof result.rowCount === 'number'
       ? result.rowCount
       : (Array.isArray(result.rows) ? result.rows.length : 0);
+    // eslint-disable-next-line global-require
+    const { resolveMany } = require('../../services/attentionItemService');
+    await resolveMany('message', (result.rows || []).map((row) => row.id));
 
     // Repair before returning. Deleting a thread root orphans everything below
     // it (see reRootOrphanedChains), and the caller has no way to know it
