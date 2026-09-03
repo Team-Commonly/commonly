@@ -1,0 +1,69 @@
+/*
+ * Design tokens for the Commonly app. Source of truth: frontend/design-system/tokens.css
+ * plus the values Sam ruled on the Shell Parity canvas (2026-09-03):
+ * shell-to-content tint step, radius ladder 6/10/14, one face at 14/20,
+ * ink primary with blue reserved for links, marks, and the focus halo.
+ * Nothing in the app may use a colour, size, or radius that is not a token.
+ */
+:root {
+  color-scheme: light;
+
+  /* ground */
+  --c-shell: #f1f1f4;
+  --c-page: #f8f8fb;
+  --c-surface: #ffffff;
+  --c-surface-hover: #fafafa;
+  --c-surface-tint: #f4f3f8;
+
+  /* lines */
+  --c-border: #e6e6ea;
+  --c-border-soft: #eef0f6;
+  --c-border-strong: #d7dce7;
+
+  /* text */
+  --c-ink: #111827;
+  --c-ink-hover: #1f2937;
+  --c-on-ink: #ffffff;
+  --c-text: #111827;
+  --c-text-secondary: #4b5563;
+  --c-text-muted: #8a93a3;
+
+  /* accent — links, mention marks, focus. Not buttons. */
+  --c-accent: #2f6feb;
+  --c-accent-strong: #1f55c9;
+  --c-accent-soft: #e8efff;
+  --c-accent-text: #2456c8;
+  --c-halo: 0 0 0 4px rgba(47, 111, 235, 0.10);
+  --c-focus-ring: 0 0 0 3px rgba(47, 111, 235, 0.18);
+
+  /* state */
+  --c-success: #10b981;
+  --c-success-soft: #e3f6ec;
+  --c-success-text: #0f7a53;
+  --c-warning-soft: #fdefdc;
+  --c-warning-text: #a85d08;
+  --c-danger: #ef4444;
+  --c-danger-soft: rgba(239, 68, 68, 0.10);
+
+  /* type: one face, one scale */
+  --font: 'Inter Variable', Inter, 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --fs-display: 40px; --lh-display: 44px;
+  --fs-title: 26px;   --lh-title: 32px;
+  --fs-heading: 15px; --lh-heading: 20px;
+  --fs-body: 14px;    --lh-body: 20px;
+  --fs-meta: 12px;    --lh-meta: 16px;
+  --fs-label: 11px;   --lh-label: 14px;
+
+  /* radius ladder: controls / rows / cards & composer */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* the one shadow: a pending card, one step up */
+  --shadow-pending: 0 1px 2px rgba(15, 23, 42, 0.06);
+
+  /* layout */
+  --content-max: 720px;
+  --gutter: 20px;
+}
