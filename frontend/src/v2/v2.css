@@ -5984,6 +5984,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-team__hire-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--v2-accent);
   color: #fff;
   border: none;
@@ -6035,8 +6038,16 @@ body.modern-ui.v2-canvas {
   margin-bottom: 20px;
 }
 
-/* Invite-code redemption strip — shown to BYO-tier users; a valid code
-   unlocks hosted agents (entitlements.cloudAgents). */
+/* Invite-code access is a quiet line under the roster title, not a notice
+   card competing with the team's primary work. The linked code path remains
+   available when a user has one. */
+.v2-team__entitlement-notice {
+  margin: -12px 0 20px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .v2-team__redeem {
   padding: 10px 14px;
   background: var(--v2-bg-subtle);
@@ -7639,6 +7650,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
   background: none;
   color: var(--v2-text-secondary);
@@ -7680,6 +7694,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: var(--v2-accent);
   color: #fff;
@@ -7812,7 +7829,8 @@ body.modern-ui.v2-canvas {
   border: 1px solid var(--v2-border);
   background: var(--v2-surface);
   color: var(--v2-text-secondary);
-  font-size: 11.5px;
+  min-height: 32px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 6px;
   padding: 3px 10px;
