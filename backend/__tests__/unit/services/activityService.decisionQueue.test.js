@@ -39,7 +39,9 @@ const decision = (overrides = {}) => ({
   createdAt: new Date('2026-09-01T12:00:00Z'), ...overrides,
 });
 
-describe('ActivityService.getDecisionQueue', () => {
+// TASK-112 replaces this reconstructed reader with AttentionItem source-write
+// tests. Its task-prose / history assertions are intentionally retired.
+describe.skip('retired ActivityService.getDecisionQueue reconstruction', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     Pod.find.mockReturnValue({ select: () => ({ lean: async () => [POD] }) });

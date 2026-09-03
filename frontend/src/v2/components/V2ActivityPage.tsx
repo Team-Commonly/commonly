@@ -27,14 +27,12 @@ interface AgentRecap {
 
 interface NeedsYouItem {
   id: string;
-  // Decision cards are agent-authored DecisionRequest rows. `press` remains
-  // an ordinary board handoff and never parses a task title into options.
-  kind: 'mention' | 'approval' | 'decision' | 'press';
+  attentionItemId?: string;
+  kind: 'mention' | 'approval' | 'decision';
   title: string;
   detail: string;
   podId: string | null;
   podName: string;
-  taskId?: string;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
   timestamp: string | null;
   // Mention rows carry where they live so a reply can land IN the thread.
@@ -266,7 +264,7 @@ const V2ActivityPage: React.FC = () => {
       );
       setRepliedIds((prev) => new Set(prev).add(item.id));
       setReplyDrafts((prev) => ({ ...prev, [item.id]: '' }));
-      await axios.post(`/api/activity/${item.id}/acknowledge`, {}, { headers: { 'x-auth-token': token ?? '' } }).catch(() => null);
+      if (item.attentionItemId) await axios.post(`/api/activity/${item.attentionItemId}/acknowledge`, {}, { headers: { 'x-auth-token': token ?? '' } }).catch(() => null);
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.mention.actionFailed'));
@@ -282,7 +280,7 @@ const V2ActivityPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post<{ success?: boolean }>(
-        `/api/activity/${item.id}/acknowledge`,
+        `/api/activity/${item.attentionItemId || item.id}/acknowledge`,
         {},
         { headers: { 'x-auth-token': token ?? '' } },
       );
@@ -293,10 +291,6 @@ const V2ActivityPage: React.FC = () => {
     } finally {
       setAcknowledgingMentionId(null);
     }
-  };
-
-  const openBoard = (item: NeedsYouItem) => {
-    if (item.podId) navigate(`/v2/pods/${item.podId}/board`);
   };
 
   const isDayZero = podId === 'all'
@@ -428,7 +422,7 @@ const V2ActivityPage: React.FC = () => {
                 {queue.map((item) => (
                   <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
-                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : item.kind === 'press' ? '▸' : '?'}
+                      {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
                       <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>
@@ -527,11 +521,6 @@ const V2ActivityPage: React.FC = () => {
                             </>
                           )}
                         </>
-                      )}
-                      {item.kind === 'press' && (
-                        <button type="button" onClick={() => openBoard(item)} disabled={!item.podId}>
-                          {t('activity.openBoard')}
-                        </button>
                       )}
                       <button type="button" className="v2-activity__queue-action--thread" onClick={() => openPod(item.podId)} disabled={!item.podId}>
                         {t('activity.openThread')}

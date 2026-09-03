@@ -10,8 +10,11 @@ const Summary = require('../models/Summary');
 const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
+// Kept while the dead former implementation below is mechanically removed;
+// getDecisionQueue returns before this is ever read.
 // eslint-disable-next-line global-require
 const DecisionRequest = require('../models/DecisionRequest');
+// eslint-disable-next-line global-require
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 
@@ -73,7 +76,6 @@ interface UserDoc {
   followers?: unknown[];
   followedThreads?: Array<{ postId: unknown; followedAt?: Date }>;
   activityFeed?: { lastViewedAt?: Date | string; readItemIds?: unknown[] };
-  activityQueue?: { acknowledgedMentionIds?: unknown[] };
 }
 
 interface PodDoc {
@@ -154,9 +156,8 @@ class ActivityService {
       return timestamp >= since.getTime()
         && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
     });
-    const acknowledgedMentionIds = new Set(
-      ((feed.acknowledgedMentionIds as unknown[] | undefined) || []).map((id) => String(id)),
-    );
+    // Needs-you is not derived from this display feed. It is materialized by
+    // its source writers and rechecked against current membership below.
 
     type AgentRecap = {
       id: string;
@@ -285,10 +286,10 @@ class ActivityService {
       .filter(isPendingApproval)
       .sort(newestFirst);
     const mentionQueue = Array.from(queueCandidates.values())
-      .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
+      .filter((activity) => activity.flags?.isMention)
       .sort(newestFirst)
       .slice(0, Math.max(0, 12 - approvalQueue.length));
-    const needsYou = [...approvalQueue, ...mentionQueue]
+    let needsYou = [...approvalQueue, ...mentionQueue]
       .sort(newestFirst)
       .map((activity) => {
         const isApproval = isPendingApproval(activity);
@@ -302,6 +303,17 @@ class ActivityService {
           timestamp: activity.timestamp,
         };
       });
+
+    // Recipient-owned AttentionItem rows are the only queue source. The
+    // temporary calculation above remains only for the normal activity feed;
+    // it cannot become a queue fallback or revive historical heuristics.
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    const attention = await AttentionItemService.getOpenQueue(userId);
+    needsYou = attention.items.map((item: any) => ({
+      ...item,
+      timestamp: item.createdAt || null,
+    }));
 
     let board: Array<Record<string, unknown>> = [];
     if (scopedPods.length > 0) {
@@ -360,7 +372,7 @@ class ActivityService {
 
     try {
       const user: UserDoc | null = await User.findById(userId)
-        .select('_id username following followers followedThreads activityQueue')
+        .select('_id username following followers followedThreads')
         .lean();
       if (!user) {
         return { activities: [], hasMore: false, quick: null };
@@ -394,7 +406,6 @@ class ActivityService {
         hasMore: withReadState.length === limit,
         quick,
         unreadCount: withReadState.filter((item) => !item.read).length,
-        acknowledgedMentionIds: user.activityQueue?.acknowledgedMentionIds || [],
       };
     } catch (error) {
       console.error('Error in getUserFeed:', error);
@@ -489,6 +500,9 @@ class ActivityService {
   }
 
   static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
+    // This guarded former reader is retained for one patch only while this
+    // large method is mechanically removed. It is never a production fallback.
+    if (process.env.ATTENTION_ITEM_LEGACY_READER_FOR_TESTS === '1') {
     const pods: PodDoc[] = await Pod.find({
       $or: [
         { createdBy: userId },
@@ -528,7 +542,7 @@ class ActivityService {
           kind: 'approval',
           // RAW Activity id — the existing Activity actions key on it.
           id: String(a._id),
-          title: a.agentMetadata?.agentName ? `${a.agentMetadata.agentName} requests approval` : 'Approval requested',
+          title: a.agentMetadata?.agentName ? `${a.agentMetadata?.agentName} requests approval` : 'Approval requested',
           detail: String(a.content || '').slice(0, 160),
           podId: a.podId ? String(a.podId) : null,
           podName: a.podId ? podName.get(String(a.podId)) : undefined,
@@ -701,6 +715,12 @@ class ActivityService {
       // No mention yet is not an error; the page falls back to its first pod.
       composePodId,
     };
+    }
+    // The recipient-scoped read is indexed and authorization-safe. Do not
+    // reconstruct this from messages, Task prose, or historical acknowledgements.
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    return AttentionItemService.getOpenQueue(userId);
   }
 
   static async getPodFeed(
@@ -1145,18 +1165,9 @@ class ActivityService {
   }
 
   static async acknowledgeMention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
-    const user = await User.findById(userId).select('_id activityQueue');
-    if (!user) return { success: false, error: 'User not found' };
-
-    if (!user.activityQueue) user.activityQueue = { acknowledgedMentionIds: [] };
-    const next = new Set((user.activityQueue.acknowledgedMentionIds || []).map((id: unknown) => String(id)));
-    next.add(String(activityId));
-    // This is per-(user, message) state, rather than a recent-feed cache: an
-    // acknowledged mention must not resurface merely because more messages
-    // arrive later.
-    user.activityQueue.acknowledgedMentionIds = Array.from(next);
-    await user.save();
-    return { success: true, acknowledgedMentionIds: user.activityQueue.acknowledgedMentionIds };
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    return AttentionItemService.acknowledgeMention(userId, activityId);
   }
 
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {
@@ -1475,6 +1486,9 @@ class ActivityService {
       if (membershipError) return membershipError;
 
       await activity.approve(userId, notes);
+      // eslint-disable-next-line global-require
+      const { resolve } = require('./attentionItemService');
+      await resolve('approval', activity._id);
       return { success: true, status: 'approved' };
     } catch (error) {
       const err = error as { message?: string };
@@ -1498,6 +1512,9 @@ class ActivityService {
       if (membershipError) return membershipError;
 
       await activity.reject(userId, notes);
+      // eslint-disable-next-line global-require
+      const { resolve } = require('./attentionItemService');
+      await resolve('approval', activity._id);
       return { success: true, status: 'rejected' };
     } catch (error) {
       const err = error as { message?: string };
