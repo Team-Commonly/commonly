@@ -205,7 +205,11 @@ router.get('/binding/:podId', auth, async (req: AuthReq, res: Res) => {
 router.delete('/uninstall/:installationId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { installationId } = req.params || {};
-    const integration = await Integration.findOne({ installationId }) as { _id: unknown; createdBy?: { toString: () => string }; podId?: unknown } | null;
+    // `installationId` is no longer Discord-owned: Installable app projections
+    // use it as their parent back-pointer too. Keep this destructive legacy
+    // route provider-scoped so a Discord installation id can never delete a
+    // connector row from another provider.
+    const integration = await Integration.findOne({ installationId, type: 'discord' }) as { _id: unknown; createdBy?: { toString: () => string }; podId?: unknown } | null;
     if (!integration) return res.status(404).json({ error: 'Integration not found' });
     const canManage = await canManageIntegration(integration, req.user?.id || '');
     if (!canManage) return res.status(403).json({ error: 'Access denied' });
