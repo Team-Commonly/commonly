@@ -98,4 +98,19 @@ describe('V2AgentProfile memory-write visibility', () => {
       { headers: { Authorization: 'Bearer viewer-token' } },
     ));
   });
+
+  it('keeps room-endpoint diagnostics off the profile page', async () => {
+    window.localStorage.setItem('token', 'viewer-token');
+    profileClient.post.mockRejectedValue({
+      response: { data: { message: 'Multiple installations found. Specify instanceId.' } },
+    });
+    renderProfile();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to Observer' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The 1:1 with this agent could not be opened.',
+    );
+    expect(screen.queryByText('Multiple installations found. Specify instanceId.')).not.toBeInTheDocument();
+  });
 });
