@@ -172,12 +172,24 @@ had — so shipping the back-pointer arms both of them in the same commit:
   this reader stays inert. Stated because it is the explanation that has to be killed, not
   because it is safe by design.
 - `:208`, `DELETE /api/discord/uninstall/:installationId` — same `findOne({ installationId })`
-  with **no `type: 'discord'` filter**, gated by `canManageIntegration` (pod creator, pod admin,
-  or `createdBy`), body `DiscordIntegration.findOneAndDelete` + `Integration.findByIdAndDelete`.
+  with **no `type: 'discord'` filter**, gated by `canManageIntegration`, body
+  `DiscordIntegration.findOneAndDelete` + `Integration.findByIdAndDelete`.
   A **hard delete**, and its id comes from the *caller's* URL, so the disjointness that protects
   `:80` does not reach it. Once a Telegram or Slack connector carries an `installationId`, any
   caller who passes that gate can hard-delete it through the Discord route — bypassing this
   spec's uninstall entirely, which is soft by design ("nothing is deleted", below).
+
+  **That gate is wider than a pod role, and the width is doing the severity work
+  (@sprint-review, 2026-09-02).** `canManageIntegration` is three branches in order: first
+  `user.role === 'admin'` — an **instance-wide** role on the User row, scoped to neither this pod
+  nor this integration; then `integration.createdBy === userId`; then `pod.createdBy === userId`.
+  An earlier draft of this bullet glossed it as "pod creator, pod admin, or `createdBy`", which
+  was wrong twice: it read the instance role as pod-scoped, and **"pod admin" is not a thing the
+  `Pod` model can express** — `members` is a bare `ObjectId[]` with no role path beneath it, and
+  the model's only `role` field lives on `agentEnsemble.participants[]`
+  (`starter | responder | synthesizer | observer`), a turn-taking value carrying no authority.
+  So the pod-scoped half of this gate is `createdBy` alone, and the branch that actually sets the
+  blast radius is instance admin.
 
 The convention already exists one route down: `POST /api/discord/register-commands/:integrationId`
 returns 400 on `integration.type !== 'discord'`. So the fix is to match it — add the `type:
