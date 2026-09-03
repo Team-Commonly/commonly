@@ -43,6 +43,7 @@ import V2AdminUsers from './components/V2AdminUsers';
 import V2AdminAnalytics from './components/V2AdminAnalytics';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
+import '@fontsource-variable/inter';
 import './v2.css';
 
 class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {

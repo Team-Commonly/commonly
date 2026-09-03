@@ -53,6 +53,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podChat = read('../components/V2PodChat.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const yourTeam = read('../components/V2YourTeamPage.tsx');
+  const activityPage = read('../components/V2ActivityPage.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -182,8 +183,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(neutralOption).toContain('border-radius: 999px');
 
     const recommendedOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended');
-    expect(recommendedOption).toContain('background: var(--v2-accent)');
-    expect(recommendedOption).toContain('color: var(--v2-surface)');
+    expect(recommendedOption).toContain('background: var(--v2-ink)');
+    expect(recommendedOption).toContain('color: var(--v2-on-ink)');
     expect(v2).toContain('.v2-activity__option-description');
   });
 
@@ -566,7 +567,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('Activity queue actions distinguish an action from the thread handoff', () => {
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
   });
@@ -576,7 +577,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // recommended state and the free-text escape hatch visible in the CSS
     // source because jsdom has no layout engine to catch a narrow regression.
     expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--recommended'))
-      .toContain('background: var(--v2-accent)');
+      .toContain('background: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
   });
@@ -885,6 +886,91 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
     expect(v2).toContain('.v2-connector__tile--telegram');
     expect(v2).toContain('var(--v2-platform-telegram-soft)');
+  });
+
+  describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {
+    const v2Root = ruleBody(v2, '.v2-root');
+
+    test('the tint step exists in both token files and the content pane is the inset card', () => {
+      expect(cssVariable(v2Root, '--v2-shell-bg')).toBe('#f1f1f4');
+      expect(cssVariable(tokens, '--c-shell-bg')).toBe('#f1f1f4');
+      expect(cssVariable(v2Root, '--v2-content-radius')).toBe('14px');
+      expect(cssVariable(tokens, '--c-content-radius')).toBe('14px');
+      expect(ruleBody(v2, '.v2-shell')).toContain('var(--v2-shell-bg)');
+      const main = ruleBody(v2, '.v2-pane--main');
+      expect(main).toContain('border: 1px solid var(--v2-border)');
+      expect(main).toContain('border-radius: var(--v2-content-radius)');
+      // The banner variant must out-specify `.v2-authenticated-shell__content .v2-pane { height: 100% }`.
+      expect(ruleBody(v2, '.v2-authenticated-shell .v2-pane--main')).toContain('height: calc(100% - 16px)');
+      // Phones: the card goes flush — both selectors, or the banner variant keeps the desktop height.
+      expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-pane--main,\n\s*\.v2-authenticated-shell \.v2-pane--main \{[\s\S]*?border-radius: 0/);
+      expect(ruleBody(v2, '.v2-feature')).toContain('background: #ffffff');
+    });
+
+    test('the radius ladder is 6 / 10 / 14 in both files', () => {
+      for (const [v2Name, dsName, value] of [
+        ['--v2-radius-sm', '--c-radius-sm', '6px'],
+        ['--v2-radius', '--c-radius', '10px'],
+        ['--v2-radius-lg', '--c-radius-lg', '14px'],
+      ]) {
+        expect(cssVariable(v2Root, v2Name)).toBe(value);
+        expect(cssVariable(tokens, dsName)).toBe(value);
+      }
+    });
+
+    test('Needs-you rows are stable on hover: transparent border, fill-only hover, no dividers', () => {
+      const row = ruleBody(v2, '.v2-activity__queue-row');
+      expect(row).toContain('border: 1px solid transparent');
+      expect(row).toContain('border-radius: var(--v2-radius)');
+      expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
+      const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
+      const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
+      expect(declarations.length).toBeGreaterThan(0);
+      for (const declaration of declarations) expect(declaration).toMatch(/^background/);
+      // Pending decision/approval rows sit one step up; a ruled decision settles back down.
+      const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
+      expect(pending).toContain('box-shadow: var(--v2-shadow-pending)');
+      expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
+      expect(ruleBody(v2, '.v2-activity__queue-row--settled')).toContain('box-shadow: none');
+      expect(activityPage).toContain("' v2-activity__queue-row--settled'");
+    });
+
+    test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
+      const activityFocusRules = v2.split('}').filter((block) => {
+        const brace = block.indexOf('{');
+        if (brace === -1) return false;
+        const selector = block.slice(0, brace);
+        return selector.includes('.v2-activity__') && selector.includes(':focus-visible');
+      });
+      expect(activityFocusRules.length).toBeGreaterThan(0);
+      for (const block of activityFocusRules) expect(block.slice(block.indexOf('{'))).not.toContain('outline: 2px');
+      expect(ruleBody(v2, '.v2-root button:focus-visible,\n.v2-root input:focus-visible,\n.v2-root textarea:focus-visible,\n.v2-root a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+      // <select> is outside the global halo's element list, so the pod picker carries its own.
+      expect(ruleBody(v2, '.v2-activity__compose-pod select:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+    });
+
+    test('ink primary: filled Activity buttons are ink, and blue stays off them', () => {
+      expect(cssVariable(v2Root, '--v2-ink')).toBe('#111827');
+      expect(cssVariable(tokens, '--c-ink')).toBe('#111827');
+      const send = ruleBody(v2, '.v2-root .v2-activity__compose button');
+      expect(send).toContain('var(--v2-ink)');
+      expect(send).not.toContain('var(--v2-accent)');
+      expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).not.toContain('var(--v2-accent)');
+    });
+
+    test('Inter is self-hosted, first in the stack, and imported before v2.css', () => {
+      const app = read('../V2App.tsx');
+      const fontImport = app.indexOf("import '@fontsource-variable/inter';");
+      expect(fontImport).toBeGreaterThan(-1);
+      expect(fontImport).toBeLessThan(app.indexOf("import './v2.css';"));
+      expect(cssVariable(v2Root, '--v2-font')?.startsWith('"Inter Variable"')).toBe(true);
+      expect(cssVariable(tokens, '--c-font-sans')?.startsWith('"Inter Variable"')).toBe(true);
+      expect(v2Root).toContain('font-size: var(--v2-fs-body)');
+      expect(v2Root).toContain('line-height: var(--v2-lh-body)');
+      expect(cssVariable(v2Root, '--v2-lh-body')).toBe('20px');
+      const pkg = JSON.parse(read('../../../package.json'));
+      expect(pkg.dependencies['@fontsource-variable/inter']).toBeDefined();
+    });
   });
 
 });
