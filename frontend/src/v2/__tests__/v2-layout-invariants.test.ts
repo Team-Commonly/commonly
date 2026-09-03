@@ -50,6 +50,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
+  const podChat = read('../components/V2PodChat.tsx');
+  const podBoard = read('../components/V2PodBoard.tsx');
+  const yourTeam = read('../components/V2YourTeamPage.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -501,6 +504,37 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(title).toContain('-webkit-line-clamp: 3');
     expect(title).toContain('-webkit-box-orient: vertical');
     expect(title).toContain('overflow: hidden');
+  });
+
+  test('craft-pass board action chips keep their 32px target and 12px type', () => {
+    // These compact controls are repeated on every board card and in the
+    // detail dialog. A declaration on the shared selector keeps both paths
+    // aligned and guards the 25px control regression measured at 390px.
+    const chip = ruleBody(v2, '.v2-root button.v2-board__card-move');
+    expect(chip).toContain('min-height: 32px');
+    expect(chip).toContain('font-size: 12px');
+  });
+
+  test('craft-pass buttons use icon components instead of unicode glyphs', () => {
+    // This is structural: accessible labels cannot prove a literal glyph has
+    // left the JSX. The MUI imports and icon nodes are the implementation
+    // contract for the three ruled buttons.
+    expect(podBoard).toContain("import AddIcon from '@mui/icons-material/Add'");
+    expect(podBoard).toContain("import ArrowBackIcon from '@mui/icons-material/ArrowBack'");
+    expect(podBoard).toContain('<ArrowBackIcon fontSize="small" aria-hidden="true" />');
+    expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
+    expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
+    expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
+    expect(yourTeam).toContain("import AddIcon from '@mui/icons-material/Add'");
+    expect(yourTeam).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
+  });
+
+  test('the chat heartbeat subtitle is guarded by an installed agent', () => {
+    // A zero-agent pod has nobody expected to heartbeat; showing "No recent"
+    // there was a false failure state. Pin both the predicate and its render
+    // guard so a later copy-only edit cannot restore the dangling separator.
+    expect(podChat).toContain('const liveState = agents.length > 0');
+    expect(podChat).toContain('{liveState && <span className="v2-chat__goal-meta"> · {liveState}</span>}');
   });
 
   test('the Community sub-tabs and Discover rows shrink inside the narrow sidebar', () => {
