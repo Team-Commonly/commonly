@@ -37,6 +37,7 @@ export const webhookProjector: ComponentProjector = {
       {
         $setOnInsert: {
           installationId,
+          installationClaimId: context.claimId,
           podId: context.podId,
           type: provider,
           status: 'pending',

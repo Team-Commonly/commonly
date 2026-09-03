@@ -31,7 +31,6 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
       if (
         integration?.isActive
         && integration.config?.connectCode
-        && integration.installationClaimId === claimId
       ) {
         const result = await InstallableInstallation.updateOne(
           { _id: installation._id, status: 'activating', claimId },
@@ -40,10 +39,6 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
         completed += result.modifiedCount || 0;
         continue;
       }
-      // A code with an unexpected generation is not ours to delete or
-      // overwrite. Its parent will be diagnosed by the next retry rather than
-      // making a sweep act like a stale owner.
-      if (integration?.isActive && integration.config?.connectCode) continue;
     }
 
     const result = await InstallableInstallation.updateOne(

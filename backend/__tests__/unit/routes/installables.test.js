@@ -18,6 +18,7 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
   InstallLockLostError: class InstallLockLostError extends Error {},
   InstallableNotFoundError: class InstallableNotFoundError extends Error {},
   InstallableProjectionError: class InstallableProjectionError extends Error {},
+  InstallInProgressError: class InstallInProgressError extends Error {},
 }));
 
 const Pod = require('../../../models/Pod');

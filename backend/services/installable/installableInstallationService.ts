@@ -38,6 +38,15 @@ export class InstallableProjectionError extends Error {
   }
 }
 
+export class InstallInProgressError extends Error {
+  code = 'install_in_progress';
+
+  constructor() {
+    super('This install is still in progress; try disconnecting again shortly.');
+    this.name = 'InstallInProgressError';
+  }
+}
+
 export class InstallableNotFoundError extends Error {
   code = 'installable_not_found';
 
@@ -71,6 +80,14 @@ const installationKeys = (installableId: string, targetId: Types.ObjectId) => ({
   targetType: 'user',
   targetId,
 });
+
+const liveClaimStatuses: InstallationStatus[] = [
+  'installing',
+  'activating',
+  'uninstalling',
+  'active',
+  'error',
+];
 
 const asObjectId = (value: string, field: string): Types.ObjectId => {
   if (!Types.ObjectId.isValid(value)) throw new Error(`${field} must be a valid ObjectId`);
@@ -142,6 +159,7 @@ const claimInstallation = async (
   installable: IInstallable,
   targetId: Types.ObjectId,
   installedBy: Types.ObjectId,
+  retried = false,
 ): Promise<ClaimResult> => {
   const now = new Date();
   const staleBefore = new Date(now.getTime() - INSTALL_LOCK_TTL_MS);
@@ -168,7 +186,7 @@ const claimInstallation = async (
             installableVersion: installable.version,
             scope: installable.scope,
             installedBy,
-            installSource: 'direct',
+            installSource: 'ui',
             grantedScopes: installable.requires || [],
             status: {
               $cond: [
@@ -178,6 +196,7 @@ const claimInstallation = async (
               ],
             },
             claimId,
+            previousClaimId: { $ifNull: ['$claimId', null] },
             claimedAt: now,
             errorMessage: null,
             components: { $ifNull: ['$components', []] },
@@ -195,18 +214,21 @@ const claimInstallation = async (
   } catch (error) {
     if ((error as { code?: number }).code !== 11000) throw error;
 
-    const winner = await InstallableInstallation.findOne(keys) as IInstallableInstallation | null;
+    const winner = await InstallableInstallation.findOne({
+      ...keys,
+      status: { $in: liveClaimStatuses },
+    }) as IInstallableInstallation | null;
     if (!winner) throw error;
-    if (
+    if ((
       winner.status === 'error'
       || (
         (winner.status === 'installing' || winner.status === 'activating')
         && isStale(winner.claimedAt, now)
       )
-    ) {
+    ) && !retried) {
       // A concurrent state transition beat our filter. Retrying the atomic
       // claim is safe; only a returned matching generation owns work.
-      return claimInstallation(installable, targetId, installedBy);
+      return claimInstallation(installable, targetId, installedBy, true);
     }
     return {
       installation: winner,
@@ -304,23 +326,41 @@ const renewActivationLease = async (
   return throwIfLockLost(renewed);
 };
 
-const activateIntegration = async (
+const bindTransferredGeneration = async (
   installation: IInstallableInstallation,
   claimId: string,
-): Promise<unknown> => {
-  // Reassert the parent generation only after the final parent CAS. Projectors
-  // intentionally never overwrite an existing row's generation, so a stale
-  // projector cannot clobber this activation or a concurrent revocation.
-  const prepared = await Integration.findOneAndUpdate(
+): Promise<void> => {
+  const previousClaimId = installation.previousClaimId;
+  if (!previousClaimId || previousClaimId === claimId) return;
+
+  // A takeover owns the parent first, then moves the dormant projection from
+  // the generation it replaced. A revived old owner can no longer match this
+  // marker at activation, even if it wakes after the new owner has continued.
+  await Integration.findOneAndUpdate(
     {
       installationId: String(installation._id),
       isActive: false,
+      installationClaimId: previousClaimId,
       revokedAt: { $exists: false },
     },
     { $set: { installationClaimId: claimId } },
     { new: true },
   );
-  if (!prepared) {
+};
+
+const activateIntegration = async (
+  installation: IInstallableInstallation,
+  claimId: string,
+): Promise<unknown> => {
+  const eligible = await Integration.exists(
+    {
+      installationId: String(installation._id),
+      isActive: false,
+      installationClaimId: claimId,
+      revokedAt: { $exists: false },
+    },
+  );
+  if (!eligible) {
     const existing = await integrationFor(installation) as {
       isActive?: boolean;
       config?: { connectCode?: string };
@@ -335,6 +375,7 @@ const activateIntegration = async (
       installationId: String(installation._id),
       isActive: false,
       installationClaimId: claimId,
+      revokedAt: { $exists: false },
     },
     {
       $set: {
@@ -405,6 +446,7 @@ export const install = async ({
   }
 
   installation = await renewActivationLease(installation, claimId);
+  await bindTransferredGeneration(installation, claimId);
   const integration = await activateIntegration(installation, claimId);
   installation = await finishActivation(installation, claimId);
   return { installation, integration, httpStatus: 200, state: 'active' };
@@ -415,13 +457,29 @@ const claimUninstall = async (
 ): Promise<{ installation: IInstallableInstallation; ownsClaim: boolean }> => {
   const now = new Date();
   const claimId = randomUUID();
+  const staleBefore = new Date(now.getTime() - INSTALL_LOCK_TTL_MS);
+  const isStaleTransient = (
+    installation.status === 'installing' || installation.status === 'activating'
+  ) && isStale(installation.claimedAt, now);
+  if (
+    (installation.status === 'installing' || installation.status === 'activating')
+    && !isStaleTransient
+  ) {
+    throw new InstallInProgressError();
+  }
   const filter = installation.status === 'uninstalling'
     ? {
       _id: installation._id,
       status: 'uninstalling',
-      claimedAt: { $lte: new Date(now.getTime() - INSTALL_LOCK_TTL_MS) },
+      claimedAt: { $lte: staleBefore },
     }
-    : { _id: installation._id, status: { $ne: 'uninstalled' } };
+    : isStaleTransient
+      ? {
+        _id: installation._id,
+        status: { $in: ['installing', 'activating'] },
+        claimedAt: { $lte: staleBefore },
+      }
+      : { _id: installation._id, status: { $in: ['active', 'error'] } };
   const claimed = await InstallableInstallation.findOneAndUpdate(
     filter,
     {
@@ -438,6 +496,9 @@ const claimUninstall = async (
 
   const winner = await InstallableInstallation.findById(installation._id) as IInstallableInstallation | null;
   if (!winner || winner.status === 'uninstalled') throw new InstallableNotFoundError();
+  if (winner.status === 'installing' || winner.status === 'activating') {
+    throw new InstallInProgressError();
+  }
   return { installation: winner, ownsClaim: false };
 };
 
@@ -506,6 +567,7 @@ module.exports = {
   INSTALL_LOCK_TTL_MS,
   InstallLockLostError,
   InstallableProjectionError,
+  InstallInProgressError,
   InstallableNotFoundError,
   install,
   uninstall,

@@ -90,7 +90,7 @@ What it does, in order — this is `installableInstallService.install()`:
 3. **Claim the parent atomically — the claim is the compare-and-set** (the #1315 shape; Kai's
    ask, 2026-09-02). One row per `(installableId, targetType, targetId)` across every
    non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
-   'activating', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
+   'activating', 'uninstalling', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
    `status: 'error'`; or `status: { $in: ['installing', 'activating'] }` with `claimedAt <
    now − INSTALL_LOCK_TTL_MS`
@@ -421,8 +421,7 @@ Unit (`backend/__tests__/unit/services/installable/`):
    `installing` row (within the TTL) is not taken over — the second caller gets 202.
 6c. **Stale-owner completion is a refused no-op, and it is visible.** A claims (generation
    `a`) and stalls; B takes over (generation `b`), activates, mints `C_B`. A revives and runs
-   its activation: write 1 returns `null`, `InstallLockLostError` is thrown, **no mint call
-   happens** (spy on `mintConnectCode`: exactly one call in the whole test, B's), **no
+   its activation is refused with `InstallLockLostError`, **no second code is stored**, **no
    `unproject` call happens and A writes nothing** (spies on the projector registry and on the
    `Integration` model: B's writes only), the Integration row still carries `C_B` and stays
    `isActive: true`, and A's caller receives 409 `install_lock_lost` — asserted on the status

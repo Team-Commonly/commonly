@@ -39,7 +39,7 @@ export type InstallationStatus =
   | 'error'
   | 'stale';
 
-export type InstallSource = 'marketplace' | 'registry' | 'direct' | 'system';
+export type InstallSource = 'marketplace' | 'registry' | 'direct' | 'ui' | 'system';
 
 export interface IComponentInstallationUsage {
   lastUsedAt?: Date;
@@ -113,6 +113,8 @@ export interface IInstallableInstallation extends Document {
    * instead of overwriting the winner's projected connector or bearer code.
    */
   claimId?: string;
+  /** Generation the current claimant replaced, used to fence its projection. */
+  previousClaimId?: string | null;
   claimedAt?: Date;
   errorMessage?: string;
   staleSince?: Date;
@@ -190,7 +192,7 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     installSource: {
       type: String,
-      enum: ['marketplace', 'registry', 'direct', 'system'],
+      enum: ['marketplace', 'registry', 'direct', 'ui', 'system'],
       required: true,
     },
 
@@ -204,6 +206,7 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
       default: 'active',
     },
     claimId: { type: String },
+    previousClaimId: { type: String, default: null },
     claimedAt: { type: Date },
     errorMessage: { type: String },
     staleSince: { type: Date },

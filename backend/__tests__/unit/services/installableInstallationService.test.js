@@ -8,6 +8,7 @@ const Integration = require('../../../models/Integration');
 const {
   install,
   uninstall,
+  InstallLockLostError,
   InstallableProjectionError,
 } = require('../../../services/installable/installableInstallationService');
 const { sweep } = require('../../../services/installable/installableReconciler');
@@ -75,6 +76,8 @@ describe('installable connector projection', () => {
 
   it('returns the existing active install and only one parent during concurrent installs', async () => {
     const { userId, podId } = ids();
+    const webhookProjector = projectorRegistry.get('webhook');
+    const project = jest.spyOn(webhookProjector, 'project');
     const [first, second] = await Promise.all([
       install({ installableId: 'telegram', installedBy: userId, podId }),
       install({ installableId: 'telegram', installedBy: userId, podId }),
@@ -83,6 +86,8 @@ describe('installable connector projection', () => {
     expect([first.httpStatus, second.httpStatus]).toEqual(expect.arrayContaining([200]));
     expect(await InstallableInstallation.countDocuments({ installableId: 'telegram' })).toBe(1);
     expect(await Integration.countDocuments({ type: 'telegram' })).toBe(1);
+    expect(project).toHaveBeenCalledTimes(1);
+    project.mockRestore();
 
     const retry = await install({ installableId: 'telegram', installedBy: userId, podId });
     expect(retry.httpStatus).toBe(200);
@@ -162,6 +167,87 @@ describe('installable connector projection', () => {
     expect(await Integration.countDocuments({ installationId: String(first.installation._id) })).toBe(1);
   });
 
+  it('returns 202 for a fresh activating split, then takes it over and mints once after the lease', async () => {
+    const { userId, podId } = ids();
+    const targetId = new mongoose.Types.ObjectId(userId);
+    const parent = await InstallableInstallation.create({
+      installableId: 'telegram',
+      installableVersion: '1.0.0',
+      targetType: 'user',
+      targetId,
+      scope: 'user',
+      installedBy: targetId,
+      installSource: 'direct',
+      status: 'activating',
+      claimId: 'owner-a',
+      claimedAt: new Date(),
+    });
+    await Integration.create({
+      installationId: String(parent._id),
+      installationClaimId: 'owner-a',
+      podId,
+      type: 'telegram',
+      status: 'pending',
+      createdBy: targetId,
+      isActive: false,
+      config: { liveRelay: true, linkedUserId: userId },
+    });
+
+    const waiting = await install({ installableId: 'telegram', installedBy: userId, podId });
+    expect(waiting.httpStatus).toBe(202);
+    expect(waiting.state).toBe('activating');
+
+    parent.claimedAt = new Date(Date.now() - 61_000);
+    await parent.save();
+    const recovered = await install({ installableId: 'telegram', installedBy: userId, podId });
+    expect(recovered.httpStatus).toBe(200);
+    expect(recovered.integration.config.connectCode).toMatch(/^[a-f0-9]{32}$/);
+    expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(1);
+  });
+
+  it('refuses a revived stale owner without changing the winner code or unprojecting', async () => {
+    const { userId, podId } = ids();
+    const originalExists = Integration.exists.bind(Integration);
+    let releaseOwner;
+    let reachedOwnerActivation;
+    const ownerActivationReached = new Promise((resolve) => { reachedOwnerActivation = resolve; });
+    const ownerMayContinue = new Promise((resolve) => { releaseOwner = resolve; });
+    let firstExists = true;
+    const exists = jest.spyOn(Integration, 'exists').mockImplementation((...args) => {
+      if (firstExists) {
+        firstExists = false;
+        reachedOwnerActivation();
+        return ownerMayContinue;
+      }
+      return originalExists(...args);
+    });
+    const webhookProjector = projectorRegistry.get('webhook');
+    const unproject = jest.spyOn(webhookProjector, 'unproject');
+
+    try {
+      const ownerA = install({ installableId: 'telegram', installedBy: userId, podId });
+      await ownerActivationReached;
+      const parent = await InstallableInstallation.findOne({ installableId: 'telegram' });
+      parent.claimedAt = new Date(Date.now() - 61_000);
+      await parent.save();
+
+      const ownerB = await install({ installableId: 'telegram', installedBy: userId, podId });
+      const winnerCode = ownerB.integration.config.connectCode;
+      releaseOwner(null);
+
+      await expect(ownerA).rejects.toBeInstanceOf(InstallLockLostError);
+      const finalParent = await InstallableInstallation.findById(parent._id);
+      const finalIntegration = await Integration.findOne({ installationId: String(parent._id) });
+      expect(finalParent.status).toBe('active');
+      expect(finalIntegration.config.connectCode).toBe(winnerCode);
+      expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(1);
+      expect(unproject).not.toHaveBeenCalled();
+    } finally {
+      exists.mockRestore();
+      unproject.mockRestore();
+    }
+  });
+
   it('uninstalls by identity, clears the code, and creates a new projection on re-install', async () => {
     const { userId, podId } = ids();
     const first = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -180,6 +266,13 @@ describe('installable connector projection', () => {
     const replacement = await install({ installableId: 'telegram', installedBy: userId, podId });
     expect(String(replacement.installation._id)).not.toBe(String(first.installation._id));
     expect(String(replacement.integration._id)).not.toBe(String(first.integration._id));
+    const duplicateAfterHistoricalUninstall = await install({
+      installableId: 'telegram', installedBy: userId, podId,
+    });
+    expect(duplicateAfterHistoricalUninstall.httpStatus).toBe(200);
+    expect(String(duplicateAfterHistoricalUninstall.installation._id)).toBe(
+      String(replacement.installation._id),
+    );
 
     await uninstall({ installableId: 'telegram', installedBy: userId });
     const replacementAfterSecondUninstall = await Integration.findById(replacement.integration._id);
@@ -246,6 +339,43 @@ describe('installable connector projection', () => {
     expect(integration.revokedAt).toBeInstanceOf(Date);
   });
 
+  it('sweeps stale installing and inactive activating rows to error', async () => {
+    const { userId, podId } = ids();
+    const targetId = new mongoose.Types.ObjectId(userId);
+    const installing = await InstallableInstallation.create({
+      installableId: 'telegram', installableVersion: '1.0.0', targetType: 'user', targetId,
+      scope: 'user', installedBy: targetId, installSource: 'direct', status: 'installing',
+      claimId: 'installing-a', claimedAt: new Date(Date.now() - 61_000),
+    });
+    const activating = await InstallableInstallation.create({
+      installableId: 'telegram-inactive', installableVersion: '1.0.0', targetType: 'user',
+      targetId: new mongoose.Types.ObjectId(), scope: 'user', installedBy: targetId,
+      installSource: 'direct', status: 'activating', claimId: 'activating-a',
+      claimedAt: new Date(Date.now() - 61_000),
+    });
+    await Integration.create({
+      installationId: String(activating._id), installationClaimId: 'activating-a', podId,
+      type: 'telegram', status: 'pending', createdBy: targetId, isActive: false,
+      config: { liveRelay: true, linkedUserId: userId },
+    });
+
+    const reconciled = await sweep(new Date());
+    expect(reconciled.errored).toBe(2);
+    expect((await InstallableInstallation.findById(installing._id)).status).toBe('error');
+    expect((await InstallableInstallation.findById(activating._id)).status).toBe('error');
+  });
+
+  it('marks a live parent stale when its projected Integration has been deleted', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await Integration.deleteOne({ _id: installed.integration._id });
+
+    const reconciled = await sweep(new Date());
+    const parent = await InstallableInstallation.findById(installed.installation._id);
+    expect(reconciled.staleComponents).toBe(1);
+    expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+  });
+
   it('completes a stale activating row with its already-active, same-generation projection', async () => {
     const { userId, podId } = ids();
     const result = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -254,8 +384,11 @@ describe('installable connector projection', () => {
     const originalCode = integration.config.connectCode;
 
     installation.status = 'activating';
+    installation.claimId = 'takeover-b';
     installation.claimedAt = new Date(Date.now() - 61_000);
     await installation.save();
+    integration.installationClaimId = 'owner-a';
+    await integration.save();
 
     const reconciled = await sweep(new Date());
     const completed = await InstallableInstallation.findById(installation._id);

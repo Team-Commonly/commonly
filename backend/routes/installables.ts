@@ -13,6 +13,7 @@ const {
   InstallLockLostError,
   InstallableNotFoundError,
   InstallableProjectionError,
+  InstallInProgressError,
   install,
   uninstall,
 } = require('../services/installable/installableInstallationService');
@@ -40,6 +41,10 @@ const sendInstallError = (error: Error, res: Res): void => {
   }
   if (error instanceof InstallLockLostError) {
     res.status(409).json({ code: 'install_lock_lost', error: error.message });
+    return;
+  }
+  if (error instanceof InstallInProgressError) {
+    res.status(409).json({ code: 'install_in_progress', error: error.message });
     return;
   }
   if (error instanceof InstallableProjectionError) {

@@ -20,6 +20,9 @@ const User = require('../models/User');
 const DiscordService = require('../services/discordService');
 // eslint-disable-next-line global-require
 const { runDiscordCommandForIntegrations } = require('../services/discordMultiCommandService');
+// Static import keeps the destructive route visible to CodeQL's rate-limit
+// query while sharing the connector write bucket with its sibling routes.
+import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -202,7 +205,7 @@ router.get('/binding/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.delete('/uninstall/:installationId', auth, async (req: AuthReq, res: Res) => {
+router.delete('/uninstall/:installationId', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { installationId } = req.params || {};
     // `installationId` is no longer Discord-owned: Installable app projections
