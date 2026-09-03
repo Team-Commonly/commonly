@@ -44,7 +44,7 @@ const connectors = [
     _id: 'i-pending',
     type: 'telegram',
     status: 'pending',
-    config: { connectCode: 'abc123' },
+    config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
     podId: { _id: 'p1', name: 'Rewire Live Demo' },
   },
   {
@@ -91,6 +91,21 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Copy command')).toBeInTheDocument();
     expect(screen.getByText(/Connected · Relay off/)).toBeInTheDocument();
     expect(screen.getByText(/Rewire crew/)).toBeInTheDocument();
+  });
+
+  it('offers a new code when the enable code has expired (or never had an expiry)', async () => {
+    mockGets([{ ...connectors[0], config: { connectCode: 'abc123' } }]);
+    axios.post.mockResolvedValue({ data: {} });
+    renderPage();
+    expect(await screen.findByText(/code expired/i)).toBeInTheDocument();
+    expect(screen.queryByText('abc1 23')).not.toBeInTheDocument();
+    expect(screen.queryByText('Copy command')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /new code/i }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/integrations/i-pending/connect-code',
+      {},
+      expect.anything(),
+    ));
   });
 
   it('toggling relay PATCHes liveRelay only — linkedUserId is server-derived', async () => {

@@ -72,6 +72,7 @@ export interface IIntegration extends Document {
     lastExternalId?: string;
     lastExternalTimestamp?: Date;
     connectCode?: string;
+    connectCodeExpiresAt?: Date | null;
     permissions?: string[];
     webhookListenerEnabled?: boolean;
     lastSummaryAt?: Date;
@@ -156,6 +157,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       lastExternalId: String,
       lastExternalTimestamp: Date,
       connectCode: String,
+      connectCodeExpiresAt: Date,
       permissions: [String],
       webhookListenerEnabled: { type: Boolean, default: false },
       lastSummaryAt: Date,

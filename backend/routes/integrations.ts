@@ -6,7 +6,6 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const axios = require('axios');
-import crypto from 'crypto';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
@@ -31,6 +30,44 @@ const registry = require('../integrations');
 const { normalizeBufferMessage } = require('../integrations/normalizeBufferMessage');
 // eslint-disable-next-line global-require
 const { hash, randomSecret } = require('../utils/secret');
+// eslint-disable-next-line global-require
+const { mintConnectCode } = require('../services/telegramConnectCode');
+// eslint-disable-next-line global-require
+const isPodMember = require('../utils/isPodMember');
+
+// Bridge attribution + binding fields are server-owned. linkedUserId is the
+// identity every inbound live-relay message is AUTHORED as; chatId/chatType
+// are written only by the /commonly-enable webhook (the code is the proof);
+// connectCode is minted here. Accepting any of them from a client body lets a
+// caller name someone else as the author or bind a chat without a code.
+const SERVER_OWNED_CONFIG_KEYS = ['linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle'];
+const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
+  const next = { ...config };
+  SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
+  return next;
+};
+
+// liveRelay / relayAllAgentMessages are declared Boolean paths, so Mongoose
+// casts on the way in while the guards below compare strictly (=== true).
+// Mongoose's truth table is wider than 'true'/'false': 1, '1' and 'yes' are
+// all stored as true. Anything that would be stored as a boolean but is not
+// one the guards recognise must be refused at the edge, or the value skips
+// the linkedUserId stamp and the group refusal (#1293 through a different
+// literal). Accepted: true/false and the legacy string forms 'true'/'false';
+// everything else is a 400, never a silent cast.
+const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
+const readRelayFlags = (config: Record<string, unknown>): { next: Record<string, unknown>; invalid?: string } => {
+  const next = { ...config };
+  for (const k of RELAY_FLAG_KEYS) {
+    const v = next[k];
+    if (v === undefined) continue;
+    if (v === true || v === 'true') next[k] = true;
+    else if (v === false || v === 'false') next[k] = false;
+    else return { next, invalid: k };
+  }
+  return { next };
+};
+const relayFlagError = (key: string) => ({ message: `${key} must be true or false` });
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -232,14 +269,50 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.post('/', auth, async (req: AuthReq, res: Res) => {
+// Token/IP keying shared by every limiter in this file — same shape as
+// routes/messages.ts so NAT'd users don't share a bucket.
+const integrationsRateLimitKey = (req: { get?: (h: string) => string | undefined; ip?: string }): string => {
+  const authHeader = req.get?.('authorization');
+  if (authHeader) {
+    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+};
+
+// Write limiter for the create + re-mint paths: each one mints a connect code
+// (a bearer secret) and writes a row, so a burst is either a bug or a probe.
+const writeIntegrationsRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: integrationsRateLimitKey,
+  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
+    res.status(429).json({ msg: 'rate limit exceeded: 30 writes per 60s' });
+  },
+});
+
+router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     const manifest = (manifests as Record<string, unknown>)[type];
     if (!manifest) return res.status(400).json({ message: 'Unsupported integration type' });
-    const nextConfig = { ...config };
-    if (type === 'telegram' && !nextConfig.connectCode) nextConfig.connectCode = crypto.randomBytes(3).toString('hex');
+    if ('linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
+      return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
+    }
+    // Membership gate: an integration relays a pod's content outward and
+    // authors content into it — a WRITE, so it takes the strict predicate
+    // (members + creator; no admin read-bypass — #1302's isPodMember, not
+    // DMService.canViewPod). Plain findById: unit mocks resolve a bare doc.
+    const targetPod = await Pod.findById(String(podId));
+    if (!targetPod || !isPodMember(targetPod, req.user?.id)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const relay = readRelayFlags(stripServerOwnedConfig(config));
+    if (relay.invalid) return res.status(400).json(relayFlagError(relay.invalid));
+    const nextConfig: Record<string, unknown> = relay.next;
+    if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
     // First-run default: mirror. A fresh connector has no leadAgentUsername
     // and its agents use no escalation markers, so attention mode relays
     // NOTHING — a new user's first experience of the bridge would be silence.
@@ -248,6 +321,12 @@ router.post('/', auth, async (req: AuthReq, res: Res) => {
       nextConfig.relayAllAgentMessages = true;
       if (nextConfig.liveRelay === undefined) nextConfig.liveRelay = true;
     }
+    // Ordering is load-bearing: the default above may have just switched
+    // liveRelay on, and a live relay with no linkedUserId authors nothing
+    // inbound (the bridge fails closed on a missing linked user) while still
+    // streaming outbound. The creator IS the authenticated caller, so the
+    // defaulted case is stamped exactly like an explicit liveRelay:true.
+    if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
@@ -394,13 +473,7 @@ const listIntegrationsRateLimit = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: { get?: (h: string) => string | undefined; ip?: string }) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-    }
-    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
-  },
+  keyGenerator: integrationsRateLimitKey,
   handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
     res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
   },
@@ -413,6 +486,27 @@ router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, re
   } catch (error) {
     console.error('Error fetching user integrations:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Re-mint the one-time enable code (codes expire after 10 minutes). Only
+// while the chat is still unbound — a connected integration has no code.
+router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { id } = req.params || {};
+    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { chatId?: string } } | null;
+    if (!integration) return res.status(404).json({ message: 'Integration not found' });
+    if (integration.type !== 'telegram') return res.status(400).json({ message: 'Connect codes are telegram-only' });
+    if (!(await canDeleteIntegration(integration, req.user?.id || ''))) return res.status(403).json({ message: 'Access denied' });
+    if (integration.config?.chatId) return res.status(409).json({ message: 'Already linked to a chat' });
+    const minted = mintConnectCode();
+    const updated = await Integration.findByIdAndUpdate(id, {
+      $set: { 'config.connectCode': minted.connectCode, 'config.connectCodeExpiresAt': minted.connectCodeExpiresAt },
+    }, { new: true });
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error minting connect code:', error);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -433,8 +527,18 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
-    const nextConfig = config ? { ...currentConfig, ...config } : currentConfig;
-    if (config && config.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
+    const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
+    if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));
+    const incoming = relay ? relay.next : null;
+    const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
+    if (incoming && incoming.liveRelay === true) {
+      // Relay authors inbound as linkedUserId and streams outbound to chatId;
+      // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
+      if (nextConfig.chatId && nextConfig.chatType !== 'private') {
+        return res.status(400).json({ message: 'Live relay requires a private chat with the bot; this connector is bound to a group' });
+      }
+      nextConfig.linkedUserId = req.user?.id;
+    }
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);
     if (missingRequired.length && status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(integration.type || '', nextConfig);

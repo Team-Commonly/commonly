@@ -17,6 +17,7 @@ import { PlatformGlyph } from '../icons/platforms';
 interface ConnectorConfig {
   chatTitle?: string;
   connectCode?: string;
+  connectCodeExpiresAt?: string;
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
 }
@@ -62,6 +63,15 @@ const groupCode = (code: string): string => (code.match(/.{1,4}/g) || [code]).jo
 
 const RECENT_MS = 10 * 60_000;
 
+// Codes expire after 10 minutes server-side (#1297); a pending card past its
+// expiry — or carrying a legacy code that never had one — offers a re-mint
+// instead of a command that the webhook will refuse.
+const codeIsLive = (c: Connector): boolean => Boolean(
+  c.config?.connectCode
+  && c.config?.connectCodeExpiresAt
+  && new Date(c.config.connectCodeExpiresAt).getTime() > Date.now(),
+);
+
 const V2ConnectorsPage: React.FC = () => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -93,7 +103,7 @@ const V2ConnectorsPage: React.FC = () => {
   useEffect(() => { load(); }, [load]);
 
   // Spec §2.3 step 3: poll while any code is pending; stop when it connects.
-  const hasPending = connectors.some((c) => c.status !== 'connected' && c.config?.connectCode);
+  const hasPending = connectors.some((c) => c.status !== 'connected' && codeIsLive(c));
   useEffect(() => {
     if (hasPending && !pollRef.current) {
       pollRef.current = setInterval(load, 3000);
@@ -147,6 +157,20 @@ const V2ConnectorsPage: React.FC = () => {
       await load();
     } catch {
       setError(t(errKey, { defaultValue: errDefault }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const regenerateCode = async (c: Connector) => {
+    if (busyId) return;
+    setBusyId(c._id);
+    setError(null);
+    try {
+      await api.post(`/api/integrations/${c._id}/connect-code`, {});
+      await load();
+    } catch {
+      setError(t('connectors.codeError', { defaultValue: 'Could not create a new code.' }));
     } finally {
       setBusyId(null);
     }
@@ -278,7 +302,18 @@ const V2ConnectorsPage: React.FC = () => {
           </div>
         )}
 
-        {!connected && isTelegram && c.config?.connectCode && (
+        {!connected && isTelegram && !codeIsLive(c) && (
+          <div className="v2-connector__code-step">
+            <div className="v2-connector__code-hint">
+              {t('connectors.codeExpired', { defaultValue: 'The enable code expired.' })}
+            </div>
+            <button type="button" className="v2-connector__copy" disabled={busyId === c._id} onClick={() => regenerateCode(c)}>
+              {t('connectors.newCode', { defaultValue: 'New code' })}
+            </button>
+          </div>
+        )}
+
+        {!connected && isTelegram && codeIsLive(c) && (
           <div className="v2-connector__code-step">
             <div className="v2-connector__code-hint">
               {t('connectors.enableHint', { defaultValue: 'Open a private chat with the Commonly bot' })}
@@ -290,7 +325,7 @@ const V2ConnectorsPage: React.FC = () => {
                 ? t('connectors.copied', { defaultValue: 'Copied' })
                 : t('connectors.copyCommand', { defaultValue: 'Copy command' })}
             </button>
-            <code className="v2-connector__code">{groupCode(c.config.connectCode)}</code>
+            <code className="v2-connector__code">{groupCode(c.config?.connectCode || '')}</code>
           </div>
         )}
       </article>
