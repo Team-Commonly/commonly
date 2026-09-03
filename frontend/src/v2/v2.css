@@ -9183,9 +9183,10 @@ body.modern-ui.v2-canvas {
 
   .v2-activity__header,
   .v2-activity__section-heading {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
+    align-items: baseline;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .v2-activity__controls {
@@ -9197,7 +9198,9 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-activity__window-button { flex: 1 1 0; }
   .v2-activity__scope select { width: 100%; max-width: none; }
   .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .v2-activity__compose-pod select { max-width: 100%; }
+  .v2-activity__compose-pod { width: 100%; }
+  .v2-activity__compose-pod > span { white-space: nowrap; }
+  .v2-activity__compose-pod select { flex: 1 1 auto; min-width: 0; max-width: none; }
   .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
   .v2-activity__section-heading > p { flex-basis: 100%; }
