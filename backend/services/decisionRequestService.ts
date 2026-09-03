@@ -214,6 +214,9 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     messageId,
     ...(threadRootId ? { threadRootId } : {}),
   });
+  // eslint-disable-next-line global-require
+  const { recordDecision } = require('./attentionItemService');
+  await recordDecision(row);
   return {
     decisionId: String(row._id),
     messageId,
@@ -394,6 +397,9 @@ export const chooseDecision = async (
       'ruling_finalize_conflict',
     );
   }
+  // eslint-disable-next-line global-require
+  const { resolve } = require('./attentionItemService');
+  await resolve('decision_request', ruled._id);
   return { status: 200, body: { ok: true, decision: decisionPayload(ruled) } };
 };
 

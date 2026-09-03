@@ -21,6 +21,7 @@
     "discord:register": "node scripts/register-discord-commands.js",
     "discord:list": "node scripts/register-discord-commands.js list",
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
+    "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
     "tsc:check": "tsc --noEmit -p tsconfig.typescheck.json",
     "tsc:check:all": "tsc --noEmit"
   },

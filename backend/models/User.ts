@@ -164,11 +164,6 @@ export interface IUser extends Document {
     lastViewedAt: Date;
     readItemIds: string[];
   };
-  // Queue acknowledgement is deliberately separate from activityFeed read
-  // state. Opening a feed is not the same as resolving a direct mention.
-  activityQueue: {
-    acknowledgedMentionIds: string[];
-  };
   digestPreferences: {
     enabled: boolean;
     frequency: DigestFrequency;
@@ -370,9 +365,6 @@ const userSchema = new Schema<IUser>({
   activityFeed: {
     lastViewedAt: { type: Date, default: new Date(0) },
     readItemIds: { type: [String], default: [] },
-  },
-  activityQueue: {
-    acknowledgedMentionIds: { type: [String], default: [] },
   },
   digestPreferences: {
     enabled: { type: Boolean, default: true },
