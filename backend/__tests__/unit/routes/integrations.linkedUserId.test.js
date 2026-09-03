@@ -93,6 +93,30 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     expect(update.config.linkedUserId).toBe('user-1');
   });
 
+  // Mongoose's Boolean cast is wider than the two literals above: 1, '1' and
+  // 'yes' are all stored as true. Any of them would be written as a live relay
+  // while skipping the === true guards (sprint-review's must-fix on #1297), so
+  // the edge refuses everything that is not a boolean or 'true'/'false'.
+  it.each([1, '1', 'yes', 'TRUE', 0, 'no'])(
+    'refuses liveRelay %p with 400 instead of letting Mongoose cast it',
+    async (value) => {
+      const res = await request(app)
+        .patch('/api/integrations/integration-1')
+        .send({ config: { liveRelay: value } });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/liveRelay must be true or false/);
+      expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([1, '1', 'yes'])('refuses relayAllAgentMessages %p the same way', async (value) => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-1')
+      .send({ config: { relayAllAgentMessages: value } });
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('does not stamp linkedUserId when liveRelay is switched off', async () => {
     const res = await request(app)
       .patch('/api/integrations/integration-1')
@@ -120,6 +144,15 @@ describe('POST /api/integrations — create-path guards', () => {
       .post('/api/integrations')
       .send({ podId: 'pod-1', type: 'telegram', config: { liveRelay: true, linkedUserId: 'VICTIM-USER-ID' } });
     expect(res.status).toBe(400);
+  });
+
+  it.each([1, '1', 'yes'])('refuses liveRelay %p on create before anything is saved', async (value) => {
+    const res = await request(app)
+      .post('/api/integrations')
+      .send({ podId: 'pod-1', type: 'telegram', config: { liveRelay: value } });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/liveRelay must be true or false/);
+    expect(Integration.prototype.save).not.toHaveBeenCalled();
   });
 
   it('refuses non-members of the target pod', async () => {
@@ -175,6 +208,14 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
     const res = await request(app)
       .patch('/api/integrations/integration-1')
       .send({ config: { liveRelay: 'true' } });
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([1, '1', 'yes'])('refuses the flip when liveRelay is %p on a group', async (value) => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-1')
+      .send({ config: { liveRelay: value } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });

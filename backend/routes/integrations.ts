@@ -48,19 +48,26 @@ const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string,
 };
 
 // liveRelay / relayAllAgentMessages are declared Boolean paths, so Mongoose
-// casts the string 'true' to true on the way in while the guards below compare
-// strictly. Coerce at the edge so a string can never skip the linkedUserId
-// stamp or the group refusal (#1293: on PATCH, liveRelay:'true' carried the
-// previous owner's linkedUserId forward and switched the relay on as them).
+// casts on the way in while the guards below compare strictly (=== true).
+// Mongoose's truth table is wider than 'true'/'false': 1, '1' and 'yes' are
+// all stored as true. Anything that would be stored as a boolean but is not
+// one the guards recognise must be refused at the edge, or the value skips
+// the linkedUserId stamp and the group refusal (#1293 through a different
+// literal). Accepted: true/false and the legacy string forms 'true'/'false';
+// everything else is a 400, never a silent cast.
 const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
-const coerceRelayFlags = (config: Record<string, unknown>): Record<string, unknown> => {
+const readRelayFlags = (config: Record<string, unknown>): { next: Record<string, unknown>; invalid?: string } => {
   const next = { ...config };
-  RELAY_FLAG_KEYS.forEach((k) => {
-    if (next[k] === 'true') next[k] = true;
-    else if (next[k] === 'false') next[k] = false;
-  });
-  return next;
+  for (const k of RELAY_FLAG_KEYS) {
+    const v = next[k];
+    if (v === undefined) continue;
+    if (v === true || v === 'true') next[k] = true;
+    else if (v === false || v === 'false') next[k] = false;
+    else return { next, invalid: k };
+  }
+  return { next };
 };
+const relayFlagError = (key: string) => ({ message: `${key} must be true or false` });
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -302,7 +309,9 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (!targetPod || !isPodMember(targetPod, req.user?.id)) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const nextConfig: Record<string, unknown> = coerceRelayFlags(stripServerOwnedConfig(config));
+    const relay = readRelayFlags(stripServerOwnedConfig(config));
+    if (relay.invalid) return res.status(400).json(relayFlagError(relay.invalid));
+    const nextConfig: Record<string, unknown> = relay.next;
     if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
     // First-run default: mirror. A fresh connector has no leadAgentUsername
     // and its agents use no escalation markers, so attention mode relays
@@ -518,7 +527,9 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     if (config && 'linkedUserId' in config && String(config.linkedUserId) !== String(req.user?.id)) {
       return res.status(400).json({ message: 'linkedUserId is derived from the authenticated caller and cannot be set' });
     }
-    const incoming = config ? coerceRelayFlags(stripServerOwnedConfig(config)) : null;
+    const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
+    if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));
+    const incoming = relay ? relay.next : null;
     const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
     if (incoming && incoming.liveRelay === true) {
       // Relay authors inbound as linkedUserId and streams outbound to chatId;
