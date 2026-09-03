@@ -217,7 +217,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // --v2-page-bg (tokens don't reach body — it sits outside .v2-root).
     expect(v2).toContain('body.modern-ui.v2-canvas');
     expect(v2).toMatch(/body\.v2-canvas,\nbody\.modern-ui\.v2-canvas \{[\s\S]*?background: #f8f8fb/);
-    expect(v2).toContain('--v2-page-bg: #f8f8fb');
+    expect(v2).toContain('--v2-page-bg: #eef0f4');
     // The flash half of the same bug: App.css's BARE body rule painted every
     // load dark before React could stamp any class. The dark default is
     // V1-scoped under body.modern-ui; the bare default matches v2's canvas.
@@ -892,10 +892,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const v2Root = ruleBody(v2, '.v2-root');
 
     test('the tint step exists in both token files and the content pane is the inset card', () => {
-      expect(cssVariable(v2Root, '--v2-shell-bg')).toBe('#f1f1f4');
-      expect(cssVariable(tokens, '--c-shell-bg')).toBe('#f1f1f4');
-      expect(cssVariable(v2Root, '--v2-content-radius')).toBe('14px');
-      expect(cssVariable(tokens, '--c-content-radius')).toBe('14px');
+      expect(cssVariable(v2Root, '--v2-shell-bg')).toBe('#eef0f4');
+      expect(cssVariable(tokens, '--c-shell-bg')).toBe('#eef0f4');
+      expect(cssVariable(v2Root, '--v2-content-radius')).toBe('6px');
+      expect(cssVariable(tokens, '--c-content-radius')).toBe('6px');
       expect(ruleBody(v2, '.v2-shell')).toContain('var(--v2-shell-bg)');
       const main = ruleBody(v2, '.v2-pane--main');
       expect(main).toContain('border: 1px solid var(--v2-border)');
@@ -907,11 +907,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ruleBody(v2, '.v2-feature')).toContain('background: #ffffff');
     });
 
-    test('the radius ladder is 6 / 10 / 14 in both files', () => {
+    test('the radius ladder is 4 / 4 / 6 in both files (Signal: hard edges)', () => {
       for (const [v2Name, dsName, value] of [
-        ['--v2-radius-sm', '--c-radius-sm', '6px'],
-        ['--v2-radius', '--c-radius', '10px'],
-        ['--v2-radius-lg', '--c-radius-lg', '14px'],
+        ['--v2-radius-sm', '--c-radius-sm', '4px'],
+        ['--v2-radius', '--c-radius', '4px'],
+        ['--v2-radius-lg', '--c-radius-lg', '6px'],
       ]) {
         expect(cssVariable(v2Root, v2Name)).toBe(value);
         expect(cssVariable(tokens, dsName)).toBe(value);
@@ -950,26 +950,27 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     });
 
     test('ink primary: filled Activity buttons are ink, and blue stays off them', () => {
-      expect(cssVariable(v2Root, '--v2-ink')).toBe('#111827');
-      expect(cssVariable(tokens, '--c-ink')).toBe('#111827');
+      expect(cssVariable(v2Root, '--v2-ink')).toBe('#101828');
+      expect(cssVariable(tokens, '--c-ink')).toBe('#101828');
       const send = ruleBody(v2, '.v2-root .v2-activity__compose button');
       expect(send).toContain('var(--v2-ink)');
       expect(send).not.toContain('var(--v2-accent)');
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).not.toContain('var(--v2-accent)');
     });
 
-    test('Inter is self-hosted, first in the stack, and imported before v2.css', () => {
+    test('IBM Plex Sans is self-hosted, first in the stack, and imported before v2.css', () => {
       const app = read('../V2App.tsx');
-      const fontImport = app.indexOf("import '@fontsource-variable/inter';");
+      const fontImport = app.indexOf("import '@fontsource/ibm-plex-sans/400.css';");
       expect(fontImport).toBeGreaterThan(-1);
       expect(fontImport).toBeLessThan(app.indexOf("import './v2.css';"));
-      expect(cssVariable(v2Root, '--v2-font')?.startsWith('"Inter Variable"')).toBe(true);
-      expect(cssVariable(tokens, '--c-font-sans')?.startsWith('"Inter Variable"')).toBe(true);
+      expect(cssVariable(v2Root, '--v2-font')?.startsWith('"IBM Plex Sans"')).toBe(true);
+      expect(cssVariable(tokens, '--c-font-sans')?.startsWith('"IBM Plex Sans"')).toBe(true);
       expect(v2Root).toContain('font-size: var(--v2-fs-body)');
       expect(v2Root).toContain('line-height: var(--v2-lh-body)');
       expect(cssVariable(v2Root, '--v2-lh-body')).toBe('20px');
       const pkg = JSON.parse(read('../../../package.json'));
-      expect(pkg.dependencies['@fontsource-variable/inter']).toBeDefined();
+      expect(pkg.dependencies['@fontsource/ibm-plex-sans']).toBeDefined();
+      expect(pkg.dependencies['@fontsource-variable/bricolage-grotesque']).toBeDefined();
     });
   });
 
