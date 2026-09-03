@@ -145,37 +145,6 @@ Extract and return ONLY a valid JSON object with this structure:
 IMPORTANT: Return ONLY the JSON object, no additional text or explanation.`;
   }
 
-  static createFallbackDigest(user: UserLike, insights: InsightsLike, _startTime: Date, endTime: Date): string {
-    const { username } = user;
-    const date = endTime.toDateString();
-
-    return `# 🌅 Daily Digest - ${date}
-
-Good morning, ${username}!
-
-Ready for your daily community catch-up? Here's what's been happening.
-
-## ✨ Today's Highlights
-
-- **Community Activity**: ${insights.totalItems || 0} conversations and updates across your communities
-- **Active Discussions**: Your communities maintained ${insights.overallAtmosphere?.energy_level || 'moderate'} energy levels
-- **Community Engagement**: ${insights.topUsers?.length || 0} active community members contributing
-
-## 📊 Community Pulse
-
-- **Overall Mood**: 😊 ${insights.overallAtmosphere?.overall_sentiment || 'Positive'}
-- **Energy Level**: ⚡ ${insights.overallAtmosphere?.energy_level || 'Moderate'}
-- **Engagement Quality**: 🎯 ${insights.overallAtmosphere?.engagement_quality || 'Good'} discussions
-- **Active Communities**: Your subscribed communities are staying connected
-
-## 🔮 Looking Ahead
-
-Your communities continue to grow and evolve. Keep an eye out for new conversations and opportunities to connect with fellow members.
-
----
-*Your personalized digest • Generated with ❤️ by Commonly AI*`;
-  }
-
   static getPersonalizedGreeting(user: UserLike, timeOfDay: string, activityLevel: string): string {
     const { username } = user;
 

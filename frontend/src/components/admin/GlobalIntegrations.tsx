@@ -67,8 +67,6 @@ const ANTHROPIC_MODELS = [
 // Backend LLM service model options (provider → model list)
 const LLM_SERVICE_MODEL_OPTIONS = {
   gemini: GEMINI_MODELS,
-  openai: OPENAI_MODELS,
-  anthropic: ANTHROPIC_MODELS,
 };
 
 // OpenClaw gateway model options (provider → model list)
@@ -874,8 +872,6 @@ const GlobalIntegrations = () => {
                 >
                   <MenuItem value="auto">Auto (LiteLLM then Gemini)</MenuItem>
                   <MenuItem value="gemini">Gemini</MenuItem>
-                  <MenuItem value="openai">OpenAI</MenuItem>
-                  <MenuItem value="anthropic">Anthropic</MenuItem>
                   <MenuItem value="litellm">LiteLLM</MenuItem>
                   <MenuItem value="openrouter">OpenRouter</MenuItem>
                 </Select>

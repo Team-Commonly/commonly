@@ -293,12 +293,18 @@ the slash-command / external-webhook tracks; naming them here keeps the enum hon
 `active` installation, every component's `projectionIds` must resolve to a live row; a missing
 row marks the component `stale` (never re-creates silently — a stale connector must not mint a
 code nobody asked for). For every `uninstalled` installation, projections must be inactive.
-For every **`installing` or `activating`** installation whose `claimedAt` is older than
-`INSTALL_LOCK_TTL_MS`,
+For every **`installing`** installation whose `claimedAt` is older than `INSTALL_LOCK_TTL_MS`,
 the sweep sets `status: 'error'` with `errorMessage: 'install lock expired'` — fenced on the
 `claimId` it read, so it cannot race a takeover that happened between its read and its write
-— and the row becomes
-the ordinary retryable case, and the board-facing state stops lying about work in progress.
+— and the row becomes the ordinary retryable case, and the board-facing state stops lying
+about work in progress. For a stale **`activating`** installation the sweep must **look
+before it demotes**, because write 2 may already have run (Vera, 2026-09-03, on the merged
+text: an unconditional demotion strands a live, redeemable code under an `error` parent): if
+the projected Integration row is `isActive: true` with a code, the sweep **finishes** the
+install — write 3, `activating → active`, fenced on the `claimId` it read — so the code the
+user was handed is the code the row reports; only if the Integration row is still inactive
+does it demote to `error` as above. The sweep never mints and never unprojects; it only ever
+completes or demotes, and both writes are fenced.
 The sweep is the backstop; the claim filter above is the primary path, so a stuck lock is
 recoverable by the next install attempt even between sweeps.
 Log a count line, the H3 pattern: the exit condition is the number reaching zero.
@@ -396,7 +402,10 @@ Unit (`backend/__tests__/unit/services/installable/`):
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
-   `error` with `'install lock expired'`.
+   `error` with `'install lock expired'`. A stale `activating` row whose Integration is still
+   inactive is swept to `error`; a stale `activating` row whose Integration is already active
+   with a code is **completed to `active`**, the code unchanged, `mintConnectCode` not called
+   — never demoted, so no redeemable code ever sits under an `error` parent.
 6b. **Lock takeover.** An `installing` row with a stale `claimedAt` (owner died): the next
    install claims it (same `_id`, new `claimId`, new `claimedAt`, new `installedBy`), runs
    projectors, reuses the inactive Integration row, activates and mints exactly once. A fresh

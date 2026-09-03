@@ -67,11 +67,15 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
 const CACHE_TTL_MS = 15000;
 let cachedConfig: GlobalModelConfig | null = null;
 let cachedAt = 0;
+const LLM_SERVICE_PROVIDERS = new Set(['auto', 'gemini', 'litellm', 'openrouter']);
 
 const normalizeProvider = (value: unknown): string => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (['auto', 'gemini', 'litellm', 'openrouter', 'openai', 'anthropic'].includes(normalized)) {
+  if (LLM_SERVICE_PROVIDERS.has(normalized)) {
     return normalized;
+  }
+  if (normalized) {
+    console.error(`[model-config] Unsupported persisted backend LLM provider "${normalized}"; using auto.`);
   }
   return DEFAULT_CONFIG.llmService.provider;
 };
@@ -204,6 +208,11 @@ class GlobalModelConfigService {
     cachedAt = 0;
   }
 
+  static isSupportedLlmServiceProvider(value: unknown): boolean {
+    const normalized = String(value || '').trim().toLowerCase();
+    return !normalized || LLM_SERVICE_PROVIDERS.has(normalized);
+  }
+
   static async getConfig({ includeSecrets = false, forceRefresh = false }: GetConfigOptions = {}): Promise<GlobalModelConfig> {
     void includeSecrets;
     if (!forceRefresh && cachedConfig && (Date.now() - cachedAt) < CACHE_TTL_MS) {
@@ -237,6 +246,11 @@ class GlobalModelConfigService {
   }
 
   static async setConfig(patch: Partial<GlobalModelConfig> = {}, userId: string | null = null): Promise<GlobalModelConfig> {
+    if (!GlobalModelConfigService.isSupportedLlmServiceProvider(
+      patch?.llmService?.provider,
+    )) {
+      throw new Error('Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.');
+    }
     const current = await GlobalModelConfigService.getConfig({ includeSecrets: true, forceRefresh: true });
     const mergedCandidate: GlobalModelConfig = {
       ...current,

@@ -103,4 +103,13 @@ describe('globalModelConfigService', () => {
     const updateArg = SystemSetting.findOneAndUpdate.mock.calls[0][1];
     expect(updateArg.$set.value.openclaw.model).toBe('openrouter/arcee-ai/trinity-large-preview:free');
   });
+
+  it('rejects an unsupported backend LLM provider instead of silently routing it to Gemini', async () => {
+    await expect(GlobalModelConfigService.setConfig({
+      llmService: { provider: 'openai' },
+    }, 'u1')).rejects.toThrow('Unsupported backend LLM provider');
+
+    expect(SystemSetting.findOne).not.toHaveBeenCalled();
+    expect(SystemSetting.findOneAndUpdate).not.toHaveBeenCalled();
+  });
 });
