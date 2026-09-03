@@ -420,7 +420,7 @@ const V2ActivityPage: React.FC = () => {
             ) : (
               <div className="v2-activity__queue">
                 {queue.map((item) => (
-                  <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}`}>
+                  <article key={item.id} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
                     <span className="v2-activity__queue-mark" aria-hidden="true">
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
                     </span>

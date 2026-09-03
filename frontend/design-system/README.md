@@ -80,39 +80,41 @@ Commonly speaks to developers building with AI agents. The voice is **plainly te
 
 ### Color
 
-- **One accent**: blue `#2f6feb`. Never blends with another. The accent appears as filled buttons, the active nav row, the active tab underline (2px), the LEAD badge, link text, the focus ring, and the unread counter.
+- **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (Sam, 2026-09-03, TASK-122).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
-- **Backgrounds layer subtly**: page `#f8f8fb` → main pane `#ffffff` → tinted card/inspector `#f4f3f8`. The shifts are tiny on purpose.
+- **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. `#f8f8fb` remains the page canvas behind the shell.
 - **Semantic** colors stay desaturated: success `#10b981`, warning `#f4a23a`, danger `#ef4444`. Info is `#0891b2` (cyan, deliberately off-axis from accent blue). Always paired with their `*-soft` background tint for badges/chips.
 - **Agent role tints** (pink/violet/amber/emerald/sky/rose) are reserved for **avatar backgrounds and role chips** — never for chrome.
 
 ### Type
 
-- **SF-first stack**: `"SF Pro Text", -apple-system, BlinkMacSystemFont, "SF Pro", "Helvetica Neue", "Segoe UI", "Inter", Roboto, sans-serif`. San Francisco loads natively on Apple devices via `-apple-system` / `BlinkMacSystemFont`; non-Apple platforms fall through to Segoe UI and Inter so weights and metrics stay close. Display headings use `"SF Pro Display"` first; mono uses `"SF Mono"` first. No webfont download — system fonts for performance and OS-native feel.
+- **Inter first, self-hosted**: `"Inter Variable", "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` via `@fontsource-variable/inter` (OFL, bundled, `font-display: swap`, no Google Fonts request). SF Pro is the fallback only while the woff2 loads or if it fails. One face: display weight comes from `font-weight`, not a second family. Mono keeps `"SF Mono"` first.
 - **Tight letter-spacing on big text**: feature titles `-0.03em`, h2 `-0.025em`, h3 `-0.02em`. Body stays at 0.
-- **Heavy weights at large sizes**: feature titles use `850`, headers `700`, section titles `650`. Body is `400`/`500`. Buttons are `600`.
-- **Sizes hover small**: body `14px`, secondary `13px`, meta `12px`, kicker `10–11px`. The biggest type in normal product UI is the 24px feature title.
+- **Heavy weights at large sizes**: feature titles use `700` in Inter (`850` was tuned for SF Pro Display), headers `700`, section titles `650`. Body is `400`/`500`. Buttons are `600`.
+- **Sizes hover small**: body `14/20`, meta `12/16`, labels `11/14`. Secondary copy keeps body size and carries hierarchy by colour. The biggest type in normal product UI is the 24px feature title.
 
 ### Spacing, radii, layout
 
 - Spacing follows a 4px grid: `4 / 8 / 16 / 24 / 32 / 48`.
-- Radii cluster around three sizes: `8` (chips/small buttons), `10` (default), `12` (cards/modals). `999` for pills.
+- Radii ladder `6 / 10 / 14` by importance: `6` chips, inputs and small buttons; `10` cards, rows and buttons ≥ 36px; `14` the content card, modals and the login card. `999` for pills.
 - The shell is a **fixed 4-column grid**: `76px rail · 272px pods · 1fr main · 336px inspector`. The inspector collapses to a 3-col layout on feature pages and defaults to collapsed.
 
 ### Backgrounds
 
-- **No gradients in chrome.** The page is solid `#f8f8fb`, the main pane solid white, the inspector solid `#f4f3f8`. **Avatars are the one carve-out** — they are the designated richness carrier (see *Imagery vibe*), and each carries a seeded two-stop gradient of its palette tint. Chrome surfaces stay flat.
+- **The tint step.** Shell `#f1f1f4` behind rail, pods and inspector; content is an inset white card (1px `#e5e7eb` ring, 14px radius, 8px gutter top/right/bottom on desktop, flush on phones).
+- **No gradients in chrome.** The shell is solid `#f1f1f4`, the content card solid white. **Avatars are the one carve-out** — they are the designated richness carrier (see *Imagery vibe*), and each carries a seeded two-stop gradient of its palette tint. Chrome surfaces stay flat.
 - **No background images, illustrations, or patterns.** The product is text-and-token forward — visual richness comes from avatars and content, not decoration.
 
 ### Borders & elevation
 
-- **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`.
-- The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs.
+- **Borders, not shadows.** Cards are `1px solid #e5e7eb`. Hairlines between sections use `#eef0f6`. Hovered borders deepen to `#d7dce7`. Rows carry a **permanent transparent 1px border** and change only their fill on hover; no dividers between rows.
+- The v2 token explicitly sets `--v2-shadow: none` and `--v2-shadow-sm: none`. **Shadows are reserved for floating UI** — mention dropdowns (`0 8px 24px rgba(15,23,42,.12)`), login card, dialogs. The single shadow allowed on a chrome card is `0 1px 2px rgba(15,23,42,.06)` on a **pending** decision or approval card; it drops when the card settles.
 - **No "inner shadow" / inset effects** on chrome surfaces. Avatars again excepted: the initials plate carries a 1px inset highlight/shade pair so the seeded gradient reads as a lit sphere rather than a flat disc — removed via `:has(img)` when a photo is present, so shading never sits on a face.
 
 ### Hover & press
 
-- **Hover** = swap to a slightly darker neutral background (`--c-surface-hover: #f1f2f5`) or a tinted accent (`#e8efff`). Borders may strengthen one tier.
+- **Hover** = fill swap only (`--c-surface-hover: #f1f2f5` or the accent tint `#e8efff`). Nothing shifts by a pixel: no border-colour, padding, transform or shadow change on hover.
+- **Focus** = halo `0 0 0 3px rgba(47,111,235,.18)` with an accent edge; never a hard 2px outline (forced-colors mode gets the UA outline).
 - **Press** = no `transform: translateY` in V2.
 - **Active state** for tabs/nav uses the accent bottom-border (2px) or the accent-soft pill background — not bold weight changes.
 - **Transitions**: very fast — `80ms ease` for hover/state changes is the V2 default. `120ms` for card hovers, `300ms` for layout shifts.
@@ -171,7 +173,7 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ### Layout rules
 
-- **Fixed sidebar widths** (rail 76, pods 272, inspector 336) — not fluid. The main pane absorbs all flex.
+- **Fixed sidebar widths** (rail 76, pods 272, inspector 336) — not fluid. The main pane absorbs all flex. The content pane is the card: 8px gutter top/right/bottom on desktop, flush on phones; when the inspector is open the card meets the inspector gutter.
 - **Rail collapses labels** at all widths — labels show as tooltips on hover (CSS `::after` with `data-label`).
 - **Inspector closes** to free width for the main pane; default state is collapsed.
 - Header heights cluster at **42px (tabs)**, **34px (chips/buttons)**, **78px (chat header w/ subtitle)**.
@@ -208,6 +210,6 @@ entrance and scroll-reveal animation is allowed within these limits:
 
 ## Caveats
 
-- **No webfonts shipped.** V2 deliberately uses system fonts. If a design needs Inter explicitly, load it from Google Fonts — but match the V2 metrics by setting `font-family` accordingly.
+- **One webfont shipped.** Inter Variable is bundled from `@fontsource-variable/inter` (OFL); everything else is system. Do not add a second family, and never load a face from Google Fonts.
 - **No Figma file** is committed. All visual decisions trace back to `tokens.css` and `frontend/src/v2/v2.css`.
 - **Marketing site styling lives elsewhere.** Only the in-app experience is documented here.
