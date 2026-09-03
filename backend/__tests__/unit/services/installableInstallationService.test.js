@@ -17,6 +17,7 @@ const {
   closeMongoDb,
   clearMongoDb,
 } = require('../../utils/testUtils');
+const { projectorRegistry } = require('../../../services/installable/projectors');
 
 const ids = () => ({
   userId: new mongoose.Types.ObjectId().toString(),
@@ -174,6 +175,7 @@ describe('installable connector projection', () => {
     expect(inactive.isActive).toBe(false);
     expect(inactive.config.connectCode).toBeUndefined();
     expect(inactive.config.relayMap).toHaveLength(1);
+    expect(inactive.revokedAt).toBeInstanceOf(Date);
 
     const replacement = await install({ installableId: 'telegram', installedBy: userId, podId });
     expect(String(replacement.installation._id)).not.toBe(String(first.installation._id));
@@ -182,6 +184,66 @@ describe('installable connector projection', () => {
     await uninstall({ installableId: 'telegram', installedBy: userId });
     const replacementAfterSecondUninstall = await Integration.findById(replacement.integration._id);
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
+  });
+
+  it('keeps a failed revocation recoverable until its projection is inactive', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const originalEventProjector = projectorRegistry.get('event-handler');
+    projectorRegistry.set('event-handler', {
+      ...originalEventProjector,
+      unproject: jest.fn().mockRejectedValue(new Error('projection unavailable')),
+    });
+
+    try {
+      await expect(uninstall({ installableId: 'telegram', installedBy: userId }))
+        .rejects.toThrow('projection unavailable');
+    } finally {
+      projectorRegistry.set('event-handler', originalEventProjector);
+    }
+
+    const pending = await InstallableInstallation.findById(installed.installation._id);
+    const inactive = await Integration.findById(installed.integration._id);
+    expect(pending.status).toBe('uninstalling');
+    expect(inactive.isActive).toBe(false);
+    expect(inactive.config.connectCode).toBeUndefined();
+    expect(inactive.revokedAt).toBeInstanceOf(Date);
+    const staleActivation = await Integration.findOneAndUpdate(
+      {
+        _id: inactive._id,
+        isActive: false,
+        revokedAt: { $exists: false },
+      },
+      { $set: { isActive: true } },
+      { new: true },
+    );
+    expect(staleActivation).toBeNull();
+
+    pending.claimedAt = new Date(Date.now() - 61_000);
+    await pending.save();
+    const reconciled = await sweep(new Date());
+    expect(reconciled.uninstallsCompleted).toBe(1);
+    expect((await InstallableInstallation.findById(pending._id)).status).toBe('uninstalled');
+  });
+
+  it('sweeps a crashed revocation by deactivating before it finalizes the parent', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const parent = await InstallableInstallation.findById(installed.installation._id);
+    parent.status = 'uninstalling';
+    parent.claimId = 'revocation-generation';
+    parent.claimedAt = new Date(Date.now() - 61_000);
+    await parent.save();
+
+    const reconciled = await sweep(new Date());
+    const finished = await InstallableInstallation.findById(parent._id);
+    const integration = await Integration.findById(installed.integration._id);
+    expect(reconciled.uninstallsCompleted).toBe(1);
+    expect(finished.status).toBe('uninstalled');
+    expect(integration.isActive).toBe(false);
+    expect(integration.config.connectCode).toBeUndefined();
+    expect(integration.installationClaimId).toBe('revocation-generation');
+    expect(integration.revokedAt).toBeInstanceOf(Date);
   });
 
   it('completes a stale activating row with its already-active, same-generation projection', async () => {

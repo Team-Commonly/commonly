@@ -104,4 +104,15 @@ describe('installable connector routes', () => {
       installedBy: '64b64c48c4f37a6b2f34c111',
     });
   });
+
+  it('does not report a concurrent revocation as disconnected', async () => {
+    installationService.uninstall.mockResolvedValue({ _id: 'install-1', status: 'uninstalling' });
+
+    const res = await request(app)
+      .delete('/api/installables/telegram/install')
+      .set(auth);
+
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe('uninstalling');
+  });
 });

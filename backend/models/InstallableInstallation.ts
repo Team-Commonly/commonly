@@ -32,6 +32,7 @@ export type InstallationTargetType = 'pod' | 'user' | 'dm' | 'instance';
 export type InstallationStatus =
   | 'installing'
   | 'activating'
+  | 'uninstalling'
   | 'active'
   | 'paused'
   | 'uninstalled'
@@ -199,7 +200,7 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
 
     status: {
       type: String,
-      enum: ['installing', 'activating', 'active', 'paused', 'uninstalled', 'error', 'stale'],
+      enum: ['installing', 'activating', 'uninstalling', 'active', 'paused', 'uninstalled', 'error', 'stale'],
       default: 'active',
     },
     claimId: { type: String },
@@ -225,7 +226,7 @@ InstallableInstallationSchema.index(
     unique: true,
     name: 'installable_live_target_unique',
     partialFilterExpression: {
-      status: { $in: ['installing', 'activating', 'active', 'error'] },
+      status: { $in: ['installing', 'activating', 'uninstalling', 'active', 'error'] },
     },
   },
 );

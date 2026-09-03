@@ -34,6 +34,8 @@ export interface IIntegration extends Document {
   installationId?: string;
   /** InstallableInstallation claim generation that activated this projection. */
   installationClaimId?: string;
+  /** Terminal tombstone: a revoked projection can never be activated again. */
+  revokedAt?: Date;
   podId: Types.ObjectId;
   type: IntegrationType;
   status: IntegrationStatus;
@@ -110,6 +112,7 @@ const IntegrationSchema = new Schema<IIntegration>(
   {
     installationId: { type: String, unique: true, sparse: true },
     installationClaimId: { type: String },
+    revokedAt: { type: Date },
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
     type: {
       type: String,

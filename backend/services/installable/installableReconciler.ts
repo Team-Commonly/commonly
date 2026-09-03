@@ -90,16 +90,54 @@ const sweepUninstalledInstallations = async (): Promise<number> => {
   return deactivated;
 };
 
+const sweepStaleUninstalls = async (now: Date): Promise<number> => {
+  const staleBefore = new Date(now.getTime() - INSTALL_LOCK_TTL_MS);
+  const rows = await InstallableInstallation.find({
+    status: 'uninstalling',
+    claimedAt: { $lte: staleBefore },
+  }).lean() as IInstallableInstallation[];
+  let completed = 0;
+
+  for (const installation of rows) {
+    if (!installation.claimId) continue;
+    // This is the revocation equivalent of the activating split-commit
+    // recovery. Parent state is only finalized after the projection is made
+    // inactive; the claim fence makes a stale sweep harmless to a takeover.
+    await Integration.updateOne(
+      { installationId: installationIdFor(installation) },
+      {
+        $set: {
+          isActive: false,
+          installationClaimId: installation.claimId,
+          revokedAt: new Date(),
+        },
+        $unset: {
+          'config.connectCode': 1,
+          'config.connectCodeExpiresAt': 1,
+        },
+      },
+    );
+    const result = await InstallableInstallation.updateOne(
+      { _id: installation._id, status: 'uninstalling', claimId: installation.claimId },
+      { $set: { status: 'uninstalled', errorMessage: null } },
+    );
+    completed += result.modifiedCount || 0;
+  }
+  return completed;
+};
+
 export const sweep = async (now: Date = new Date()): Promise<{
   completed: number;
   errored: number;
   staleComponents: number;
+  uninstallsCompleted: number;
   deactivated: number;
 }> => {
   const locks = await sweepStaleLocks(now);
   const staleComponents = await sweepActiveInstallations();
+  const uninstallsCompleted = await sweepStaleUninstalls(now);
   const deactivated = await sweepUninstalledInstallations();
-  const result = { ...locks, staleComponents, deactivated };
+  const result = { ...locks, staleComponents, uninstallsCompleted, deactivated };
   console.log('[installable-reconciler] sweep', result);
   return result;
 };

@@ -113,6 +113,9 @@ router.delete('/:installableId/install', writeIntegrationsRateLimit, auth, async
       installableId: String(req.params?.installableId || ''),
       installedBy: String(userId),
     });
+    if (installation.status === 'uninstalling') {
+      return res.status(202).json({ status: 'uninstalling', installation });
+    }
     return res.json({ status: 'uninstalled', installation });
   } catch (error) {
     return sendInstallError(error as Error, res);

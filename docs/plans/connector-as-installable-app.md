@@ -218,11 +218,15 @@ independently of this spec. **Nothing here writes `installationId` until that te
 'user'`, `targetId: req.user.id` — and from nothing else: the route takes no installation id
 and no body field, so there is no way to name someone else's row. (Vera, 2026-09-02: install
 gated the pod by `isPodMember` while uninstall had no matching gate — a co-member could have
-torn down another member's connector.) The live row for that key (`installing` or `active`)
-goes → `uninstalled`; each projector's `unproject` runs (Integration `isActive: false`, connect
-code cleared, relayMap kept for audit); nothing is deleted; no row → 404. Uninstalling an
-`installing` row is allowed and is the human escape hatch for a stuck lock in addition to the
-lease. Re-install mints a new Integration row — Vera's
+torn down another member's connector.) Revocation is a recoverable split commit: the parent
+first becomes **`uninstalling`** under a fresh generation; projectors deactivate their rows and
+clear the code; only then does a generation-fenced CAS finalize it as `uninstalled`. The webhook
+projection writes a terminal `revokedAt` tombstone before finalization, so an old activation
+generation cannot revive a connector after revocation. A fresh concurrent delete gets 202
+`uninstalling`, never a false disconnected success; the reconciler deactivates a stale
+`uninstalling` projection before it completes the parent. Nothing is deleted; no row → 404.
+Uninstalling an `installing` row is allowed and is the human escape hatch for a stuck lock in
+addition to the lease. Re-install mints a new Integration row — Vera's
 ruling on the design spec stands (the binding row is the unit; relayMap and gates are never
 reused).
 
@@ -399,6 +403,11 @@ Unit (`backend/__tests__/unit/services/installable/`):
    calls `DELETE /api/installables/telegram/install`: A's row is untouched (B gets 404 with no
    install of their own, or uninstalls only their own). A body containing another
    installation's id changes nothing.
+4c. **Revocation never reports success ahead of its projection.** A projector failure or crash
+   after the parent enters `uninstalling` leaves the parent recoverable, not `uninstalled`; the
+   Integration becomes inactive with no code before a sweep or retry can finalize it. A stale
+   sweep deactivates first and then fences the `uninstalling → uninstalled` transition; the
+   terminal tombstone prevents an old activation generation from reviving the Integration.
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to

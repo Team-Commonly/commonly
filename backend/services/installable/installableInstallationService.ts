@@ -51,7 +51,7 @@ export interface InstallResult {
   installation: IInstallableInstallation;
   integration: unknown | null;
   httpStatus: 200 | 202;
-  state: 'active' | 'installing' | 'activating';
+  state: 'active' | 'installing' | 'activating' | 'uninstalling';
 }
 
 interface ClaimResult {
@@ -130,7 +130,11 @@ const resultForExisting = async (
     installation,
     integration,
     httpStatus: 202,
-    state: installation.status === 'activating' ? 'activating' : 'installing',
+    state: installation.status === 'activating'
+      ? 'activating'
+      : installation.status === 'uninstalling'
+        ? 'uninstalling'
+        : 'installing',
   };
 };
 
@@ -193,7 +197,13 @@ const claimInstallation = async (
 
     const winner = await InstallableInstallation.findOne(keys) as IInstallableInstallation | null;
     if (!winner) throw error;
-    if (winner.status === 'error' || isStale(winner.claimedAt, now)) {
+    if (
+      winner.status === 'error'
+      || (
+        (winner.status === 'installing' || winner.status === 'activating')
+        && isStale(winner.claimedAt, now)
+      )
+    ) {
       // A concurrent state transition beat our filter. Retrying the atomic
       // claim is safe; only a returned matching generation owns work.
       return claimInstallation(installable, targetId, installedBy);
@@ -298,11 +308,33 @@ const activateIntegration = async (
   installation: IInstallableInstallation,
   claimId: string,
 ): Promise<unknown> => {
+  // Reassert the parent generation only after the final parent CAS. Projectors
+  // intentionally never overwrite an existing row's generation, so a stale
+  // projector cannot clobber this activation or a concurrent revocation.
+  const prepared = await Integration.findOneAndUpdate(
+    {
+      installationId: String(installation._id),
+      isActive: false,
+      revokedAt: { $exists: false },
+    },
+    { $set: { installationClaimId: claimId } },
+    { new: true },
+  );
+  if (!prepared) {
+    const existing = await integrationFor(installation) as {
+      isActive?: boolean;
+      config?: { connectCode?: string };
+    } | null;
+    if (existing?.isActive && existing.config?.connectCode) return existing;
+    throw new Error('Integration activation did not find an inactive projection');
+  }
+
   const minted = mintConnectCode();
   const activated = await Integration.findOneAndUpdate(
     {
       installationId: String(installation._id),
       isActive: false,
+      installationClaimId: claimId,
     },
     {
       $set: {
@@ -378,6 +410,37 @@ export const install = async ({
   return { installation, integration, httpStatus: 200, state: 'active' };
 };
 
+const claimUninstall = async (
+  installation: IInstallableInstallation,
+): Promise<{ installation: IInstallableInstallation; ownsClaim: boolean }> => {
+  const now = new Date();
+  const claimId = randomUUID();
+  const filter = installation.status === 'uninstalling'
+    ? {
+      _id: installation._id,
+      status: 'uninstalling',
+      claimedAt: { $lte: new Date(now.getTime() - INSTALL_LOCK_TTL_MS) },
+    }
+    : { _id: installation._id, status: { $ne: 'uninstalled' } };
+  const claimed = await InstallableInstallation.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        status: 'uninstalling',
+        claimId,
+        claimedAt: now,
+        errorMessage: null,
+      },
+    },
+    { new: true },
+  ) as IInstallableInstallation | null;
+  if (claimed) return { installation: claimed, ownsClaim: true };
+
+  const winner = await InstallableInstallation.findById(installation._id) as IInstallableInstallation | null;
+  if (!winner || winner.status === 'uninstalled') throw new InstallableNotFoundError();
+  return { installation: winner, ownsClaim: false };
+};
+
 export const uninstall = async ({
   installableId,
   installedBy,
@@ -389,12 +452,10 @@ export const uninstall = async ({
   ) as IInstallableInstallation | null;
   if (!installation) throw new InstallableNotFoundError();
 
-  const uninstalled = await InstallableInstallation.findOneAndUpdate(
-    { _id: installation._id, status: { $ne: 'uninstalled' } },
-    { $set: { status: 'uninstalled', errorMessage: null } },
-    { new: true },
-  ) as IInstallableInstallation | null;
-  if (!uninstalled) return installation;
+  const claim = await claimUninstall(installation);
+  if (!claim.ownsClaim) return claim.installation;
+  const claimId = claim.installation.claimId;
+  if (!claimId) throw new InstallLockLostError();
 
   const installable = await Installable.findOne({ installableId: normalizedId }) as IInstallable | null;
   if (installable) {
@@ -408,10 +469,10 @@ export const uninstall = async ({
         ? Object.fromEntries(installedComponent.projectionIds.entries()) as ProjectionIds
         : {};
       await projector.unproject(component, {
-        installation,
+        installation: claim.installation,
         installable,
         installedBy: targetId,
-        claimId: installation.claimId || '',
+        claimId,
       }, ids);
     }
   } else {
@@ -420,17 +481,25 @@ export const uninstall = async ({
     await Integration.findOneAndUpdate(
       { installationId: String(installation._id) },
       {
-        $set: { isActive: false },
+        $set: {
+          isActive: false,
+          installationClaimId: claimId,
+          revokedAt: new Date(),
+        },
         $unset: {
           'config.connectCode': 1,
           'config.connectCodeExpiresAt': 1,
-          installationClaimId: 1,
         },
       },
     );
   }
 
-  return uninstalled;
+  const uninstalled = await InstallableInstallation.findOneAndUpdate(
+    { _id: claim.installation._id, status: 'uninstalling', claimId },
+    { $set: { status: 'uninstalled', errorMessage: null } },
+    { new: true },
+  ) as IInstallableInstallation | null;
+  return throwIfLockLost(uninstalled);
 };
 
 module.exports = {
