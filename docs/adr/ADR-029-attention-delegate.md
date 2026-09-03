@@ -1,6 +1,6 @@
 # ADR-029: The attention delegate — one agent in the channel, a team behind it
 
-**Status:** Proposed (2026-09-03, commissioned by Sam; drafted by the commander session). Acknowledged unknowns: the interrupt threshold (D4) is a starting rule, not a measured one — the benchmark in §6 exists to replace it with a measured one; whether a delegate should ever *act* in the channel on its own (post a digest unprompted on a schedule) is left to the first team that runs one. Ratifying this ADR does not settle either.
+**Status:** Proposed (2026-09-03, commissioned by Sam; drafted by the commander session; ratified in direction by Sam 2026-09-03; D4/D5/§6 amended 2026-09-04 after the sprint-review and pod-architect attacks — see those decisions). Acknowledged unknowns: the interrupt threshold (D4) is a starting rule, not a measured one — the benchmark in §6 exists to replace it with a measured one; whether a delegate should ever *act* in the channel on its own (post a digest unprompted on a schedule) is left to the first team that runs one. Ratifying this ADR does not settle either.
 
 **Scope boundary:** ADR-025 (connector substrate) decides how a channel is bound and relayed. ADR-024 (inbox batching) and ADR-018 (wake policy) decide when an *agent* wakes. ADR-028 (work claims and decision ledger) decides how a decision is recorded. This ADR decides what a *channel* sees and who speaks there. Where they touch, this ADR defers to those for mechanism and owns only the delegate's three verdicts (D4).
 
@@ -31,9 +31,13 @@ The problem is symmetric, which is why it has been hard to see:
 | **digest** | worth knowing, not worth a ping | at the next digest boundary, grouped |
 | **hold** | noise to the channel, still visible in the workspace | never; the workspace shows it |
 
-The starting rule (to be replaced by measurement, §6): an event is an *interrupt* iff it carries a decision request (a DecisionRequest or an explicit "needs <human>"), a failed action the human asked for, or a blocked row the human owns. Everything else is *digest* if it changes a fact the human asked about, else *hold*.
+The starting rule (to be replaced by measurement, §6): an event is an *interrupt* iff it carries a decision request (a DecisionRequest or an explicit "needs <human>"), a failed action the human asked for, a blocked row the human owns, an escalation marker, or a question aimed at a human (the two `shouldEscalate` branches the Telegram bridge already fires on). Everything else is *digest* if it changes a fact the human asked about, else *hold*.
+
+**The floor (amended 2026-09-04 after sprint-review's attack, Sharpen 63017):** until a binding has delivered its first *interrupt*, every outbound verdict is *interrupt*. A stranger's first answer must reach them now, not at a digest boundary they are no longer there for — the codebase already refused the quieter default once (`routes/integrations.ts` defaults a fresh connector to relay-all for exactly this reason), and D4 without a floor was strictly quieter than the filter we declined to ship. The floor also makes §6 scorable on latency to first answer.
 
 **D5 — Two-way, symmetric guards.** Inbound: a channel message wakes the delegate only; the delegate wakes team members; cascade caps and wake policy apply unchanged. Outbound: only the delegate may post to the channel on the team's behalf; team members post to the workspace. A team member that needs the channel goes through D3, never around it.
+
+*Amended 2026-09-04 after pod-architect's attack (Sharpen 63018):* this is contradicted by code that runs today — `agentMessageService` relays **every** agent post to the bound channel per agent, and `relayAllAgentMessages` short-circuits `shouldEscalate` before any delegate could render a verdict. So D5 names its chokepoint: the single existing relay call takes the binding's delegate and returns early unless the posting agent *is* the delegate; `relayAllAgentMessages` becomes a delegate *mode* (every verdict is *interrupt*), not a per-message bypass. Without this the ledger (D6) and the benchmark (§6) count different populations — the delegate would look best exactly where it was bypassed most.
 
 **D6 — The ledger is the product surface.** Every verdict is written with `{channel, event, verdict, reason, at, reachedHumanAt?}`. The workspace shows the day's ledger per channel: interrupts sent, digests sent, held, and — from the silence detector — needed-a-human missed. This is what a team lead reads to trust the delegate, and it is the same data the benchmark (§6) scores.
 
@@ -62,10 +66,11 @@ Nobody measures this. Every agent framework either interrupts constantly or goes
 
 **Shape.** A scripted day of workspace events for a team of N agents, replayed against a system under test that fronts one channel. Each event is labelled by a human panel as *needs a human now*, *worth knowing*, or *noise*. The system emits channel messages; each is timestamped and attributed.
 
-**Two scores, reported together, never one without the other:**
+**Three scores, reported together, never one without the others** (the third added 2026-09-04: it is what the two strangers who got silence this week actually suffered):
 
 - **Interrupt rate** — channel messages that were not *needs a human now*, per hour of scripted time. Lower is better.
 - **Missed-need rate** — *needs a human now* events with no channel message within T (T = 5 minutes in the first version). Lower is better.
+- **Latency to first answer** — for each human message into the channel, seconds until the first channel message attributed to the team. Reported as median and 95th percentile; a binding that never answers scores the fixture's horizon.
 
 Secondary: attribution fidelity (did the message name the origin agent correctly), latency to first channel message per needed event, and re-ask rate (how often the human had to ask "who did this?" or "what happened to X?").
 
