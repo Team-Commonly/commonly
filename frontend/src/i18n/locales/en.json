@@ -1563,7 +1563,7 @@
   },
   "podsSidebar": {
     "title": "Pods",
-    "newPod": "New Pod",
+    "newPod": "New pod",
     "closeTitle": "Close pods",
     "closeAriaLabel": "Close pods list",
     "searchPlaceholder": "Search pods...",
@@ -1687,7 +1687,7 @@
       "kicker": "{{agents}} · {{active}} active this week"
     },
     "actions": {
-      "hire": "+ Hire an agent",
+      "hire": "Hire an agent",
       "addComputer": "Add a computer",
       "cancel": "Cancel"
     },
@@ -1743,9 +1743,9 @@
       "workingNow": "Working now",
       "team": "Team",
       "quiet": "Quiet",
-      "internal": "Internal seats",
+      "internal": "Connected agents",
       "quietCount": "Quiet ({{count}})",
-      "internalCount": "Internal seats ({{count}})",
+      "internalCount": "Connected agents ({{count}})",
       "activeMeta_one": "Active {{time}} · {{count}} pod",
       "activeMeta_other": "Active {{time}} · {{count}} pods"
     }

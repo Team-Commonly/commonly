@@ -1141,12 +1141,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const onlineAgentCount = agents.filter((agent) => (
     !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
   )).length;
-  const liveState = onlineAgentCount > 0
-    ? t('podChat.heartbeat.recent', {
-      count: onlineAgentCount,
-      formattedCount: numberFormatter.format(onlineAgentCount),
-    })
-    : t('podChat.heartbeat.none');
+  // A no-heartbeat state has meaning only when this pod has an installed
+  // agent. Human-only pods otherwise read as broken despite having nobody
+  // expected to check in.
+  const liveState = agents.length > 0
+    ? onlineAgentCount > 0
+      ? t('podChat.heartbeat.recent', {
+        count: onlineAgentCount,
+        formattedCount: numberFormatter.format(onlineAgentCount),
+      })
+      : t('podChat.heartbeat.none')
+    : null;
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
 
   return (
@@ -1235,7 +1240,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
           {pod.description && (
             <div className="v2-chat__goal">
               {pod.description}
-              <span className="v2-chat__goal-meta"> · {liveState}</span>
+              {liveState && <span className="v2-chat__goal-meta"> · {liveState}</span>}
             </div>
           )}
         </header>

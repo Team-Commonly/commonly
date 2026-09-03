@@ -15,6 +15,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import AddIcon from '@mui/icons-material/Add';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 
@@ -231,7 +233,8 @@ const V2PodBoard: React.FC = () => {
           className="v2-board__back"
           onClick={() => navigate(`/v2/pods/${podId}`)}
         >
-          ← {t('board.backToChat')}
+          <ArrowBackIcon fontSize="small" aria-hidden="true" />
+          {t('board.backToChat')}
         </button>
         <div className="v2-board__title-wrap">
           <h1 className="v2-board__title">{podName || t('board.title')}</h1>
@@ -244,7 +247,8 @@ const V2PodBoard: React.FC = () => {
           className="v2-board__new"
           onClick={openCreateTask}
         >
-          + {t('board.newTask')}
+          <AddIcon fontSize="small" aria-hidden="true" />
+          {t('board.newTask')}
         </button>
       </header>
 

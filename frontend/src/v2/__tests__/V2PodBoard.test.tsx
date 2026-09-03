@@ -79,6 +79,11 @@ describe('V2PodBoard', () => {
   test('renders four canonical columns and places alias statuses in them', async () => {
     renderBoard();
 
+    // The craft pass uses icon components, not unicode arrow/plus glyphs, so
+    // the accessible button names stay sentence-case labels.
+    expect(screen.getByRole('button', { name: 'Back to chat' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New task' })).toBeInTheDocument();
+
     const pending = await screen.findByRole('region', { name: 'Pending' });
     const inProgress = screen.getByRole('region', { name: 'In Progress' });
     const done = screen.getByRole('region', { name: 'Done' });

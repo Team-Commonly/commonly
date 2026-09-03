@@ -75,6 +75,28 @@ const renderChat = (detail) => render(
 );
 
 describe('V2PodChat composer send button', () => {
+  test('only shows a no-heartbeat state when the pod has an installed agent', () => {
+    const view = renderChat(makeDetail({
+      pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
+    }));
+
+    // A human-only pod is not waiting on anyone to heartbeat.
+    expect(view.container.querySelector('.v2-chat__goal-meta')).toBeNull();
+
+    view.rerender(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <V2PodChat detail={makeDetail({
+            pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
+            agents: [{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }],
+          })} />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    expect(view.container.querySelector('.v2-chat__goal-meta')).toHaveTextContent('No recent heartbeats');
+  });
+
   test('clicking the send button sends the drafted text', async () => {
     const detail = makeDetail();
     renderChat(detail);

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import AddIcon from '@mui/icons-material/Add';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
 
@@ -473,6 +474,7 @@ const V2YourTeamPage: React.FC = () => {
             className="v2-team__hire-cta"
             onClick={() => navigate(primaryHirePath)}
           >
+            <AddIcon fontSize="small" aria-hidden="true" />
             {t('yourTeam.actions.hire')}
           </button>
           <button
@@ -486,7 +488,7 @@ const V2YourTeamPage: React.FC = () => {
       </header>
 
       {!isEntitled && (
-        <div className="v2-team__redeem">
+        <div className="v2-team__entitlement-notice">
           {redeemOpen ? (
             <form className="v2-team__redeem-form" onSubmit={handleRedeem}>
               <input
