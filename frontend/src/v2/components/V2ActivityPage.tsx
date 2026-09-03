@@ -28,6 +28,7 @@ interface AgentRecap {
 interface NeedsYouItem {
   id: string;
   attentionItemId?: string;
+  actorName?: string;
   kind: 'mention' | 'approval' | 'decision';
   title: string;
   detail: string;
@@ -334,11 +335,8 @@ const V2ActivityPage: React.FC = () => {
       {!loading && !error && recap && (
         <>
           <section className="v2-activity__compose" aria-labelledby="activity-compose-title">
-            <div className="v2-activity__compose-heading">
-              <div>
-                <div className="v2-activity__eyebrow">{t('activity.compose.eyebrow')}</div>
-                <h2 id="activity-compose-title">{t('activity.compose.title')}</h2>
-              </div>
+            <div className="v2-activity__compose-top">
+              <h2 id="activity-compose-title" className="v2-activity__compose-label">{t('activity.compose.label')}</h2>
               <label className="v2-activity__compose-pod">
                 <span>{t('activity.compose.podLabel')}</span>
                 <select value={composePodId} onChange={(event) => setComposePodId(event.target.value)}>
@@ -346,16 +344,17 @@ const V2ActivityPage: React.FC = () => {
                 </select>
               </label>
             </div>
-            <div className="v2-activity__compose-entry">
-              <textarea
-                aria-label={t('activity.compose.placeholder')}
-                rows={3}
-                placeholder={t('activity.compose.placeholder')}
-                value={composeDraft}
-                onChange={(event) => setComposeDraft(event.target.value)}
-                onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
-                disabled={composing || !composePodId}
-              />
+            <textarea
+              aria-label={t('activity.compose.placeholder')}
+              rows={2}
+              placeholder={t('activity.compose.placeholder')}
+              value={composeDraft}
+              onChange={(event) => setComposeDraft(event.target.value)}
+              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') sendCompose(); }}
+              disabled={composing || !composePodId}
+            />
+            <div className="v2-activity__compose-foot">
+              <span className="v2-activity__compose-hint">{t('activity.compose.hint')}</span>
               <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={sendCompose} disabled={composing || !composePodId || !composeDraft.trim()}>
                 {composing ? t('activity.compose.working') : t('activity.compose.send')}
               </button>
@@ -366,10 +365,8 @@ const V2ActivityPage: React.FC = () => {
           <div className="v2-activity__sections">
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
-              <div>
-                <div className="v2-activity__eyebrow">{t('activity.needsYou.eyebrow')}</div>
-                <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
-              </div>
+              <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
+              {!isDayZero && queue.length > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queue.length })}>{queue.length}</span>}
               <p>{t('activity.needsYou.description')}</p>
             </div>
             {isDayZero ? (
@@ -425,10 +422,12 @@ const V2ActivityPage: React.FC = () => {
                       {item.kind === 'mention' ? '@' : item.kind === 'approval' ? '!' : '?'}
                     </span>
                     <div className="v2-activity__queue-copy">
-                      <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>
-                      <strong>{item.title}</strong>
+                      {item.kind !== 'mention' && <div className="v2-activity__queue-kind">{t(`activity.needsYou.kinds.${item.kind}`)}</div>}
+                      <div className="v2-activity__queue-topline">
+                        <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
+                        <span>{item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
+                      </div>
                       {item.detail && <p>{item.detail}</p>}
-                      <span>{item.podName}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
                     </div>
                     <div className="v2-activity__queue-actions">
                       {item.kind === 'approval' && (
@@ -461,7 +460,7 @@ const V2ActivityPage: React.FC = () => {
                               {replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}
                             </button>
                           </div>
-                          <button type="button" className="v2-activity__queue-action--secondary" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
+                          <button type="button" className="v2-activity__queue-action--thread" onClick={() => acknowledgeMention(item)} disabled={acknowledgingMentionId === item.id}>
                             {acknowledgingMentionId === item.id ? t('activity.mention.working') : t('activity.mention.acknowledge')}
                           </button>
                         </>
@@ -535,10 +534,7 @@ const V2ActivityPage: React.FC = () => {
 
           <section className="v2-activity__section" aria-labelledby="activity-agents">
             <div className="v2-activity__section-heading">
-              <div>
-                <div className="v2-activity__eyebrow">{t('activity.agents.eyebrow')}</div>
-                <h2 id="activity-agents">{t('activity.agents.title')}</h2>
-              </div>
+              <h2 id="activity-agents">{t('activity.agents.title')}</h2>
               <p>{t('activity.agents.description')}</p>
             </div>
             {recap.agents.length === 0 ? (
@@ -576,10 +572,7 @@ const V2ActivityPage: React.FC = () => {
 
           <section className="v2-activity__section" aria-labelledby="activity-board">
             <div className="v2-activity__section-heading">
-              <div>
-                <div className="v2-activity__eyebrow">{t('activity.board.eyebrow')}</div>
-                <h2 id="activity-board">{t('activity.board.title')}</h2>
-              </div>
+              <h2 id="activity-board">{t('activity.board.title')}</h2>
               <p>{t('activity.board.description')}</p>
             </div>
             {recap.board.length === 0 ? (
