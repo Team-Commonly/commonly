@@ -848,6 +848,19 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
     }).select('_id').lean();
     const accessibleSet = new Set(accessiblePods.map((p: any) => p._id.toString()));
 
+    // Opening a room installs the agent into that room so it can reply. That
+    // reactive projection shares the agent's identity, but it is not a second
+    // workspace choice for this endpoint. Ignore personal-DM installations
+    // while selecting a workspace installation; if they are all that remain,
+    // retain the legacy fallback so an existing room stays reopenable.
+    const personalInstallPods = await Pod.find({
+      _id: { $in: candidatePodIds },
+      type: { $in: [...AgentIdentityService.DM_POD_TYPES_GUARD] },
+    }).select('_id').lean();
+    const personalInstallPodIds = new Set(
+      personalInstallPods.map((pod: any) => String(pod._id)),
+    );
+
     const authorized = isAdmin
       ? installations
       : installations.filter((i: any) => (
@@ -865,18 +878,24 @@ router.post('/room', dualAuth, phase4RateLimit, async (req: any, res: any) => {
       ...i,
       instanceId: String(i.instanceId || 'default'),
     }));
+    const workspaceInstalls = normalized.filter(
+      (installation: any) => !personalInstallPodIds.has(String(installation.podId)),
+    );
+    const selectableInstalls = workspaceInstalls.length ? workspaceInstalls : normalized;
     let selected: any = null;
     const byExact = normalizedInstanceId
-      ? normalized.filter((i: any) => i.instanceId.toLowerCase() === normalizedInstanceId)
+      ? selectableInstalls.filter((i: any) => i.instanceId.toLowerCase() === normalizedInstanceId)
       : [];
     if (byExact.length === 1) {
       selected = byExact[0];
-    } else if (normalized.length === 1) {
-      selected = normalized[0];
+    } else if (selectableInstalls.length === 1) {
+      selected = selectableInstalls[0];
     } else {
       return res.status(409).json({
-        message: 'Multiple installations found. Specify instanceId.',
-        installations: normalized.map((i: any) => ({
+        message: normalizedInstanceId
+          ? 'Multiple installations match that instanceId. Specify podId.'
+          : 'Multiple installations found. Specify instanceId (and podId if needed).',
+        installations: selectableInstalls.map((i: any) => ({
           instanceId: i.instanceId,
           podId: String(i.podId || ''),
         })),
