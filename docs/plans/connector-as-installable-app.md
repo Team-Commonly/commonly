@@ -135,8 +135,11 @@ What it does, in order — this is `installableInstallService.install()`:
       claimId: ours }, { $set: { status: 'active', activatedByClaimId: ours } })`. The
       `claimId` term is **required in the filter, never match-if-present** — this write is
       what hands out a bearer secret. `null` ⇒ `InstallLockLostError`: the owner logs at warn
-      with both generations, mints nothing, and returns **409 `{ code: 'install_lock_lost' }`**
-      to its own caller. The refusal is a distinct error class and a distinct status, never
+      with both generations, mints nothing, **does nothing else — no unproject, no status
+      write, no cleanup of any kind** — and returns **409 `{ code: 'install_lock_lost' }`**
+      to its own caller. A refusal means "someone else owns this row now"; a loser that
+      tidies up deletes the winner's work (Vera 62703 — D6's `markPosted` gate made exactly
+      that mistake). The same rule holds for every fenced write in step 4: on `null`, stop. The refusal is a distinct error class and a distinct status, never
       the `null` a no-op would return (Vera 62655: D6's first cut returned null for both and
       the caller reported success).
    2. **Integration activation, fenced on its own state:** `findOneAndUpdate({ installationId:
@@ -386,9 +389,11 @@ Unit (`backend/__tests__/unit/services/installable/`):
 6c. **Stale-owner completion is a refused no-op, and it is visible.** A claims (generation
    `a`) and stalls; B takes over (generation `b`), activates, mints `C_B`. A revives and runs
    its activation: write 1 returns `null`, `InstallLockLostError` is thrown, **no mint call
-   happens** (spy on `mintConnectCode`: exactly one call in the whole test, B's), the
-   Integration row still carries `C_B`, and A's caller receives 409 `install_lock_lost` —
-   asserted on the status and the code, not on a null.
+   happens** (spy on `mintConnectCode`: exactly one call in the whole test, B's), **no
+   `unproject` call happens and A writes nothing** (spies on the projector registry and on the
+   `Integration` model: B's writes only), the Integration row still carries `C_B` and stays
+   `isActive: true`, and A's caller receives 409 `install_lock_lost` — asserted on the status
+   and the code, not on a null.
 6d. **Winner retry mints once.** B crashes between writes 1 and 2 and retries holding
    generation `b`: write 2 finds `isActive: false` and mints; a second retry finds
    `isActive: true`, returns the same code, `mintConnectCode` called once.
