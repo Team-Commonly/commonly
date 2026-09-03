@@ -257,8 +257,10 @@ router.get('/all-posts', summariesReadRateLimit, auth, async (_req: AuthReq, res
     const allPostsSummary = await summarizerService.summarizeAllPosts();
     res.json(allPostsSummary);
   } catch (error) {
-    console.error('Error generating all posts summary:', error);
-    res.status(500).json({ error: 'Failed to generate all posts summary' });
+    // Fail closed: the summarizer no longer fabricates filler when the LLM is
+    // unavailable, so this is a service-unavailable, not a server bug.
+    console.error('All posts summary unavailable:', (error as Error).message);
+    res.status(503).json({ error: 'summary_unavailable' });
   }
 });
 
