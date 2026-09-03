@@ -1,9 +1,5 @@
 // eslint-disable-next-line global-require
 const express = require('express');
-// ESM import (not require) so CodeQL's js/missing-rate-limiting query
-// recognizes the limiter (same pattern as routes/messages.ts).
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { createHash } from 'crypto';
 // eslint-disable-next-line global-require
 const axios = require('axios');
 // eslint-disable-next-line global-require
@@ -34,6 +30,12 @@ const { hash, randomSecret } = require('../utils/secret');
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
+// Keep this as an ESM import: static analysis recognizes the rate limiter at
+// the route sink, while the middleware owns the shared token/IP bucket.
+import {
+  writeIntegrationsRateLimit,
+  listIntegrationsRateLimit,
+} from '../middleware/integrationRateLimit';
 
 // Bridge attribution + binding fields are server-owned. linkedUserId is the
 // identity every inbound live-relay message is AUTHORED as; chatId/chatType
@@ -269,29 +271,6 @@ router.get('/:podId', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-// Token/IP keying shared by every limiter in this file — same shape as
-// routes/messages.ts so NAT'd users don't share a bucket.
-const integrationsRateLimitKey = (req: { get?: (h: string) => string | undefined; ip?: string }): string => {
-  const authHeader = req.get?.('authorization');
-  if (authHeader) {
-    return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
-  }
-  return req.ip ? ipKeyGenerator(req.ip) : 'anon';
-};
-
-// Write limiter for the create + re-mint paths: each one mints a connect code
-// (a bearer secret) and writes a row, so a burst is either a bug or a probe.
-const writeIntegrationsRateLimit = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: integrationsRateLimitKey,
-  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
-    res.status(429).json({ msg: 'rate limit exceeded: 30 writes per 60s' });
-  },
-});
-
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
@@ -464,19 +443,6 @@ router.get('/admin/all', auth, adminAuth, async (_req: AuthReq, res: Res) => {
     console.error('Error fetching all integrations:', error);
     res.status(500).json({ message: 'Server error' });
   }
-});
-
-// Read limiter for the connector listing — same token/IP keying as
-// routes/messages.ts so NAT'd users don't share a bucket.
-const listIntegrationsRateLimit = rateLimit({
-  windowMs: 60_000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: integrationsRateLimitKey,
-  handler: (_req: unknown, res: { status: (n: number) => { json: (b: unknown) => void } }) => {
-    res.status(429).json({ msg: 'rate limit exceeded: 120 reads per 60s' });
-  },
 });
 
 router.get('/user/all', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {

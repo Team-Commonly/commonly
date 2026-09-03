@@ -32,6 +32,8 @@ export interface IIntegrationMessageBuffer {
 
 export interface IIntegration extends Document {
   installationId?: string;
+  /** InstallableInstallation claim generation that activated this projection. */
+  installationClaimId?: string;
   podId: Types.ObjectId;
   type: IntegrationType;
   status: IntegrationStatus;
@@ -107,6 +109,7 @@ export interface IIntegration extends Document {
 const IntegrationSchema = new Schema<IIntegration>(
   {
     installationId: { type: String, unique: true, sparse: true },
+    installationClaimId: { type: String },
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
     type: {
       type: String,

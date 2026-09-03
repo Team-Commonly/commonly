@@ -30,6 +30,8 @@ import type { ComponentType, InstallableScope } from './Installable';
 export type InstallationTargetType = 'pod' | 'user' | 'dm' | 'instance';
 
 export type InstallationStatus =
+  | 'installing'
+  | 'activating'
   | 'active'
   | 'paused'
   | 'uninstalled'
@@ -104,6 +106,13 @@ export interface IInstallableInstallation extends Document {
 
   // Lifecycle
   status: InstallationStatus;
+  /**
+   * Opaque ownership generation for a transient install claim. Every owner
+   * write must include it in its filter; a stale worker is then a no-op
+   * instead of overwriting the winner's projected connector or bearer code.
+   */
+  claimId?: string;
+  claimedAt?: Date;
   errorMessage?: string;
   staleSince?: Date;
 
@@ -190,9 +199,11 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
 
     status: {
       type: String,
-      enum: ['active', 'paused', 'uninstalled', 'error', 'stale'],
+      enum: ['installing', 'activating', 'active', 'paused', 'uninstalled', 'error', 'stale'],
       default: 'active',
     },
+    claimId: { type: String },
+    claimedAt: { type: Date },
     errorMessage: { type: String },
     staleSince: { type: Date },
   },
@@ -203,10 +214,20 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
 // Indexes
 // ---------------------------------------------------------------------------
 
-// One installation of a given Installable per target.
+// One live installation of a given Installable per target. `uninstalled`
+// rows intentionally fall outside the index: their audit history survives,
+// while a later install gets a new parent/projection instead of resurrecting
+// a historical connector. Retained `error` rows stay inside so retry can
+// claim the same parent and safely reuse its inactive projection.
 InstallableInstallationSchema.index(
   { installableId: 1, targetType: 1, targetId: 1 },
-  { unique: true },
+  {
+    unique: true,
+    name: 'installable_live_target_unique',
+    partialFilterExpression: {
+      status: { $in: ['installing', 'activating', 'active', 'error'] },
+    },
+  },
 );
 
 // "What's installed in this pod/user/dm right now?"
