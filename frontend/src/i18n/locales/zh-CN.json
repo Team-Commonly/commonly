@@ -47,7 +47,9 @@
       "send": "发送",
       "sendAriaLabel": "发送消息",
       "working": "发送中…",
-      "actionFailed": "无法发送消息，请重试。"
+      "actionFailed": "无法发送消息，请重试。",
+      "label": "告诉你的智能体",
+      "hint": "以你的身份发布 · ⌘↵ 发送"
     },
     "reply": {
       "placeholder": "在话题中回复…",
@@ -69,7 +71,8 @@
         "approval": "审批",
         "decision": "待你决策",
         "press": "待你合并"
-      }
+      },
+      "countLabel": "{{count}} 项等你处理"
     },
     "dayZero": {
       "kind": "开始使用",

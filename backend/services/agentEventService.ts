@@ -1049,7 +1049,23 @@ class AgentEventService {
         status: 'active',
       }).lean() as InstallationDoc | null;
       if (installationDoc) {
-        const installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+        let installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+        if (!installationRuntimeCfg.runtimeType) {
+          // A projection written without its runtime (agent-room installs
+          // before 2026-09-03 did this) must still route like the agent it
+          // projects, or the wake parks in the external queue forever.
+          const sibling = await AgentInstallation.findOne({
+            agentName: agentName.toLowerCase(),
+            instanceId,
+            status: 'active',
+            'config.runtime.runtimeType': { $exists: true },
+          }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
+          const siblingRuntime = (sibling && normalizeConfig(sibling.config)?.runtime) as Record<string, unknown> | undefined;
+          if (siblingRuntime?.runtimeType) {
+            installationRuntimeCfg = siblingRuntime;
+            installationDoc.config = { ...(normalizeConfig(installationDoc.config) || {}), runtime: siblingRuntime } as InstallationDoc['config'];
+          }
+        }
         const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
         if (installationRuntimeType === 'native') {
           routedToNative = true;

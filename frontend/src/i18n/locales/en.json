@@ -47,7 +47,9 @@
       "send": "Send",
       "sendAriaLabel": "Send message",
       "working": "Sending…",
-      "actionFailed": "Your message could not be sent. Try again."
+      "actionFailed": "Your message could not be sent. Try again.",
+      "label": "Tell your agents",
+      "hint": "Posts as you · ⌘↵ to send"
     },
     "reply": {
       "placeholder": "Reply in thread…",
@@ -69,7 +71,8 @@
         "approval": "Approval",
         "decision": "Decision needed",
         "press": "Ready for your press"
-      }
+      },
+      "countLabel": "{{count}} waiting on you"
     },
     "dayZero": {
       "kind": "Get started",
