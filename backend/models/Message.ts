@@ -37,6 +37,21 @@ const MessageSchema = new Schema<IMessage>({
   updatedAt: { type: Date, default: Date.now },
 });
 
+MessageSchema.post('save', async (doc) => {
+  // Mongo is the availability fallback for chat writes, so it must materialize
+  // the same recipient-owned fact as the normal PostgreSQL writer.
+  // eslint-disable-next-line global-require
+  const { recordMentionedUsers } = require('../services/attentionItemService');
+  await recordMentionedUsers(doc);
+});
+
+MessageSchema.post('findOneAndDelete', async (doc) => {
+  if (!doc) return;
+  // eslint-disable-next-line global-require
+  const { resolve } = require('../services/attentionItemService');
+  await resolve('message', doc._id);
+});
+
 export const Message: Model<IMessage> = mongoose.model<IMessage>('Message', MessageSchema);
 
 export default Message;

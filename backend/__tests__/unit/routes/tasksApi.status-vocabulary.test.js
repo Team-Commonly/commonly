@@ -49,6 +49,13 @@ jest.mock('../../../services/taskEventService', () => ({
   emitTaskUpdated: (...args) => mockEmitTaskUpdated(...args),
 }));
 
+const mockRecordTaskAttention = jest.fn();
+const mockResolveTaskAttention = jest.fn();
+jest.mock('../../../services/attentionItemService', () => ({
+  recordTaskAttention: (...args) => mockRecordTaskAttention(...args),
+  resolveTaskAttention: (...args) => mockResolveTaskAttention(...args),
+}));
+
 const tasksApi = require('../../../routes/tasksApi');
 
 const app = express();
@@ -61,6 +68,10 @@ beforeEach(() => {
   mockFindOneAndUpdate.mockReset();
   mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-001', status: 'claimed' });
   mockEmitTaskUpdated.mockReset();
+  mockRecordTaskAttention.mockReset();
+  mockRecordTaskAttention.mockResolvedValue(undefined);
+  mockResolveTaskAttention.mockReset();
+  mockResolveTaskAttention.mockResolvedValue(undefined);
 });
 
 describe('PATCH /:podId/:taskId status vocabulary', () => {
@@ -89,6 +100,30 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
 
     expect(res.status).toBe(200);
     expect(mockFindOneAndUpdate.mock.calls[0][1].$set.status).toBe('blocked');
+  });
+
+  test('materializes a blocked row at the status-write boundary', async () => {
+    const task = { taskId: 'TASK-001', status: 'blocked', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'blocked' });
+
+    expect(res.status).toBe(200);
+    expect(mockRecordTaskAttention).toHaveBeenCalledWith(task, { includeBlocked: true });
+  });
+
+  test('resolves task attention when a task leaves blocked state', async () => {
+    const task = { taskId: 'TASK-001', status: 'done', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(mockResolveTaskAttention).toHaveBeenCalledWith(task);
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {

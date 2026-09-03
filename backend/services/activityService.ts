@@ -11,8 +11,6 @@ const Post = require('../models/Post');
 // eslint-disable-next-line global-require
 const Task = require('../models/Task');
 // eslint-disable-next-line global-require
-const DecisionRequest = require('../models/DecisionRequest');
-// eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 
 let PGMessage: unknown = null;
@@ -73,7 +71,6 @@ interface UserDoc {
   followers?: unknown[];
   followedThreads?: Array<{ postId: unknown; followedAt?: Date }>;
   activityFeed?: { lastViewedAt?: Date | string; readItemIds?: unknown[] };
-  activityQueue?: { acknowledgedMentionIds?: unknown[] };
 }
 
 interface PodDoc {
@@ -154,9 +151,8 @@ class ActivityService {
       return timestamp >= since.getTime()
         && (!requestedPodId || (activity.pod && scopedPodIds.has(activity.pod.id)));
     });
-    const acknowledgedMentionIds = new Set(
-      ((feed.acknowledgedMentionIds as unknown[] | undefined) || []).map((id) => String(id)),
-    );
+    // Needs-you is not derived from this display feed. It is materialized by
+    // its source writers and rechecked against current membership below.
 
     type AgentRecap = {
       id: string;
@@ -226,82 +222,16 @@ class ActivityService {
       })
       .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
 
-    // Approvals are a decision queue, not an activity sample: query the
-    // existing authoritative pending-approval reader separately so a busy
-    // pod cannot push an older decision behind getUserFeed's display page.
-    // Mentions remain a bounded recent interrupt list and are removed only by
-    // their explicit acknowledgement, never by feed read-state.
-    const pendingApprovals = await ActivityService.getPendingApprovals(userId) as Array<{
-      _id?: unknown;
-      id?: unknown;
-      type?: string;
-      actor?: ActorInfo;
-      action?: string;
-      content?: string;
-      podId?: unknown;
-      approval?: unknown;
-      agentMetadata?: { agentName?: string };
-      createdAt?: Date | string;
-      updatedAt?: Date | string;
-    }>;
-    const approvalItems: ActivityItem[] = pendingApprovals
-      .filter((approval) => !requestedPodId || scopedPodIds.has(String(approval.podId)))
-      .map((approval) => {
-        const podId = approval.podId ? String(approval.podId) : '';
-        const pod = scopedPods.find((candidate) => String(candidate._id) === podId);
-        return {
-          id: String(approval._id || approval.id || ''),
-          type: approval.type || 'approval_needed',
-          actor: approval.actor || {
-            name: approval.agentMetadata?.agentName || 'An agent', type: 'agent',
-          },
-          action: approval.action || 'approval_needed',
-          content: approval.content,
-          timestamp: approval.createdAt || approval.updatedAt || null,
-          pod: pod ? { id: String(pod._id), name: pod.name } : null,
-          approval: approval.approval,
-          reactions: { likes: 0, liked: false },
-          replyCount: 0,
-          replies: [],
-        };
-      })
-      .filter((approval) => Boolean(approval.id));
-
-    const isPendingApproval = (activity: ActivityItem): boolean => {
-      const approval = activity.approval as { status?: string } | undefined;
-      // Mongoose materializes approval.status = 'pending' for every Activity
-      // document. It is meaningful only on the one activity type that carries
-      // an approval request; otherwise every message becomes a human action.
-      return activity.type === 'approval_needed' && approval?.status === 'pending';
-    };
-    const queueCandidates = new Map<string, ActivityItem>();
-    [...activities, ...approvalItems].forEach((activity) => {
-      if (!queueCandidates.has(activity.id)) queueCandidates.set(activity.id, activity);
-    });
-    const newestFirst = (left: ActivityItem, right: ActivityItem) => (
-      new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime()
-    );
-    const approvalQueue = Array.from(queueCandidates.values())
-      .filter(isPendingApproval)
-      .sort(newestFirst);
-    const mentionQueue = Array.from(queueCandidates.values())
-      .filter((activity) => activity.flags?.isMention && !acknowledgedMentionIds.has(String(activity.id)))
-      .sort(newestFirst)
-      .slice(0, Math.max(0, 12 - approvalQueue.length));
-    const needsYou = [...approvalQueue, ...mentionQueue]
-      .sort(newestFirst)
-      .map((activity) => {
-        const isApproval = isPendingApproval(activity);
-        return {
-          id: activity.id,
-          kind: isApproval ? 'approval' : 'mention',
-          title: isApproval ? 'Approval requested' : `${activity.actor?.name || 'Someone'} mentioned you`,
-          detail: String(activity.preview || activity.content || '').replace(/\s+/g, ' ').trim().slice(0, 180),
-          podId: activity.pod?.id || null,
-          podName: activity.pod?.name || 'Direct activity',
-          timestamp: activity.timestamp,
-        };
-      });
+    // Recipient-owned AttentionItem rows are the only needs-you source.
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    const attention = await AttentionItemService.getOpenQueue(userId);
+    const needsYou = attention.items
+      .filter((item: any) => !requestedPodId || item.podId === requestedPodId)
+      .map((item: any) => ({
+        ...item,
+        timestamp: item.createdAt || null,
+      }));
 
     let board: Array<Record<string, unknown>> = [];
     if (scopedPods.length > 0) {
@@ -360,7 +290,7 @@ class ActivityService {
 
     try {
       const user: UserDoc | null = await User.findById(userId)
-        .select('_id username following followers followedThreads activityQueue')
+        .select('_id username following followers followedThreads')
         .lean();
       if (!user) {
         return { activities: [], hasMore: false, quick: null };
@@ -394,7 +324,6 @@ class ActivityService {
         hasMore: withReadState.length === limit,
         quick,
         unreadCount: withReadState.filter((item) => !item.read).length,
-        acknowledgedMentionIds: user.activityQueue?.acknowledgedMentionIds || [],
       };
     } catch (error) {
       console.error('Error in getUserFeed:', error);
@@ -439,268 +368,12 @@ class ActivityService {
     }
   }
 
-  /**
-   * The decision queue: everything concretely waiting on THIS human, from
-   * stored facts: existing approval requests, unacknowledged direct mentions,
-   * agent-authored DecisionRequests, and explicit board press handoffs.
-   * A board title is never parsed into a decision surface.
-   */
-  /**
-   * Every message in the user's pods that @mentions them, threads included,
-   * minus their own and minus acknowledged ones. Ids are `msg_<pg id>` —
-   * the same shape the feed emits, so acknowledgedMentionIds keeps working.
-   */
-  static async getMentionsForUser(userId: unknown, podIds: unknown[]): Promise<Array<{
-    id: string; messageId: number; threadRootId: number; podId: string;
-    authorName: string; content: string; createdAt: Date;
-  }>> {
-    const user = await (User as {
-      findById(id: unknown): { select(f: string): { lean(): Promise<{ username?: string; activityQueue?: { acknowledgedMentionIds?: unknown[] } } | null> } };
-    }).findById(userId).select('username activityQueue.acknowledgedMentionIds').lean();
-    const username = String(user?.username || '').trim();
-    if (!username || !podIds.length) return [];
-    const acked = new Set(((user?.activityQueue?.acknowledgedMentionIds as unknown[]) || []).map(String));
-    const { pool } = require('../config/db-pg') as { pool: { query(q: string, p: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> } };
-    // ILIKE on the handle; the trailing boundary keeps @sam from matching
-    // @samantha. ::text[] is load-bearing (the rank query lesson, #1307).
-    const { rows } = await pool.query(
-      `SELECT m.id, m.pod_id, m.user_id, m.content, m.created_at, m.thread_root_id, u.username AS author
-         FROM messages m
-         LEFT JOIN users u ON u._id = m.user_id
-        WHERE m.pod_id = ANY($1::text[])
-          AND m.user_id <> $2
-          AND m.created_at > now() - interval '7 days'
-          AND m.content ~* $3
-        ORDER BY m.created_at DESC
-        LIMIT 40`,
-      [podIds.map(String), String(userId), `@${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`],
-    );
-    return rows
-      .map((r) => ({
-        id: `msg_${r.id}`,
-        messageId: Number(r.id),
-        threadRootId: Number(r.thread_root_id || r.id),
-        podId: String(r.pod_id),
-        authorName: String(r.author || 'Someone'),
-        content: String(r.content || ''),
-        createdAt: r.created_at as Date,
-      }))
-      .filter((m) => !acked.has(m.id));
-  }
-
   static async getDecisionQueue(userId: unknown): Promise<Record<string, unknown>> {
-    const pods: PodDoc[] = await Pod.find({
-      $or: [
-        { createdBy: userId },
-        { 'members.userId': userId },
-        { members: userId },
-      ],
-    }).select('_id name type').lean();
-    const podIds = pods.map((p) => p._id);
-    const podName = new Map(pods.map((p) => [String(p._id), p.name as string]));
-
-    type QueueItem = {
-      kind: 'approval' | 'mention' | 'decision' | 'press';
-      id: string;
-      title: string;
-      detail?: string;
-      podId: string | null;
-      podName?: string;
-      taskId?: string;
-      options?: Array<{ label: string; description?: string; recommended?: boolean }>;
-      messageId?: string;
-      threadRootId?: string;
-      createdAt: Date | string | null;
-    };
-    const items: QueueItem[] = [];
-    let composePodId: string | null = null;
-
-    // 1. Existing binary approvals stay on their established Activity path.
-    // DecisionRequest is additive; it does not widen or replace the
-    // owner-scoped ApprovalAction flow.
-    try {
-      const approvals = await ActivityService.getPendingApprovals(userId) as Array<{
-        _id: { toString(): string }; content?: string; podId?: unknown; createdAt?: Date;
-        agentMetadata?: { agentName?: string };
-      }>;
-      for (const a of approvals) {
-        items.push({
-          kind: 'approval',
-          // RAW Activity id — the existing Activity actions key on it.
-          id: String(a._id),
-          title: a.agentMetadata?.agentName ? `${a.agentMetadata.agentName} requests approval` : 'Approval requested',
-          detail: String(a.content || '').slice(0, 160),
-          podId: a.podId ? String(a.podId) : null,
-          podName: a.podId ? podName.get(String(a.podId)) : undefined,
-          createdAt: a.createdAt || null,
-        });
-      }
-    } catch (err) {
-      console.warn('[decision-queue] approvals read failed:', (err as Error).message);
-    }
-
-    // 2. Unacknowledged direct mentions — a DEDICATED query, not the feed.
-    // Sam, 2026-09-01: "pods mentioning me… but activity tab is not showing
-    // properly." Measured: 15 @Sam mentions in 36h, 14 inside THREADS, and
-    // the feed path saw zero — it samples ~20 recent rows per pod through
-    // the generic aggregator, so thread traffic (where agents now do most
-    // of their talking) never reaches the mention flag. The mention query
-    // asks the store the actual question, across every pod, threads
-    // included, for the last 7 days.
-    try {
-      const mentions = await ActivityService.getMentionsForUser(userId, podIds);
-      for (const m of mentions) {
-        // The query is newest-first, so its first result is the closest
-        // factual default for "tell them what is on my mind".
-        if (!composePodId) composePodId = m.podId;
-        items.push({
-          kind: 'mention',
-          id: m.id,
-          title: `${m.authorName} mentioned you`,
-          detail: m.content.slice(0, 220),
-          podId: m.podId,
-          podName: podName.get(m.podId),
-          createdAt: m.createdAt,
-          // Reply-in-place needs the thread root (or the message itself, as
-          // the root of a new thread) and the message to address.
-          ...({ threadRootId: m.threadRootId, messageId: m.messageId } as Record<string, unknown>),
-        });
-      }
-    } catch (err) {
-      console.warn('[decision-queue] mentions read failed:', (err as Error).message);
-    }
-
-    // 3. Agent-authored DecisionRequest rows. The asking runtime supplied
-    // the title, question, and alternatives at the fork; this reader neither
-    // parses task prose nor reconstructs context from a board title.
-    try {
-      const decisions = await DecisionRequest.find({
-        podId: { $in: podIds },
-        status: 'pending',
-        messageId: { $exists: true, $ne: null },
-      }).sort({ createdAt: -1 }).limit(50).lean() as Array<{
-        _id: { toString(): string }; podId?: unknown; title?: string; question?: string;
-        context?: string; options?: Array<{ label?: string; description?: string; recommended?: boolean }>;
-        messageId?: string; threadRootId?: string; createdAt?: Date;
-      }>;
-      for (const decision of decisions) {
-        const options = (decision.options || [])
-          .filter((option) => option && typeof option.label === 'string')
-          .sort((a, b) => Number(Boolean(b.recommended)) - Number(Boolean(a.recommended)))
-          .map((option) => ({
-            label: String(option.label),
-            ...(option.description ? { description: String(option.description) } : {}),
-            ...(option.recommended ? { recommended: true } : {}),
-          }));
-        items.push({
-          kind: 'decision',
-          id: String(decision._id),
-          title: String(decision.title || 'Decision requested'),
-          detail: String(decision.question || decision.context || '').slice(0, 1000),
-          podId: decision.podId ? String(decision.podId) : null,
-          podName: decision.podId ? podName.get(String(decision.podId)) : undefined,
-          options,
-          messageId: decision.messageId,
-          threadRootId: decision.threadRootId || decision.messageId,
-          createdAt: decision.createdAt || null,
-        });
-      }
-    } catch (err) {
-      console.warn('[decision-queue] decision request read failed:', (err as Error).message);
-    }
-
-    // 4. Board handoffs still need an open-board affordance, but task prose
-    // is never an option source. DECIDE rows remain ordinary board rows.
-    try {
-      const HANDOFF_RE = /human\s+(merge\s+)?press|ready for (the\s+)?(human|sam)|sam'?s?\s+(ruling|call|decision)|awaiting\s+(sam|human)/i;
-      // Freshness cutoff (Sam, 2026-09-01: "some of those activities seem
-      // stale and non new attention routes"). Measured that day: every queue
-      // item was 10–47 days old, half of them zombie rows from dead pods —
-      // "Fix CI failures on PR #N" from July does not need attention, it
-      // needs an archive. A board row qualifies as WAITING ON YOU only if
-      // someone touched it recently; the row itself stays on the board
-      // either way, so nothing is lost — only the attention claim expires.
-      const STALE_CUTOFF = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-      const tasks = await (Task as {
-        find(q: unknown): { sort(s: unknown): { limit(n: number): { lean(): Promise<Array<Record<string, unknown>>> } } };
-      }).find({
-        podId: { $in: podIds },
-        status: { $in: ['pending', 'claimed', 'blocked'] },
-        updatedAt: { $gte: STALE_CUTOFF },
-      }).sort({ updatedAt: -1 }).limit(120).lean();
-      for (const t of tasks) {
-        const title = String(t.title || '');
-        const updates = (t.updates as Array<{ text?: string; createdAt?: Date }> | undefined) || [];
-        const last = updates[updates.length - 1];
-        const isBlocked = t.status === 'blocked';
-        const isHandoff = !!(last && HANDOFF_RE.test(String(last.text || '')));
-        if (!isBlocked && !isHandoff) continue;
-        items.push({
-          // A blocked row is a standing DECISION (no options — the fork owner
-          // should convert it to a DecisionRequest); only an explicit human
-          // handoff in the latest update is a PRESS. #1470 collapsed both to
-          // 'press', which put "ADR-024 D3: batch the poller tick" under
-          // "Ready for your press" — a mislabel Sam noticed the same morning.
-          kind: isHandoff ? 'press' : 'decision',
-          id: `task_${t.taskId}`,
-          title,
-          detail: last ? String(last.text || '').slice(0, 160) : undefined,
-          podId: String(t.podId),
-          podName: podName.get(String(t.podId)),
-          taskId: String(t.taskId || ''),
-          createdAt: (last?.createdAt as Date) || (t.updatedAt as Date) || null,
-        });
-      }
-    } catch (err) {
-      console.warn('[decision-queue] board read failed:', (err as Error).message);
-    }
-
-    // Attention order, then recency, then a hard cap. The option card is the
-    // direct decision surface; existing approvals and board presses retain
-    // their prior precedence and mentions stay bounded below action rows.
-    const KIND_PRIORITY: Record<string, number> = {
-      approval: 0, decision: 1, press: 2, mention: 3,
-    };
-    items.sort((a, b) => {
-      const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
-      if (kindDelta !== 0) return kindDelta;
-      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-    });
-    // Per-kind soft cap. Live after #1464: 40+ thread mentions filled all
-    // 12 slots and direct decision cards vanished below the cap — the
-    // opposite of "decision pending on me" being visible. Mentions take at
-    // most 8 of the 12; whatever is left goes to the other kinds
-    // in attention order. `count` still reports the full total.
-    const MENTION_SLOTS = 8;
-    const picked: QueueItem[] = [];
-    let mentionsPicked = 0;
-    const deferredMentions: QueueItem[] = [];
-    for (const it of items) {
-      if (picked.length >= 12) break;
-      if (it.kind === 'mention') {
-        if (mentionsPicked < MENTION_SLOTS) { picked.push(it); mentionsPicked += 1; } else deferredMentions.push(it);
-      } else {
-        picked.push(it);
-      }
-    }
-    for (const it of deferredMentions) {
-      if (picked.length >= 12) break;
-      picked.push(it);
-    }
-    // Restore attention order within the final page, recency inside each
-    // kind — the loop above kept the sorted order for everything it picked,
-    // so a stable re-sort is enough.
-    picked.sort((a, b) => {
-      const kindDelta = (KIND_PRIORITY[a.kind] ?? 9) - (KIND_PRIORITY[b.kind] ?? 9);
-      if (kindDelta !== 0) return kindDelta;
-      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-    });
-    return {
-      items: picked,
-      count: items.length,
-      // No mention yet is not an error; the page falls back to its first pod.
-      composePodId,
-    };
+    // Recipient-scoped rows are materialized at each source write, then
+    // membership-checked by this indexed reader.
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    return AttentionItemService.getOpenQueue(userId);
   }
 
   static async getPodFeed(
@@ -1145,18 +818,9 @@ class ActivityService {
   }
 
   static async acknowledgeMention(userId: unknown, activityId: string): Promise<Record<string, unknown>> {
-    const user = await User.findById(userId).select('_id activityQueue');
-    if (!user) return { success: false, error: 'User not found' };
-
-    if (!user.activityQueue) user.activityQueue = { acknowledgedMentionIds: [] };
-    const next = new Set((user.activityQueue.acknowledgedMentionIds || []).map((id: unknown) => String(id)));
-    next.add(String(activityId));
-    // This is per-(user, message) state, rather than a recent-feed cache: an
-    // acknowledged mention must not resurface merely because more messages
-    // arrive later.
-    user.activityQueue.acknowledgedMentionIds = Array.from(next);
-    await user.save();
-    return { success: true, acknowledgedMentionIds: user.activityQueue.acknowledgedMentionIds };
+    // eslint-disable-next-line global-require
+    const AttentionItemService = require('./attentionItemService');
+    return AttentionItemService.acknowledgeMention(userId, activityId);
   }
 
   static async getUnreadCount(userId: unknown, options: GetFeedOptions = {}): Promise<{ unreadCount: number }> {
@@ -1475,6 +1139,9 @@ class ActivityService {
       if (membershipError) return membershipError;
 
       await activity.approve(userId, notes);
+      // eslint-disable-next-line global-require
+      const { resolve } = require('./attentionItemService');
+      await resolve('approval', activity._id);
       return { success: true, status: 'approved' };
     } catch (error) {
       const err = error as { message?: string };
@@ -1498,6 +1165,9 @@ class ActivityService {
       if (membershipError) return membershipError;
 
       await activity.reject(userId, notes);
+      // eslint-disable-next-line global-require
+      const { resolve } = require('./attentionItemService');
+      await resolve('approval', activity._id);
       return { success: true, status: 'rejected' };
     } catch (error) {
       const err = error as { message?: string };

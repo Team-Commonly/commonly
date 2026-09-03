@@ -174,7 +174,7 @@ activitySchema.statics.createSkillActivity = async function (summary, pod) {
 
 activitySchema.statics.createApprovalRequest = async function (options) {
   const { podId, requestedBy, agentName, scopes, content } = options;
-  return this.create({
+  const approval = await this.create({
     type: 'approval_needed',
     actor: { id: null, name: 'commonly-bot', type: 'system', verified: true },
     action: 'approval_needed',
@@ -183,6 +183,12 @@ activitySchema.statics.createApprovalRequest = async function (options) {
     approval: { status: 'pending', requestedBy, requestedScopes: scopes },
     agentMetadata: { agentName },
   });
+  // The source row remains authoritative. Attention is a per-recipient
+  // projection written at the same boundary, never reconstructed by a read.
+  // eslint-disable-next-line global-require
+  const { recordApproval } = require('../services/attentionItemService');
+  await recordApproval(approval);
+  return approval;
 };
 
 activitySchema.statics.getFeedForUser = async function (userId, pods, options = {}) {

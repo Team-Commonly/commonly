@@ -84,6 +84,10 @@ jest.mock('../../../models/User', () => ({
 
 jest.mock('../../../services/githubAppService', () => ({ isPatConfigured: jest.fn(() => false) }));
 jest.mock('../../../services/taskEventService', () => ({ emitTaskUpdated: jest.fn() }));
+const mockRecordTaskAttention = jest.fn();
+jest.mock('../../../services/attentionItemService', () => ({
+  recordTaskAttention: (...args) => mockRecordTaskAttention(...args),
+}));
 
 const Task = require('../../../models/Task');
 const tasksApi = require('../../../routes/tasksApi');
@@ -125,7 +129,11 @@ afterAll(async () => {
   if (mongod) await mongod.stop();
 });
 
-beforeEach(async () => { await Task.deleteMany({}); });
+beforeEach(async () => {
+  await Task.deleteMany({});
+  mockRecordTaskAttention.mockReset();
+  mockRecordTaskAttention.mockResolvedValue(undefined);
+});
 
 describe('POST /updates renews a holder-authored lease', () => {
   it('the holder\'s note pushes the lease out by a full period', async () => {
@@ -157,6 +165,18 @@ describe('POST /updates renews a holder-authored lease', () => {
     // which is the abandonment bar the lease exists to enforce.
     expect(new Date(row.claimExpiresAt).getTime()).toBe(before.getTime());
     expect(row.updates.map((u) => u.text)).toContain('reviewed at 9f91b9b0');
+  });
+
+  it('hands every progress note to the task-attention source writer', async () => {
+    await seed({ claimedBy: 'holder', claimedAt: new Date(), claimExpiresAt: new Date(Date.now() + LEASE_MS) });
+
+    const res = await postUpdate('holder', 'TASK-001', 'Ready for Sam\'s ruling.');
+
+    expect(res.status).toBe(200);
+    expect(mockRecordTaskAttention).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'TASK-001',
+      updates: expect.arrayContaining([expect.objectContaining({ text: 'Ready for Sam\'s ruling.' })]),
+    }));
   });
 
   it('an ALREADY-LAPSED holder still renews — the row was theirs and they are working', async () => {

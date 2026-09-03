@@ -17,6 +17,8 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 // eslint-disable-next-line global-require
 const { emitTaskUpdated, notifyPodAgents } = require('../services/taskEventService');
+// eslint-disable-next-line global-require
+const { recordTaskAttention, resolveTaskAttention } = require('../services/attentionItemService');
 
 /**
  * Who made this board change, for the agent fan-out.
@@ -686,6 +688,7 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       task = await Task.findOneAndUpdate({ podId: podFilter, taskId }, { $push: note }, { new: true });
     }
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    await recordTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
     // Reported explicitly. A note that did not renew is a legitimate outcome
@@ -763,6 +766,8 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (changeParts.length > 0) update.$push = { updates: { text: `${author} updated: ${changeParts.join(', ')}`, author, authorId: userId?.toString() || null, createdAt: new Date() } };
     const task = await Task.findOneAndUpdate({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }, update, { new: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
+    if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated');
     return res.json({ task });

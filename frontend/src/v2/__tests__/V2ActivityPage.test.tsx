@@ -26,12 +26,8 @@ const CurrentPath = () => {
 const decisionQueue = {
   items: [
     {
-      id: 'mention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
+      id: 'mention-1', attentionItemId: 'attention-1', kind: 'mention', title: 'Review requested', detail: 'A direct mention.',
       podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T11:00:00.000Z',
-    },
-    {
-      id: 'task_TASK-059', kind: 'press', title: 'Retention ledger', detail: '#1208 held for the human merge press.',
-      podId: 'pod-1', podName: 'Launch pod', taskId: 'TASK-059', createdAt: '2026-08-26T10:00:00.000Z',
     },
     {
       id: 'decision-024', kind: 'decision', title: 'Choose the eslint scope', detail: 'What should the agent do?',
@@ -41,7 +37,7 @@ const decisionQueue = {
       ], createdAt: '2026-08-26T09:00:00.000Z',
     },
   ],
-  count: 3,
+  count: 2,
   composePodId: 'pod-1',
 };
 
@@ -102,14 +98,11 @@ describe('V2ActivityPage', () => {
     // adds a microtask hop the old single-request race happened to win.
     expect(await screen.findByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
     expect(screen.getByText('Review requested')).toBeInTheDocument();
-    // A board press remains an Open-board action; DecisionRequest cards use
-    // their declared options rather than deriving actions from task prose.
-    expect(screen.getByText('Retention ledger')).toBeInTheDocument();
-    expect(screen.getByText('Ready for your press')).toBeInTheDocument();
+    // Queue rows are only durable source facts; task handoff prose never
+    // creates a card. DecisionRequest cards use declared alternatives.
     expect(screen.getByText('Choose the eslint scope')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rule: Ship now' })).toBeInTheDocument();
     expect(screen.getByText('Release the bounded change.')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Open board' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.anything());
     expect(screen.getByRole('heading', { name: 'What your agents did' })).toBeInTheDocument();
@@ -267,6 +260,27 @@ describe('V2ActivityPage', () => {
       { value: 'Hold for customer evidence' },
       expect.objectContaining({ headers: expect.any(Object) }),
     ));
+  });
+
+  test('keeps a task attention row as an open-thread fact when it has no declared options', async () => {
+    const taskQueue = {
+      items: [{
+        id: 'task-1:blocked', attentionItemId: 'attention-task-1', kind: 'decision',
+        title: 'Choose a deploy shape', detail: 'Blocked on an upstream choice.',
+        podId: 'pod-1', podName: 'Launch pod', options: [], createdAt: '2026-08-26T11:00:00.000Z',
+      }],
+      count: 1,
+      composePodId: null,
+    };
+    mockGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === '/api/activity/decision-queue' ? taskQueue : { ...recap, needsYou: [] },
+    }));
+    renderPage();
+
+    expect(await screen.findByText('Choose a deploy shape')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Other…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Open thread' })).not.toHaveLength(0);
   });
 
   test('composes an ordinary pod message into the most recently addressed pod', async () => {
