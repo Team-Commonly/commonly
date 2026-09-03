@@ -135,6 +135,81 @@ describe('POST /api/agents/runtime/room — dual-auth (ADR-010 Phase 1)', () => 
       expect(res.body.room.members).toHaveLength(2);
     });
 
+    it('reopens the room after its reactive installation shares the agent identity', async () => {
+      const first = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(first.status).toBe(200);
+
+      // Creating the room adds a second active installation so Alice can
+      // reply there. That projection must not make a repeat "Talk to" call
+      // ambiguous with the original workspace installation.
+      const installations = await AgentInstallation.find({ agentName: 'alice', status: 'active' }).lean();
+      expect(installations).toHaveLength(2);
+
+      const second = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(second.status).toBe(200);
+      expect(String(second.body.room._id)).toBe(String(first.body.room._id));
+      expect(await Pod.countDocuments({ type: 'agent-room' })).toBe(1);
+    });
+
+    it('reopens the room when its reactive installation is the only one left', async () => {
+      const first = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(first.status).toBe(200);
+
+      // The room's reactive installation is the only surviving projection.
+      // It remains a valid legacy selection so reopening the existing 1:1
+      // never turns into a false "multiple installations" failure.
+      await AgentInstallation.deleteOne({
+        agentName: 'alice',
+        podId: pod._id,
+        status: 'active',
+      });
+      expect(await AgentInstallation.countDocuments({ agentName: 'alice', status: 'active' })).toBe(1);
+
+      const second = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(second.status).toBe(200);
+      expect(String(second.body.room._id)).toBe(String(first.body.room._id));
+    });
+
+    it('asks for podId when two workspace installations share an instance', async () => {
+      const first = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(first.status).toBe(200);
+
+      const secondWorkspacePod = await Pod.create({
+        name: 'Second Alice Workspace',
+        type: 'chat',
+        createdBy: humanUser._id,
+        members: [humanUser._id],
+      });
+      await request(app)
+        .post('/api/registry/install')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', podId: secondWorkspacePod._id.toString(), scopes: ['context:read'] });
+
+      const res = await request(app)
+        .post('/api/agents/runtime/room')
+        .set('Authorization', `Bearer ${humanToken}`)
+        .send({ agentName: 'alice', instanceId: 'default' });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe('Multiple installations match that instanceId. Specify podId.');
+      // Refusal does not fork another personal room.
+      expect(await Pod.countDocuments({ type: 'agent-room' })).toBe(1);
+    });
+
     it('returns 400 when agentName is missing', async () => {
       const res = await request(app)
         .post('/api/agents/runtime/room')
