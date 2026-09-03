@@ -107,13 +107,13 @@ function hasRecentTokenUse(
  */
 export async function markStaleInstallations(
   daysSinceLastEvent: number = DEFAULT_STALENESS_EVENT_DAYS,
-): Promise<{ marked: number }> {
+): Promise<{ marked: number; evaluationFailures: number }> {
   if (!Number.isFinite(daysSinceLastEvent) || daysSinceLastEvent <= 0) {
     console.warn(
       '[installation-cleanup] invalid daysSinceLastEvent, skipping mark step (value=%s)',
       daysSinceLastEvent,
     );
-    return { marked: 0 };
+    return { marked: 0, evaluationFailures: 0 };
   }
 
   const cutoff = new Date(Date.now() - daysSinceLastEvent * 24 * 60 * 60 * 1000);
@@ -125,7 +125,7 @@ export async function markStaleInstallations(
     .lean();
 
   if (!activeInstalls.length) {
-    return { marked: 0 };
+    return { marked: 0, evaluationFailures: 0 };
   }
 
   // Dedup the (agentName, instanceId) pairs so we only do one User lookup and
@@ -141,6 +141,10 @@ export async function markStaleInstallations(
   }
 
   const stalePairs = new Set<string>();
+  // A per-item swallow makes `marked` a LOWER BOUND reported as a total: a run
+  // that failed to evaluate every pair returns `{ marked: 0 }`, byte-identical
+  // to a clean run with nothing to do. Count the misses so the two differ.
+  let evaluationFailures = 0;
 
   for (const { agentName, instanceId } of uniquePairs.values()) {
     try {
@@ -178,11 +182,12 @@ export async function markStaleInstallations(
         instanceId,
         (err as Error).message,
       );
+      evaluationFailures += 1;
     }
   }
 
   if (!stalePairs.size) {
-    return { marked: 0 };
+    return { marked: 0, evaluationFailures };
   }
 
   // Build the OR filter once and updateMany — touches all pods of each stale
@@ -207,7 +212,7 @@ export async function markStaleInstallations(
   );
 
   const marked = result?.modifiedCount ?? result?.nModified ?? 0;
-  return { marked };
+  return { marked, evaluationFailures };
 }
 
 /**
@@ -217,13 +222,13 @@ export async function markStaleInstallations(
  */
 export async function pruneStaleInstallations(
   minStaleAgeDays: number = DEFAULT_PRUNE_AFTER_STALE_DAYS,
-): Promise<{ deleted: number }> {
+): Promise<{ deleted: number; failures: number }> {
   if (!Number.isFinite(minStaleAgeDays) || minStaleAgeDays <= 0) {
     console.warn(
       '[installation-cleanup] invalid minStaleAgeDays, skipping prune step (value=%s)',
       minStaleAgeDays,
     );
-    return { deleted: 0 };
+    return { deleted: 0, failures: 0 };
   }
 
   const cutoff = new Date(Date.now() - minStaleAgeDays * 24 * 60 * 60 * 1000);
@@ -236,10 +241,13 @@ export async function pruneStaleInstallations(
     .lean();
 
   if (!prunable.length) {
-    return { deleted: 0 };
+    return { deleted: 0, failures: 0 };
   }
 
   let deleted = 0;
+  // Same reason as markStaleInstallations: `deleted: 0` must not mean both
+  // "nothing to prune" and "every prune threw".
+  let failures = 0;
   for (const inst of prunable) {
     try {
       // Remove the agent user from the pod's members array so it stops
@@ -261,10 +269,11 @@ export async function pruneStaleInstallations(
         inst.instanceId,
         (err as Error).message,
       );
+      failures += 1;
     }
   }
 
-  return { deleted };
+  return { deleted, failures };
 }
 
 export async function runCleanup(): Promise<void> {
@@ -291,9 +300,15 @@ export async function runCleanup(): Promise<void> {
       `[installation-cleanup] running: mark stale after ${eventDays}d inactivity, prune after ${pruneDays}d stale`,
     );
     const markResult = await markStaleInstallations(eventDays);
-    console.log(`[installation-cleanup] mark done: marked ${markResult.marked} install(s) stale`);
+    console.log(
+      `[installation-cleanup] mark done: marked ${markResult.marked} install(s) stale`
+      + `, ${markResult.evaluationFailures} pair(s) could not be evaluated`,
+    );
     const pruneResult = await pruneStaleInstallations(pruneDays);
-    console.log(`[installation-cleanup] prune done: deleted ${pruneResult.deleted} stale install(s)`);
+    console.log(
+      `[installation-cleanup] prune done: deleted ${pruneResult.deleted} stale install(s)`
+      + `, ${pruneResult.failures} failed`,
+    );
   } catch (err) {
     // Swallow so cron keeps running — never crash the host process from a
     // cleanup failure. Next run will retry.

@@ -112,7 +112,13 @@ const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationD
       // pod's escalations to that group (connector-verify F2, 2026-08-26).
       'config.chatType': 'private',
     }).lean();
-  } catch {
+  } catch (error) {
+    // Fail CLOSED (no relay) but never silently: `null` is also what a pod with
+    // no live bridge returns, which is the overwhelmingly common case, so an
+    // unlogged swallow made a Mongo failure indistinguishable from the modal
+    // success value. Callers are fire-and-forget, so rethrowing here would only
+    // land on a floating promise — the log is the whole remedy.
+    console.error('[telegram-bridge] findLiveIntegration failed, treating pod as unbridged:', (error as Error).message);
     return null;
   }
 };
