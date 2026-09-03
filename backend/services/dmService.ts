@@ -2,6 +2,28 @@ import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
 
+/**
+ * The runtime block of an agent's existing active installation, so a new
+ * projection (agent-room, DM) routes the same way the original does.
+ * Returns null when the agent has no install with a runtime (BYO wrappers
+ * that never declared one), which keeps today's external-queue behaviour.
+ */
+export const resolveInstallRuntime = async (
+  agentName: string,
+  instanceId: string,
+): Promise<Record<string, unknown> | null> => {
+  try {
+    const sibling = await AgentInstallation.findOne({
+      agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $exists: true },
+    }).sort({ createdAt: -1 }).lean() as { config?: unknown } | null;
+    const cfg = sibling?.config as { runtime?: Record<string, unknown>; get?: (k: string) => unknown } | undefined;
+    const runtime = (cfg && typeof cfg.get === 'function' ? cfg.get('runtime') : cfg?.runtime) as Record<string, unknown> | undefined;
+    return runtime && typeof runtime === 'object' ? { ...runtime } : null;
+  } catch {
+    return null;
+  }
+};
+
 let PGPod: { addMember: (podId: string, userId: unknown) => Promise<void>; create: (name: string, description: string, type: string, creatorId: unknown, podId: string) => Promise<void> } | null;
 try {
   // eslint-disable-next-line global-require
@@ -365,11 +387,19 @@ class DMService {
     // (they fire on user message, not on a schedule).
     if (agentName) {
       try {
+        // The room install must carry the agent's RUNTIME, or the event
+        // router finds this pod-scoped row, sees no runtimeType, and parks
+        // the wake in the external queue where nothing consumes it. Every
+        // hosted Scout DM went silent this way (2026-08-28 .. 09-02: two
+        // strangers, one smoke). Copy runtime from the agent's existing
+        // active install; the room is a projection of the same agent.
+        const runtime = await resolveInstallRuntime(agentName.toLowerCase(), instanceId || 'default');
         await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
           version: '1.0.0',
           config: {
             heartbeat: { enabled: false },
             autoJoinSource: 'agent-room-create',
+            ...(runtime ? { runtime } : {}),
           } as unknown as Map<string, unknown>,
           scopes: ['context:read', 'summaries:read', 'messages:write'],
           installedBy: requestingUserId as unknown as import('mongoose').Types.ObjectId,
