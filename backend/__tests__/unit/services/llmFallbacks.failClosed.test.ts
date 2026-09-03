@@ -68,3 +68,53 @@ describe('LLM summaries fail closed', () => {
       .rejects.toThrow('LLM unavailable');
   });
 });
+
+// TASK-099 site 4. Failing closed is the first half; saying WHICH failure is
+// the second. `GET /api/summaries/all-posts` turns a throw from here into a
+// 503, and 503 is an instruction to retry — correct for an LLM outage,
+// actively wrong for a defect in this method. The route reads `.code`, so the
+// tag has to be applied at the throw site, and only at the two causes the
+// route's own comment names.
+describe('summarizeAllPosts tags the causes that are genuinely unavailability', () => {
+  const postsQuery = (result) => {
+    const query = {
+      populate: jest.fn(),
+      sort: jest.fn(),
+      limit: jest.fn(),
+      lean: jest.fn(),
+    };
+    query.populate.mockReturnValue(query);
+    query.sort.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    if (result instanceof Error) query.lean.mockRejectedValue(result);
+    else query.lean.mockResolvedValue(result);
+    return query;
+  };
+  const onePost = [{ content: 'A real post', tags: [], userId: { username: 'lily' } }];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("tags an LLM failure with code 'summary_unavailable'", async () => {
+    Post.find.mockReturnValueOnce(postsQuery(onePost));
+    generateText.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    const err = await summarizerService.summarizeAllPosts().catch((e) => e);
+
+    expect(err.code).toBe('summary_unavailable');
+    // The original message survives inside the wrapper: the outer catch still
+    // scans it for '429' / 'Resource exhausted' to arm the cooldown, so
+    // replacing the text rather than interpolating it would disarm that.
+    expect(err.message).toContain('connect ECONNREFUSED');
+  });
+
+  it('leaves a datastore failure untagged, so the route reports it as a server error', async () => {
+    Post.find.mockReturnValueOnce(postsQuery(new Error('MongoNetworkError: connection 3 to db timed out')));
+
+    const err = await summarizerService.summarizeAllPosts().catch((e) => e);
+
+    expect(err.message).toContain('MongoNetworkError');
+    expect(err.code).toBeUndefined();
+  });
+});

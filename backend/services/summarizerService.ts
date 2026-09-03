@@ -36,6 +36,32 @@ interface AllPostsSummary {
   };
 }
 
+// TASK-099 site 4. `GET /api/summaries/all-posts` reported EVERY throw out of
+// `summarizeAllPosts` as `503 summary_unavailable`, so a code defect in this
+// method was indistinguishable from the LLM being down — and 503 tells the
+// caller to retry an endpoint that is permanently broken. Only the two causes
+// the route's fail-closed comment actually names carry this marker: the
+// rate-limit cooldown, and a `generateText` failure. Everything else (a Mongo
+// error, a TypeError in the post mapping) stays an ordinary throw and the
+// route answers 500.
+//
+// The route matches on `.code`, not `instanceof`: this module ships through
+// the `module.exports = exports.default` CJS-compat shim at the foot of the
+// file, and a duplicated module registration would break identity while a
+// string property survives it.
+export const SUMMARY_UNAVAILABLE = 'summary_unavailable';
+
+export class SummaryUnavailableError extends Error {
+  code: string;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message);
+    this.name = 'SummaryUnavailableError';
+    this.code = SUMMARY_UNAVAILABLE;
+    if (options && 'cause' in options) (this as { cause?: unknown }).cause = options.cause;
+  }
+}
+
 interface AllPostsCache {
   summary: AllPostsSummary | null;
   createdAt: number;
@@ -394,10 +420,20 @@ Please create an engaging 3-4 sentence community overview that:
 This is for new visitors to understand what the community is all about. Focus on the content and conversations, not just statistics.`;
 
       if (now < cache.cooldownUntil) {
-        throw new Error('All-posts summary generation is cooling down after an LLM rate limit');
+        throw new SummaryUnavailableError('All-posts summary generation is cooling down after an LLM rate limit');
       }
       console.log('Generating all-posts summary with LLM...');
-      const summaryText = await generateText(prompt, { temperature: 0.4 }) as string;
+      let summaryText: string;
+      try {
+        summaryText = await generateText(prompt, { temperature: 0.4 }) as string;
+      } catch (llmError) {
+        // Message is interpolated, not replaced: the outer catch below still
+        // scans it for '429'/'Resource exhausted' to arm the cooldown.
+        throw new SummaryUnavailableError(
+          `All-posts summary generation failed at the LLM: ${(llmError as Error)?.message}`,
+          { cause: llmError },
+        );
+      }
       console.log(
         `✓ LLM returned all-posts summary: "${summaryText.substring(0, 100)}..."`,
       );
