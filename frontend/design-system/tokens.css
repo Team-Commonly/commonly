@@ -24,6 +24,8 @@
   --c-surface:         #ffffff;
   --c-surface-tint:    #f4f3f8;   /* inspector, code blocks */
   --c-surface-hover:   #f1f2f5;
+  --c-shell-bg:        #f1f1f4;   /* shell ground: rail, pods, inspector, gutter around the content card (TASK-122) */
+  --c-content-radius:  14px;      /* the inset content card */
 
   /* ---------- Borders ---------- */
   --c-border:          #e5e7eb;   /* default */
@@ -36,6 +38,9 @@
   --c-fg-tertiary:     #7b8494;
   --c-fg-muted:        #8a93a3;
   --c-fg-on-accent:    #ffffff;
+  --c-ink:             #111827;   /* filled buttons are ink; blue is links, marks, halo (TASK-122) */
+  --c-ink-hover:       #1f2937;
+  --c-on-ink:          #ffffff;
 
   /* ---------- Semantic ---------- */
   --c-success:         #10b981;
@@ -66,9 +71,9 @@
   --c-github:          #333333;
 
   /* ---------- Geometry ---------- */
-  --c-radius-sm:       8px;       /* chips, small buttons */
+  --c-radius-sm:       6px;       /* chips, inputs, small buttons */
   --c-radius:          10px;      /* default — inputs, cards inside panels */
-  --c-radius-lg:       12px;      /* cards, modals */
+  --c-radius-lg:       14px;      /* the content card, modals, the login card */
   --c-radius-pill:     999px;
 
   /* ---------- Spacing scale ---------- */
@@ -91,6 +96,7 @@
   --c-shadow-sm:   0 1px 2px 0 rgba(15, 23, 42, 0.04);
   --c-shadow-md:   0 4px 12px rgba(15, 23, 42, 0.06);
   --c-shadow-lg:   0 8px 24px rgba(15, 23, 42, 0.12);
+  --c-shadow-pending: 0 1px 2px rgba(15, 23, 42, 0.06);   /* the one chrome-card shadow: a PENDING decision/approval only */
 
   /* ---------- Motion ---------- */
   --c-ease:        cubic-bezier(0.4, 0, 0.2, 1);
@@ -111,15 +117,12 @@
   --motion-ease-linear: linear;
 
   /* ---------- Typography ---------- */
-  /* SF-first stack — uses the OS-installed San Francisco family on Apple
-     devices; falls through to BlinkMacSystemFont (Chrome's SF alias) and
-     finally to Segoe/Inter on non-Apple platforms. */
-  --c-font-sans:   "SF Pro Text", -apple-system, BlinkMacSystemFont,
-                   "SF Pro", "Helvetica Neue", "Segoe UI", "Inter",
-                   Roboto, sans-serif;
-  --c-font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont,
-                    "SF Pro", "Helvetica Neue", "Segoe UI", "Inter",
-                    sans-serif;
+  /* Inter (variable, self-hosted from the bundle via @fontsource-variable/inter);
+     SF Pro is the fallback only while the woff2 loads or if it fails. One face:
+     display weight comes from font-weight, not a second family. (TASK-122) */
+  --c-font-sans:   "Inter Variable", "Inter", "SF Pro Text", -apple-system,
+                   BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --c-font-display: var(--c-font-sans);
   --c-font-mono:   "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
                    "JetBrains Mono", "Fira Code", monospace;
 
@@ -145,6 +148,9 @@
   --c-lh-tight:    1.25;
   --c-lh-base:     1.45;
   --c-lh-comfy:    1.55;
+  --c-lh-body:     20px;   /* 14/20 body, 12/16 meta, 11/14 labels — mirror --v2-lh-* */
+  --c-lh-meta:     16px;
+  --c-lh-label:    14px;
   /* Platform brand + tint tokens (connectors) — mirror of --v2-platform-* in
      src/v2/v2.css; the two move together. */
   --c-platform-telegram: #2aabee;
@@ -184,7 +190,7 @@ html, body {
 h1, .c-h1 {
   font-family: var(--c-font-sans);
   font-size: var(--c-fs-3xl);
-  font-weight: 850;            /* V2 uses 850 for feature titles */
+  font-weight: 700;            /* 850 was tuned for SF Pro Display; Inter reads right at 700 */
   line-height: var(--c-lh-tight);
   letter-spacing: -0.03em;
   margin: 0;
