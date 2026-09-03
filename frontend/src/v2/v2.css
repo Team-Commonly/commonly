@@ -8586,78 +8586,86 @@ body.modern-ui.v2-canvas {
   margin-top: 30px;
 }
 
+/* Composer (Sam ruled 2026-09-03 on the Shell Parity canvas, board 3): one
+   card, radius-lg, the textarea borderless inside it, a small ink Send in the
+   foot row. Focus is the halo on the CARD, not a harder border. */
 .v2-activity__compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 22px;
-  padding: 16px;
+  padding: 12px 14px;
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-radius-lg);
   background: var(--v2-surface);
+  transition: box-shadow 120ms ease;
 }
 
 .v2-activity__compose:focus-within {
-  border-color: var(--v2-border-strong);
+  box-shadow: 0 0 0 4px rgba(47, 111, 235, 0.10);
 }
 
-.v2-activity__compose-heading,
-.v2-activity__compose-entry,
-.v2-activity__compose-pod {
+.v2-activity__compose-top,
+.v2-activity__compose-foot {
   display: flex;
-  align-items: end;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.v2-activity__compose-heading {
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.v2-activity__compose h2 {
-  font-size: 17px;
-  line-height: 1.25;
-  letter-spacing: -0.015em;
-}
-
-.v2-activity__compose-pod {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+.v2-activity__compose h2.v2-activity__compose-label {
+  margin: 0;
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-label);
   line-height: var(--v2-lh-label);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.v2-activity__compose-pod {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-muted);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
 }
 
 .v2-activity__compose-pod select {
-  min-height: 36px;
+  height: 26px;
   max-width: 220px;
-  padding: 0 28px 0 10px;
+  padding: 0 24px 0 8px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
+  background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
   font: inherit;
+  font-size: var(--v2-fs-meta);
   font-weight: 500;
 }
 
 .v2-root .v2-activity__compose textarea {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
+  resize: none;
+  padding: 2px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--v2-text-primary);
   font: inherit;
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
 }
 
-/* Halo focus (TASK-122): the global `.v2-root textarea:focus-visible` rule
-   carries the box-shadow halo; this only gives it an edge. <select> is outside
-   that global list, so the pod picker carries its own halo. No hard outline. */
+/* Halo focus (TASK-122): the card carries the halo (focus-within above), so
+   the textarea itself shows nothing; <select> is outside the global
+   focus-visible list and carries its own ring. */
 .v2-root .v2-activity__compose textarea:focus-visible {
-  border-color: var(--v2-accent);
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
 }
 
 .v2-activity__compose-pod select:focus-visible {
@@ -8666,11 +8674,17 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-accent);
 }
 
+.v2-activity__compose-hint {
+  color: var(--v2-text-muted);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
 .v2-root .v2-activity__compose button {
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 30px;
+  padding: 0 14px;
   border: 1px solid var(--v2-ink);
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-radius-sm);
   background: var(--v2-ink);
   color: var(--v2-on-ink);
   font-size: 13px;
@@ -8684,15 +8698,30 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__section-heading {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 14px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .v2-activity__section-heading > p {
-  max-width: 440px;
-  text-align: right;
+  margin: 0;
+  color: var(--v2-text-muted);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+.v2-activity__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font-size: var(--v2-fs-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .v2-activity__eyebrow {
@@ -8705,9 +8734,11 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__section h2 {
-  font-size: 19px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .v2-activity__board-list {
@@ -8760,7 +8791,8 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-row--decision,
 .v2-activity__queue-row--approval {
   background: var(--v2-surface);
-  border-color: var(--v2-border);
+  border-color: var(--v2-border-strong);
+  border-radius: var(--v2-radius-lg);
   box-shadow: var(--v2-shadow-pending);
 }
 
@@ -8785,11 +8817,15 @@ body.modern-ui.v2-canvas {
   width: 28px;
   height: 28px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--v2-radius-sm);
   background: var(--v2-accent-soft);
   color: var(--v2-accent-text);
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
+}
+.v2-activity__queue-row--decision .v2-activity__queue-mark {
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-activity__queue-row--approval .v2-activity__queue-mark {
@@ -8811,6 +8847,7 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__queue-kind,
 .v2-activity__queue-copy > span,
+.v2-activity__queue-topline > span,
 .v2-activity__agent-topline span,
 .v2-activity__board-meta,
 .v2-activity__task-id,
@@ -8854,13 +8891,13 @@ body.modern-ui.v2-canvas {
 
 .v2-activity__queue-row button,
 .v2-activity__board-meta button {
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
   color: var(--v2-text-primary);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .v2-root .v2-activity__queue-actions button {
@@ -8908,6 +8945,36 @@ body.modern-ui.v2-canvas {
   grid-column: 1 / -1;
   justify-content: flex-start;
   flex-wrap: wrap;
+}
+
+/* Mention rows (canvas board 3): the reply line sits UNDER the message,
+   indented past the mark, never squeezed beside it. The mark already says
+   "@", so the kind label is redundant and hidden. */
+.v2-activity__queue-row--mention {
+  align-items: start;
+}
+.v2-activity__queue-topline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.v2-activity__queue-topline strong {
+  margin-top: 0;
+  font-weight: 600;
+}
+.v2-activity__queue-row--mention .v2-activity__queue-copy p {
+  color: var(--v2-text-primary);
+}
+.v2-activity__queue-row--mention .v2-activity__queue-actions {
+  grid-column: 2 / -1;
+  align-items: center;
+  margin-top: 4px;
+}
+.v2-root .v2-activity__queue-actions button:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 .v2-root .v2-activity__queue-actions button.v2-activity__option {
@@ -9129,11 +9196,11 @@ body.modern-ui.v2-canvas {
   .v2-activity__window { width: 100%; }
   .v2-root button.v2-activity__window-button { flex: 1 1 0; }
   .v2-activity__scope select { width: 100%; max-width: none; }
-  .v2-activity__compose-heading,
-  .v2-activity__compose-entry { align-items: stretch; flex-direction: column; }
-  .v2-activity__compose-pod select { max-width: none; width: 100%; }
-  .v2-root .v2-activity__compose button { width: 100%; }
-  .v2-activity__section-heading > p { text-align: left; }
+  .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .v2-activity__compose-pod select { max-width: 100%; }
+  .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
+  .v2-activity__section-heading { flex-wrap: wrap; }
+  .v2-activity__section-heading > p { flex-basis: 100%; }
   .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
@@ -9194,7 +9261,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-team__title,
 .v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__compose h2,
+.v2-root:lang(zh) .v2-activity__compose-label,
 .v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-activity__agent-card h3,
 .v2-root:lang(zh) .v2-activity__board-row h3,
@@ -9483,23 +9550,32 @@ body.modern-ui.v2-canvas {
    full width of the row so the thumb has something to hit. */
 .v2-activity__reply {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
   flex: 1 1 260px;
   min-width: 0;
 }
+.v2-root .v2-activity__reply button {
+  flex: 0 0 auto;
+  min-width: max-content;
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
 .v2-root textarea.v2-activity__reply-input {
   flex: 1 1 auto;
   min-width: 0;
-  resize: vertical;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: var(--v2-fs-body);
-  line-height: var(--v2-lh-body);
-  color: var(--v2-text-primary);
-  background: var(--v2-surface);
+  height: 32px;
+  min-height: 32px;
+  padding: 6px 10px;
+  resize: none;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
 }
 .v2-root textarea.v2-activity__reply-input:focus-visible {
   border-color: var(--v2-accent); /* the global halo carries the ring; no hard outline */

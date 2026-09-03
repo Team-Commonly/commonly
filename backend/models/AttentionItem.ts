@@ -11,6 +11,7 @@ export interface IAttentionItem extends Document {
   title: string;
   detail?: string;
   podName?: string;
+  actorName?: string;
   messageId?: string;
   threadRootId?: string;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
@@ -37,6 +38,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   title: { type: String, required: true },
   detail: { type: String },
   podName: { type: String },
+  actorName: { type: String },
   messageId: { type: String },
   threadRootId: { type: String },
   options: [optionSchema],
