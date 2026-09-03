@@ -548,6 +548,7 @@ describe('Clawdbot E2E Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.events).toBeDefined();
       expect(res.body.events.length).toBe(2);
+      expect(res.body.inboxCount).toBe(2);
       // ADR-012 §3: GET /events is mutate-on-claim — events return as
       // 'delivered' (claimed, awaiting ack), not 'pending'. The ack route
       // transitions them to 'acked'.

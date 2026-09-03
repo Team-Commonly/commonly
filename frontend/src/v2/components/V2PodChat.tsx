@@ -26,6 +26,11 @@ import { agentKeyFor } from '../utils/agentKey';
 const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
+// A sent direct message is durable in the room, but it is not a reply. Give
+// the person a clear, bounded wait state instead of leaving the composer to
+// imply that the agent is working. Two minutes is long enough for a normal
+// turn and short enough to make an unavailable seat visible.
+const AGENT_REPLY_TIMEOUT_MS = 2 * 60 * 1000;
 
 const STARTER_PROMPT_KEYS = [
   'podChat.starters.introduce',
@@ -108,16 +113,33 @@ interface MentionItem {
 
 // #891 surface 1 — per-agent reachability from /api/pods/:podId/agent-states.
 // Only the states the kernel can derive HONESTLY for the agent's runtime
-// class arrive here; 'reachable'/'unknown' render nothing.
+// class arrive here. Shared-pod mention affordances stay quiet for
+// 'reachable'/'unknown'; a 1:1 room separately states returned uncertainty.
 type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 interface AgentStateRow {
   agentName: string;
   instanceId: string;
+  displayName?: string;
   state: AgentReachState;
   isOwner: boolean;
   fixCommand?: string;
 }
 const REACH_NEEDS_WARNING = new Set<AgentReachState>(['gone-dark', 'never-connected']);
+const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
+
+interface DirectAgentIdentity {
+  username: string;
+  displayName: string;
+  state: AgentStateRow | null;
+}
+
+interface AwaitingAgentReply {
+  podId: string;
+  messageId: string;
+  agentName: string;
+  sentAt: number;
+  timedOut: boolean;
+}
 
 interface TypingAgentEntry {
   key: string;
@@ -236,6 +258,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     messageId: string;
     mentionHandle: string;
   } | null>(null);
+  const [awaitingAgentReply, setAwaitingAgentReply] = useState<AwaitingAgentReply | null>(null);
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
   const [mode, setMode] = useState<PodMode>(pod ? readMode(pod._id) : 'plan');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -343,6 +366,72 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     });
     return map;
   }, [agentStates]);
+
+  // Agent rooms are exactly one human and one agent. Resolve that one agent
+  // through the same installation data that powers mentions, then attach the
+  // liveness row only when the status endpoint returned a matching row. An
+  // unavailable status read must never turn into a fabricated "offline" UI.
+  const directAgent = useMemo<DirectAgentIdentity | null>(() => {
+    if (pod?.type !== 'agent-room') return null;
+    // `isBot` is not reliable on every old member payload. Prefer a member
+    // that resolves against the active agent installation, then keep isBot as
+    // the backwards-compatible fallback.
+    const member = (members || []).find((candidate) => (agents || []).some((agent) => {
+      const rawName = ((agent as { name?: string; agentName?: string }).name || agent.agentName || '');
+      return buildAgentUsername(rawName, agent.instanceId) === (candidate?.username || '').toLowerCase();
+    })) || (members || []).find((candidate) => candidate?.isBot);
+    if (!member) return null;
+    const username = (member.username || '').toLowerCase();
+    const agent = (agents || []).find((candidate) => {
+      const rawName = ((candidate as { name?: string; agentName?: string }).name || candidate.agentName || '');
+      return buildAgentUsername(rawName, candidate.instanceId) === username;
+    });
+    const rawName = ((agent as { name?: string; agentName?: string } | undefined)?.name
+      || agent?.agentName
+      || username);
+    const rawInstance = agent?.instanceId || '';
+    const state = agentStateByHandle.get(rawInstance.toLowerCase())
+      || agentStateByHandle.get(rawName.toLowerCase())
+      || null;
+    return {
+      username,
+      displayName: agent?.displayName || agent?.profile?.displayName || state?.displayName || member.username || t('common.agent'),
+      state,
+    };
+  }, [pod?.type, members, agents, agentStateByHandle, t]);
+
+  // The direct-room wait ends only on the agent's actual reply (not when the
+  // POST succeeds) or after a bounded timeout. Clearing it on a pod change
+  // keeps a wait from one room from leaking into another.
+  useEffect(() => {
+    if (!awaitingAgentReply) return undefined;
+    if (pod?._id !== awaitingAgentReply.podId) {
+      setAwaitingAgentReply(null);
+      return undefined;
+    }
+    const receivedReply = messages.some((message) => {
+      if (String(message.id) === awaitingAgentReply.messageId) return false;
+      const sentOrLater = new Date(message.created_at || message.createdAt || 0).getTime()
+        >= awaitingAgentReply.sentAt;
+      const isDirectAgent = Boolean(message.user?.isBot)
+        || String(message.user?.username || '').toLowerCase() === directAgent?.username;
+      return sentOrLater && isDirectAgent;
+    });
+    if (receivedReply) {
+      setAwaitingAgentReply(null);
+      return undefined;
+    }
+    if (awaitingAgentReply.timedOut) return undefined;
+    const remaining = Math.max(0, AGENT_REPLY_TIMEOUT_MS - (Date.now() - awaitingAgentReply.sentAt));
+    const timeout = setTimeout(() => {
+      setAwaitingAgentReply((current) => (
+        current && current.messageId === awaitingAgentReply.messageId
+          ? { ...current, timedOut: true }
+          : current
+      ));
+    }, remaining);
+    return () => clearTimeout(timeout);
+  }, [awaitingAgentReply, pod?._id, messages, directAgent?.username]);
 
   useEffect(() => {
     if (pod) setMode(readMode(pod._id));
@@ -851,6 +940,18 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const botPair = isBotToBot
     ? botMembers.slice(0, 2).map((m) => m.username || t('common.agent'))
     : null;
+  const directAgentReach = directAgent?.state?.state;
+  const showDirectAgentLiveness = Boolean(
+    isAgentRoom && directAgent && directAgentReach && !REACH_IS_ACTIVE.has(directAgentReach),
+  );
+  const directAgentLivenessKey = directAgentReach === 'never-connected'
+    ? 'podChat.agentRoomLiveness.neverConnected'
+    : directAgentReach === 'gone-dark'
+      ? 'podChat.agentRoomLiveness.goneDark'
+      : 'podChat.agentRoomLiveness.unknown';
+  const showAwaitingAgentReply = Boolean(
+    isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
+  );
 
   const handleSend = async (override?: string) => {
     const text = (override ?? draft).trim();
@@ -886,6 +987,18 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
         threadTarget?.id || undefined,
       );
       if (created) {
+        // A direct-room post is not evidence that the agent is alive or
+        // working. Track the reply separately so the user gets a truthful
+        // "waiting" state until the agent speaks or the wait expires.
+        if (isAgentRoom && directAgent) {
+          setAwaitingAgentReply({
+            podId: pod._id,
+            messageId: String(created.id),
+            agentName: directAgent.displayName,
+            sentAt: Date.now(),
+            timedOut: false,
+          });
+        }
         const delivery = created.agentDelivery;
         const exampleAgent = agents.find((agent) => agent.status === 'active') || agents[0];
         // Same handle rule as the typeahead: human-chosen instanceId is the
@@ -1028,12 +1141,17 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   const onlineAgentCount = agents.filter((agent) => (
     !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
   )).length;
-  const liveState = onlineAgentCount > 0
-    ? t('podChat.heartbeat.recent', {
-      count: onlineAgentCount,
-      formattedCount: numberFormatter.format(onlineAgentCount),
-    })
-    : t('podChat.heartbeat.none');
+  // A no-heartbeat state has meaning only when this pod has an installed
+  // agent. Human-only pods otherwise read as broken despite having nobody
+  // expected to check in.
+  const liveState = agents.length > 0
+    ? onlineAgentCount > 0
+      ? t('podChat.heartbeat.recent', {
+        count: onlineAgentCount,
+        formattedCount: numberFormatter.format(onlineAgentCount),
+      })
+      : t('podChat.heartbeat.none')
+    : null;
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
 
   return (
@@ -1122,7 +1240,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
           {pod.description && (
             <div className="v2-chat__goal">
               {pod.description}
-              <span className="v2-chat__goal-meta"> · {liveState}</span>
+              {liveState && <span className="v2-chat__goal-meta"> · {liveState}</span>}
             </div>
           )}
         </header>
@@ -1397,6 +1515,23 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                 </div>
               </div>
             ) : (
+            <>
+              {showDirectAgentLiveness && directAgent && (
+                <div className="v2-chat__agent-room-status" data-testid="agent-room-liveness" role="status">
+                  {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
+                </div>
+              )}
+              {showAwaitingAgentReply && awaitingAgentReply && (
+                <div
+                  className={`v2-chat__agent-room-status v2-chat__agent-room-status--wait${awaitingAgentReply.timedOut ? ' v2-chat__agent-room-status--timeout' : ''}`}
+                  data-testid="agent-reply-wait"
+                  role="status"
+                >
+                  {awaitingAgentReply.timedOut
+                    ? t('podChat.agentRoomLiveness.timedOut', { agentName: awaitingAgentReply.agentName })
+                    : t('podChat.agentRoomLiveness.waiting', { agentName: awaitingAgentReply.agentName })}
+                </div>
+              )}
             <div className="v2-chat__composer">
               {threadTarget && (
                 <div className="v2-chat__reply-chip v2-chat__reply-chip--thread" role="status">
@@ -1562,6 +1697,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                 <span><kbd>{COMMAND_KEY}</kbd><kbd>{ENTER_KEY}</kbd> {t('podChat.composer.toSend')}</span>
               </div>
             </div>
+            </>
             )}
       </div>
     </main>

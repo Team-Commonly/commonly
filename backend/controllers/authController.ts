@@ -70,6 +70,26 @@ const isValidEmail = (email: any) => typeof email === 'string'
   && email.length <= 254
   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+const hasEmailDeliveryConfig = () => Boolean(process.env.SMTP2GO_API_KEY)
+  && Boolean(process.env.SMTP2GO_FROM_EMAIL)
+  && Boolean(process.env.FRONTEND_URL);
+
+// Registration and resend must produce the same link. Keeping the delivery
+// details here avoids a resend drifting to a different URL, TTL, or sender.
+const sendVerificationEmail = async (user: any) => {
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: '1d',
+  });
+  const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+
+  return sendEmail({
+    to: user.email,
+    subject: 'Verify Your Email - Commonly',
+    textBody: `Click the link below to verify your email: ${verifyUrl}`,
+    htmlBody: `<p>Click the link below to verify your email:</p><a href="${verifyUrl}">Verify Email</a>`,
+  });
+};
+
 // Give every new signup a default private workspace pod so the BYO
 // onboarding flow has a target to install/talk-to an agent in. Matches
 // the Mongo Pod shape created by podController.createPod (type 'chat',
@@ -324,9 +344,7 @@ exports.register = async (req: any, res: any) => {
       });
     }
 
-    const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
-      && Boolean(process.env.SMTP2GO_FROM_EMAIL)
-      && Boolean(process.env.FRONTEND_URL);
+    const hasEmailConfig = hasEmailDeliveryConfig();
     // When email is not configured there is no way to deliver a verification
     // link, so auto-verify regardless of NODE_ENV — otherwise a prod deploy
     // without SMTP would create verified=false accounts that login() permanently
@@ -356,28 +374,13 @@ exports.register = async (req: any, res: any) => {
     if (shouldAutoVerify) joinCommunityPodBestEffort(user._id);
 
     if (hasEmailConfig) {
-      // Generate email verification token
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-        expiresIn: '1d',
-      });
-
-      const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
-      const html = `<p>Click the link below to verify your email:</p>
-               <a href="${verifyUrl}">Verify Email</a>`;
-      const text = `Click the link below to verify your email: ${verifyUrl}`;
-
       try {
         console.log('SMTP2GO send attempt:', {
-          to: email,
+          to: user.email,
           sender: process.env.SMTP2GO_FROM_EMAIL,
           fromName: process.env.SMTP2GO_FROM_NAME,
         });
-        const smtpRes = await sendEmail({
-          to: email,
-          subject: 'Verify Your Email - Commonly',
-          textBody: text,
-          htmlBody: html,
-        });
+        const smtpRes = await sendVerificationEmail(user);
         console.log('SMTP2GO send response:', smtpRes?.data);
       } catch (sendError: any) {
         console.error('SMTP2GO error during registration:', sendError?.response?.data || sendError.message);
@@ -533,9 +536,7 @@ exports.forgotPassword = async (req: any, res: any) => {
     if (!email || !isValidEmail(email)) return res.json(genericResponse);
 
     const user = await User.findOne({ email, isBot: { $ne: true } });
-    const hasEmailConfig = Boolean(process.env.SMTP2GO_API_KEY)
-      && Boolean(process.env.SMTP2GO_FROM_EMAIL)
-      && Boolean(process.env.FRONTEND_URL);
+    const hasEmailConfig = hasEmailDeliveryConfig();
     if (!user || !hasEmailConfig) {
       if (user && !hasEmailConfig) {
         console.warn('[forgot-password] email delivery not configured; reset link not sent for', email);
@@ -562,6 +563,34 @@ exports.forgotPassword = async (req: any, res: any) => {
     return res.json(genericResponse);
   } catch (err: any) {
     console.error('forgot-password failed:', err.message);
+    return res.json(genericResponse);
+  }
+};
+
+// 📌 Resend verification — always 200 so this public endpoint cannot reveal
+// whether an address has an account. The login form already has a verified
+// credential failure to act on; every other caller receives the same response.
+exports.resendVerification = async (req: any, res: any) => {
+  const genericResponse = {
+    message: 'If that email has an unverified account, a verification link is on its way.',
+  };
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email || !isValidEmail(email)) return res.json(genericResponse);
+
+    const user = await User.findOne({ email, isBot: { $ne: true } });
+    if (!user || user.verified || !hasEmailDeliveryConfig()) return res.json(genericResponse);
+
+    try {
+      await sendVerificationEmail(user);
+    } catch (sendError: any) {
+      // Keep the response generic, but make delivery failure observable to the
+      // operator rather than presenting a false promise as success.
+      console.error('SMTP2GO error during verification resend:', sendError?.response?.data || sendError.message);
+    }
+    return res.json(genericResponse);
+  } catch (err: any) {
+    console.error('resend-verification failed:', err.message);
     return res.json(genericResponse);
   }
 };
@@ -644,13 +673,6 @@ exports.login = async (req: any, res: any) => {
       return res.status(403).json({ error: 'This account has been suspended.' });
     }
 
-    // Check if the email is verified
-    if (!user.verified) {
-      return res
-        .status(400)
-        .json({ error: 'Email not verified. Please check your inbox.' });
-    }
-
     // OAuth-only accounts have no password hash — send them to their provider
     // instead of letting bcrypt throw on an undefined hash.
     if (!user.password) {
@@ -663,6 +685,10 @@ exports.login = async (req: any, res: any) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
+
+    // Verification is a post-login reminder, not an authentication wall.
+    // A correct password always starts a session; the shell receives the
+    // verified bit and keeps the user informed until their email is confirmed.
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: '7d',
@@ -677,6 +703,7 @@ exports.login = async (req: any, res: any) => {
         email: user.email,
         profilePicture: user.profilePicture,
         role: user.role,
+        verified: user.verified,
       },
     });
   } catch (err: any) {

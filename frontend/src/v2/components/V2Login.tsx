@@ -110,7 +110,7 @@ const V2Login: React.FC = () => {
           <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.login.forgotPassword')}</Link>
         </div>
 
-        {errorMessage && <div className="v2-login__error">{errorMessage}</div>}
+        {errorMessage && <div className="v2-login__error" role="alert">{errorMessage}</div>}
 
         <V2OAuthButtons next={nextPath} />
 

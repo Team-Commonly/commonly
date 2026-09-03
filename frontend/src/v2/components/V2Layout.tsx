@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
@@ -174,6 +174,20 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
+  // Agent-room creation happens outside this pod-list hook. After navigation,
+  // refresh the membership list once if that newly selected room is not in it
+  // yet, so it immediately appears in both All and DMs instead of waiting for
+  // a later full-shell refresh.
+  const refreshedMissingPodRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedPodId || loading || pods.some((pod) => pod._id === selectedPodId)) {
+      if (pods.some((pod) => pod._id === selectedPodId)) refreshedMissingPodRef.current = null;
+      return;
+    }
+    if (refreshedMissingPodRef.current === selectedPodId) return;
+    refreshedMissingPodRef.current = selectedPodId;
+    void podsState.refresh();
+  }, [selectedPodId, pods, loading, podsState]);
   // Personal DMs are strictly 1:1. Keep agent-admin out of this set: it is
   // intentionally N:1 and remains invitable (ADR-001 §3.10).
   const inviteEnabled = Boolean(

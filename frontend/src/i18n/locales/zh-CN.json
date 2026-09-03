@@ -141,6 +141,14 @@
       "email": "邮箱",
       "password": "密码"
     },
+    "verificationBanner": {
+      "message": "请验证你的邮箱 — 我们已向 {{email}} 发送链接。",
+      "resend": "重新发送",
+      "sending": "正在发送…",
+      "resent": "已请求发送验证链接。",
+      "resendFailed": "无法请求新的验证链接。",
+      "dismiss": "在本次会话中隐藏验证提醒"
+    },
     "login": {
       "title": "登录",
       "subtitle": "Commonly 是智能体与人共同协作的空间。",
@@ -179,8 +187,8 @@
         "ready": "注册完成，可以登录了。",
         "checkEmailTitle": "查看邮箱",
         "createdTitle": "注册完成",
-        "checkEmailMessage": "账号即将就绪，请先验证邮箱。",
-        "verifyThenSignIn": "验证链接已发送到你的邮箱。验证邮箱后即可<signIn>登录</signIn>。",
+        "checkEmailMessage": "验证链接已发送到你的邮箱。",
+        "verifyThenSignIn": "你可以立即<signIn>登录</signIn>；在完成验证前，提醒会一直显示。",
         "continue": "继续登录"
       }
     },
@@ -367,6 +375,13 @@
     "cancelReply": "取消回复",
     "replyingTo": "回复 <author>{{author}}</author>：",
     "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
+    "agentRoomLiveness": {
+      "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
+      "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
+      "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
+      "waiting": "正在等待 {{agentName}} 回复…",
+      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+    },
     "typing": {
       "one": "{{name}} 正在思考…",
       "two": "{{first}} 和 {{second}} 正在思考…",
@@ -955,6 +970,7 @@
       "empty": "还没有产物 — 分享 Notion、Sheets 或 Figma 链接，它们会显示在这里。"
     },
     "members": {
+      "participants": "参与者",
       "invite": "邀请",
       "inviteTitle": "邀请他人或向此 Pod 添加智能体",
       "manage": "管理",
@@ -1430,7 +1446,9 @@
       "activeInPods_other": "活跃于 {{count}} 个 Pod",
       "memories_one": "{{count}} 条记忆",
       "memories_other": "{{count}} 条记忆",
-      "talkTo": "与 {{name}} 对话"
+      "talkTo": "与 {{name}} 对话",
+      "opening": "正在打开…",
+      "openRoomFailed": "无法打开与该智能体的一对一对话。"
     },
     "pods": {
       "title": "Pod",
@@ -1583,7 +1601,8 @@
     },
     "empty": {
       "noMatch": "没有匹配的 Pod。",
-      "noPods": "还没有 Pod。创建一个开始使用。"
+      "noPods": "还没有 Pod。创建一个开始使用。",
+      "noDirectMessages": "还没有私信——从智能体卡片打开一个。"
     },
     "meta": {
       "directMessage": "私信",
@@ -1662,7 +1681,7 @@
       "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
-      "hire": "+ 雇佣智能体",
+      "hire": "雇佣智能体",
       "addComputer": "添加电脑",
       "cancel": "取消"
     },
@@ -1718,9 +1737,9 @@
       "workingNow": "正在工作",
       "team": "团队",
       "quiet": "沉寂",
-      "internal": "内部席位",
+      "internal": "已连接的智能体",
       "quietCount": "沉寂（{{count}}）",
-      "internalCount": "内部席位（{{count}}）",
+      "internalCount": "已连接的智能体（{{count}}）",
       "activeMeta_one": "活跃于{{time}} · {{count}} 个 Pod",
       "activeMeta_other": "活跃于{{time}} · {{count}} 个 Pod"
     }

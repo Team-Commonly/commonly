@@ -141,6 +141,14 @@
       "email": "Email",
       "password": "Password"
     },
+    "verificationBanner": {
+      "message": "Verify your email — we sent a link to {{email}}.",
+      "resend": "Resend",
+      "sending": "Sending…",
+      "resent": "Verification link requested.",
+      "resendFailed": "Could not request another link.",
+      "dismiss": "Hide verification reminder for this session"
+    },
     "login": {
       "title": "Sign in",
       "subtitle": "Commonly is the shared space where agents and humans collaborate.",
@@ -179,8 +187,8 @@
         "ready": "Your account is ready. Sign in to continue.",
         "checkEmailTitle": "Check your email",
         "createdTitle": "Account created",
-        "checkEmailMessage": "Your account is almost ready. Verify your email to continue.",
-        "verifyThenSignIn": "We sent a verification link to your email. Verify your address, then <signIn>sign in</signIn>.",
+        "checkEmailMessage": "We sent a verification link to your email.",
+        "verifyThenSignIn": "You can <signIn>sign in now</signIn>; a reminder stays visible until you verify.",
         "continue": "Continue to sign in"
       }
     },
@@ -367,6 +375,13 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "agentRoomLiveness": {
+      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
+      "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
+      "waiting": "Waiting for {{agentName}} to reply…",
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this room."
+    },
     "typing": {
       "one": "{{name}} is thinking…",
       "two": "{{first}} and {{second}} are thinking…",
@@ -958,6 +973,7 @@
       "empty": "No artifacts yet — share Notion, Sheets, or Figma links and they'll appear here."
     },
     "members": {
+      "participants": "Participants",
       "invite": "Invite",
       "inviteTitle": "Invite people or add an agent to this pod",
       "manage": "Manage",
@@ -1436,7 +1452,9 @@
       "activeInPods_other": "Active in {{count}} pods",
       "memories_one": "{{count}} memory",
       "memories_other": "{{count}} memories",
-      "talkTo": "Talk to {{name}}"
+      "talkTo": "Talk to {{name}}",
+      "opening": "Opening…",
+      "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
     "pods": {
       "title": "Pods",
@@ -1545,7 +1563,7 @@
   },
   "podsSidebar": {
     "title": "Pods",
-    "newPod": "New Pod",
+    "newPod": "New pod",
     "closeTitle": "Close pods",
     "closeAriaLabel": "Close pods list",
     "searchPlaceholder": "Search pods...",
@@ -1589,7 +1607,8 @@
     },
     "empty": {
       "noMatch": "No pods match your search.",
-      "noPods": "No pods yet. Create one to get started."
+      "noPods": "No pods yet. Create one to get started.",
+      "noDirectMessages": "No direct messages yet — open one from an agent's card."
     },
     "meta": {
       "directMessage": "Direct message",
@@ -1668,7 +1687,7 @@
       "kicker": "{{agents}} · {{active}} active this week"
     },
     "actions": {
-      "hire": "+ Hire an agent",
+      "hire": "Hire an agent",
       "addComputer": "Add a computer",
       "cancel": "Cancel"
     },
@@ -1724,9 +1743,9 @@
       "workingNow": "Working now",
       "team": "Team",
       "quiet": "Quiet",
-      "internal": "Internal seats",
+      "internal": "Connected agents",
       "quietCount": "Quiet ({{count}})",
-      "internalCount": "Internal seats ({{count}})",
+      "internalCount": "Connected agents ({{count}})",
       "activeMeta_one": "Active {{time}} · {{count}} pod",
       "activeMeta_other": "Active {{time}} · {{count}} pods"
     }

@@ -1,12 +1,18 @@
 # ADR-025 — The connector substrate: outbound exists, synchronisation does not
 
-**Status:** **Draft** — audit re-derived after sprint-review falsified the first version's
-headline; the decisions below are proposals for Sam. Nothing here is ratified, and D1–D7 should
-not be cited as settled. The landscape section is
-deliberately unfilled pending cl-strategist's comparison memo (TASK-078); the current-state audit
-and the shape proposal do not depend on it, so they are written now rather than held.
-**Date:** 2026-08-26
-**Author:** pod-architect (Lily Shen)
+**Status:** **Draft / Proposed — two halves, one number.** **D1–D7** are the substrate audit's
+proposals for Sam (audit re-derived after sprint-review falsified the first version's headline;
+nothing here is ratified, and D1–D7 should not be cited as settled). **D8–D16** are the
+channel-routing decisions folded in from #1295 (Proposed 2026-08-26; folded 2026-09-02 under Sam's
+ruling of 2026-08-30T01:44:52Z, pod message 60455 — one ADR-025, not two). D8 supersedes D7 for the
+private-chat case (see D7's note). **D17** (the connector as an installable app) is the one **ruled**
+decision in this document — Sam, 2026-09-02, by decision card — and is cited as settled. Acknowledged unknowns in the folded half: the inbound
+bare-message routing default (D12) and the digest cadence (D13) are guesses until measured. The
+landscape section is deliberately unfilled pending cl-strategist's comparison memo (TASK-078); the
+current-state audit and the shape proposal do not depend on it, so they are written now rather than
+held.
+**Date:** 2026-08-26 (substrate audit) · 2026-08-26 (channel routing, #1295) · folded 2026-09-02 · D17 ruled 2026-09-02
+**Author:** pod-architect (Lily Shen) — D1–D7 and the audit; cl-strategist (Lily Shen) — D8–D16
 **Companions:** [`ADR-001`](ADR-001-installable-taxonomy.md) (the Installable model this should
 become a component of), [`ADR-004`](ADR-004-commonly-agent-protocol.md) (CAP — the driver-facing
 verbs), [`ADR-006`](ADR-006-webhook-sdk-and-self-serve-install.md) (the webhook driver, which is
@@ -301,9 +307,9 @@ shipping a seventh plaintext credential is a decision too, and it should be take
 one-install-fans-out, so an enterprise install is one administrative act rather than twenty.
 
 > **Superseded for the private-chat case — the reconciliation position (pod-architect, 2026-09-01).**
-> Sam's 2026-08-31 01:44Z ruling folds #1295 into this document and delegates "whose text is
-> canonical" to cl-strategist and me. This is my half of that call, filed as an artifact rather than
-> a comment so it carries its own answer.
+> Sam's ruling of 2026-08-30T01:44:52Z (pod message 60455) folds #1295 into this document and
+> delegates "whose text is canonical" to cl-strategist and me. This is my half of that call, filed
+> as an artifact rather than a comment so it carries its own answer.
 >
 > The two texts overlap on exactly one decision. #1295's **"The private chat binds to the USER, not
 > to a pod"** — `Integration.scope: 'user'`, `linkedUserId` the owner, no `podId` — **replaces D7**
@@ -319,9 +325,212 @@ one-install-fans-out, so an enterprise install is one administrative act rather 
 > D7 is **not** withdrawn: team-group bridging still wants one record across many pods, and #1295
 > keeps the pod-scoped connector for exactly that, dormant until per-sender attribution exists. So
 > the two are a case split, not a contest — D7 for the shared channel, the folded D8 for the private
-> one. Read D7 as scoped to team-group bridging from here.
+> one. Read D7 as scoped to team-group bridging from here. The folded decision is **D8** below.
 
 ---
+
+## Channel routing — user-scoped connectors (D8–D16)
+
+> **Provenance.** This section is [#1295](https://github.com/Team-Commonly/commonly/pull/1295)
+> (*ADR-025 — user-scoped connectors and channel routing*, cl-strategist, Proposed 2026-08-26,
+> amended the same day per review) folded into this document under Sam's ruling of
+> 2026-08-30T01:44:52Z (pod message 60455): one ADR-025, not two; the merged substrate file is the
+> container; the two authors decide whose text is canonical. The decisions keep their original
+> order and text — only the numbers change. #1295's D1–D9 are **D8–D16** here, so a citation of
+> "ADR-025 D*n*" resolves to exactly one decision (sprint-review's D8+ rule, agreed on the PR
+> 2026-08-30 — unique by construction rather than detected after the fact). #1295's D1 replaces D7
+> for the private-chat case and lands as D8 (pod-architect's half of the fold, #1473). Every
+> internal cross-reference below has been moved to the numbers in *this* file. The separate file
+> `ADR-025-user-scoped-connectors-and-channel-routing.md` was never merged and does not exist.
+
+**Scope boundary — this section, not ADR-017/018.** D8–D16 govern how a messaging channel binds
+to Commonly and how messages route between a channel and pods. They do NOT govern what crosses the
+attention gate — [`ADR-017`](ADR-017-attention-routing.md)/ADR-018 and the escalation gate in
+`telegramBridgeService.shouldEscalate` own that — and they do not change the Installable taxonomy:
+D8 *uses* ADR-001's `user` install scope. [`ADR-027`](ADR-027-pm-tool-projection-contract.md) is
+the sibling for STRUCTURED work items (tasks, status, assignees) and cites D9 and D10 by number.
+
+### Context
+
+The Telegram live bridge shipped 2026-08-26 (#1282, #1286, #1289, #1290) binds one Telegram chat
+to one pod (`Integration.podId`), enabled by a connect code minted from that pod. Two security
+decisions, each correct alone, compose into a dead end:
+
+- **#1289**: inbound relay is refused unless `chatType === 'private'` — in a group, attributing
+  every sender's message to `config.linkedUserId` is impersonation, and Telegram gives us no
+  per-sender Commonly identity.
+- **Pre-existing**: one chat can claim one pod (`handleEnableCommand`'s chatClaim check) — correct
+  while the binding is chat↔pod.
+
+A user has exactly one private chat with the bot. Private-only × one-claim means **a user can
+bridge two-way with exactly one pod, ever** (inbound is what the private-only gate refuses; outbound
+is not gated on `chatType` on main, so N group chats relay *out* with inbound refused on each — a
+two-way dead end, per review). "Which pod does this connector wire to?" is not a UX copy problem;
+the binding model is wrong.
+
+### Decisions
+
+**D8 — The private chat binds to the USER, not to a pod.** A connector at ADR-001 `user` scope:
+`Integration.scope: 'user'`, `linkedUserId` = the owner, no `podId`. The chat becomes that user's
+attention surface for every pod they are in. The existing pod-scoped connector remains as the
+special case for team-group bridging, dormant until per-sender attribution exists. *(Replaces D7
+for the private-chat case; D7 narrows to team-group bridging — see the note under D7.)*
+
+**D9 — Transport is kernel; curation is agent.** Routing (tags, quote-reply resolution, slash
+commands, digest schedule) is deterministic kernel code on the integration. Agents decide what
+crosses (per-pod escalation gate, lead agent, future LLM judge) and may compose answers — they never
+carry bytes. A proxy agent doing transport means the phone goes dark when a seat hangs; seat failure
+modes are measured and frequent.
+
+**D10 — Outbound messages carry their pod.** Every relayed line is prefixed `[PodName]` and
+`relayMap` entries gain `podId` alongside `{tgMessageId, agentUsername, podMessageId}`. The map is
+the routing table.
+
+**D11 — Quote-reply is the primary inbound router.** Replying to a relayed line routes to that
+agent in that pod — exact, zero new UX, already 80% built.
+
+**D12 — Slash commands cover cold starts, and routing precedence is explicit.** `/pods` lists
+memberships (the connector reveals its targets); `/pod <name>` sets the chat's active pod (stored on
+the integration); `/tldr [pod]` returns an on-demand digest. Bare-message precedence (amended per
+review, 2026-08-26): **quote → inline `/pod` → last-pushed pod within 15 min → active pod → ask** —
+with an ack line on every non-quote route, because the real hazard is a stale active pod misrouting
+silently, not the cold start.
+
+**D13 — Digests are pushed per pod on a schedule**, reusing pod-summarizer, each tagged
+`[PodName]`. Cadence starts daily; a guess until usage data.
+
+**D14 — The judge routes only ambiguity.** A bare message with no active pod and no quote is the
+single case that may invoke an LLM: ask one clarifying question or infer. Everything else stays
+deterministic.
+
+**D15 — Attribution invariants carry over, stated precisely** (corrected per review, 2026-08-26 —
+the first draft overclaimed). Inbound posts are authored as the integration's owner, **stamped at
+the PATCH/enable step from the authenticated caller** (#1290 guard), not by the code minter. The
+#1289 private-chat gate is **inbound-only**; outbound relay does not check `chatType` today and
+needs its own gate when user-scoped binding lands. Connect codes widen from 24 bits to 128 bits —
+the current size is brute-forceable. *Status 2026-09-02:* #1297 (open, P0) implements the last two
+sentences ahead of D8 — 128-bit codes with a 10-minute TTL, single-use, five attempts per chat per
+ten minutes, and `findLiveIntegration` requiring `chatType: 'private'` so outbound gets the gate
+this decision asks for.
+
+**D16 — The Commander persona is the conversational front-end (owner: Sam, 2026-08-26).**
+Alongside raw slash commands, a user can simply talk to a **Commander** — a named persona
+(ADR-022), distinct from Scout: Scout does discovery/onboarding; Commander does attention routing
+and delegation. A profile-level opt-in ("enable my Commander") auto-joins the Commander to every pod
+the user is a member of, as ordinary per-pod installation projections. The user's channel connector
+may bind to their Commander DM, making the phone chat a conversation: "tell the rewire pod I
+approved it" instead of `/pod rewire`. D9 still governs — the Commander phrases, decides, and
+delegates through the same kernel transport; it never carries bytes itself, and every routed message
+lands as an auditable pod post. Slash commands remain as the deterministic fallback when the
+Commander is disabled or down.
+
+### Consequences
+
+- One phone chat per user, N pods behind it. The one-pod cap dissolves.
+- `handleEnableCommand`'s one-claim check must distinguish scopes: a chat may hold one
+  `user`-scoped binding (replacing the pod-claim rule for that scope).
+- The Connectors page (#1290, redesigned in #1304) grows a "personal connector" card above the
+  per-pod list; per-pod live-relay toggles become per-pod *gate* settings on the user connector.
+- Group chats stay read-only-ingest until per-sender identity mapping exists (Telegram user ↔
+  Commonly user), which is its own ADR when it comes.
+- **Three costs D8 carries that the schema does not yet express** (raised by the 2026-08-30 review
+  of #1295, re-checked at `origin/main` 2026-09-02):
+  1. `podId` is `required: true` on the Integration schema (`models/Integration.ts:109`). D8's "no
+     `podId`" is a required-field relaxation plus a conditional validator, not a new value.
+  2. `Integration.scope` does not exist — a new field, not a new value of an existing one.
+  3. `findLiveIntegration(podId)` (`services/telegramBridgeService.ts:102`) resolves the integration
+     *from the pod*, and every outbound path goes through it — so a user-scoped row with no `podId`
+     is invisible to the only lookup outbound has. D10's `[PodName]` tagging means that lookup has
+     to invert: pod → members → each member's personal connector — a single `findOne` becomes a
+     fan-out with its own dedupe and ordering questions. This is the largest implementation
+     consequence of D8 and the first thing its implementer should size.
+- A key added to `Integration.config` must be declared in BOTH the TS interface and the runtime
+  Schema (`strict: true`): an interface-only key is silently dropped on write, which is what made
+  #1282's whole feature inert until it was caught pre-merge. D12's active-pod key and D10's
+  `relayMap.podId` both land here.
+- The link between the private chat's counterpart and the caller who flipped `liveRelay` on (the
+  identity D15 stamps) does not exist in code — `handleEnableCommand` captures no user identity at
+  bind. Under the pod-scoped model that gap misattributes one pod; under D8 it misattributes every
+  pod the user is in. #1297's follow-up (bind the redeemer's `from.id` at enable, confirm in
+  Commonly) is the prerequisite for D8, not a nice-to-have after it.
+
+### Alternatives rejected
+
+- **N private chats via N bots** (one bot per pod): operationally absurd, Telegram-specific, and
+  dies at Slack/Discord parity.
+- **Commander agent as transport**: see D9. Also makes delivery latency a model-inference latency.
+- **Group binding with per-sender trust**: blocked on identity mapping; reopening it now reopens
+  the #1289 impersonation hole.
+
+---
+
+## The connector as an installable app (D17)
+
+> **Provenance.** TASK-005 in the Connectors v2 pod. Sam's directive of 2026-09-02 (pod message
+> 62429) asked for the shape to be ruled by decision card; the card (6a9812803f95024de5f7bf4e,
+> thread 62468) offered three shapes with evidence, and Sam ruled **A** at 2026-09-02T22:34:37Z
+> (pod message 62584). The evidence memo (`task-005-connector-as-app-decision.md`, attached in
+> the pod) and the implementation plan
+> ([`docs/plans/connector-as-installable-app.md`](../plans/connector-as-installable-app.md), #1509)
+> carry the detail; this decision is the record.
+
+**D17 — The connector is an Installable, the Connectors page is its install surface, and
+there is one install verb (ruled: Sam, 2026-09-02).** The Telegram connector becomes a
+builtin [`ADR-001`](ADR-001-installable-taxonomy.md) Installable — `kind: 'app'`, `source:
+'builtin'`, `scope: 'user'` per D8, with a `webhook` component on the mounted route and an
+`event-handler` component on `chat.message` — and **"Add a channel" on `/v2/connectors` is the
+install verb**, backed by an `InstallableInstallation` parent whose projection *is* the existing
+`Integration` row (`Integration.installationId` is the back-pointer). ADR-001's invariant 6
+("one install record → N component projections"), unimplemented for every component type at
+the time of ruling (`routes/registry/install.ts` reads no `components[]`), is built here for
+two types against the two behaviours that already ship: the webhook route and the outbound
+relay hook at `agentMessageService.ts`. A Browse card is a **second door to the same verb**
+and lands only when the Apps marketplace unlocks; nothing in D17 depends on it.
+
+Three shapes were on the card. **B — a Browse listing only** — lost because the marketplace
+is locked, off the nav rail, and its `/browse` query excludes `source: 'builtin'`, so the
+listing would have been invisible and would have installed by navigation — the dead end the
+marketplace's connector strip already has. **C — listing plus folding the Connectors page into
+the marketplace** — lost because it moves the milestone's entry point onto that locked surface
+and fights [`ADR-022`](ADR-022-persona-colleagues.md) D2 (Browse sells personas; apps are the
+other aisle); it remains the right end state *if* the marketplace becomes the one front door,
+which is a marketplace ruling, not a connector one, and A leaves it open — same rows, same
+verb, the page moves later.
+
+**Four invariants the ruling carries**, each earned by review on #1509 (Vera and Kai,
+2026-09-02) and pinned by an acceptance test in the plan:
+
+1. **Mint last.** No projector mints the connect code. The projected `Integration` row is
+   created `isActive: false` with no code; the install service's final write — after every
+   component is active — flips `isActive` and mints in one step. A partial install therefore
+   has nothing `handleEnableCommand`'s lookup can match, and the webhook route is not edited.
+2. **The claim is the compare-and-set.** One parent row per `(installable, user)` across
+   `installing`, `active`, and retained `error` (unique partial index); the parent is claimed by
+   one atomic upsert; **the lock carries a lease and a generation** (`claimedAt` + one named TTL,
+   and a fresh `claimId` on every claim or takeover) so a dead owner's `installing` row is
+   taken over by the next attempt and swept to `error` by the reconciler, never honoured
+   forever — and **every write the owner makes is fenced on the generation**, the activate-and-
+   mint write above all, so a stale owner that revives after a takeover is refused with a
+   distinct error rather than minting a second code over the one the user was handed (the
+   ADR-026 D6 nonce, one layer up); the parent-then-projection activation is a split commit
+   bridged by a recoverable `activating` state, so a crash between the two writes is resumed
+   at the mint on retry and never reported as success; only the lock owner runs projectors; every loser gets the
+   existing row — 202 while installing, 200 when active — and never invokes a projector.
+3. **Selection is the dispatcher's, scoped by the event's target.** For `chat.message` in pod
+   P the dispatcher selects the installations bound to P in one query before any handler runs;
+   it never fans out to every tenant and relies on handlers to decline. The bridge's own
+   `findLiveIntegration(podId)` stays as defence in depth until D8's inversion replaces it.
+4. **Phasing is honest about D8.** The Installable declares `scope: 'user'` because that is
+   what the product is; until D8's three schema consequences ship (`Integration.scope`, optional
+   `podId`, the pod → members → connector lookup), the projected row keeps today's pod binding
+   as the first gate row. The install verb's API does not change between the phases.
+
+**What D17 does not decide:** slash-command components for the Telegram control plane (the
+handlers stay in the webhook route until the slash-command track reactivates under ADR-011);
+unifying `NativeAgentTrigger` and the `event-handler` vocabulary (D17 reuses the trigger name
+and stops there); external `webhook:https://…` and `agent:` handlers (ADR-006's path); the
+marketplace unlock. D6 (credentials behind a reference) still gates any *new* connector; D17
+re-platforms the existing one and its Installable row carries no secret.
 
 ## What this ADR does not decide
 

@@ -1473,6 +1473,28 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
     </section>
   );
 
+  // A room is deliberately 1:1, not a normal pod with an editable Members
+  // tab. That does not mean its participants disappear: showing both here is
+  // the confirmation that the "Talk to" action opened the intended private
+  // conversation without reintroducing invite/manage controls.
+  const roomParticipantsSection = isAgentRoom && (
+    <section className="v2-inspector__section v2-inspector__section--quiet" data-testid="inspector-room-participants">
+      <div className="v2-inspector__section-title">{t('inspector.members.participants')}</div>
+      {members.map((member) => {
+        const roleKey = memberRoleKey(member, ownerId, Boolean(member.isBot));
+        return (
+          <div key={`participant-${member._id || member.username}`} className="v2-inspector__member-row v2-inspector__member-row--static">
+            <V2Avatar name={member.username || t('inspector.unknownUser')} src={member.profilePicture || undefined} size="md" />
+            <span className="v2-inspector__member-meta">
+              <span className="v2-inspector__member-name">{member.username || t('inspector.unknownUser')}</span>
+              <span className="v2-inspector__member-role">{t(`inspector.roles.${roleKey}`)}</span>
+            </span>
+          </div>
+        );
+      })}
+    </section>
+  );
+
   const runStateSection = (
     <section className="v2-inspector__section">
       <div className="v2-inspector__section-title">{t('inspector.runState.title')}</div>
@@ -1894,6 +1916,7 @@ const V2PodInspector: React.FC<V2PodInspectorProps> = ({
                   )}
                   {progressSection}
                   {nowSection}
+                  {roomParticipantsSection}
                   {pod.description && goalSection}
                   {artifactsSection}
                 </>

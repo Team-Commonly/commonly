@@ -71,10 +71,9 @@ const V2Register: React.FC = () => {
       const message = data?.message || t('auth.register.success.ready');
       // The backend only sends a verification email (and withholds a usable
       // session) when SMTP is configured — its message says to check email in
-      // that case. When auto-verified, no email is sent and sign-in works
-      // immediately. Branch the success screen on that signal so we never tell
-      // a still-unverified user to "Continue to sign in" (which yields
-      // "Email not verified" at login).
+      // that case. The login shell admits unverified users and keeps a
+      // persistent verification reminder visible, so the success screen can
+      // take them directly to sign-in without creating a dead end.
       setVerifyPending(message.toLowerCase().includes('check your email'));
       setDone(message);
     } catch (err) {

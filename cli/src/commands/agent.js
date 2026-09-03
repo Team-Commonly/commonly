@@ -223,6 +223,11 @@ const PROMPT_EVENT_TYPES = new Set([
   'first_contact',
 ]);
 
+// Consultations have a per-request private response channel, rather than a
+// pod-chat delivery. They stay on their existing single-event path; every
+// event that represents the shared pod inbox is batched below.
+const PRIVATE_RESPONSE_EVENT_TYPES = new Set(['agent.ask', 'agent.ask.response']);
+
 // ── default environment for adapters that benefit from auto-MCP wiring ─────
 
 // Adapters that can consume `mcp[]` from the resolved environment spec.
@@ -746,6 +751,10 @@ export const performRun = ({
   chatCharLimit = 400,
   maxChatChunks = 3,
   claimYieldDelayMs = 3000,
+  // ADR-024 D3: a poll is an inbox batch, not ten independent interrupts.
+  // Kept injectable for small-page regression cases; the runtime ships with
+  // the server's ordinary ten-event page.
+  inboxBatchLimit = 10,
   sleepImpl = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
 }) => {
   const client = createClient({ instance: instanceUrl, token });
@@ -793,6 +802,7 @@ export const performRun = ({
   // workspace path replaces the /tmp default.
   const agentCwd = workspacePath || join(tmpdir(), 'commonly-agents', agentName);
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
+  const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
     const eventPodId = event.podId || podId;
@@ -1102,7 +1112,7 @@ export const performRun = ({
         }
       }
     }
-    const heartbeatControlReply = event.type === 'heartbeat'
+    const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
     const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
     let delivered = agentPostedItself;
@@ -1253,38 +1263,322 @@ export const performRun = ({
     return { outcome: delivered ? 'posted' : 'no_action' };
   };
 
+  // ADR-024 D3: the batch header states the real inbox count even when we cap
+  // copied bodies. The cap is the fetched page itself: never acknowledge a
+  // claimed event whose body the one turn did not receive. Additional pending
+  // events stay in the kernel queue and are cued in the header for a later
+  // pull, rather than being silently consumed here.
+  const buildInboxPrompt = (entries, inboxCount = entries.length) => {
+    const BODY_LIMIT = batchLimit;
+    const bodies = entries.slice(0, BODY_LIMIT).map((entry, index) => {
+      const messageId = entry.event.payload?.messageId;
+      const prefix = [
+        `Event ${index + 1}/${entries.length}: ${entry.event.type}`,
+        messageId ? `message ${messageId}` : null,
+      ].filter(Boolean).join(' — ');
+      const claimContext = entry.readOnly
+        ? `${peerHoldsFrame(entry.holder, messageId)}\n`
+          + '[This item is read-only context: a peer won its binding claim. Do not act on it.]\n'
+        : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
+      const body = entry.prompt || '[No usable prompt was delivered for this item.]';
+      return `${prefix}\n${claimContext}${body}`;
+    });
+    const omitted = Math.max(0, inboxCount - bodies.length);
+    return [
+      `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
+        + 'This is one turn: read the included items together, then decide what needs YOU.]',
+      ...bodies,
+      ...(omitted > 0
+        ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
+        : []),
+      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY.',
+    ].join('\n\n');
+  };
+
+  const batchAdmissionResult = (event, admission) => ({
+    outcome: 'no_action',
+    reason: 'cascade-cap',
+    details: {
+      messageId: event?.payload?.messageId || null,
+      streak: admission.streak,
+      cap: cascadeSettings.cap,
+      addressedGrace: cascadeSettings.addressedGrace,
+      resetMs: cascadeSettings.resetMs,
+      addressed: admission.addressed,
+      graceApplied: admission.graceApplied,
+    },
+  });
+
+  // Claim the binding portion before the ONE composite spawn. A lost binding
+  // claim is not discarded: it remains in the model's context with the same
+  // peer frame the single-event path already uses, but is explicitly read-only.
+  // Advisory losses retain their existing peer-aware behaviour.
+  const processEventBatch = async (events, inboxCount = events.length) => {
+    const eventPodId = events[0]?.podId || podId;
+    if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
+      throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
+    }
+
+    const entries = events.map((event) => ({
+      event,
+      prompt: extractPrompt(event),
+      result: null,
+      claimKeeper: null,
+      peerFrame: null,
+      readOnly: false,
+      holder: null,
+    }));
+
+    // Duplicate deliveries have already completed locally. Re-ack them but do
+    // not spend the new batch turn displaying old work as if it were new.
+    const seenEventIds = new Set();
+    for (const entry of entries) {
+      const eventId = String(entry.event._id);
+      if (seenEventIds.has(eventId) || wasEventHandled(agentName, entry.event._id)) {
+        entry.result = { outcome: 'no_action', reason: 'duplicate-delivery' };
+        log(`[${entry.event.type}] duplicate delivery ${entry.event._id} — re-acking without batch spawn`);
+      } else {
+        seenEventIds.add(eventId);
+      }
+      if (entry.result?.reason === 'duplicate-delivery') {
+        continue;
+      }
+      if (!entry.prompt) {
+        entry.result = { outcome: 'no_action', reason: 'no-prompt' };
+        log(`[${entry.event.type}] no prompt — no-op`);
+        onError?.(Object.assign(
+          new Error(
+            `${entry.event.type} event ${entry.event._id} was acked WITHOUT a spawn: `
+            + 'payload carried no content and no messageId. If this wake mattered, its producer is sending an unusable payload.',
+          ),
+          { code: 'agent_event_skipped_no_prompt', eventId: entry.event._id },
+        ));
+      }
+    }
+
+    const snapshotMessages = async () => {
+      try {
+        const { messages = [] } = await client.get(
+          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
+        );
+        return messages;
+      } catch {
+        return null;
+      }
+    };
+    const preSpawn = await snapshotMessages();
+    const preSpawnIds = preSpawn
+      ? new Set(preSpawn.map((message) => String(message._id || message.id)))
+      : null;
+    const activeEntries = entries.filter((entry) => !entry.result);
+    const triggers = activeEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
+    const trigger = triggers.includes('human') ? 'human'
+      : (triggers.includes('agent') ? 'agent' : 'unknown');
+    if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    const admissionEvent = activeEntries.find((entry) => ADDRESSED_EVENT_TYPES.has(entry.event.type))
+      || activeEntries[0];
+    if (admissionEvent) {
+      const admission = cascadeGovernor.admit(
+        eventPodId,
+        trigger,
+        admissionEvent.event.type,
+        admissionEvent.event.payload,
+      );
+      if (!admission.allowed) {
+        for (const entry of activeEntries) {
+          entry.result = batchAdmissionResult(entry.event, admission);
+        }
+        return { entries };
+      }
+    }
+
+    const bindingEntries = activeEntries.filter((entry) => (
+      entry.event.type === 'message.posted' && entry.event.payload?.messageId
+    ));
+    if (bindingEntries.length > 0) {
+      const yieldMs = claimHandicap.yieldDelayMs(eventPodId);
+      if (yieldMs > 0) {
+        log(`[inbox.batch] yielding ${yieldMs}ms before claiming ${bindingEntries.length} binding event${bindingEntries.length === 1 ? '' : 's'}`);
+        await sleepImpl(yieldMs);
+      }
+    }
+
+    for (const entry of activeEntries) {
+      const messageId = entry.event.payload?.messageId;
+      if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) continue;
+      const claimKeeper = createClaimKeeper(client, {
+        messageId,
+        podId: eventPodId,
+        leaseSeconds: claimLeaseSeconds,
+        log: (line) => log(`[${entry.event.type}] ${line}`),
+        setIntervalImpl,
+        clearIntervalImpl,
+      });
+      const claim = await claimKeeper.acquire();
+      if (claim.claimed) {
+        entry.claimKeeper = claimKeeper;
+        claimKeeper.startRenewal();
+        if (entry.event.type === 'message.posted') claimHandicap.recordWin(eventPodId);
+      } else if (!claim.failOpen) {
+        entry.holder = claim.holder;
+        if (entry.event.type === 'message.posted') {
+          // A reply to this seat's own message is direct-address evidence,
+          // even though its transport type is the broadcast-shaped
+          // `message.posted`. Preserve the existing ADR-018/TASK-058
+          // peer-aware exception; D3a otherwise partitions lost bindings as
+          // read-only so a generic broadcast cannot widen itself after CAS.
+          if (entry.event.payload?.repliesToYourMessage === true) {
+            entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
+            continue;
+          }
+          // D3a's partition: no later model judgement can widen this item's
+          // authority after a peer won the binding CAS.
+          entry.readOnly = true;
+          entry.result = { outcome: 'no_action', reason: 'claim-held' };
+          claimHandicap.recordLoss(eventPodId);
+        } else {
+          entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
+        }
+      } else {
+        log(`[${entry.event.type}] claim unavailable (${claim.error?.message || 'unknown error'}) — proceeding unguarded`);
+      }
+    }
+
+    const actionEntries = activeEntries.filter((entry) => !entry.result);
+    if (actionEntries.length === 0) return { entries };
+
+    const claimKeepers = actionEntries
+      .map((entry) => entry.claimKeeper)
+      .filter(Boolean);
+    const compositeClaimKeeper = claimKeepers.length > 0 ? {
+      isLost: () => claimKeepers.some((keeper) => keeper.isLost()),
+      getHolder: () => claimKeepers.find((keeper) => keeper.isLost())?.getHolder(),
+    } : null;
+    const batchEvent = {
+      ...actionEntries[0].event,
+      _id: `batch-${actionEntries[0].event._id}`,
+      type: 'inbox.batch',
+      payload: {
+        ...actionEntries[0].event.payload,
+        batchEventIds: entries.map((entry) => String(entry.event._id)),
+        hasHeartbeat: entries.some((entry) => entry.event.type === 'heartbeat'),
+      },
+    };
+    let turnResult;
+    try {
+      turnResult = await runTurn({
+        event: batchEvent,
+        eventPodId,
+        prompt: buildInboxPrompt(entries, inboxCount),
+        preSpawnIds,
+        snapshotMessages,
+        claimKeeper: compositeClaimKeeper,
+        trigger,
+      });
+      for (const entry of actionEntries) entry.result = turnResult;
+      return { entries };
+    } finally {
+      await Promise.all(actionEntries
+        .filter((entry) => entry.claimKeeper)
+        .map(async (entry) => {
+          // Preserve ADR-018 D6.1 per binding message: a silent human
+          // broadcast may be handed to one remaining listener, while every
+          // other completed batch item closes normally.
+          const claimOutcome = entry.event.type === 'message.posted'
+            && entry.event.payload?.senderIsHuman === true
+            && turnResult?.outcome === 'no_action' && !turnResult?.reason
+            ? 'declined'
+            : (turnResult ? 'completed' : undefined);
+          await entry.claimKeeper.release(claimOutcome);
+        }));
+    }
+  };
+
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
     try {
-      // ONE event per fetch, because the fetch IS the claim.
-      //
-      // `AgentEventService.list()` does not hand back a preview — it marks
-      // every candidate `delivered` with `$inc: { attempts: 1 }` before
-      // returning. This loop then processes them SERIALLY, one full model
-      // turn each. So asking for 10 claims 10 and starts 1.
-      //
-      // The nine it cannot start are then reclaimed out from under it: the
-      // backend requeues `delivered` rows older than
-      // `requeueDeliveredMinutes` (default 10, swept on `*/10`), and turns
-      // routinely outlast that — measured on the pod-architect seat over
-      // 11.5h: median 128s, p90 669s, 13 turns over 600s, max 1153s. Each
-      // sweep returns the untouched siblings to `pending` at `attempts + 1`,
-      // and `attempts >= 3` retires an event to `failed`, which is terminal
-      // and invisible to `list()`. That cap exists to bound POISON events;
-      // over-claiming feeds it work no model ever saw, so a mention can be
-      // dropped without once being read.
-      //
-      // `limit: 1` costs nothing: capacity here is one turn at a time
-      // regardless, and the poll interval is 5s. It only stops the loop
-      // claiming work it has no way to begin.
-      const { events = [] } = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: 1,
+      // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
+      // backend returns one pod's oldest pending batch, so every delivered row
+      // below reaches the SAME composite turn before it can age into the
+      // requeue sweep. The service selects the pod before claiming any row;
+      // do not reintroduce a mixed-pod `limit: 10` here.
+      const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
+        agentName, instanceId, limit: batchLimit,
       });
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
+      // A deployed CLI can briefly run against an older server that still
+      // returns multiple pods in one page. Preserve pod privacy in that
+      // migration window by partitioning locally. Current servers produce one
+      // group, so the normal path remains one tick → one turn.
+      const eventGroups = new Map();
       for (const event of events) {
+        const eventPodId = event.podId || podId;
+        const key = PRIVATE_RESPONSE_EVENT_TYPES.has(event.type)
+          ? `private:${event._id}`
+          : (eventPodId || `private:${event._id}`);
+        const group = eventGroups.get(key) || [];
+        group.push(event);
+        eventGroups.set(key, group);
+      }
+      for (const group of eventGroups.values()) {
         if (!running) break;
+        if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
+          let batch;
+          try {
+            batch = await processEventBatch(group, inboxCount);
+          } catch (err) {
+            consecutiveSpawnFailures += 1;
+            const retry = spawnRetryPolicy({
+              error: err,
+              consecutiveFailures: consecutiveSpawnFailures,
+              intervalMs,
+              jitterRatio: spawnJitterRatio,
+            });
+            nextPollDelayMs = retry.delayMs;
+            const event = group[0];
+            const wrapped = new Error(
+              `inbox batch processing failed (${retry.failureClass}; ${consecutiveSpawnFailures} consecutive) `
+              + `— ${group.length} events remain unacked; ${retry.circuitOpen ? 'circuit open' : 'retry scheduled'}, `
+              + `next probe in ${formatRetryDelay(retry.delayMs)}: ${err.message}`,
+              { cause: err },
+            );
+            Object.assign(wrapped, {
+              code: 'agent_spawn_retry_scheduled',
+              failureClass: retry.failureClass,
+              consecutiveFailures: consecutiveSpawnFailures,
+              retryAfterMs: retry.delayMs,
+              circuitOpen: retry.circuitOpen,
+              eventId: event._id,
+            });
+            if (onError) onError(wrapped);
+            else log(`[inbox.batch] ${wrapped.message}`);
+            break;
+          }
+          const batchSpawned = batch.entries.some((entry) => (
+            entry.result?.outcome === 'posted'
+            || (entry.result?.outcome === 'no_action' && !entry.result?.reason)
+          ));
+          if (batchSpawned) consecutiveSpawnFailures = 0;
+          for (const entry of batch.entries) {
+            const event = entry.event;
+            if (entry.result?.reason !== 'duplicate-delivery') {
+              recordHandledEvent(agentName, event._id);
+            }
+            try {
+              const deliveryId = event.payload?.deliveryId;
+              await client.post(`/api/agents/runtime/events/${event._id}/ack`, {
+                result: entry.result,
+                ...(typeof deliveryId === 'string' && deliveryId ? { deliveryId } : {}),
+              });
+            } catch (ackErr) {
+              onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
+            }
+          }
+          continue;
+        }
+        const [event] = group;
         let result;
         if (wasEventHandled(agentName, event._id)) {
           result = { outcome: 'no_action', reason: 'duplicate-delivery' };

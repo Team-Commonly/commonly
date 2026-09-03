@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable react/display-name */
 // Wren spec §1 (Sam-ruled 2026-08-30): the roster renders as tiers, not a
 // wall. Pinned here: featured tier caps and is the ONLY place the liveness
 // dot exists; standard cards carry the always-visible talk icon (BEND-2
@@ -23,6 +24,8 @@ jest.mock('axios', () => {
 });
 
 const axios = jest.requireMock('axios').default;
+
+jest.mock('../components/V2Avatar', () => () => <span data-testid="team-avatar" />);
 
 const authValue = {
   currentUser: { _id: 'u1', username: 'sam', role: 'user' },
@@ -67,7 +70,10 @@ const renderPage = () => {
   );
 };
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  window.localStorage.clear();
+});
 
 describe('Your Team tiers', () => {
   test('recently active agents render featured — and only they carry the dot', async () => {
@@ -109,12 +115,21 @@ describe('Your Team tiers', () => {
     // hosted-smoke was active 1 minute ago and still must NOT be featured.
     expect(screen.queryByText('Hosted Smoke')).not.toBeInTheDocument();
     const toggle = screen.getByTestId('team-internal-toggle');
-    expect(toggle).toHaveTextContent('Internal seats (1)');
+    expect(toggle).toHaveTextContent('Connected agents (1)');
     // smoke-widget matches the old client-side name pattern but has no server
     // flag: it stays on the open roster, not behind the disclosure.
     expect(screen.getByText('Smoke Widget')).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText('Hosted Smoke')).toBeInTheDocument();
+  });
+
+  test('the invite-gated notice stays a quiet line with its code link', async () => {
+    renderPage();
+    const noticeText = await screen.findByText('Hosted agents are invite-gated during beta.');
+    const notice = noticeText.closest('.v2-team__entitlement-notice');
+
+    expect(notice).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Have an invitation code?' })).toBeInTheDocument();
   });
 
   test('header kicker reports real numbers: total and active this week, internal excluded', async () => {
@@ -128,11 +143,24 @@ describe('Your Team tiers', () => {
   test('header offers exactly hire + add-a-computer — channels have no CTA here (Sam 2026-09-01)', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Fable')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: '+ Hire an agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hire an agent' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add a computer' })).toBeInTheDocument();
     // "Connect" (the channels page) must not sit next to an agent-runtime CTA
     // — same verb, different concept was the confusion being removed.
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
     expect(screen.queryByText('Connect your own agent')).toBeNull();
+  });
+
+  test('Talk to opens the agent-room endpoint directly instead of routing through the profile', async () => {
+    axios.post.mockResolvedValue({ data: { room: { _id: 'room-fable' } } });
+    window.localStorage.setItem('token', 'jwt');
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to' }));
+
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/agents/runtime/room',
+      { agentName: 'fable', instanceId: 'lead', podId: 'p1' },
+      { headers: { Authorization: 'Bearer jwt' } },
+    ));
   });
 });

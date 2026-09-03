@@ -18,7 +18,14 @@ architecture.
 status, assignees, provenance) project two-way between a Commonly pod and an
 external PM surface. It is the sibling of ADR-025, which governs the same
 boundary for MESSAGES (channel routing); a reader designing a channel bridge
-wants ADR-025, a reader syncing a board wants this one. It does not govern
+wants ADR-025, a reader syncing a board wants this one. **ADR-025 is itself
+`Draft / Proposed`** — its own status line reads D1–D7 as the substrate
+audit's proposals, and D8–D16 arrived through Sam's 2026-09-02 fold
+carrying that same status. So the ADR-025 decisions this document inherits
+(D6 for credentials behind a secret reference, D9 for transport-is-kernel,
+D10 for the relayMap routing table) are premises, not settled rulings:
+ratifying this ADR does not ratify them, and if D9 or D10 move, D2 and the
+attribution rule move with them. It does not govern
 the attention gate (ADR-017/018), and it uses — not changes — the Installable
 taxonomy (ADR-001) and the task board (`/api/v1/tasks`).
 
@@ -44,7 +51,7 @@ message side, and its two hardest lessons transfer whole:
 - **Attribution is the security boundary.** Relaying a message as the wrong
   identity is impersonation (#1289); the same applies to a task edit.
 - **The mapping table IS the router.** relayMap on the integration, not
-  heuristics at read time (ADR-025 D3).
+  heuristics at read time (ADR-025 D10).
 
 **Portability is the other half of adoption safety.** A team that brings its
 board wants to know it can leave, and that its agents are not hostage to our
@@ -70,7 +77,7 @@ is never a one-way door.
 or Paperclip is one adapter file (design rule 6), never a schema change. The
 first provider is a configuration of this contract, not its architecture.
 
-**D2 — Transport is kernel; judgment is agent (inherits ADR-025 D2).** Sync
+**D2 — Transport is kernel; judgment is agent (inherits ADR-025 D9).** Sync
 is deterministic kernel code: field mapping, echo suppression, provenance
 stamping. Agents act ON the board (claim, complete, comment) and their acts
 project like anyone else's; they never carry the sync bytes, so a hung seat
@@ -269,7 +276,7 @@ promise we make only when asked to keep it.
 
 - **Per-tool bespoke integrations** — three tools deep you have three
   schemas and no ledger; the wedge inverts into maintenance.
-- **Agent-as-transport** (an agent that "watches Notion") — ADR-025 D2's
+- **Agent-as-transport** (an agent that "watches Notion") — ADR-025 D9's
   rejection, same reasons, plus rate limits bind to a seat's cadence.
 - **One-time import/migration** — answers the demo, not the wedge; teams
   live in both tools during the entire adoption window, which is exactly
