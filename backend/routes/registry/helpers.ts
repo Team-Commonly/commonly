@@ -3,6 +3,7 @@ const User = require('../../models/User');
 const Gateway = require('../../models/Gateway');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { isK8sMode } = require('../../services/agentProvisionerService');
+const { deriveAgentOutputState } = require('../../services/agentStateService');
 const AgentIdentityService = require('../../services/agentIdentityService').default;
 const { PRESET_DEFINITIONS } = require('./presets');
 
@@ -409,6 +410,7 @@ const buildAgentInstallationPayload = (installation: any, {
   const displayName = profileDisplayName
     || installationDisplayName
     || (user ? resolveDisplayLabelFromUser(user, identityFallback) : identityFallback);
+  const lastMessageSnippet = toSnippet(lastMessage?.content);
   return {
     name: installation.agentName,
     instanceId: installation.instanceId || 'default',
@@ -429,9 +431,16 @@ const buildAgentInstallationPayload = (installation: any, {
     // Wren spec §1.1 line 2: what the agent last said, pre-trimmed. Null when
     // it has never spoken in this pod (or the PG lookup was skipped/failed —
     // the roster never fails over a snippet).
-    lastMessage: lastMessage && toSnippet(lastMessage.content)
-      ? { snippet: toSnippet(lastMessage.content), at: lastMessage.createdAt || null }
+    lastMessage: lastMessageSnippet
+      ? { snippet: lastMessageSnippet, at: lastMessage?.createdAt || null }
       : null,
+    // Heartbeats, token use, and runs prove the seat is alive; only a message
+    // proves it produced visible output. Do not collapse a live-but-silent
+    // seat into the roster's quiet state (#TASK-113).
+    outputState: deriveAgentOutputState(
+      lastActiveAt || lastHeartbeatAt,
+      lastMessageSnippet ? lastMessage?.createdAt || null : null,
+    ),
     installedBy: installation.installedBy?.toString?.() || installation.installedBy,
     runtime: runtimeConfig,
     // Resolved at the boundary so the frontend doesn't need to know

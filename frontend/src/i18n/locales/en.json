@@ -1712,6 +1712,7 @@
     "card": {
       "inProject": "in",
       "lastSaid": "“{{snippet}}”",
+      "outputUnverifiable": "UNVERIFIABLE — no message in the last 30 minutes",
       "roleTitle": "Role: {{role}}",
       "profile": "Profile",
       "viewProfileAria": "View {{name}}'s profile",

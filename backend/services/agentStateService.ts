@@ -119,6 +119,44 @@ export function deriveAgentState(
 const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // active within 10 minutes
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
+// A recent liveness signal only proves that the runtime is alive. It does not
+// prove that the seat produced a visible result for its human. Keep that
+// distinction explicit on the roster: a live seat with no message in this
+// window is *unverifiable*, not quietly productive.
+export const OUTPUT_VERIFICATION_WINDOW_MS = 30 * 60 * 1000;
+export type AgentOutputState = 'observed' | 'unverifiable' | 'quiet' | 'unknown';
+
+const timestampOf = (value: Date | string | null | undefined): number | null => {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
+
+/**
+ * Distinguishes a recent runtime proof-of-life from a recent visible reply.
+ *
+ * `lastActiveAt` is deliberately not treated as output: it may come from a
+ * heartbeat, runtime-token use, or AgentRun. Conversely, a persisted message
+ * is direct proof that the agent did produce output, even if one of those
+ * liveness collectors is behind. The caller owns the records; this pure seam
+ * owns the 30-minute interpretation so roster consumers cannot drift.
+ */
+export const deriveAgentOutputState = (
+  lastActiveAt: Date | string | null | undefined,
+  lastMessageAt: Date | string | null | undefined,
+  now: number = Date.now(),
+): AgentOutputState => {
+  const lastMessage = timestampOf(lastMessageAt);
+  if (lastMessage !== null && now - lastMessage <= OUTPUT_VERIFICATION_WINDOW_MS) {
+    return 'observed';
+  }
+
+  const lastActive = timestampOf(lastActiveAt);
+  if (lastActive === null) return 'unknown';
+  if (now - lastActive <= OUTPUT_VERIFICATION_WINDOW_MS) return 'unverifiable';
+  return 'quiet';
+};
+
 export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
 
 interface ActivityInstallationLike {
@@ -255,6 +293,7 @@ export const deriveActivityBucket = (
 
 export default {
   deriveAgentState, AGENT_LISTENING_STALE_MS, collectPodAgentActivity, deriveActivityBucket,
+  deriveAgentOutputState, OUTPUT_VERIFICATION_WINDOW_MS,
 };
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports

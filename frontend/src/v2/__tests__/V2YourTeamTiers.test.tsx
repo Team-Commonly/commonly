@@ -55,10 +55,10 @@ const agents = [
   { name: 'smoke-widget', instanceId: 'default', displayName: 'Smoke Widget', lastActiveAt: minutesAgo(3 * 24 * 60) },
 ];
 
-const renderPage = () => {
+const renderPage = (agentRows = agents) => {
   axios.get.mockImplementation((url) => {
     if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace' }] });
-    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents } });
+    if (url.startsWith('/api/registry/pods/p1/agents')) return Promise.resolve({ data: { agents: agentRows } });
     return Promise.resolve({ data: {} });
   });
   return render(
@@ -86,6 +86,20 @@ describe('Your Team tiers', () => {
     expect(screen.getAllByTestId('team-dot')).toHaveLength(1);
     // Line 2 quotes what the agent last said (server-trimmed snippet).
     expect(featured[0]).toHaveTextContent('“Shipped the fix to main.”');
+  });
+
+  test('a live seat without recent output says UNVERIFIABLE instead of reading as quiet', async () => {
+    renderPage([
+      ...agents,
+      {
+        name: 'silent-but-live', instanceId: 'default', displayName: 'Silent but live',
+        lastActiveAt: minutesAgo(2), outputState: 'unverifiable',
+      },
+    ]);
+
+    const card = (await screen.findByText('Silent but live')).closest('.v2-team-feature');
+    expect(card).toHaveTextContent('UNVERIFIABLE — no message in the last 30 minutes');
+    expect(card).not.toHaveTextContent('Quiet');
   });
 
   test('standard cards carry the always-visible talk icon, no dot, no button pair', async () => {

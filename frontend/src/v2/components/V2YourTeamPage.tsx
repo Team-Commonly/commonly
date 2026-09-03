@@ -33,6 +33,9 @@ interface AgentInstallationSummary {
   internal?: boolean;
   // What the agent last said in this pod, pre-trimmed by the server.
   lastMessage?: { snippet?: string; at?: string | null } | null;
+  // Runtime liveness and visible output are distinct facts. A recent live
+  // seat with no message in 30 minutes is intentionally not called quiet.
+  outputState?: 'observed' | 'unverifiable' | 'quiet' | 'unknown';
 }
 
 // Runtime labels removed from cards 2026-08-22: ADR-022 D1 (ratified) bans
@@ -341,7 +344,11 @@ const V2YourTeamPage: React.FC = () => {
             <span className="v2-team-feature__name">{display}</span>
             <span className="v2-team-feature__dot" data-testid="team-dot" />
           </div>
-          {a.lastMessage?.snippet ? (
+          {a.outputState === 'unverifiable' ? (
+            <div className="v2-team-feature__doing" data-testid="team-output-unverifiable">
+              {t('yourTeam.card.outputUnverifiable')}
+            </div>
+          ) : a.lastMessage?.snippet ? (
             // Line 2 is what the agent last said (Wren spec §1.1) — quoted,
             // one line, ellipsized. The project line is the fallback for an
             // agent that has not spoken in this pod yet.
@@ -406,6 +413,12 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__pod">
             {t('yourTeam.card.inProject')} <em>{a.podName || t('yourTeam.untitledProject')}</em>
             {' · '}
+            {a.outputState === 'unverifiable' ? (
+              <>
+                <span data-testid="team-output-unverifiable">{t('yourTeam.card.outputUnverifiable')}</span>
+                {' · '}
+              </>
+            ) : null}
             {lastSeen}
           </div>
         </div>

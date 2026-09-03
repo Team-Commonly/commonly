@@ -29,4 +29,22 @@ describe('agent listing last-message snippet', () => {
     expect(buildAgentInstallationPayload(install).lastMessage).toBeNull();
     expect(buildAgentInstallationPayload(install, { lastMessage: { content: '  \n ' } }).lastMessage).toBeNull();
   });
+
+  test('payload carries the output state instead of inferring it in a roster client', () => {
+    const now = Date.now();
+    const p = buildAgentInstallationPayload(install, {
+      lastActiveAt: new Date(now - 1000),
+      lastMessage: { content: 'A reply from earlier today.', createdAt: new Date(now - 31 * 60 * 1000) },
+    });
+    expect(p.outputState).toBe('unverifiable');
+  });
+
+  test('blank message content does not count as observed output', () => {
+    const p = buildAgentInstallationPayload(install, {
+      lastActiveAt: new Date(),
+      lastMessage: { content: ' \n ', createdAt: new Date() },
+    });
+    expect(p.lastMessage).toBeNull();
+    expect(p.outputState).toBe('unverifiable');
+  });
 });

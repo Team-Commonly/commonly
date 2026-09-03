@@ -1706,6 +1706,7 @@
     "card": {
       "inProject": "属于",
       "lastSaid": "“{{snippet}}”",
+      "outputUnverifiable": "无法验证——过去 30 分钟内没有消息",
       "roleTitle": "角色：{{role}}",
       "profile": "资料页",
       "viewProfileAria": "查看 {{name}} 的资料页",
