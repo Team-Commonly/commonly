@@ -1060,10 +1060,18 @@ class AgentEventService {
             status: 'active',
             'config.runtime.runtimeType': { $exists: true },
           }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
-          const siblingRuntime = (sibling && normalizeConfig(sibling.config)?.runtime) as Record<string, unknown> | undefined;
+          const siblingCfg = (sibling && normalizeConfig(sibling.config)) || null;
+          const siblingRuntime = siblingCfg?.runtime as Record<string, unknown> | undefined;
           if (siblingRuntime?.runtimeType) {
+            // Inherit everything the native runtime reads (runtime, model,
+            // systemPrompt, tools, budgets), keeping the projection's own keys
+            // on top. A room install written before #1524/#1527 has only
+            // {heartbeat, autoJoinSource}; runtime alone made it route, but
+            // the run then fell to the default model with no system prompt.
+            const own = normalizeConfig(installationDoc.config) || {};
+            const { heartbeat: _h, autoJoinSource: _a, ...inheritable } = siblingCfg as Record<string, unknown>;
             installationRuntimeCfg = siblingRuntime;
-            installationDoc.config = { ...(normalizeConfig(installationDoc.config) || {}), runtime: siblingRuntime } as InstallationDoc['config'];
+            installationDoc.config = { ...inheritable, ...own, runtime: siblingRuntime } as InstallationDoc['config'];
           }
         }
         const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
