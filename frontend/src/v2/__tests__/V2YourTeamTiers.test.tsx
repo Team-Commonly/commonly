@@ -115,12 +115,21 @@ describe('Your Team tiers', () => {
     // hosted-smoke was active 1 minute ago and still must NOT be featured.
     expect(screen.queryByText('Hosted Smoke')).not.toBeInTheDocument();
     const toggle = screen.getByTestId('team-internal-toggle');
-    expect(toggle).toHaveTextContent('Internal seats (1)');
+    expect(toggle).toHaveTextContent('Connected agents (1)');
     // smoke-widget matches the old client-side name pattern but has no server
     // flag: it stays on the open roster, not behind the disclosure.
     expect(screen.getByText('Smoke Widget')).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(screen.getByText('Hosted Smoke')).toBeInTheDocument();
+  });
+
+  test('the invite-gated notice stays a quiet line with its code link', async () => {
+    renderPage();
+    const noticeText = await screen.findByText('Hosted agents are invite-gated during beta.');
+    const notice = noticeText.closest('.v2-team__entitlement-notice');
+
+    expect(notice).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Have an invitation code?' })).toBeInTheDocument();
   });
 
   test('header kicker reports real numbers: total and active this week, internal excluded', async () => {
@@ -134,7 +143,7 @@ describe('Your Team tiers', () => {
   test('header offers exactly hire + add-a-computer — channels have no CTA here (Sam 2026-09-01)', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Fable')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: '+ Hire an agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hire an agent' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add a computer' })).toBeInTheDocument();
     // "Connect" (the channels page) must not sit next to an agent-runtime CTA
     // — same verb, different concept was the confusion being removed.

@@ -238,4 +238,66 @@ describe('Install endpoint preserves curated displayName (cycle-of-Aria regressi
     // Registry default is acceptable when there's no curated identity to preserve.
     expect(installation.displayName).toBe('Cuz 🦞');
   });
+
+  // TASK-032, ruled 2026-09-02: AgentInstallation is canonical; the User row
+  // is a seed for an installation that has no name, never a preference over
+  // one that does. Before the ruling this case reverted a per-pod label to
+  // the shared identity's label on every re-install, while the read paths
+  // (agentMessageService, dmService) already preferred the installation.
+  //
+  // This is the discriminating case for that precedence and nothing else in
+  // the file reaches it: every other test starts from an empty
+  // AgentInstallation collection, where seed and preference are the same
+  // value and the two orderings agree.
+  //
+  // The reachable shape is uninstall-then-reinstall, not install-twice: an
+  // ACTIVE row makes the route 400 ('Agent already installed in this pod'),
+  // so the only way a second install meets an existing row is the
+  // reactivation path — where ADR-001 §3 identity continuity keeps the row
+  // (and its curated name) across the uninstall.
+  it('keeps an existing installation displayName over the curated User row on re-install', async () => {
+    await AgentInstallation.create({
+      agentName: 'openclaw',
+      podId: pod._id,
+      instanceId: 'aria',
+      installedBy: installer._id,
+      version: '1.0.0',
+      status: 'uninstalled',
+      scopes: ['context:read'],
+      // Curated for THIS pod, and deliberately different from the User row's
+      // 'Aria' so the assertion cannot pass by coincidence.
+      displayName: 'Aria (Sprint Desk)',
+    });
+
+    const res = await request(app)
+      .post('/api/registry/install')
+      .set('Authorization', `Bearer ${installerToken}`)
+      .send({
+        agentName: 'openclaw',
+        instanceId: 'aria',
+        podId: pod._id.toString(),
+        version: '1.0.0',
+        scopes: ['context:read', 'summaries:read', 'messages:write'],
+        // No explicit displayName — the caller is re-installing, not renaming.
+      });
+
+    expect(res.status).toBe(200);
+
+    const installation = await AgentInstallation.findOne({
+      podId: pod._id,
+      agentName: 'openclaw',
+      instanceId: 'aria',
+    }).lean();
+    expect(installation.displayName).toBe('Aria (Sprint Desk)');
+    // The two values the old precedence would have written instead.
+    expect(installation.displayName).not.toBe('Aria');
+    expect(installation.displayName).not.toBe('Cuz 🦞');
+
+    const profile = await AgentProfile.findOne({
+      podId: pod._id,
+      agentName: 'openclaw',
+      instanceId: 'aria',
+    }).lean();
+    expect(profile.name).toBe('Aria (Sprint Desk)');
+  });
 });

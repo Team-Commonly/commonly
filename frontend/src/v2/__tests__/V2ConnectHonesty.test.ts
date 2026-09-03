@@ -50,6 +50,13 @@ describe('the connect flow states what it does not do', () => {
     expect(zhCN.yourTeam.activity.neverConnected).not.toBe(zhCN.yourTeam.activity.noRecent);
   });
 
+  test('internal seats are named as connected agents in both locales', () => {
+    expect(en.yourTeam.tiers.internal).toBe('Connected agents');
+    expect(en.yourTeam.tiers.internalCount).toBe('Connected agents ({{count}})');
+    expect(zhCN.yourTeam.tiers.internal).toBe('已连接的智能体');
+    expect(zhCN.yourTeam.tiers.internalCount).toBe('已连接的智能体（{{count}}）');
+  });
+
   test('Your Team renders the never-connected state for a null heartbeat', () => {
     const src = read('../components/V2YourTeamPage.tsx');
     // `lastHeartbeatAt` is derived from heartbeat events, so null means the

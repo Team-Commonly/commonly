@@ -41,6 +41,7 @@ import PodContextDevPage from '../components/PodContextDevPage';
 import GlobalIntegrations from '../components/admin/GlobalIntegrations';
 import V2AdminUsers from './components/V2AdminUsers';
 import V2AdminAnalytics from './components/V2AdminAnalytics';
+import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
 import './v2.css';
 
@@ -92,6 +93,13 @@ const V2Boot: React.FC = () => (
   </div>
 );
 
+const V2AuthenticatedShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="v2-authenticated-shell">
+    <V2EmailVerificationBanner />
+    <div className="v2-authenticated-shell__content">{children}</div>
+  </div>
+);
+
 const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
@@ -104,7 +112,7 @@ const V2RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     return <Navigate to="/v2/login" state={{ from: location }} replace />;
   }
 
-  return <>{children}</>;
+  return <V2AuthenticatedShell>{children}</V2AuthenticatedShell>;
 };
 
 // Index gate at `/v2`. Logged-out visitors see the public landing (the front
@@ -122,7 +130,7 @@ const V2Home: React.FC = () => {
     return <Navigate to="/" replace />;
   }
 
-  return <V2Layout selectionMode="auto" />;
+  return <V2AuthenticatedShell><V2Layout selectionMode="auto" /></V2AuthenticatedShell>;
 };
 
 const V2UseCaseRedirect: React.FC = () => {

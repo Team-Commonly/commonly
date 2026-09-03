@@ -65,13 +65,13 @@ test('logout clears token and user', () => {
   expect(global.testAuth.currentUser).toBeNull();
 });
 
-test('login stores token and user', async () => {
-  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Alice' } } });
+test('login stores token, user, and verification state', async () => {
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Alice', verified: false } } });
   await act(async () => {
     await global.testAuth.login('a', 'b');
   });
   expect(localStorage.getItem('token')).toBe('tok');
-  expect(global.testAuth.currentUser).toEqual({ name: 'Alice' });
+  expect(global.testAuth.currentUser).toEqual({ name: 'Alice', verified: false });
   expect(axios.post).toHaveBeenCalledWith('/api/auth/login', { email: 'a', password: 'b' });
 });
 

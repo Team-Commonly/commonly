@@ -370,6 +370,98 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Layout shell ---------- */
 
+/* Authenticated v2 routes reserve a compact shell row for the email
+   verification reminder. The inner shell/panes must use the remaining space,
+   not 100vh, or the composer and feature-page footers would clip. */
+.v2-authenticated-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.v2-authenticated-shell__content {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.v2-authenticated-shell__content > .v2-shell,
+.v2-authenticated-shell__content .v2-pane {
+  height: 100%;
+}
+
+.v2-verification-banner {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "content resend dismiss";
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-warning-soft);
+  color: var(--v2-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.v2-verification-banner__content {
+  grid-area: content;
+  min-width: 0;
+}
+
+.v2-verification-banner__text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* Resend feedback stays in the visible status reminder so a sighted person
+   receives the same confirmation as assistive technology. */
+.v2-verification-banner__notice {
+  display: block;
+  margin-top: 2px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.v2-root button.v2-verification-banner__resend,
+.v2-root button.v2-verification-banner__dismiss {
+  flex: none;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.v2-root button.v2-verification-banner__resend {
+  grid-area: resend;
+  padding: 4px 4px;
+}
+
+.v2-root button.v2-verification-banner__dismiss {
+  grid-area: dismiss;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-verification-banner__resend:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 .v2-shell {
   display: grid;
   grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) 1fr var(--v2-inspector-w);
@@ -4565,6 +4657,22 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 480px) {
+  .v2-verification-banner {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "content dismiss"
+      "resend resend";
+    align-items: start;
+    gap: 6px 8px;
+    min-height: 0;
+    padding: 8px 12px;
+    font-size: 16px;
+  }
+
+  .v2-root button.v2-verification-banner__resend {
+    justify-self: start;
+  }
+
   /* Auth is a primary phone flow: 16px prevents Safari's focus zoom and a
      44px target keeps signup usable with a thumb. */
   .v2-login__input {
@@ -4871,29 +4979,6 @@ body.modern-ui.v2-canvas {
   background: rgba(239, 68, 68, 0.1);
   color: var(--v2-danger);
   font-size: 12px;
-}
-
-.v2-root button.v2-login__resend {
-  min-height: 32px;
-  margin-top: 8px;
-  padding: 6px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.v2-root button.v2-login__resend:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.v2-login__resend-notice {
-  margin-top: 6px;
-  color: var(--v2-text-secondary);
 }
 
 .v2-login__forgot {
@@ -5899,6 +5984,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-team__hire-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--v2-accent);
   color: #fff;
   border: none;
@@ -5950,8 +6038,16 @@ body.modern-ui.v2-canvas {
   margin-bottom: 20px;
 }
 
-/* Invite-code redemption strip — shown to BYO-tier users; a valid code
-   unlocks hosted agents (entitlements.cloudAgents). */
+/* Invite-code access is a quiet line under the roster title, not a notice
+   card competing with the team's primary work. The linked code path remains
+   available when a user has one. */
+.v2-team__entitlement-notice {
+  margin: -12px 0 20px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .v2-team__redeem {
   padding: 10px 14px;
   background: var(--v2-bg-subtle);
@@ -7554,6 +7650,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
   background: none;
   color: var(--v2-text-secondary);
@@ -7595,6 +7694,9 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-board__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: var(--v2-accent);
   color: #fff;
@@ -7727,7 +7829,8 @@ body.modern-ui.v2-canvas {
   border: 1px solid var(--v2-border);
   background: var(--v2-surface);
   color: var(--v2-text-secondary);
-  font-size: 11.5px;
+  min-height: 32px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 6px;
   padding: 3px 10px;

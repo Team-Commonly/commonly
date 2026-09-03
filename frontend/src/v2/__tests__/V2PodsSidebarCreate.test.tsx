@@ -92,7 +92,7 @@ describe('V2PodsSidebar create flow', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'New Pod' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
 
     // The audience choice is gone — it set one field, could not be honoured
     // for non-admins, and asked a stranger to decide before they had content.
