@@ -224,6 +224,7 @@ describe('V2PodChat agent-room liveness', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
 
     expect(await screen.findByTestId('agent-reply-wait')).toHaveTextContent('Waiting for Aria to reply');
+    expect(screen.getByTestId('agent-reply-wait').querySelector('.v2-chat__agent-room-status-dot')).toBeInTheDocument();
     expect(screen.queryByTestId('agent-room-liveness')).not.toBeInTheDocument();
 
     const reply = {
