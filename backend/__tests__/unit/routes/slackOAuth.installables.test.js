@@ -14,6 +14,9 @@ jest.mock('../../../models/Integration', () => ({
 }));
 jest.mock('../../../models/InstallableInstallation', () => ({ findOne: jest.fn() }));
 jest.mock('../../../utils/secret', () => ({ hash: jest.fn((value) => `hash:${value}`), randomSecret: jest.fn(() => 'nonce-value') }));
+jest.mock('../../../services/telegramConnectCode', () => ({
+  mintConnectCode: jest.fn(() => ({ connectCode: 'r'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000) })),
+}));
 jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(), put: jest.fn(), revoke: jest.fn() }));
 jest.mock('../../../services/slackApi', () => jest.fn().mockImplementation(() => ({
   openConversation: jest.fn(),
@@ -41,6 +44,7 @@ const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const connectorSecrets = require('../../../services/connectorSecrets');
+const { mintConnectCode } = require('../../../services/telegramConnectCode');
 const SlackApi = require('../../../services/slackApi');
 const slackOAuth = require('../../../services/slackOAuthService');
 const installableRoutes = require('../../../routes/installables');
@@ -87,6 +91,28 @@ describe('Slack installable OAuth routes', () => {
       expect.objectContaining({ $set: expect.objectContaining({ 'config.oauthStateNonceHash': 'hash:nonce-value' }) }),
       expect.anything(),
     );
+  });
+
+  test('re-mints an expired Slack OAuth state without disconnecting the install', async () => {
+    const expired = {
+      ...integration,
+      config: { ...integration.config, connectCodeExpiresAt: new Date(Date.now() - 1_000) },
+    };
+    Integration.findOne.mockResolvedValue(expired);
+    Integration.findOneAndUpdate
+      .mockResolvedValueOnce({ ...integration, config: { ...integration.config, connectCode: 'r'.repeat(32) } })
+      .mockResolvedValueOnce({ ...integration, config: { ...integration.config, connectCode: 'r'.repeat(32) } });
+
+    const response = await request(app).post('/api/installables/slack/authorize-url');
+
+    expect(response.status).toBe(200);
+    expect(mintConnectCode).toHaveBeenCalledTimes(1);
+    expect(slackOAuth.buildAuthorizeUrl).toHaveBeenCalledWith('r'.repeat(32));
+    expect(Integration.findOneAndUpdate.mock.calls[0]).toEqual([
+      expect.objectContaining({ _id: 'integration-1', type: 'slack', isActive: true }),
+      expect.objectContaining({ $set: expect.objectContaining({ 'config.connectCode': 'r'.repeat(32) }) }),
+      expect.anything(),
+    ]);
   });
 
   test('refuses a callback without its browser nonce before Slack exchange', async () => {

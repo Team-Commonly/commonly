@@ -13,6 +13,8 @@ const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
 const { hash, randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
+const { mintConnectCode } = require('../services/telegramConnectCode');
+// eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
 // eslint-disable-next-line global-require
 const SlackApi = require('../services/slackApi');
@@ -135,13 +137,50 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
   try {
     const owned = await ownedSlackIntegration(userId);
     if (!owned) return slackError(res, 404, 'slack_installation_not_found', 'Slack installation not found.');
-    const code = owned.integration.config?.connectCode;
-    const expiresAt = owned.integration.config?.connectCodeExpiresAt;
-    if (!owned.integration.isActive || !code || !expiresAt || new Date(expiresAt) <= new Date()) {
-      return slackError(res, 409, 'slack_authorization_unavailable', 'Generate a new Slack authorization first.');
+    let code = owned.integration.config?.connectCode;
+    let expiresAt = owned.integration.config?.connectCodeExpiresAt;
+    if (!owned.integration.isActive) {
+      return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
     }
     if (owned.integration.config?.chatId || owned.integration.config?.pendingBind) {
       return slackError(res, 409, 'slack_already_authorized', 'Slack is already awaiting confirmation or connected.');
+    }
+    // OAuth state expires after ten minutes. Re-mint it here, rather than
+    // forcing an otherwise healthy installed connector through Disconnect
+    // before the owner can try Slack again. The same no-chat/no-pending CAS
+    // prevents a second browser from replacing a state that has already
+    // reached Slack's callback.
+    if (!code || !expiresAt || new Date(expiresAt) <= new Date()) {
+      const minted = mintConnectCode();
+      const reminted = await Integration.findOneAndUpdate(
+        {
+          _id: owned.integration._id,
+          type: 'slack',
+          isActive: true,
+          'config.chatId': { $exists: false },
+          'config.pendingBind': { $exists: false },
+        },
+        {
+          $set: {
+            'config.connectCode': minted.connectCode,
+            'config.connectCodeExpiresAt': minted.connectCodeExpiresAt,
+          },
+          $unset: {
+            'config.oauthStateNonceHash': 1,
+            'config.oauthStateNonceExpiresAt': 1,
+            'config.oauthStateClaimId': 1,
+          },
+        },
+        { new: true },
+      );
+      if (!reminted) {
+        return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
+      }
+      code = reminted.config?.connectCode;
+      expiresAt = reminted.config?.connectCodeExpiresAt;
+    }
+    if (!code || !expiresAt || new Date(expiresAt) <= new Date()) {
+      return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
     }
     // Fail configuration before writing a nonce. Otherwise a deployment with
     // missing OAuth settings consumes a browser attempt it can never service.
