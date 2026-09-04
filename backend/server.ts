@@ -200,6 +200,7 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
+app.use('/api/installables', require('./routes/installables'));
 app.use('/api/apps', appPlatformRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/webhooks/slack', slackWebhookRoutes);
@@ -291,6 +292,11 @@ mongoose.connection.once('open', () => {
 
       require('./scripts/seed-native-agents').seedNativeAgents().catch((err: any) =>
         console.error('[native-seed] failed:', err?.message || err),
+      );
+      require('./scripts/seed-builtin-connectors').seedBuiltinConnectors().then(() =>
+        require('./services/installable/installableReconciler').sweep(),
+      ).catch((err: any) =>
+        console.error('[builtin-connectors] bootstrap failed:', err?.message || err),
       );
     })();
   }
