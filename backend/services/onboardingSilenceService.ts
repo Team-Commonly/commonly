@@ -381,6 +381,23 @@ const openOrExtendEpisode = async ({
   const podId = String(message.pod_id);
   const userId = String(message.user_id);
 
+  // A message already judged by a RESOLVED episode is never re-opened. The
+  // scan's "answered" test only looks inside the threshold window, so a message
+  // answered late (silent for 46 minutes, then answered) fails that test on
+  // every pass for the whole 24h lookback. Before this guard the sequence was:
+  // open -> next pass resolves (answer found) -> next pass opens AGAIN -> ...,
+  // one alert email every five minutes for the same message (2026-09-04, the
+  // first day a recipient was configured). Resolution still re-arms the pair:
+  // a message typed AFTER the resolution is a genuinely new silence.
+  const covered = await OnboardingSilenceEpisode.exists({
+    userId,
+    podId,
+    status: 'resolved',
+    firstTypedAt: { $lte: typedAt },
+    resolvedAt: { $gte: typedAt },
+  });
+  if (covered) return;
+
   const existing = await OnboardingSilenceEpisode.findOne({ userId, podId, status: 'open' });
   if (existing) {
     // Absorb, idempotently. Passes overlap by design (a 24h lookback re-run
