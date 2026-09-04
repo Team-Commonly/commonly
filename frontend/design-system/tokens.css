@@ -6,40 +6,40 @@
 
 :root {
   /* ---------- Brand & accents ---------- */
-  --c-accent:          #2f6feb;   /* primary blue — CTAs, links, indicators */
-  --c-accent-strong:   #1f55c9;   /* hover/pressed accent */
-  --c-accent-soft:     #e8efff;   /* tinted bg for active nav, badges, soft buttons */
-  --c-accent-text:     #2456c8;   /* darker variant for text on white (AA on body) */
-  --c-accent-deep:     #14306f;   /* deep navy — section heads, dark surfaces */
+  --c-accent:          #1d3fd1;   /* primary blue — CTAs, links, indicators */
+  --c-accent-strong:   #1633a8;   /* hover/pressed accent */
+  --c-accent-soft:     #e9edfb;   /* tinted bg for active nav, badges, soft buttons */
+  --c-accent-text:     #1d3fd1;   /* darker variant for text on white (AA on body) */
+  --c-accent-deep:     #0f2378;   /* deep navy — section heads, dark surfaces */
 
-  --c-focus-ring:      0 0 0 3px rgba(47, 111, 235, 0.18);
+  --c-focus-ring:      0 0 0 3px rgba(29, 63, 209, 0.18);
 
   /* Logo / legacy splash blue (from manifest theme-color & logo art) */
   --c-brand-blue:      #1da1f2;
 
   /* ---------- Backgrounds ---------- */
   --c-bg:              #ffffff;   /* main pane */
-  --c-bg-page:         #f8f8fb;   /* page / feature bg */
-  --c-bg-subtle:       #f7f7fa;   /* rail / panel */
+  --c-bg-page:         #eef0f4;   /* page / feature bg */
+  --c-bg-subtle:       #f9fafb;   /* rail / panel */
   --c-surface:         #ffffff;
-  --c-surface-tint:    #f4f3f8;   /* inspector, code blocks */
-  --c-surface-hover:   #f1f2f5;
-  --c-shell-bg:        #f1f1f4;   /* shell ground: rail, pods, inspector, gutter around the content card (TASK-122) */
-  --c-content-radius:  14px;      /* the inset content card */
+  --c-surface-tint:    #f2f4f7;   /* inspector, code blocks */
+  --c-surface-hover:   #f2f4f7;
+  --c-shell-bg:        #eef0f4;   /* shell ground: rail, pods, inspector, gutter around the content card (TASK-122) */
+  --c-content-radius:  6px;      /* the inset content card */
 
   /* ---------- Borders ---------- */
-  --c-border:          #e5e7eb;   /* default */
-  --c-border-soft:     #eef0f6;   /* dividers */
-  --c-border-strong:   #d7dce7;   /* hover/focus */
+  --c-border:          #d0d5dd;   /* default */
+  --c-border-soft:     #e4e7ec;   /* dividers */
+  --c-border-strong:   #98a2b3;   /* hover/focus */
 
   /* ---------- Text ---------- */
-  --c-fg-primary:      #111827;
-  --c-fg-secondary:    #4b5563;
-  --c-fg-tertiary:     #7b8494;
-  --c-fg-muted:        #8a93a3;
+  --c-fg-primary:      #101828;
+  --c-fg-secondary:    #475467;
+  --c-fg-tertiary:     #667085;
+  --c-fg-muted:        #667085;
   --c-fg-on-accent:    #ffffff;
-  --c-ink:             #111827;   /* filled buttons are ink; blue is links, marks, halo (TASK-122) */
-  --c-ink-hover:       #1f2937;
+  --c-ink:             #101828;   /* filled buttons are ink; blue is links, marks, halo (TASK-122) */
+  --c-ink-hover:       #1d2939;
   --c-on-ink:          #ffffff;
 
   /* ---------- Semantic ---------- */
@@ -71,9 +71,9 @@
   --c-github:          #333333;
 
   /* ---------- Geometry ---------- */
-  --c-radius-sm:       6px;       /* chips, inputs, small buttons */
-  --c-radius:          10px;      /* default — inputs, cards inside panels */
-  --c-radius-lg:       14px;      /* the content card, modals, the login card */
+  --c-radius-sm:       4px;       /* chips, inputs, small buttons */
+  --c-radius:          4px;      /* default — inputs, cards inside panels */
+  --c-radius-lg:       6px;      /* the content card, modals, the login card */
   --c-radius-pill:     999px;
 
   /* ---------- Spacing scale ---------- */
@@ -96,7 +96,7 @@
   --c-shadow-sm:   0 1px 2px 0 rgba(15, 23, 42, 0.04);
   --c-shadow-md:   0 4px 12px rgba(15, 23, 42, 0.06);
   --c-shadow-lg:   0 8px 24px rgba(15, 23, 42, 0.12);
-  --c-shadow-pending: 0 1px 2px rgba(15, 23, 42, 0.06);   /* the one chrome-card shadow: a PENDING decision/approval only */
+  --c-shadow-pending: none;   /* the one chrome-card shadow: a PENDING decision/approval only */
 
   /* ---------- Motion ---------- */
   --c-ease:        cubic-bezier(0.4, 0, 0.2, 1);
@@ -120,11 +120,10 @@
   /* Inter (variable, self-hosted from the bundle via @fontsource-variable/inter);
      SF Pro is the fallback only while the woff2 loads or if it fails. One face:
      display weight comes from font-weight, not a second family. (TASK-122) */
-  --c-font-sans:   "Inter Variable", "Inter", "SF Pro Text", -apple-system,
-                   BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --c-font-display: var(--c-font-sans);
-  --c-font-mono:   "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-                   "JetBrains Mono", "Fira Code", monospace;
+  --c-font-sans:   "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", Roboto, sans-serif;
+  --c-font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --c-font-mono:   "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Type scale — V2 first, MUI fallbacks where larger */
   --c-fs-xxs: 10px;   /* kickers, uppercase eyebrows */

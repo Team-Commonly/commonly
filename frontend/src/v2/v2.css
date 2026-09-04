@@ -19,28 +19,31 @@ body.modern-ui.v2-canvas {
 .v2-root {
   /* Palette */
   --v2-bg: #ffffff;
-  --v2-page-bg: #f8f8fb;
-  --v2-bg-subtle: #f7f7fa;
+  --v2-page-bg: #eef0f4;
+  --v2-bg-subtle: #f9fafb;
   --v2-surface: #ffffff;
-  --v2-surface-tint: #f4f3f8;
-  --v2-surface-hover: #f1f2f5;
-  --v2-border: #e5e7eb;
-  --v2-border-soft: #eef0f6;
-  --v2-border-strong: #d7dce7;
-  --v2-text-primary: #111827;
-  --v2-text-secondary: #4b5563;
-  --v2-text-tertiary: #7b8494;
-  --v2-text-muted: #8a93a3;
+  --v2-surface-tint: #f2f4f7;
+  --v2-surface-hover: #f2f4f7;
+  --v2-border: #d0d5dd;
+  --v2-border-soft: #e4e7ec;
+  --v2-border-strong: #98a2b3;
+  --v2-text-primary: #101828;
+  --v2-text-secondary: #475467;
+  --v2-text-tertiary: #667085;
+  --v2-text-muted: #667085;
+  --v2-text-placeholder: #98a2b3;
 
-  /* TASK-122 Phase A (Sam ruled 2026-09-03): the tint step. The shell ground
-     sits behind rail, pods and inspector; the content pane is an inset white
-     card. Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
-  --v2-shell-bg: #f1f1f4;
-  --v2-content-radius: 14px;
-  /* Ink primary — filled buttons are ink; blue stays for links, mention marks
-     and the focus halo. Mirrors --c-ink / --c-ink-hover / --c-on-ink. */
-  --v2-ink: #111827;
-  --v2-ink-hover: #1f2937;
+  /* The tint step (TASK-122) in the Signal identity: shell ground #eef0f4
+     behind rail, pods and inspector; the content pane is an inset white card
+     with a 1px #d0d5dd ring and a 6px radius — hard edges, no shadow.
+     Mirrors --c-shell-bg / --c-content-radius in design-system/tokens.css. */
+  --v2-shell-bg: #eef0f4;
+  --v2-content-radius: 6px;
+  /* Ink primary — filled buttons are ink; cobalt (#1d3fd1) is a MARK inside
+     the app: links, the live dot, the agent name, the one card that needs
+     you. On marketing surfaces cobalt is used as blocks. Mirrors --c-ink. */
+  --v2-ink: #101828;
+  --v2-ink-hover: #1d2939;
   --v2-on-ink: #ffffff;
 
   /* BEND-1 (Wren spec 2026-08-30, Sam-approved): the featured-tier name
@@ -48,12 +51,12 @@ body.modern-ui.v2-canvas {
      design-system/tokens.css; the two move together. */
   --v2-fs-feature: 17px;
 
-  --v2-accent: #2f6feb;
-  --v2-accent-strong: #1f55c9;
-  --v2-accent-soft: #e8efff;
-  --v2-accent-text: #2456c8;
-  --v2-accent-deep: #14306f;
-  --v2-focus-ring: 0 0 0 3px rgba(47, 111, 235, 0.18);
+  --v2-accent: #1d3fd1;
+  --v2-accent-strong: #1633a8;
+  --v2-accent-soft: #e9edfb;
+  --v2-accent-text: #1d3fd1;
+  --v2-accent-deep: #0f2378;
+  --v2-focus-ring: 0 0 0 3px rgba(29, 63, 209, 0.18);
 
   /* Platform brand + tint tokens (connectors) — mirror of --c-platform-* in
      design-system/tokens.css; the two move together. */
@@ -97,33 +100,37 @@ body.modern-ui.v2-canvas {
   --v2-sky: #60a5fa;
   --v2-rose: #fb7185;
 
-  /* Typography — Inter (variable, self-hosted via @fontsource-variable/inter,
-     imported in V2App.tsx above this sheet). SF Pro is the fallback only while
-     the woff2 loads or if it fails. One face: display weight comes from
-     font-weight, not a second family. Mirrors --c-font-sans. */
-  --v2-font: "Inter Variable", "Inter", "SF Pro Text", -apple-system,
-    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --v2-font-display: var(--v2-font);
+  /* Typography — the Signal identity (Sam chose C on the Shell Parity canvas,
+     2026-09-03). Three faces, each with one job: Bricolage Grotesque for
+     display (headings, wordmarks — weight 700/800), IBM Plex Sans for every
+     line of body and control text, IBM Plex Mono for meta (timestamps,
+     ids, status). All self-hosted via @fontsource, imported in V2App.tsx
+     above this sheet; the system stacks are fallbacks only while woff2
+     loads. Mirrors --c-font-* in design-system/tokens.css. */
+  --v2-font: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  --v2-font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque",
+    "Helvetica Neue", Arial, sans-serif;
   --v2-fs-body: 14px;
   --v2-lh-body: 20px;
   --v2-fs-meta: 12px;
   --v2-lh-meta: 16px;
   --v2-fs-label: 11px;
   --v2-lh-label: 14px;
-  --v2-font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-    "JetBrains Mono", "Fira Code", monospace;
+  --v2-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
 
   /* Geometry */
-  --v2-radius-sm: 6px;
-  --v2-radius: 10px;
-  --v2-radius-lg: 14px;
+  --v2-radius-sm: 4px;
+  --v2-radius: 4px;
+  --v2-radius-lg: 6px;
   --v2-radius-pill: 999px;
 
   /* Elevation */
   --v2-shadow-sm: none;
   --v2-shadow: none;
   --v2-shadow-lg: none;
-  --v2-shadow-pending: 0 1px 2px rgba(15, 23, 42, 0.06); /* the one chrome-card shadow: a PENDING decision or approval only */
+  --v2-shadow-pending: none; /* the one chrome-card shadow: a PENDING decision or approval only */
 
   /* Layout */
   --v2-rail-w: 76px;

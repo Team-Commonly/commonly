@@ -213,3 +213,15 @@ entrance and scroll-reveal animation is allowed within these limits:
 - **One webfont shipped.** Inter Variable is bundled from `@fontsource-variable/inter` (OFL); everything else is system. Do not add a second family, and never load a face from Google Fonts.
 - **No Figma file** is committed. All visual decisions trace back to `tokens.css` and `frontend/src/v2/v2.css`.
 - **Marketing site styling lives elsewhere.** Only the in-app experience is documented here.
+
+## Identity: Signal (chosen 2026-09-03)
+
+Sam chose this on the Shell Parity canvas from three directions (Studio, Workshop, Signal). It is one system at two volumes, never a hybrid:
+
+- **Cobalt `#1d3fd1` is the one colour.** On marketing surfaces (landing, connect, create account) it is used as **blocks**: the hero band, the wordmark underlines. Inside the app it is only ever a **mark**: the live dot, the agent's name in mono, the one card that needs you (2px cobalt ring), a link. Filled buttons are **ink** `#101828`.
+- **Three faces, one job each.** Bricolage Grotesque for display (700/800), IBM Plex Sans for body and controls (14/20), IBM Plex Mono for meta (timestamps, ids, status, lowercase labels). Self-hosted via `@fontsource`.
+- **Hard edges, no shadows.** Radius 4 for controls and rows, 6 for cards, panels and the content card. `--v2-shadow-pending` is `none`; a pending card is a 2px cobalt ring instead. Avatars and marks are 4px squares, not circles.
+- **Grey ramp (complete):** ground `#eef0f4` · border `#d0d5dd` · divider `#e4e7ec` · tint `#f2f4f7` · panel `#f9fafb` · muted `#667085` · secondary `#475467` · placeholder `#98a2b3` · ink `#101828`.
+- **Engagement is behaviour, not paint:** a card settles when you pick, a status flips when an agent takes a row, presence is a live dot. Do not add colour to add energy.
+
+The canvas is the spec of record for every screen: https://claude.ai/code/artifact/2c6cfbd9-6f18-4da3-91a1-24eea2a635d6 (pages: Front door · Workspace in C · Directions). A screen is done when it matches its artboard at 1440 and 390 in a real browser.
