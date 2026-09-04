@@ -6,15 +6,12 @@ import { act } from 'react-dom/test-utils';
 import Login from './Login';
 import Register from './Register';
 import VerifyEmail from './VerifyEmail';
-import Dashboard from './Dashboard';
-import PostFeed from './PostFeed';
-import Thread from './Thread';
 import UserProfile from './UserProfile';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 import { useLayout as useLayoutCtx } from '../context/LayoutContext';
 import { useSocket } from '../context/SocketContext';
-import { useNavigate, useParams, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 const axios = require('axios').default;
 
 jest.mock('axios', () => ({
@@ -39,7 +36,6 @@ jest.mock('react-router-dom', () => ({
   useParams: jest.fn(),
   useSearchParams: jest.fn(),
   useLocation: jest.fn(),
-  useOutletContext: jest.fn(),
   Navigate: () => <div>Navigate</div>,
   Outlet: () => <div>Outlet</div>,
   Link: ({ children }) => <a href="#">{children}</a>
@@ -116,25 +112,6 @@ test('VerifyEmail fetches token', async () => {
   await TestUtils.act(async () => { root.render(<VerifyEmail />); });
   await TestUtils.act(async () => Promise.resolve());
   expect(container.textContent).toContain('verified');
-});
-
-test('Dashboard renders', () => {
-  render(<Dashboard />);
-});
-
-test('PostFeed renders', async () => {
-  axios.get.mockResolvedValueOnce({ data: [] });
-  useOutletContext.mockReturnValue(null);
-  await TestUtils.act(async () => { root.render(<PostFeed />); });
-  await TestUtils.act(async () => Promise.resolve());
-  expect(axios.get).toHaveBeenCalled();
-});
-
-test('Thread renders', async () => {
-  axios.get.mockResolvedValueOnce({ data: { _id: '1', userId: { username: 'u' }, content: 'c', createdAt: Date.now(), comments: [] } });
-  await TestUtils.act(async () => { root.render(<Thread />); });
-  await TestUtils.act(async () => Promise.resolve());
-  expect(axios.get).toHaveBeenCalled();
 });
 
 test('UserProfile renders', async () => {

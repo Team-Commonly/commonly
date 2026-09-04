@@ -60,6 +60,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podChat = read('../components/V2PodChat.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
+  const v2App = read('../V2App.tsx');
+  const app = read('../../App.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -712,6 +714,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       '.v2-chat__system-link',
     ]) {
       expect(v2).not.toContain(selector);
+    }
+  });
+
+  test('retired legacy feature routes and embedded styles stay deleted', () => {
+    // TASK-123 removed six legacy V2FeaturePage wrappers. The pod board and
+    // community remain separate, supported surfaces; this guard names only
+    // the archived routes so a future removal sweep cannot widen its scope.
+    const retiredRoutes = ['dashboard', 'feed', 'thread/:id', 'skills', 'digest', 'analytics'];
+    expect(retiredRoutes).not.toHaveLength(0);
+    for (const route of retiredRoutes) {
+      expect(v2App).not.toContain(`path="${route}"`);
+    }
+
+    for (const legacyRedirect of [
+      "pathname === '/feed'",
+      "pathname.startsWith('/thread/')",
+      "pathname === '/dashboard'",
+      "pathname === '/digest'",
+      "pathname === '/skills'",
+    ]) {
+      expect(app).not.toContain(legacyRedirect);
+    }
+
+    expect(v2).not.toContain('post-feed-container');
+    expect(v2).not.toContain('v2-skills-catalog');
+  });
+
+  test('E2E specs do not reference a retired legacy feature route', () => {
+    const e2eDirectory = path.join(__dirname, '../../../../e2e');
+    const specs = fs.readdirSync(e2eDirectory).filter((file) => file.endsWith('.spec.ts'));
+    const retiredRoute = /(?:\/v2)?\/(?:feed|dashboard|digest|analytics|skills)(?=\/|[?#'"`\s]|$)|\/thread\//;
+
+    expect(specs).not.toHaveLength(0);
+    for (const spec of specs) {
+      expect(fs.readFileSync(path.join(e2eDirectory, spec), 'utf8')).not.toMatch(retiredRoute);
     }
   });
 

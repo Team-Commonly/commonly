@@ -186,12 +186,7 @@ const getV2EquivalentPath = (pathname: string, search: string): string | null =>
   if (pathname === '/register' || pathname === '/register/invite-required') return `/v2${pathname}${search}`;
   if (pathname === '/verify-email') return `/v2${pathname}${search}`;
   if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;
-  if (pathname === '/feed') return `/v2/feed${search}`;
-  if (pathname.startsWith('/thread/')) return `/v2${pathname}${search}`;
-  if (pathname === '/dashboard') return `/v2/dashboard${search}`;
-  if (pathname === '/digest') return `/v2/digest${search}`;
   if (pathname === '/agents') return `/v2/agents${search}`;
-  if (pathname === '/skills') return `/v2/skills${search}`;
   if (pathname === '/activity') return `/v2/activity${search}`;
   if (pathname === '/profile' || pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
   if (pathname === '/admin/users') return '/v2/profile?tab=user-admin';
