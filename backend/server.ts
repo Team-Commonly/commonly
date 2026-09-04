@@ -152,6 +152,11 @@ app.use(
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+    // Slack OAuth starts in the authenticated shell and returns through an
+    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
+    // API origin, so the authorize-url request must be allowed to persist it
+    // when the shell is served from commonly.me.
+    credentials: true,
   }),
 );
 
