@@ -119,8 +119,8 @@ describe('Slack installable OAuth routes', () => {
     const response = await request(app)
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`);
 
-    expect(response.status).toBe(400);
-    expect(response.body.code).toBe('slack_oauth_invalid_state');
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('https://commonly.me/v2/connectors?slack=error&code=invalid_state');
     expect(slackOAuth.exchangeCode).not.toHaveBeenCalled();
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
@@ -143,7 +143,8 @@ describe('Slack installable OAuth routes', () => {
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
       .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe('https://commonly.me/v2/connectors?slack=pending');
     expect(slackOAuth.exchangeCode).toHaveBeenCalledWith('slack-code');
     expect(connectorSecrets.put).toHaveBeenCalledWith('integration-1', 'slack', 'xoxb-never-store-on-integration');
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
@@ -180,5 +181,45 @@ describe('Slack installable OAuth routes', () => {
     );
     expect(JSON.stringify(response.body)).not.toContain('secret-ref');
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[Launch] connected');
+  });
+
+  test('rejects a pending Slack bind and revokes its secret reference', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Integration.findOneAndUpdate.mockResolvedValue({ ...integration, config: {} });
+
+    const response = await request(app).post('/api/installables/slack/reject');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: 'rejected' });
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'integration-1', 'config.pendingBind.botTokenRef': 'secret-ref' }),
+      { $unset: { 'config.pendingBind': 1 } },
+      expect.anything(),
+    );
+    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref');
+  });
+
+  test('expires a stale pending bind back to active pending, not an invisible inactive row', async () => {
+    const pending = {
+      teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: 'secret-ref',
+      expiresAt: new Date(Date.now() - 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Integration.findOneAndUpdate.mockResolvedValue({ ...integration, status: 'pending', isActive: true, config: {} });
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('slack_bind_expired');
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'integration-1', 'config.pendingBind.botTokenRef': 'secret-ref' }),
+      expect.objectContaining({ $set: { status: 'pending', errorMessage: null } }),
+      expect.anything(),
+    );
+    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref');
   });
 });

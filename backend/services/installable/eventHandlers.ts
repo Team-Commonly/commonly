@@ -46,6 +46,7 @@ const activeHandlersForPod = async (podId: string): Promise<Array<{
       $match: {
         type: { $in: ['telegram', 'slack'] },
         isActive: true,
+        status: { $ne: 'error' },
         podId: new Types.ObjectId(podId),
         'config.liveRelay': true,
       },

@@ -10,6 +10,8 @@ const ConnectorSecret = require('../../models/ConnectorSecret');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('../connectorSecrets');
 
+const ORPHAN_SECRET_GRACE_MS = 10 * 60_000;
+
 const installationIdFor = (installation: IInstallableInstallation): string => String(installation._id);
 
 const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored: number }> => {
@@ -122,24 +124,13 @@ const sweepStaleUninstalls = async (now: Date): Promise<number> => {
   return completed;
 };
 
-const markSlackIntegrationStale = async (
-  integration: { _id: unknown; installationId?: string },
+const markSlackIntegrationUnavailable = async (
+  integration: { _id: unknown },
   message: string,
 ): Promise<void> => {
   await Integration.updateOne(
     { _id: integration._id, isActive: true },
-    { $set: { isActive: false, status: 'error', errorMessage: message } },
-  );
-  if (!integration.installationId) return;
-  await InstallableInstallation.updateOne(
-    { _id: integration.installationId, status: 'active' },
-    {
-      $set: {
-        'components.$[component].status': 'stale',
-        'components.$[component].errorMessage': message,
-      },
-    },
-    { arrayFilters: [{ 'component.componentType': { $in: ['webhook', 'event-handler'] } }] },
+    { $set: { status: 'error', errorMessage: message } },
   );
 };
 
@@ -164,23 +155,25 @@ const sweepExpiredSlackBinds = async (now: Date): Promise<number> => {
         'config.pendingBind.botTokenRef': ref,
       },
       {
-        $set: { isActive: false, status: 'error', errorMessage: 'Slack authorization expired' },
+        $set: { status: 'pending', errorMessage: null },
         $unset: { 'config.pendingBind': 1 },
       },
       { new: true },
     );
     if (!claimed) continue;
     await connectorSecrets.revoke(ref);
-    await markSlackIntegrationStale(integration, 'Slack authorization expired');
     expired += 1;
   }
   return expired;
 };
 
-const sweepOrphanedConnectorSecrets = async (): Promise<number> => {
-  const secrets = await ConnectorSecret.find({}).select('_id integrationId').lean() as Array<{
+const sweepOrphanedConnectorSecrets = async (now: Date): Promise<number> => {
+  const secrets = await ConnectorSecret.find({
+    createdAt: { $lte: new Date(now.getTime() - ORPHAN_SECRET_GRACE_MS) },
+  }).select('_id integrationId createdAt').lean() as Array<{
     _id: unknown;
     integrationId: unknown;
+    createdAt: Date;
   }>;
   let revoked = 0;
   for (const secret of secrets) {
@@ -215,7 +208,7 @@ const sweepUnavailableSlackSecretKeys = async (): Promise<number> => {
   for (const secret of unavailable) {
     const integration = await Integration.findById(secret.integrationId)
       .select('installationId').lean() as { _id: unknown; installationId?: string } | null;
-    if (integration) await markSlackIntegrationStale(integration, 'Slack connector secret key is unavailable');
+    if (integration) await markSlackIntegrationUnavailable(integration, 'Slack connector secret key is unavailable');
   }
   return unavailable.length;
 };
@@ -235,7 +228,7 @@ export const sweep = async (now: Date = new Date()): Promise<{
   const uninstallsCompleted = await sweepStaleUninstalls(now);
   const deactivated = await sweepUninstalledInstallations();
   const expiredSlackBinds = await sweepExpiredSlackBinds(now);
-  const orphanedSecrets = await sweepOrphanedConnectorSecrets();
+  const orphanedSecrets = await sweepOrphanedConnectorSecrets(now);
   const unavailableSlackSecretKeys = await sweepUnavailableSlackSecretKeys();
   const result = {
     ...locks,

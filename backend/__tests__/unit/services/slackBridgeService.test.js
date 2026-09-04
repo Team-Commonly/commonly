@@ -55,4 +55,14 @@ describe('Slack installable bridge', () => {
       relayMap: [{ externalMessageId: '171234.0001', agentUsername: 'kai' }],
     })).toEqual({ content: '@kai Can you clarify?', routedAgent: 'kai' });
   });
+
+  test('does not relay through a visible recovery row whose secret is unavailable', async () => {
+    await relayAgentMessageToSlack({
+      podId: 'pod-1', agentUsername: 'kai', displayName: 'Kai', content: 'Must stay in Commonly',
+      integration: { ...integration, status: 'error' },
+    });
+
+    expect(connectorSecrets.get).not.toHaveBeenCalled();
+    expect(SlackApi).not.toHaveBeenCalled();
+  });
 });

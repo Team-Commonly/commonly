@@ -406,6 +406,21 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('revokes Slack’s envelope secret when the installation is uninstalled', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'slack', installedBy: userId, podId });
+    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.botTokenRef': ref } },
+    );
+
+    await uninstall({ installableId: 'slack', installedBy: userId });
+
+    expect(await ConnectorSecret.findById(ref)).toBeNull();
+    expect((await Integration.findById(installed.integration._id)).config.botTokenRef).toBeUndefined();
+  });
+
   it('finishes a stale revocation before re-installing a new parent and projection', async () => {
     const { userId, podId } = ids();
     const first = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -530,7 +545,7 @@ describe('installable connector projection', () => {
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
   });
 
-  it('expires a pending Slack bind, revokes its encrypted token, and marks the component stale', async () => {
+  it('expires a pending Slack bind, revokes its encrypted token, and leaves a retryable active card', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
     const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
@@ -551,14 +566,31 @@ describe('installable connector projection', () => {
     const parent = await InstallableInstallation.findById(installed.installation._id);
 
     expect(reconciled.expiredSlackBinds).toBe(1);
-    expect(integration.isActive).toBe(false);
-    expect(integration.status).toBe('error');
+    expect(integration.isActive).toBe(true);
+    expect(integration.status).toBe('pending');
     expect(integration.config.pendingBind?.botTokenRef).toBeUndefined();
     expect(await ConnectorSecret.findById(ref)).toBeNull();
-    expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+    expect(parent.components.every((component) => component.status === 'active')).toBe(true);
   });
 
-  it('marks a Slack projection stale when its secret key disappears from the ring', async () => {
+  it('does not sweep a freshly written orphaned secret before a callback can commit its bind', async () => {
+    const ref = await put(new mongoose.Types.ObjectId().toString(), 'slack', 'xoxb-secret');
+    const now = new Date();
+
+    const fresh = await sweep(now);
+    expect(fresh.orphanedSecrets).toBe(0);
+    expect(await ConnectorSecret.findById(ref)).not.toBeNull();
+
+    await ConnectorSecret.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(ref) },
+      { $set: { createdAt: new Date(now.getTime() - (10 * 60_000) - 1) } },
+    );
+    const expired = await sweep(now);
+    expect(expired.orphanedSecrets).toBe(1);
+    expect(await ConnectorSecret.findById(ref)).toBeNull();
+  });
+
+  it('keeps a Slack projection visible but error-gated when its secret key disappears from the ring', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
     const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
@@ -581,9 +613,10 @@ describe('installable connector projection', () => {
     const parent = await InstallableInstallation.findById(installed.installation._id);
 
     expect(reconciled.unavailableSlackSecretKeys).toBe(1);
-    expect(integration.isActive).toBe(false);
+    expect(integration.isActive).toBe(true);
+    expect(integration.status).toBe('error');
     expect(integration.errorMessage).toMatch(/secret key/i);
-    expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+    expect(parent.components.every((component) => component.status === 'active')).toBe(true);
   });
 
   it('completes a stale activating row with its already-active, same-generation projection', async () => {

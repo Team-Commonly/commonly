@@ -3,6 +3,8 @@ import { createHmac } from 'crypto';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const registry = require('../../integrations');
@@ -12,9 +14,24 @@ const { safeEqual } = require('../../utils/secret');
 const slackReceipts = require('../../services/slackEventReceiptService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { relaySlackMessageToPod } = require('../../services/slackBridgeService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 const router = express.Router({ mergeParams: true });
 const SIGNATURE_WINDOW_MS = 5 * 60_000;
+
+// Slack retries delivery aggressively, so this budget deliberately leaves
+// room for a busy shared workspace while still bounding unauthenticated work
+// before HMAC verification and receipt creation.
+const slackWebhookRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: unknown, res: any) => res.status(429).json({ error: 'Too many Slack webhook requests' }),
+});
 
 const header = (req: any, name: string): string => String(req.get?.(name) || req.headers?.[name.toLowerCase()] || '');
 
@@ -40,13 +57,23 @@ const signed = (req: any, res: any, next: () => void) => {
 
 const finishEvent = async (eventId: string, teamId: string, event: any): Promise<void> => {
   try {
+    // Keep provider input scalar before it reaches Mongoose. The direct
+    // String/strip form is intentionally adjacent to the selector so both
+    // the runtime boundary and CodeQL's NoSQL-injection model see the fence.
+    const safeTeamId = String(teamId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    const channelId = String(event?.channel || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!safeTeamId || !channelId) {
+      await slackReceipts.markDone(eventId);
+      return;
+    }
     const integration = await Integration.findOne({
       type: 'slack',
       isActive: true,
-      'config.teamId': teamId,
-      'config.chatId': event.channel,
+      'config.teamId': safeTeamId,
+      'config.chatId': channelId,
       'config.chatType': 'im',
       'config.liveRelay': true,
+      status: { $ne: 'error' },
     }).lean();
     if (integration) await relaySlackMessageToPod({ integration, event });
     await slackReceipts.markDone(eventId);
@@ -54,7 +81,7 @@ const finishEvent = async (eventId: string, teamId: string, event: any): Promise
     // Keep state=processing. A stale delivery can then be CAS-reclaimed by a
     // provider retry after a worker failure; done is reserved for a completed
     // or intentionally dropped event, never for an exception.
-    console.error(`[slack-events] processing failed event=${eventId}:`, (error as Error).message);
+    console.error('[slack-events] processing failed:', (error as Error).message);
   }
 };
 
@@ -63,7 +90,7 @@ const finishEvent = async (eventId: string, teamId: string, event: any): Promise
  * the legacy /:integrationId provider route below: one Slack app has one
  * global request URL and resolves its target by team + DM channel.
  */
-router.post('/events', signed, async (req: any, res: any) => {
+router.post('/events', slackWebhookRateLimit, signed, async (req: any, res: any) => {
   const body = req.body || {};
   if (body.type === 'url_verification') return res.status(200).json({ challenge: body.challenge });
   const event = body.event;
@@ -84,22 +111,29 @@ router.post('/events', signed, async (req: any, res: any) => {
   // Ack before the bridge's database/PG work. Slack's 3s deadline is a
   // transport concern; state in SlackEventReceipt carries the work claim.
   res.status(200).json({ ok: true });
-  const teamId = String(body.team_id || event.team || '');
+  const teamId = String(body.team_id || event.team || '').replace(/[^a-zA-Z0-9_-]/g, '');
   setImmediate(() => { void finishEvent(String(body.event_id), teamId, event); });
   return undefined;
 });
 
 const commandHelp = 'Use /commonly status, mode mirror|attention, mute [minutes], or unmute.';
 
-router.post('/commands', signed, async (req: any, res: any) => {
+router.post('/commands', slackWebhookRateLimit, signed, async (req: any, res: any) => {
   const body = req.body || {};
+  const teamId = String(body.team_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const channelId = String(body.channel_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const slackUserId = String(body.user_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!teamId || !channelId || !slackUserId) {
+    return res.status(400).json({ response_type: 'ephemeral', text: 'Invalid Slack command context.' });
+  }
   const integration = await Integration.findOne({
     type: 'slack',
     isActive: true,
-    'config.teamId': body.team_id,
-    'config.chatId': body.channel_id,
+    'config.teamId': teamId,
+    'config.chatId': channelId,
     'config.chatType': 'im',
-    'config.slackUserId': body.user_id,
+    'config.slackUserId': slackUserId,
+    status: { $ne: 'error' },
   });
   if (!integration) {
     return res.status(404).json({

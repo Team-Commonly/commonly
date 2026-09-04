@@ -18,6 +18,7 @@ interface SlackIntegrationDoc {
   podId: unknown;
   type?: string;
   isActive?: boolean;
+  status?: string;
   config?: {
     teamId?: string;
     chatId?: string;
@@ -43,6 +44,7 @@ const isRelayableIntegration = (integration: SlackIntegrationDoc, podId: string)
   String(integration.podId) === String(podId)
   && integration.type === 'slack'
   && integration.isActive === true
+  && integration.status !== 'error'
   && integration.config?.liveRelay === true
   && integration.config?.chatType === 'im'
   && Boolean(integration.config?.teamId)
@@ -54,6 +56,7 @@ const findLiveIntegration = async (podId: string): Promise<SlackIntegrationDoc |
   Integration.findOne({
     type: 'slack',
     isActive: true,
+    status: { $ne: 'error' },
     podId,
     'config.liveRelay': true,
     'config.chatType': 'im',

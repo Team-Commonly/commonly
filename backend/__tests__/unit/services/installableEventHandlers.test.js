@@ -182,6 +182,27 @@ describe('installable event dispatcher', () => {
     expect(String(slackRelay.mock.calls[0][0].integration.podId)).toBe(podId);
   });
 
+  it('does not dispatch an error-gated Slack row while keeping its projection active for recovery', async () => {
+    const podId = freshId();
+    const installed = await install({ installableId: 'slack', installedBy: freshId(), podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { status: 'error', isActive: true } },
+    );
+    const slackRelay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['slack.relay'] = slackRelay;
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'Do not send through an unavailable connector',
+      podMessageId: 'message-error-gated',
+    });
+
+    expect(slackRelay).not.toHaveBeenCalled();
+  });
+
   it('contains an individual handler failure', async () => {
     const podId = freshId();
     await install({ installableId: 'telegram', installedBy: freshId(), podId });

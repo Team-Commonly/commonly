@@ -50,6 +50,7 @@ interface AuthReq {
 interface Res {
   status: (status: number) => Res;
   json: (body: unknown) => void;
+  redirect: (status: number, url: string) => Res;
   cookie?: (name: string, value: string, options: Record<string, unknown>) => Res;
   clearCookie?: (name: string, options?: Record<string, unknown>) => Res;
 }
@@ -75,21 +76,6 @@ const cookieValue = (req: AuthReq, name: string): string | undefined => {
   }
 };
 
-const cookieOptions = (): Record<string, unknown> => ({
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: true,
-  maxAge: SLACK_NONCE_TTL_MS,
-  path: '/api/webhooks/slack/oauth/callback',
-});
-
-const clearCookieOptions = (): Record<string, unknown> => ({
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: true,
-  path: '/api/webhooks/slack/oauth/callback',
-});
-
 const ownedSlackIntegration = async (userId: string): Promise<{ installation: any; integration: any } | null> => {
   const installation = await InstallableInstallation.findOne({
     installableId: 'slack',
@@ -104,6 +90,27 @@ const ownedSlackIntegration = async (userId: string): Promise<{ installation: an
 
 const slackError = (res: Res, status: number, code: string, error: string): void => {
   res.status(status).json({ code, error });
+};
+
+const publicAppUrl = (): string => {
+  const configured = String(process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'https://commonly.me')
+    .split(',')[0]
+    .trim();
+  return (configured || 'https://commonly.me').replace(/\/+$/, '');
+};
+
+const slackCallbackRedirect = (res: Res, state: 'pending' | 'error', code?: string): Res => {
+  res.clearCookie?.(SLACK_NONCE_COOKIE, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: true,
+    path: '/api/webhooks/slack/oauth/callback',
+  });
+  const query = new URLSearchParams({ slack: state });
+  if (code) query.set('code', code);
+  // Connectors is a v2 shell route; `/connectors` is not a mounted page on
+  // the public app, so send the browser to the actual rendered surface.
+  return res.redirect(302, `${publicAppUrl()}/v2/connectors?${query.toString()}`);
 };
 
 // Mongoose's Integration toJSON transform is the normal guard. Keep this
@@ -209,7 +216,15 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
     if (!claimed) {
       return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
     }
-    res.cookie?.(SLACK_NONCE_COOKIE, nonce, cookieOptions());
+    // Keep these options at the sink: CodeQL must be able to prove that the
+    // browser-bound nonce is never script-readable or sent over HTTP.
+    res.cookie?.(SLACK_NONCE_COOKIE, nonce, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: true,
+      maxAge: SLACK_NONCE_TTL_MS,
+      path: '/api/webhooks/slack/oauth/callback',
+    });
     return res.json({ authorizeUrl: url, expiresAt });
   } catch (error) {
     if (error instanceof SlackOAuthConfigurationError) {
@@ -234,7 +249,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
   const code = typeof req.query?.code === 'string' ? req.query.code : '';
   const nonce = cookieValue(req, SLACK_NONCE_COOKIE);
   if (!state || !code || !nonce) {
-    return slackError(res, 400, 'slack_oauth_invalid_state', 'Slack authorization state is invalid or expired.');
+    return slackCallbackRedirect(res, 'error', 'invalid_state');
   }
   const now = new Date();
   const claimId = randomSecret(16);
@@ -259,7 +274,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
       { new: true },
     );
     if (!integration) {
-      return slackError(res, 400, 'slack_oauth_invalid_state', 'Slack authorization state is invalid or expired.');
+      return slackCallbackRedirect(res, 'error', 'invalid_state');
     }
     const { accessToken, ...binding } = await exchangeCode(code);
     const dm = await new SlackApi(accessToken).openConversation(binding.slackUserId);
@@ -295,10 +310,9 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
     );
     if (!committed) {
       await connectorSecrets.revoke(botTokenRef);
-      return slackError(res, 409, 'slack_oauth_state_consumed', 'Slack authorization was already completed.');
+      return slackCallbackRedirect(res, 'error', 'state_consumed');
     }
-    res.clearCookie?.(SLACK_NONCE_COOKIE, clearCookieOptions());
-    return res.status(200).json({ status: 'pending_confirmation' });
+    return slackCallbackRedirect(res, 'pending');
   } catch (error) {
     if (integration?._id) {
       await Integration.updateOne(
@@ -308,10 +322,10 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
     }
     if (error instanceof SlackOAuthConfigurationError || error instanceof SlackOAuthExchangeError) {
       const oauthError = error as { code: string; message: string };
-      return slackError(res, 400, oauthError.code, oauthError.message);
+      return slackCallbackRedirect(res, 'error', oauthError.code);
     }
     console.error('[slack-oauth] callback failed:', (error as Error).message);
-    return slackError(res, 500, 'slack_oauth_callback_failed', 'Could not complete Slack authorization.');
+    return slackCallbackRedirect(res, 'error', 'callback_failed');
   }
 };
 
@@ -319,7 +333,6 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
 // owner-facing lifecycle siblings remain under /api/installables. Export a
 // narrow mounted router rather than duplicating callback logic or adding a
 // broad unauthenticated path to this router.
-router.get('/slack/oauth/callback', writeIntegrationsRateLimit, slackOAuthCallback);
 const slackOAuthCallbackRouter: ReturnType<typeof express.Router> = express.Router();
 slackOAuthCallbackRouter.get('/callback', writeIntegrationsRateLimit, slackOAuthCallback);
 
@@ -334,7 +347,7 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     const cleared = await Integration.findOneAndUpdate(
       { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
       {
-        $set: { status: 'error', isActive: false, errorMessage: 'Slack authorization expired' },
+        $set: { status: 'pending', errorMessage: null },
         $unset: { 'config.pendingBind': 1 },
       },
       { new: true },
