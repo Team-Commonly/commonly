@@ -60,9 +60,9 @@ test.describe('Authentication', () => {
     await page.evaluate(() => {
       try { localStorage.removeItem('token'); } catch { /* ignore */ }
     });
-    await page.goto('/feed');
+    await page.goto('/v2/activity');
 
-    // v2 default: /feed → /v2/feed → V2RequireAuth → /v2/login when unauthenticated
+    // Activity is a surviving V2RequireAuth route, so an anonymous visit lands at /v2/login.
     await page.waitForURL((url) => url.pathname === '/v2/login', { timeout: 8000 });
   });
 });
