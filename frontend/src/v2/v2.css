@@ -9487,6 +9487,7 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__dot { width: 8px; height: 8px; flex: none; border-radius: var(--v2-radius-sm); background: var(--v2-border-soft); }
 .v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: inherit; }
 .v2-connector-row__glyph svg { width: 20px; height: 20px; }
+.v2-connector-row--not-yet .v2-connector-row__glyph { color: var(--v2-text-placeholder); }
 .v2-connector-row__dot--live, .v2-connector-row__dot--pending { background: var(--v2-accent); }
 .v2-connector-row__dot--empty { border: 1px solid var(--v2-border-strong); background: transparent; }
 .v2-connector-row__dot--idle { background: var(--v2-border-soft); }
