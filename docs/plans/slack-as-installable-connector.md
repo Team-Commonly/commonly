@@ -168,9 +168,17 @@ Socket Mode path and are not read by this design.
   after the response, and dedupes on `event_id` **in a shared store, not in process memory**
   (Vera, 2026-09-04: a rollout runs two backend processes for ~40 s, and the scheduler's own
   comment says so — a per-process set lets the retry land on the other replica). The store is a
-  `SlackEventReceipt { eventId (unique), teamId, receivedAt }` collection with a TTL index of 24 h;
-  the handler **inserts before it relays** and treats a duplicate-key error as "already handled"
-  and acks. Dedupe is at the event, before relay — a unique index on
+  `SlackEventReceipt { eventId (unique), teamId, state: 'processing' | 'done', claimedAt, receivedAt }`
+  collection with a TTL index of 24 h, and **the receipt is a claim, not a receipt of completion**
+  (Vera, 2026-09-04): the handler inserts `processing` before it relays and marks `done` after the
+  relay lands. A duplicate-key on insert is not "already handled" by itself: if the existing row is
+  `done`, ack and stop; if it is `processing` and younger than `EVENT_CLAIM_TTL_MS` (10 s), another
+  replica is on it — ack and stop; if it is `processing` and older than that, the first worker died
+  mid-relay, so **take it over with a CAS** (`findOneAndUpdate({ eventId, state: 'processing',
+  claimedAt: { $lte: staleBefore } }, { $set: { claimedAt: now } })`) and relay — exactly the lease
+  shape #1527 uses for install claims. A crash therefore costs at most one duplicate relay, never a
+  silent loss, which is the direction Slack's own retries assume (at-least-once, dedupe at the
+  consumer). Dedupe is at the event, before relay — a unique index on
   `config.messageBuffer.externalId` is not enough. Telegram has no equivalent; this is new
   verification surface.
 
@@ -309,9 +317,12 @@ be `im` for inbound relay, mirroring #1289.
    no inbound was ever authored as the victim.
 4. Inbound `message.im` for the bound team+channel → one pod post authored as `linkedUserId`;
    `channel_type: 'channel'` → dropped; unsigned or stale-timestamp request → 401; a retried event
-   (same `event_id`, `X-Slack-Retry-Num: 1`) → no second post, **asserted through a second process
-   or a second app instance sharing the DB, not the same handler** — the receipt row is what
-   dedupes, and a fresh `SlackEventReceipt` unique index is exercised against real Mongo.
+   (same `event_id`, `X-Slack-Retry-Num: 1`) after a `done` receipt → no second post, **asserted
+   through a second process or a second app instance sharing the DB, not the same handler** — the
+   receipt row is what dedupes, and a fresh `SlackEventReceipt` unique index is exercised against
+   real Mongo. A retry against a `processing` receipt younger than 10 s → no second post; against
+   one older than 10 s (first worker died) → the CAS takes it over and the relay runs once more —
+   one duplicate, never a loss; two workers racing the takeover → exactly one wins the CAS.
 4b. **Key ring.** Secret written under `k1`; ring rotated to `k2` and re-wrapped; `k1` removed;
    `get` returns the material. `k2` removed from the ring: `get` throws
    `ConnectorSecretKeyMissing`, the bridge logs integration + team, the reconciler marks the
