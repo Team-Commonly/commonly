@@ -6619,6 +6619,36 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 
+/* Persona context (Sam 2026-09-01): who was picked and why, carried from the
+   catalog — or an honest "nobody yet" for the machine-first entry. */
+.v2-byo__persona {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-surface);
+}
+.v2-byo__persona--none {
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+}
+.v2-byo__persona-body { min-width: 0; flex: 1; }
+.v2-byo__persona-title {
+  font-size: 14px;
+  color: var(--v2-text-secondary);
+}
+.v2-byo__persona-title strong { color: var(--v2-text-primary); font-weight: 700; }
+.v2-byo__persona-line {
+  font-size: 13px;
+  color: var(--v2-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
    the accent border + focus ring marks the pressed card. */
 .v2-byo__modes {
