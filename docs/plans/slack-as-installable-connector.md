@@ -178,6 +178,12 @@ already `active`. The rules that keep this honest:
   upsert overwrites the orphan, and the reconciler deletes any `ConnectorSecret` whose Integration
   is inactive, absent, or has neither a ref nor a pending bind. An unconfirmed bind is revoked
   after 10 minutes by the same sweep.
+- **The window ordering cannot close** (Vera, 2026-09-04) is between Slack's `oauth.v2.access`
+  response and the `ConnectorSecret` upsert — one write wide. It is hygiene, not a hole: the token
+  never left a process that no longer exists, and Slack returns the **same** workspace bot token
+  to a re-install of the same app unless token rotation is enabled, which this design leaves off
+  (rotation would turn every crash here into a token we cannot revoke). So the retry — *New
+  code* → consent → exchange — hands back the token the crash dropped, and the upsert stores it.
 - **The bind is confirmed by the Commonly identity, not proved by the Slack one.** The callback
   proves *a* Slack identity; only the authenticated owner (the same derivation install and
   uninstall use) can accept it, and the card shows the workspace and user being accepted.
@@ -290,4 +296,6 @@ bridge, then page. One backend PR, one page PR, stacked.
 - Replacing the legacy per-row Slack ingest provider; it keeps working for its rows and is retired
   when ADR-025 D4 lands.
 - The Commander (D16) speaking through the Slack DM — same design as Telegram, lands with D16.
+- Slack token rotation — deliberately off in Phase 1 (see §2d); revisit only with a durable
+  exchange log that can revoke what a crash drops.
 - iMessage — a desktop-runtime spike, separately.
