@@ -17,19 +17,13 @@ import DiscordCallback from '../components/DiscordCallback';
 import V2BillingPanel from './components/V2BillingPanel';
 import V2DevicesPanel from './components/V2DevicesPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
-import PostFeed from '../components/PostFeed';
-import Thread from '../components/Thread';
 import UserProfile from '../components/UserProfile';
-import Dashboard from '../components/Dashboard';
-import DailyDigest from '../components/DailyDigest';
 import AgentsHub from '../components/agents/AgentsHub';
 import V2AgentBYO from './components/V2AgentBYO';
 import V2ConnectPage from './components/V2ConnectPage';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
 import V2PodBoard from './components/V2PodBoard';
-import SkillsCatalogPage from '../components/skills/SkillsCatalogPage';
 import V2ActivityPage from './components/V2ActivityPage';
-import AnalyticsDashboard from '../components/analytics/AnalyticsDashboard';
 import ChatRoom from '../components/ChatRoom';
 import ApiDevPage from '../components/ApiDevPage';
 import PodContextDevPage from '../components/PodContextDevPage';
@@ -224,10 +218,6 @@ const V2App: React.FC = () => {
               <V2RequireAuth>
                 <Routes>
                 <Route path="/" element={<V2Layout selectionMode="auto" />} />
-                <Route
-                  path="dashboard"
-                  element={feature('Dashboard', 'Your dashboard tools, kept inside the v2 shell.', <Dashboard />)}
-                />
                 {/* Board must precede the param routes: the static "board"
                     segment outranks both pods/:podId and pods/:podType/:roomId
                     in v6 matching, but keeping it first makes intent legible. */}
@@ -259,14 +249,6 @@ const V2App: React.FC = () => {
                 <Route
                   path="chat/:podId"
                   element={<V2LegacyChatRedirect />}
-                />
-                <Route
-                  path="feed"
-                  element={feature('Feed', 'Create, filter, search, like, and discuss posts using the existing feed APIs.', <PostFeed />)}
-                />
-                <Route
-                  path="thread/:id"
-                  element={feature('Thread', 'Read and reply to a feed thread without leaving v2.', <Thread />)}
                 />
                 <Route
                   path="agents"
@@ -302,20 +284,8 @@ const V2App: React.FC = () => {
                   element={feature('Connectors', 'Bridge pods to the channels your team already uses.', <V2ConnectorsPage />, false)}
                 />
                 <Route
-                  path="skills"
-                  element={feature('Skills', 'Browse, rate, import, and attach skills to pods and agents.', <SkillsCatalogPage />)}
-                />
-                <Route
                   path="activity"
                   element={feature('Activity', 'Review updates, mentions, approvals, pod activity, and unread items.', <V2ActivityPage />, false, false)}
-                />
-                <Route
-                  path="digest"
-                  element={feature('Daily Digest', 'Generate and review daily summaries and digest history.', <DailyDigest />)}
-                />
-                <Route
-                  path="analytics"
-                  element={feature('Analytics', 'Community analytics powered by the existing analytics summary, timeline, and keyword endpoints.', <AnalyticsDashboard />)}
                 />
                 <Route
                   path="settings"
