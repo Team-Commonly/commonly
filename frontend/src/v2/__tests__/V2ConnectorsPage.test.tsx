@@ -1,10 +1,8 @@
 // @ts-nocheck
-// Connectors page (Wren spec rev 5 subset): platform cards with dot-status,
-// grouped enable code + copy-command, add-flow tiles with an open-relay pod
-// guard, and the relay controls — liveRelay toggle plus the mirror/attention
-// segment. linkedUserId stays server-derived (never sent by the client).
+// Signal Connectors page: rows preserve the Phase 1 verbs while the selected
+// channel owns code, confirmation, relay controls, and disconnect in its aside.
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2ConnectorsPage, { installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
@@ -42,16 +40,20 @@ const authValue = {
 const connectors = [
   {
     _id: 'i-pending',
+    installationId: 'install-telegram-u1',
     type: 'telegram',
     status: 'pending',
+    createdAt: new Date(Date.now() - 60_000).toISOString(),
     config: { connectCode: 'abc123', connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
     podId: { _id: 'p1', name: 'Rewire Live Demo' },
   },
   {
     _id: 'i-live',
-    installationId: 'install-telegram-u1',
-    type: 'telegram',
+    installationId: 'install-slack-u1',
+    type: 'slack',
     status: 'connected',
+    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    updatedAt: new Date().toISOString(),
     config: { chatTitle: 'Rewire crew', liveRelay: false },
     podId: { _id: 'p2', name: 'Ops' },
   },
@@ -89,25 +91,27 @@ describe('V2ConnectorsPage', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('lists connectors with grouped code, copy command, and dot status', async () => {
+  it('renders the Signal row list and opens the pending channel in the selected aside', async () => {
     mockGets();
-    renderPage();
-    expect((await screen.findAllByText('Rewire Live Demo')).length).toBeGreaterThanOrEqual(1);
-    // Code renders grouped in 4s (spec §2.3) under a copy-command primary.
-    expect(screen.getByText('abc1 23')).toBeInTheDocument();
-    expect(screen.getByText('Copy command')).toBeInTheDocument();
-    expect(screen.getByText(/Connected · Relay off/)).toBeInTheDocument();
-    expect(screen.getByText(/Rewire crew/)).toBeInTheDocument();
+    const { container } = renderPage();
+
+    await screen.findByRole('button', { name: 'View Telegram' });
+    expect(screen.getByText('Waiting for one message in your Telegram chat.')).toBeInTheDocument();
+    expect(screen.getByText('Rewire crew · linked to Ops')).toBeInTheDocument();
+    expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
+    expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
   });
 
-  it('offers a new code when the enable code has expired (or never had an expiry)', async () => {
+  it('offers a new code from the row and aside when the Telegram code has expired', async () => {
     mockGets([{ ...connectors[0], config: { connectCode: 'abc123' } }]);
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
-    expect(await screen.findByText(/code expired/i)).toBeInTheDocument();
-    expect(screen.queryByText('abc1 23')).not.toBeInTheDocument();
-    expect(screen.queryByText('Copy command')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /new code/i }));
+
+    expect((await screen.findAllByText('The enable code expired.')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('/commonly-enable abc1 23')).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: 'New code' })[0]);
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/integrations/i-pending/connect-code',
       {},
@@ -115,12 +119,13 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('toggling relay PATCHes liveRelay only — linkedUserId is server-derived', async () => {
+  it('selects a connected channel and keeps relay and mode PATCHes in its aside', async () => {
     mockGets();
     axios.patch.mockResolvedValue({ data: {} });
     renderPage();
-    const toggle = await screen.findByRole('checkbox');
-    fireEvent.click(toggle);
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'View Slack' }))[0]);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Relay' }));
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
       '/api/integrations/i-live',
       { config: { liveRelay: true } },
@@ -128,20 +133,16 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('mirror/attention segment PATCHes relayAllAgentMessages', async () => {
-    mockGets([
-      {
-        _id: 'i-live',
-        type: 'telegram',
-        status: 'connected',
-        config: { chatTitle: 'Rewire crew', liveRelay: true, relayAllAgentMessages: false },
-        podId: { _id: 'p2', name: 'Ops' },
-      },
-    ]);
+  it('PATCHes the mirror mode from the selected channel aside', async () => {
+    mockGets([{
+      ...connectors[1],
+      config: { chatTitle: 'Rewire crew', liveRelay: true, relayAllAgentMessages: false },
+    }]);
     axios.patch.mockResolvedValue({ data: {} });
     renderPage();
-    const mirrorBtn = await screen.findByRole('button', { name: 'Mirror' });
-    fireEvent.click(mirrorBtn);
+
+    await screen.findByRole('button', { name: 'Attention' });
+    fireEvent.click(screen.getByRole('button', { name: 'Mirror' }));
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
       '/api/integrations/i-live',
       { config: { relayAllAgentMessages: true } },
@@ -149,24 +150,18 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('ghost empty state opens the add flow and excludes public pods', async () => {
-    mockGets([]);
-    renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    const picker = screen.getByLabelText('Pod to bridge');
-    const options = Array.from(picker.querySelectorAll('option')).map((o) => o.textContent);
-    expect(options).toContain('Rewire Live Demo');
-    expect(options).not.toContain('Town Square');
-  });
-
-  it('installs Telegram for the selected pod', async () => {
+  it('uses the inline provider and pod form, excluding public pods', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { integration: { _id: 'new' } } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    const picker = screen.getByLabelText('Pod to bridge');
+    const options = Array.from(picker.querySelectorAll('option')).map((option) => option.textContent);
+    expect(options).toContain('Rewire Live Demo');
+    expect(options).not.toContain('Town Square');
+    expect(picker.closest('.v2-connectors__aside')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/telegram/install',
       { podId: 'p1' },
@@ -174,13 +169,14 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('installs Slack for the selected pod through the lifecycle verb', async () => {
+  it('selects Slack in the inline provider form and installs through its lifecycle verb', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { integration: { _id: 'slack-new' } } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Slack/ }));
-    fireEvent.click(screen.getByText('New Slack connector'));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Slack' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/slack/install',
       { podId: 'p1' },
@@ -188,113 +184,78 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('keeps the add form open while an install claim is in progress', async () => {
+  it('keeps the form open while an install claim is still in progress', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { status: 'installing' } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
-  it('names the pending pod returned with a 202 install response', async () => {
+  it('names the pending pod returned with an install response', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { status: 'installing', boundPodId: 'p1' } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
-  it('keeps the add form open when the server reports an install lock', async () => {
+  it('keeps the form open when the server reports an install lock', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'install_in_progress', boundPodId: 'p1' } } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('keeps the form open when an install lock does not name its pod', async () => {
     mockGets([]);
     axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'install_in_progress' } } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
-  });
-
-  it('names the pending pod when the server reports an install lock', async () => {
-    mockGets([]);
-    axios.post.mockRejectedValue({
-      response: { status: 409, data: { code: 'install_in_progress', boundPodId: 'p1' } },
-    });
-    renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
-
-    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
   it('names the existing pod when the installable is already bound elsewhere', async () => {
     mockGets([]);
-    axios.post.mockRejectedValue({
-      response: { status: 409, data: { code: 'already_installed', boundPodId: 'p1' } },
-    });
+    axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'already_installed', boundPodId: 'p1' } } });
     renderPage();
-    await screen.findByText(/Link a channel/);
-    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
-    fireEvent.click(screen.getByText('New Telegram connector'));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Connect a channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
-  it('disconnects an installable Telegram connector through its lifecycle verb', async () => {
-    mockGets();
+  it('disconnects installable and legacy rows through their respective verbs', async () => {
+    mockGets([connectors[1]]);
     axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
-    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
-      '/api/installables/telegram/install',
-      expect.anything(),
-    ));
-  });
+    const firstRender = renderPage();
 
-  it('disconnects an installable Slack connector through Slack\'s lifecycle verb', async () => {
-    mockGets([{
-      _id: 'i-slack',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'connected',
-      config: { chatTitle: 'Commonly DM', liveRelay: true },
-      podId: { _id: 'p1', name: 'Rewire Live Demo' },
-    }]);
-    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
     fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
     await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
       '/api/installables/slack/install',
       expect.anything(),
     ));
-  });
 
-  it('derives the installable lifecycle target from the connector row type', () => {
-    expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
-  });
-
-  it('keeps a legacy Telegram connector disconnectable through the legacy route', async () => {
+    firstRender.unmount();
     mockGets([{ ...connectors[1], installationId: undefined }]);
     axios.patch.mockResolvedValue({ data: {} });
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
     fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
       '/api/integrations/i-live',
@@ -303,34 +264,82 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('does not offer a second Telegram install while an installable row exists', async () => {
-    mockGets();
+  it('disconnects an installable Telegram connector through its lifecycle verb', async () => {
+    mockGets([{ ...connectors[1], installationId: 'install-telegram-u1', type: 'telegram' }]);
+    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
     renderPage();
-    await screen.findByText('Your channels');
-    expect(screen.queryByRole('button', { name: /Telegram/ })).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+      '/api/installables/telegram/install',
+      expect.anything(),
+    ));
   });
 
-  it('SOON platforms are not buttons', async () => {
+  it('removes the retired SOON tiles and keeps unavailable providers in the Not yet row', async () => {
     mockGets([]);
     renderPage();
-    await screen.findByText(/Link a channel/);
-    expect(screen.getByRole('button', { name: /Slack/ })).toBeInTheDocument();
-    expect(screen.getAllByText('SOON').length).toBeGreaterThanOrEqual(1);
+
+    expect(await screen.findByText(/Not yet\. Tell us which channel/)).toBeInTheDocument();
+    expect(screen.queryByText('SOON')).toBeNull();
   });
 
-  it('shows owner confirmation controls for a pending Slack authorization', async () => {
+  it('does not offer another install control once both supported providers are present', async () => {
+    mockGets();
+    renderPage();
+
+    await screen.findByRole('button', { name: 'View Telegram' });
+    expect(screen.queryByRole('button', { name: 'Connect a channel' })).toBeNull();
+  });
+
+  it('requests the credentialed Slack authorization URL and drops the opener', async () => {
+    const slackWindow = { location: { assign: jest.fn() }, close: jest.fn(), opener: window };
+    jest.mocked(window.open).mockReturnValue(slackWindow as unknown as Window);
     mockGets([{
-      _id: 'i-slack-pending',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'pending',
-      config: {
-        pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam', expiresAt: new Date(Date.now() + 60_000).toISOString() },
-      },
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://slack.test/oauth?state=secret' } });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/authorize-url',
+      {},
+      expect.objectContaining({ withCredentials: true }),
+    ));
+    expect(slackWindow.location.assign).toHaveBeenCalledWith('https://slack.test/oauth?state=secret');
+    expect(slackWindow.opener).toBeNull();
+  });
+
+  it('keeps a Slack authorization failure generic in the selected aside', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: {}, podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({ response: { status: 503 } });
+    renderPage();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/authorize-url',
+      {},
+      expect.objectContaining({ withCredentials: true }),
+    ));
+    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+  });
+
+  it('moves Slack confirmation and rejection to the selected aside', async () => {
+    mockGets([{
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
       podId: { _id: 'p1', name: 'Rewire Live Demo' },
     }]);
     axios.post.mockResolvedValue({ data: { status: 'connected' } });
     renderPage();
+
     expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm connection' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
@@ -340,60 +349,15 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('requests the server-built Slack authorization URL from the pending card', async () => {
+  it('keeps rejection reachable from the selected Slack aside', async () => {
     mockGets([{
-      _id: 'i-slack-authorize',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'pending',
-      config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
-      podId: { _id: 'p1', name: 'Rewire Live Demo' },
-    }]);
-    axios.post.mockRejectedValue({ response: { status: 503 } });
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Authorize in Slack' }));
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
-      '/api/installables/slack/authorize-url',
-      {},
-      expect.objectContaining({ withCredentials: true }),
-    ));
-    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
-  });
-
-  it('opens Slack in a separate tab so the pending confirmation stays on this page', async () => {
-    const slackWindow = {
-      location: { assign: jest.fn() },
-      close: jest.fn(),
-      opener: window,
-    };
-    jest.mocked(window.open).mockReturnValue(slackWindow as unknown as Window);
-    mockGets([{
-      _id: 'i-slack-authorize',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'pending',
-      config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
-      podId: { _id: 'p1', name: 'Rewire Live Demo' },
-    }]);
-    axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://slack.test/oauth?state=secret' } });
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Authorize in Slack' }));
-
-    await waitFor(() => expect(slackWindow.location.assign).toHaveBeenCalledWith('https://slack.test/oauth?state=secret'));
-    expect(slackWindow.opener).toBeNull();
-  });
-
-  it('lets the owner reject a pending Slack authorization', async () => {
-    mockGets([{
-      _id: 'i-slack-pending',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'pending',
+      _id: 'i-slack-pending', installationId: 'install-slack-u1', type: 'slack', status: 'pending',
       config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
       podId: { _id: 'p1', name: 'Rewire Live Demo' },
     }]);
     axios.post.mockResolvedValue({ data: { status: 'rejected' } });
     renderPage();
+
     fireEvent.click(await screen.findByRole('button', { name: 'This is not me' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/slack/reject',
@@ -402,20 +366,19 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
-  it('shows a generic Slack callback failure and clears its opaque query code', async () => {
+  it('consumes an opaque Slack callback result without rendering its code', async () => {
     window.history.replaceState({}, '', '/v2/connectors?slack=error&code=invalid_state');
     mockGets([]);
-
     renderPage();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Slack authorization didn’t complete — try again.');
     expect(window.location.search).toBe('');
+    expect(screen.queryByText('invalid_state')).toBeNull();
   });
 
   it('reloads connectors after a successful Slack callback and clears its query', async () => {
     window.history.replaceState({}, '', '/v2/connectors?slack=pending');
     mockGets([]);
-
     renderPage();
 
     await waitFor(() => expect(
@@ -424,25 +387,27 @@ describe('V2ConnectorsPage', () => {
     expect(window.location.search).toBe('');
   });
 
-  it('keeps an error-gated Slack row manageable so the user can disconnect and reconnect', async () => {
+  it('shows the error reconnect action and retains the separate removal action', async () => {
     mockGets([{
-      _id: 'i-slack-error',
-      installationId: 'install-slack-u1',
-      type: 'slack',
-      status: 'error',
-      config: { teamName: 'Commonly HQ', chatId: 'D1', chatType: 'im' },
+      _id: 'i-slack-error', installationId: 'install-slack-u1', type: 'slack', status: 'error',
+      config: { chatTitle: 'Commonly HQ', liveRelay: true },
       podId: { _id: 'p1', name: 'Rewire Live Demo' },
     }]);
-    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
+    axios.post.mockRejectedValue({ response: { status: 503 } });
     renderPage();
 
-    expect(await screen.findByText('Connection error — reconnect')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
-    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
-      '/api/installables/slack/install',
-      expect.anything(),
+    expect((await screen.findAllByText('The connection dropped.')).length).toBeGreaterThan(0);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Authorize in Slack' }))[0]);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/authorize-url',
+      {},
+      expect.objectContaining({ withCredentials: true }),
     ));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(screen.getByRole('button', { name: /Really disconnect/ })).toBeInTheDocument();
+  });
+
+  it('derives the installable lifecycle target from the connector row type', () => {
+    expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
 });

@@ -1,12 +1,5 @@
-// Connectors — channel bridges, per Wren's connectors-v2 design spec rev 5
-// (Connectors v2 pod, 2026-08-26). This ships the spec subset the deployed
-// kernel supports today: platform tiles + tint tokens, dot-status with last
-// activity, the relay-mode control (attention | mirror — the live
-// relayAllAgentMessages flag), copy-command code treatment, SOON tiles, the
-// ghost empty state, manage/disconnect, and 3s polling while a code is
-// pending. The Commander card and per-pod gates (spec §2.0/§2.2) land with
-// their kernel slices — per the spec's honesty rule, the page never renders a
-// control the server does not enforce.
+// Connectors — the Signal Coverage artboard's channel list. It deliberately
+// renders only controls the Phase 1 connector service already enforces.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,8 +13,6 @@ interface ConnectorConfig {
   connectCodeExpiresAt?: string;
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
-  teamName?: string;
-  slackUserName?: string;
   pendingBind?: {
     teamName?: string;
     slackUserName?: string;
@@ -31,11 +22,10 @@ interface ConnectorConfig {
 
 interface Connector {
   _id: string;
-  // Installable-backed channel rows carry their parent binding. Older
-  // integrations remain managed through the legacy route until migrated.
   installationId?: string;
   type: string;
   status: string;
+  createdAt?: string;
   updatedAt?: string;
   config?: ConnectorConfig;
   podId?: { _id: string; name?: string } | string | null;
@@ -55,6 +45,18 @@ interface SlackAuthorizeResponse {
   authorizeUrl?: string;
 }
 
+type ConnectorAction = 'manage' | 'show-code' | 'new-code' | 'authorize' | 'confirm';
+
+interface ConnectorRow {
+  action: ConnectorAction | null;
+  actionLabel?: string;
+  detail: string;
+  dot: 'live' | 'idle' | 'pending' | 'empty';
+  line: string;
+  pulse: boolean;
+  when: string;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
@@ -66,20 +68,17 @@ const TYPE_LABELS: Record<string, string> = {
   instagram: 'Instagram',
 };
 
-// Telegram and Slack are self-serve. The remaining provider tiles stay
-// present as honest, non-interactive previews rather than dead buttons.
-const ADD_PLATFORMS: { type: string; enabled: boolean }[] = [
+// The catalog route from TASK-009 will make readiness server-owned. Until it
+// lands, this is intentionally limited to the two providers this page can use.
+const ADD_PLATFORMS = [
   { type: 'telegram', enabled: true },
   { type: 'slack', enabled: true },
-  { type: 'discord', enabled: false },
-  { type: 'whatsapp', enabled: false },
 ];
+const UNAVAILABLE_PLATFORM_LABELS = ['Discord', 'WhatsApp'];
 
 const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
+const RECENT_MS = 10 * 60_000;
 
-// The route is keyed by the installable identity, which is the connector
-// provider type in this Phase 1 projection. Do not pin this to Telegram: a
-// future installable-backed provider must revoke its own parent.
 export const installableLifecyclePath = (type: string): string => (
   `/api/installables/${encodeURIComponent(type)}/install`
 );
@@ -88,8 +87,8 @@ const installErrorResponse = (error: unknown): { status?: number; data?: Install
   (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
 );
 
-const podName = (c: Connector): string => (
-  typeof c.podId === 'object' && c.podId ? (c.podId.name || 'Untitled pod') : 'Untitled pod'
+const podName = (connector: Connector): string => (
+  typeof connector.podId === 'object' && connector.podId ? (connector.podId.name || 'Untitled pod') : 'Untitled pod'
 );
 
 const boundPodName = (boundPodId: string | undefined, connectors: Connector[], pods: V2Pod[]): string => {
@@ -101,20 +100,24 @@ const boundPodName = (boundPodId: string | undefined, connectors: Connector[], p
   return existing ? podName(existing) : (boundPod?.name || 'another pod');
 };
 
-// Codes are 32 hex now (128-bit) — grouped in 4s, wrapping; legacy short
-// codes flow through the same grouping (spec §2.3 step 2).
 const groupCode = (code: string): string => (code.match(/.{1,4}/g) || [code]).join(' ');
 
-const RECENT_MS = 10 * 60_000;
-
-// Codes expire after 10 minutes server-side (#1297); a pending card past its
-// expiry — or carrying a legacy code that never had one — offers a re-mint
-// instead of a command that the webhook will refuse.
-const codeIsLive = (c: Connector): boolean => Boolean(
-  c.config?.connectCode
-  && c.config?.connectCodeExpiresAt
-  && new Date(c.config.connectCodeExpiresAt).getTime() > Date.now(),
+const codeIsLive = (connector: Connector): boolean => Boolean(
+  connector.config?.connectCode
+  && connector.config?.connectCodeExpiresAt
+  && new Date(connector.config.connectCodeExpiresAt).getTime() > Date.now(),
 );
+
+const relativeTime = (date?: string): string => {
+  const timestamp = date ? new Date(date).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) return 'just now';
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
 
 const V2ConnectorsPage: React.FC = () => {
   const { t } = useTranslation();
@@ -126,7 +129,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [manageId, setManageId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,12 +149,10 @@ const V2ConnectorsPage: React.FC = () => {
     }
   }, [api, t]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  // Slack returns through a separate browser tab. Its callback cannot render
-  // a useful Commonly page itself, so it redirects here with an intentionally
-  // opaque status. Consume the query once: URL error codes are never shown
-  // back to the user and therefore cannot become a UI data surface.
+  // The Slack callback resolves in its own tab. Consume its opaque result and
+  // leave no state or error code in the browser URL.
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const slackState = query.get('slack');
@@ -173,37 +174,39 @@ const V2ConnectorsPage: React.FC = () => {
     );
   }, [load, t]);
 
-  // Poll while a provider can finish binding: Telegram has a copied code;
-  // Slack either has an OAuth state or is awaiting the owner's confirmation.
-  const hasPending = connectors.some((c) => c.status !== 'connected' && (
-    (c.type === 'telegram' && codeIsLive(c))
-    || (c.type === 'slack' && (codeIsLive(c) || Boolean(c.config?.pendingBind)))
+  const hasPending = connectors.some((connector) => connector.status !== 'connected' && (
+    (connector.type === 'telegram' && codeIsLive(connector))
+    || (connector.type === 'slack' && (codeIsLive(connector) || Boolean(connector.config?.pendingBind)))
   ));
   useEffect(() => {
-    if (hasPending && !pollRef.current) {
-      pollRef.current = setInterval(load, 3000);
-    }
+    if (hasPending && !pollRef.current) pollRef.current = setInterval(load, 3000);
     if (!hasPending && pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
   }, [hasPending, load]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const data = await api.get<V2Pod[]>('/api/pods');
-        // Open-relay guard: never offer public/community pods as bridge targets.
         const eligible = (Array.isArray(data) ? data : []).filter(
-          (p) => !['community', 'showcase'].includes((p as { type?: string }).type || ''),
+          (pod) => !['community', 'showcase'].includes((pod as { type?: string }).type || ''),
         );
         if (!cancelled) {
           setPods(eligible);
-          setNewPodId((prev) => prev || eligible[0]?._id || '');
+          setNewPodId((current) => current || eligible[0]?._id || '');
         }
-      } catch { /* picker stays empty */ }
+      } catch {
+        // The picker stays empty when no eligible pod can be read.
+      }
     })();
     return () => { cancelled = true; };
   }, [api]);
@@ -212,8 +215,6 @@ const V2ConnectorsPage: React.FC = () => {
     if (!newPodId || !addingType || creating) return;
     const type = addingType;
     const typeLabel = TYPE_LABELS[type] || type;
-    setCreating(true);
-    setError(null);
     const installInProgressMessage = (boundPodId?: string): string => (
       boundPodId
         ? t('connectors.installInProgressForPod', {
@@ -222,6 +223,8 @@ const V2ConnectorsPage: React.FC = () => {
         })
         : t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' })
     );
+    setCreating(true);
+    setError(null);
     try {
       const result = await api.post<InstallResponse>(installableLifecyclePath(type), { podId: newPodId });
       if (result.status && result.status !== 'active') {
@@ -230,8 +233,8 @@ const V2ConnectorsPage: React.FC = () => {
       }
       setAddingType(null);
       await load();
-    } catch (error) {
-      const response = installErrorResponse(error);
+    } catch (requestError) {
+      const response = installErrorResponse(requestError);
       if (response.status === 409 && response.data?.code === 'install_in_progress') {
         setError(installInProgressMessage(response.data.boundPodId));
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
@@ -248,26 +251,26 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const patchConfig = async (c: Connector, config: Record<string, unknown>, errKey: string, errDefault: string) => {
+  const patchConfig = async (connector: Connector, config: Record<string, unknown>, errorKey: string, errorDefault: string) => {
     if (busyId) return;
-    setBusyId(c._id);
+    setBusyId(connector._id);
     setError(null);
     try {
-      await api.patch(`/api/integrations/${c._id}`, { config });
+      await api.patch(`/api/integrations/${connector._id}`, { config });
       await load();
     } catch {
-      setError(t(errKey, { defaultValue: errDefault }));
+      setError(t(errorKey, { defaultValue: errorDefault }));
     } finally {
       setBusyId(null);
     }
   };
 
-  const regenerateCode = async (c: Connector) => {
+  const regenerateCode = async (connector: Connector) => {
     if (busyId) return;
-    setBusyId(c._id);
+    setBusyId(connector._id);
     setError(null);
     try {
-      await api.post(`/api/integrations/${c._id}/connect-code`, {});
+      await api.post(`/api/integrations/${connector._id}/connect-code`, {});
       await load();
     } catch {
       setError(t('connectors.codeError', { defaultValue: 'Could not create a new code.' }));
@@ -276,13 +279,10 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const authorizeSlack = async (c: Connector) => {
+  const authorizeSlack = async (connector: Connector) => {
     if (busyId) return;
-    // Open the tab during the user gesture, before awaiting the API call, so
-    // browsers do not block it as an async popup. The main Commonly page then
-    // remains open to poll the callback's pending owner-confirmation state.
     const authorizationWindow = window.open('', '_blank');
-    setBusyId(c._id);
+    setBusyId(connector._id);
     setError(null);
     try {
       const result = await api.post<SlackAuthorizeResponse>(
@@ -291,16 +291,10 @@ const V2ConnectorsPage: React.FC = () => {
         { withCredentials: true },
       );
       if (!result.authorizeUrl) throw new Error('Slack authorization URL was missing');
-      // The API has now stored the browser nonce cookie that binds Slack's
-      // callback to this authorization attempt. Drop the opener before this
-      // blank tab crosses to Slack, avoiding reverse-tabnabbing.
       if (authorizationWindow) {
         authorizationWindow.opener = null;
         authorizationWindow.location.assign(result.authorizeUrl);
       } else {
-        // A browser may still block a new tab. Continue rather than losing a
-        // user-initiated authorization attempt; the callback can be revisited
-        // through the browser's back button in that exceptional case.
         window.location.assign(result.authorizeUrl);
       }
     } catch {
@@ -313,9 +307,9 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const resolveSlackBind = async (c: Connector, action: 'confirm' | 'reject') => {
+  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject') => {
     if (busyId) return;
-    setBusyId(c._id);
+    setBusyId(connector._id);
     setError(null);
     try {
       await api.post(`/api/installables/slack/${action}`, {});
@@ -329,19 +323,16 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const disconnect = async (c: Connector) => {
-    setBusyId(c._id);
+  const disconnect = async (connector: Connector) => {
+    setBusyId(connector._id);
     try {
-      if (c.installationId) {
-        await api.del(installableLifecyclePath(c.type));
+      if (connector.installationId) {
+        await api.del(installableLifecyclePath(connector.type));
       } else {
-        // The installable verb owns lifecycle for new Telegram bindings. Keep
-        // older direct integrations disconnectable while their migration is
-        // still an explicit, separate change.
-        await api.patch(`/api/integrations/${c._id}`, { isActive: false });
+        await api.patch(`/api/integrations/${connector._id}`, { isActive: false });
       }
       setConfirmDisconnect(null);
-      setManageId(null);
+      setSelectedId(null);
       await load();
     } catch {
       setError(t('connectors.disconnectError', { defaultValue: 'Could not disconnect.' }));
@@ -351,272 +342,391 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const copyCommand = async (code: string) => {
-    const cmd = `/commonly-enable ${code}`;
+    const command = `/commonly-enable ${code}`;
     try {
-      await navigator.clipboard.writeText(cmd);
+      await navigator.clipboard.writeText(command);
       setCopied(code);
       setTimeout(() => setCopied(null), 2000);
-    } catch { /* clipboard unavailable — the code is selectable */ }
+    } catch {
+      // Clipboard access is optional; the command remains selectable.
+    }
   };
 
-  const statusLine = (c: Connector): { dot: string; pulse: boolean; text: string } => {
-    if (c.status === 'error') {
-      return { dot: 'danger', pulse: false, text: t('connectors.statusError', { defaultValue: 'Connection error — reconnect' }) };
+  const rowFor = (connector: Connector): ConnectorRow => {
+    const started = `started ${relativeTime(connector.createdAt)}`;
+    const isTelegram = connector.type === 'telegram';
+    const isSlack = connector.type === 'slack';
+
+    if (connector.status === 'error') {
+      return {
+        action: isTelegram ? 'new-code' : isSlack ? 'authorize' : null,
+        actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
+        detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
+        dot: 'empty',
+        line: t('connectors.errorLine', { defaultValue: 'The connection dropped.' }),
+        pulse: false,
+        when: `since ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+      };
     }
-    if (c.status !== 'connected') {
-      return { dot: 'warning', pulse: false, text: t('connectors.pending', { defaultValue: 'Waiting for the channel' }) };
+
+    if (connector.status === 'connected') {
+      const relay = Boolean(connector.config?.liveRelay);
+      const mirror = connector.config?.relayAllAgentMessages === true;
+      const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
+      return {
+        action: (isTelegram || isSlack) ? 'manage' : null,
+        actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
+        detail: relay
+          ? (mirror
+            ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
+            : t('connectors.rowAttention', { defaultValue: 'attention mode · escalations reach the channel' }))
+          : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' }),
+        dot: relay ? 'live' : 'idle',
+        line: `${connector.config?.chatTitle || TYPE_LABELS[connector.type] || connector.type} · linked to ${podName(connector)}`,
+        pulse: relay && Boolean(recent),
+        when: `added ${relativeTime(connector.createdAt)}`,
+      };
     }
-    const recent = c.updatedAt && (Date.now() - new Date(c.updatedAt).getTime()) < RECENT_MS;
-    if (c.config?.liveRelay) {
-      return recent
-        ? { dot: 'success', pulse: true, text: t('connectors.statusLive', { defaultValue: 'Live · Active in the last few minutes' }) }
-        : { dot: 'success', pulse: false, text: t('connectors.statusIdle', { defaultValue: 'Live · Quiet lately' }) };
+
+    if (isTelegram && codeIsLive(connector)) {
+      return {
+        action: 'show-code',
+        actionLabel: t('connectors.showCode', { defaultValue: 'Show code' }),
+        detail: t('connectors.codeExpires', { defaultValue: 'code expires soon' }),
+        dot: 'pending',
+        line: t('connectors.waitingTelegram', { defaultValue: 'Waiting for one message in your Telegram chat.' }),
+        pulse: true,
+        when: started,
+      };
     }
-    return { dot: 'success', pulse: false, text: t('connectors.statusConnected', { defaultValue: 'Connected · Relay off' }) };
+
+    if (isTelegram) {
+      return {
+        action: 'new-code',
+        actionLabel: t('connectors.newCode', { defaultValue: 'New code' }),
+        detail: t('connectors.nothingSent', { defaultValue: 'nothing was sent' }),
+        dot: 'empty',
+        line: t('connectors.codeExpired', { defaultValue: 'The enable code expired.' }),
+        pulse: false,
+        when: started,
+      };
+    }
+
+    if (isSlack && connector.config?.pendingBind) {
+      const workspace = connector.config.pendingBind.teamName || 'This Slack workspace';
+      const user = connector.config.pendingBind.slackUserName ? `@${connector.config.pendingBind.slackUserName}` : 'your Slack user';
+      return {
+        action: 'confirm',
+        actionLabel: t('connectors.slackConfirm', { defaultValue: 'Confirm' }),
+        detail: t('connectors.slackConfirmDetail', { defaultValue: 'waiting for you to confirm' }),
+        dot: 'pending',
+        line: t('connectors.slackConfirmRow', { defaultValue: '{{workspace}} says {{user}} connected — is that you?', workspace, user }),
+        pulse: true,
+        when: `Slack answered ${relativeTime(connector.updatedAt || connector.createdAt)}`,
+      };
+    }
+
+    if (isSlack) {
+      return {
+        action: 'authorize',
+        actionLabel: t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
+        detail: t('connectors.slackAuthorizeDetail', { defaultValue: 'one click in Slack' }),
+        dot: 'empty',
+        line: t('connectors.slackAuthorizeHint', { defaultValue: 'Authorize Commonly in your Slack workspace to connect your DM.' }),
+        pulse: false,
+        when: started,
+      };
+    }
+
+    return {
+      action: null,
+      detail: t('connectors.pending', { defaultValue: 'Waiting for the channel' }),
+      dot: 'empty',
+      line: `${TYPE_LABELS[connector.type] || connector.type} is waiting to connect.`,
+      pulse: false,
+      when: started,
+    };
   };
 
-  const renderCard = (c: Connector) => {
-    const st = statusLine(c);
-    const isTelegram = c.type === 'telegram';
-    const isSlack = c.type === 'slack';
-    const supportsRelayControls = isTelegram || isSlack;
-    const connected = c.status === 'connected';
-    const manageable = supportsRelayControls && (connected || c.status === 'error');
-    const mirror = c.config?.relayAllAgentMessages === true;
+  const selectedConnector = connectors.find((connector) => connector._id === selectedId)
+    || connectors.find((connector) => {
+      const action = rowFor(connector).action;
+      return action !== null && action !== 'manage';
+    })
+    || connectors[0]
+    || null;
+
+  const selectConnector = (connector: Connector) => {
+    setSelectedId(connector._id);
+    setConfirmDisconnect(null);
+  };
+
+  const runAction = (connector: Connector, action: ConnectorAction) => {
+    selectConnector(connector);
+    if (action === 'new-code') return regenerateCode(connector);
+    if (action === 'authorize') return authorizeSlack(connector);
+    if (action === 'confirm') return resolveSlackBind(connector, 'confirm');
+    return undefined;
+  };
+
+  const renderRow = (connector: Connector) => {
+    const row = rowFor(connector);
+    const selected = selectedConnector?._id === connector._id;
+    const isManage = row.action === 'manage';
     return (
-      <article key={c._id} className={`v2-connector v2-connector--${c.type}`}>
-        <div className="v2-connector__row">
-          <span className={`v2-connector__tile v2-connector__tile--${c.type}`} aria-hidden="true">
-            <PlatformGlyph type={c.type} />
+      <article key={connector._id} className={`v2-connector-row${selected ? ' v2-connector-row--selected' : ''}`}>
+        <button
+          type="button"
+          className="v2-connector-row__selection"
+          aria-pressed={selected}
+          aria-label={t('connectors.viewChannel', { defaultValue: 'View {{channel}}', channel: TYPE_LABELS[connector.type] || connector.type })}
+          onClick={() => selectConnector(connector)}
+        >
+          <span className="v2-connector-row__name">
+            <span className={`v2-connector-row__dot v2-connector-row__dot--${row.dot}${row.pulse ? ' v2-connector-row__dot--pulse' : ''}`} aria-hidden="true" />
+            <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={connector.type} /></span>
+            <span>{TYPE_LABELS[connector.type] || connector.type}</span>
           </span>
-          <div className="v2-connector__body">
-            <div className="v2-connector__title">
-              <strong>{TYPE_LABELS[c.type] || c.type}</strong>
-              <span className="v2-connector__meta">{podName(c)}{c.config?.chatTitle ? ` · ${c.config.chatTitle}` : ''}</span>
-            </div>
-            <div className="v2-connector__status">
-              <span className={`v2-connector__dot v2-connector__dot--${st.dot}${st.pulse ? ' v2-connector__dot--pulse' : ''}`} />
-              {st.text}
-            </div>
-          </div>
-          {manageable && (
-            <button
-              type="button"
-              className="v2-connector__manage"
-              onClick={() => { setManageId(manageId === c._id ? null : c._id); setConfirmDisconnect(null); }}
-            >
-              {t('connectors.manage', { defaultValue: 'Manage' })}
-            </button>
-          )}
-        </div>
+          <span className="v2-connector-row__details">
+            <strong>{row.line}</strong>
+            <span className="v2-connector-row__detail">{row.detail}</span>
+          </span>
+          <span className="v2-connector-row__when">{row.when}</span>
+        </button>
+        {row.action && (
+          <button
+            type="button"
+            className={`v2-connector-row__action${isManage ? ' v2-connector-row__action--secondary' : ''}`}
+            disabled={busyId === connector._id && !isManage}
+            onClick={() => { void runAction(connector, row.action as ConnectorAction); }}
+          >
+            {busyId === connector._id && row.action === 'authorize'
+              ? t('connectors.slackAuthorizing', { defaultValue: 'Opening Slack…' })
+              : row.actionLabel}
+          </button>
+        )}
+      </article>
+    );
+  };
 
-        {connected && supportsRelayControls && (
-          <div className="v2-connector__controls">
-            <label className="v2-connector__relay">
-              <input
-                type="checkbox"
-                checked={Boolean(c.config?.liveRelay)}
-                disabled={busyId === c._id}
-                onChange={() => patchConfig(c, { liveRelay: !c.config?.liveRelay }, 'connectors.toggleError', 'Could not update live relay.')}
-              />
-              <span>{t('connectors.liveRelay', { defaultValue: 'Relay' })}</span>
-            </label>
-            {c.config?.liveRelay && (
-              <div className="v2-connector__mode" role="group" aria-label={t('connectors.mode', { defaultValue: 'Relay mode' })}>
-                <button
-                  type="button"
-                  className={`v2-connector__mode-opt${!mirror ? ' v2-connector__mode-opt--on' : ''}`}
-                  disabled={busyId === c._id || !mirror}
-                  onClick={() => patchConfig(c, { relayAllAgentMessages: false }, 'connectors.modeError', 'Could not switch mode.')}
-                >
-                  {t('connectors.modeAttention', { defaultValue: 'Attention' })}
-                </button>
-                <button
-                  type="button"
-                  className={`v2-connector__mode-opt${mirror ? ' v2-connector__mode-opt--on' : ''}`}
-                  disabled={busyId === c._id || mirror}
-                  onClick={() => patchConfig(c, { relayAllAgentMessages: true }, 'connectors.modeError', 'Could not switch mode.')}
-                >
-                  {t('connectors.modeMirror', { defaultValue: 'Mirror' })}
-                </button>
-              </div>
+  const renderAside = (connector: Connector) => {
+    const isTelegram = connector.type === 'telegram';
+    const isSlack = connector.type === 'slack';
+    const connected = connector.status === 'connected';
+    const supportsRelayControls = isTelegram || isSlack;
+    const mirror = connector.config?.relayAllAgentMessages === true;
+    const row = rowFor(connector);
+    const pendingBind = connector.config?.pendingBind;
+
+    return (
+      <aside className="v2-connectors__aside" aria-label={t('connectors.channelDetails', { defaultValue: 'Channel details' })}>
+        {!connected && (
+          <section className="v2-connector-aside__step">
+            <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
+            {isTelegram && codeIsLive(connector) && (
+              <>
+                <p>
+                  {t('connectors.enableHint', { defaultValue: 'Open a private chat with the Commonly bot' })}
+                  {BOT_HANDLE ? ` (@${BOT_HANDLE.replace(/^@/, '')})` : ''}
+                  {t('connectors.enableHintSend', { defaultValue: ' and send:' })}
+                </p>
+                <div className="v2-connector-code">
+                  <code>/commonly-enable {groupCode(connector.config?.connectCode || '')}</code>
+                  <button type="button" className="v2-connector-code__copy" onClick={() => copyCommand(connector.config?.connectCode || '')}>
+                    {copied === connector.config?.connectCode
+                      ? t('connectors.copied', { defaultValue: 'Copied' })
+                      : t('connectors.copyCommand', { defaultValue: 'Copy command' })}
+                  </button>
+                </div>
+              </>
             )}
-            <span className="v2-connector__mode-hint">
-              {c.config?.liveRelay
+            {isTelegram && connector.status !== 'error' && !codeIsLive(connector) && (
+              <>
+                <p>{row.line}</p>
+                <button type="button" className="v2-connector-aside__primary" disabled={busyId === connector._id} onClick={() => { void regenerateCode(connector); }}>
+                  {t('connectors.newCode', { defaultValue: 'New code' })}
+                </button>
+              </>
+            )}
+            {isSlack && pendingBind && (
+              <>
+                <p>{t('connectors.slackConfirmHint', {
+                  defaultValue: '{{workspace}} wants to connect as {{user}}.',
+                  workspace: pendingBind.teamName || 'This Slack workspace',
+                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
+                })}</p>
+                <div className="v2-connector-aside__actions">
+                  <button type="button" className="v2-connector-aside__primary" disabled={busyId === connector._id} onClick={() => { void resolveSlackBind(connector, 'confirm'); }}>
+                    {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
+                  </button>
+                  <button type="button" className="v2-connector-aside__secondary" disabled={busyId === connector._id} onClick={() => { void resolveSlackBind(connector, 'reject'); }}>
+                    {t('connectors.slackReject', { defaultValue: 'This is not me' })}
+                  </button>
+                </div>
+              </>
+            )}
+            {isSlack && !pendingBind && connector.status !== 'error' && (
+              <>
+                <p>{row.line}</p>
+                <button type="button" className="v2-connector-aside__primary" disabled={busyId === connector._id} onClick={() => { void authorizeSlack(connector); }}>
+                  {t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' })}
+                </button>
+              </>
+            )}
+            {connector.status === 'error' && (
+              <>
+                <p>{row.line}</p>
+                {row.action && (
+                  <button type="button" className="v2-connector-aside__primary" disabled={busyId === connector._id} onClick={() => { void runAction(connector, row.action as ConnectorAction); }}>
+                    {row.actionLabel}
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {supportsRelayControls && (
+          <section className="v2-connector-aside__card">
+            <h2>{t('connectors.channelSees', { defaultValue: 'What the channel sees' })}</h2>
+            <p>
+              {connector.config?.liveRelay
                 ? (mirror
                   ? t('connectors.mirrorHint', { defaultValue: 'Every agent message reaches the channel.' })
                   : t('connectors.attentionHint', { defaultValue: 'Only escalations and the lead agent reach the channel.' }))
                 : t('connectors.relayOffHint', { defaultValue: 'Messages stay in the pod.' })}
-            </span>
-          </div>
-        )}
-
-        {manageId === c._id && manageable && (
-          <div className="v2-connector__manage-panel">
-            {confirmDisconnect === c._id ? (
-              <button type="button" className="v2-connector__danger" disabled={busyId === c._id} onClick={() => disconnect(c)}>
+            </p>
+            {connected && (
+              <div className="v2-connector-aside__controls">
+                <label className="v2-connector-aside__relay">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(connector.config?.liveRelay)}
+                    disabled={busyId === connector._id}
+                    onChange={() => patchConfig(connector, { liveRelay: !connector.config?.liveRelay }, 'connectors.toggleError', 'Could not update live relay.')}
+                  />
+                  <span>{t('connectors.liveRelay', { defaultValue: 'Relay' })}</span>
+                </label>
+                {connector.config?.liveRelay && (
+                  <div className="v2-connector-aside__mode" role="group" aria-label={t('connectors.mode', { defaultValue: 'Relay mode' })}>
+                    <button
+                      type="button"
+                      className={!mirror ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'}
+                      disabled={busyId === connector._id || !mirror}
+                      onClick={() => patchConfig(connector, { relayAllAgentMessages: false }, 'connectors.modeError', 'Could not switch mode.')}
+                    >
+                      {t('connectors.modeAttention', { defaultValue: 'Attention' })}
+                    </button>
+                    <button
+                      type="button"
+                      className={mirror ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'}
+                      disabled={busyId === connector._id || mirror}
+                      onClick={() => patchConfig(connector, { relayAllAgentMessages: true }, 'connectors.modeError', 'Could not switch mode.')}
+                    >
+                      {t('connectors.modeMirror', { defaultValue: 'Mirror' })}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {confirmDisconnect === connector._id ? (
+              <button type="button" className="v2-connector-aside__primary" disabled={busyId === connector._id} onClick={() => { void disconnect(connector); }}>
                 {t('connectors.disconnectConfirm', { defaultValue: 'Really disconnect — the channel goes quiet' })}
               </button>
             ) : (
-              <button type="button" className="v2-connector__danger" onClick={() => setConfirmDisconnect(c._id)}>
+              <button type="button" className="v2-connector-aside__secondary" onClick={() => setConfirmDisconnect(connector._id)}>
                 {t('connectors.disconnect', { defaultValue: 'Disconnect' })}
               </button>
             )}
-          </div>
+          </section>
         )}
-
-        {!connected && isTelegram && !codeIsLive(c) && (
-          <div className="v2-connector__code-step">
-            <div className="v2-connector__code-hint">
-              {t('connectors.codeExpired', { defaultValue: 'The enable code expired.' })}
-            </div>
-            <button type="button" className="v2-connector__copy" disabled={busyId === c._id} onClick={() => regenerateCode(c)}>
-              {t('connectors.newCode', { defaultValue: 'New code' })}
-            </button>
-          </div>
-        )}
-
-        {!connected && isTelegram && codeIsLive(c) && (
-          <div className="v2-connector__code-step">
-            <div className="v2-connector__code-hint">
-              {t('connectors.enableHint', { defaultValue: 'Open a private chat with the Commonly bot' })}
-              {BOT_HANDLE ? ` (@${BOT_HANDLE.replace(/^@/, '')})` : ''}
-              {t('connectors.enableHintSend', { defaultValue: ' and send:' })}
-            </div>
-            <button type="button" className="v2-connector__copy" onClick={() => copyCommand(c.config?.connectCode || '')}>
-              {copied === c.config?.connectCode
-                ? t('connectors.copied', { defaultValue: 'Copied' })
-                : t('connectors.copyCommand', { defaultValue: 'Copy command' })}
-            </button>
-            <code className="v2-connector__code">{groupCode(c.config?.connectCode || '')}</code>
-          </div>
-        )}
-
-        {!connected && isSlack && !c.config?.pendingBind && (
-          <div className="v2-connector__code-step">
-            <div className="v2-connector__code-hint">
-              {t('connectors.slackAuthorizeHint', {
-                defaultValue: 'Authorize Commonly in Slack to connect your private DM.',
-              })}
-            </div>
-            <button
-              type="button"
-              className="v2-connector__copy"
-              disabled={busyId === c._id}
-              onClick={() => authorizeSlack(c)}
-            >
-              {busyId === c._id
-                ? t('connectors.slackAuthorizing', { defaultValue: 'Opening Slack…' })
-                : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' })}
-            </button>
-          </div>
-        )}
-
-        {!connected && isSlack && c.config?.pendingBind && (
-          <div className="v2-connector__code-step">
-            <div className="v2-connector__code-hint">
-              {t('connectors.slackConfirmHint', {
-                defaultValue: '{{workspace}} wants to connect as {{user}}.',
-                workspace: c.config.pendingBind.teamName || 'This Slack workspace',
-                user: c.config.pendingBind.slackUserName ? `@${c.config.pendingBind.slackUserName}` : 'your Slack user',
-              })}
-            </div>
-            <button
-              type="button"
-              className="v2-connector__copy"
-              disabled={busyId === c._id}
-              onClick={() => resolveSlackBind(c, 'confirm')}
-            >
-              {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
-            </button>
-            <button
-              type="button"
-              className="v2-connector__danger"
-              disabled={busyId === c._id}
-              onClick={() => resolveSlackBind(c, 'reject')}
-            >
-              {t('connectors.slackReject', { defaultValue: 'This is not me' })}
-            </button>
-          </div>
-        )}
-      </article>
+      </aside>
     );
   };
 
   const hasInstallation = (type: string): boolean => connectors.some(
     (connector) => connector.type === type && Boolean(connector.installationId),
   );
-
-  const addTiles = (
-    <div className="v2-connector-add__tiles">
-      {ADD_PLATFORMS.map((p) => (hasInstallation(p.type) ? null : p.enabled ? (
-        <button key={p.type} type="button" className="v2-connector-add__tile" onClick={() => setAddingType(p.type)}>
-          <span className={`v2-connector__tile v2-connector__tile--${p.type}`}><PlatformGlyph type={p.type} /></span>
-          <span>{TYPE_LABELS[p.type]}</span>
-        </button>
-      ) : (
-        <span key={p.type} className="v2-connector-add__tile v2-connector-add__tile--soon">
-          <span className={`v2-connector__tile v2-connector__tile--${p.type}`}><PlatformGlyph type={p.type} /></span>
-          <span>{TYPE_LABELS[p.type]}</span>
-          <span className="v2-connector-add__soon">SOON</span>
-        </span>
-      )))}
+  const availableProviders = ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
+  const renderAddForm = (aside = false) => (
+    <div className={`v2-connectors__new-row${aside ? ' v2-connectors__new-row--aside' : ''}`}>
+      <div className="v2-connectors__providers" role="group" aria-label={t('connectors.provider', { defaultValue: 'Channel provider' })}>
+        {availableProviders.map((provider) => (
+          <button
+            key={provider.type}
+            type="button"
+            className={`v2-connectors__provider${addingType === provider.type ? ' v2-connectors__provider--selected' : ''}`}
+            onClick={() => setAddingType(provider.type)}
+          >
+            {TYPE_LABELS[provider.type]}
+          </button>
+        ))}
+      </div>
+      <select
+        className="v2-connectors__select"
+        value={newPodId}
+        onChange={(event) => setNewPodId(event.target.value)}
+        aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
+      >
+        {pods.map((pod) => <option key={pod._id} value={pod._id}>{pod.name}</option>)}
+      </select>
+      <button type="button" className="v2-connectors__create" disabled={!newPodId || creating || !addingType} onClick={createConnector}>
+        {creating ? t('connectors.creating', { defaultValue: 'Connecting…' }) : t('connectors.connect', { defaultValue: 'Connect' })}
+      </button>
     </div>
   );
 
   return (
     <div className="v2-connectors">
+      <header className="v2-connectors__header">
+        <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
+        <p>{t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}</p>
+      </header>
+
       {loading && <div className="v2-connectors__loading">{t('connectors.loading', { defaultValue: 'Loading connectors…' })}</div>}
 
-      {!loading && connectors.length > 0 && (
-        <section aria-label={t('connectors.channels', { defaultValue: 'Your channels' })}>
-          <h2 className="v2-connectors__section">{t('connectors.channels', { defaultValue: 'Your channels' })}</h2>
-          <div className="v2-connectors__list">{connectors.map(renderCard)}</div>
-        </section>
-      )}
+      {!loading && (
+        <div className="v2-connectors__content">
+          <section className="v2-connectors__main" aria-label={t('connectors.channels', { defaultValue: 'Your channels' })}>
+            <div className="v2-connectors__rows">
+              {connectors.map(renderRow)}
+              <article className="v2-connector-row v2-connector-row--not-yet">
+                <span className="v2-connector-row__name">
+                  <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
+                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="discord" /></span>
+                  <span>{UNAVAILABLE_PLATFORM_LABELS.join(' · ')}</span>
+                </span>
+                <span className="v2-connector-row__details">
+                  <strong>{t('connectors.notYetLine', { defaultValue: 'Not yet. Tell us which channel you need and we build it next.' })}</strong>
+                </span>
+                <span className="v2-connector-row__when">—</span>
+                <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
+                  {t('connectors.ask', { defaultValue: 'Ask' })}
+                </a>
+              </article>
+            </div>
 
-      {!loading && connectors.length === 0 && (
-        // Spec §2.4: the ghost card IS the add flow's pick state.
-        <div className="v2-connector v2-connector--ghost">
-          <p className="v2-connectors__empty-line">
-            {t('connectors.empty', { defaultValue: 'Link a channel — every pod you’re in gets a voice where you already talk.' })}
-          </p>
-          {addTiles}
-        </div>
-      )}
-
-      {!loading && connectors.length > 0 && (
-        <section aria-label={t('connectors.add', { defaultValue: 'Add a channel' })}>
-          <h2 className="v2-connectors__section">{t('connectors.add', { defaultValue: 'Add a channel' })}</h2>
-          {addTiles}
-        </section>
-      )}
-
-      {adding && (
-        <div className="v2-connector v2-connector--add-form">
-          <div className="v2-connectors__new-row">
-            <select
-              className="v2-byo__input v2-connectors__select"
-              value={newPodId}
-              onChange={(e) => setNewPodId(e.target.value)}
-              aria-label={t('connectors.podPicker', { defaultValue: 'Pod to bridge' })}
-            >
-              {pods.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
-            </select>
-            <button type="button" className="v2-connectors__create" disabled={!newPodId || creating} onClick={createConnector}>
-              {creating
-                ? t('connectors.creating', { defaultValue: 'Creating…' })
-                : t('connectors.createConnector', {
-                  defaultValue: 'New {{connector}} connector',
-                  connector: TYPE_LABELS[addingType || ''] || 'channel',
-                })}
-            </button>
-          </div>
-          <p className="v2-connectors__foot">
-            {addingType === 'slack'
-              ? t('connectors.slackFootnote', { defaultValue: 'Slack opens its secure authorization flow, then asks you to confirm the workspace and DM.' })
-              : t('connectors.footnote', { defaultValue: 'You get a one-time code to send to the bot. More platforms are on the way.' })}
-          </p>
+            {availableProviders.length > 0 && (
+              <div className="v2-connectors__add">
+                <button type="button" className="v2-connectors__connect" onClick={() => setAddingType((current) => current ? null : availableProviders[0]?.type || null)}>
+                  {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
+                </button>
+                <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>
+                {adding && selectedConnector && renderAddForm()}
+              </div>
+            )}
+          </section>
+          {selectedConnector
+            ? renderAside(selectedConnector)
+            : adding && (
+              <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
+                <section className="v2-connector-aside__step">
+                  <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
+                  <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>
+                  {renderAddForm(true)}
+                </section>
+              </aside>
+            )}
         </div>
       )}
 
