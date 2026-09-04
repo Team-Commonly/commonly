@@ -41,6 +41,34 @@ const agentConnectionReadLimit = rateLimit({
   }),
 });
 
+// Profile writes change the label that every chat message renders. This must
+// run before auth for CodeQL and to shed bursts before JWT work. Hash a bearer
+// credential so separate signed-in accounts do not share a NAT/IP bucket;
+// retain the user-id branch for callers that mount auth upstream.
+const profileWriteLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: {
+    get?: (header: string) => string | undefined;
+    userId?: unknown;
+    user?: { id?: unknown; _id?: unknown };
+    ip?: string;
+  }) => {
+    const userId = req.userId || req.user?.id || req.user?._id;
+    if (userId) return `profile-write:${String(userId)}`;
+    const authHeader = req.get?.('authorization') || req.get?.('x-auth-token');
+    if (authHeader) {
+      return `profile-write:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: any) => res.status(429).json({
+    msg: 'rate limit exceeded: 30 profile writes per 15 minutes',
+  }),
+});
+
 router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id || req.user?._id;
@@ -126,7 +154,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
 });
 
 router.get('/profile', auth, getCurrentProfile);
-router.put('/profile', auth, updateProfile);
+router.put('/profile', profileWriteLimit, auth, updateProfile);
 router.get('/:id/public-activity', auth, getUserPublicActivity);
 router.get('/:id', auth, getUserById);
 router.post('/:id/follow', auth, followUser);

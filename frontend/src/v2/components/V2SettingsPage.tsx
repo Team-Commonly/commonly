@@ -19,36 +19,109 @@ const LANGUAGE_OPTIONS = [
 ];
 
 interface SettingsSectionProps {
-  label: string;
+  id: string;
+  title: string;
   children: React.ReactNode;
 }
 
-const SettingsSection: React.FC<SettingsSectionProps> = ({ label, children }) => (
-  <section className="v2-settings__section" aria-labelledby={`v2-settings-${label.replace(/\s/g, '-')}`}>
-    <h2 className="v2-settings__label" id={`v2-settings-${label.replace(/\s/g, '-')}`}>{label}</h2>
+const SETTINGS_SECTIONS = [
+  { id: 'account', title: 'Account' },
+  { id: 'plan', title: 'Plan' },
+  { id: 'devices', title: 'Devices' },
+  { id: 'api-token', title: 'API token' },
+  { id: 'connected-apps', title: 'Connected apps' },
+  { id: 'language', title: 'Language' },
+] as const;
+
+const settingsSectionId = (id: string) => `v2-settings-${id}`;
+
+const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }) => (
+  <section
+    className="v2-settings__section"
+    id={settingsSectionId(id)}
+    aria-labelledby={`${settingsSectionId(id)}-label`}
+  >
+    <h2 className="v2-settings__label" id={`${settingsSectionId(id)}-label`}>{title}</h2>
     <div className="v2-settings__section-body">{children}</div>
   </section>
 );
 
 const V2AccountSection: React.FC = () => {
-  const { currentUser } = useAuth();
-  const name = currentUser?.username || 'Your account';
+  const { currentUser, updateProfile } = useAuth();
+  const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
+  const accountUsername = String(currentUser?.username || '');
+  const accountEmail = String(currentUser?.email || '');
+  const [name, setName] = useState(accountName);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setName(accountName);
+  }, [accountEmail, accountName, accountUsername]);
+
+  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = name.trim();
+    if (nextName === accountName) {
+      setNotice('No account changes to save.');
+      setError(null);
+      return;
+    }
+
+    setBusy(true);
+    setNotice(null);
+    setError(null);
+    try {
+      await updateProfile({ displayName: nextName });
+      setNotice('Account saved.');
+    } catch (requestError) {
+      const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
+      setError(message?.error || message?.msg || 'Couldn’t save your account. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="v2-settings__account-row">
-      <V2Avatar
-        className="v2-settings__avatar"
-        name={name}
-        src={currentUser?.profilePicture || undefined}
-        seed={currentUser?._id || currentUser?.id}
-        title={`${name} avatar`}
-      />
-      <div className="v2-settings__account-copy">
-        <div className="v2-settings__account-name">{name}</div>
-        {currentUser?.email && <div className="v2-settings__meta">{currentUser.email}</div>}
+    <form className="v2-settings__account" onSubmit={save}>
+      <div className="v2-settings__account-row">
+        <V2Avatar
+          className="v2-settings__avatar"
+          name={name || accountName}
+          src={currentUser?.profilePicture || undefined}
+          seed={currentUser?._id || currentUser?.id}
+          title={`${name || accountName} avatar`}
+        />
+        <div className="v2-settings__account-copy">
+          <div className="v2-settings__account-name">{name || accountName}</div>
+          <div className="v2-settings__meta">@{accountUsername}</div>
+        </div>
+        <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
       </div>
-      <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
-    </div>
+      <div className="v2-settings__account-fields">
+        <label>
+          <span>Name</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
+        </label>
+        <label>
+          <span>Username</span>
+          <input value={accountUsername} readOnly aria-readonly="true" />
+        </label>
+        <div className="v2-settings__account-email">
+          <span>Email</span>
+          <div className="v2-settings__email-control">
+            <span>{accountEmail}</span>
+            <button className="v2-settings__secondary" type="button">Change</button>
+          </div>
+        </div>
+      </div>
+      {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
+      {notice && <p className="v2-settings__message" role="status">{notice}</p>}
+      <div className="v2-settings__actions">
+        <button className="v2-settings__primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </form>
   );
 };
 
@@ -178,20 +251,49 @@ const V2LanguageSection: React.FC = () => {
   );
 };
 
-const V2SettingsPage: React.FC = () => (
-  <div className="v2-settings" aria-label="Settings">
-    <header className="v2-settings__header">
-      <h1>Settings</h1>
-    </header>
-    <div className="v2-settings__content">
-      <SettingsSection label="account"><V2AccountSection /></SettingsSection>
-      <SettingsSection label="plan"><V2BillingPanel /></SettingsSection>
-      <SettingsSection label="devices"><V2DevicesPanel /></SettingsSection>
-      <SettingsSection label="api token"><V2ApiTokenSection /></SettingsSection>
-      <SettingsSection label="connected apps"><AppsManagement variant="settings" /></SettingsSection>
-      <SettingsSection label="language"><V2LanguageSection /></SettingsSection>
+const V2SettingsPage: React.FC = () => {
+  const [activeSection, setActiveSection] = useState<string>('account');
+
+  useEffect(() => {
+    const syncActiveSection = () => {
+      const matchingSection = SETTINGS_SECTIONS.find(({ id }) => `#${settingsSectionId(id)}` === window.location.hash);
+      if (matchingSection) setActiveSection(matchingSection.id);
+    };
+    syncActiveSection();
+    window.addEventListener('hashchange', syncActiveSection);
+    return () => window.removeEventListener('hashchange', syncActiveSection);
+  }, []);
+
+  return (
+    <div className="v2-settings" aria-label="Settings">
+      <div className="v2-settings__layout">
+        <h1 className="v2-settings__title">Settings</h1>
+        <nav className="v2-settings__nav" aria-label="Settings sections">
+          <div className="v2-settings__nav-list">
+            {SETTINGS_SECTIONS.map(({ id, title }) => (
+              <a
+                key={id}
+                className={`v2-settings__nav-link${activeSection === id ? ' v2-settings__nav-link--active' : ''}`}
+                href={`#${settingsSectionId(id)}`}
+                aria-current={activeSection === id ? 'location' : undefined}
+                onClick={() => setActiveSection(id)}
+              >
+                {title}
+              </a>
+            ))}
+          </div>
+        </nav>
+        <div className="v2-settings__content">
+          <SettingsSection id="account" title="Account"><V2AccountSection /></SettingsSection>
+          <SettingsSection id="plan" title="Plan"><V2BillingPanel showHeading={false} /></SettingsSection>
+          <SettingsSection id="devices" title="Devices"><V2DevicesPanel showHeading={false} /></SettingsSection>
+          <SettingsSection id="api-token" title="API token"><V2ApiTokenSection /></SettingsSection>
+          <SettingsSection id="connected-apps" title="Connected apps"><AppsManagement variant="settings" /></SettingsSection>
+          <SettingsSection id="language" title="Language"><V2LanguageSection /></SettingsSection>
+        </div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export default V2SettingsPage;

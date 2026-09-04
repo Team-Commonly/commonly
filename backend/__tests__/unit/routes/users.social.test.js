@@ -10,7 +10,11 @@ jest.mock('../../../controllers/userController', () => ({
   unfollowUser: jest.fn((req, res) => res.status(200).end()),
 }));
 
-jest.mock('../../../middleware/auth', () => (req, res, next) => next());
+jest.mock('../../../middleware/auth', () => (req, res, next) => {
+  req.user = { id: 'u1' };
+  req.userId = 'u1';
+  next();
+});
 
 const routes = require('../../../routes/users');
 const controllers = require('../../../controllers/userController');
@@ -33,5 +37,26 @@ describe('users social routes', () => {
   it('GET /api/users/:id/public-activity calls getUserPublicActivity', async () => {
     await request(app).get('/api/users/user123/public-activity').expect(200);
     expect(controllers.getUserPublicActivity).toHaveBeenCalled();
+  });
+
+  it('PUT /api/users/profile mounts the profile write limiter', async () => {
+    const response = await request(app).put('/api/users/profile').send({ displayName: 'Lily' });
+
+    expect(response.status).toBe(200);
+    expect(response.headers).toHaveProperty('ratelimit-policy');
+    expect(response.headers['ratelimit-policy']).toContain('30;w=900');
+    expect(controllers.updateProfile).toHaveBeenCalled();
+  });
+
+  it('keys profile writes by authenticated credentials before auth runs', async () => {
+    const accountA = 'Bearer account-a';
+    const accountB = 'Bearer account-b';
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await request(app).put('/api/users/profile').set('Authorization', accountA).send({}).expect(200);
+    }
+
+    await request(app).put('/api/users/profile').set('Authorization', accountB).send({}).expect(200);
+    await request(app).put('/api/users/profile').set('Authorization', accountA).send({}).expect(429);
   });
 });

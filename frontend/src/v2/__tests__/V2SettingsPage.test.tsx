@@ -29,13 +29,13 @@ jest.mock('../components/V2Avatar', () => {
 });
 
 jest.mock('../components/V2BillingPanel', () => {
-  const MockV2BillingPanel = () => <div>Plan controls</div>;
+  const MockV2BillingPanel = ({ showHeading }: { showHeading?: boolean }) => <div data-show-heading={String(showHeading)}>Plan controls</div>;
   MockV2BillingPanel.displayName = 'MockV2BillingPanel';
   return MockV2BillingPanel;
 });
 
 jest.mock('../components/V2DevicesPanel', () => {
-  const MockV2DevicesPanel = () => <div>Device controls</div>;
+  const MockV2DevicesPanel = ({ showHeading }: { showHeading?: boolean }) => <div data-show-heading={String(showHeading)}>Device controls</div>;
   MockV2DevicesPanel.displayName = 'MockV2DevicesPanel';
   return MockV2DevicesPanel;
 });
@@ -61,18 +61,41 @@ describe('V2SettingsPage', () => {
     renderSettings();
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    for (const label of ['account', 'plan', 'devices', 'api token', 'connected apps', 'language']) {
-      expect(screen.getByRole('heading', { name: label })).toBeInTheDocument();
+    for (const section of [
+      { id: 'account', title: 'Account' },
+      { id: 'plan', title: 'Plan' },
+      { id: 'devices', title: 'Devices' },
+      { id: 'api-token', title: 'API token' },
+      { id: 'connected-apps', title: 'Connected apps' },
+      { id: 'language', title: 'Language' },
+    ]) {
+      expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', `#v2-settings-${section.id}`);
     }
     expect(screen.getByText('lily')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toBeInTheDocument();
     expect(screen.getByText('Device controls')).toBeInTheDocument();
+    expect(screen.getByText('Plan controls')).toHaveAttribute('data-show-heading', 'false');
+    expect(screen.getByText('Device controls')).toHaveAttribute('data-show-heading', 'false');
     expect(screen.getByText('Connected app controls')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
     expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
     expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();
+  });
+
+  test('uses a left navigation column to target Settings sections', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    expect(document.getElementById('v2-settings-account')).toHaveAttribute('aria-labelledby', 'v2-settings-account-label');
+    expect(document.getElementById('v2-settings-connected-apps')).toHaveAttribute('aria-labelledby', 'v2-settings-connected-apps-label');
+    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('aria-current', 'location');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Plan' }));
+    expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'location');
   });
 
   test('generates and reveals a new API token without leaving Settings', async () => {
@@ -86,5 +109,23 @@ describe('V2SettingsPage', () => {
     expect(await screen.findByText('cm_user_secret')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+  });
+
+  test('saves only the editable name from the Account section and offers an email change action', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateProfile.mockResolvedValue({ ...auth.currentUser, displayName: 'Lily Shen' });
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily Shen' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(auth.updateProfile).toHaveBeenCalledTimes(1));
+    expect(auth.updateProfile).toHaveBeenCalledWith({ displayName: 'Lily Shen' });
+    expect(screen.getByLabelText('Username')).toHaveAttribute('readonly');
+    expect(screen.getByText('lily@example.com')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(auth.updateProfile).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('status')).toHaveTextContent('Account saved.');
+    expect(screen.queryByText(/re-verification; ask us for now/i)).not.toBeInTheDocument();
   });
 });

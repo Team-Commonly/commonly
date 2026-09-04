@@ -10,9 +10,13 @@ interface Device {
   revokedAt: string | null;
 }
 
+interface V2DevicesPanelProps {
+  showHeading?: boolean;
+}
+
 const dateLabel = (value: string | null) => (value ? new Date(value).toLocaleString() : 'Never');
 
-const V2DevicesPanel: React.FC = () => {
+const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +48,7 @@ const V2DevicesPanel: React.FC = () => {
 
   return (
     <section className="v2-devices" aria-labelledby="devices-heading">
-      <div className="v2-devices__heading"><div><h2 id="devices-heading">Devices</h2><p>CLI device tokens are long-lived until you revoke them.</p></div><button type="button" onClick={() => void load()} disabled={loading}>Refresh</button></div>
+      <div className="v2-devices__heading"><div>{showHeading && <h2 id="devices-heading">Devices</h2>}<p>CLI device tokens are long-lived until you revoke them.</p></div><button type="button" onClick={() => void load()} disabled={loading}>Refresh</button></div>
       {error && <p className="v2-devices__error">{error}</p>}
       {loading && <p>Loading devices…</p>}
       {!loading && devices.length === 0 && <p className="v2-devices__empty">No CLI devices are connected.</p>}

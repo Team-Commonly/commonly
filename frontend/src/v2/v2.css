@@ -7465,45 +7465,102 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-settings__header {
-  display: flex;
-  align-items: baseline;
-  min-height: 44px;
-  padding: 0 0 20px;
-  border-bottom: 1px solid var(--v2-border);
+.v2-settings__layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  gap: 0 40px;
+  padding-top: 40px;
 }
 
-.v2-settings__header h1 {
+.v2-settings__title {
+  grid-column: 1;
+  grid-row: 1;
   margin: 0;
   color: var(--v2-text-primary);
   font-family: var(--v2-font-display);
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 28px;
+  font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.1;
 }
 
-.v2-settings__section {
+.v2-settings__nav {
+  grid-column: 1;
+  grid-row: 2;
+  position: sticky;
+  top: 24px;
+  align-self: start;
+}
+
+.v2-settings__nav-list {
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr);
-  gap: 28px;
-  padding: 24px 0;
+  gap: 2px;
+  margin-top: 24px;
+}
+
+.v2-root a.v2-settings__nav-link {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.v2-root a.v2-settings__nav-link:hover {
+  color: var(--v2-text-primary);
+}
+
+.v2-root a.v2-settings__nav-link--active {
+  color: var(--v2-text-primary);
+  background: var(--v2-bg-subtle);
+  font-weight: 600;
+}
+
+.v2-root a.v2-settings__nav-link:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+
+.v2-settings__nav-note {
+  margin: 24px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.v2-settings__section {
+  padding: 28px 0;
   border-bottom: 1px solid var(--v2-border-soft);
+  scroll-margin-top: 24px;
 }
 
 .v2-settings__label {
-  margin: 2px 0 0;
-  color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-  font-size: var(--v2-fs-label);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: var(--v2-lh-label);
-  text-transform: lowercase;
+  margin: 0 0 16px;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
 .v2-settings__section-body {
   min-width: 0;
+}
+
+.v2-settings__content {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .v2-settings__account-row {
@@ -7532,6 +7589,21 @@ body.modern-ui.v2-canvas {
   min-width: 0;
 }
 
+.v2-settings__account {
+  min-width: 0;
+}
+
+/* Neutralize App.css's bare auth-form shell: Settings owns this form's
+ * surface and spacing, so it must stay flat inside its section. */
+.v2-settings form.v2-settings__account {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .v2-settings__account-name {
   overflow: hidden;
   color: var(--v2-text-primary);
@@ -7556,6 +7628,67 @@ body.modern-ui.v2-canvas {
   text-transform: lowercase;
 }
 
+.v2-settings__account-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.v2-settings__account-fields label,
+.v2-settings__account-email {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+.v2-settings__account-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: #ffffff;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-settings__account-fields input:focus {
+  outline: none;
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-settings__account-fields input[readonly] {
+  color: var(--v2-text-secondary);
+  cursor: default;
+}
+
+.v2-settings__email-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding-left: 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: #ffffff;
+  color: var(--v2-text-secondary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-settings__email-control .v2-settings__secondary {
+  align-self: stretch;
+  border-color: transparent;
+  border-radius: 0 var(--v2-radius-sm) var(--v2-radius-sm) 0;
+}
+
 .v2-settings__section .v2-billing,
 .v2-settings__section .v2-devices {
   margin: 0;
@@ -7565,23 +7698,23 @@ body.modern-ui.v2-canvas {
   background: transparent;
 }
 
-.v2-settings__section .v2-billing__title,
-.v2-settings__section .v2-devices h2 {
-  font-family: var(--v2-font-display);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.v2-settings__section .v2-billing__badge,
-.v2-settings__section .v2-billing__badge--pro {
+.v2-settings__section .v2-billing__badge {
   border-radius: var(--v2-radius-sm);
   background: #ffffff;
+  border-color: var(--v2-border);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 16px;
+  text-transform: none;
 }
 
 .v2-settings__section .v2-billing__badge--pro {
-  border-color: var(--v2-ink);
-  color: var(--v2-text-primary);
+  background: var(--v2-accent);
+  border-color: var(--v2-accent);
+  color: var(--v2-on-ink);
 }
 
 .v2-settings__section .v2-devices__item {
@@ -7694,15 +7827,32 @@ body.modern-ui.v2-canvas {
   font-family: var(--v2-font);
 }
 
-.v2-settings .apps-management--settings .MuiCard-root,
-.v2-settings .apps-management--settings .MuiPaper-root {
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  box-shadow: none;
+.v2-settings .apps-management--settings .MuiCardContent-root {
+  padding: 0;
 }
 
-.v2-settings .apps-management--settings .MuiCardContent-root {
-  padding: 16px;
+.v2-settings .apps-management--settings .MuiCardActions-root {
+  padding: 8px 0 0;
+}
+
+.v2-settings .apps-management--settings .apps-management__section + .apps-management__section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-settings .apps-management--settings .apps-management__integration {
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+}
+
+.v2-settings .apps-management--settings .apps-management__developer-tips {
+  margin: 14px 0 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
 }
 
 .v2-settings .apps-management--settings .MuiTypography-root,
@@ -7742,16 +7892,21 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 680px) {
-  .v2-settings__header {
-    padding-bottom: 16px;
+  .v2-settings__layout {
+    display: block;
+    padding-top: 24px;
   }
 
-  .v2-settings__header h1 {
+  .v2-settings__title {
+    margin-bottom: 24px;
     font-size: 28px;
   }
 
+  .v2-settings__nav {
+    display: none;
+  }
+
   .v2-settings__section {
-    display: block;
     padding: 20px 0;
   }
 
@@ -7761,6 +7916,10 @@ body.modern-ui.v2-canvas {
 
   .v2-settings__token-value {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .v2-settings__account-fields {
+    grid-template-columns: 1fr;
   }
 
   .v2-settings__token-value code {
@@ -9351,7 +9510,8 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
-.v2-root:lang(zh) .v2-settings__header h1,
+.v2-root:lang(zh) .v2-settings__title,
+.v2-root:lang(zh) .v2-settings__label,
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
 .v2-root:lang(zh) .v2-settings__section .v2-devices h2,

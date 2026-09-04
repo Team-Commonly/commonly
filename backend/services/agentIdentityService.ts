@@ -577,8 +577,13 @@ class AgentIdentityService {
     return pod;
   }
 
-  static async syncUserToPostgreSQL(user: InstanceType<typeof User>): Promise<void> {
-    if (!PGMessage || !process.env.PG_HOST || !dbPg) return;
+  static async syncUserToPostgreSQL(user: InstanceType<typeof User>): Promise<boolean> {
+    const pgHost = process.env.PG_HOST;
+    // Some test harnesses clear process.env with `undefined`, which Node
+    // serializes as the literal string "undefined". Treat that the same as
+    // an unconfigured PostgreSQL mirror rather than reporting a false sync
+    // failure to an otherwise successful profile save.
+    if (!PGMessage || !pgHost || pgHost === 'undefined' || !dbPg) return true;
     try {
       const { pool } = dbPg;
       const checkQuery = 'SELECT _id FROM users WHERE _id = $1';
@@ -587,7 +592,7 @@ class AgentIdentityService {
       // For bot users, use display name as username for better UX
       const displayUsername = user.isBot && user.botMetadata?.displayName
         ? user.botMetadata.displayName
-        : user.username;
+        : user.displayName || user.username;
 
       const isBot = user.isBot === true;
 
@@ -604,7 +609,7 @@ class AgentIdentityService {
           isBot,
           new Date(),
         ]);
-        return;
+        return true;
       }
 
       const insertQuery = `
@@ -620,8 +625,10 @@ class AgentIdentityService {
         user.createdAt,
         new Date(),
       ]);
+      return true;
     } catch (error) {
       console.error('Failed to sync agent user to PostgreSQL:', error);
+      return false;
     }
   }
 }
