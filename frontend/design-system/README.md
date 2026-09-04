@@ -224,4 +224,6 @@ Sam chose this on the Shell Parity canvas from three directions (Studio, Worksho
 - **Grey ramp (complete):** ground `#eef0f4` · border `#d0d5dd` · divider `#e4e7ec` · tint `#f2f4f7` · panel `#f9fafb` · muted `#667085` · secondary `#475467` · placeholder `#98a2b3` · ink `#101828`.
 - **Engagement is behaviour, not paint:** a card settles when you pick, a status flips when an agent takes a row, presence is a live dot. Do not add colour to add energy.
 
-The canvas is the spec of record for every screen: https://claude.ai/code/artifact/2c6cfbd9-6f18-4da3-91a1-24eea2a635d6 (pages: Front door · Workspace in C · Directions). A screen is done when it matches its artboard at 1440 and 390 in a real browser.
+The canvas is the spec of record for every screen: https://claude.ai/code/artifact/2c6cfbd9-6f18-4da3-91a1-24eea2a635d6 (pages: Workspace in C · Front door · Directions · Coverage). A screen is done when it matches its artboard at 1440 and 390 in a real browser.
+
+**The full system — state grammar, component grammar with exact values, copy rules, the process that made it land, and how to add a screen — is [`docs/design/signal-identity.md`](../../docs/design/signal-identity.md).** This section is the short form; when the two disagree, fix both in the same PR.
