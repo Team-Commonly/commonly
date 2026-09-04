@@ -95,9 +95,9 @@ export interface IInstallableInstallation extends Document {
   targetId: Types.ObjectId;
   scope: InstallableScope; // replicates Installable.scope for query perf
 
-  // A user-scoped channel install still has one operational pod target. Keep
-  // it on the parent from the first claim so a fresh transient can reject a
-  // second request for another pod before its projection exists.
+  // The pod requested by the current claim. It makes a fresh transient legible
+  // before a projection exists; an errored or stale inactive projection may
+  // safely adopt the retry's pod at its fenced activation write.
   boundPodId?: Types.ObjectId;
 
   // Install provenance

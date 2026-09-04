@@ -120,7 +120,7 @@ describe('installable connector projection', () => {
     });
   });
 
-  it('refuses a different pod while a fresh claim has no projection yet', async () => {
+  it('reports a fresh claim in progress without re-targeting it', async () => {
     const { userId, podId } = ids();
     const otherPodId = new mongoose.Types.ObjectId().toString();
     const targetId = new mongoose.Types.ObjectId(userId);
@@ -138,17 +138,15 @@ describe('installable connector projection', () => {
       claimedAt: new Date(),
     });
 
-    await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
-      .rejects.toMatchObject({
-        code: 'already_installed',
-        boundPodId: podId,
-      });
+    const waiting = await install({ installableId: 'telegram', installedBy: userId, podId: otherPodId });
+    expect(waiting).toMatchObject({ httpStatus: 202, state: 'installing' });
 
     const after = await InstallableInstallation.findById(parent._id);
     expect(after).toMatchObject({
       status: 'installing',
       claimId: 'owner-a',
       claimedAt: parent.claimedAt,
+      boundPodId: new mongoose.Types.ObjectId(podId),
     });
     expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(0);
   });
@@ -179,9 +177,11 @@ describe('installable connector projection', () => {
       { installableId: 'telegram' },
       { $set: { 'components.1.eventHandler': 'internal:telegram.relay' } },
     );
-    const retried = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const retryPodId = new mongoose.Types.ObjectId().toString();
+    const retried = await install({ installableId: 'telegram', installedBy: userId, podId: retryPodId });
     expect(String(retried.installation._id)).toBe(String(failed._id));
     expect(retried.integration.config.connectCode).toMatch(/^[a-f0-9]{32}$/);
+    expect(String(retried.integration.podId)).toBe(retryPodId);
     expect(await Integration.countDocuments({ installationId: String(failed._id) })).toBe(1);
   });
 
@@ -264,9 +264,11 @@ describe('installable connector projection', () => {
 
     parent.claimedAt = new Date(Date.now() - 61_000);
     await parent.save();
-    const recovered = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const retryPodId = new mongoose.Types.ObjectId().toString();
+    const recovered = await install({ installableId: 'telegram', installedBy: userId, podId: retryPodId });
     expect(recovered.httpStatus).toBe(200);
     expect(recovered.integration.config.connectCode).toMatch(/^[a-f0-9]{32}$/);
+    expect(String(recovered.integration.podId)).toBe(retryPodId);
     expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(1);
   });
 

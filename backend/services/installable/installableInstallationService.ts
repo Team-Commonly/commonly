@@ -167,14 +167,14 @@ const resultForExisting = async (
   requestedPodId: Types.ObjectId,
 ): Promise<InstallResult> => {
   const integration = await integrationFor(installation);
-  // The parent records the requested pod before projectors run. This makes a
-  // second request for another pod unambiguous even in the pre-projection
-  // `installing` window. Older rows fall back to their Integration target.
-  const boundPodId = installationBoundPodId(installation) || integrationPodId(integration);
-  if (boundPodId && boundPodId !== String(requestedPodId)) {
-    throw new InstallableAlreadyInstalledError(boundPodId);
-  }
   if (installation.status === 'active') {
+    // A live Integration is a real channel binding. Every non-active state is
+    // retryable: its inactive projection has no code and activation will bind
+    // it to the retry's requested pod under the same CAS that mints the code.
+    const boundPodId = installationBoundPodId(installation) || integrationPodId(integration);
+    if (boundPodId && boundPodId !== String(requestedPodId)) {
+      throw new InstallableAlreadyInstalledError(boundPodId);
+    }
     return { installation, integration, httpStatus: 200, state: 'active' };
   }
   return {
@@ -209,21 +209,11 @@ const claimInstallation = async (
     const installation = await InstallableInstallation.findOneAndUpdate(
       {
         ...keys,
-        $and: [
-          {
-            $or: [
-              { status: 'error' },
-              { status: { $in: ['installing', 'activating'] }, claimedAt: { $lte: staleBefore } },
-              { status: 'uninstalling', claimedAt: { $lte: staleBefore } },
-              { status: { $exists: false } },
-            ],
-          },
-          {
-            $or: [
-              { boundPodId: requestedPodId },
-              { boundPodId: { $exists: false } },
-            ],
-          },
+        $or: [
+          { status: 'error' },
+          { status: { $in: ['installing', 'activating'] }, claimedAt: { $lte: staleBefore } },
+          { status: 'uninstalling', claimedAt: { $lte: staleBefore } },
+          { status: { $exists: false } },
         ],
       },
       [
@@ -249,7 +239,7 @@ const claimInstallation = async (
             },
             claimId,
             claimedAt: now,
-            boundPodId: { $ifNull: ['$boundPodId', requestedPodId] },
+            boundPodId: requestedPodId,
             errorMessage: null,
             components: { $ifNull: ['$components', []] },
           },
@@ -382,6 +372,7 @@ const renewActivationLease = async (
 
 const activateIntegration = async (
   installation: IInstallableInstallation,
+  targetPodId: Types.ObjectId,
   claimId: string,
 ): Promise<unknown> => {
   const eligible = await Integration.exists({
@@ -392,9 +383,16 @@ const activateIntegration = async (
   if (!eligible) {
     const existing = await integrationFor(installation) as {
       isActive?: boolean;
+      podId?: unknown;
       config?: { connectCode?: string };
     } | null;
-    if (existing?.isActive && existing.config?.connectCode) return existing;
+    if (existing?.isActive && existing.config?.connectCode) {
+      const boundPodId = integrationPodId(existing);
+      if (boundPodId && boundPodId !== String(targetPodId)) {
+        throw new InstallableAlreadyInstalledError(boundPodId);
+      }
+      return existing;
+    }
     throw new InstallLockLostError();
   }
 
@@ -408,6 +406,10 @@ const activateIntegration = async (
     {
       $set: {
         isActive: true,
+        // An inactive projection has no redeemable code or chat binding. Move
+        // its target here, atomically with activation, so an error retry or
+        // stale takeover cannot report success for the prior request's pod.
+        podId: targetPodId,
         installationClaimId: claimId,
         'config.connectCode': minted.connectCode,
         'config.connectCodeExpiresAt': minted.connectCodeExpiresAt,
@@ -422,9 +424,16 @@ const activateIntegration = async (
   // code the user may already have copied.
   const existing = await integrationFor(installation) as {
     isActive?: boolean;
+    podId?: unknown;
     config?: { connectCode?: string };
   } | null;
-  if (existing?.isActive && existing.config?.connectCode) return existing;
+  if (existing?.isActive && existing.config?.connectCode) {
+    const boundPodId = integrationPodId(existing);
+    if (boundPodId && boundPodId !== String(targetPodId)) {
+      throw new InstallableAlreadyInstalledError(boundPodId);
+    }
+    return existing;
+  }
   // A missing or revoked projection is not an internal 500: this claim no
   // longer has an activation it may finish. Callers stop at the typed 409.
   throw new InstallLockLostError();
@@ -541,7 +550,7 @@ const installAttempt = async ({
   }
 
   installation = await renewActivationLease(installation, claimId);
-  const integration = await activateIntegration(installation, claimId);
+  const integration = await activateIntegration(installation, targetPodId, claimId);
   installation = await finishActivation(installation, claimId);
   return { installation, integration, httpStatus: 200, state: 'active' };
 };
