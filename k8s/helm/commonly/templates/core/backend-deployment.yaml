@@ -203,6 +203,15 @@ spec:
               key: SMTP2GO_BASE_URL
               optional: true
 
+        # Onboarding silence alerts — recipient of the detector's email (onboardingAlertService).
+        # Unset = LOG-ONLY: episodes are recorded but nobody is paged.
+        - name: ONBOARDING_ALERT_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: ONBOARDING_ALERT_EMAIL
+              optional: true
+
         # AI Services
         - name: GEMINI_API_KEY
           valueFrom:
