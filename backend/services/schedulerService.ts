@@ -446,6 +446,25 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // Installable cleanup is deliberately lease-free. A rollout can run this
+    // on two replicas, but every sweep mutation is a status+claimId CAS and
+    // revoke/delete is idempotent. A duplicate pass is wasted work, never a
+    // duplicate side effect. Heartbeat dispatch differs: it enqueues events,
+    // so that job retains its cross-replica lease.
+    const installableReconcileJob: CronJob = cron.schedule(
+      '*/5 * * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const reconciler = require('./installable/installableReconciler');
+          await reconciler.sweep();
+        } catch (error) {
+          console.error('[installable-reconciler] scheduled sweep failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -463,6 +482,7 @@ class SchedulerService {
       onboardingSilenceJob,
       stalledConnectJob,
       kernelWorkSweepJob,
+      installableReconcileJob,
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;
@@ -501,6 +521,7 @@ class SchedulerService {
       + `${process.env.ONBOARDING_ALERT_EMAIL ? '' : ' (LOG-ONLY: ONBOARDING_ALERT_EMAIL unset)'}`,
     );
     console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
+    console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
 
     setTimeout(() => {
       SchedulerService.runSummarizer().catch((error) => {

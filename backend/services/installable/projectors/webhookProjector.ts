@@ -3,14 +3,17 @@ import type { ComponentProjector, ProjectionContext, ProjectionIds } from './typ
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const connectorSecrets = require('../../connectorSecrets');
 
-const INTERNAL_WEBHOOK_PROVIDERS: Record<string, 'telegram'> = {
+const INTERNAL_WEBHOOK_PROVIDERS: Record<string, 'telegram' | 'slack'> = {
   '/api/webhooks/telegram': 'telegram',
+  '/api/webhooks/slack': 'slack',
 };
 
 const installationIdFor = (context: ProjectionContext): string => String(context.installation._id);
 
-const resolveProvider = (component: IComponent): 'telegram' => {
+const resolveProvider = (component: IComponent): 'telegram' | 'slack' => {
   const provider = component.webhookPath
     ? INTERNAL_WEBHOOK_PROVIDERS[component.webhookPath]
     : undefined;
@@ -57,10 +60,23 @@ export const webhookProjector: ComponentProjector = {
   },
 
   async unproject(
-    _component: IComponent,
+    component: IComponent,
     context: ProjectionContext,
     _projectionIds: ProjectionIds,
   ): Promise<void> {
+    const integration = await Integration.findOne({
+      installationId: installationIdFor(context),
+    }).select('type config.botTokenRef config.pendingBind.botTokenRef').lean();
+    // Slack owns a per-workspace secret. Attempting Slack's remote auth.revoke
+    // is a later best-effort addition; deleting our envelope is local,
+    // idempotent, and must happen even when the integration row is already
+    // partially deactivated.
+    if (component.webhookPath === '/api/webhooks/slack' && integration?.type === 'slack') {
+      await Promise.all([
+        connectorSecrets.revoke(integration.config?.botTokenRef),
+        connectorSecrets.revoke(integration.config?.pendingBind?.botTokenRef),
+      ]);
+    }
     await Integration.findOneAndUpdate(
       { installationId: installationIdFor(context) },
       {
@@ -71,6 +87,11 @@ export const webhookProjector: ComponentProjector = {
         $unset: {
           'config.connectCode': 1,
           'config.connectCodeExpiresAt': 1,
+          'config.oauthStateNonce': 1,
+          'config.oauthStateNonceExpiresAt': 1,
+          'config.oauthStateClaimId': 1,
+          'config.pendingBind': 1,
+          'config.botTokenRef': 1,
         },
       },
     );
