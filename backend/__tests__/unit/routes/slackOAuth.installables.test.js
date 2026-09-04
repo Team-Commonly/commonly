@@ -2,6 +2,10 @@ const request = require('supertest');
 const express = require('express');
 const crypto = require('crypto');
 
+const TEST_PUBLIC_APP_URL = 'https://connectors.example.test';
+const originalPublicAppUrl = process.env.PUBLIC_APP_URL;
+const originalFrontendUrl = process.env.FRONTEND_URL;
+
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: '64b64c48c4f37a6b2f34c111' };
   next();
@@ -74,6 +78,18 @@ const own = () => {
 };
 
 describe('Slack installable OAuth routes', () => {
+  beforeAll(() => {
+    process.env.PUBLIC_APP_URL = TEST_PUBLIC_APP_URL;
+    delete process.env.FRONTEND_URL;
+  });
+
+  afterAll(() => {
+    if (originalPublicAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
+    else process.env.PUBLIC_APP_URL = originalPublicAppUrl;
+    if (originalFrontendUrl === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = originalFrontendUrl;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     own();
@@ -129,7 +145,7 @@ describe('Slack installable OAuth routes', () => {
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`);
 
     expect(response.status).toBe(302);
-    expect(response.headers.location).toBe('https://commonly.me/v2/connectors?slack=error&code=invalid_state');
+    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
     expect(slackOAuth.exchangeCode).not.toHaveBeenCalled();
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
@@ -153,7 +169,7 @@ describe('Slack installable OAuth routes', () => {
       .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
 
     expect(response.status).toBe(302);
-    expect(response.headers.location).toBe('https://commonly.me/v2/connectors?slack=pending');
+    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=pending`);
     expect(slackOAuth.exchangeCode).toHaveBeenCalledWith('slack-code');
     expect(connectorSecrets.put).toHaveBeenCalledWith('integration-1', 'slack', 'xoxb-never-store-on-integration');
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
