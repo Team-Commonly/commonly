@@ -255,7 +255,11 @@ const V2ConnectorsPage: React.FC = () => {
     setBusyId(c._id);
     setError(null);
     try {
-      const result = await api.post<SlackAuthorizeResponse>('/api/installables/slack/authorize-url', {});
+      const result = await api.post<SlackAuthorizeResponse>(
+        '/api/installables/slack/authorize-url',
+        {},
+        { withCredentials: true },
+      );
       if (!result.authorizeUrl) throw new Error('Slack authorization URL was missing');
       // This leaves Commonly only after the server has stored the browser
       // nonce cookie that binds Slack's callback to this authorization attempt.

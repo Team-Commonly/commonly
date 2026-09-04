@@ -349,7 +349,7 @@ describe('V2ConnectorsPage', () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/slack/authorize-url',
       {},
-      expect.anything(),
+      expect.objectContaining({ withCredentials: true }),
     ));
     expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
   });
