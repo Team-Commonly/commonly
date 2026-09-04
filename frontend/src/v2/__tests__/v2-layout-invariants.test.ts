@@ -1024,14 +1024,38 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(mq![0]).toContain('grid-template-columns: 44px minmax(0, 1fr)');
   });
 
-  it('platform tint tokens exist in v2.css and tokens.css together', () => {
+  it('platform tint tokens stay in v2.css and tokens.css, while Signal rows use the cobalt mark', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     for (const pf of ['telegram', 'slack', 'discord', 'whatsapp']) {
       expect(v2).toContain(`--v2-platform-${pf}-soft`);
       expect(ds).toContain(`--c-platform-${pf}-soft`);
     }
-    expect(v2).toContain('.v2-connector__tile--telegram');
-    expect(v2).toContain('var(--v2-platform-telegram-soft)');
+    expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
+    expect(v2).not.toContain('.v2-connector__tile--telegram');
+  });
+
+  it('Signal connectors pin the row grid, aside, colour grammar, and phone collapse', () => {
+    expect(ruleBody(v2, '.v2-connector-row')).toContain('grid-template-columns: 200px minmax(0, 1fr) 200px 120px');
+    expect(ruleBody(v2, '.v2-connectors__content')).toContain('grid-template-columns: minmax(0, 1fr) 400px');
+    const connectors = ruleBody(v2, '.v2-connectors');
+    expect(connectors).toContain('min-height: calc(100vh - 86px)');
+    expect(connectors).not.toContain('max-width');
+    expect(ruleBody(v2, '.v2-connectors__header p')).not.toContain('var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
+    expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
+    expect(ruleBody(v2, '.v2-connector-row--not-yet .v2-connector-row__glyph')).toContain('color: var(--v2-text-placeholder)');
+    expect(ruleBody(v2, '.v2-connector-row__detail')).toContain('white-space: nowrap');
+    expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-connector-row__dot--idle')).toContain('var(--v2-border-soft)');
+    const connectorCss = v2.slice(v2.indexOf('/* ── Connectors'), v2.indexOf('/* Activity queue'));
+    expect(connectorCss).not.toContain('var(--v2-success)');
+    expect(connectorCss).not.toContain('var(--v2-warning)');
+    expect(connectorCss).not.toContain('var(--v2-danger)');
+    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connector-row \{ grid-template-columns: minmax\(0, 1fr\) auto;/);
+    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors__content \{ grid-template-columns: minmax\(0, 1fr\);/);
+    expect(connectorCss).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-connectors \{ min-height: 0; gap: 24px; margin: -12px -18px 0;/);
+    expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \{ grid-column: 1 \/ -1;/);
+    expect(connectorCss).toMatch(/\.v2-root button\.v2-connector-row__selection \.v2-connector-row__details \{ grid-column: 1 \/ -1; grid-row: 2;/);
   });
 
   describe('TASK-122 Phase A — the ruled restyle (Sam, 2026-09-03; spec on TASK-122)', () => {

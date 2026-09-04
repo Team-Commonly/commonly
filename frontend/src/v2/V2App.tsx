@@ -280,7 +280,14 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connectors"
-                  element={feature('Connectors', 'Bridge pods to the channels your team already uses.', <V2ConnectorsPage />, false)}
+                  element={feature(
+                    'Connectors',
+                    'Bridge pods to the channels your team already uses.',
+                    <V2ConnectorsPage />,
+                    false,
+                    // The Signal artboard owns this page's display-sized head.
+                    false,
+                  )}
                 />
                 <Route
                   path="activity"
