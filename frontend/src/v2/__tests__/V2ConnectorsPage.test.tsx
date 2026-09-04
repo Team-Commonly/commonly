@@ -49,6 +49,7 @@ const connectors = [
   },
   {
     _id: 'i-live',
+    installationId: 'install-telegram-u1',
     type: 'telegram',
     status: 'connected',
     config: { chatTitle: 'Rewire crew', liveRelay: false },
@@ -153,7 +154,7 @@ describe('V2ConnectorsPage', () => {
     expect(options).not.toContain('Town Square');
   });
 
-  it('creates a telegram connector for the selected pod', async () => {
+  it('installs Telegram for the selected pod', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { integration: { _id: 'new' } } });
     renderPage();
@@ -161,8 +162,35 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
     fireEvent.click(screen.getByText('New Telegram connector'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
-      '/api/integrations',
-      { podId: 'p1', type: 'telegram', config: {} },
+      '/api/installables/telegram/install',
+      { podId: 'p1' },
+      expect.anything(),
+    ));
+  });
+
+  it('disconnects an installable Telegram connector through its lifecycle verb', async () => {
+    mockGets();
+    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+      '/api/installables/telegram/install',
+      expect.anything(),
+    ));
+  });
+
+  it('keeps a legacy Telegram connector disconnectable through the legacy route', async () => {
+    mockGets([{ ...connectors[1], installationId: undefined }]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-live',
+      { isActive: false },
       expect.anything(),
     ));
   });

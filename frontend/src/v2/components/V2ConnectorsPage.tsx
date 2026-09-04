@@ -24,6 +24,9 @@ interface ConnectorConfig {
 
 interface Connector {
   _id: string;
+  // Installable-backed channel rows carry their parent binding. Older
+  // integrations remain managed through the legacy route until migrated.
+  installationId?: string;
   type: string;
   status: string;
   updatedAt?: string;
@@ -138,7 +141,7 @@ const V2ConnectorsPage: React.FC = () => {
     setCreating(true);
     setError(null);
     try {
-      await api.post('/api/integrations', { podId: newPodId, type: 'telegram', config: {} });
+      await api.post('/api/installables/telegram/install', { podId: newPodId });
       setAdding(false);
       await load();
     } catch {
@@ -179,7 +182,14 @@ const V2ConnectorsPage: React.FC = () => {
   const disconnect = async (c: Connector) => {
     setBusyId(c._id);
     try {
-      await api.patch(`/api/integrations/${c._id}`, { isActive: false });
+      if (c.installationId) {
+        await api.del('/api/installables/telegram/install');
+      } else {
+        // The installable verb owns lifecycle for new Telegram bindings. Keep
+        // older direct integrations disconnectable while their migration is
+        // still an explicit, separate change.
+        await api.patch(`/api/integrations/${c._id}`, { isActive: false });
+      }
       setConfirmDisconnect(null);
       setManageId(null);
       await load();
