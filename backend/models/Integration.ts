@@ -77,8 +77,8 @@ export interface IIntegration extends Document {
     lastExternalTimestamp?: Date;
     connectCode?: string;
     connectCodeExpiresAt?: Date | null;
-    /** Slack OAuth callback nonce — hashed and short-lived, never exposed. */
-    oauthStateNonceHash?: string;
+    /** Slack OAuth callback nonce — random, short-lived, and never exposed. */
+    oauthStateNonce?: string;
     oauthStateNonceExpiresAt?: Date;
     oauthStateClaimId?: string;
     permissions?: string[];
@@ -187,7 +187,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       lastExternalTimestamp: Date,
       connectCode: String,
       connectCodeExpiresAt: Date,
-      oauthStateNonceHash: String,
+      oauthStateNonce: String,
       oauthStateNonceExpiresAt: Date,
       oauthStateClaimId: String,
       permissions: [String],
@@ -289,6 +289,7 @@ IntegrationSchema.set('toJSON', {
   transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
     if (!returned.config) return returned;
     delete returned.config.botTokenRef;
+    delete returned.config.oauthStateNonce;
     const pending = returned.config.pendingBind;
     if (pending && typeof pending === 'object') {
       delete (pending as Record<string, unknown>).botTokenRef;

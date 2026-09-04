@@ -65,13 +65,14 @@ const SLACK_NONCE_COOKIE = 'commonly_slack_oauth_nonce';
 const SLACK_NONCE_TTL_MS = 5 * 60_000;
 const SLACK_BIND_TTL_MS = 10 * 60_000;
 
-// This is a high-entropy, short-lived browser nonce rather than a password.
-// The HMAC key makes a database read useless as an offline oracle; the domain
-// label prevents this digest from being reused by another JWT-secret caller.
-const slackNonceDigest = (nonce: string): string => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error('JWT_SECRET is required for Slack OAuth state verification');
-  return crypto.createHmac('sha256', secret).update(`slack-oauth-nonce:v1|${nonce}`).digest('hex');
+// The nonce is random, short-lived, and never returned in JSON. Compare the
+// cookie to the server record in constant time instead of treating it as a
+// password-derived value.
+const matchesSlackNonce = (stored: unknown, supplied: string): boolean => {
+  if (typeof stored !== 'string') return false;
+  const expected = Buffer.from(stored);
+  const actual = Buffer.from(supplied);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 };
 
 const cookieValue = (req: AuthReq, name: string): string | undefined => {
@@ -184,7 +185,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
             'config.connectCodeExpiresAt': minted.connectCodeExpiresAt,
           },
           $unset: {
-            'config.oauthStateNonceHash': 1,
+            'config.oauthStateNonce': 1,
             'config.oauthStateNonceExpiresAt': 1,
             'config.oauthStateClaimId': 1,
           },
@@ -217,7 +218,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
       },
       {
         $set: {
-          'config.oauthStateNonceHash': slackNonceDigest(nonce),
+          'config.oauthStateNonce': nonce,
           'config.oauthStateNonceExpiresAt': new Date(now.getTime() + SLACK_NONCE_TTL_MS),
         },
         $unset: { 'config.oauthStateClaimId': 1 },
@@ -266,6 +267,19 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
   const claimId = randomSecret(16);
   let integration: any;
   try {
+    const candidate = await Integration.findOne({
+      type: 'slack',
+      isActive: true,
+      'config.connectCode': state,
+      'config.connectCodeExpiresAt': { $gt: now },
+      'config.oauthStateNonceExpiresAt': { $gt: now },
+      'config.oauthStateClaimId': { $exists: false },
+      'config.chatId': { $exists: false },
+      'config.pendingBind': { $exists: false },
+    });
+    if (!candidate || !matchesSlackNonce(candidate.config?.oauthStateNonce, nonce)) {
+      return slackCallbackRedirect(res, 'error', 'invalid_state');
+    }
     // Claim before exchange. This consumes the one-use browser state across
     // replicas while still allowing a transient exchange failure to unclaim
     // below. No forged or replayed state can spend Slack exchange capacity.
@@ -275,7 +289,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
         isActive: true,
         'config.connectCode': state,
         'config.connectCodeExpiresAt': { $gt: now },
-        'config.oauthStateNonceHash': slackNonceDigest(nonce),
+        'config.oauthStateNonce': candidate.config.oauthStateNonce,
         'config.oauthStateNonceExpiresAt': { $gt: now },
         'config.oauthStateClaimId': { $exists: false },
         'config.chatId': { $exists: false },
@@ -312,7 +326,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
         $unset: {
           'config.connectCode': 1,
           'config.connectCodeExpiresAt': 1,
-          'config.oauthStateNonceHash': 1,
+          'config.oauthStateNonce': 1,
           'config.oauthStateNonceExpiresAt': 1,
           'config.oauthStateClaimId': 1,
         },

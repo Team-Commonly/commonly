@@ -87,7 +87,7 @@ export const webhookProjector: ComponentProjector = {
         $unset: {
           'config.connectCode': 1,
           'config.connectCodeExpiresAt': 1,
-          'config.oauthStateNonceHash': 1,
+          'config.oauthStateNonce': 1,
           'config.oauthStateNonceExpiresAt': 1,
           'config.oauthStateClaimId': 1,
           'config.pendingBind': 1,

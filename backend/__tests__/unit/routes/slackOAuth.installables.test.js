@@ -1,7 +1,5 @@
 const request = require('supertest');
 const express = require('express');
-const crypto = require('crypto');
-
 const TEST_PUBLIC_APP_URL = 'https://connectors.example.test';
 const originalPublicAppUrl = process.env.PUBLIC_APP_URL;
 const originalFrontendUrl = process.env.FRONTEND_URL;
@@ -69,6 +67,7 @@ const integration = {
   config: {
     connectCode: 'c'.repeat(32),
     connectCodeExpiresAt: new Date(Date.now() + 60_000),
+    oauthStateNonce: 'nonce-value',
   },
 };
 
@@ -97,11 +96,6 @@ describe('Slack installable OAuth routes', () => {
 
   test('mints a browser-bound nonce and sends only the lifecycle code as OAuth state', async () => {
     Integration.findOneAndUpdate.mockResolvedValue({ ...integration });
-    const nonceDigest = crypto
-      .createHmac('sha256', process.env.JWT_SECRET)
-      .update('slack-oauth-nonce:v1|nonce-value')
-      .digest('hex');
-
     const response = await request(app).post('/api/installables/slack/authorize-url');
 
     expect(response.status).toBe(200);
@@ -111,7 +105,7 @@ describe('Slack installable OAuth routes', () => {
       expect.objectContaining({ _id: 'integration-1', 'config.connectCode': integration.config.connectCode }),
       expect.objectContaining({
         $set: expect.objectContaining({
-          'config.oauthStateNonceHash': nonceDigest,
+          'config.oauthStateNonce': 'nonce-value',
         }),
       }),
       expect.anything(),
@@ -150,6 +144,17 @@ describe('Slack installable OAuth routes', () => {
     expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
   });
 
+  test('refuses a callback with a mismatched browser nonce before Slack exchange', async () => {
+    const response = await request(app)
+      .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
+      .set('Cookie', 'commonly_slack_oauth_nonce=wrong-nonce');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
+    expect(slackOAuth.exchangeCode).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   test('stores only a secret reference in a pending bind after a claimed callback', async () => {
     Integration.findOneAndUpdate
       .mockResolvedValueOnce({ ...integration })
@@ -175,6 +180,39 @@ describe('Slack installable OAuth routes', () => {
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
     expect(commit.$set['config.pendingBind']).toMatchObject({ teamId: 'T1', chatId: 'D1', botTokenRef: 'secret-ref' });
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');
+  });
+
+  test('refuses a replayed browser nonce after its callback state is consumed', async () => {
+    Integration.findOne
+      .mockResolvedValueOnce({ ...integration, config: { ...integration.config } })
+      .mockResolvedValueOnce({
+        ...integration,
+        config: {
+          connectCode: integration.config.connectCode,
+          connectCodeExpiresAt: integration.config.connectCodeExpiresAt,
+        },
+      });
+    Integration.findOneAndUpdate
+      .mockResolvedValueOnce({ ...integration })
+      .mockResolvedValueOnce({ ...integration, config: { pendingBind: { botTokenRef: 'secret-ref' } } });
+    slackOAuth.exchangeCode.mockResolvedValue({
+      accessToken: 'xoxb-never-store-on-integration',
+      teamId: 'T1', teamName: 'Example', slackUserId: 'U1', slackUserName: 'sam',
+    });
+    SlackApi.mockImplementationOnce(() => ({ openConversation: jest.fn().mockResolvedValue({ ok: true, channel: { id: 'D1' } }) }));
+    connectorSecrets.put.mockResolvedValue('secret-ref');
+
+    const first = await request(app)
+      .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
+      .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
+    const replay = await request(app)
+      .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
+      .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
+
+    expect(first.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=pending`);
+    expect(replay.status).toBe(302);
+    expect(replay.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
+    expect(slackOAuth.exchangeCode).toHaveBeenCalledTimes(1);
   });
 
   test('confirms only the owner binding and never serializes the secret reference', async () => {
