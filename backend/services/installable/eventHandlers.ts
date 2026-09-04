@@ -5,6 +5,8 @@ import { Types } from 'mongoose';
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramBridgeService = require('../telegramBridgeService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const slackBridgeService = require('../slackBridgeService');
 
 export interface ChatMessageEventPayload {
   podId: string;
@@ -23,6 +25,7 @@ export type InternalEventHandler = (
 // add one registration instead of another dispatcher branch.
 export const eventHandlers: Record<string, InternalEventHandler> = {
   'telegram.relay': telegramBridgeService.relayAgentMessageToTelegram,
+  'slack.relay': slackBridgeService.relayAgentMessageToSlack,
 };
 
 export const hasEventHandler = (reference: string): boolean => (
@@ -30,7 +33,7 @@ export const hasEventHandler = (reference: string): boolean => (
   && typeof eventHandlers[reference.slice('internal:'.length)] === 'function'
 );
 
-const activeTelegramHandlersForPod = async (podId: string): Promise<Array<{
+const activeHandlersForPod = async (podId: string): Promise<Array<{
   integration: IIntegration;
   handler: string;
 }>> => {
@@ -41,8 +44,9 @@ const activeTelegramHandlersForPod = async (podId: string): Promise<Array<{
   return Integration.aggregate([
     {
       $match: {
-        type: 'telegram',
+        type: { $in: ['telegram', 'slack'] },
         isActive: true,
+        status: { $ne: 'error' },
         podId: new Types.ObjectId(podId),
         'config.liveRelay': true,
       },
@@ -76,13 +80,17 @@ const activeTelegramHandlersForPod = async (podId: string): Promise<Array<{
     {
       $project: {
         integration: '$$ROOT',
-        // Existing direct Integration rows predate D17. They remain one
-        // pod-scoped Telegram relay until their owner explicitly replaces or
-        // uninstalls them; only rows carrying a parent must prove an active
-        // component projection through the lookup.
+        // Existing direct Integration rows predate D17. The old live-relay
+        // shape is Telegram-only; Slack is always an Installable projection
+        // because its token is an opaque ConnectorSecret reference.
         handlers: {
           $cond: [
-            { $eq: [{ $ifNull: ['$installationId', null] }, null] },
+            {
+              $and: [
+                { $eq: [{ $ifNull: ['$installationId', null] }, null] },
+                { $eq: ['$type', 'telegram'] },
+              ],
+            },
             [{ config: { eventHandler: 'internal:telegram.relay' } }],
             {
               $let: {
@@ -125,7 +133,7 @@ export const dispatch = async (
 
   let selected: Array<{ integration: IIntegration; handler: string }>;
   try {
-    selected = await activeTelegramHandlersForPod(payload.podId);
+    selected = await activeHandlersForPod(payload.podId);
   } catch (error) {
     console.warn('[installable-dispatch] selector failed:', (error as Error).message);
     return;
@@ -148,5 +156,6 @@ export const dispatch = async (
 module.exports = {
   eventHandlers,
   hasEventHandler,
+  activeHandlersForPod,
   dispatch,
 };

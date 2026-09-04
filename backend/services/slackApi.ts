@@ -21,6 +21,12 @@ interface HistoryParams {
   latest?: string;
 }
 
+interface ConversationOpenResponse {
+  ok: boolean;
+  channel?: { id?: string };
+  error?: string;
+}
+
 class SlackApi {
   private client: AxiosInstance;
 
@@ -48,6 +54,13 @@ class SlackApi {
     if (oldest) params.oldest = oldest;
     if (latest) params.latest = latest;
     const res = await this.client.get<HistoryResponse>('/conversations.history', { params });
+    return res.data;
+  }
+
+  async openConversation(userId: string): Promise<ConversationOpenResponse> {
+    const res = await this.client.post<ConversationOpenResponse>('/conversations.open', {
+      users: userId,
+    });
     return res.data;
   }
 }

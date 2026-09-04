@@ -77,6 +77,10 @@ export interface IIntegration extends Document {
     lastExternalTimestamp?: Date;
     connectCode?: string;
     connectCodeExpiresAt?: Date | null;
+    /** Slack OAuth callback nonce — random, short-lived, and never exposed. */
+    oauthStateNonce?: string;
+    oauthStateNonceExpiresAt?: Date;
+    oauthStateClaimId?: string;
     permissions?: string[];
     webhookListenerEnabled?: boolean;
     lastSummaryAt?: Date;
@@ -93,10 +97,29 @@ export interface IIntegration extends Document {
     leadAgentUsername?: string;
     relayAllAgentMessages?: boolean;
     relayMutedUntil?: Date;
+    /** Opaque ConnectorSecret id; credentials never live on the Integration. */
+    botTokenRef?: string;
+    /** Slack's workspace identity and the bound one-to-one DM. */
+    teamId?: string;
+    teamName?: string;
+    slackUserId?: string;
+    slackUserName?: string;
+    pendingBind?: {
+      teamId: string;
+      teamName?: string;
+      slackUserId: string;
+      slackUserName?: string;
+      chatId: string;
+      botTokenRef: string;
+      expiresAt: Date;
+    };
     relayMap?: {
-      tgMessageId: string;
+      /** Generic D11 reply key. Telegram retains tgMessageId during migration. */
+      externalMessageId?: string;
+      tgMessageId?: string;
       agentUsername: string;
       podMessageId?: string | null;
+      podId?: string;
     }[];
   };
   ingestTokens: IIngestToken[];
@@ -164,6 +187,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       lastExternalTimestamp: Date,
       connectCode: String,
       connectCodeExpiresAt: Date,
+      oauthStateNonce: String,
+      oauthStateNonceExpiresAt: Date,
+      oauthStateClaimId: String,
       permissions: [String],
       webhookListenerEnabled: { type: Boolean, default: false },
       lastSummaryAt: Date,
@@ -185,11 +211,29 @@ const IntegrationSchema = new Schema<IIntegration>(
       leadAgentUsername: String,
       relayAllAgentMessages: { type: Boolean, default: false },
       relayMutedUntil: Date,
+      // Connector secrets live in ConnectorSecret; routes must never accept
+      // this reference from clients (see SERVER_OWNED_CONFIG_KEYS).
+      botTokenRef: String,
+      teamId: String,
+      teamName: String,
+      slackUserId: String,
+      slackUserName: String,
+      pendingBind: {
+        teamId: String,
+        teamName: String,
+        slackUserId: String,
+        slackUserName: String,
+        chatId: String,
+        botTokenRef: String,
+        expiresAt: Date,
+      },
       relayMap: [
         {
+          externalMessageId: String,
           tgMessageId: String,
           agentUsername: String,
           podMessageId: String,
+          podId: String,
         },
       ],
       agentAccessEnabled: { type: Boolean, default: false },
@@ -217,6 +261,9 @@ IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
 IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
 IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });
+// Installable Slack Events API lookup: a global endpoint resolves a bound DM
+// solely by its workspace and channel, then still checks isActive.
+IntegrationSchema.index({ type: 1, 'config.teamId': 1, 'config.chatId': 1, isActive: 1 });
 
 IntegrationSchema.virtual('platformIntegration', {
   ref() {
@@ -233,7 +280,23 @@ IntegrationSchema.virtual('platformIntegration', {
   justOne: true,
 });
 
-IntegrationSchema.set('toJSON', { virtuals: true });
+// A ConnectorSecret reference is itself not a bearer credential, but returning
+// it still widens the set of clients that can reason about server-side secret
+// storage. Keep it server-only in every normal JSON response, including the
+// pending OAuth bind that needs to show its workspace/user details.
+IntegrationSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
+    if (!returned.config) return returned;
+    delete returned.config.botTokenRef;
+    delete returned.config.oauthStateNonce;
+    const pending = returned.config.pendingBind;
+    if (pending && typeof pending === 'object') {
+      delete (pending as Record<string, unknown>).botTokenRef;
+    }
+    return returned;
+  },
+});
 IntegrationSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model<IIntegration>('Integration', IntegrationSchema);
