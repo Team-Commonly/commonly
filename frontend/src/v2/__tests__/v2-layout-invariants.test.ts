@@ -62,6 +62,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const activityPage = read('../components/V2ActivityPage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
+  const settingsPage = read('../components/V2SettingsPage.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -416,6 +417,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     );
     expect(rule).toContain('background: var(--v2-ink)');
     expect(rule).toContain('color: var(--v2-on-ink)');
+  });
+
+  test('Settings is the one home for the folded self-profile and device routes', () => {
+    // Structural guard: route retirement is an absence property, so executing
+    // a happy path cannot prove the old page stops being reachable. The
+    // positive controls below pin both the new destination and the public
+    // profile route that must remain available.
+    expect(settingsPage).toContain('<SettingsSection label="account">');
+    expect(settingsPage).toContain('<SettingsSection label="plan">');
+    expect(settingsPage).toContain('<SettingsSection label="devices">');
+    expect(settingsPage).toContain('<SettingsSection label="api token">');
+    expect(settingsPage).toContain('<SettingsSection label="connected apps">');
+    expect(settingsPage).toContain('<SettingsSection label="language">');
+    expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
+    expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
+    expect(v2App).toContain('path="profile/:id"');
+    expect(v2App).toContain('<UserProfile />');
+    expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
   test('the Community offer stays visible below the independently scrolling pod list', () => {

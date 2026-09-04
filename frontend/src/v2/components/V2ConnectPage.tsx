@@ -110,7 +110,7 @@ const V2ConnectPage: React.FC = () => {
         <p className="v2-connect__note">
           The CLI uses device sign-in. MCP uses a per-agent <code>cm_agent_</code> token, created when you connect that agent below.
         </p>
-        <Link className="v2-connect__link" to="/v2/settings/devices">Manage connected CLI devices</Link>
+        <Link className="v2-connect__link" to="/v2/settings">Manage connected CLI devices</Link>
       </section>
 
       <section className="v2-connect__lane" aria-labelledby="connect-agent-heading">
