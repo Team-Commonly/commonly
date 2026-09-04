@@ -197,8 +197,13 @@ already `active`. The rules that keep this honest:
   could not cite it, so the recovery path must not lean on it. If a new token is issued, the
   dropped one stays valid at Slack until the app is uninstalled from that workspace; there is no
   API to enumerate or revoke a token we never stored. That residue is accepted for a one-write
-  window and logged when the retry binds (the bind handler logs "rebind after dropped exchange"
-  when a `ConnectorSecret` already exists for the row with no pending bind consuming it).
+  window and logged when the retry binds: the bind handler logs
+  `[slack-connector] rebind after dropped exchange integration=<id> team=<teamId> "<teamName>"`
+  when a `ConnectorSecret` already exists for the row with no pending bind consuming it. The
+  `teamId` is the point of the line (Vera, 2026-09-04): the dropped token cannot be enumerated
+  by us, so this log is the only trace it existed, and the workspace is what an operator needs
+  to take the one revocation path left — uninstalling the app from that workspace, which
+  revokes every token issued to it.
 - **Token rotation stays off, and that is irreversible in the other direction.** Slack's
   [token-rotation guide](https://docs.slack.dev/authentication/using-token-rotation) says
   "Token rotation may not be turned off once it's turned on"; with it on, `oauth.v2.access`
