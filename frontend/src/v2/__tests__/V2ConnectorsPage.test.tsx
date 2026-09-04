@@ -168,6 +168,20 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
+  it('installs Slack for the selected pod through the lifecycle verb', async () => {
+    mockGets([]);
+    axios.post.mockResolvedValue({ data: { integration: { _id: 'slack-new' } } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Slack/ }));
+    fireEvent.click(screen.getByText('New Slack connector'));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/install',
+      { podId: 'p1' },
+      expect.anything(),
+    ));
+  });
+
   it('keeps the add form open while an install claim is in progress', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { status: 'installing' } });
@@ -245,6 +259,26 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
+  it('disconnects an installable Slack connector through Slack\'s lifecycle verb', async () => {
+    mockGets([{
+      _id: 'i-slack',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'connected',
+      config: { chatTitle: 'Commonly DM', liveRelay: true },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+      '/api/installables/slack/install',
+      expect.anything(),
+    ));
+  });
+
   it('derives the installable lifecycle target from the connector row type', () => {
     expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
@@ -274,7 +308,68 @@ describe('V2ConnectorsPage', () => {
     mockGets([]);
     renderPage();
     await screen.findByText(/Link a channel/);
-    expect(screen.queryByRole('button', { name: /Slack/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Slack/ })).toBeInTheDocument();
     expect(screen.getAllByText('SOON').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows owner confirmation controls for a pending Slack authorization', async () => {
+    mockGets([{
+      _id: 'i-slack-pending',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'pending',
+      config: {
+        pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam', expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockResolvedValue({ data: { status: 'connected' } });
+    renderPage();
+    expect(await screen.findByText('Commonly HQ wants to connect as @sam.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm connection' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/confirm',
+      {},
+      expect.anything(),
+    ));
+  });
+
+  it('requests the server-built Slack authorization URL from the pending card', async () => {
+    mockGets([{
+      _id: 'i-slack-authorize',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'pending',
+      config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockRejectedValue({ response: { status: 503 } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Authorize in Slack' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/authorize-url',
+      {},
+      expect.anything(),
+    ));
+    expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+  });
+
+  it('lets the owner reject a pending Slack authorization', async () => {
+    mockGets([{
+      _id: 'i-slack-pending',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'pending',
+      config: { pendingBind: { teamName: 'Commonly HQ', slackUserName: 'sam' } },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockResolvedValue({ data: { status: 'rejected' } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'This is not me' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      '/api/installables/slack/reject',
+      {},
+      expect.anything(),
+    ));
   });
 });

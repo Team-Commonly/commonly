@@ -20,6 +20,13 @@ interface ConnectorConfig {
   connectCodeExpiresAt?: string;
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
+  teamName?: string;
+  slackUserName?: string;
+  pendingBind?: {
+    teamName?: string;
+    slackUserName?: string;
+    expiresAt?: string;
+  };
 }
 
 interface Connector {
@@ -44,6 +51,10 @@ interface InstallErrorResponse {
   boundPodId?: string;
 }
 
+interface SlackAuthorizeResponse {
+  authorizeUrl?: string;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
@@ -55,11 +66,11 @@ const TYPE_LABELS: Record<string, string> = {
   instagram: 'Instagram',
 };
 
-// Spec §2.3 — only Telegram is self-serve today; the rest render as SOON
-// tiles (45% opacity, not buttons — no dead clicks).
+// Telegram and Slack are self-serve. The remaining provider tiles stay
+// present as honest, non-interactive previews rather than dead buttons.
 const ADD_PLATFORMS: { type: string; enabled: boolean }[] = [
   { type: 'telegram', enabled: true },
-  { type: 'slack', enabled: false },
+  { type: 'slack', enabled: true },
   { type: 'discord', enabled: false },
   { type: 'whatsapp', enabled: false },
 ];
@@ -111,7 +122,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [newPodId, setNewPodId] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [addingType, setAddingType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -120,6 +131,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const adding = addingType !== null;
 
   const load = useCallback(async () => {
     try {
@@ -135,8 +147,12 @@ const V2ConnectorsPage: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  // Spec §2.3 step 3: poll while any code is pending; stop when it connects.
-  const hasPending = connectors.some((c) => c.status !== 'connected' && codeIsLive(c));
+  // Poll while a provider can finish binding: Telegram has a copied code;
+  // Slack either has an OAuth state or is awaiting the owner's confirmation.
+  const hasPending = connectors.some((c) => c.status !== 'connected' && (
+    (c.type === 'telegram' && codeIsLive(c))
+    || (c.type === 'slack' && (codeIsLive(c) || Boolean(c.config?.pendingBind)))
+  ));
   useEffect(() => {
     if (hasPending && !pollRef.current) {
       pollRef.current = setInterval(load, 3000);
@@ -166,8 +182,10 @@ const V2ConnectorsPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [api]);
 
-  const createTelegram = async () => {
-    if (!newPodId || creating) return;
+  const createConnector = async () => {
+    if (!newPodId || !addingType || creating) return;
+    const type = addingType;
+    const typeLabel = TYPE_LABELS[type] || type;
     setCreating(true);
     setError(null);
     const installInProgressMessage = (boundPodId?: string): string => (
@@ -179,12 +197,12 @@ const V2ConnectorsPage: React.FC = () => {
         : t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' })
     );
     try {
-      const result = await api.post<InstallResponse>('/api/installables/telegram/install', { podId: newPodId });
+      const result = await api.post<InstallResponse>(installableLifecyclePath(type), { podId: newPodId });
       if (result.status && result.status !== 'active') {
         setError(installInProgressMessage(result.boundPodId));
         return;
       }
-      setAdding(false);
+      setAddingType(null);
       await load();
     } catch (error) {
       const response = installErrorResponse(error);
@@ -192,7 +210,8 @@ const V2ConnectorsPage: React.FC = () => {
         setError(installInProgressMessage(response.data.boundPodId));
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
         setError(t('connectors.alreadyBound', {
-          defaultValue: 'Your Telegram channel is bound to {{pod}}. Disconnect it to bind a different pod.',
+          defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Disconnect it to bind a different pod.',
+          connector: typeLabel,
           pod: boundPodName(response.data.boundPodId, connectors, pods),
         }));
       } else {
@@ -226,6 +245,41 @@ const V2ConnectorsPage: React.FC = () => {
       await load();
     } catch {
       setError(t('connectors.codeError', { defaultValue: 'Could not create a new code.' }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const authorizeSlack = async (c: Connector) => {
+    if (busyId) return;
+    setBusyId(c._id);
+    setError(null);
+    try {
+      const result = await api.post<SlackAuthorizeResponse>('/api/installables/slack/authorize-url', {});
+      if (!result.authorizeUrl) throw new Error('Slack authorization URL was missing');
+      // This leaves Commonly only after the server has stored the browser
+      // nonce cookie that binds Slack's callback to this authorization attempt.
+      window.location.assign(result.authorizeUrl);
+    } catch {
+      setError(t('connectors.slackAuthorizeError', {
+        defaultValue: 'Could not begin Slack authorization. Try again in a moment.',
+      }));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const resolveSlackBind = async (c: Connector, action: 'confirm' | 'reject') => {
+    if (busyId) return;
+    setBusyId(c._id);
+    setError(null);
+    try {
+      await api.post(`/api/installables/slack/${action}`, {});
+      await load();
+    } catch {
+      setError(t('connectors.slackBindError', {
+        defaultValue: 'Could not update the Slack connection. Try again in a moment.',
+      }));
     } finally {
       setBusyId(null);
     }
@@ -280,6 +334,8 @@ const V2ConnectorsPage: React.FC = () => {
   const renderCard = (c: Connector) => {
     const st = statusLine(c);
     const isTelegram = c.type === 'telegram';
+    const isSlack = c.type === 'slack';
+    const supportsRelayControls = isTelegram || isSlack;
     const connected = c.status === 'connected';
     const mirror = c.config?.relayAllAgentMessages === true;
     return (
@@ -298,7 +354,7 @@ const V2ConnectorsPage: React.FC = () => {
               {st.text}
             </div>
           </div>
-          {connected && isTelegram && (
+          {connected && supportsRelayControls && (
             <button
               type="button"
               className="v2-connector__manage"
@@ -309,7 +365,7 @@ const V2ConnectorsPage: React.FC = () => {
           )}
         </div>
 
-        {connected && isTelegram && (
+        {connected && supportsRelayControls && (
           <div className="v2-connector__controls">
             <label className="v2-connector__relay">
               <input
@@ -390,18 +446,66 @@ const V2ConnectorsPage: React.FC = () => {
             <code className="v2-connector__code">{groupCode(c.config?.connectCode || '')}</code>
           </div>
         )}
+
+        {!connected && isSlack && !c.config?.pendingBind && (
+          <div className="v2-connector__code-step">
+            <div className="v2-connector__code-hint">
+              {t('connectors.slackAuthorizeHint', {
+                defaultValue: 'Authorize Commonly in Slack to connect your private DM.',
+              })}
+            </div>
+            <button
+              type="button"
+              className="v2-connector__copy"
+              disabled={busyId === c._id}
+              onClick={() => authorizeSlack(c)}
+            >
+              {busyId === c._id
+                ? t('connectors.slackAuthorizing', { defaultValue: 'Opening Slack…' })
+                : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' })}
+            </button>
+          </div>
+        )}
+
+        {!connected && isSlack && c.config?.pendingBind && (
+          <div className="v2-connector__code-step">
+            <div className="v2-connector__code-hint">
+              {t('connectors.slackConfirmHint', {
+                defaultValue: '{{workspace}} wants to connect as {{user}}.',
+                workspace: c.config.pendingBind.teamName || 'This Slack workspace',
+                user: c.config.pendingBind.slackUserName ? `@${c.config.pendingBind.slackUserName}` : 'your Slack user',
+              })}
+            </div>
+            <button
+              type="button"
+              className="v2-connector__copy"
+              disabled={busyId === c._id}
+              onClick={() => resolveSlackBind(c, 'confirm')}
+            >
+              {t('connectors.slackConfirm', { defaultValue: 'Confirm connection' })}
+            </button>
+            <button
+              type="button"
+              className="v2-connector__danger"
+              disabled={busyId === c._id}
+              onClick={() => resolveSlackBind(c, 'reject')}
+            >
+              {t('connectors.slackReject', { defaultValue: 'This is not me' })}
+            </button>
+          </div>
+        )}
       </article>
     );
   };
 
-  const hasTelegramInstallation = connectors.some(
-    (connector) => connector.type === 'telegram' && Boolean(connector.installationId),
+  const hasInstallation = (type: string): boolean => connectors.some(
+    (connector) => connector.type === type && Boolean(connector.installationId),
   );
 
   const addTiles = (
     <div className="v2-connector-add__tiles">
-      {ADD_PLATFORMS.map((p) => (p.enabled && !(p.type === 'telegram' && hasTelegramInstallation) ? (
-        <button key={p.type} type="button" className="v2-connector-add__tile" onClick={() => setAdding(true)}>
+      {ADD_PLATFORMS.map((p) => (hasInstallation(p.type) ? null : p.enabled ? (
+        <button key={p.type} type="button" className="v2-connector-add__tile" onClick={() => setAddingType(p.type)}>
           <span className={`v2-connector__tile v2-connector__tile--${p.type}`}><PlatformGlyph type={p.type} /></span>
           <span>{TYPE_LABELS[p.type]}</span>
         </button>
@@ -454,14 +558,19 @@ const V2ConnectorsPage: React.FC = () => {
             >
               {pods.map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
             </select>
-            <button type="button" className="v2-connectors__create" disabled={!newPodId || creating} onClick={createTelegram}>
+            <button type="button" className="v2-connectors__create" disabled={!newPodId || creating} onClick={createConnector}>
               {creating
                 ? t('connectors.creating', { defaultValue: 'Creating…' })
-                : t('connectors.createTelegram', { defaultValue: 'New Telegram connector' })}
+                : t('connectors.createConnector', {
+                  defaultValue: 'New {{connector}} connector',
+                  connector: TYPE_LABELS[addingType || ''] || 'channel',
+                })}
             </button>
           </div>
           <p className="v2-connectors__foot">
-            {t('connectors.footnote', { defaultValue: 'You get a one-time code to send to the bot. More platforms are on the way.' })}
+            {addingType === 'slack'
+              ? t('connectors.slackFootnote', { defaultValue: 'Slack opens its secure authorization flow, then asks you to confirm the workspace and DM.' })
+              : t('connectors.footnote', { defaultValue: 'You get a one-time code to send to the bot. More platforms are on the way.' })}
           </p>
         </div>
       )}
