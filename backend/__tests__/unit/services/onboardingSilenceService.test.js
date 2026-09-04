@@ -36,11 +36,13 @@ const mockEpisodeFindOne = jest.fn();
 const mockEpisodeFind = jest.fn();
 const mockEpisodeCreate = jest.fn();
 const mockEpisodeUpdateOne = jest.fn();
+const mockEpisodeExists = jest.fn();
 jest.mock('../../../models/OnboardingSilenceEpisode', () => ({
   findOne: (...a) => mockEpisodeFindOne(...a),
   find: (...a) => mockEpisodeFind(...a),
   create: (...a) => mockEpisodeCreate(...a),
   updateOne: (...a) => mockEpisodeUpdateOne(...a),
+  exists: (...a) => mockEpisodeExists(...a),
 }));
 
 const { scan } = require('../../../services/onboardingSilenceService');
@@ -69,12 +71,14 @@ const setup = ({
   bots = [{ _id: SCOUT }],
   openEpisodes = [],
   existingEpisode = null,
+  coveredByResolved = null,
   events = [],
   runsStarted = 0,
 } = {}) => {
   mockRunCount.mockResolvedValue(runsStarted);
   mockEpisodeFind.mockReturnValue(limitLean(openEpisodes));
   mockEpisodeFindOne.mockResolvedValue(existingEpisode);
+  mockEpisodeExists.mockResolvedValue(coveredByResolved);
   mockEpisodeCreate.mockImplementation((doc) => Promise.resolve({ _id: 'ep1', ...doc }));
   mockEpisodeUpdateOne.mockResolvedValue({ modifiedCount: 1 });
 
@@ -186,6 +190,38 @@ describe('onboardingSilenceService.scan', () => {
 
     const [filter] = mockInstallFind.mock.calls[0];
     expect(filter.status).toBe('active');
+  });
+
+  it('never re-opens a message a RESOLVED episode already covers', async () => {
+    // 2026-09-04: a message answered 46 minutes late fails the in-window
+    // "answered" test on every pass of the 24h lookback. Without this guard the
+    // pass after a resolution opened it again, and the alert recipient got one
+    // email every five minutes for the same message.
+    setup({ coveredByResolved: { _id: 'ep7' } });
+    const result = await scan({ now: NOW });
+
+    expect(result.opened).toHaveLength(0);
+    expect(result.updated).toBe(0);
+    expect(mockEpisodeCreate).not.toHaveBeenCalled();
+    expect(mockEpisodeUpdateOne).not.toHaveBeenCalled();
+    // Coverage is by time, not by message id: the resolved episode must have
+    // started at or before this message and been resolved at or after it. A
+    // message typed after the resolution is a genuinely new silence.
+    expect(mockEpisodeExists).toHaveBeenCalledWith({
+      userId: NEWCOMER,
+      podId: POD,
+      status: 'resolved',
+      firstTypedAt: { $lte: TYPED_AT },
+      resolvedAt: { $gte: TYPED_AT },
+    });
+  });
+
+  it('still opens when no resolved episode covers the message', async () => {
+    setup({ coveredByResolved: null });
+    const result = await scan({ now: NOW });
+
+    expect(result.opened).toHaveLength(1);
+    expect(mockEpisodeCreate).toHaveBeenCalledTimes(1);
   });
 
   it('absorbs a second silent message into the open episode instead of opening another', async () => {
