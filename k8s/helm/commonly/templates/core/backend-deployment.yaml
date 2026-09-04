@@ -352,6 +352,39 @@ spec:
               name: api-keys
               key: slack-bot-token
               optional: true
+        # Slack installable OAuth and per-workspace token encryption. Every
+        # reference is optional so instances that have not enabled Slack's
+        # OAuth ExternalSecret entries continue to start normally.
+        - name: SLACK_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: slack-client-id
+              optional: true
+        - name: SLACK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: slack-client-secret
+              optional: true
+        - name: SLACK_SIGNING_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: slack-signing-secret
+              optional: true
+        - name: CONNECTOR_SECRET_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: connector-secret-keys
+              optional: true
+        - name: CONNECTOR_SECRET_ACTIVE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: connector-secret-active-key
+              optional: true
         - name: GROUPME_BOT_ID
           valueFrom:
             secretKeyRef:

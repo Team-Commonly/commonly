@@ -285,6 +285,20 @@ jobs:
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .readinessProbe.httpGet.path' /tmp/dev-rendered.yaml)" = "/api/health/ready"
           test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .lifecycle.preStop.exec.command[2]' /tmp/dev-rendered.yaml)" = "sleep 10"
 
+      - name: Render Slack OAuth secret wiring
+        run: |
+          helm template commonly-slack k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-dev.yaml \
+            --set slack.oauth.enabled=true \
+            > /tmp/slack-rendered.yaml
+          for key in slack-client-id slack-client-secret slack-signing-secret connector-secret-keys connector-secret-active-key; do
+            test "$(yq --arg key "$key" 'select(.kind == "ExternalSecret" and .metadata.name == "api-keys") | .spec.data | map(select(.secretKey == $key)) | length' /tmp/slack-rendered.yaml)" = "1"
+          done
+          for name in SLACK_CLIENT_ID SLACK_CLIENT_SECRET SLACK_SIGNING_SECRET CONNECTOR_SECRET_KEYS CONNECTOR_SECRET_ACTIVE_KEY; do
+            test "$(yq --arg name "$name" 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .env | map(select(.name == $name)) | length' /tmp/slack-rendered.yaml)" = "1"
+          done
+
       - name: Render and lint prod chart (if values-prod.yaml exists)
         run: |
           if [ -f k8s/helm/commonly/values-prod.yaml ]; then
