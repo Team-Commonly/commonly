@@ -81,8 +81,14 @@ round trip. So the bearer secret Telegram hands to the user is, for Slack, the `
      shows "Slack workspace *Acme* wants to connect as *@sam* — Confirm / Not me".
      `POST /api/installables/slack/confirm` (auth; target derived from the caller's identity, never
      from a body id) moves `pendingBind` into `teamId`, `slackUserId`, `chatId`, `chatType: 'im'`,
-     `status: 'connected'`. `POST …/reject` (same derivation) revokes the ref and clears the bind;
-     so does an unconfirmed bind after 10 minutes (reconciler). The Telegram-parity of this step is
+     `status: 'connected'`. `POST …/reject` (same derivation) revokes the ref and clears the bind.
+     A pending bind carries `pendingBind.expiresAt` (10 minutes): **Confirm enforces it at read
+     time** — an expired bind is refused and revoked in the same call, so the expiry does not
+     depend on a sweep — and the reconciler revokes expired binds as the backstop. That backstop
+     only exists if the reconciler runs: on main `sweep()` fires once from the boot hook
+     (`server.ts:297`), so (Vera, 2026-09-04) this note **schedules it** — a `node-cron` job in
+     `schedulerService` every 5 minutes, alongside the boot run — which also gives #1527's stale
+     lock and stale revocation sweeps the cadence they were written as if they had. The Telegram-parity of this step is
      the D15 follow-up the ADR already names (bind the redeemer, confirm in Commonly); Slack lands
      it first because its code is the more exposed of the two.
 
@@ -176,8 +182,9 @@ already `active`. The rules that keep this honest:
   and the only one that makes the row route. A crash between the first two leaves an orphan
   `ConnectorSecret` with no ref and an unconsumed code — *New code* re-mints, the next callback's
   upsert overwrites the orphan, and the reconciler deletes any `ConnectorSecret` whose Integration
-  is inactive, absent, or has neither a ref nor a pending bind. An unconfirmed bind is revoked
-  after 10 minutes by the same sweep.
+  is inactive, absent, or has neither a ref nor a pending bind. An unconfirmed bind is refused and
+  revoked by Confirm once it is older than 10 minutes, and swept by the scheduled reconciler
+  (every 5 minutes; boot-only today) as the backstop.
 - **The window ordering cannot close** (Vera, 2026-09-04) is between Slack's `oauth.v2.access`
   response and the `ConnectorSecret` upsert — one write wide. It is hygiene, not a hole: the token
   never left a process that no longer exists, and Slack returns the **same** workspace bot token
@@ -255,7 +262,8 @@ be `im` for inbound relay, mirroring #1289.
    `state` without the nonce cookie → 4xx, no exchange. Confirm by the owner → bound (`teamId`,
    `slackUserId`, `chatId`, `chatType: 'im'`, `status: 'connected'`). Confirm by another
    authenticated user → 404, nothing changes. Reject → ref revoked, bind cleared. Unconfirmed for
-   10 minutes → swept, ref revoked.
+   10 minutes → Confirm refuses and revokes; the scheduled sweep revokes it too (assert the
+   reconciler is registered with the scheduler, not only the boot hook).
 3b. **The leaked-state walk.** Attacker holds a victim's `state` inside the TTL, has no nonce
    cookie → callback refuses. Attacker somehow has both → a pending bind naming the attacker's
    workspace appears on the victim's card; nothing routes; the victim's *Not me* revokes it and
@@ -280,7 +288,7 @@ be `im` for inbound relay, mirroring #1289.
 | Piece | Owner | Size |
 |---|---|---|
 | `connectorSecrets` module + `CONNECTOR_SECRET_KEY` wiring + tests (D6) | Kai | S |
-| Slack manifest + seeder entry; dispatcher type generalisation | Kai | S |
+| Slack manifest + seeder entry; dispatcher type generalisation; reconciler on the scheduler (5 min) | Kai | S |
 | `authorize-url` (nonce cookie), OAuth callback (pending bind), confirm/reject routes, events + commands routes with signature/ack/dedupe | Kai | M |
 | `slackBridgeService` (outbound, inbound, thread router) + shared escalation helper | Kai | M |
 | Page: Slack tile enabled, *Authorize in Slack* affordance, copy | Kai | S |
