@@ -62,6 +62,7 @@ describe('installable connector projection', () => {
       podId: expect.objectContaining({ toString: expect.any(Function) }),
     });
     expect(String(integration.podId)).toBe(podId);
+    expect(String(result.installation.boundPodId)).toBe(podId);
     expect(integration.createdBy.toString()).toBe(userId);
     expect(integration.config.linkedUserId).toBe(userId);
     expect(integration.config.liveRelay).toBe(true);
@@ -117,6 +118,39 @@ describe('installable connector projection', () => {
       claimId: before.claimId,
       claimedAt: before.claimedAt,
     });
+  });
+
+  it('refuses a different pod while a fresh claim has no projection yet', async () => {
+    const { userId, podId } = ids();
+    const otherPodId = new mongoose.Types.ObjectId().toString();
+    const targetId = new mongoose.Types.ObjectId(userId);
+    const parent = await InstallableInstallation.create({
+      installableId: 'telegram',
+      installableVersion: '1.0.0',
+      targetType: 'user',
+      targetId,
+      scope: 'user',
+      boundPodId: new mongoose.Types.ObjectId(podId),
+      installedBy: targetId,
+      installSource: 'direct',
+      status: 'installing',
+      claimId: 'owner-a',
+      claimedAt: new Date(),
+    });
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
+      .rejects.toMatchObject({
+        code: 'already_installed',
+        boundPodId: podId,
+      });
+
+    const after = await InstallableInstallation.findById(parent._id);
+    expect(after).toMatchObject({
+      status: 'installing',
+      claimId: 'owner-a',
+      claimedAt: parent.claimedAt,
+    });
+    expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(0);
   });
 
   it('survives repeated component failures and claims the same projection on retry', async () => {

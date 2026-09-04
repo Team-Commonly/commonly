@@ -158,16 +158,23 @@ const integrationPodId = (integration: unknown): string | null => {
   return podId == null ? null : String(podId);
 };
 
+const installationBoundPodId = (installation: IInstallableInstallation): string | null => (
+  installation.boundPodId == null ? null : String(installation.boundPodId)
+);
+
 const resultForExisting = async (
   installation: IInstallableInstallation,
   requestedPodId: Types.ObjectId,
 ): Promise<InstallResult> => {
   const integration = await integrationFor(installation);
+  // The parent records the requested pod before projectors run. This makes a
+  // second request for another pod unambiguous even in the pre-projection
+  // `installing` window. Older rows fall back to their Integration target.
+  const boundPodId = installationBoundPodId(installation) || integrationPodId(integration);
+  if (boundPodId && boundPodId !== String(requestedPodId)) {
+    throw new InstallableAlreadyInstalledError(boundPodId);
+  }
   if (installation.status === 'active') {
-    const boundPodId = integrationPodId(integration);
-    if (boundPodId && boundPodId !== String(requestedPodId)) {
-      throw new InstallableAlreadyInstalledError(boundPodId);
-    }
     return { installation, integration, httpStatus: 200, state: 'active' };
   }
   return {
@@ -186,6 +193,7 @@ const claimInstallation = async (
   installable: IInstallable,
   targetId: Types.ObjectId,
   installedBy: Types.ObjectId,
+  requestedPodId: Types.ObjectId,
   retried = false,
 ): Promise<ClaimResult> => {
   const now = new Date();
@@ -201,11 +209,21 @@ const claimInstallation = async (
     const installation = await InstallableInstallation.findOneAndUpdate(
       {
         ...keys,
-        $or: [
-          { status: 'error' },
-          { status: { $in: ['installing', 'activating'] }, claimedAt: { $lte: staleBefore } },
-          { status: 'uninstalling', claimedAt: { $lte: staleBefore } },
-          { status: { $exists: false } },
+        $and: [
+          {
+            $or: [
+              { status: 'error' },
+              { status: { $in: ['installing', 'activating'] }, claimedAt: { $lte: staleBefore } },
+              { status: 'uninstalling', claimedAt: { $lte: staleBefore } },
+              { status: { $exists: false } },
+            ],
+          },
+          {
+            $or: [
+              { boundPodId: requestedPodId },
+              { boundPodId: { $exists: false } },
+            ],
+          },
         ],
       },
       [
@@ -231,6 +249,7 @@ const claimInstallation = async (
             },
             claimId,
             claimedAt: now,
+            boundPodId: { $ifNull: ['$boundPodId', requestedPodId] },
             errorMessage: null,
             components: { $ifNull: ['$components', []] },
           },
@@ -263,7 +282,7 @@ const claimInstallation = async (
     ) && !retried) {
       // A concurrent state transition beat our filter. Retrying the atomic
       // claim is safe; only a returned matching generation owns work.
-      return claimInstallation(installable, targetId, installedBy, true);
+      return claimInstallation(installable, targetId, installedBy, requestedPodId, true);
     }
     return {
       installation: winner,
@@ -493,7 +512,7 @@ const installAttempt = async ({
 
   const installerId = asObjectId(installedBy, 'installer');
   const targetPodId = asObjectId(podId, 'podId');
-  const claim = await claimInstallation(installable, installerId, installerId);
+  const claim = await claimInstallation(installable, installerId, installerId, targetPodId);
   if (!claim.ownsClaim) return resultForExisting(claim.installation, targetPodId);
 
   let installation = claim.installation;

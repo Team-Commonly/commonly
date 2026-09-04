@@ -95,6 +95,11 @@ export interface IInstallableInstallation extends Document {
   targetId: Types.ObjectId;
   scope: InstallableScope; // replicates Installable.scope for query perf
 
+  // A user-scoped channel install still has one operational pod target. Keep
+  // it on the parent from the first claim so a fresh transient can reject a
+  // second request for another pod before its projection exists.
+  boundPodId?: Types.ObjectId;
+
   // Install provenance
   installedBy: Types.ObjectId;
   installSource: InstallSource;
@@ -186,6 +191,7 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
       enum: ['instance', 'pod', 'user', 'dm'],
       required: true,
     },
+    boundPodId: { type: Schema.Types.ObjectId, ref: 'Pod' },
 
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     installSource: {
