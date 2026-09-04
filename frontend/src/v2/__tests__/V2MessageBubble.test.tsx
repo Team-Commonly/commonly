@@ -92,4 +92,24 @@ describe('V2MessageBubble', () => {
     expect(row.className).not.toContain('v2-msg__reactions--bare');
     expect(screen.getByText('👍')).toBeInTheDocument();
   });
+
+  it('marks a system card with its action state', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageBubble
+          message={{
+            id: '44',
+            pod_id: 'pod-1',
+            user_id: 'system-1',
+            content: '🤝 Pixel and codex started a DM — [view](/v2/pods/0123456789abcdef01234567)',
+            message_type: 'text',
+            created_at: '2026-08-13T00:00:00.000Z',
+            user: { username: 'commonly-bot' },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Pixel and codex started a DM').closest('.v2-syscard')).toHaveClass('v2-syscard--action');
+  });
 });

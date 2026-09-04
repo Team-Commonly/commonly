@@ -363,7 +363,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   if (dmEvent) {
     return (
       <div className="v2-msg v2-msg--system">
-        <div className="v2-syscard">
+        <div className="v2-syscard v2-syscard--action">
           <div className="v2-syscard__icon" aria-hidden="true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
