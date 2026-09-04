@@ -188,8 +188,9 @@ const getV2EquivalentPath = (pathname: string, search: string): string | null =>
   if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;
   if (pathname === '/agents') return `/v2/agents${search}`;
   if (pathname === '/activity') return `/v2/activity${search}`;
-  if (pathname === '/profile' || pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
-  if (pathname === '/admin/users') return '/v2/profile?tab=user-admin';
+  if (pathname === '/profile') return '/v2/settings';
+  if (pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
+  if (pathname === '/admin/users') return '/v2/admin/users';
   if (pathname === '/admin/integrations/global') return `/v2${pathname}${search}`;
   if (pathname === '/dev/api' || pathname === '/dev/pod-context') return `/v2${pathname}${search}`;
   if (pathname === '/pods') return `/v2${search}`;
@@ -265,7 +266,7 @@ function App(): React.ReactElement {
                   <NavigationHandler />
                   <div className="App">
                     <Routes>
-                    <Route path="/settings/devices" element={<Navigate to="/v2/settings/devices" replace />} />
+                    <Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />
                     <Route path="/v2/*" element={<V2App />} />
                     <Route path="/" element={<PublicHome />} />
                     {/* Legacy auth/OAuth entry points preserve their query strings. */}

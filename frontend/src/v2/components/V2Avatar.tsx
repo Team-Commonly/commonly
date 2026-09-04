@@ -10,6 +10,7 @@ interface V2AvatarProps {
   name?: string | null;
   src?: string | null;
   size?: V2AvatarSize;
+  className?: string;
   online?: boolean;
   title?: string;
   /**
@@ -40,7 +41,7 @@ const sizeClass = (size: V2AvatarSize): string => {
 };
 
 const V2Avatar: React.FC<V2AvatarProps> = ({
-  name, src, size = 'md', online, title, kind, seed: seedProp,
+  name, src, size = 'md', className, online, title, kind, seed: seedProp,
 }) => {
   const seed = String(name || '');
   const bg = gradientFor(seed);
@@ -58,6 +59,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   // right tier.
   const cleanSrc = getAvatarSrc(rawSrc) || null;
   const [imgFailed, setImgFailed] = React.useState(false);
+  const classes = [sizeClass(size), className].filter(Boolean).join(' ');
 
   // Character tier (photo still wins, below). Memoized because the SVG build
   // runs per identity per render otherwise, and chat re-renders per message.
@@ -75,7 +77,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   if (cleanSrc && !imgFailed) {
     return (
       <span
-        className={sizeClass(size)}
+        className={classes}
         style={{ background: bg }}
         title={display}
       >
@@ -84,7 +86,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
           alt={display || 'avatar'}
           onError={() => setImgFailed(true)}
           style={{
-            width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%',
+            width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit',
           }}
         />
         {online && <span className="v2-avatar__online" />}
@@ -95,7 +97,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
   if (characterSrc) {
     return (
       <span
-        className={sizeClass(size)}
+        className={classes}
         style={{ background: bg }}
         title={display}
       >
@@ -103,7 +105,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
           src={characterSrc}
           alt={display || 'avatar'}
           style={{
-            width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%',
+            width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit',
           }}
         />
         {online && <span className="v2-avatar__online" />}
@@ -113,7 +115,7 @@ const V2Avatar: React.FC<V2AvatarProps> = ({
 
   return (
     <span
-      className={sizeClass(size)}
+      className={classes}
       style={{ background: bg }}
       title={display}
     >

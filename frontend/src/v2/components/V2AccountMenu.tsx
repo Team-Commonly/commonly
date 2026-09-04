@@ -43,9 +43,9 @@ const V2AccountMenu: React.FC = () => {
         PaperProps={{ className: 'v2-account-menu__popover', elevation: 0 }}
       >
         <nav id="v2-account-options" className="v2-account-menu__list" aria-label="Account">
-          <button type="button" className="v2-account-menu__item" onClick={() => go('/v2/profile')}>
+          <button type="button" className="v2-account-menu__item" onClick={() => go('/v2/settings')}>
             <AccountCircleOutlinedIcon aria-hidden="true" />
-            <span>Profile</span>
+            <span>Settings</span>
           </button>
           <button type="button" className="v2-account-menu__item" onClick={() => go('/v2/connect')}>
             <CableOutlinedIcon aria-hidden="true" />
