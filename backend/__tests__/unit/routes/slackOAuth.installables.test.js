@@ -1,5 +1,6 @@
 const request = require('supertest');
 const express = require('express');
+const crypto = require('crypto');
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: '64b64c48c4f37a6b2f34c111' };
@@ -13,7 +14,7 @@ jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(),
 }));
 jest.mock('../../../models/InstallableInstallation', () => ({ findOne: jest.fn() }));
-jest.mock('../../../utils/secret', () => ({ hash: jest.fn((value) => `hash:${value}`), randomSecret: jest.fn(() => 'nonce-value') }));
+jest.mock('../../../utils/secret', () => ({ randomSecret: jest.fn(() => 'nonce-value') }));
 jest.mock('../../../services/telegramConnectCode', () => ({
   mintConnectCode: jest.fn(() => ({ connectCode: 'r'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000) })),
 }));
@@ -88,7 +89,11 @@ describe('Slack installable OAuth routes', () => {
     expect(response.headers['set-cookie'][0]).toContain('commonly_slack_oauth_nonce=nonce-value');
     expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'integration-1', 'config.connectCode': integration.config.connectCode }),
-      expect.objectContaining({ $set: expect.objectContaining({ 'config.oauthStateNonceHash': 'hash:nonce-value' }) }),
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'config.oauthStateNonceHash': crypto.createHmac('sha256', process.env.JWT_SECRET).update('nonce-value').digest('hex'),
+        }),
+      }),
       expect.anything(),
     );
   });

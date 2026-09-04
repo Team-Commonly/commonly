@@ -1,6 +1,8 @@
 // eslint-disable-next-line global-require
 const express = require('express');
 // eslint-disable-next-line global-require
+const crypto = require('crypto');
+// eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -11,7 +13,7 @@ const InstallableInstallation = require('../models/InstallableInstallation');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
 // eslint-disable-next-line global-require
-const { hash, randomSecret } = require('../utils/secret');
+const { randomSecret } = require('../utils/secret');
 // eslint-disable-next-line global-require
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
@@ -62,6 +64,15 @@ const requesterId = (req: AuthReq): string | undefined => req.userId || req.user
 const SLACK_NONCE_COOKIE = 'commonly_slack_oauth_nonce';
 const SLACK_NONCE_TTL_MS = 5 * 60_000;
 const SLACK_BIND_TTL_MS = 10 * 60_000;
+
+// This is a high-entropy, short-lived browser nonce rather than a password.
+// A keyed digest prevents a database read from becoming an offline oracle for
+// the cookie value, while keeping verification deterministic across replicas.
+const slackNonceDigest = (nonce: string): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is required for Slack OAuth state verification');
+  return crypto.createHmac('sha256', secret).update(nonce).digest('hex');
+};
 
 const cookieValue = (req: AuthReq, name: string): string | undefined => {
   const header = req.headers?.cookie;
@@ -206,7 +217,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
       },
       {
         $set: {
-          'config.oauthStateNonceHash': hash(nonce),
+          'config.oauthStateNonceHash': slackNonceDigest(nonce),
           'config.oauthStateNonceExpiresAt': new Date(now.getTime() + SLACK_NONCE_TTL_MS),
         },
         $unset: { 'config.oauthStateClaimId': 1 },
@@ -264,7 +275,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
         isActive: true,
         'config.connectCode': state,
         'config.connectCodeExpiresAt': { $gt: now },
-        'config.oauthStateNonceHash': hash(nonce),
+        'config.oauthStateNonceHash': slackNonceDigest(nonce),
         'config.oauthStateNonceExpiresAt': { $gt: now },
         'config.oauthStateClaimId': { $exists: false },
         'config.chatId': { $exists: false },
