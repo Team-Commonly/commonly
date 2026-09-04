@@ -252,6 +252,10 @@ const V2ConnectorsPage: React.FC = () => {
 
   const authorizeSlack = async (c: Connector) => {
     if (busyId) return;
+    // Open the tab during the user gesture, before awaiting the API call, so
+    // browsers do not block it as an async popup. The main Commonly page then
+    // remains open to poll the callback's pending owner-confirmation state.
+    const authorizationWindow = window.open('', '_blank');
     setBusyId(c._id);
     setError(null);
     try {
@@ -261,10 +265,20 @@ const V2ConnectorsPage: React.FC = () => {
         { withCredentials: true },
       );
       if (!result.authorizeUrl) throw new Error('Slack authorization URL was missing');
-      // This leaves Commonly only after the server has stored the browser
-      // nonce cookie that binds Slack's callback to this authorization attempt.
-      window.location.assign(result.authorizeUrl);
+      // The API has now stored the browser nonce cookie that binds Slack's
+      // callback to this authorization attempt. Drop the opener before this
+      // blank tab crosses to Slack, avoiding reverse-tabnabbing.
+      if (authorizationWindow) {
+        authorizationWindow.opener = null;
+        authorizationWindow.location.assign(result.authorizeUrl);
+      } else {
+        // A browser may still block a new tab. Continue rather than losing a
+        // user-initiated authorization attempt; the callback can be revisited
+        // through the browser's back button in that exceptional case.
+        window.location.assign(result.authorizeUrl);
+      }
     } catch {
+      authorizationWindow?.close();
       setError(t('connectors.slackAuthorizeError', {
         defaultValue: 'Could not begin Slack authorization. Try again in a moment.',
       }));

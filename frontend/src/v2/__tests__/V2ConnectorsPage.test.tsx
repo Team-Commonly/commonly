@@ -81,7 +81,12 @@ const renderPage = () => render(
 );
 
 describe('V2ConnectorsPage', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(window, 'open').mockReturnValue(null);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('lists connectors with grouped code, copy command, and dot status', async () => {
     mockGets();
@@ -352,6 +357,29 @@ describe('V2ConnectorsPage', () => {
       expect.objectContaining({ withCredentials: true }),
     ));
     expect(await screen.findByText('Could not begin Slack authorization. Try again in a moment.')).toBeInTheDocument();
+  });
+
+  it('opens Slack in a separate tab so the pending confirmation stays on this page', async () => {
+    const slackWindow = {
+      location: { assign: jest.fn() },
+      close: jest.fn(),
+      opener: window,
+    };
+    jest.mocked(window.open).mockReturnValue(slackWindow as unknown as Window);
+    mockGets([{
+      _id: 'i-slack-authorize',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'pending',
+      config: { connectCode: 'a'.repeat(32), connectCodeExpiresAt: new Date(Date.now() + 60_000).toISOString() },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.post.mockResolvedValue({ data: { authorizeUrl: 'https://slack.test/oauth?state=secret' } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Authorize in Slack' }));
+
+    await waitFor(() => expect(slackWindow.location.assign).toHaveBeenCalledWith('https://slack.test/oauth?state=secret'));
+    expect(slackWindow.opener).toBeNull();
   });
 
   it('lets the owner reject a pending Slack authorization', async () => {
