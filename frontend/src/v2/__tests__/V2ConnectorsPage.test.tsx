@@ -93,7 +93,7 @@ describe('V2ConnectorsPage', () => {
 
   it('renders the Signal row list and opens the pending channel in the selected aside', async () => {
     mockGets();
-    renderPage();
+    const { container } = renderPage();
 
     await screen.findByRole('button', { name: 'View Telegram' });
     expect(screen.getByText('Waiting for one message in your Telegram chat.')).toBeInTheDocument();
@@ -101,6 +101,7 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByText('Discord · WhatsApp')).toBeInTheDocument();
     expect(screen.getByText('/commonly-enable abc1 23')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.v2-connector-row__glyph')).toHaveLength(3);
   });
 
   it('offers a new code from the row and aside when the Telegram code has expired', async () => {

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2Pod } from '../hooks/useV2Pods';
+import { PlatformGlyph } from '../icons/platforms';
 
 interface ConnectorConfig {
   chatTitle?: string;
@@ -483,6 +484,7 @@ const V2ConnectorsPage: React.FC = () => {
         >
           <span className="v2-connector-row__name">
             <span className={`v2-connector-row__dot v2-connector-row__dot--${row.dot}${row.pulse ? ' v2-connector-row__dot--pulse' : ''}`} aria-hidden="true" />
+            <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type={connector.type} /></span>
             <span>{TYPE_LABELS[connector.type] || connector.type}</span>
           </span>
           <span className="v2-connector-row__details">
@@ -678,7 +680,7 @@ const V2ConnectorsPage: React.FC = () => {
     <div className="v2-connectors">
       <header className="v2-connectors__header">
         <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
-        <p>{t('connectors.description', { defaultValue: 'Bridge pods to the channels your team already uses.' })}</p>
+        <p>{t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}</p>
       </header>
 
       {loading && <div className="v2-connectors__loading">{t('connectors.loading', { defaultValue: 'Loading connectors…' })}</div>}
@@ -691,6 +693,7 @@ const V2ConnectorsPage: React.FC = () => {
               <article className="v2-connector-row v2-connector-row--not-yet">
                 <span className="v2-connector-row__name">
                   <span className="v2-connector-row__dot v2-connector-row__dot--not-yet" aria-hidden="true" />
+                  <span className="v2-connector-row__glyph" aria-hidden="true"><PlatformGlyph type="discord" /></span>
                   <span>{UNAVAILABLE_PLATFORM_LABELS.join(' · ')}</span>
                 </span>
                 <span className="v2-connector-row__details">

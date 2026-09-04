@@ -9432,6 +9432,9 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  /* The channel list is the page's content card, not a short island in its
+     shell. The feature body is the inset pane less 28px/42px vertical pad. */
+  min-height: calc(100vh - 86px);
 }
 .v2-connectors__header h1 {
   margin: 0;
@@ -9449,13 +9452,13 @@ body.modern-ui.v2-canvas {
   line-height: 20px;
 }
 .v2-connectors__loading { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; }
-.v2-connectors__content { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; align-items: start; }
-.v2-connectors__main { min-width: 0; }
-.v2-connectors__rows { overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
+.v2-connectors__content { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; align-items: stretch; }
+.v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.v2-connectors__rows { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
 
 .v2-connector-row {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr) 200px 120px;
+  grid-template-columns: 200px minmax(0, 1fr) 200px 120px;
   align-items: center;
   min-height: 82px;
   padding: 16px 18px;
@@ -9468,7 +9471,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-connector-row__selection {
   display: grid;
   grid-column: 1 / 4;
-  grid-template-columns: 160px minmax(0, 1fr) 200px;
+  grid-template-columns: 200px minmax(0, 1fr) 200px;
   align-items: center;
   min-width: 0;
   padding: 0;
@@ -9482,6 +9485,8 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__name { display: inline-flex; align-items: center; gap: 10px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
 .v2-connector-row--not-yet .v2-connector-row__name { color: var(--v2-text-tertiary); }
 .v2-connector-row__dot { width: 8px; height: 8px; flex: none; border-radius: var(--v2-radius-sm); background: var(--v2-border-soft); }
+.v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: inherit; }
+.v2-connector-row__glyph svg { width: 20px; height: 20px; }
 .v2-connector-row__dot--live, .v2-connector-row__dot--pending { background: var(--v2-accent); }
 .v2-connector-row__dot--empty { border: 1px solid var(--v2-border-strong); background: transparent; }
 .v2-connector-row__dot--idle { background: var(--v2-border-soft); }
@@ -9497,6 +9502,7 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__details { display: flex; min-width: 0; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
 .v2-connector-row__details strong { overflow: hidden; color: var(--v2-ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
+.v2-connector-row__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-connector-row__when { padding-right: 16px; }
 .v2-root button.v2-connector-row__action,
 .v2-root a.v2-connector-row__action {
@@ -9578,7 +9584,7 @@ body.modern-ui.v2-canvas {
 .v2-connectors__error { padding: 10px 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-ink); font-size: 13px; }
 
 @media (max-width: 760px) {
-  .v2-connectors { gap: 24px; margin: -12px -18px 0; }
+  .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .v2-connector-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; padding: 14px 12px; }
   .v2-root button.v2-connector-row__selection { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
