@@ -152,6 +152,11 @@ app.use(
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+    // Slack OAuth starts in the authenticated shell and returns through an
+    // unauthenticated callback. The browser-bound nonce is HttpOnly on the
+    // API origin, so the authorize-url request must be allowed to persist it
+    // when the shell is served from commonly.me.
+    credentials: true,
   }),
 );
 
@@ -169,6 +174,17 @@ app.use(
   '/api/webhooks/slack',
   express.json({
     verify: (req: any, res: any, buf: any) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
+// Slack slash commands are form posts, but their signature is over the same
+// raw bytes. Capture those too before any parser turns them into an object.
+app.use(
+  '/api/webhooks/slack',
+  express.urlencoded({
+    extended: false,
+    verify: (req: any, _res: any, buf: Buffer) => {
       req.rawBody = buf.toString();
     },
   }),
@@ -200,7 +216,12 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
-app.use('/api/installables', require('./routes/installables'));
+const installableRoutes = require('./routes/installables');
+app.use('/api/installables', installableRoutes);
+// Slack's redirect URI is deliberately a webhook URL so the Slack app's
+// public surface stays together. The handler itself remains in the
+// installables module because it acts on the owner-scoped installation.
+app.use('/api/webhooks/slack/oauth', installableRoutes.slackOAuthCallbackRouter);
 app.use('/api/apps', appPlatformRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/webhooks/slack', slackWebhookRoutes);

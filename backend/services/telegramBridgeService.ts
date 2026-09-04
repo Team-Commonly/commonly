@@ -22,6 +22,8 @@
 const IntegrationModel = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramSend = require('./telegramService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { shouldEscalate } = require('./connectorRelayPolicy');
 
 const RELAY_MAP_CAP = 100;
 const OUTBOUND_TEXT_CAP = 900;
@@ -53,32 +55,7 @@ const escapeHtml = (raw: string): string => String(raw)
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
-// Rule-based escalation gate. Deliberately structural and cheap — the same
-// shape as the cascade cap: no model call decides whether to interrupt a
-// human. A message crosses to the channel when it:
-//   - carries an explicit escalation/blocked/decision marker, or
-//   - asks the human something (question addressed at a person), or
-//   - comes from the designated lead agent (their reports are the digest), or
-//   - the integration opts into relay-everything (demo/verbose mode).
-const ESCALATION_MARKERS = /\[(BLOCKED|ESCALATE|DECISION|NEEDS[-_ ]?HUMAN|APPROVAL)\]/i;
-const QUESTION_AT_HUMAN = /@[a-z0-9_.-]+[^\n]{0,200}\?/i;
-
-export const shouldEscalate = (opts: {
-  content: string;
-  agentUsername: string;
-  integration: TelegramIntegrationDoc;
-}): boolean => {
-  const { content, agentUsername, integration } = opts;
-  const cfg = integration.config || {};
-  if (cfg.relayAllAgentMessages) return true;
-  if (cfg.leadAgentUsername
-    && agentUsername.toLowerCase() === String(cfg.leadAgentUsername).toLowerCase()) {
-    return true;
-  }
-  if (ESCALATION_MARKERS.test(content)) return true;
-  if (QUESTION_AT_HUMAN.test(content)) return true;
-  return false;
-};
+export { shouldEscalate };
 
 // Prefix an inbound Telegram quote-reply with the @mention of the agent whose
 // relayed line was quoted, so the normal mention pipeline routes it. Pure —

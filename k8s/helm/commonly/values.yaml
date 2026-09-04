@@ -34,6 +34,15 @@ errorTracking:
 billing:
   enabled: false
 
+# Slack's installable connector needs its own OAuth app credentials and the
+# envelope-encryption key ring. Keep the ExternalSecret entries gated: ESO
+# rejects the entire api-keys resource when one remote secret is absent.
+# Populate all five `commonly-dev-{slack-*,connector-secret-*}` secrets before
+# enabling this in an environment.
+slack:
+  oauth:
+    enabled: false
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true

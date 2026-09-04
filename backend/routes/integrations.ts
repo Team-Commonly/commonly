@@ -42,7 +42,12 @@ import {
 // are written only by the /commonly-enable webhook (the code is the proof);
 // connectCode is minted here. Accepting any of them from a client body lets a
 // caller name someone else as the author or bind a chat without a code.
-const SERVER_OWNED_CONFIG_KEYS = ['linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle'];
+const SERVER_OWNED_CONFIG_KEYS = [
+  'linkedUserId', 'connectCode', 'connectCodeExpiresAt', 'chatId', 'chatType', 'chatTitle',
+  // OAuth callback and connectorSecrets own Slack identity and its opaque
+  // credential reference. Accepting either from a browser body defeats D6.
+  'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
+];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
   SERVER_OWNED_CONFIG_KEYS.forEach((k) => { delete next[k]; });
