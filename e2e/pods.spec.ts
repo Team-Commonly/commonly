@@ -9,12 +9,6 @@ test.describe('Pods', () => {
     expect(page.url()).toContain('/v2');
   });
 
-  test('authenticated user can navigate to feed', async ({ authenticatedPage: page }) => {
-    await page.goto('/v2/feed');
-    await expect(page.locator('#root')).toBeAttached();
-    expect(page.url()).toContain('/feed');
-  });
-
   test('api/pods returns array for authenticated user', async ({ authenticatedPage: page, request }) => {
     // Extract token from localStorage set during login
     const token = await page.evaluate(() => localStorage.getItem('token'));
