@@ -293,10 +293,10 @@ jobs:
             --set slack.oauth.enabled=true \
             > /tmp/slack-rendered.yaml
           for key in slack-client-id slack-client-secret slack-signing-secret connector-secret-keys connector-secret-active-key; do
-            test "$(yq --arg key "$key" 'select(.kind == "ExternalSecret" and .metadata.name == "api-keys") | .spec.data | map(select(.secretKey == $key)) | length' /tmp/slack-rendered.yaml)" = "1"
+            test "$(yq 'select(.kind == "ExternalSecret" and .metadata.name == "api-keys") | .spec.data[].secretKey' /tmp/slack-rendered.yaml | grep -Fx "$key")" = "$key"
           done
           for name in SLACK_CLIENT_ID SLACK_CLIENT_SECRET SLACK_SIGNING_SECRET CONNECTOR_SECRET_KEYS CONNECTOR_SECRET_ACTIVE_KEY; do
-            test "$(yq --arg name "$name" 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .env | map(select(.name == $name)) | length' /tmp/slack-rendered.yaml)" = "1"
+            test "$(yq 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .env[].name' /tmp/slack-rendered.yaml | grep -Fx "$name")" = "$name"
           done
 
       - name: Render and lint prod chart (if values-prod.yaml exists)
