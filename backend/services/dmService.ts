@@ -3,12 +3,17 @@ import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
 
 /**
- * The runtime block of an agent's existing active installation, so a new
- * projection (agent-room, DM) routes the same way the original does.
- * Returns null when the agent has no install with a runtime (BYO wrappers
- * that never declared one), which keeps today's external-queue behaviour.
+ * What a new projection of an agent (agent-room, DM) inherits from the
+ * agent's existing active installation: everything the native runtime reads
+ * — runtime, model, systemPrompt, tools, triggers, budgets — minus the keys
+ * that belong to the projection itself (heartbeat, autoJoinSource). Without
+ * this a room install carried only {heartbeat, autoJoinSource}: the router
+ * could not see a runtime (fixed in #1524), and once it could, the run fell
+ * to the default model with no system prompt. Returns null when the agent has
+ * no install with a runtime (BYO wrappers), which keeps today's behaviour.
  */
-export const resolveInstallRuntime = async (
+const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
+export const resolveInstallInheritance = async (
   agentName: string,
   instanceId: string,
 ): Promise<Record<string, unknown> | null> => {
@@ -16,12 +21,23 @@ export const resolveInstallRuntime = async (
     const sibling = await AgentInstallation.findOne({
       agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $exists: true },
     }).sort({ createdAt: -1 }).lean() as { config?: unknown } | null;
-    const cfg = sibling?.config as { runtime?: Record<string, unknown>; get?: (k: string) => unknown } | undefined;
-    const runtime = (cfg && typeof cfg.get === 'function' ? cfg.get('runtime') : cfg?.runtime) as Record<string, unknown> | undefined;
-    return runtime && typeof runtime === 'object' ? { ...runtime } : null;
+    const raw = sibling?.config as { toObject?: () => Record<string, unknown> } | Record<string, unknown> | Map<string, unknown> | undefined;
+    if (!raw) return null;
+    let cfg: Record<string, unknown>;
+    if (raw instanceof Map) cfg = Object.fromEntries(raw);
+    else if (typeof (raw as { toObject?: unknown }).toObject === 'function') cfg = (raw as { toObject: () => Record<string, unknown> }).toObject();
+    else cfg = { ...(raw as Record<string, unknown>) };
+    const inherited: Record<string, unknown> = {};
+    Object.entries(cfg).forEach(([k, v]) => { if (!PROJECTION_OWN_KEYS.has(k) && v !== undefined) inherited[k] = v; });
+    return inherited.runtime ? inherited : null;
   } catch {
     return null;
   }
+};
+/** Back-compat alias for callers that only need the runtime block. */
+export const resolveInstallRuntime = async (agentName: string, instanceId: string): Promise<Record<string, unknown> | null> => {
+  const inherited = await resolveInstallInheritance(agentName, instanceId);
+  return (inherited?.runtime as Record<string, unknown>) || null;
 };
 
 let PGPod: { addMember: (podId: string, userId: unknown) => Promise<void>; create: (name: string, description: string, type: string, creatorId: unknown, podId: string) => Promise<void> } | null;
@@ -393,13 +409,13 @@ class DMService {
         // hosted Scout DM went silent this way (2026-08-28 .. 09-02: two
         // strangers, one smoke). Copy runtime from the agent's existing
         // active install; the room is a projection of the same agent.
-        const runtime = await resolveInstallRuntime(agentName.toLowerCase(), instanceId || 'default');
+        const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default');
         await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
           version: '1.0.0',
           config: {
+            ...(inherited || {}),
             heartbeat: { enabled: false },
             autoJoinSource: 'agent-room-create',
-            ...(runtime ? { runtime } : {}),
           } as unknown as Map<string, unknown>,
           scopes: ['context:read', 'summaries:read', 'messages:write'],
           installedBy: requestingUserId as unknown as import('mongoose').Types.ObjectId,
