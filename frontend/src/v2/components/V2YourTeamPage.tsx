@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-import AddIcon from '@mui/icons-material/Add';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
 
@@ -154,13 +153,6 @@ const V2YourTeamPage: React.FC = () => {
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemed, setRedeemed] = useState(false);
   const isEntitled = entitledFromUser || redeemed;
-  // ADR-022 D2, first step (Sam, 2026-08-21: "two buttons go to the same
-  // place"): the entitlement fork used to send unentitled users' Hire button
-  // to BYO — the same destination as the Connect button beside it. Everyone
-  // sees the same catalog now; entitlement gates at install time (the
-  // where-step, once Phase 1 lands), not at the storefront door.
-  const primaryHirePath = '/v2/agents/browse';
-
   const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!redeemCode.trim() || redeeming) return;
@@ -462,21 +454,7 @@ const V2YourTeamPage: React.FC = () => {
                   })}
           </p>
         </div>
-        {/* Sam's 2026-09-01 ruling: two CTAs, user's mental model, not our
-            architecture. Channels ("Connect") live ONLY in the nav rail's
-            Connectors item — "Connect" next to "Connect your own agent" was
-            the same verb for two different concepts. "Add a computer" is the
-            ADR-026 direction: today it opens the where-it-runs flow; when
-            daemon Phase 2 lands it becomes the machine surface. */}
         <div className="v2-team__actions">
-          <button
-            type="button"
-            className="v2-team__hire-cta"
-            onClick={() => navigate(primaryHirePath)}
-          >
-            <AddIcon fontSize="small" aria-hidden="true" />
-            {t('yourTeam.actions.hire')}
-          </button>
           <button
             type="button"
             className="v2-team__byo-cta"
@@ -535,13 +513,6 @@ const V2YourTeamPage: React.FC = () => {
             {t('yourTeam.empty.text')}
           </div>
           <div className="v2-team__empty-actions">
-            <button
-              type="button"
-              className="v2-team__hire-cta"
-              onClick={() => navigate(primaryHirePath)}
-            >
-              {t('yourTeam.empty.hireFirst')}
-            </button>
             <button
               type="button"
               className="v2-team__byo-cta"

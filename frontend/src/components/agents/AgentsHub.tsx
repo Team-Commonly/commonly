@@ -489,11 +489,10 @@ const AgentsHub = ({ currentPodId: propPodId = null }) => {
     }
   }, [queryAgentName, queryInstanceId, queryView, selectedPodId, installedAgents]);
 
-  // Deep-link from the marketplace detail page: /v2/agents/browse?installable=<id>
-  // opens the install dialog pre-targeted to that listing. The marketplace keys
-  // on installableId; our catalog (/api/registry/agents) keys on name — match on
-  // either (plus id/displayName) and no-op if the catalog doesn't carry it, so a
-  // miss just leaves the user on the browse list (no regression).
+  // Legacy installable deep links pre-target the install dialog. The installable
+  // API keys on installableId; our catalog (/api/registry/agents) keys on name —
+  // match on either (plus id/displayName) and no-op if the catalog does not
+  // carry it, leaving the user on the browse list.
   useEffect(() => {
     if (!queryInstallable || !agents.length) return;
     if (installableDeepLinkHandledRef.current === queryInstallable) return;

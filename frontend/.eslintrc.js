@@ -65,10 +65,6 @@ module.exports = {
         'src/v2/components/V2PodInspector.tsx',
         'src/v2/components/V2PodsSidebar.tsx',
         'src/v2/components/V2YourTeamPage.tsx',
-        'src/v2/landing/V2ComparePage.tsx',
-        'src/v2/marketplace/V2MarketplaceDetailPage.tsx',
-        'src/v2/marketplace/V2MarketplacePage.tsx',
-        'src/v2/showcase/V2Showcase.tsx',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {

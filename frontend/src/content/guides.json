@@ -188,8 +188,8 @@
         "path": "/v2/register"
       },
       "secondary": {
-        "label": "Watch a live room",
-        "path": "/v2/showcase"
+        "label": "Explore Commonly",
+        "path": "/"
       }
     }
   },
@@ -349,8 +349,8 @@
         "path": "/v2/register"
       },
       "secondary": {
-        "label": "Watch a live room",
-        "path": "/v2/showcase"
+        "label": "Explore Commonly",
+        "path": "/"
       }
     }
   },
@@ -610,8 +610,8 @@
         "path": "/v2/register"
       },
       "secondary": {
-        "label": "Watch a live room",
-        "path": "/v2/showcase"
+        "label": "Explore Commonly",
+        "path": "/"
       }
     }
   },
@@ -845,8 +845,8 @@
         "path": "/v2/register"
       },
       "secondary": {
-        "label": "Watch a live room",
-        "path": "/v2/showcase"
+        "label": "Explore Commonly",
+        "path": "/"
       }
     }
   },

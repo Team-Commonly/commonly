@@ -23,7 +23,6 @@ import V2Avatar from './V2Avatar';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
-import { PERSONA_CARDS } from '../agents/personaCatalogData';
 
 const DEFAULT_SCOPES = [
   'context:read', 'summaries:read', 'messages:write', 'messages:read',
@@ -67,15 +66,8 @@ const V2AgentBYO: React.FC = () => {
     return {
       pod: (params.get('pod') || '').replace(/[^a-f0-9]/gi, ''),
       name: sanitizeAgentName(params.get('name') || ''),
-      persona: sanitizeAgentName(params.get('persona') || ''),
     };
   })();
-  // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged here
-  // with no indication of what persona was picked and why. The catalog now
-  // hands the choice over (?persona=<key>); this page shows it, names the
-  // agent after it, and records it on the installation. No param = the
-  // machine-first entry, which says so instead of pretending.
-  const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [podId, setPodId] = useState<string>(prefill.pod);
   // Personalized default: a global-namespace collision guard (#613) means a
@@ -84,7 +76,6 @@ const V2AgentBYO: React.FC = () => {
   const { currentUser } = useAuth();
   const defaultAgentName = (() => {
     const u = (currentUser?.username || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
-    if (personaCard) return u ? `${u}-${personaCard.key}` : personaCard.key;
     return u ? `${u}-agent` : DEFAULT_AGENT_NAME;
   })();
   const [name, setName] = useState<string>(prefill.name || defaultAgentName);
@@ -223,8 +214,8 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_SCOPES,
-          config: { runtime: { runtimeType: 'hosted' }, ...(personaCard ? { persona: personaCard.key } : {}) },
-          displayName: personaCard?.name || cleanName,
+          config: { runtime: { runtimeType: 'hosted' } },
+          displayName: cleanName,
         });
       } catch (installErr) {
         const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number } } })
@@ -270,8 +261,8 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_SCOPES,
-          config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
-          displayName: personaCard?.name || cleanName,
+          config: { runtime: { runtimeType: 'webhook' } },
+          displayName: cleanName,
         });
       } catch (installErr) {
         // "Already installed" is identity continuity (ADR-001), not a
@@ -459,36 +450,6 @@ const V2AgentBYO: React.FC = () => {
     >
       <div className="v2-byo__layout">
       <div className="v2-byo__main">
-      {!issued && !hosted && personaCard && (
-        <div className="v2-byo__persona" data-testid="byo-persona-context">
-          <V2Avatar name={personaCard.name} size="md" kind={AGENT_KIND} seed={personaCard.avatarSeed} />
-          <div className="v2-byo__persona-body">
-            <div className="v2-byo__persona-title">
-              {t('agentByo.persona.hiring')} <strong>{personaCard.name}</strong> · {personaCard.role}
-            </div>
-            <div className="v2-byo__persona-line">{personaCard.oneLiner}</div>
-          </div>
-          <button
-            type="button"
-            className="v2-byo__persona-change"
-            onClick={() => navigate('/v2/agents/browse')}
-          >
-            {t('agentByo.persona.change')}
-          </button>
-        </div>
-      )}
-      {!issued && !hosted && !personaCard && (
-        <div className="v2-byo__persona v2-byo__persona--none" data-testid="byo-persona-none">
-          <span>{t('agentByo.persona.none')}</span>
-          <button
-            type="button"
-            className="v2-byo__persona-change"
-            onClick={() => navigate('/v2/agents/browse')}
-          >
-            {t('agentByo.persona.browse')}
-          </button>
-        </div>
-      )}
       {!issued && !hosted && (
         <div className="v2-byo__form">
           {hosting?.configured && (

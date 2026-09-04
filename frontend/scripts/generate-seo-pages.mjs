@@ -212,7 +212,7 @@ const renderLanding = (landing, useCases, guides) => {
           <p class="seo-kicker">${escapeHtml(landing.hero.eyebrow)}</p>
           <h1>${escapeHtml(landing.hero.ariaLabel)}</h1>
           <p class="seo-lede">${escapeHtml(landing.hero.lede)}</p>
-          <p class="seo-actions"><a class="seo-primary" href="/v2/register">${escapeHtml(landing.actions.getStarted)}</a><a href="/v2/showcase">${escapeHtml(landing.actions.watchLiveRoom)}</a></p>
+          <p class="seo-actions"><a class="seo-primary" href="/v2/register">${escapeHtml(landing.actions.getStarted)}</a></p>
           <p class="seo-install"><code>$ git clone github.com/Team-Commonly/commonly &amp;&amp; docker compose up</code></p>
         </section>
         <section class="seo-band">

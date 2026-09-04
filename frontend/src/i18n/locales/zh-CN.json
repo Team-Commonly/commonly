@@ -364,7 +364,6 @@
     },
     "agentHint": "连接你已经在运行的智能体 —— Claude Code、Codex、Cursor —— 它就会加入这个 Pod。大约需要两分钟。",
     "connectOwnAgent": "连接你自己的智能体 →",
-    "browseAgents": "或浏览目录",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
       "generateFailed": "邀请链接生成失败。",
@@ -503,16 +502,13 @@
       "features": "功能",
       "useCases": "使用场景",
       "pricing": "定价",
-      "compare": "对比",
       "github": "GitHub",
       "signIn": "登录"
     },
     "actions": {
       "openApp": "打开应用",
       "getStarted": "开始使用",
-      "watchLiveRoom": "观看实时协作",
       "readSource": "查看源代码",
-      "compare": "产品对比",
       "selfHost": "自托管",
       "talkToUs": "联系我们",
       "starGithub": "去 GitHub 点 Star"
@@ -774,8 +770,6 @@
     },
     "footer": {
       "product": "产品",
-      "marketplace": "应用市场",
-      "hireAgent": "启用智能体",
       "multiAgentCollaborationGuide": "多智能体协作指南",
       "feedback": "反馈",
       "openSource": "开源",
@@ -1120,94 +1114,6 @@
       "failed": "决定未能保存，请重试。"
     }
   },
-  "marketplace": {
-    "title": "应用市场",
-    "subtitle": "浏览并安装智能体、应用和集成。",
-    "subtitleLocked": "像装软件包一样安装智能体和应用。",
-    "searchPlaceholder": "搜索智能体、应用、集成…",
-    "categories": {
-      "all": "全部分类",
-      "productivity": "效率",
-      "development": "开发",
-      "analytics": "分析",
-      "support": "支持",
-      "communication": "沟通",
-      "other": "其他"
-    },
-    "kinds": {
-      "all": "全部类型",
-      "agent": "智能体",
-      "app": "应用",
-      "skill": "技能",
-      "bundle": "捆绑包"
-    },
-    "filters": {
-      "kindLabel": "类型",
-      "categoryLabel": "分类",
-      "installToPodLabel": "安装到 Pod"
-    },
-    "tabs": {
-      "discover": "发现",
-      "installed": "已安装",
-      "installedWithCount": "已安装 ({{count}})"
-    },
-    "sections": {
-      "results": "结果",
-      "allListings": "全部列表",
-      "officialTitle": "官方集成",
-      "officialSub": "由 Commonly 精选 — 从 Pod 中连接。",
-      "mcpTitle": "MCP 应用（预览）",
-      "mcpSub": "在兼容 MCP 的宿主中呈现的交互式界面。"
-    },
-    "card": {
-      "verified": "已验证",
-      "verifiedTooltip": "由 Commonly 验证",
-      "noDescription": "暂无描述。",
-      "installsCount": "{{count}} 次安装"
-    },
-    "actions": {
-      "install": "安装",
-      "installing": "安装中…",
-      "remove": "移除",
-      "removing": "移除中…"
-    },
-    "official": {
-      "mcpApp": "MCP 应用",
-      "integration": "集成",
-      "mcpHostRequired": "需要 MCP 宿主",
-      "connectInPod": "在 Pod 中连接",
-      "docs": "文档"
-    },
-    "empty": {
-      "noListingsTitle": "暂无列表",
-      "noListingsText": "没有符合筛选条件的结果。试试更宽泛的搜索，或发布第一个。",
-      "pickPodText": "选择一个 Pod 查看已安装的内容。",
-      "nothingInstalledTitle": "这里还没有安装任何内容",
-      "nothingInstalledText": "浏览「发现」并安装你的第一个。"
-    },
-    "status": {
-      "pickPodToInstall": "先在上方选择一个 Pod 再安装。",
-      "installed": "已将 {{name}} 安装到 {{pod}}。",
-      "podFallback": "Pod",
-      "removed": "已移除 {{name}}。",
-      "openPodToConnect": "打开一个 Pod 来连接 {{name}}。"
-    },
-    "errors": {
-      "loadFailed": "加载应用市场失败。",
-      "installFailed": "无法安装 — 请重试。",
-      "removeFailed": "无法移除 — 请重试。"
-    },
-    "gate": {
-      "cloudAgentsNotEntitled": "托管智能体需要升级或管理员权限 — 请改为连接你自己的智能体。",
-      "connectYourOwnAgent": "连接你自己的智能体"
-    },
-    "comingSoon": {
-      "badge": "即将推出",
-      "title": "可安装智能体的应用市场",
-      "text": "我们正在精选可一键安装的智能体。在此之前，你已经可以自带智能体 —— 连接 Claude Code、Cursor 或 Codex，它就会成为你 Pod 的正式成员。",
-      "cta": "自带智能体"
-    }
-  },
   "compare": {
     "kicker": "对比",
     "title": "Commonly 与其他选择",
@@ -1274,50 +1180,6 @@
       "product": "产品",
       "openSource": "开源",
       "license": "许可证（Apache-2.0）"
-    }
-  },
-  "showcase": {
-    "nav": {
-      "brandHome": "Commonly 首页",
-      "primary": "主导航",
-      "whatIs": "什么是 Commonly？",
-      "signIn": "登录",
-      "signUpToJoin": "注册加入"
-    },
-    "actions": {
-      "startYourOwnRoom": "创建你自己的 Pod"
-    },
-    "banner": {
-      "regionLabel": "注册加入 Commonly",
-      "text": "实时一览 Commonly Pod 内部 — 注册创建你自己的。"
-    },
-    "unavailable": {
-      "errorTitle": "无法加载此 Pod",
-      "privateTitle": "此 Pod 非公开",
-      "errorText": "加载此对话时出错。请稍后重试。",
-      "privateText": "它可能已被设为私密或删除。了解 Commonly 是什么，或创建你自己的 Pod。"
-    },
-    "room": {
-      "defaultName": "Commonly Pod",
-      "memberCount_one": "{{count}} 名成员",
-      "memberCount_other": "{{count}} 名成员",
-      "agentCount_one": "{{count}} 个智能体",
-      "agentCount_other": "{{count}} 个智能体",
-      "readOnlyView": "只读视图",
-      "agentsLabel": "此 Pod 中的智能体"
-    },
-    "messages": {
-      "olderHidden": "在此公开视图中，更早的消息已隐藏。",
-      "emptyTitle": "暂无消息",
-      "emptyText": "此 Pod 目前很安静。请稍后再来看看。",
-      "loadOlder": "加载更早的消息",
-      "loadingOlder": "加载中…",
-      "copyLink": "复制此消息的链接",
-      "linkCopied": "已复制"
-    },
-    "footer": {
-      "title": "这是一个真实的 Commonly Pod。",
-      "text": "把你的团队和 agent 带进同一个群——每个 agent 都有自己的记忆。几分钟就能创建你自己的 Pod——开源且免费。"
     }
   },
   "agentByo": {
@@ -1420,12 +1282,6 @@
       "live": "监听中",
       "noteHosted": "这就是它在 Pod 中的样子。头像跟随名字生成。",
       "noteByo": "你的运行时使用令牌连接后即会出现在 Pod 中。"
-    },
-    "persona": {
-      "hiring": "正在雇佣",
-      "change": "更换",
-      "none": "还没有选择同事——这是空白智能体路径。",
-      "browse": "浏览同事"
     }
   },
   "agentProfile": {
@@ -1643,33 +1499,6 @@
       "joinDiscord": "加入我们的 Discord"
     }
   },
-  "marketplaceDetail": {
-    "loading": "加载中…",
-    "backToMarketplace": "← 返回应用市场",
-    "install": "安装",
-    "untitled": "未命名",
-    "categoryOther": "其他",
-    "kindApp": "应用",
-    "unknownPublisher": "未知",
-    "unrated": "暂无评分",
-    "componentFallback": "组件",
-    "byPublisher": "作者 {{publisher}}",
-    "installsCount": "{{count}} 次安装",
-    "version": "v{{version}}",
-    "verifiedBadge": "✓ 已验证",
-    "verifiedTitle": "由 Commonly 验证",
-    "sections": {
-      "components": "组件",
-      "requiredScopes": "所需权限范围",
-      "about": "关于"
-    },
-    "errors": {
-      "noInstallable": "未指定可安装项",
-      "manifestNotFound": "未找到清单",
-      "loadFailed": "加载应用市场条目失败",
-      "notFound": "未找到"
-    }
-  },
   "yourTeam": {
     "title": "你的团队",
     "loading": "加载中…",
@@ -1684,7 +1513,6 @@
       "kicker": "{{agents}} · 本周活跃 {{active}} 个"
     },
     "actions": {
-      "hire": "雇佣智能体",
       "addComputer": "添加电脑",
       "cancel": "取消"
     },
@@ -1698,8 +1526,7 @@
     },
     "empty": {
       "title": "组建你的 AI 团队",
-      "text": "你雇的 agent 会加入你的项目，各自保留自己的记忆，把成果交付给你。没有托管 agent？连接你自己的——Claude Code、Cursor 或 Codex——大约两分钟就能搞定。",
-      "hireFirst": "+ 雇佣第一个智能体"
+      "text": "你雇的 agent 会加入你的项目，各自保留自己的记忆，把成果交付给你。没有托管 agent？连接你自己的——Claude Code、Cursor 或 Codex——大约两分钟就能搞定。"
     },
     "tabs": {
       "ariaLabel": "按角色筛选",

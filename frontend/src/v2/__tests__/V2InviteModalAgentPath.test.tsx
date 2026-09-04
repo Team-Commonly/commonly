@@ -8,15 +8,7 @@ import zhCN from '../../i18n/locales/zh-CN.json';
 /**
  * The in-pod "add an agent" path must lead to the flow that works.
  *
- * It used to offer exactly one button, into `/v2/agents/browse` — the v1
- * AgentsHub, whose catalog still serves 21 internal and smoke-test rows
- * (`smoke-claude`, `demo-target`, `pod-architect`, `cl-critic`, …) beside real
- * entries. On 2026-08-14 a real user took that door, installed the
- * `claude-code` template, never started a local session, asked it the same
- * question three times and got silence. They had a working Scout in the next
- * room the entire time.
- *
- * So: connect-your-own leads, the catalog stays reachable underneath.
+ * Connecting an agent the user already runs is the supported path.
  */
 
 const mockNavigate = jest.fn();
@@ -60,22 +52,12 @@ describe('the in-pod add-agent path', () => {
     expect(mockNavigate).toHaveBeenCalledWith(`/v2/agents/byo?pod=${POD}`);
   });
 
-  test('the v1 catalog is demoted, not the only door', () => {
-    open();
-
-    const browse = screen.queryByText(en.inviteModal.browseAgents);
-    expect(browse).toBeTruthy();
-    fireEvent.click(browse as HTMLElement);
-
-    expect(mockNavigate).toHaveBeenCalledWith(`/v2/agents/browse?podId=${POD}`);
-  });
 });
 
 describe('both locales carry the new primary action', () => {
   test.each([['en', en as any], ['zh-CN', zhCN as any]])('%s', (_l, bundle) => {
     // Two of the users this change is for wrote Chinese.
     expect(bundle.inviteModal.connectOwnAgent).toBeTruthy();
-    expect(bundle.inviteModal.browseAgents).toBeTruthy();
     // The hint must describe connecting your own agent, not picking from a
     // catalog — the sentence is what sets the expectation before the click.
     expect(bundle.inviteModal.agentHint).not.toMatch(/catalog|目录/);
