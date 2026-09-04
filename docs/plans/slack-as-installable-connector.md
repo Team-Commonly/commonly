@@ -68,7 +68,12 @@ round trip. So the bearer secret Telegram hands to the user is, for Slack, the `
 
    - **Session nonce (SameSite=Lax cookie).** `authorize-url` is a `POST` made with credentials;
      its response sets `slack_oauth_nonce` (random, HttpOnly, Secure, SameSite=Lax, Max-Age 300)
-     on the API origin and stores `sha256(nonce)` on the row beside the code. Slack's redirect is a
+     on the API origin and stores the nonce itself on the row beside the code — no digest. The
+     callback compares cookie and row with `crypto.timingSafeEqual` (equal length checked first).
+     A hashed cookie is what CodeQL's `js/insufficient-password-hash` reads as a password (alert
+     #1779, four digest variants all fired), and hashing bought nothing here: a reader of the row
+     already holds `state` in the same document, so the nonce's secrecy against that reader was
+     never load-bearing — Confirm is the wall that holds (Vera, 63403). Slack's redirect is a
      top-level GET, so the cookie arrives at the callback; a `state` without its nonce is refused
      before any exchange. The one CORS change is credentials on that route for the app origin.
    - **Confirm in Commonly.** `GET /api/webhooks/slack/oauth/callback?code&state` is
@@ -199,8 +204,9 @@ already `active`. The rules that keep this honest:
 
 - The token is written only after a **single-use `state` redemption with its session nonce**:
   the callback's row CAS is `{ type: 'slack', isActive: true, 'config.connectCode': state,
-  'config.chatId': { $exists: false } }` plus the nonce hash, and the exchange is called only
-  after that row is found. No secret is stored for a state that has expired, been reused, lacks
+  'config.chatId': { $exists: false } }` plus the nonce (read once, then fenced in the CAS on the
+  exact stored value, so a nonce re-minted between the read and the claim fails the claim), and
+  the exchange is called only after that row is found. No secret is stored for a state that has expired, been reused, lacks
   its nonce, or names a row already bound.
 - `ConnectorSecret` has a **unique index on `integrationId`** and the callback upserts by it, so
   the secret write is idempotent per row; the callback's second write sets `pendingBind` (with the
