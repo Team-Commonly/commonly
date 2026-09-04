@@ -186,11 +186,27 @@ already `active`. The rules that keep this honest:
   revoked by Confirm once it is older than 10 minutes, and swept by the scheduled reconciler
   (every 5 minutes; boot-only today) as the backstop.
 - **The window ordering cannot close** (Vera, 2026-09-04) is between Slack's `oauth.v2.access`
-  response and the `ConnectorSecret` upsert — one write wide. It is hygiene, not a hole: the token
-  never left a process that no longer exists, and Slack returns the **same** workspace bot token
-  to a re-install of the same app unless token rotation is enabled, which this design leaves off
-  (rotation would turn every crash here into a token we cannot revoke). So the retry — *New
-  code* → consent → exchange — hands back the token the crash dropped, and the upsert stores it.
+  response and the `ConnectorSecret` upsert — one write wide, and the upsert is the first `await`
+  after the exchange returns. What is true of a token dropped there, with the public docs as the
+  source: it never left a process that no longer exists, so nobody holds it; Slack's OAuth guide
+  says of a repeat flow that "any subsequent time(s) you send that same user through the OAuth
+  flow, any new scopes you request will be added to that initial set" and that "OAuth tokens do
+  not expire" ([Installing with OAuth](https://docs.slack.dev/authentication/installing-with-oauth),
+  *Appending scopes*, *Revoking tokens*). The docs do **not** state whether a repeat flow returns
+  the same `xoxb` or a new one — an earlier draft of this note asserted "the same token" and
+  could not cite it, so the recovery path must not lean on it. If a new token is issued, the
+  dropped one stays valid at Slack until the app is uninstalled from that workspace; there is no
+  API to enumerate or revoke a token we never stored. That residue is accepted for a one-write
+  window and logged when the retry binds (the bind handler logs "rebind after dropped exchange"
+  when a `ConnectorSecret` already exists for the row with no pending bind consuming it).
+- **Token rotation stays off, and that is irreversible in the other direction.** Slack's
+  [token-rotation guide](https://docs.slack.dev/authentication/using-token-rotation) says
+  "Token rotation may not be turned off once it's turned on"; with it on, `oauth.v2.access`
+  returns a 12-hour access token plus a refresh token, and "after you refresh your short-lived
+  credentials for the first time, we'll expire your original long-lived access token". Turning it
+  on would make every crash in the window above a live short-lived token we cannot refresh, and
+  would add a refresh loop to the bridge. Whoever enables it in the app settings for any other
+  reason breaks this recovery path and must bring the refresh design with them (§8).
 - **The bind is confirmed by the Commonly identity, not proved by the Slack one.** The callback
   proves *a* Slack identity; only the authenticated owner (the same derivation install and
   uninstall use) can accept it, and the card shows the workspace and user being accepted.
@@ -304,6 +320,6 @@ bridge, then page. One backend PR, one page PR, stacked.
 - Replacing the legacy per-row Slack ingest provider; it keeps working for its rows and is retired
   when ADR-025 D4 lands.
 - The Commander (D16) speaking through the Slack DM — same design as Telegram, lands with D16.
-- Slack token rotation — deliberately off in Phase 1 (see §2d); revisit only with a durable
-  exchange log that can revoke what a crash drops.
+- Slack token rotation — deliberately off in Phase 1 and irreversible once on (see §2d, cited);
+  enabling it needs a refresh loop in the bridge and a durable exchange log first.
 - iMessage — a desktop-runtime spike, separately.
