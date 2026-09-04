@@ -180,4 +180,19 @@ describe('discord management route auth', () => {
     expect(res.status).toBe(403);
     expect(DiscordIntegration.findOneAndDelete).not.toHaveBeenCalled();
   });
+
+  it('scopes legacy uninstall lookup to Discord integrations', async () => {
+    Integration.findOne.mockResolvedValue(null);
+
+    const res = await request(app)
+      .delete('/api/discord/uninstall/install-1')
+      .set('Authorization', 'Bearer user-token');
+
+    expect(res.status).toBe(404);
+    expect(Integration.findOne).toHaveBeenCalledWith({
+      installationId: 'install-1',
+      type: 'discord',
+    });
+    expect(Integration.findByIdAndDelete).not.toHaveBeenCalled();
+  });
 });

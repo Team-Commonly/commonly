@@ -90,12 +90,14 @@ What it does, in order — this is `installableInstallService.install()`:
 3. **Claim the parent atomically — the claim is the compare-and-set** (the #1315 shape; Kai's
    ask, 2026-09-02). One row per `(installableId, targetType, targetId)` across every
    non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
-   'activating', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
+   'activating', 'uninstalling', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
-   `status: 'error'`; or `status: { $in: ['installing', 'activating'] }` with `claimedAt <
-   now − INSTALL_LOCK_TTL_MS`
-   — and whose update sets `status: 'installing'`, **`claimId: randomUUID()` — a fresh
-   generation on every claim and every takeover**, `installedBy`, `installableVersion`,
+   `status: 'error'`; `status: { $in: ['installing', 'activating'] }` with `claimedAt <
+   now − INSTALL_LOCK_TTL_MS`; or stale `status: 'uninstalling'` with the same predicate.
+   — and whose update claims `installing` for a new/error parent, retains `activating` to resume
+   its split write, and retains `uninstalling` until its terminal teardown completes; every path
+   writes **`claimId: randomUUID()` — a fresh generation on every claim and every takeover**,
+   `installedBy`, `installableVersion`,
    `installSource: 'ui'`, `grantedScopes = installable.requires` (**descriptive only in Phase 1**
    — it records what the manifest declared at install time, mirroring ADR-001's "declared,
    permissive enforcement"; nothing reads it for authorization, and no route may start to
@@ -153,9 +155,11 @@ What it does, in order — this is `installableInstallService.install()`:
       applies), and **the idempotent-return path never treats it as success** — a retry or a
       takeover that finds `activating` skips the projectors and resumes at write 2.
    2. **Integration activation, fenced on its own state:** `findOneAndUpdate({ installationId:
-      String(parent._id), isActive: false }, { $set: { isActive: true, 'config.connectCode':
-      …, 'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
-      inside this write's construction. `null` here means the row is already active (a
+      String(parent._id), isActive: false, revokedAt: { $exists: false } }, { $set: {
+      isActive: true, installationClaimId: ours, 'config.connectCode': …,
+      'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
+      inside this write's construction. `installationClaimId` records the generation that
+      minted the code; it is not an eligibility predicate. `null` here means the row is already active (a
       resume after a crash between writes 2 and 3): read the existing code, mint nothing.
    3. **Parent CAS → `active`:** `findOneAndUpdate({ _id, status: 'activating', claimId:
       ours }, { $set: { status: 'active' } })`, fenced like every other owner write; `null` ⇒
@@ -218,11 +222,16 @@ independently of this spec. **Nothing here writes `installationId` until that te
 'user'`, `targetId: req.user.id` — and from nothing else: the route takes no installation id
 and no body field, so there is no way to name someone else's row. (Vera, 2026-09-02: install
 gated the pod by `isPodMember` while uninstall had no matching gate — a co-member could have
-torn down another member's connector.) The live row for that key (`installing` or `active`)
-goes → `uninstalled`; each projector's `unproject` runs (Integration `isActive: false`, connect
-code cleared, relayMap kept for audit); nothing is deleted; no row → 404. Uninstalling an
-`installing` row is allowed and is the human escape hatch for a stuck lock in addition to the
-lease. Re-install mints a new Integration row — Vera's
+torn down another member's connector.) Revocation is a recoverable split commit: the parent
+first becomes **`uninstalling`** under a fresh generation; projectors deactivate their rows and
+clear the code; only then does a generation-fenced CAS finalize it as `uninstalled`. The webhook
+projection writes a terminal `revokedAt` tombstone before finalization, so an old activation
+generation cannot revive a connector after revocation. A fresh concurrent delete gets 202
+`uninstalling`, never a false disconnected success; the reconciler deactivates a stale
+`uninstalling` projection before it completes the parent. Nothing is deleted; no row → 404.
+Uninstalling an `installing` row is allowed and is the human escape hatch for a stuck lock in
+addition to the lease. Install also takes over a stale `uninstalling` row, completes its terminal
+teardown, and then claims a new parent. Re-install mints a new Integration row — Vera's
 ruling on the design spec stands (the binding row is the unit; relayMap and gates are never
 reused).
 
@@ -273,18 +282,22 @@ and the promise moves up a layer with the call). The dispatcher then invokes eac
 handler with the same payload the bridge takes today (`{ podId, agentUsername, displayName,
 content, podMessageId }`) plus the selected `integration`, fire-and-forget, one `try/catch` per
 handler so one bridge cannot fail the post. The bridge's own `findLiveIntegration(podId)` stays
-in Phase 1 as defence in depth, not as the selector: an install must be filtered out **before**
-its handler runs, not inside it — a dispatcher that fans out to every tenant and relies on each
-handler to decline is a multi-tenant leak waiting for a handler that does not (Vera,
-2026-09-02). In Phase 2 the selector becomes D8's inversion — pod → members → each member's
-user-scoped install — and the bridge lookup is deleted; the handler signature does not change.
+in Phase 1 only as a fallback for legacy direct rows. For a dispatched handler, the bridge
+honours the selected `integration` and independently validates its provider, pod, active,
+live-relay, private-chat, and chat-id gates; it does not re-select with `findOne`. An install
+must be filtered out **before** its handler runs — a dispatcher that fans out to every tenant
+and relies on each handler to decline is a multi-tenant leak waiting for a handler that does not
+(Vera, 2026-09-02). In Phase 2 the selector becomes D8's inversion — pod → members → each
+member's user-scoped install — and the legacy fallback is deleted; the handler signature does
+not change.
 
 **Behaviour pins:** (a) for a pod with one live Telegram row, exactly one relay fires per post,
 with the same arguments as before; (b) **two tenants**: user A's install bound to pod P and
 user B's bound to pod Q — a post in P invokes A's handler once and B's zero times, measured at
 the dispatcher (a spy on the handler map), not at the bridge; (c) a pod with no install costs
-one selector query and zero invocations. Those are the tests that prove invariant 6 landed
-without moving the product or widening it.
+one selector query and zero invocations; (d) two users' active installs bound to the same pod
+are two subscriptions, so one post produces one send to each selected private chat. Those are
+the tests that prove invariant 6 landed without moving the product or widening it.
 
 Unknown `eventHandler` prefix (`agent:`, `webhook:`) → projector error in Phase 1. Those are
 the slash-command / external-webhook tracks; naming them here keeps the enum honest.
@@ -399,6 +412,11 @@ Unit (`backend/__tests__/unit/services/installable/`):
    calls `DELETE /api/installables/telegram/install`: A's row is untouched (B gets 404 with no
    install of their own, or uninstalls only their own). A body containing another
    installation's id changes nothing.
+4c. **Revocation never reports success ahead of its projection.** A projector failure or crash
+   after the parent enters `uninstalling` leaves the parent recoverable, not `uninstalled`; the
+   Integration becomes inactive with no code before a sweep or retry can finalize it. A stale
+   sweep deactivates first and then fences the `uninstalling → uninstalled` transition; the
+   terminal tombstone prevents an old activation generation from reviving the Integration.
 5. Non-member of the chosen pod → 403, nothing written.
 6. Reconciler: a deleted Integration under an active installation marks the component `stale`,
    creates nothing. An `installing` row with `claimedAt` older than the TTL is swept to
@@ -412,8 +430,7 @@ Unit (`backend/__tests__/unit/services/installable/`):
    `installing` row (within the TTL) is not taken over — the second caller gets 202.
 6c. **Stale-owner completion is a refused no-op, and it is visible.** A claims (generation
    `a`) and stalls; B takes over (generation `b`), activates, mints `C_B`. A revives and runs
-   its activation: write 1 returns `null`, `InstallLockLostError` is thrown, **no mint call
-   happens** (spy on `mintConnectCode`: exactly one call in the whole test, B's), **no
+   its activation is refused with `InstallLockLostError`, **no second code is stored**, **no
    `unproject` call happens and A writes nothing** (spies on the projector registry and on the
    `Integration` model: B's writes only), the Integration row still carries `C_B` and stays
    `isActive: true`, and A's caller receives 409 `install_lock_lost` — asserted on the status
@@ -434,9 +451,9 @@ Service (`__tests__/service/`):
    row triggers exactly one `relayAgentMessageToTelegram` call via the dispatcher, with the same
    five fields the hardcoded hook passed. (b) **Multi-tenant:** two active installs — user A's
    bound to pod P, user B's bound to pod Q — and a post in P: A's handler is invoked once, B's
-   zero times, asserted on a spy at the handler map (the bridge's own lookup is stubbed out so
-   it cannot be what filtered B). (c) A pod with no install: one selector query, zero
-   invocations. (d) A throwing handler does not fail the post.
+   zero times, asserted on a spy at the handler map. (c) A pod with no install: one selector
+   query, zero invocations. (d) Two active user installs on the same pod produce exactly two
+   real Telegram sends, one to each selected chat. (e) A throwing handler does not fail the post.
 8. `telegramBridgeService.attribution` and `telegram.webhook.*` suites pass unchanged — the
    route is not edited.
 

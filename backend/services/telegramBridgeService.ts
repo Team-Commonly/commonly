@@ -35,6 +35,8 @@ export interface RelayMapEntry {
 interface TelegramIntegrationDoc {
   _id: unknown;
   podId: unknown;
+  type?: string;
+  isActive?: boolean;
   config?: {
     chatId?: string;
     chatType?: string;
@@ -123,6 +125,18 @@ const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationD
   }
 };
 
+const isRelayableIntegration = (
+  integration: TelegramIntegrationDoc,
+  podId: string,
+): boolean => (
+  String(integration.podId) === String(podId)
+  && (integration.type === undefined || integration.type === 'telegram')
+  && integration.isActive !== false
+  && integration.config?.liveRelay === true
+  && integration.config?.chatType === 'private'
+  && Boolean(integration.config?.chatId)
+);
+
 // Outbound: agent message → Telegram, attributed, with a deep link back into
 // the pod. Fire-and-forget from AgentMessageService.postMessage — a bridge
 // failure must never fail the post itself.
@@ -132,13 +146,16 @@ export const relayAgentMessageToTelegram = async (opts: {
   displayName: string;
   content: string;
   podMessageId?: string | null;
+  integration?: TelegramIntegrationDoc;
 }): Promise<void> => {
   const {
     podId, agentUsername, displayName, content, podMessageId,
   } = opts;
   try {
-    const integration = await findLiveIntegration(podId);
-    if (!integration) return;
+    // The dispatcher selects each pod-scoped subscription. Its row is the
+    // authority for this send; the fallback preserves legacy direct rows.
+    const integration = opts.integration ?? await findLiveIntegration(podId);
+    if (!integration || !isRelayableIntegration(integration, podId)) return;
     // /mute pauses ALL outbound relay to the chat, escalations included —
     // mute means mute; /status shows it, and it self-expires.
     const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
@@ -234,7 +251,8 @@ export const relayTelegramMessageToPod = async (opts: {
   const chatType = integration.config?.chatType;
   if (chatType !== 'private') {
     console.warn(
-      `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} cannot guarantee the sender is them`,
+      `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} `
+        + 'cannot guarantee the sender is them',
     );
     return { relayed: false };
   }

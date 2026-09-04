@@ -1778,15 +1778,15 @@ class AgentMessageService {
       console.error('Failed to emit agent socket message:', socketError);
     }
 
-    // Telegram live bridge (fire-and-forget): pods with a live-relay telegram
-    // integration surface escalations and lead reports into the linked chat.
-    // The bridge no-ops in O(1 query) for every pod without one, and a bridge
-    // failure never fails the post.
+    // Installable event dispatch (fire-and-forget). Selection is pod-scoped in
+    // the dispatcher before a connector handler runs, so one user's relay can
+    // never observe another user's event. A handler failure never fails the
+    // message post.
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const bridge = require('./telegramBridgeService');
+      const eventHandlers = require('./installable/eventHandlers');
       const bridgeUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
-      void bridge.relayAgentMessageToTelegram({
+      void eventHandlers.dispatch('chat.message', {
         podId: String(podId),
         agentUsername: bridgeUsername,
         displayName: senderDisplayName || bridgeUsername,
