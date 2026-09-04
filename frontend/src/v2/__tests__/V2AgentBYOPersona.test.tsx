@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged on this
-// page with the persona silently dropped. Pinned: the catalog's ?persona=
-// param renders a context card, names the agent after the persona, and the
+// page with the persona silently dropped. Pinned: a ?persona= param renders
+// a context card, names the agent after the persona, and the
 // install request records the choice; the bare entry says nobody was picked.
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -80,12 +80,12 @@ describe('BYO persona carry-through', () => {
     expect(screen.queryByTestId('byo-persona-none')).toBeNull();
   });
 
-  test('the bare entry (Add a computer) says no colleague was picked', async () => {
+  test('the bare entry says no colleague was selected without linking to the retired catalog', async () => {
     mockGet();
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-persona-none')).toBeInTheDocument());
-    expect(screen.getByText('No colleague picked yet — this is the blank-agent path.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Browse colleagues' })).toBeInTheDocument();
+    expect(screen.getByText('No colleague selected — this is the blank-agent path.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /browse colleagues/i })).toBeNull();
     expect(screen.getByDisplayValue('sam-agent')).toBeInTheDocument();
   });
 

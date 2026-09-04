@@ -14,7 +14,6 @@ import V2ResetPassword from './components/V2ResetPassword';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
-import V2Showcase from './showcase/V2Showcase';
 import V2BillingPanel from './components/V2BillingPanel';
 import V2DevicesPanel from './components/V2DevicesPanel';
 import V2AgentProfile from './agents/V2AgentProfile';
@@ -23,11 +22,7 @@ import Thread from '../components/Thread';
 import UserProfile from '../components/UserProfile';
 import Dashboard from '../components/Dashboard';
 import DailyDigest from '../components/DailyDigest';
-import V2MarketplacePage from './marketplace/V2MarketplacePage';
-import V2MarketplaceDetailPage from './marketplace/V2MarketplaceDetailPage';
-import './marketplace/V2MarketplaceDetailPage.css';
 import AgentsHub from '../components/agents/AgentsHub';
-import V2PersonaCatalog from './agents/V2PersonaCatalog';
 import V2AgentBYO from './components/V2AgentBYO';
 import V2ConnectPage from './components/V2ConnectPage';
 import V2ConnectorsPage from './components/V2ConnectorsPage';
@@ -198,14 +193,9 @@ const V2App: React.FC = () => {
         <Routes>
           <Route index element={<V2Home />} />
           <Route path="landing" element={<Navigate to="/" replace />} />
-          {/* Public read-only showcase — a logged-out visitor's window onto a
-              real room. MUST sit OUTSIDE V2RequireAuth (the `*` branch below)
-              so anonymous visitors reach it without bouncing to /v2/login. */}
-          <Route path="showcase" element={<V2Showcase />} />
-          <Route path="showcase/:podId" element={<V2Showcase />} />
           {/* Public read-only agent profile — the "meet the agent" identity card.
               Singular /v2/agent/... so it never collides with the authed plural
-              /v2/agents (Your Team). Outside V2RequireAuth, like the showcase. */}
+              /v2/agents (Your Team). */}
           <Route path="agent/:agentName" element={<V2AgentProfile />} />
           <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
           <Route path="use-cases/:useCaseId" element={<V2UseCaseRedirect />} />
@@ -290,13 +280,6 @@ const V2App: React.FC = () => {
                     false,
                   )}
                 />
-                {/* Phase 1 (ADR-022 D2): the browse route sells personas.
-                    The old hub survives at agents/manage for installed-agent
-                    ops until the where-step absorbs the rest of it. */}
-                <Route
-                  path="agents/browse"
-                  element={feature('Hire a colleague', 'Pick who joins your team — where they run comes second.', <V2PersonaCatalog />, false, false)}
-                />
                 <Route
                   path="agents/manage"
                   element={feature('Manage agents', 'Installed agents and registry operations.', <AgentsHub />)}
@@ -318,15 +301,6 @@ const V2App: React.FC = () => {
                   path="connectors"
                   element={feature('Connectors', 'Bridge pods to the channels your team already uses.', <V2ConnectorsPage />, false)}
                 />
-                <Route
-                  path="marketplace"
-                  element={feature('Marketplace', 'Browse and install agents, apps, and integrations.', <V2MarketplacePage />, false, false)}
-                />
-                <Route
-                  path="marketplace/:installableId"
-                  element={feature('Marketplace', 'Manifest detail.', <V2MarketplaceDetailPage />, false)}
-                />
-                <Route path="apps" element={<Navigate to="/v2/marketplace" replace />} />
                 <Route
                   path="skills"
                   element={feature('Skills', 'Browse, rate, import, and attach skills to pods and agents.', <SkillsCatalogPage />)}

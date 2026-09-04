@@ -1645,17 +1645,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-.v2-chat__btn--accent {
-  background: var(--v2-accent);
-  color: #ffffff;
-  border-color: var(--v2-accent);
-}
-
-.v2-chat__btn--accent:hover {
-  background: var(--v2-accent-strong);
-  color: #ffffff;
-}
-
 .v2-chat__icon-btn {
   width: 34px;
   height: 34px;
@@ -1749,17 +1738,6 @@ body.modern-ui.v2-canvas {
   gap: 7px;
   font-size: 12px;
   font-weight: 700;
-}
-
-.v2-chat__state-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-accent);
-}
-
-.v2-chat__state-strip--execute .v2-chat__state-dot {
-  background: var(--v2-text-tertiary);
 }
 
 .v2-chat__state-copy {
@@ -2104,12 +2082,6 @@ body.modern-ui.v2-canvas {
   border-radius: 50%;
   background: var(--v2-success);
   flex-shrink: 0;
-}
-
-.v2-chat__system-link {
-  margin-left: auto;
-  color: var(--v2-accent-text);
-  font-weight: 600;
 }
 
 /* Agent typing indicator — sits between message list and composer.
@@ -4820,26 +4792,6 @@ body.modern-ui.v2-canvas {
   filter: brightness(1.05);
 }
 
-/* Secondary, text-weight action under a primary CTA. Carries the
-   `.v2-root button.` prefix deliberately: the global button reset is 0-2-1 and
-   beats a bare class, which has already shipped once as a styled action
-   rendering like plain prose (#870, guarded in v2-layout-invariants). */
-.v2-root button.v2-modal__link-btn {
-  width: 100%;
-  margin-top: 6px;
-  padding: 4px 0;
-  border: none;
-  background: none;
-  color: var(--v2-text-secondary);
-  font-size: 12.5px;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.v2-root button.v2-modal__link-btn:hover {
-  color: var(--v2-text-primary);
-}
-
 .v2-root button.v2-invite-card__cta:disabled,
 .v2-invite-card__cta:disabled {
   opacity: 0.6;
@@ -6697,17 +6649,6 @@ body.modern-ui.v2-canvas {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.v2-root button.v2-byo__persona-change {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font-size: 13px;
-  color: var(--v2-accent);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.v2-root button.v2-byo__persona-change:hover { text-decoration: underline; }
-
 /* ADR-023 W2 — "Run it here" vs BYO choice cards. Borders, not shadows;
    the accent border + focus ring marks the pressed card. */
 .v2-byo__modes {
