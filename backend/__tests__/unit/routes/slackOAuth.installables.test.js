@@ -1,6 +1,9 @@
 const request = require('supertest');
 const express = require('express');
 const crypto = require('crypto');
+const { promisify } = require('util');
+
+const scrypt = promisify(crypto.scrypt);
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.user = { id: '64b64c48c4f37a6b2f34c111' };
@@ -81,6 +84,7 @@ describe('Slack installable OAuth routes', () => {
 
   test('mints a browser-bound nonce and sends only the lifecycle code as OAuth state', async () => {
     Integration.findOneAndUpdate.mockResolvedValue({ ...integration });
+    const nonceDigest = (await scrypt('nonce-value', process.env.JWT_SECRET, 32)).toString('hex');
 
     const response = await request(app).post('/api/installables/slack/authorize-url');
 
@@ -91,7 +95,7 @@ describe('Slack installable OAuth routes', () => {
       expect.objectContaining({ _id: 'integration-1', 'config.connectCode': integration.config.connectCode }),
       expect.objectContaining({
         $set: expect.objectContaining({
-          'config.oauthStateNonceHash': crypto.createHmac('sha256', process.env.JWT_SECRET).update('nonce-value').digest('hex'),
+          'config.oauthStateNonceHash': nonceDigest,
         }),
       }),
       expect.anything(),

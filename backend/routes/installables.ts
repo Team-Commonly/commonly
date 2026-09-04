@@ -66,12 +66,19 @@ const SLACK_NONCE_TTL_MS = 5 * 60_000;
 const SLACK_BIND_TTL_MS = 10 * 60_000;
 
 // This is a high-entropy, short-lived browser nonce rather than a password.
-// A keyed digest prevents a database read from becoming an offline oracle for
-// the cookie value, while keeping verification deterministic across replicas.
-const slackNonceDigest = (nonce: string): string => {
+// Scrypt keeps a database read from becoming a practical offline oracle while
+// keeping verification deterministic across replicas. It is asynchronous so
+// unauthenticated callback traffic cannot block the event loop while deriving.
+const slackNonceDigest = async (nonce: string): Promise<string> => {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET is required for Slack OAuth state verification');
-  return crypto.createHmac('sha256', secret).update(nonce).digest('hex');
+  const digest = await new Promise<Buffer>((resolve, reject) => {
+    crypto.scrypt(nonce, secret, 32, (error: Error | null, derivedKey: Buffer) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+  return digest.toString('hex');
 };
 
 const cookieValue = (req: AuthReq, name: string): string | undefined => {
@@ -217,7 +224,7 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
       },
       {
         $set: {
-          'config.oauthStateNonceHash': slackNonceDigest(nonce),
+          'config.oauthStateNonceHash': await slackNonceDigest(nonce),
           'config.oauthStateNonceExpiresAt': new Date(now.getTime() + SLACK_NONCE_TTL_MS),
         },
         $unset: { 'config.oauthStateClaimId': 1 },
@@ -275,7 +282,7 @@ const slackOAuthCallback = async (req: AuthReq, res: Res) => {
         isActive: true,
         'config.connectCode': state,
         'config.connectCodeExpiresAt': { $gt: now },
-        'config.oauthStateNonceHash': slackNonceDigest(nonce),
+        'config.oauthStateNonceHash': await slackNonceDigest(nonce),
         'config.oauthStateNonceExpiresAt': { $gt: now },
         'config.oauthStateClaimId': { $exists: false },
         'config.chatId': { $exists: false },
