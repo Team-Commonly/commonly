@@ -52,12 +52,14 @@ const V2AccountSection: React.FC = () => {
   const accountUsername = String(currentUser?.username || '');
   const accountEmail = String(currentUser?.email || '');
   const [name, setName] = useState(accountName);
+  const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setName(accountName);
+    setEmail(accountEmail);
   }, [accountEmail, accountName, accountUsername]);
 
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -109,9 +111,9 @@ const V2AccountSection: React.FC = () => {
           <input value={accountUsername} readOnly aria-readonly="true" />
         </label>
         <div className="v2-settings__account-email">
-          <span>Email</span>
+          <label htmlFor="v2-settings-email">Email</label>
           <div className="v2-settings__email-control">
-            <span>{accountEmail}</span>
+            <input id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
             <button className="v2-settings__secondary" type="button">Change</button>
           </div>
         </div>

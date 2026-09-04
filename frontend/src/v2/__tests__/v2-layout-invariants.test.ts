@@ -481,12 +481,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('await updateProfile({ displayName: nextName });');
     expect(settingsPage).toContain('value={accountUsername} readOnly aria-readonly="true"');
     expect(settingsPage).toContain('className="v2-settings__email-control"');
+    expect(settingsPage).toContain('id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)}');
     expect(settingsPage).toContain('type="button">Change</button>');
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
-    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
     expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');
     const accountForm = ruleBody(v2, '.v2-settings form.v2-settings__account');
     expect(accountForm).toContain('padding: 0');
     expect(accountForm).toContain('background: transparent');

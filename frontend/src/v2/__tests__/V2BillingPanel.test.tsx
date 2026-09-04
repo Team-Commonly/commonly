@@ -15,7 +15,7 @@ describe('V2BillingPanel', () => {
     (useAuth as jest.Mock).mockReturnValue({ currentUser: { entitlements: { pro: true } } });
     render(<V2BillingPanel />);
 
-    expect(screen.getByText('Pro')).toBeInTheDocument();
+    expect(screen.getByText('Pro · $12 a month')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Manage billing' })).toBeInTheDocument();
     expect(screen.queryByText(/free in beta|included during beta/i)).not.toBeInTheDocument();
   });
@@ -34,7 +34,7 @@ describe('V2BillingPanel', () => {
     render(<V2BillingPanel showHeading={false} />);
 
     expect(screen.queryByRole('heading', { name: 'Plan' })).not.toBeInTheDocument();
-    expect(screen.getByText('Pro')).toBeInTheDocument();
+    expect(screen.getByText('Pro · $12 a month')).toBeInTheDocument();
   });
 
   test('sends a Free account to checkout and a Pro account to billing management', async () => {

@@ -7630,7 +7630,7 @@ body.modern-ui.v2-canvas {
 
 .v2-settings__account-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -7644,6 +7644,10 @@ body.modern-ui.v2-canvas {
   font-family: var(--v2-font-mono);
   font-size: var(--v2-fs-meta);
   line-height: var(--v2-lh-meta);
+}
+
+.v2-settings__account-fields > .v2-settings__account-email {
+  grid-column: 1 / -1;
 }
 
 .v2-settings__account-fields input {
@@ -7672,21 +7676,17 @@ body.modern-ui.v2-canvas {
 .v2-settings__email-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  min-height: 36px;
-  padding-left: 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: #ffffff;
-  color: var(--v2-text-secondary);
-  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-settings__email-control input {
+  min-width: 0;
 }
 
 .v2-settings__email-control .v2-settings__secondary {
   align-self: stretch;
-  border-color: transparent;
-  border-radius: 0 var(--v2-radius-sm) var(--v2-radius-sm) 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .v2-settings__section .v2-billing,

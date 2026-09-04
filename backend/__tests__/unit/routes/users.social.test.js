@@ -11,8 +11,9 @@ jest.mock('../../../controllers/userController', () => ({
 }));
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.user = { id: 'u1' };
-  req.userId = 'u1';
+  const userId = req.get('authorization') || 'u1';
+  req.user = { id: userId };
+  req.userId = userId;
   next();
 });
 
@@ -48,15 +49,25 @@ describe('users social routes', () => {
     expect(controllers.updateProfile).toHaveBeenCalled();
   });
 
-  it('keys profile writes by authenticated credentials before auth runs', async () => {
+  it('lets each authenticated user use 30 profile writes and rejects the 31st', async () => {
     const accountA = 'Bearer account-a';
     const accountB = 'Bearer account-b';
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      await request(app).put('/api/users/profile').set('Authorization', accountA).send({}).expect(200);
+      // eslint-disable-next-line no-await-in-loop
+      await request(app).put('/api/users/profile').set('Authorization', accountA).send({})
+        .expect(200);
     }
 
-    await request(app).put('/api/users/profile').set('Authorization', accountB).send({}).expect(200);
-    await request(app).put('/api/users/profile').set('Authorization', accountA).send({}).expect(429);
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await request(app).put('/api/users/profile').set('Authorization', accountB).send({})
+        .expect(200);
+    }
+
+    const capped = await request(app).put('/api/users/profile').set('Authorization', accountA).send({});
+    expect(capped.status).toBe(429);
+    expect(capped.headers['ratelimit-policy']).toContain('30;w=900');
+    expect(capped.body).toEqual({ msg: 'rate limit exceeded: 30 profile writes per 15 minutes' });
   });
 });

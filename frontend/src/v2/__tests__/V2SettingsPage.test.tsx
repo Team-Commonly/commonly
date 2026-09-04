@@ -111,7 +111,7 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
   });
 
-  test('saves only the editable name from the Account section and offers an email change action', async () => {
+  test('saves only the editable name from the Account section and exposes the staged email-change control', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateProfile.mockResolvedValue({ ...auth.currentUser, displayName: 'Lily Shen' });
     renderSettings();
@@ -122,7 +122,8 @@ describe('V2SettingsPage', () => {
     await waitFor(() => expect(auth.updateProfile).toHaveBeenCalledTimes(1));
     expect(auth.updateProfile).toHaveBeenCalledWith({ displayName: 'Lily Shen' });
     expect(screen.getByLabelText('Username')).toHaveAttribute('readonly');
-    expect(screen.getByText('lily@example.com')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toHaveValue('lily@example.com');
+    expect(screen.getByLabelText('Email')).not.toHaveAttribute('readonly');
     fireEvent.click(screen.getByRole('button', { name: 'Change' }));
     expect(auth.updateProfile).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('status')).toHaveTextContent('Account saved.');
