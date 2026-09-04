@@ -130,6 +130,39 @@ Socket Mode path and are not read by this design.
   `config.messageBuffer.externalId` is not enough — dedupe is at the event, before relay). Telegram
   has no equivalent; this is new verification surface for Vera.
 
+### 2d. The #1527 invariants, checked one by one
+
+Vera's list (pod, 2026-09-04): identity-derived install and uninstall targets; one live parent per
+`(installableId, targetType, targetId)` across the partial index; every owner write fenced on the
+claim generation; mint-last, with the bearer secret minted inside the activation CAS; the routing
+row deciding the bound target; the dispatcher selecting before any handler runs. Slack keeps all
+six unchanged — `installableId: 'slack'` is a second key in the same index, so a user may hold one
+Telegram and one Slack install, never two of either.
+
+The one place Slack adds to that list rather than reusing it: **a second secret enters at the
+callback, outside the activation CAS.** The activation CAS mints the `state` code exactly as it
+mints Telegram's; the bot token is not minted by us but *received* from `oauth.v2.access`, and it
+is written by the callback the way `handleEnableCommand` writes `chatId` — after the parent is
+already `active`. The rules that keep this honest:
+
+- The token is written only after a **single-use `state` redemption**: the callback's row CAS is
+  `{ type: 'slack', isActive: true, 'config.connectCode': state, 'config.chatId': { $exists: false } }`,
+  and the exchange is called only after that row is found. No secret is stored for a state that
+  has expired, been reused, or names a row already bound.
+- `ConnectorSecret` has a **unique index on `integrationId`** and the callback upserts by it, so
+  the secret write is idempotent per row; the bind CAS then sets `botTokenRef`, `teamId`,
+  `slackUserId`, `chatId`, `chatType`, clears the code fields and flips `status: 'connected'` in
+  **one write**. A crash between the two leaves an orphan `ConnectorSecret` with no ref and a
+  still-pending row whose code has not been consumed — the user presses *New code* and the
+  next callback's upsert overwrites the orphan. The reconciler's uninstalled sweep also deletes
+  any `ConnectorSecret` whose Integration is inactive or absent, so nothing outlives its row.
+- Uninstall's unproject revokes the ref in the same step that deactivates the row (identity-derived,
+  as today), so a stale owner reviving after revocation finds no token to send with even if it
+  finds a row.
+
+Nothing else moves: the parent's generation fence, `boundPodId`, the sweep, and the dispatcher's
+selection are byte-for-byte #1527's.
+
 ## 3. Manifest
 
 ```jsonc
