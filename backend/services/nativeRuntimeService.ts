@@ -60,7 +60,12 @@ const MAX_WALL_CLOCK_MS = 60_000;
 // override (`installation.config.model`) for dev agents that legitimately
 // need paid Codex — but the platform-wide default never burns Codex quota
 // just because someone forgot to set the field.
-const DEFAULT_MODEL = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+// The default when an installation names no model. It used to be the free
+// OpenRouter tier; that key expired on 2026-09-03 and every hosted run with
+// no model fell into a 401 with no fallback group. Follow the chat model the
+// deployment already pays for, so "no model configured" means "the normal
+// model", never "the dead one".
+const DEFAULT_MODEL = process.env.LITELLM_CHAT_MODEL || 'deepseek-v4-flash';
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
 // Guardrail opt-in for the native cloud-agent inference path. Unlike dev agents

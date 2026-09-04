@@ -12,28 +12,29 @@ jest.mock('../../../models/AgentRegistry', () => ({
 
 const chain = (value) => ({ sort: () => ({ lean: async () => value }) });
 
-describe('dmService.resolveInstallRuntime', () => {
+describe('dmService.resolveInstallInheritance', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('copies the runtime block from the agent\'s active install (plain object config)', async () => {
-    mockFindOne.mockReturnValue(chain({ config: { runtime: { runtimeType: 'native' }, heartbeat: { enabled: true } } }));
-    const { resolveInstallRuntime } = require('../../../services/dmService');
-    await expect(resolveInstallRuntime('scout', 'u20f7e33728')).resolves.toEqual({ runtimeType: 'native' });
+  it('copies everything the native runtime reads from the agent\'s active install, minus the projection\'s own keys', async () => {
+    mockFindOne.mockReturnValue(chain({ config: { runtime: { runtimeType: 'native' }, model: 'deepseek-v4-flash', systemPrompt: 'You are Scout.', heartbeat: { enabled: true }, autoJoinSource: 'signup' } }));
+    const { resolveInstallInheritance } = require('../../../services/dmService');
+    await expect(resolveInstallInheritance('scout', 'u20f7e33728')).resolves.toEqual({ runtime: { runtimeType: 'native' }, model: 'deepseek-v4-flash', systemPrompt: 'You are Scout.' });
     expect(mockFindOne).toHaveBeenCalledWith({
       agentName: 'scout', instanceId: 'u20f7e33728', status: 'active', 'config.runtime.runtimeType': { $exists: true },
     });
   });
 
   it('reads a Mongoose Map config the way the router does', async () => {
-    const config = new Map([['runtime', { runtimeType: 'native', host: 'cloud' }]]);
+    const config = new Map([['runtime', { runtimeType: 'native', host: 'cloud' }], ['model', 'deepseek-v4-flash'], ['heartbeat', { enabled: false }]]);
     mockFindOne.mockReturnValue(chain({ config }));
-    const { resolveInstallRuntime } = require('../../../services/dmService');
+    const { resolveInstallInheritance, resolveInstallRuntime } = require('../../../services/dmService');
+    await expect(resolveInstallInheritance('scout', 'abc')).resolves.toEqual({ runtime: { runtimeType: 'native', host: 'cloud' }, model: 'deepseek-v4-flash' });
     await expect(resolveInstallRuntime('scout', 'abc')).resolves.toEqual({ runtimeType: 'native', host: 'cloud' });
   });
 
   it('returns null when the agent has no install with a runtime, keeping the external queue', async () => {
     mockFindOne.mockReturnValue(chain(null));
-    const { resolveInstallRuntime } = require('../../../services/dmService');
-    await expect(resolveInstallRuntime('byo-agent', 'default')).resolves.toBeNull();
+    const { resolveInstallInheritance } = require('../../../services/dmService');
+    await expect(resolveInstallInheritance('byo-agent', 'default')).resolves.toBeNull();
   });
 });
