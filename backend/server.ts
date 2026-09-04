@@ -200,7 +200,12 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/docs', docsRoutes);
 app.use('/api/summaries', summariesRoutes);
 app.use('/api/integrations', integrationRoutes);
-app.use('/api/installables', require('./routes/installables'));
+const installableRoutes = require('./routes/installables');
+app.use('/api/installables', installableRoutes);
+// Slack's redirect URI is deliberately a webhook URL so the Slack app's
+// public surface stays together. The handler itself remains in the
+// installables module because it acts on the owner-scoped installation.
+app.use('/api/webhooks/slack/oauth', installableRoutes.slackOAuthCallbackRouter);
 app.use('/api/apps', appPlatformRoutes);
 app.use('/api/webhooks/discord', discordWebhookRoutes);
 app.use('/api/webhooks/slack', slackWebhookRoutes);

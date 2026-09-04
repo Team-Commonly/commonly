@@ -77,6 +77,10 @@ export interface IIntegration extends Document {
     lastExternalTimestamp?: Date;
     connectCode?: string;
     connectCodeExpiresAt?: Date | null;
+    /** Slack OAuth callback nonce — hashed and short-lived, never exposed. */
+    oauthStateNonceHash?: string;
+    oauthStateNonceExpiresAt?: Date;
+    oauthStateClaimId?: string;
     permissions?: string[];
     webhookListenerEnabled?: boolean;
     lastSummaryAt?: Date;
@@ -183,6 +187,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       lastExternalTimestamp: Date,
       connectCode: String,
       connectCodeExpiresAt: Date,
+      oauthStateNonceHash: String,
+      oauthStateNonceExpiresAt: Date,
+      oauthStateClaimId: String,
       permissions: [String],
       webhookListenerEnabled: { type: Boolean, default: false },
       lastSummaryAt: Date,
@@ -273,7 +280,22 @@ IntegrationSchema.virtual('platformIntegration', {
   justOne: true,
 });
 
-IntegrationSchema.set('toJSON', { virtuals: true });
+// A ConnectorSecret reference is itself not a bearer credential, but returning
+// it still widens the set of clients that can reason about server-side secret
+// storage. Keep it server-only in every normal JSON response, including the
+// pending OAuth bind that needs to show its workspace/user details.
+IntegrationSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc: unknown, returned: { config?: Record<string, unknown> }) => {
+    if (!returned.config) return returned;
+    delete returned.config.botTokenRef;
+    const pending = returned.config.pendingBind;
+    if (pending && typeof pending === 'object') {
+      delete (pending as Record<string, unknown>).botTokenRef;
+    }
+    return returned;
+  },
+});
 IntegrationSchema.set('toObject', { virtuals: true });
 
 export default mongoose.model<IIntegration>('Integration', IntegrationSchema);
