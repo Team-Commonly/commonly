@@ -108,13 +108,11 @@ export interface IInstallableInstallation extends Document {
   // Lifecycle
   status: InstallationStatus;
   /**
-   * Opaque ownership generation for a transient install claim. Every owner
-   * write must include it in its filter; a stale worker is then a no-op
-   * instead of overwriting the winner's projected connector or bearer code.
+   * Opaque ownership generation for a transient install claim. Every parent
+   * owner write includes it in its filter; a stale worker is then a no-op
+   * instead of overwriting the winner's lifecycle state or bearer code.
    */
   claimId?: string;
-  /** Generation the current claimant replaced, used to fence its projection. */
-  previousClaimId?: string | null;
   claimedAt?: Date;
   errorMessage?: string;
   staleSince?: Date;
@@ -206,7 +204,6 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
       default: 'active',
     },
     claimId: { type: String },
-    previousClaimId: { type: String, default: null },
     claimedAt: { type: Date },
     errorMessage: { type: String },
     staleSince: { type: Date },

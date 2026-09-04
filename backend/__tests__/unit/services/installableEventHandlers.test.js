@@ -12,6 +12,7 @@ const {
   dispatch,
   eventHandlers,
 } = require('../../../services/installable/eventHandlers');
+const telegramSend = require('../../../services/telegramService');
 const { TELEGRAM_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const {
   setupMongoDb,
@@ -72,6 +73,44 @@ describe('installable event dispatcher', () => {
       integration: expect.objectContaining({ podId: expect.anything() }),
     }));
     expect(String(relay.mock.calls[0][0].integration.podId)).toBe(podA);
+  });
+
+  it('relays each same-pod connector to its own selected Telegram chat', async () => {
+    const podId = freshId();
+    const first = await install({ installableId: 'telegram', installedBy: freshId(), podId });
+    const second = await install({ installableId: 'telegram', installedBy: freshId(), podId });
+    await Integration.updateOne(
+      { _id: first.integration._id },
+      { $set: { 'config.chatId': 'chat-a', 'config.chatType': 'private' } },
+    );
+    await Integration.updateOne(
+      { _id: second.integration._id },
+      { $set: { 'config.chatId': 'chat-b', 'config.chatType': 'private' } },
+    );
+    const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+    const sendMessage = jest.spyOn(telegramSend, 'sendMessage')
+      .mockResolvedValueOnce({ messageId: 1 })
+      .mockResolvedValueOnce({ messageId: 2 });
+
+    try {
+      await dispatch('chat.message', {
+        podId,
+        agentUsername: 'kai',
+        displayName: 'Kai',
+        content: 'Both subscriptions should receive this',
+        podMessageId: 'message-fanout',
+      });
+
+      expect(sendMessage).toHaveBeenCalledTimes(2);
+      expect(new Set(sendMessage.mock.calls.map((call) => call[1]))).toEqual(
+        new Set(['chat-a', 'chat-b']),
+      );
+    } finally {
+      sendMessage.mockRestore();
+      if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = previousToken;
+    }
   });
 
   it('does not invoke a handler when the event pod has no installation', async () => {

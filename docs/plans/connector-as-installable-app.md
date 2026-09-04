@@ -155,9 +155,11 @@ What it does, in order — this is `installableInstallService.install()`:
       applies), and **the idempotent-return path never treats it as success** — a retry or a
       takeover that finds `activating` skips the projectors and resumes at write 2.
    2. **Integration activation, fenced on its own state:** `findOneAndUpdate({ installationId:
-      String(parent._id), isActive: false }, { $set: { isActive: true, 'config.connectCode':
-      …, 'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
-      inside this write's construction. `null` here means the row is already active (a
+      String(parent._id), isActive: false, revokedAt: { $exists: false } }, { $set: {
+      isActive: true, installationClaimId: ours, 'config.connectCode': …,
+      'config.connectCodeExpiresAt': … } })` — `mintConnectCode()` is called exactly once,
+      inside this write's construction. `installationClaimId` records the generation that
+      minted the code; it is not an eligibility predicate. `null` here means the row is already active (a
       resume after a crash between writes 2 and 3): read the existing code, mint nothing.
    3. **Parent CAS → `active`:** `findOneAndUpdate({ _id, status: 'activating', claimId:
       ours }, { $set: { status: 'active' } })`, fenced like every other owner write; `null` ⇒
@@ -280,18 +282,22 @@ and the promise moves up a layer with the call). The dispatcher then invokes eac
 handler with the same payload the bridge takes today (`{ podId, agentUsername, displayName,
 content, podMessageId }`) plus the selected `integration`, fire-and-forget, one `try/catch` per
 handler so one bridge cannot fail the post. The bridge's own `findLiveIntegration(podId)` stays
-in Phase 1 as defence in depth, not as the selector: an install must be filtered out **before**
-its handler runs, not inside it — a dispatcher that fans out to every tenant and relies on each
-handler to decline is a multi-tenant leak waiting for a handler that does not (Vera,
-2026-09-02). In Phase 2 the selector becomes D8's inversion — pod → members → each member's
-user-scoped install — and the bridge lookup is deleted; the handler signature does not change.
+in Phase 1 only as a fallback for legacy direct rows. For a dispatched handler, the bridge
+honours the selected `integration` and independently validates its provider, pod, active,
+live-relay, private-chat, and chat-id gates; it does not re-select with `findOne`. An install
+must be filtered out **before** its handler runs — a dispatcher that fans out to every tenant
+and relies on each handler to decline is a multi-tenant leak waiting for a handler that does not
+(Vera, 2026-09-02). In Phase 2 the selector becomes D8's inversion — pod → members → each
+member's user-scoped install — and the legacy fallback is deleted; the handler signature does
+not change.
 
 **Behaviour pins:** (a) for a pod with one live Telegram row, exactly one relay fires per post,
 with the same arguments as before; (b) **two tenants**: user A's install bound to pod P and
 user B's bound to pod Q — a post in P invokes A's handler once and B's zero times, measured at
 the dispatcher (a spy on the handler map), not at the bridge; (c) a pod with no install costs
-one selector query and zero invocations. Those are the tests that prove invariant 6 landed
-without moving the product or widening it.
+one selector query and zero invocations; (d) two users' active installs bound to the same pod
+are two subscriptions, so one post produces one send to each selected private chat. Those are
+the tests that prove invariant 6 landed without moving the product or widening it.
 
 Unknown `eventHandler` prefix (`agent:`, `webhook:`) → projector error in Phase 1. Those are
 the slash-command / external-webhook tracks; naming them here keeps the enum honest.
@@ -445,9 +451,9 @@ Service (`__tests__/service/`):
    row triggers exactly one `relayAgentMessageToTelegram` call via the dispatcher, with the same
    five fields the hardcoded hook passed. (b) **Multi-tenant:** two active installs — user A's
    bound to pod P, user B's bound to pod Q — and a post in P: A's handler is invoked once, B's
-   zero times, asserted on a spy at the handler map (the bridge's own lookup is stubbed out so
-   it cannot be what filtered B). (c) A pod with no install: one selector query, zero
-   invocations. (d) A throwing handler does not fail the post.
+   zero times, asserted on a spy at the handler map. (c) A pod with no install: one selector
+   query, zero invocations. (d) Two active user installs on the same pod produce exactly two
+   real Telegram sends, one to each selected chat. (e) A throwing handler does not fail the post.
 8. `telegramBridgeService.attribution` and `telegram.webhook.*` suites pass unchanged — the
    route is not edited.
 

@@ -32,7 +32,7 @@ export interface IIntegrationMessageBuffer {
 
 export interface IIntegration extends Document {
   installationId?: string;
-  /** InstallableInstallation claim generation that activated this projection. */
+  /** InstallableInstallation claim generation that minted this projection's code. */
   installationClaimId?: string;
   /** Terminal tombstone: a revoked projection can never be activated again. */
   revokedAt?: Date;

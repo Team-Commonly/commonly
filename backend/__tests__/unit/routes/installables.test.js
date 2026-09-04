@@ -91,6 +91,25 @@ describe('installable connector routes', () => {
     });
   });
 
+  it('returns typed 409 when activation loses its projection', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+    installationService.install.mockRejectedValue(
+      new installationService.InstallLockLostError('install lock lost'),
+    );
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('install_lock_lost');
+  });
+
   it('cannot use an uninstall body to target another user installation', async () => {
     installationService.uninstall.mockResolvedValue({ _id: 'install-1', status: 'uninstalled' });
 

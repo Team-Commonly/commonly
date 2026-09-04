@@ -94,7 +94,7 @@ describe('installable connector projection', () => {
     expect(String(retry.installation._id)).toBe(String(first.installation._id));
   });
 
-  it('retains an inactive projection on a component error and claims the same parent on retry', async () => {
+  it('survives repeated component failures and claims the same projection on retry', async () => {
     const { userId, podId } = ids();
     await Installable.updateOne(
       { installableId: 'telegram' },
@@ -109,6 +109,12 @@ describe('installable connector projection', () => {
     expect(failed.status).toBe('error');
     expect(inactive.isActive).toBe(false);
     expect(inactive.config.connectCode).toBeUndefined();
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId }))
+      .rejects.toBeInstanceOf(InstallableProjectionError);
+    const failedTwice = await InstallableInstallation.findById(failed._id);
+    expect(failedTwice.status).toBe('error');
+    expect(await Integration.countDocuments({ installationId: String(failed._id) })).toBe(1);
 
     await Installable.updateOne(
       { installableId: 'telegram' },
@@ -205,21 +211,42 @@ describe('installable connector projection', () => {
     expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(1);
   });
 
+  it('returns a typed lock loss when an activating parent has no projection', async () => {
+    const { userId, podId } = ids();
+    const targetId = new mongoose.Types.ObjectId(userId);
+    await InstallableInstallation.create({
+      installableId: 'telegram',
+      installableVersion: '1.0.0',
+      targetType: 'user',
+      targetId,
+      scope: 'user',
+      installedBy: targetId,
+      installSource: 'direct',
+      status: 'activating',
+      claimId: 'missing-projection-owner',
+      claimedAt: new Date(Date.now() - 61_000),
+    });
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId }))
+      .rejects.toBeInstanceOf(InstallLockLostError);
+    expect(await Integration.countDocuments({ type: 'telegram' })).toBe(0);
+  });
+
   it('refuses a revived stale owner without changing the winner code or unprojecting', async () => {
     const { userId, podId } = ids();
-    const originalExists = Integration.exists.bind(Integration);
+    const originalFindOneAndUpdate = Integration.findOneAndUpdate.bind(Integration);
     let releaseOwner;
     let reachedOwnerActivation;
     const ownerActivationReached = new Promise((resolve) => { reachedOwnerActivation = resolve; });
     const ownerMayContinue = new Promise((resolve) => { releaseOwner = resolve; });
-    let firstExists = true;
-    const exists = jest.spyOn(Integration, 'exists').mockImplementation((...args) => {
-      if (firstExists) {
-        firstExists = false;
+    let firstActivation = true;
+    const findOneAndUpdate = jest.spyOn(Integration, 'findOneAndUpdate').mockImplementation(async (filter, ...args) => {
+      if (firstActivation && filter?.isActive === false && filter?.revokedAt?.$exists === false) {
+        firstActivation = false;
         reachedOwnerActivation();
-        return ownerMayContinue;
+        await ownerMayContinue;
       }
-      return originalExists(...args);
+      return originalFindOneAndUpdate(filter, ...args);
     });
     const webhookProjector = projectorRegistry.get('webhook');
     const unproject = jest.spyOn(webhookProjector, 'unproject');
@@ -243,7 +270,7 @@ describe('installable connector projection', () => {
       expect(await Integration.countDocuments({ installationId: String(parent._id) })).toBe(1);
       expect(unproject).not.toHaveBeenCalled();
     } finally {
-      exists.mockRestore();
+      findOneAndUpdate.mockRestore();
       unproject.mockRestore();
     }
   });
@@ -362,7 +389,7 @@ describe('installable connector projection', () => {
     expect(finished.status).toBe('uninstalled');
     expect(integration.isActive).toBe(false);
     expect(integration.config.connectCode).toBeUndefined();
-    expect(integration.installationClaimId).toBe('revocation-generation');
+    expect(integration.installationClaimId).toBe(installed.installation.claimId);
     expect(integration.revokedAt).toBeInstanceOf(Date);
   });
 

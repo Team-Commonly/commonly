@@ -25,7 +25,6 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
         installationId: installationIdFor(installation),
       }).lean() as {
         isActive?: boolean;
-        installationClaimId?: string;
         config?: { connectCode?: string };
       } | null;
       if (
@@ -76,7 +75,6 @@ const sweepUninstalledInstallations = async (): Promise<number> => {
         $unset: {
           'config.connectCode': 1,
           'config.connectCodeExpiresAt': 1,
-          installationClaimId: 1,
         },
       },
     );
@@ -103,7 +101,6 @@ const sweepStaleUninstalls = async (now: Date): Promise<number> => {
       {
         $set: {
           isActive: false,
-          installationClaimId: installation.claimId,
           revokedAt: new Date(),
         },
         $unset: {

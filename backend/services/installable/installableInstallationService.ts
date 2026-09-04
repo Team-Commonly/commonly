@@ -208,7 +208,6 @@ const claimInstallation = async (
               ],
             },
             claimId,
-            previousClaimId: { $ifNull: ['$claimId', null] },
             claimedAt: now,
             errorMessage: null,
             components: { $ifNull: ['$components', []] },
@@ -340,47 +339,22 @@ const renewActivationLease = async (
   return throwIfLockLost(renewed);
 };
 
-const bindTransferredGeneration = async (
-  installation: IInstallableInstallation,
-  claimId: string,
-): Promise<void> => {
-  const previousClaimId = installation.previousClaimId;
-  if (!previousClaimId || previousClaimId === claimId) return;
-
-  // A takeover owns the parent first, then moves the dormant projection from
-  // the generation it replaced. A revived old owner can no longer match this
-  // marker at activation, even if it wakes after the new owner has continued.
-  await Integration.findOneAndUpdate(
-    {
-      installationId: String(installation._id),
-      isActive: false,
-      installationClaimId: previousClaimId,
-      revokedAt: { $exists: false },
-    },
-    { $set: { installationClaimId: claimId } },
-    { new: true },
-  );
-};
-
 const activateIntegration = async (
   installation: IInstallableInstallation,
   claimId: string,
 ): Promise<unknown> => {
-  const eligible = await Integration.exists(
-    {
-      installationId: String(installation._id),
-      isActive: false,
-      installationClaimId: claimId,
-      revokedAt: { $exists: false },
-    },
-  );
+  const eligible = await Integration.exists({
+    installationId: String(installation._id),
+    isActive: false,
+    revokedAt: { $exists: false },
+  });
   if (!eligible) {
     const existing = await integrationFor(installation) as {
       isActive?: boolean;
       config?: { connectCode?: string };
     } | null;
     if (existing?.isActive && existing.config?.connectCode) return existing;
-    throw new Error('Integration activation did not find an inactive projection');
+    throw new InstallLockLostError();
   }
 
   const minted = mintConnectCode();
@@ -388,7 +362,6 @@ const activateIntegration = async (
     {
       installationId: String(installation._id),
       isActive: false,
-      installationClaimId: claimId,
       revokedAt: { $exists: false },
     },
     {
@@ -411,7 +384,9 @@ const activateIntegration = async (
     config?: { connectCode?: string };
   } | null;
   if (existing?.isActive && existing.config?.connectCode) return existing;
-  throw new Error('Integration activation did not find an inactive projection');
+  // A missing or revoked projection is not an internal 500: this claim no
+  // longer has an activation it may finish. Callers stop at the typed 409.
+  throw new InstallLockLostError();
 };
 
 const finishActivation = async (
@@ -459,7 +434,6 @@ const unprojectInstallation = async (
     {
       $set: {
         isActive: false,
-        installationClaimId: claimId,
         revokedAt: new Date(),
       },
       $unset: {
@@ -526,7 +500,6 @@ const installAttempt = async ({
   }
 
   installation = await renewActivationLease(installation, claimId);
-  await bindTransferredGeneration(installation, claimId);
   const integration = await activateIntegration(installation, claimId);
   installation = await finishActivation(installation, claimId);
   return { installation, integration, httpStatus: 200, state: 'active' };

@@ -37,7 +37,6 @@ export const webhookProjector: ComponentProjector = {
       {
         $setOnInsert: {
           installationId,
-          installationClaimId: context.claimId,
           podId: context.podId,
           type: provider,
           status: 'pending',
@@ -65,12 +64,8 @@ export const webhookProjector: ComponentProjector = {
     await Integration.findOneAndUpdate(
       { installationId: installationIdFor(context) },
       {
-        // Carry the revocation generation onto the projection before the
-        // parent can become uninstalled. An in-flight stale activation then
-        // cannot match its old generation and revive this connector.
         $set: {
           isActive: false,
-          installationClaimId: context.claimId,
           revokedAt: new Date(),
         },
         $unset: {
