@@ -171,7 +171,12 @@ const resultForExisting = async (
     // A live Integration is a real channel binding. Every non-active state is
     // retryable: its inactive projection has no code and activation will bind
     // it to the retry's requested pod under the same CAS that mints the code.
-    const boundPodId = installationBoundPodId(installation) || integrationPodId(integration);
+    // The Integration is the routing authority once it exists. `boundPodId`
+    // records claim intent and can be newer than a projection after a crash
+    // between activation and parent completion; reporting that intent first
+    // would tell a caller that the channel is bound to a pod it does not
+    // actually route to.
+    const boundPodId = integrationPodId(integration) || installationBoundPodId(installation);
     if (boundPodId && boundPodId !== String(requestedPodId)) {
       throw new InstallableAlreadyInstalledError(boundPodId);
     }

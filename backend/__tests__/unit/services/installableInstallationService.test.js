@@ -120,6 +120,28 @@ describe('installable connector projection', () => {
     });
   });
 
+  it('uses an existing active projection as the binding authority after parent completion recovers', async () => {
+    const { userId, podId } = ids();
+    const retryPodId = new mongoose.Types.ObjectId().toString();
+    const first = await install({ installableId: 'telegram', installedBy: userId, podId });
+
+    // A retry can update claim intent before boot reconciliation observes the
+    // already-active projection and finishes the parent. The projection, not
+    // that newer intent, decides where the live relay routes.
+    await InstallableInstallation.updateOne(
+      { _id: first.installation._id },
+      { $set: { boundPodId: new mongoose.Types.ObjectId(retryPodId), status: 'active' } },
+    );
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId: retryPodId }))
+      .rejects.toMatchObject({
+        code: 'already_installed',
+        boundPodId: podId,
+      });
+    const integration = await Integration.findById(first.integration._id);
+    expect(String(integration.podId)).toBe(podId);
+  });
+
   it('reports a fresh claim in progress without re-targeting it', async () => {
     const { userId, podId } = ids();
     const otherPodId = new mongoose.Types.ObjectId().toString();
