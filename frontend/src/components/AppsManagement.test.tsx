@@ -70,4 +70,16 @@ describe('AppsManagement ingest tokens', () => {
       });
     });
   });
+
+  it('drops the duplicate page heading when rendered inside Settings', async () => {
+    const { container } = render(
+      <AuthContext.Provider value={{ user: { role: 'member' } }}>
+        <AppsManagement variant="settings" />
+      </AuthContext.Provider>,
+    );
+
+    await screen.findByText('Commonly Apps');
+    expect(screen.queryByRole('heading', { name: 'Connections & Developer Apps' })).not.toBeInTheDocument();
+    expect(container.querySelector('.apps-management--settings')).toBeInTheDocument();
+  });
 });

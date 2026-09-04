@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
+import V2Avatar from './V2Avatar';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -32,11 +33,16 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ label, children }) =>
 const V2AccountSection: React.FC = () => {
   const { currentUser } = useAuth();
   const name = currentUser?.username || 'Your account';
-  const initials = name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <div className="v2-settings__account-row">
-      <span className="v2-settings__avatar" aria-hidden="true">{initials}</span>
+      <V2Avatar
+        className="v2-settings__avatar"
+        name={name}
+        src={currentUser?.profilePicture || undefined}
+        seed={currentUser?._id || currentUser?.id}
+        title={`${name} avatar`}
+      />
       <div className="v2-settings__account-copy">
         <div className="v2-settings__account-name">{name}</div>
         {currentUser?.email && <div className="v2-settings__meta">{currentUser.email}</div>}
@@ -182,7 +188,7 @@ const V2SettingsPage: React.FC = () => (
       <SettingsSection label="plan"><V2BillingPanel /></SettingsSection>
       <SettingsSection label="devices"><V2DevicesPanel /></SettingsSection>
       <SettingsSection label="api token"><V2ApiTokenSection /></SettingsSection>
-      <SettingsSection label="connected apps"><AppsManagement /></SettingsSection>
+      <SettingsSection label="connected apps"><AppsManagement variant="settings" /></SettingsSection>
       <SettingsSection label="language"><V2LanguageSection /></SettingsSection>
     </div>
   </div>

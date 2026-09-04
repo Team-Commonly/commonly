@@ -7514,17 +7514,18 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-settings__avatar {
-  display: grid;
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
-  place-items: center;
+  border: 0;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: #ffffff;
-  font-family: var(--v2-font-mono);
   font-size: 12px;
-  font-weight: 500;
+}
+
+.v2-settings__avatar img {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--v2-radius-sm);
 }
 
 .v2-settings__account-copy {
@@ -7579,8 +7580,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-settings__section .v2-billing__badge--pro {
-  border-color: var(--v2-accent);
-  color: var(--v2-accent-text);
+  border-color: var(--v2-ink);
+  color: var(--v2-text-primary);
 }
 
 .v2-settings__section .v2-devices__item {
@@ -7686,18 +7687,58 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-/* AppsManagement is still MUI, but the Settings surface owns its primary
- * actions. Cobalt remains a mark; buttons that commit a change are ink. */
-.v2-settings .MuiButton-containedPrimary {
+/* Settings owns the connected-apps controls without inheriting the legacy
+ * page chrome: its section label is the only page-level heading. */
+.v2-settings .apps-management--settings {
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
+}
+
+.v2-settings .apps-management--settings .MuiCard-root,
+.v2-settings .apps-management--settings .MuiPaper-root {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  box-shadow: none;
+}
+
+.v2-settings .apps-management--settings .MuiCardContent-root {
+  padding: 16px;
+}
+
+.v2-settings .apps-management--settings .MuiTypography-root,
+.v2-settings .apps-management--settings .MuiInputBase-input,
+.v2-settings .apps-management--settings .MuiInputLabel-root,
+.v2-settings .apps-management--settings .MuiButton-root {
+  font-family: inherit;
+}
+
+.v2-settings .apps-management--settings .MuiSvgIcon-colorPrimary,
+.v2-settings .apps-management--settings .MuiButton-textPrimary {
+  color: var(--v2-ink);
+}
+
+/* Cobalt remains a mark; buttons that commit a change are ink. */
+.v2-settings .apps-management--settings .MuiButton-containedPrimary {
   border: 1px solid var(--v2-ink);
   border-radius: var(--v2-radius-sm);
   background: var(--v2-ink);
   color: var(--v2-on-ink);
 }
 
-.v2-settings .MuiButton-containedPrimary:hover {
+.v2-settings .apps-management--settings .MuiButton-containedPrimary:hover {
   border-color: var(--v2-ink-hover);
   background: var(--v2-ink-hover);
+}
+
+@media (max-width: 560px) {
+  .v2-settings .v2-devices__heading {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .v2-settings .v2-devices__heading > button {
+    margin-left: auto;
+  }
 }
 
 @media (max-width: 680px) {

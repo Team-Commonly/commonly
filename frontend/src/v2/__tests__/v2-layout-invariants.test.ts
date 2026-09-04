@@ -430,6 +430,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<SettingsSection label="api token">');
     expect(settingsPage).toContain('<SettingsSection label="connected apps">');
     expect(settingsPage).toContain('<SettingsSection label="language">');
+    expect(settingsPage).toContain('className="v2-settings__avatar"');
+    expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
+    expect(settingsPage).toContain('<AppsManagement variant="settings" />');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(v2).toContain('.v2-settings .apps-management--settings .MuiCard-root');
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toContain('path="profile/:id"');

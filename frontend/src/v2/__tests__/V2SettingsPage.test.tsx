@@ -15,9 +15,17 @@ jest.mock('../../utils/axiosConfig', () => {
 });
 
 jest.mock('../../components/AppsManagement', () => {
-  const MockAppsManagement = () => <div>Connected app controls</div>;
+  const MockAppsManagement = ({ variant }: { variant?: string }) => <div data-variant={variant}>Connected app controls</div>;
   MockAppsManagement.displayName = 'MockAppsManagement';
   return MockAppsManagement;
+});
+
+jest.mock('../components/V2Avatar', () => {
+  const MockV2Avatar = ({ name, src, className }: { name?: string; src?: string; className?: string }) => (
+    <img alt={`${name} avatar`} className={className} src={src} />
+  );
+  MockV2Avatar.displayName = 'MockV2Avatar';
+  return MockV2Avatar;
 });
 
 jest.mock('../components/V2BillingPanel', () => {
@@ -33,8 +41,8 @@ jest.mock('../components/V2DevicesPanel', () => {
 });
 
 const auth = {
-  currentUser: { _id: 'u1', username: 'lily', email: 'lily@example.com', role: 'member' },
-  user: { _id: 'u1', username: 'lily', email: 'lily@example.com', role: 'member' },
+  currentUser: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
+  user: { _id: 'u1', username: 'lily', email: 'lily@example.com', profilePicture: '/uploads/lily.png', role: 'member' },
   token: 'jwt', loading: false, error: null, isAuthenticated: true,
   register: jest.fn(), login: jest.fn(), logout: jest.fn(), updateProfile: jest.fn(),
 };
@@ -60,6 +68,9 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('Plan controls')).toBeInTheDocument();
     expect(screen.getByText('Device controls')).toBeInTheDocument();
     expect(screen.getByText('Connected app controls')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
+    expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
+    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
     expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();
   });
