@@ -48,7 +48,7 @@ describe('V2ConnectPage', () => {
     expect(screen.getByRole('heading', { name: 'Connect the CLI or MCP' })).toBeInTheDocument();
     expect(screen.getByText(/commonly login/)).toBeInTheDocument();
     expect(screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage connected CLI devices' })).toHaveAttribute('href', '/v2/settings/devices');
+    expect(screen.getByRole('link', { name: 'Manage connected CLI devices' })).toHaveAttribute('href', '/v2/settings');
     expect(screen.queryByRole('heading', { name: 'Instance keys' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open global integrations' })).not.toBeInTheDocument();
 
@@ -90,4 +90,19 @@ test('the account menu links to Connect', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Connect', hidden: true }));
   expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/connect');
+});
+
+test('the account menu sends the folded Profile surface to Settings', async () => {
+  render(
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={['/v2/agents']}>
+        <div className="v2-root"><V2AccountMenu /></div>
+        <CurrentPath />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Settings', hidden: true }));
+  expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/settings');
 });

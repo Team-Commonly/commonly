@@ -7445,13 +7445,327 @@ body.modern-ui.v2-canvas {
   border-color: var(--v2-border-strong);
 }
 .v2-root button.v2-billing__btn--primary {
-  background: var(--v2-accent);
-  border-color: var(--v2-accent);
-  color: #ffffff;
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
+}
+.v2-root button.v2-billing__btn--primary:hover:not(:disabled) {
+  background: var(--v2-ink-hover);
+  border-color: var(--v2-ink-hover);
 }
 .v2-root button.v2-billing__btn:disabled {
   opacity: 0.7;
   cursor: default;
+}
+
+/* ---------- Settings (/v2/settings) ---------- */
+.v2-settings {
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  color: var(--v2-text-primary);
+}
+
+.v2-settings__header {
+  display: flex;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--v2-border);
+}
+
+.v2-settings__header h1 {
+  margin: 0;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.v2-settings__section {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 28px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
+.v2-settings__label {
+  margin: 2px 0 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: var(--v2-lh-label);
+  text-transform: lowercase;
+}
+
+.v2-settings__section-body {
+  min-width: 0;
+}
+
+.v2-settings__account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.v2-settings__avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  font-size: 12px;
+}
+
+.v2-settings__avatar img {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-settings__account-copy {
+  min-width: 0;
+}
+
+.v2-settings__account-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-settings__account-type,
+.v2-settings__meta {
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+.v2-settings__account-type {
+  margin-left: auto;
+  text-transform: lowercase;
+}
+
+.v2-settings__section .v2-billing,
+.v2-settings__section .v2-devices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.v2-settings__section .v2-billing__title,
+.v2-settings__section .v2-devices h2 {
+  font-family: var(--v2-font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.v2-settings__section .v2-billing__badge,
+.v2-settings__section .v2-billing__badge--pro {
+  border-radius: var(--v2-radius-sm);
+  background: #ffffff;
+}
+
+.v2-settings__section .v2-billing__badge--pro {
+  border-color: var(--v2-ink);
+  color: var(--v2-text-primary);
+}
+
+.v2-settings__section .v2-devices__item {
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-settings__section .v2-devices__empty {
+  padding: 0;
+  background: transparent;
+}
+
+.v2-settings__token-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.v2-settings__token-value code {
+  overflow: hidden;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v2-root button.v2-settings__primary,
+.v2-root button.v2-settings__secondary,
+.v2-root button.v2-settings__language-option {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: #ffffff;
+  color: var(--v2-text-primary);
+  font: 600 13px/20px var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-settings__primary {
+  border-color: var(--v2-ink);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+}
+
+.v2-root button.v2-settings__primary:hover:not(:disabled) {
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
+}
+
+.v2-root button.v2-settings__secondary:hover:not(:disabled),
+.v2-root button.v2-settings__language-option:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+}
+
+.v2-root button.v2-settings__primary:focus-visible,
+.v2-root button.v2-settings__secondary:focus-visible,
+.v2-root button.v2-settings__language-option:focus-visible {
+  outline: none;
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-root button.v2-settings__primary:disabled,
+.v2-root button.v2-settings__secondary:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.v2-settings__message {
+  margin: 0 0 12px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.v2-settings__message--error {
+  color: var(--v2-text-primary);
+}
+
+.v2-settings__language {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v2-root button.v2-settings__language-option--active {
+  border: 2px solid var(--v2-accent);
+  padding: 0 11px;
+  color: var(--v2-text-primary);
+}
+
+/* Settings owns the connected-apps controls without inheriting the legacy
+ * page chrome: its section label is the only page-level heading. */
+.v2-settings .apps-management--settings {
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
+}
+
+.v2-settings .apps-management--settings .MuiCard-root,
+.v2-settings .apps-management--settings .MuiPaper-root {
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  box-shadow: none;
+}
+
+.v2-settings .apps-management--settings .MuiCardContent-root {
+  padding: 16px;
+}
+
+.v2-settings .apps-management--settings .MuiTypography-root,
+.v2-settings .apps-management--settings .MuiInputBase-input,
+.v2-settings .apps-management--settings .MuiInputLabel-root,
+.v2-settings .apps-management--settings .MuiButton-root {
+  font-family: inherit;
+}
+
+.v2-settings .apps-management--settings .MuiSvgIcon-colorPrimary,
+.v2-settings .apps-management--settings .MuiButton-textPrimary {
+  color: var(--v2-ink);
+}
+
+/* Cobalt remains a mark; buttons that commit a change are ink. */
+.v2-settings .apps-management--settings .MuiButton-containedPrimary {
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+}
+
+.v2-settings .apps-management--settings .MuiButton-containedPrimary:hover {
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
+}
+
+@media (max-width: 560px) {
+  .v2-settings .v2-devices__heading {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .v2-settings .v2-devices__heading > button {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .v2-settings__header {
+    padding-bottom: 16px;
+  }
+
+  .v2-settings__header h1 {
+    font-size: 28px;
+  }
+
+  .v2-settings__section {
+    display: block;
+    padding: 20px 0;
+  }
+
+  .v2-settings__label {
+    margin-bottom: 14px;
+  }
+
+  .v2-settings__token-value {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v2-settings__token-value code {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ── V2 Pod Board — /v2/pods/:podId/board ──────────────────────────────── */
@@ -9037,6 +9351,10 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-settings__header h1,
+.v2-root:lang(zh) .v2-settings__account-name,
+.v2-root:lang(zh) .v2-settings__section .v2-billing__title,
+.v2-root:lang(zh) .v2-settings__section .v2-devices h2,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h2,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h3,

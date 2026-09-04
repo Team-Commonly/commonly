@@ -90,7 +90,15 @@ interface IngestToken {
   lastUsedAt?: string;
 }
 
-const AppsManagement: React.FC = () => {
+interface AppsManagementProps {
+  /**
+   * The profile page preserves the legacy management surface. Settings uses
+   * the same functional controls without duplicating its page-level heading.
+   */
+  variant?: 'default' | 'settings';
+}
+
+const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -331,29 +339,31 @@ const AppsManagement: React.FC = () => {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight={200}>
+      <Box className={variant === 'settings' ? 'apps-management apps-management--settings' : 'apps-management'} display="flex" justifyContent="center" alignItems="center" minHeight={200}>
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h5">Connections & Developer Apps</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage external integrations and create Commonly Apps for webhooks and API access.
-          </Typography>
+    <Box className={variant === 'settings' ? 'apps-management apps-management--settings' : 'apps-management'}>
+      {variant !== 'settings' && (
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Box>
+            <Typography variant="h5">Connections & Developer Apps</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Manage external integrations and create Commonly Apps for webhooks and API access.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1}>
+            <Tooltip title="Refresh">
+              <IconButton onClick={() => { fetchIntegrations(); fetchApps(); }} disabled={loading}>
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+          </Stack>
         </Box>
-        <Stack direction="row" spacing={1}>
-          <Tooltip title="Refresh">
-            <IconButton onClick={() => { fetchIntegrations(); fetchApps(); }} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-      </Box>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
