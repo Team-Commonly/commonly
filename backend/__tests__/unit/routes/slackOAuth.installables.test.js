@@ -144,15 +144,15 @@ describe('Slack installable OAuth routes', () => {
     expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
   });
 
-  test('refuses a callback with a mismatched browser nonce before Slack exchange', async () => {
+  test('refuses a callback with a different-length browser nonce before Slack exchange', async () => {
     const response = await request(app)
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
-      .set('Cookie', 'commonly_slack_oauth_nonce=wrong-nonce');
+      .set('Cookie', 'commonly_slack_oauth_nonce=short');
 
-    expect(response.status).toBe(302);
-    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
     expect(slackOAuth.exchangeCode).not.toHaveBeenCalled();
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
   });
 
   test('stores only a secret reference in a pending bind after a claimed callback', async () => {
@@ -182,16 +182,13 @@ describe('Slack installable OAuth routes', () => {
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');
   });
 
-  test('refuses a replayed browser nonce after its callback state is consumed', async () => {
+  test('refuses a replayed browser nonce when its row already has a pending bind', async () => {
     Integration.findOne
       .mockResolvedValueOnce({ ...integration, config: { ...integration.config } })
-      .mockResolvedValueOnce({
-        ...integration,
-        config: {
-          connectCode: integration.config.connectCode,
-          connectCodeExpiresAt: integration.config.connectCodeExpiresAt,
-        },
-      });
+      // A replay sees the same row after the first callback has committed its
+      // pending bind. The selector below must exclude it, so Mongo returns no
+      // candidate rather than exposing its consumed nonce.
+      .mockResolvedValueOnce(null);
     Integration.findOneAndUpdate
       .mockResolvedValueOnce({ ...integration })
       .mockResolvedValueOnce({ ...integration, config: { pendingBind: { botTokenRef: 'secret-ref' } } });
@@ -205,14 +202,22 @@ describe('Slack installable OAuth routes', () => {
     const first = await request(app)
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
       .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
+    const exchangesBeforeReplay = slackOAuth.exchangeCode.mock.calls.length;
+    const writesBeforeReplay = Integration.findOneAndUpdate.mock.calls.length;
     const replay = await request(app)
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`)
       .set('Cookie', 'commonly_slack_oauth_nonce=nonce-value');
 
+    expect(Integration.findOne.mock.calls[1][0]).toEqual(expect.objectContaining({
+      'config.pendingBind': { $exists: false },
+    }));
+    expect(slackOAuth.exchangeCode).toHaveBeenCalledTimes(exchangesBeforeReplay);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(writesBeforeReplay);
     expect(first.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=pending`);
     expect(replay.status).toBe(302);
     expect(replay.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
-    expect(slackOAuth.exchangeCode).toHaveBeenCalledTimes(1);
+    expect(exchangesBeforeReplay).toBe(1);
+    expect(writesBeforeReplay).toBe(2);
   });
 
   test('confirms only the owner binding and never serializes the secret reference', async () => {
