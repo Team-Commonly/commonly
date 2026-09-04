@@ -14,10 +14,6 @@ import path from 'path';
  *     chip ("AI Citation Strategist" -> "/"). Fixed in #568 — and it had already
  *     silently regressed once via a stale-base revert of the original fix
  *     (d8140397), so a revert is a real, observed failure mode.
- *   - The showcase page clipped ~500px including its footer CTA because it
- *     inherited the `.v2-root` app-shell `overflow:hidden` and never added its
- *     own scroll override (#575).
- *
  * This is a deliberate stand-in until a browser-level layout test tier exists.
  * It precisely guards the thing that actually broke: the override rule going
  * missing. If these assertions feel brittle, that's the point — the rule they
@@ -47,12 +43,10 @@ const cssVariable = (css: string, name: string): string | undefined => (
 describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
   const tokens = read('../../../design-system/tokens.css');
-  const showcase = read('../showcase/v2-showcase.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2PodChat.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
-  const yourTeam = read('../components/V2YourTeamPage.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
@@ -341,10 +335,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-team__grid')).toContain('minmax(min(320px, 100%), 1fr)');
   });
 
-  test('the showcase page is its own scroll container (not clipped by the app shell)', () => {
-    expect(ruleBody(showcase, '.v2-root.v2-showcase')).toContain('overflow-y: auto');
-  });
-
   test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
     // Any full-page `.v2-root.<surface>` must set its own scroll, or the base
     // `.v2-root { height:100vh; overflow:hidden }` clips it. This is the general
@@ -516,18 +506,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(chip).toContain('font-size: 12px');
   });
 
-  test('craft-pass buttons use icon components instead of unicode glyphs', () => {
+  test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
     // This is structural: accessible labels cannot prove a literal glyph has
     // left the JSX. The MUI imports and icon nodes are the implementation
-    // contract for the three ruled buttons.
+    // contract for the two ruled board buttons.
     expect(podBoard).toContain("import AddIcon from '@mui/icons-material/Add'");
     expect(podBoard).toContain("import ArrowBackIcon from '@mui/icons-material/ArrowBack'");
     expect(podBoard).toContain('<ArrowBackIcon fontSize="small" aria-hidden="true" />');
     expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
-    expect(yourTeam).toContain("import AddIcon from '@mui/icons-material/Add'");
-    expect(yourTeam).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
   });
 
   test('the chat heartbeat subtitle is guarded by an installed agent', () => {
@@ -703,14 +691,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pitch).toMatch(/font-size: 13px/);
   });
 
-  test('compare head does not combine section padding with its own max-width', () => {
-    // `.v2-landing__section` centres a 1120px column via percentage padding
-    // resolved against the PARENT. An element carrying both that class and its
-    // own max-width keeps the padding and caps the box, collapsing the text to
-    // a ribbon — shipped live on /compare. Constrain the children instead.
-    const landingCss = read('../landing/v2-landing.css');
-    expect(ruleBody(landingCss, '.v2-compare__head')).not.toContain('max-width');
-    expect(ruleBody(landingCss, '.v2-compare__head > *')).toContain('max-width');
+  test('retired chat selectors stay deleted', () => {
+    for (const selector of [
+      '.v2-chat__btn--accent',
+      '.v2-chat__state-dot',
+      '.v2-chat__system-link',
+    ]) {
+      expect(v2).not.toContain(selector);
+    }
   });
 
   test('an uploaded avatar photo is not overlaid by the initials-plate highlight', () => {

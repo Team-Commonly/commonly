@@ -14,13 +14,11 @@ import GuidesIndexPage from './components/landing/GuidesIndexPage';
 import UseCasePage from './components/landing/UseCasePage';
 import VerifyEmail from './components/VerifyEmail';
 import DiscordCallback from './components/DiscordCallback';
-import V2ComparePage from './v2/landing/V2ComparePage';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { LayoutProvider } from './context/LayoutContext';
 import V2App from './v2/V2App';
-import V2CliAuthorize from './v2/components/V2CliAuthorize';
 import V2LandingPage from './v2/landing/V2LandingPage';
 import { setupFocusManagement } from './utils/focusUtils';
 import { checkAndRefresh } from './utils/refreshUtils';
@@ -195,7 +193,6 @@ const getV2EquivalentPath = (pathname: string, search: string): string | null =>
   if (pathname === '/agents') return `/v2/agents${search}`;
   if (pathname === '/skills') return `/v2/skills${search}`;
   if (pathname === '/activity') return `/v2/activity${search}`;
-  if (pathname === '/apps') return `/v2/marketplace${search}`;
   if (pathname === '/profile' || pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
   if (pathname === '/admin/users') return '/v2/profile?tab=user-admin';
   if (pathname === '/admin/integrations/global') return `/v2${pathname}${search}`;
@@ -273,12 +270,9 @@ function App(): React.ReactElement {
                   <NavigationHandler />
                   <div className="App">
                     <Routes>
-                    <Route path="/cli/authorize" element={<V2CliAuthorize />} />
                     <Route path="/settings/devices" element={<Navigate to="/v2/settings/devices" replace />} />
                     <Route path="/v2/*" element={<V2App />} />
                     <Route path="/" element={<PublicHome />} />
-                    {/* Canonical public routes also have static build output. */}
-                    <Route path="/compare" element={<V2ComparePage />} />
                     {/* Legacy auth/OAuth entry points preserve their query strings. */}
                     <Route path="/guides" element={<GuidesIndexPage />} />
                     <Route path="/guides/:guideId" element={<GuidePage />} />
