@@ -130,6 +130,7 @@ const V2ConnectorsPage: React.FC = () => {
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const adding = addingType !== null;
 
@@ -146,6 +147,31 @@ const V2ConnectorsPage: React.FC = () => {
   }, [api, t]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Slack returns through a separate browser tab. Its callback cannot render
+  // a useful Commonly page itself, so it redirects here with an intentionally
+  // opaque status. Consume the query once: URL error codes are never shown
+  // back to the user and therefore cannot become a UI data surface.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const slackState = query.get('slack');
+    if (slackState !== 'pending' && slackState !== 'error') return;
+    if (slackState === 'pending') {
+      void load();
+    } else {
+      setSlackCallbackError(t('connectors.slackCallbackError', {
+        defaultValue: 'Slack authorization didn’t complete — try again.',
+      }));
+    }
+    query.delete('slack');
+    query.delete('code');
+    const remaining = query.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
+    );
+  }, [load, t]);
 
   // Poll while a provider can finish binding: Telegram has a copied code;
   // Slack either has an OAuth state or is awaiting the owner's confirmation.
@@ -355,6 +381,7 @@ const V2ConnectorsPage: React.FC = () => {
     const isSlack = c.type === 'slack';
     const supportsRelayControls = isTelegram || isSlack;
     const connected = c.status === 'connected';
+    const manageable = supportsRelayControls && (connected || c.status === 'error');
     const mirror = c.config?.relayAllAgentMessages === true;
     return (
       <article key={c._id} className={`v2-connector v2-connector--${c.type}`}>
@@ -372,7 +399,7 @@ const V2ConnectorsPage: React.FC = () => {
               {st.text}
             </div>
           </div>
-          {connected && supportsRelayControls && (
+          {manageable && (
             <button
               type="button"
               className="v2-connector__manage"
@@ -424,7 +451,7 @@ const V2ConnectorsPage: React.FC = () => {
           </div>
         )}
 
-        {manageId === c._id && connected && (
+        {manageId === c._id && manageable && (
           <div className="v2-connector__manage-panel">
             {confirmDisconnect === c._id ? (
               <button type="button" className="v2-connector__danger" disabled={busyId === c._id} onClick={() => disconnect(c)}>
@@ -593,7 +620,7 @@ const V2ConnectorsPage: React.FC = () => {
         </div>
       )}
 
-      {error && <div className="v2-connectors__error" role="alert">{error}</div>}
+      {(error || slackCallbackError) && <div className="v2-connectors__error" role="alert">{error || slackCallbackError}</div>}
     </div>
   );
 };

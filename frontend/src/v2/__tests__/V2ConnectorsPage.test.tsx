@@ -84,6 +84,7 @@ describe('V2ConnectorsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(window, 'open').mockReturnValue(null);
+    window.history.replaceState({}, '', '/v2/connectors');
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -397,6 +398,50 @@ describe('V2ConnectorsPage', () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
       '/api/installables/slack/reject',
       {},
+      expect.anything(),
+    ));
+  });
+
+  it('shows a generic Slack callback failure and clears its opaque query code', async () => {
+    window.history.replaceState({}, '', '/v2/connectors?slack=error&code=invalid_state');
+    mockGets([]);
+
+    renderPage();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Slack authorization didn’t complete — try again.');
+    expect(window.location.search).toBe('');
+  });
+
+  it('reloads connectors after a successful Slack callback and clears its query', async () => {
+    window.history.replaceState({}, '', '/v2/connectors?slack=pending');
+    mockGets([]);
+
+    renderPage();
+
+    await waitFor(() => expect(
+      axios.get.mock.calls.filter(([url]) => url === '/api/integrations/user/all').length,
+    ).toBeGreaterThanOrEqual(2));
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps an error-gated Slack row manageable so the user can disconnect and reconnect', async () => {
+    mockGets([{
+      _id: 'i-slack-error',
+      installationId: 'install-slack-u1',
+      type: 'slack',
+      status: 'error',
+      config: { teamName: 'Commonly HQ', chatId: 'D1', chatType: 'im' },
+      podId: { _id: 'p1', name: 'Rewire Live Demo' },
+    }]);
+    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
+    renderPage();
+
+    expect(await screen.findByText('Connection error — reconnect')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+      '/api/installables/slack/install',
       expect.anything(),
     ));
   });
