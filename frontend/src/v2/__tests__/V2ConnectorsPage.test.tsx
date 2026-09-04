@@ -168,6 +168,44 @@ describe('V2ConnectorsPage', () => {
     ));
   });
 
+  it('keeps the add form open while an install claim is in progress', async () => {
+    mockGets([]);
+    axios.post.mockResolvedValue({ data: { status: 'installing' } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('keeps the add form open when the server reports an install lock', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'install_in_progress' } } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('names the existing pod when the installable is already bound elsewhere', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'already_installed', boundPodId: 'p1' } },
+    });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
   it('disconnects an installable Telegram connector through its lifecycle verb', async () => {
     mockGets();
     axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
@@ -197,6 +235,13 @@ describe('V2ConnectorsPage', () => {
       { isActive: false },
       expect.anything(),
     ));
+  });
+
+  it('does not offer a second Telegram install while an installable row exists', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByText('Your channels');
+    expect(screen.queryByRole('button', { name: /Telegram/ })).toBeNull();
   });
 
   it('SOON platforms are not buttons', async () => {

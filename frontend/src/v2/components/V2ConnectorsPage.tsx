@@ -34,6 +34,15 @@ interface Connector {
   podId?: { _id: string; name?: string } | string | null;
 }
 
+interface InstallResponse {
+  status?: 'active' | 'installing' | 'activating' | 'uninstalling';
+}
+
+interface InstallErrorResponse {
+  code?: string;
+  boundPodId?: string;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
@@ -61,6 +70,10 @@ const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 // future installable-backed provider must revoke its own parent.
 export const installableLifecyclePath = (type: string): string => (
   `/api/installables/${encodeURIComponent(type)}/install`
+);
+
+const installErrorResponse = (error: unknown): { status?: number; data?: InstallErrorResponse } => (
+  (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
 );
 
 const podName = (c: Connector): string => (
@@ -148,11 +161,30 @@ const V2ConnectorsPage: React.FC = () => {
     setCreating(true);
     setError(null);
     try {
-      await api.post('/api/installables/telegram/install', { podId: newPodId });
+      const result = await api.post<InstallResponse>('/api/installables/telegram/install', { podId: newPodId });
+      if (result.status && result.status !== 'active') {
+        setError(t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' }));
+        return;
+      }
       setAdding(false);
       await load();
-    } catch {
-      setError(t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+    } catch (error) {
+      const response = installErrorResponse(error);
+      if (response.status === 409 && response.data?.code === 'install_in_progress') {
+        setError(t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' }));
+      } else if (response.status === 409 && response.data?.code === 'already_installed') {
+        const existing = connectors.find((connector) => {
+          const podId = typeof connector.podId === 'object' ? connector.podId?._id : connector.podId;
+          return String(podId) === String(response.data?.boundPodId);
+        });
+        const boundPod = pods.find((pod) => String(pod._id) === String(response.data?.boundPodId));
+        setError(t('connectors.alreadyBound', {
+          defaultValue: 'Your Telegram channel is bound to {{pod}}. Disconnect it to bind a different pod.',
+          pod: existing ? podName(existing) : (boundPod?.name || 'another pod'),
+        }));
+      } else {
+        setError(t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+      }
     } finally {
       setCreating(false);
     }
@@ -349,9 +381,13 @@ const V2ConnectorsPage: React.FC = () => {
     );
   };
 
+  const hasTelegramInstallation = connectors.some(
+    (connector) => connector.type === 'telegram' && Boolean(connector.installationId),
+  );
+
   const addTiles = (
     <div className="v2-connector-add__tiles">
-      {ADD_PLATFORMS.map((p) => (p.enabled ? (
+      {ADD_PLATFORMS.map((p) => (p.enabled && !(p.type === 'telegram' && hasTelegramInstallation) ? (
         <button key={p.type} type="button" className="v2-connector-add__tile" onClick={() => setAdding(true)}>
           <span className={`v2-connector__tile v2-connector__tile--${p.type}`}><PlatformGlyph type={p.type} /></span>
           <span>{TYPE_LABELS[p.type]}</span>
