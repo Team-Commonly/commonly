@@ -28,7 +28,9 @@ export interface SlackOAuthGrant {
 
 const oauthConfig = (): { clientId: string; clientSecret: string; redirectUri: string } => {
   const { SLACK_CLIENT_ID: clientId, SLACK_CLIENT_SECRET: clientSecret } = process.env;
-  const apiBase = String(process.env.PUBLIC_API_URL || 'https://api.commonly.me').replace(/\/$/, '');
+  const apiBase = String(
+    process.env.PUBLIC_API_URL || process.env.BACKEND_URL || 'https://api.commonly.me',
+  ).replace(/\/$/, '');
   const redirectUri = process.env.SLACK_OAUTH_REDIRECT_URI
     || `${apiBase}/api/webhooks/slack/oauth/callback`;
   if (!clientId || !clientSecret) {
