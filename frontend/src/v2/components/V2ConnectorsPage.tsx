@@ -24,11 +24,24 @@ interface ConnectorConfig {
 
 interface Connector {
   _id: string;
+  // Installable-backed channel rows carry their parent binding. Older
+  // integrations remain managed through the legacy route until migrated.
+  installationId?: string;
   type: string;
   status: string;
   updatedAt?: string;
   config?: ConnectorConfig;
   podId?: { _id: string; name?: string } | string | null;
+}
+
+interface InstallResponse {
+  status?: 'active' | 'installing' | 'activating' | 'uninstalling';
+  boundPodId?: string;
+}
+
+interface InstallErrorResponse {
+  code?: string;
+  boundPodId?: string;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -53,9 +66,29 @@ const ADD_PLATFORMS: { type: string; enabled: boolean }[] = [
 
 const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 
+// The route is keyed by the installable identity, which is the connector
+// provider type in this Phase 1 projection. Do not pin this to Telegram: a
+// future installable-backed provider must revoke its own parent.
+export const installableLifecyclePath = (type: string): string => (
+  `/api/installables/${encodeURIComponent(type)}/install`
+);
+
+const installErrorResponse = (error: unknown): { status?: number; data?: InstallErrorResponse } => (
+  (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
+);
+
 const podName = (c: Connector): string => (
   typeof c.podId === 'object' && c.podId ? (c.podId.name || 'Untitled pod') : 'Untitled pod'
 );
+
+const boundPodName = (boundPodId: string | undefined, connectors: Connector[], pods: V2Pod[]): string => {
+  const existing = connectors.find((connector) => {
+    const podId = typeof connector.podId === 'object' ? connector.podId?._id : connector.podId;
+    return String(podId) === String(boundPodId);
+  });
+  const boundPod = pods.find((pod) => String(pod._id) === String(boundPodId));
+  return existing ? podName(existing) : (boundPod?.name || 'another pod');
+};
 
 // Codes are 32 hex now (128-bit) — grouped in 4s, wrapping; legacy short
 // codes flow through the same grouping (spec §2.3 step 2).
@@ -137,12 +170,34 @@ const V2ConnectorsPage: React.FC = () => {
     if (!newPodId || creating) return;
     setCreating(true);
     setError(null);
+    const installInProgressMessage = (boundPodId?: string): string => (
+      boundPodId
+        ? t('connectors.installInProgressForPod', {
+          defaultValue: 'Still setting up for {{pod}} — try again in a moment.',
+          pod: boundPodName(boundPodId, connectors, pods),
+        })
+        : t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' })
+    );
     try {
-      await api.post('/api/integrations', { podId: newPodId, type: 'telegram', config: {} });
+      const result = await api.post<InstallResponse>('/api/installables/telegram/install', { podId: newPodId });
+      if (result.status && result.status !== 'active') {
+        setError(installInProgressMessage(result.boundPodId));
+        return;
+      }
       setAdding(false);
       await load();
-    } catch {
-      setError(t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+    } catch (error) {
+      const response = installErrorResponse(error);
+      if (response.status === 409 && response.data?.code === 'install_in_progress') {
+        setError(installInProgressMessage(response.data.boundPodId));
+      } else if (response.status === 409 && response.data?.code === 'already_installed') {
+        setError(t('connectors.alreadyBound', {
+          defaultValue: 'Your Telegram channel is bound to {{pod}}. Disconnect it to bind a different pod.',
+          pod: boundPodName(response.data.boundPodId, connectors, pods),
+        }));
+      } else {
+        setError(t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+      }
     } finally {
       setCreating(false);
     }
@@ -179,7 +234,14 @@ const V2ConnectorsPage: React.FC = () => {
   const disconnect = async (c: Connector) => {
     setBusyId(c._id);
     try {
-      await api.patch(`/api/integrations/${c._id}`, { isActive: false });
+      if (c.installationId) {
+        await api.del(installableLifecyclePath(c.type));
+      } else {
+        // The installable verb owns lifecycle for new Telegram bindings. Keep
+        // older direct integrations disconnectable while their migration is
+        // still an explicit, separate change.
+        await api.patch(`/api/integrations/${c._id}`, { isActive: false });
+      }
       setConfirmDisconnect(null);
       setManageId(null);
       await load();
@@ -332,9 +394,13 @@ const V2ConnectorsPage: React.FC = () => {
     );
   };
 
+  const hasTelegramInstallation = connectors.some(
+    (connector) => connector.type === 'telegram' && Boolean(connector.installationId),
+  );
+
   const addTiles = (
     <div className="v2-connector-add__tiles">
-      {ADD_PLATFORMS.map((p) => (p.enabled ? (
+      {ADD_PLATFORMS.map((p) => (p.enabled && !(p.type === 'telegram' && hasTelegramInstallation) ? (
         <button key={p.type} type="button" className="v2-connector-add__tile" onClick={() => setAdding(true)}>
           <span className={`v2-connector__tile v2-connector__tile--${p.type}`}><PlatformGlyph type={p.type} /></span>
           <span>{TYPE_LABELS[p.type]}</span>

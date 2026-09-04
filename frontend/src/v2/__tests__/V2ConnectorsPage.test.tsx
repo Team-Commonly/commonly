@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2ConnectorsPage from '../components/V2ConnectorsPage';
+import V2ConnectorsPage, { installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -49,6 +49,7 @@ const connectors = [
   },
   {
     _id: 'i-live',
+    installationId: 'install-telegram-u1',
     type: 'telegram',
     status: 'connected',
     config: { chatTitle: 'Rewire crew', liveRelay: false },
@@ -153,7 +154,7 @@ describe('V2ConnectorsPage', () => {
     expect(options).not.toContain('Town Square');
   });
 
-  it('creates a telegram connector for the selected pod', async () => {
+  it('installs Telegram for the selected pod', async () => {
     mockGets([]);
     axios.post.mockResolvedValue({ data: { integration: { _id: 'new' } } });
     renderPage();
@@ -161,10 +162,112 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
     fireEvent.click(screen.getByText('New Telegram connector'));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
-      '/api/integrations',
-      { podId: 'p1', type: 'telegram', config: {} },
+      '/api/installables/telegram/install',
+      { podId: 'p1' },
       expect.anything(),
     ));
+  });
+
+  it('keeps the add form open while an install claim is in progress', async () => {
+    mockGets([]);
+    axios.post.mockResolvedValue({ data: { status: 'installing' } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('names the pending pod returned with a 202 install response', async () => {
+    mockGets([]);
+    axios.post.mockResolvedValue({ data: { status: 'installing', boundPodId: 'p1' } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('keeps the add form open when the server reports an install lock', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'install_in_progress' } } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('names the pending pod when the server reports an install lock', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'install_in_progress', boundPodId: 'p1' } },
+    });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('names the existing pod when the installable is already bound elsewhere', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'already_installed', boundPodId: 'p1' } },
+    });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText(/bound to Rewire Live Demo/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('disconnects an installable Telegram connector through its lifecycle verb', async () => {
+    mockGets();
+    axios.delete.mockResolvedValue({ data: { status: 'uninstalled' } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith(
+      '/api/installables/telegram/install',
+      expect.anything(),
+    ));
+  });
+
+  it('derives the installable lifecycle target from the connector row type', () => {
+    expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
+  });
+
+  it('keeps a legacy Telegram connector disconnectable through the legacy route', async () => {
+    mockGets([{ ...connectors[1], installationId: undefined }]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Manage' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(screen.getByRole('button', { name: /Really disconnect/ }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-live',
+      { isActive: false },
+      expect.anything(),
+    ));
+  });
+
+  it('does not offer a second Telegram install while an installable row exists', async () => {
+    mockGets();
+    renderPage();
+    await screen.findByText('Your channels');
+    expect(screen.queryByRole('button', { name: /Telegram/ })).toBeNull();
   });
 
   it('SOON platforms are not buttons', async () => {
