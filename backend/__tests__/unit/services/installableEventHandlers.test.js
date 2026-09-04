@@ -13,7 +13,7 @@ const {
   eventHandlers,
 } = require('../../../services/installable/eventHandlers');
 const telegramSend = require('../../../services/telegramService');
-const { TELEGRAM_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
+const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -24,6 +24,7 @@ const freshId = () => new mongoose.Types.ObjectId().toString();
 
 describe('installable event dispatcher', () => {
   let originalTelegramHandler;
+  let originalSlackHandler;
 
   beforeAll(async () => {
     await setupMongoDb();
@@ -40,11 +41,17 @@ describe('installable event dispatcher', () => {
       ...TELEGRAM_CONNECTOR,
       stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
     });
+    await Installable.create({
+      ...SLACK_CONNECTOR,
+      stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+    });
     originalTelegramHandler = eventHandlers['telegram.relay'];
+    originalSlackHandler = eventHandlers['slack.relay'];
   });
 
   afterEach(() => {
     eventHandlers['telegram.relay'] = originalTelegramHandler;
+    eventHandlers['slack.relay'] = originalSlackHandler;
   });
 
   it('selects only the event pod connector before invoking its handler', async () => {
@@ -151,6 +158,28 @@ describe('installable event dispatcher', () => {
 
     expect(relay).toHaveBeenCalledTimes(1);
     expect(relay.mock.calls[0][0].podId).toBe(podId);
+  });
+
+  it('selects installed Slack and Telegram rows independently for one pod', async () => {
+    const podId = freshId();
+    await install({ installableId: 'telegram', installedBy: freshId(), podId });
+    await install({ installableId: 'slack', installedBy: freshId(), podId });
+    const telegramRelay = jest.fn().mockResolvedValue(undefined);
+    const slackRelay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = telegramRelay;
+    eventHandlers['slack.relay'] = slackRelay;
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'One message, two subscriptions',
+      podMessageId: 'message-mixed',
+    });
+
+    expect(telegramRelay).toHaveBeenCalledTimes(1);
+    expect(slackRelay).toHaveBeenCalledTimes(1);
+    expect(String(slackRelay.mock.calls[0][0].integration.podId)).toBe(podId);
   });
 
   it('contains an individual handler failure', async () => {

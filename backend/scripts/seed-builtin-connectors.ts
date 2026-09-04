@@ -46,6 +46,41 @@ const TELEGRAM_CONNECTOR = {
   ],
 };
 
+const slackCatalog = manifests.slack?.catalog;
+if (!slackCatalog) {
+  throw new Error('Slack provider manifest is missing its catalog metadata');
+}
+
+const SLACK_CONNECTOR = {
+  installableId: 'slack',
+  name: slackCatalog.label,
+  description: 'Link your Slack DM to Commonly — every pod you\'re in gets a voice where you already talk.',
+  version: '1.0.0',
+  kind: 'app',
+  source: 'builtin',
+  scope: 'user',
+  status: 'active',
+  requires: ['chat:read', 'chat:write', 'integrations:manage'],
+  components: [
+    {
+      name: 'slack-webhook',
+      type: 'webhook',
+      webhookPath: '/api/webhooks/slack',
+      webhookEvents: ['message.im', 'oauth.callback', 'command'],
+      addresses: [{ mode: 'webhook', identifier: '/api/webhooks/slack' }],
+      scopes: ['chat:write'],
+    },
+    {
+      name: 'slack-relay',
+      type: 'event-handler',
+      eventType: 'chat.message',
+      eventHandler: 'internal:slack.relay',
+      addresses: [{ mode: 'event', identifier: 'chat.message' }],
+      scopes: ['chat:read'],
+    },
+  ],
+};
+
 const migrateInstallationIndex = async (): Promise<void> => {
   // The scaffolding index was unique across historical uninstalls. D17 makes
   // a new installation a new projection, so replace it exactly once with the
@@ -65,22 +100,24 @@ const migrateInstallationIndex = async (): Promise<void> => {
 export const seedBuiltinConnectors = async (): Promise<void> => {
   try {
     await migrateInstallationIndex();
-    await Installable.findOneAndUpdate(
-      { installableId: TELEGRAM_CONNECTOR.installableId },
-      {
-        $set: TELEGRAM_CONNECTOR,
-        $setOnInsert: {
-          stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+    await Promise.all([TELEGRAM_CONNECTOR, SLACK_CONNECTOR].map((connector) => (
+      Installable.findOneAndUpdate(
+        { installableId: connector.installableId },
+        {
+          $set: connector,
+          $setOnInsert: {
+            stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+          },
         },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    console.log('[builtin-connectors] Telegram manifest ready');
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      )
+    )));
+    console.log('[builtin-connectors] Telegram and Slack manifests ready');
   } catch (error) {
     console.error('[builtin-connectors] seed failed:', (error as Error).message);
   }
 };
 
-export { TELEGRAM_CONNECTOR };
+export { TELEGRAM_CONNECTOR, SLACK_CONNECTOR };
 
-module.exports = { seedBuiltinConnectors, TELEGRAM_CONNECTOR };
+module.exports = { seedBuiltinConnectors, TELEGRAM_CONNECTOR, SLACK_CONNECTOR };

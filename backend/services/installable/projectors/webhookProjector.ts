@@ -4,13 +4,14 @@ import type { ComponentProjector, ProjectionContext, ProjectionIds } from './typ
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../../models/Integration');
 
-const INTERNAL_WEBHOOK_PROVIDERS: Record<string, 'telegram'> = {
+const INTERNAL_WEBHOOK_PROVIDERS: Record<string, 'telegram' | 'slack'> = {
   '/api/webhooks/telegram': 'telegram',
+  '/api/webhooks/slack': 'slack',
 };
 
 const installationIdFor = (context: ProjectionContext): string => String(context.installation._id);
 
-const resolveProvider = (component: IComponent): 'telegram' => {
+const resolveProvider = (component: IComponent): 'telegram' | 'slack' => {
   const provider = component.webhookPath
     ? INTERNAL_WEBHOOK_PROVIDERS[component.webhookPath]
     : undefined;
