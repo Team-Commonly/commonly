@@ -9,6 +9,7 @@ const {
   install,
   uninstall,
   InstallLockLostError,
+  InstallableAlreadyInstalledError,
   InstallableProjectionError,
 } = require('../../../services/installable/installableInstallationService');
 const { sweep } = require('../../../services/installable/installableReconciler');
@@ -92,6 +93,23 @@ describe('installable connector projection', () => {
     const retry = await install({ installableId: 'telegram', installedBy: userId, podId });
     expect(retry.httpStatus).toBe(200);
     expect(String(retry.installation._id)).toBe(String(first.installation._id));
+  });
+
+  it('refuses a different pod instead of reporting an existing install as a success', async () => {
+    const { userId, podId } = ids();
+    const otherPodId = new mongoose.Types.ObjectId().toString();
+    await install({ installableId: 'telegram', installedBy: userId, podId });
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
+      .rejects.toMatchObject({
+        code: 'already_installed',
+        boundPodId: podId,
+      });
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
+      .rejects.toBeInstanceOf(InstallableAlreadyInstalledError);
+
+    const integration = await Integration.findOne({ type: 'telegram' });
+    expect(String(integration.podId)).toBe(podId);
   });
 
   it('survives repeated component failures and claims the same projection on retry', async () => {

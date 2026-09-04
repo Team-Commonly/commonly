@@ -47,6 +47,17 @@ export class InstallInProgressError extends Error {
   }
 }
 
+export class InstallableAlreadyInstalledError extends Error {
+  code = 'already_installed';
+  boundPodId: string;
+
+  constructor(boundPodId: string) {
+    super('This connector is already installed for another pod.');
+    this.name = 'InstallableAlreadyInstalledError';
+    this.boundPodId = boundPodId;
+  }
+}
+
 export class InstallableNotFoundError extends Error {
   code = 'installable_not_found';
 
@@ -141,11 +152,22 @@ const integrationFor = async (installation: IInstallableInstallation): Promise<u
   Integration.findOne({ installationId: String(installation._id) })
 );
 
+const integrationPodId = (integration: unknown): string | null => {
+  if (!integration || typeof integration !== 'object') return null;
+  const podId = (integration as { podId?: unknown }).podId;
+  return podId == null ? null : String(podId);
+};
+
 const resultForExisting = async (
   installation: IInstallableInstallation,
+  requestedPodId: Types.ObjectId,
 ): Promise<InstallResult> => {
   const integration = await integrationFor(installation);
   if (installation.status === 'active') {
+    const boundPodId = integrationPodId(integration);
+    if (boundPodId && boundPodId !== String(requestedPodId)) {
+      throw new InstallableAlreadyInstalledError(boundPodId);
+    }
     return { installation, integration, httpStatus: 200, state: 'active' };
   }
   return {
@@ -472,7 +494,7 @@ const installAttempt = async ({
   const installerId = asObjectId(installedBy, 'installer');
   const targetPodId = asObjectId(podId, 'podId');
   const claim = await claimInstallation(installable, installerId, installerId);
-  if (!claim.ownsClaim) return resultForExisting(claim.installation);
+  if (!claim.ownsClaim) return resultForExisting(claim.installation, targetPodId);
 
   let installation = claim.installation;
   const claimId = installation.claimId;
@@ -583,6 +605,7 @@ module.exports = {
   InstallLockLostError,
   InstallableProjectionError,
   InstallInProgressError,
+  InstallableAlreadyInstalledError,
   InstallableNotFoundError,
   install,
   uninstall,

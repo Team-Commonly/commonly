@@ -16,6 +16,10 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
   install: jest.fn(),
   uninstall: jest.fn(),
   InstallLockLostError: class InstallLockLostError extends Error {},
+  InstallableAlreadyInstalledError: function InstallableAlreadyInstalledError(boundPodId) {
+    this.message = 'This connector is already installed for another pod.';
+    this.boundPodId = boundPodId;
+  },
   InstallableNotFoundError: class InstallableNotFoundError extends Error {},
   InstallableProjectionError: class InstallableProjectionError extends Error {},
   InstallInProgressError: class InstallInProgressError extends Error {},
@@ -108,6 +112,28 @@ describe('installable connector routes', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('install_lock_lost');
+  });
+
+  it('returns the bound pod when an active connector is requested for another pod', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+    installationService.install.mockRejectedValue(
+      new installationService.InstallableAlreadyInstalledError('64b64c48c4f37a6b2f34c333'),
+    );
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'already_installed',
+      boundPodId: '64b64c48c4f37a6b2f34c333',
+    });
   });
 
   it('cannot use an uninstall body to target another user installation', async () => {

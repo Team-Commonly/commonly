@@ -11,6 +11,7 @@ import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 // eslint-disable-next-line global-require
 const {
   InstallLockLostError,
+  InstallableAlreadyInstalledError,
   InstallableNotFoundError,
   InstallableProjectionError,
   InstallInProgressError,
@@ -45,6 +46,15 @@ const sendInstallError = (error: Error, res: Res): void => {
   }
   if (error instanceof InstallInProgressError) {
     res.status(409).json({ code: 'install_in_progress', error: error.message });
+    return;
+  }
+  if (error instanceof InstallableAlreadyInstalledError) {
+    const { boundPodId } = error as Error & { boundPodId: string };
+    res.status(409).json({
+      code: 'already_installed',
+      error: error.message,
+      boundPodId,
+    });
     return;
   }
   if (error instanceof InstallableProjectionError) {
