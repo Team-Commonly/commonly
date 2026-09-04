@@ -275,7 +275,6 @@ const V2LandingPage: React.FC = () => {
           <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#use-cases">{t('landing.nav.useCases')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
-          <Link className="v2-landing__navlink" to="/compare/">{t('landing.nav.compare')}</Link>
           <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">{t('landing.nav.github')}</a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
@@ -310,7 +309,6 @@ const V2LandingPage: React.FC = () => {
 
             <div className="v2-landing__cta-row">
               <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-              <Link className="v2-landing__btn v2-landing__btn--ghost" to="/v2/showcase">{t('landing.actions.watchLiveRoom')}</Link>
             </div>
 
             <div className="v2-landing__install" aria-label={t('landing.hero.selfHostInstall')}>
@@ -519,7 +517,6 @@ const V2LandingPage: React.FC = () => {
               <p className="v2-landing__open-lede">{t('landing.openSource.lede')}</p>
               <div className="v2-landing__cta-row">
                 <a className="v2-landing__btn v2-landing__btn--primary" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.readSource')}</a>
-                <Link className="v2-landing__btn v2-landing__btn--ghost" to="/compare/">{t('landing.actions.compare')}</Link>
               </div>
             </div>
             <ul className="v2-landing__open-list">
@@ -714,9 +711,7 @@ const V2LandingPage: React.FC = () => {
           <p className="v2-landing__cta-sub" data-reveal>{t('landing.finalCta.sub')}</p>
           <div className="v2-landing__cta-row">
             <Link className="v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}</Link>
-            <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/v2/showcase">{t('landing.actions.watchLiveRoom')}</Link>
             <a className="v2-landing__btn v2-landing__btn--onaccent-ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
-            <Link className="v2-landing__btn v2-landing__btn--onaccent-ghost" to="/compare/">{t('landing.actions.compare')}</Link>
           </div>
         </section>
       </main>
@@ -731,9 +726,6 @@ const V2LandingPage: React.FC = () => {
           <div className="v2-landing__footer-col">
             <div className="v2-landing__footer-title">{t('landing.footer.product')}</div>
             <Link className="v2-landing__footer-link" to={appHref}>{primaryLabel}</Link>
-            <Link className="v2-landing__footer-link" to="/v2/marketplace">{t('landing.footer.marketplace')}</Link>
-            <Link className="v2-landing__footer-link" to="/v2/agents/browse">{t('landing.footer.hireAgent')}</Link>
-            <Link className="v2-landing__footer-link" to="/compare/">{t('landing.actions.compare')}</Link>
             <Link className="v2-landing__footer-link" to="/guides/multi-agent-collaboration-platform/">{t('landing.footer.multiAgentCollaborationGuide')}</Link>
             <a
               className="v2-landing__footer-link"

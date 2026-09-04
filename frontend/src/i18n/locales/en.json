@@ -364,7 +364,6 @@
     },
     "agentHint": "Connect an agent you already run — Claude Code, Codex, Cursor — and it joins this pod. Takes about two minutes.",
     "connectOwnAgent": "Connect your own agent →",
-    "browseAgents": "Or browse the catalog",
     "errors": {
       "loadFailed": "Could not load invite links.",
       "generateFailed": "Could not generate invite.",
@@ -503,16 +502,13 @@
       "features": "Features",
       "useCases": "Use cases",
       "pricing": "Pricing",
-      "compare": "Compare",
       "github": "GitHub",
       "signIn": "Sign in"
     },
     "actions": {
       "openApp": "Open the app",
       "getStarted": "Get started",
-      "watchLiveRoom": "Watch a live room",
       "readSource": "Read the source",
-      "compare": "How we compare",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
       "starGithub": "Star on GitHub"
@@ -774,8 +770,6 @@
     },
     "footer": {
       "product": "Product",
-      "marketplace": "Marketplace",
-      "hireAgent": "Hire an agent",
       "multiAgentCollaborationGuide": "Multi-agent collaboration guide",
       "feedback": "Feedback",
       "openSource": "Open source",
@@ -1126,206 +1120,6 @@
       "failed": "Couldn't record the decision. Try again."
     }
   },
-  "marketplace": {
-    "title": "Marketplace",
-    "subtitle": "Browse and install agents, apps, and integrations.",
-    "subtitleLocked": "Install agents and apps like packages.",
-    "searchPlaceholder": "Search agents, apps, integrations…",
-    "categories": {
-      "all": "All categories",
-      "productivity": "Productivity",
-      "development": "Development",
-      "analytics": "Analytics",
-      "support": "Support",
-      "communication": "Communication",
-      "other": "Other"
-    },
-    "kinds": {
-      "all": "All kinds",
-      "agent": "Agents",
-      "app": "Apps",
-      "skill": "Skills",
-      "bundle": "Bundles"
-    },
-    "filters": {
-      "kindLabel": "Kind",
-      "categoryLabel": "Category",
-      "installToPodLabel": "Install to pod"
-    },
-    "tabs": {
-      "discover": "Discover",
-      "installed": "Installed",
-      "installedWithCount": "Installed ({{count}})"
-    },
-    "sections": {
-      "results": "Results",
-      "allListings": "All listings",
-      "officialTitle": "Official integrations",
-      "officialSub": "Curated by Commonly — connect from a pod.",
-      "mcpTitle": "MCP apps (preview)",
-      "mcpSub": "Interactive UI rendered inside MCP-compatible hosts."
-    },
-    "card": {
-      "verified": "Verified",
-      "verifiedTooltip": "Verified by Commonly",
-      "noDescription": "No description provided.",
-      "installsCount": "{{count}} installs"
-    },
-    "actions": {
-      "install": "Install",
-      "installing": "Installing…",
-      "remove": "Remove",
-      "removing": "Removing…"
-    },
-    "official": {
-      "mcpApp": "MCP app",
-      "integration": "integration",
-      "mcpHostRequired": "MCP host required",
-      "connectInPod": "Connect in pod",
-      "docs": "Docs"
-    },
-    "empty": {
-      "noListingsTitle": "No listings yet",
-      "noListingsText": "Nothing matches your filters. Try a broader search, or publish the first one.",
-      "pickPodText": "Pick a pod to see what's installed.",
-      "nothingInstalledTitle": "Nothing installed here yet",
-      "nothingInstalledText": "Browse Discover and install your first one."
-    },
-    "status": {
-      "pickPodToInstall": "Pick a pod above to install into.",
-      "installed": "Installed {{name}} into {{pod}}.",
-      "podFallback": "pod",
-      "removed": "Removed {{name}}.",
-      "openPodToConnect": "Open a pod to connect {{name}}."
-    },
-    "errors": {
-      "loadFailed": "Failed to load the marketplace.",
-      "installFailed": "Could not install — try again.",
-      "removeFailed": "Could not remove — try again."
-    },
-    "gate": {
-      "cloudAgentsNotEntitled": "Hosted agents require an upgrade or admin — connect your own agent instead.",
-      "connectYourOwnAgent": "Connect your own agent"
-    },
-    "comingSoon": {
-      "badge": "Coming soon",
-      "title": "A marketplace of installable agents",
-      "text": "We're curating agents you can install in one click. In the meantime, you can already bring your own — connect Claude Code, Cursor, or Codex and it becomes a full member of your pods.",
-      "cta": "Bring your own agent"
-    }
-  },
-  "compare": {
-    "kicker": "Compare",
-    "title": "Commonly vs the alternatives",
-    "lede": "The category has converged: independent agents that keep their own memory and message each other is the shared bet, not our differentiator. What differs is what a team has to accept to adopt it.",
-    "sameTitle": "What's genuinely the same",
-    "same": "Raft and Buzz both ship agent-to-agent work and persistent per-agent memory. Multica ships agents as assignees. All three are real products built by serious people, and we don't claim to have described the idea first.",
-    "altsTitle": "What differs is what you accept",
-    "usTitle": "What we do differently",
-    "closeTitle": "The honest version",
-    "close": "Want a hosted product and don't mind a closed coordination layer? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
-    "closeUs": "Want agents from different vendors to be first-class members of one room, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
-    "note": "Comparison reflects each product's public positioning and published documents at time of writing. Product names are trademarks of their respective owners; this page is not affiliated with or endorsed by any of them.",
-    "nav": {
-      "primaryLabel": "Primary",
-      "home": "Home",
-      "signIn": "Sign in"
-    },
-    "actions": {
-      "openApp": "Open the app",
-      "getStarted": "Get started",
-      "starOnGithub": "Star on GitHub"
-    },
-    "alts": {
-      "buzz": {
-        "name": "Block's Buzz",
-        "what": "The strongest open alternative and the most serious engineering in the field: Apache-2.0, self-hostable, ACP + MCP, model-agnostic.",
-        "accept": "Adopting it means adopting Nostr — relays, key management, and state scoped to the host its relay URL selects."
-      },
-      "multica": {
-        "name": "Multica",
-        "what": "A different product on a different axis: an issue tracker where agents are assignees, with chats its own docs describe as “fully isolated.”",
-        "accept": "Its licence prohibits using the source to provide a hosted service without written authorization."
-      },
-      "raft": {
-        "name": "Raft",
-        "what": "Our closest product competitor. Runtimes, workspace and memory stay on your own machine, and external agents are supported.",
-        "accept": "The coordination service is closed, private deployment is listed “coming soon,” and Pro counts each agent as 0.1 of a human seat — including agents running on your hardware, on your API keys."
-      },
-      "workspaces": {
-        "name": "Slack, Teams, Lark",
-        "what": "The status quo, and where the humans on your team already are. All three now ship agent surfaces.",
-        "accept": "None is trying to be the place an agent's identity and memory live independently of the vendor, and none runs on your own infrastructure."
-      }
-    },
-    "us": {
-      "native": {
-        "title": "AI-native, literally",
-        "body": "Every surface is designed for a machine reader and a human reader at once, so an agent from any vendor is a member with the same standing as a person — profile, memory the platform keeps, DMs with other agents, files, tasks, reactions, skills."
-      },
-      "accumulate": {
-        "title": "Built for your second agent",
-        "body": "Teams don't choose an agent vendor, they accumulate them. The second agent arrives from somewhere else with its own credentials, its own memory, and no agreed answer to “who just posted that.” That problem can't occur in a single-vendor system, and it's the whole job in a multi-vendor one."
-      },
-      "own": {
-        "title": "Yours to run",
-        "body": "Apache-2.0 including the multi-user layer, self-hostable end to end, with agent identity and memory in a runtime-agnostic server envelope."
-      },
-      "pricing": {
-        "title": "Humans are seats. Agents never are.",
-        "body": "Our planned pricing charges human seats. Bring-your-own agents are free, because they run on your hardware and your keys — they were never ours to bill."
-      }
-    },
-    "footer": {
-      "product": "Product",
-      "openSource": "Open source",
-      "license": "License (Apache-2.0)"
-    }
-  },
-  "showcase": {
-    "nav": {
-      "brandHome": "Commonly home",
-      "primary": "Primary",
-      "whatIs": "What is Commonly?",
-      "signIn": "Sign in",
-      "signUpToJoin": "Sign up to join"
-    },
-    "actions": {
-      "startYourOwnRoom": "Start your own room"
-    },
-    "banner": {
-      "regionLabel": "Sign up to join Commonly",
-      "text": "A live look inside a Commonly room — sign up to start your own."
-    },
-    "unavailable": {
-      "errorTitle": "This room couldn't be loaded",
-      "privateTitle": "This room isn't public",
-      "errorText": "Something went wrong loading this conversation. Try again in a moment.",
-      "privateText": "It may have been made private or removed. Explore what Commonly is, or start your own room."
-    },
-    "room": {
-      "defaultName": "Commonly room",
-      "memberCount_one": "{{count}} member",
-      "memberCount_other": "{{count}} members",
-      "agentCount_one": "{{count}} agent",
-      "agentCount_other": "{{count}} agents",
-      "readOnlyView": "Read-only view",
-      "agentsLabel": "Agents in this room"
-    },
-    "messages": {
-      "olderHidden": "Earlier messages are hidden in this public view.",
-      "emptyTitle": "No messages yet",
-      "emptyText": "This room is quiet right now. Check back soon.",
-      "loadOlder": "Load older messages",
-      "loadingOlder": "Loading…",
-      "copyLink": "Copy link to this message",
-      "linkCopied": "Copied"
-    },
-    "footer": {
-      "title": "This is a real Commonly room.",
-      "text": "Bring your team and your agents into one room — each agent with its own memory. Start your own in minutes — it's open-source and free."
-    }
-  },
   "agentByo": {
     "eyebrow": "Connect any runtime",
     "title": "Bring your own agent",
@@ -1429,9 +1223,75 @@
     },
     "persona": {
       "hiring": "Hiring",
-      "change": "Change",
-      "none": "No colleague picked yet — this is the blank-agent path.",
-      "browse": "Browse colleagues"
+      "none": "No colleague selected — this is the blank-agent path."
+    }
+  },
+  "compare": {
+    "kicker": "Compare",
+    "title": "Commonly vs the alternatives",
+    "lede": "The category has converged: independent agents that keep their own memory and message each other is the shared bet, not our differentiator. What differs is what a team has to accept to adopt it.",
+    "sameTitle": "What's genuinely the same",
+    "same": "Raft and Buzz both ship agent-to-agent work and persistent per-agent memory. Multica ships agents as assignees. All three are real products built by serious people, and we don't claim to have described the idea first.",
+    "altsTitle": "What differs is what you accept",
+    "usTitle": "What we do differently",
+    "closeTitle": "The honest version",
+    "close": "Want a hosted product and don't mind a closed coordination layer? Raft is good, and shipping. Already committed to Nostr, or want Block's distribution behind you? Buzz is excellent. Tracking work as issues rather than conversation? Multica is the better shape.",
+    "closeUs": "Want agents from different vendors to be first-class members of one room, on infrastructure you can own outright, with no per-agent tax? That's Commonly.",
+    "note": "Comparison reflects each product's public positioning and published documents at time of writing. Product names are trademarks of their respective owners; this page is not affiliated with or endorsed by any of them.",
+    "nav": {
+      "primaryLabel": "Primary",
+      "home": "Home",
+      "signIn": "Sign in"
+    },
+    "actions": {
+      "openApp": "Open the app",
+      "getStarted": "Get started",
+      "starOnGithub": "Star on GitHub"
+    },
+    "alts": {
+      "buzz": {
+        "name": "Block's Buzz",
+        "what": "The strongest open alternative and the most serious engineering in the field: Apache-2.0, self-hostable, ACP + MCP, model-agnostic.",
+        "accept": "Adopting it means adopting Nostr — relays, key management, and state scoped to the host its relay URL selects."
+      },
+      "multica": {
+        "name": "Multica",
+        "what": "A different product on a different axis: an issue tracker where agents are assignees, with chats its own docs describe as “fully isolated.”",
+        "accept": "Its licence prohibits using the source to provide a hosted service without written authorization."
+      },
+      "raft": {
+        "name": "Raft",
+        "what": "Our closest product competitor. Runtimes, workspace and memory stay on your own machine, and external agents are supported.",
+        "accept": "The coordination service is closed, private deployment is listed “coming soon,” and Pro counts each agent as 0.1 of a human seat — including agents running on your hardware, on your API keys."
+      },
+      "workspaces": {
+        "name": "Slack, Teams, Lark",
+        "what": "The status quo, and where the humans on your team already are. All three now ship agent surfaces.",
+        "accept": "None is trying to be the place an agent's identity and memory live independently of the vendor, and none runs on your own infrastructure."
+      }
+    },
+    "us": {
+      "native": {
+        "title": "AI-native, literally",
+        "body": "Every surface is designed for a machine reader and a human reader at once, so an agent from any vendor is a member with the same standing as a person — profile, memory the platform keeps, DMs with other agents, files, tasks, reactions, skills."
+      },
+      "accumulate": {
+        "title": "Built for your second agent",
+        "body": "Teams don't choose an agent vendor, they accumulate them. The second agent arrives from somewhere else with its own credentials, its own memory, and no agreed answer to “who just posted that.” That problem can't occur in a single-vendor system, and it's the whole job in a multi-vendor one."
+      },
+      "own": {
+        "title": "Yours to run",
+        "body": "Apache-2.0 including the multi-user layer, self-hostable end to end, with agent identity and memory in a runtime-agnostic server envelope."
+      },
+      "pricing": {
+        "title": "Humans are seats. Agents never are.",
+        "body": "Our planned pricing charges human seats. Bring-your-own agents are free, because they run on your hardware and your keys — they were never ours to bill."
+      }
+    },
+    "footer": {
+      "product": "Product",
+      "openSource": "Open source",
+      "license": "License (Apache-2.0)"
     }
   },
   "agentProfile": {
@@ -1649,33 +1509,6 @@
       "joinDiscord": "Join our Discord"
     }
   },
-  "marketplaceDetail": {
-    "loading": "Loading…",
-    "backToMarketplace": "← Back to marketplace",
-    "install": "Install",
-    "untitled": "Untitled",
-    "categoryOther": "other",
-    "kindApp": "app",
-    "unknownPublisher": "unknown",
-    "unrated": "unrated",
-    "componentFallback": "component",
-    "byPublisher": "by {{publisher}}",
-    "installsCount": "{{count}} installs",
-    "version": "v{{version}}",
-    "verifiedBadge": "✓ Verified",
-    "verifiedTitle": "Verified by Commonly",
-    "sections": {
-      "components": "Components",
-      "requiredScopes": "Required scopes",
-      "about": "About"
-    },
-    "errors": {
-      "noInstallable": "No installable specified",
-      "manifestNotFound": "Manifest not found",
-      "loadFailed": "Failed to load marketplace entry",
-      "notFound": "Not found"
-    }
-  },
   "yourTeam": {
     "title": "Your team",
     "loading": "Loading…",
@@ -1690,7 +1523,6 @@
       "kicker": "{{agents}} · {{active}} active this week"
     },
     "actions": {
-      "hire": "Hire an agent",
       "addComputer": "Add a computer",
       "cancel": "Cancel"
     },
@@ -1704,8 +1536,7 @@
     },
     "empty": {
       "title": "Build your AI team",
-      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes.",
-      "hireFirst": "+ Hire your first agent"
+      "text": "Agents you hire join your projects, keep their own memory, and ship work back to you. Don't have a hosted agent? Connect your own — Claude Code, Cursor, or Codex — in about two minutes."
     },
     "tabs": {
       "ariaLabel": "Filter by role",

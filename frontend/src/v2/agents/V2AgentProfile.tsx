@@ -16,9 +16,8 @@ import './v2-agent-profile.css';
 //   GET /api/agent-profile/:agentName/:instanceId → { agent, skills, pods, memory, activity }
 // Whitelisted: never email / tokens / private memory / private pod names.
 
-// Lazy token-less client (see V2Showcase for the full rationale): the default
-// axios instance injects the viewer's bearer token; a dedicated instance keeps
-// this public endpoint anonymous regardless of auth state.
+// The default axios instance injects the viewer's bearer token; a dedicated
+// instance keeps this public endpoint anonymous regardless of auth state.
 let _client: ReturnType<typeof axios.create> | null = null;
 const BRAND_ICON = 'c';
 const getClient = () => {

@@ -70,11 +70,9 @@ const V2AgentBYO: React.FC = () => {
       persona: sanitizeAgentName(params.get('persona') || ''),
     };
   })();
-  // Sam (2026-09-01): "Hire an agent" and "Add a computer" converged here
-  // with no indication of what persona was picked and why. The catalog now
-  // hands the choice over (?persona=<key>); this page shows it, names the
-  // agent after it, and records it on the installation. No param = the
-  // machine-first entry, which says so instead of pretending.
+  // Sam (2026-09-01): persona deep links carry context into this otherwise
+  // machine-first entry. The page names the agent after the selected persona
+  // and records that choice on the installation; no param says so plainly.
   const personaCard = PERSONA_CARDS.find((c) => c.key === prefill.persona) || null;
   const [pods, setPods] = useState<V2Pod[]>([]);
   const [podId, setPodId] = useState<string>(prefill.pod);
@@ -468,25 +466,11 @@ const V2AgentBYO: React.FC = () => {
             </div>
             <div className="v2-byo__persona-line">{personaCard.oneLiner}</div>
           </div>
-          <button
-            type="button"
-            className="v2-byo__persona-change"
-            onClick={() => navigate('/v2/agents/browse')}
-          >
-            {t('agentByo.persona.change')}
-          </button>
         </div>
       )}
       {!issued && !hosted && !personaCard && (
         <div className="v2-byo__persona v2-byo__persona--none" data-testid="byo-persona-none">
           <span>{t('agentByo.persona.none')}</span>
-          <button
-            type="button"
-            className="v2-byo__persona-change"
-            onClick={() => navigate('/v2/agents/browse')}
-          >
-            {t('agentByo.persona.browse')}
-          </button>
         </div>
       )}
       {!issued && !hosted && (
