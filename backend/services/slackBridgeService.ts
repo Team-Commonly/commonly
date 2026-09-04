@@ -14,6 +14,7 @@ const OUTBOUND_TEXT_CAP = 2_800;
 
 interface SlackIntegrationDoc {
   _id: unknown;
+  installationId?: string;
   podId: unknown;
   type?: string;
   isActive?: boolean;
@@ -22,10 +23,19 @@ interface SlackIntegrationDoc {
     chatId?: string;
     chatType?: string;
     botTokenRef?: string;
+    linkedUserId?: string;
+    slackUserId?: string;
     liveRelay?: boolean;
     relayAllAgentMessages?: boolean;
     leadAgentUsername?: string;
     relayMutedUntil?: Date | string;
+    relayMap?: Array<{
+      externalMessageId?: string;
+      tgMessageId?: string;
+      agentUsername?: string;
+      podMessageId?: string | null;
+      podId?: string;
+    }>;
   };
 }
 
@@ -102,4 +112,150 @@ export const relayAgentMessageToSlack = async (opts: {
   }
 };
 
-module.exports = { relayAgentMessageToSlack, isRelayableIntegration };
+// D11: a Slack thread attached to a relayed line is a direct answer to that
+// line's agent. Keep the map generic so Telegram can migrate from tgMessageId
+// without changing this reader.
+export const routeSlackReplyContent = (opts: {
+  content: string;
+  threadTs?: string | null;
+  relayMap?: Array<{
+    externalMessageId?: string;
+    tgMessageId?: string;
+    agentUsername?: string;
+  }>;
+}): { content: string; routedAgent: string | null } => {
+  const { content, threadTs, relayMap } = opts;
+  if (!threadTs || !Array.isArray(relayMap)) return { content, routedAgent: null };
+  const hit = relayMap.find((entry) => String(entry.externalMessageId || entry.tgMessageId) === String(threadTs));
+  if (!hit?.agentUsername) return { content, routedAgent: null };
+  const mention = `@${hit.agentUsername}`;
+  return content.toLowerCase().includes(mention.toLowerCase())
+    ? { content, routedAgent: hit.agentUsername }
+    : { content: `${mention} ${content}`, routedAgent: hit.agentUsername };
+};
+
+// Inbound Slack DM → Commonly pod. The event route has already proven the
+// Slack signature and selected the team/channel row; this function repeats
+// the ownership-shaped checks because a bridge is never allowed to rely on a
+// caller's selection alone.
+export const relaySlackMessageToPod = async (opts: {
+  integration: SlackIntegrationDoc;
+  event: {
+    text?: string;
+    user?: string;
+    ts?: string;
+    thread_ts?: string;
+    user_profile?: { real_name?: string; display_name?: string };
+  };
+}): Promise<{ relayed: boolean; routedAgent?: string | null }> => {
+  const { integration, event } = opts;
+  const rawText = String(event.text || '').trim();
+  if (!rawText || rawText.startsWith('/')) return { relayed: false };
+  const config = integration.config || {};
+  if (
+    !isRelayableIntegration(integration, String(integration.podId))
+    || !config.linkedUserId
+    || !config.slackUserId
+    || event.user !== config.slackUserId
+  ) {
+    console.warn(
+      `[slack-bridge] inbound dropped integration=${String(integration._id)}: `
+      + 'unbound or mismatched DM sender',
+    );
+    return { relayed: false };
+  }
+  const { content: routedText, routedAgent } = routeSlackReplyContent({
+    content: rawText,
+    threadTs: event.thread_ts,
+    relayMap: config.relayMap,
+  });
+  const podId = String(integration.podId);
+  const linkedUserId = String(config.linkedUserId);
+  const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
+  const content = senderName
+    ? `💬 ${senderName} (via Slack): ${routedText}`
+    : `💬 (via Slack): ${routedText}`;
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const PodModel = require('../models/Pod');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const PGMessage = require('../models/pg/Message');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { deliverMessageToAgents } = require('./messageAgentDeliveryService');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const socketConfig = require('../config/socket');
+
+  const [linkedUser, pod] = await Promise.all([
+    User.findById(linkedUserId).select('username profilePicture').lean(),
+    PodModel.findById(podId).select('type').lean(),
+  ]);
+  if (!linkedUser || !pod) {
+    console.warn('[slack-bridge] inbound dropped — linked user or pod missing');
+    return { relayed: false };
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const PGPod = require('../models/pg/Pod');
+    if (!await PGPod.findById(podId)) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { syncPodFromMongo } = require('./pgPodSyncService');
+      await syncPodFromMongo(podId, linkedUserId);
+    }
+  } catch (error) {
+    console.warn('[slack-bridge] PG pod backfill skipped:', (error as Error).message);
+  }
+  const created = await PGMessage.create(podId, linkedUserId, content, 'text', null, null, null);
+  let message: Record<string, unknown> = created;
+  try {
+    const populated = created?.id ? await PGMessage.findById(created.id) : null;
+    if (populated) message = populated;
+  } catch (error) {
+    console.warn('[slack-bridge] post-write read failed:', (error as Error).message);
+  }
+  // A post is durable. As in the Telegram bridge, do not turn a later wake or
+  // socket failure into a Slack retry that writes the same human message again.
+  try {
+    await deliverMessageToAgents({
+      podId,
+      podType: pod.type,
+      message,
+      userId: linkedUserId,
+      requestUser: { username: linkedUser.username },
+      replyToMessageId: null,
+    });
+  } catch (error) {
+    console.error('[slack-bridge] agent delivery failed after pod write:', (error as Error).message);
+  }
+  try {
+    const io = socketConfig.getIO();
+    if (io) {
+      io.to(`pod_${podId}`).emit('newMessage', {
+        _id: (message as { id?: unknown }).id,
+        id: (message as { id?: unknown }).id,
+        pod_id: podId,
+        podId,
+        content: (message as { content?: unknown }).content || content,
+        messageType: 'text',
+        userId: { _id: linkedUserId, username: linkedUser.username, profilePicture: linkedUser.profilePicture },
+        username: linkedUser.username,
+        profile_picture: linkedUser.profilePicture,
+        createdAt: (message as { created_at?: unknown }).created_at || new Date(),
+        replyTo: null,
+        thread_root_id: null,
+        payload: null,
+      });
+    }
+  } catch (error) {
+    console.warn('[slack-bridge] socket emit failed:', (error as Error).message);
+  }
+  return { relayed: true, routedAgent };
+};
+
+module.exports = {
+  relayAgentMessageToSlack,
+  relaySlackMessageToPod,
+  routeSlackReplyContent,
+  isRelayableIntegration,
+};

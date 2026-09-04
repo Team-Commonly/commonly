@@ -14,7 +14,7 @@ jest.mock('../../../models/Integration', () => ({
 }));
 jest.mock('../../../models/InstallableInstallation', () => ({ findOne: jest.fn() }));
 jest.mock('../../../utils/secret', () => ({ hash: jest.fn((value) => `hash:${value}`), randomSecret: jest.fn(() => 'nonce-value') }));
-jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn(), revoke: jest.fn() }));
+jest.mock('../../../services/connectorSecrets', () => ({ get: jest.fn(), put: jest.fn(), revoke: jest.fn() }));
 jest.mock('../../../services/slackApi', () => jest.fn().mockImplementation(() => ({
   openConversation: jest.fn(),
 })));
@@ -38,6 +38,7 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
 }));
 
 const Integration = require('../../../models/Integration');
+const Pod = require('../../../models/Pod');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const SlackApi = require('../../../services/slackApi');
@@ -122,5 +123,36 @@ describe('Slack installable OAuth routes', () => {
     const [, commit] = Integration.findOneAndUpdate.mock.calls[1];
     expect(commit.$set['config.pendingBind']).toMatchObject({ teamId: 'T1', chatId: 'D1', botTokenRef: 'secret-ref' });
     expect(JSON.stringify(commit)).not.toContain('xoxb-never-store-on-integration');
+  });
+
+  test('confirms only the owner binding and never serializes the secret reference', async () => {
+    const pending = {
+      teamId: 'T1', teamName: 'Example', slackUserId: 'U1', slackUserName: 'sam',
+      chatId: 'D1', botTokenRef: 'secret-ref', expiresAt: new Date(Date.now() + 60_000),
+    };
+    Integration.findOne.mockResolvedValue({ ...integration, config: { pendingBind: pending } });
+    Pod.findById
+      .mockResolvedValueOnce({ createdBy: { toString: () => 'another' }, members: [ownerId] })
+      .mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ name: 'Launch' }) }),
+      });
+    Integration.findOneAndUpdate.mockResolvedValue({
+      ...integration,
+      status: 'connected',
+      config: { ...pending, botTokenRef: 'secret-ref', chatType: 'im' },
+    });
+    connectorSecrets.get.mockResolvedValue('xoxb-secret');
+    SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '1.1' }) }));
+
+    const response = await request(app).post('/api/installables/slack/confirm');
+
+    expect(response.status).toBe(200);
+    expect(Integration.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'integration-1', 'config.pendingBind.botTokenRef': 'secret-ref' }),
+      expect.objectContaining({ $set: expect.objectContaining({ 'config.chatType': 'im', 'config.botTokenRef': 'secret-ref' }) }),
+      expect.anything(),
+    );
+    expect(JSON.stringify(response.body)).not.toContain('secret-ref');
+    expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[Launch] connected');
   });
 });

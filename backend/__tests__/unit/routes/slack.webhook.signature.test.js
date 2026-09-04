@@ -1,0 +1,67 @@
+const crypto = require('crypto');
+const request = require('supertest');
+const express = require('express');
+
+jest.mock('../../../models/Integration', () => ({ findOne: jest.fn(), findById: jest.fn() }));
+jest.mock('../../../integrations', () => ({ get: jest.fn() }));
+jest.mock('../../../services/slackEventReceiptService', () => ({ claim: jest.fn(), markDone: jest.fn() }));
+jest.mock('../../../services/slackBridgeService', () => ({ relaySlackMessageToPod: jest.fn() }));
+
+const receipts = require('../../../services/slackEventReceiptService');
+const Integration = require('../../../models/Integration');
+const slackRoutes = require('../../../routes/webhooks/slack');
+
+const app = express();
+app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString(); } }));
+app.use('/api/webhooks/slack', slackRoutes);
+
+const signingSecret = 'slack-signing-secret';
+const eventBody = {
+  event_id: 'Ev1',
+  team_id: 'T1',
+  event: {
+    type: 'message', channel_type: 'im', channel: 'D1', user: 'U1', text: 'hello',
+  },
+};
+const signatureHeaders = (body, timestamp = Math.floor(Date.now() / 1000)) => {
+  const raw = JSON.stringify(body);
+  const signature = `v0=${crypto.createHmac('sha256', signingSecret).update(`v0:${timestamp}:${raw}`).digest('hex')}`;
+  return { 'X-Slack-Request-Timestamp': String(timestamp), 'X-Slack-Signature': signature };
+};
+
+describe('installable Slack webhook signature and acknowledgement', () => {
+  beforeEach(() => {
+    process.env.SLACK_SIGNING_SECRET = signingSecret;
+    jest.clearAllMocks();
+  });
+  afterAll(() => delete process.env.SLACK_SIGNING_SECRET);
+
+  test('rejects invalid signatures before receipt creation', async () => {
+    const response = await request(app).post('/api/webhooks/slack/events').send(eventBody);
+    expect(response.status).toBe(401);
+    expect(receipts.claim).not.toHaveBeenCalled();
+  });
+
+  test('drops non-DM events before they create a receipt or resolve a connector', async () => {
+    const body = { ...eventBody, event: { ...eventBody.event, channel_type: 'channel' } };
+    const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(body)).send(body);
+    expect(response.status).toBe(200);
+    expect(receipts.claim).not.toHaveBeenCalled();
+    expect(Integration.findOne).not.toHaveBeenCalled();
+  });
+
+  test('acknowledges a claimed DM event and resolves only its bound team/channel', async () => {
+    receipts.claim.mockResolvedValue('claimed');
+    receipts.markDone.mockResolvedValue(undefined);
+    Integration.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+
+    const response = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(receipts.claim).toHaveBeenCalledWith('Ev1', 'T1');
+    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'slack', 'config.teamId': 'T1', 'config.chatId': 'D1', 'config.chatType': 'im', isActive: true,
+    }));
+    expect(receipts.markDone).toHaveBeenCalledWith('Ev1');
+  });
+});

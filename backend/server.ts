@@ -173,6 +173,17 @@ app.use(
     },
   }),
 );
+// Slack slash commands are form posts, but their signature is over the same
+// raw bytes. Capture those too before any parser turns them into an object.
+app.use(
+  '/api/webhooks/slack',
+  express.urlencoded({
+    extended: false,
+    verify: (req: any, _res: any, buf: Buffer) => {
+      req.rawBody = buf.toString();
+    },
+  }),
+);
 
 // Standard JSON for GroupMe and Telegram webhooks
 app.use('/api/webhooks/groupme', express.json());

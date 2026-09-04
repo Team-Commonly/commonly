@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const Installable = require('../../../models/Installable');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const Integration = require('../../../models/Integration');
+const ConnectorSecret = require('../../../models/ConnectorSecret');
 const {
   install,
   uninstall,
@@ -13,7 +14,8 @@ const {
   InstallableProjectionError,
 } = require('../../../services/installable/installableInstallationService');
 const { sweep } = require('../../../services/installable/installableReconciler');
-const { TELEGRAM_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
+const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
+const { put } = require('../../../services/connectorSecrets');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -27,13 +29,19 @@ const ids = () => ({
 });
 
 describe('installable connector projection', () => {
+  const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+  const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+
   beforeAll(async () => {
     await setupMongoDb();
     await InstallableInstallation.syncIndexes();
+    await ConnectorSecret.syncIndexes();
   });
 
   afterAll(async () => {
     await closeMongoDb();
+    process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
   });
 
   beforeEach(async () => {
@@ -42,6 +50,12 @@ describe('installable connector projection', () => {
       ...TELEGRAM_CONNECTOR,
       stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
     });
+    await Installable.create({
+      ...SLACK_CONNECTOR,
+      stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+    });
+    process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
   });
 
   it('projects Telegram once, mints last, and shares one Integration between components', async () => {
@@ -513,6 +527,62 @@ describe('installable connector projection', () => {
     const reconciled = await sweep(new Date());
     const parent = await InstallableInstallation.findById(installed.installation._id);
     expect(reconciled.staleComponents).toBe(1);
+    expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+  });
+
+  it('expires a pending Slack bind, revokes its encrypted token, and marks the component stale', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'slack', installedBy: userId, podId });
+    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      {
+        $set: {
+          'config.pendingBind': {
+            teamId: 'T1', slackUserId: 'U1', chatId: 'D1', botTokenRef: ref,
+            expiresAt: new Date(Date.now() - 1),
+          },
+        },
+      },
+    );
+
+    const reconciled = await sweep(new Date());
+    const integration = await Integration.findById(installed.integration._id);
+    const parent = await InstallableInstallation.findById(installed.installation._id);
+
+    expect(reconciled.expiredSlackBinds).toBe(1);
+    expect(integration.isActive).toBe(false);
+    expect(integration.status).toBe('error');
+    expect(integration.config.pendingBind?.botTokenRef).toBeUndefined();
+    expect(await ConnectorSecret.findById(ref)).toBeNull();
+    expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+  });
+
+  it('marks a Slack projection stale when its secret key disappears from the ring', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'slack', installedBy: userId, podId });
+    const ref = await put(String(installed.integration._id), 'slack', 'xoxb-secret');
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      {
+        $set: {
+          'config.botTokenRef': ref,
+          'config.teamId': 'T1',
+          'config.chatId': 'D1',
+          'config.chatType': 'im',
+        },
+      },
+    );
+    process.env.CONNECTOR_SECRET_KEYS = `k2:${Buffer.alloc(32, 2).toString('base64')}`;
+    process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k2';
+
+    const reconciled = await sweep(new Date());
+    const integration = await Integration.findById(installed.integration._id);
+    const parent = await InstallableInstallation.findById(installed.installation._id);
+
+    expect(reconciled.unavailableSlackSecretKeys).toBe(1);
+    expect(integration.isActive).toBe(false);
+    expect(integration.errorMessage).toMatch(/secret key/i);
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
   });
 

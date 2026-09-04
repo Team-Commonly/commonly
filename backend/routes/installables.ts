@@ -167,7 +167,9 @@ router.post('/slack/authorize-url', writeIntegrationsRateLimit, auth, async (req
       },
       { new: true },
     );
-    if (!claimed) return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
+    if (!claimed) {
+      return slackError(res, 409, 'slack_authorization_unavailable', 'Slack authorization is no longer available.');
+    }
     res.cookie?.(SLACK_NONCE_COOKIE, nonce, cookieOptions());
     return res.json({ authorizeUrl: url, expiresAt });
   } catch (error) {
@@ -292,7 +294,10 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   if (new Date(pending.expiresAt) <= new Date()) {
     const cleared = await Integration.findOneAndUpdate(
       { _id: owned.integration._id, 'config.pendingBind.botTokenRef': pending.botTokenRef },
-      { $set: { status: 'error', isActive: false, errorMessage: 'Slack authorization expired' }, $unset: { 'config.pendingBind': 1 } },
+      {
+        $set: { status: 'error', isActive: false, errorMessage: 'Slack authorization expired' },
+        $unset: { 'config.pendingBind': 1 },
+      },
       { new: true },
     );
     if (cleared) await connectorSecrets.revoke(pending.botTokenRef);
@@ -327,6 +332,19 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
     { new: true },
   );
   if (!confirmed) return slackError(res, 409, 'slack_bind_missing', 'Slack authorization is no longer available.');
+  // Confirmation is the point at which this DM becomes a real attention
+  // surface. Send the one explicit round-trip marker the stranger smoke uses;
+  // an API hiccup must not undo the already durable owner confirmation.
+  try {
+    const token = await connectorSecrets.get(pending.botTokenRef);
+    const livePod = await Pod.findById(confirmed.podId).select('name').lean();
+    await new SlackApi(token).postMessage(
+      pending.chatId,
+      `[${String(livePod?.name || 'Commonly')}] connected`,
+    );
+  } catch (error) {
+    console.warn('[slack-oauth] connected marker could not be sent:', (error as Error).message);
+  }
   return res.json({ status: 'connected', integration: publicIntegration(confirmed) });
 });
 

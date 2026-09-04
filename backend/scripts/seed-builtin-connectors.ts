@@ -7,6 +7,10 @@ const Installable = require('../models/Installable');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const InstallableInstallation = require('../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const ConnectorSecret = require('../models/ConnectorSecret');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const SlackEventReceipt = require('../models/SlackEventReceipt');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { manifests } = require('../integrations/manifests');
 
 const telegramCatalog = manifests.telegram?.catalog;
@@ -100,6 +104,10 @@ const migrateInstallationIndex = async (): Promise<void> => {
 export const seedBuiltinConnectors = async (): Promise<void> => {
   try {
     await migrateInstallationIndex();
+    // These models are first reached through asynchronous Slack callbacks;
+    // create their uniqueness/TTL indexes during the deterministic boot seed
+    // rather than discovering a missing index on the first external request.
+    await Promise.all([ConnectorSecret.syncIndexes(), SlackEventReceipt.syncIndexes()]);
     await Promise.all([TELEGRAM_CONNECTOR, SLACK_CONNECTOR].map((connector) => (
       Installable.findOneAndUpdate(
         { installableId: connector.installableId },

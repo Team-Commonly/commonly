@@ -5,6 +5,10 @@ import { INSTALL_LOCK_TTL_MS } from './installableInstallationService';
 const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const ConnectorSecret = require('../../models/ConnectorSecret');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const connectorSecrets = require('../connectorSecrets');
 
 const installationIdFor = (installation: IInstallableInstallation): string => String(installation._id);
 
@@ -118,18 +122,130 @@ const sweepStaleUninstalls = async (now: Date): Promise<number> => {
   return completed;
 };
 
+const markSlackIntegrationStale = async (
+  integration: { _id: unknown; installationId?: string },
+  message: string,
+): Promise<void> => {
+  await Integration.updateOne(
+    { _id: integration._id, isActive: true },
+    { $set: { isActive: false, status: 'error', errorMessage: message } },
+  );
+  if (!integration.installationId) return;
+  await InstallableInstallation.updateOne(
+    { _id: integration.installationId, status: 'active' },
+    {
+      $set: {
+        'components.$[component].status': 'stale',
+        'components.$[component].errorMessage': message,
+      },
+    },
+    { arrayFilters: [{ 'component.componentType': { $in: ['webhook', 'event-handler'] } }] },
+  );
+};
+
+const sweepExpiredSlackBinds = async (now: Date): Promise<number> => {
+  const rows = await Integration.find({
+    type: 'slack',
+    isActive: true,
+    'config.pendingBind.expiresAt': { $lte: now },
+  }).select('installationId config.pendingBind').lean() as Array<{
+    _id: unknown;
+    installationId?: string;
+    config?: { pendingBind?: { botTokenRef?: string } };
+  }>;
+  let expired = 0;
+  for (const integration of rows) {
+    const ref = integration.config?.pendingBind?.botTokenRef;
+    const claimed = await Integration.findOneAndUpdate(
+      {
+        _id: integration._id,
+        isActive: true,
+        'config.pendingBind.expiresAt': { $lte: now },
+        'config.pendingBind.botTokenRef': ref,
+      },
+      {
+        $set: { isActive: false, status: 'error', errorMessage: 'Slack authorization expired' },
+        $unset: { 'config.pendingBind': 1 },
+      },
+      { new: true },
+    );
+    if (!claimed) continue;
+    await connectorSecrets.revoke(ref);
+    await markSlackIntegrationStale(integration, 'Slack authorization expired');
+    expired += 1;
+  }
+  return expired;
+};
+
+const sweepOrphanedConnectorSecrets = async (): Promise<number> => {
+  const secrets = await ConnectorSecret.find({}).select('_id integrationId').lean() as Array<{
+    _id: unknown;
+    integrationId: unknown;
+  }>;
+  let revoked = 0;
+  for (const secret of secrets) {
+    const integration = await Integration.findById(secret.integrationId)
+      .select('isActive config.botTokenRef config.pendingBind.botTokenRef').lean() as {
+        isActive?: boolean;
+        config?: { botTokenRef?: string; pendingBind?: { botTokenRef?: string } };
+      } | null;
+    const ref = String(secret._id);
+    if (
+      integration?.isActive === true
+      && (integration.config?.botTokenRef === ref || integration.config?.pendingBind?.botTokenRef === ref)
+    ) continue;
+    await connectorSecrets.revoke(ref);
+    revoked += 1;
+  }
+  return revoked;
+};
+
+const sweepUnavailableSlackSecretKeys = async (): Promise<number> => {
+  const secretCount = await ConnectorSecret.countDocuments();
+  if (!secretCount) return 0;
+  let unavailable: Array<{ integrationId: unknown }>;
+  try {
+    unavailable = await connectorSecrets.listWithUnavailableKey();
+  } catch (error) {
+    // A malformed or wholly absent ring makes every stored secret unreadable.
+    // That is an error state, not an invitation to keep attempting sends.
+    console.error('[installable-reconciler] connector secret key ring unavailable:', (error as Error).message);
+    unavailable = await ConnectorSecret.find({}).select('integrationId').lean();
+  }
+  for (const secret of unavailable) {
+    const integration = await Integration.findById(secret.integrationId)
+      .select('installationId').lean() as { _id: unknown; installationId?: string } | null;
+    if (integration) await markSlackIntegrationStale(integration, 'Slack connector secret key is unavailable');
+  }
+  return unavailable.length;
+};
+
 export const sweep = async (now: Date = new Date()): Promise<{
   completed: number;
   errored: number;
   staleComponents: number;
   uninstallsCompleted: number;
   deactivated: number;
+  expiredSlackBinds: number;
+  orphanedSecrets: number;
+  unavailableSlackSecretKeys: number;
 }> => {
   const locks = await sweepStaleLocks(now);
   const staleComponents = await sweepActiveInstallations();
   const uninstallsCompleted = await sweepStaleUninstalls(now);
   const deactivated = await sweepUninstalledInstallations();
-  const result = { ...locks, staleComponents, uninstallsCompleted, deactivated };
+  const expiredSlackBinds = await sweepExpiredSlackBinds(now);
+  const orphanedSecrets = await sweepOrphanedConnectorSecrets();
+  const unavailableSlackSecretKeys = await sweepUnavailableSlackSecretKeys();
+  const result = {
+    ...locks,
+    staleComponents,
+    uninstallsCompleted,
+    deactivated,
+    expiredSlackBinds,
+    orphanedSecrets,
+    unavailableSlackSecretKeys,
+  };
   console.log('[installable-reconciler] sweep', result);
   return result;
 };
