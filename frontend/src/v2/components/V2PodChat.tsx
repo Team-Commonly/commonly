@@ -1527,6 +1527,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                   data-testid="agent-reply-wait"
                   role="status"
                 >
+                  {!awaitingAgentReply.timedOut && <span className="v2-chat__agent-room-status-dot" aria-hidden="true" />}
                   {awaitingAgentReply.timedOut
                     ? t('podChat.agentRoomLiveness.timedOut', { agentName: awaitingAgentReply.agentName })
                     : t('podChat.agentRoomLiveness.waiting', { agentName: awaitingAgentReply.agentName })}

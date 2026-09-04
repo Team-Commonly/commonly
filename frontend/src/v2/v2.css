@@ -1604,12 +1604,12 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-chat__avatars--active {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
+  border-color: var(--v2-surface-hover);
 }
 
 .v2-chat__avatars--active:hover {
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
 }
 
 .v2-chat__avatars-more {
@@ -1695,13 +1695,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-chat__mode-option--active {
-  background: var(--v2-accent);
-  color: #ffffff;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-chat__mode-option--active:hover {
-  background: var(--v2-accent-strong);
-  color: #ffffff;
+  background: var(--v2-ink-hover);
+  color: var(--v2-on-ink);
 }
 
 .v2-chat__goal {
@@ -1891,8 +1891,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-chat__delivery-hint strong {
-  color: var(--v2-accent-text);
-  font-weight: 650;
+  color: var(--v2-ink);
+  font-weight: 600;
 }
 
 /* First-run is a shell-level dialog. The overlay separates the one-time setup
@@ -1924,7 +1924,8 @@ body.modern-ui.v2-canvas {
 
 .v2-first-run__eyebrow {
   margin-bottom: 8px;
-  color: var(--v2-accent);
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.09em;
@@ -1997,8 +1998,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-first-run__step-mark--done {
-  border-color: var(--v2-accent-soft);
-  background: var(--v2-accent-soft);
+  border-color: var(--v2-border);
+  background: var(--v2-surface);
   color: var(--v2-accent);
 }
 
@@ -2027,8 +2028,8 @@ body.modern-ui.v2-canvas {
   margin-top: 6px;
   padding: 8px 12px;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;
@@ -2036,8 +2037,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root a.v2-first-run__setup:hover,
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
-  background: var(--v2-accent-strong);
-  color: #fff;
+  background: var(--v2-ink-hover);
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-first-run__hello:disabled {
@@ -2157,10 +2158,19 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-chat__agent-room-status--wait {
-  border-color: var(--v2-accent-soft);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-weight: 600;
+  border-color: var(--v2-border);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font-mono);
+  font-weight: 500;
+}
+
+.v2-chat__agent-room-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--v2-success);
 }
 
 .v2-chat__agent-room-status--timeout {
@@ -2261,8 +2271,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-chat__new-pod-action:hover {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
 }
 
 .v2-chat__new-pod-action-title {
@@ -2295,7 +2304,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-chat__new-pod-copy:hover {
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
 }
 
 .v2-chat__new-pod-error {
@@ -2331,9 +2340,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-chat__starter-prompt:hover {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: var(--v2-surface-hover);
 }
 
 @media (max-width: 700px) {
@@ -2423,8 +2430,9 @@ body.modern-ui.v2-canvas {
   display: grid;
   place-items: center;
   border-radius: 9px;
-  background: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
   transition: background 80ms ease;
   flex-shrink: 0;
   order: 3;
@@ -2435,15 +2443,16 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-chat__send--execute {
-  background: var(--v2-accent);
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
 }
 
 .v2-root button.v2-chat__send--execute:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root button.v2-chat__send:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root button.v2-chat__send:disabled {
@@ -2520,8 +2529,8 @@ body.modern-ui.v2-canvas {
   width: 28px;
   height: 28px;
   border-radius: var(--v2-radius-pill);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: var(--v2-surface-hover);
+  color: var(--v2-ink);
 }
 
 .v2-chat__readonly-body {
@@ -2562,9 +2571,14 @@ body.modern-ui.v2-canvas {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
+}
+
+.v2-syscard--action {
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
 }
 
 .v2-syscard__icon {
@@ -2575,8 +2589,8 @@ body.modern-ui.v2-canvas {
   width: 28px;
   height: 28px;
   border-radius: var(--v2-radius-pill);
-  background: var(--v2-surface);
-  color: var(--v2-accent-text);
+  background: var(--v2-surface-hover);
+  color: var(--v2-ink);
 }
 
 .v2-syscard__body {
@@ -2606,9 +2620,9 @@ body.modern-ui.v2-canvas {
   flex: 0 0 auto;
   font-size: 12.5px;
   font-weight: 600;
-  color: #fff;
-  background: var(--v2-accent);
-  border: 1px solid var(--v2-accent-strong);
+  color: var(--v2-on-ink);
+  background: var(--v2-ink);
+  border: 1px solid var(--v2-ink);
   border-radius: var(--v2-radius-pill);
   padding: 6px 14px;
   cursor: pointer;
@@ -2617,7 +2631,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-syscard__cta:hover,
 .v2-syscard__cta:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 /* GitHub PR preview card. Rendered below a message body when the content
@@ -2924,8 +2938,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__author-btn:hover {
-  color: var(--v2-accent-text);
-  text-decoration: underline;
+  background: var(--v2-surface-hover);
 }
 
 .v2-msg__avatar-btn {
@@ -2944,12 +2957,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__avatar-btn:hover {
-  box-shadow: 0 0 0 2px var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
 }
 
 .v2-msg__lead-badge {
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: transparent;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
   height: 18px;
   font-size: 10px;
   font-weight: 700;
@@ -2992,7 +3006,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__mention {
-  background: var(--v2-accent-soft);
+  background: transparent;
   color: var(--v2-accent-text);
   padding: 1px 5px;
   border-radius: 5px;
@@ -3002,7 +3016,7 @@ body.modern-ui.v2-canvas {
 
 /* A mention is a tinted system signal, not a separate card or accent rail. */
 .v2-msg--mention {
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
   border-radius: var(--v2-radius-sm);
   padding: 8px 10px 8px 10px;
 }
@@ -3165,8 +3179,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__reaction:hover {
-  background: var(--v2-surface);
-  border-color: var(--v2-border);
+  background: var(--v2-surface-hover);
 }
 
 /* ---------- Inspector ---------- */
@@ -3324,8 +3337,10 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-inspector__tab--active {
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  border-bottom: 2px solid var(--v2-accent);
+  background: transparent;
+  color: var(--v2-ink);
+  font-weight: 600;
 }
 
 .v2-inspector__tab-count {
@@ -3343,8 +3358,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-inspector__tab--active .v2-inspector__tab-count {
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: transparent;
+  color: var(--v2-ink);
 }
 
 /* NOW card — currently-active agent + task. Now lives inside
@@ -3358,7 +3373,8 @@ body.modern-ui.v2-canvas {
 .v2-inspector__now-eyebrow {
   font-size: 10px;
   font-weight: 700;
-  color: var(--v2-accent-text);
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -3380,8 +3396,9 @@ body.modern-ui.v2-canvas {
 
 .v2-inspector__progress-pct {
   font-size: 12px;
-  font-weight: 700;
-  color: var(--v2-accent-text);
+  font-weight: 600;
+  color: var(--v2-ink);
+  font-family: var(--v2-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3395,7 +3412,7 @@ body.modern-ui.v2-canvas {
 .v2-inspector__progress-bar {
   height: 100%;
   border-radius: 3px;
-  background: var(--v2-accent);
+  background: var(--v2-ink);
   transition: width 240ms ease;
 }
 
@@ -3534,7 +3551,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__link:hover {
-  color: var(--v2-accent-strong);
   text-decoration: underline;
 }
 
@@ -3557,7 +3573,7 @@ body.modern-ui.v2-canvas {
 /* ---------- Members section action row (Invite / Manage) ----------
  * Replaces the bare text-link buttons that previously sat right-aligned
  * above the member list. Now reads as a proper action toolbar with a
- * primary "Invite" CTA (filled accent) and a secondary "Manage" affordance
+ * primary "Invite" CTA (filled ink) and a secondary "Manage" affordance
  * (outline). Matches the "+ Add" / Cancel pattern used in Artifacts. */
 .v2-inspector__members-actions {
   display: flex;
@@ -3591,19 +3607,16 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__action--primary,
 .v2-inspector__action--primary {
-  background: var(--v2-accent);
-  border-color: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
   flex: 1;
   justify-content: center;
 }
 
 .v2-root button.v2-inspector__action--primary:hover,
 .v2-inspector__action--primary:hover {
-  background: var(--v2-accent-strong, var(--v2-accent));
-  border-color: var(--v2-accent-strong, var(--v2-accent));
-  color: #fff;
-  filter: brightness(1.04);
+  background: var(--v2-ink-hover);
 }
 
 /* ---------- Inspector: Artifacts ---------- */
@@ -3639,8 +3652,8 @@ body.modern-ui.v2-canvas {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: var(--v2-surface-hover);
+  color: var(--v2-ink);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -3782,8 +3795,10 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector__pill--progress {
-  background: rgba(79, 70, 229, 0.10);
-  color: var(--v2-accent-text);
+  border: 1px solid var(--v2-ink);
+  background: transparent;
+  color: var(--v2-ink);
+  font-family: var(--v2-font-mono);
 }
 
 .v2-inspector__pill--complete {
@@ -3916,15 +3931,14 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-inspector__btn--primary,
 .v2-root a.v2-inspector__btn--primary {
-  background: var(--v2-accent);
-  color: #fff;
-  border-color: var(--v2-accent);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  border-color: var(--v2-ink);
 }
 
 .v2-root button.v2-inspector__btn--primary:hover,
 .v2-root a.v2-inspector__btn--primary:hover {
-  background: var(--v2-accent-strong);
-  color: #fff;
+  background: var(--v2-ink-hover);
 }
 
 .v2-inspector__detail-card {
@@ -6316,8 +6330,7 @@ body.modern-ui.v2-canvas {
   font-variant-emoji: emoji;
 }
 .v2-msg__reaction:hover {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
 }
 .v2-msg__reaction-emoji {
   font-size: 13px;
@@ -6338,8 +6351,8 @@ body.modern-ui.v2-canvas {
   align-self: center;
 }
 
-/* Sprint B5 — interactive reaction chips + picker. Mine = filled
- * indigo; not-mine = subtle gray (existing rule above). Same
+/* Sprint B5 — interactive reaction chips + picker. Mine = an ink-bordered
+ * selection; not-mine = subtle gray (existing rule above). Same
  * specificity workaround as other v2 buttons. */
 .v2-root button.v2-msg__reaction {
   cursor: pointer;
@@ -6364,13 +6377,12 @@ body.modern-ui.v2-canvas {
   line-height: 1;
 }
 .v2-root button.v2-msg__reaction--mine {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+  background: var(--v2-surface);
+  border-color: var(--v2-ink);
+  color: var(--v2-ink);
 }
 .v2-root button.v2-msg__reaction:hover:not(:disabled) {
-  background: var(--v2-accent-soft);
-  border-color: var(--v2-accent);
+  background: var(--v2-surface-hover);
 }
 .v2-root button.v2-msg__reaction:disabled {
   cursor: default;
@@ -6418,7 +6430,8 @@ body.modern-ui.v2-canvas {
   background: #f3f4f6;
 }
 .v2-root button.v2-msg__reaction-picker-item--mine {
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-ink);
 }
 
 /* Sprint B3 — Bring-your-own MCP agent onboarding page. Lives at
@@ -7439,7 +7452,7 @@ body.modern-ui.v2-canvas {
   padding: 6px 12px;
   font-size: 12.5px;
   color: var(--v2-text-secondary);
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface-hover);
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius-sm);
 }
@@ -7960,10 +7973,9 @@ body.modern-ui.v2-canvas {
 }
 
 /* ── Approval card (ADR-020 D3 / ADR-017) ──────────────────────────────────
-   Speaks the syscard idiom (§3.8 agent-dm card): soft accent-tinted ground +
-   soft border + house radius. The TINT signals "system surface" — no accent
-   rail (the rail-on-rounded-card is the generic look we deliberately avoid;
-   flagged by Sam on the first live card, 2026-08-13). */
+   Speaks the Signal needs-you idiom: white ground + cobalt 2px ring. The
+   ring identifies an unresolved human decision without turning the card into
+   generic tinted chrome. */
 
 /* The card sits IN the message content column, not flush with the row edge:
    38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without
@@ -7976,7 +7988,8 @@ body.modern-ui.v2-canvas {
 .v2-approval {
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
   padding: 12px 16px;
   max-width: none;
   display: flex;
@@ -7995,7 +8008,8 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--v2-accent-text);
+  color: var(--v2-ink);
+  font-family: var(--v2-font-mono);
 }
 
 .v2-approval__agent {
@@ -8053,13 +8067,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-approval__btn--approve {
-  background: var(--v2-accent);
-  border-color: var(--v2-accent);
-  color: #fff;
+  background: var(--v2-ink);
+  border-color: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 .v2-root button.v2-approval__btn--approve:not(:disabled):hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-ink-hover);
 }
 
 .v2-root button.v2-approval__btn--decline {
@@ -8133,7 +8147,8 @@ body.modern-ui.v2-canvas {
 .v2-inspector__approval-row {
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent-soft);
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -8247,7 +8262,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-thread-card__reply:hover {
-  color: var(--v2-accent);
+  background: var(--v2-surface-hover);
 }
 
 .v2-thread-card__count {
@@ -8300,7 +8315,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-thread-card__follow--on {
-  color: var(--v2-accent);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
 }
 
 /* Expanded replies hang off a left rail at the thread block's own edge.
@@ -8363,7 +8379,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-thread-replies__aim:hover {
-  color: var(--v2-accent);
+  background: var(--v2-surface-hover);
 }
 
 .v2-chat__reply-chip--thread .v2-chat__reply-chip-label {

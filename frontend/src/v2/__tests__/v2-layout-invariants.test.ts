@@ -36,6 +36,18 @@ const ruleBody = (css: string, selector: string): string => {
   return end === -1 ? '' : css.slice(start, end);
 };
 
+// Some component rules deliberately share a declaration block with an
+// element variant (for example, button + link CTAs). The guard still needs to
+// inspect that one block without splitting the production selector just for a
+// test helper.
+const selectorRuleBody = (css: string, selector: string): string => {
+  const selectorStart = css.indexOf(selector);
+  if (selectorStart === -1) return '';
+  const bodyStart = css.indexOf('{', selectorStart);
+  const bodyEnd = css.indexOf('}', bodyStart);
+  return bodyStart === -1 || bodyEnd === -1 ? '' : css.slice(bodyStart, bodyEnd);
+};
+
 const cssVariable = (css: string, name: string): string | undefined => (
   new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
 );
@@ -104,7 +116,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const status = ruleBody(v2, '.v2-chat__agent-room-status');
     expect(status).toContain('margin: 8px 24px 0');
     expect(status).toContain('font-size: 12px');
-    expect(ruleBody(v2, '.v2-chat__agent-room-status--wait')).toContain('background: var(--v2-accent-soft)');
+    const waiting = ruleBody(v2, '.v2-chat__agent-room-status--wait');
+    expect(waiting).toContain('background: var(--v2-surface-hover)');
+    expect(waiting).toContain('font-family: var(--v2-font-mono)');
   });
 
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
@@ -390,16 +404,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-first-run')).toContain('overflow-y: auto');
   });
 
-  test('the first-run setup CTA beats the global inherited anchor color', () => {
+  test('the first-run setup CTA beats the global inherited anchor color with ink', () => {
     // `.v2-root a { color: inherit }` outranks a bare class selector. The
-    // first browser pass rendered blue text on the blue CTA until this
+    // first browser pass rendered inherited text on the filled CTA until this
     // compound selector matched/exceeded the reset specificity.
     const rule = ruleBody(
       v2,
       '.v2-root a.v2-first-run__setup,\n.v2-root button.v2-first-run__hello',
     );
-    expect(rule).toContain('background: var(--v2-accent)');
-    expect(rule).toContain('color: #fff');
+    expect(rule).toContain('background: var(--v2-ink)');
+    expect(rule).toContain('color: var(--v2-on-ink)');
   });
 
   test('the Community offer stays visible below the independently scrolling pod list', () => {
@@ -437,13 +451,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toBeGreaterThan(v2.indexOf('.v2-root button.v2-pods__filter {'));
   });
 
-  test('accent treatment is a wash, never a message rail', () => {
+  test('mention treatment is a neutral wash, never a message rail', () => {
     // Accent rails made otherwise ordinary cards look like generic callouts.
-    // Message mentions retain their semantic wash, while quote edges stay
+    // Message rows retain a neutral semantic wash, while quote edges stay
     // neutral structural affordances.
     expect(v2).not.toMatch(/border-left:\s*[^;]*var\(--v2-accent\)/);
     const mention = ruleBody(v2, '.v2-msg--mention');
-    expect(mention).toContain('background: var(--v2-accent-soft)');
+    expect(mention).toContain('background: var(--v2-surface-hover)');
     expect(mention).toContain('border-radius: var(--v2-radius-sm)');
   });
 
@@ -699,6 +713,85 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     ]) {
       expect(v2).not.toContain(selector);
     }
+  });
+
+  describe('Signal chat + inspector color contract (TASK-124)', () => {
+    const filledControls = [
+      '.v2-root button.v2-chat__send',
+      '.v2-root button.v2-chat__send--execute',
+      '.v2-root button.v2-chat__mode-option--active',
+      '.v2-root button.v2-first-run__hello',
+      '.v2-syscard__cta',
+      '.v2-inspector__action--primary',
+      '.v2-root a.v2-inspector__btn--primary',
+      '.v2-root button.v2-approval__btn--approve',
+    ];
+
+    test('all eight filled controls use ink, never cobalt', () => {
+      for (const selector of filledControls) {
+        const rule = selectorRuleBody(v2, selector);
+        expect(rule).toContain('var(--v2-ink)');
+        expect(rule).not.toContain('var(--v2-accent)');
+      }
+    });
+
+    test('chat and inspector surfaces do not paint with accent-soft', () => {
+      const prefixes = [
+        '.v2-chat',
+        '.v2-msg',
+        '.v2-inspector',
+        '.v2-approval',
+        '.v2-syscard',
+        '.v2-thread-card',
+      ];
+      const offenders = v2.split('}').filter((block) => {
+        const open = block.indexOf('{');
+        if (open === -1 || !block.includes('var(--v2-accent-soft)')) return false;
+        const selector = block.slice(0, open).replace(/\/\*[\s\S]*?\*\//g, '');
+        return prefixes.some((prefix) => selector.includes(prefix));
+      });
+
+      expect(offenders).toEqual([]);
+    });
+
+    test('hover under chat and inspector changes fill only, never accent color, border, or shadow', () => {
+      const prefixes = [
+        '.v2-chat',
+        '.v2-msg',
+        '.v2-inspector',
+        '.v2-approval',
+        '.v2-syscard',
+        '.v2-thread-card',
+      ];
+      const accentHoverDeclarations = v2.split('}').flatMap((block) => {
+        const open = block.indexOf('{');
+        if (open === -1) return [];
+        const selector = block.slice(0, open).replace(/\/\*[\s\S]*?\*\//g, '');
+        const body = block.slice(open + 1);
+        if (!selector.includes(':hover') || !prefixes.some((prefix) => selector.includes(prefix))) return [];
+        return body.split(';').map((declaration) => declaration.trim()).filter((declaration) => (
+          /^(color|border-color|box-shadow):/.test(declaration) && declaration.includes('var(--v2-accent')
+        ));
+      });
+
+      expect(accentHoverDeclarations).toEqual([]);
+    });
+
+    test('the nine allowed cobalt marks remain explicit', () => {
+      for (const selector of [
+        '.v2-thread-card__dot',
+        '.v2-thread-card--addressed .v2-thread-card__count',
+        '.v2-msg__mention',
+        '.v2-msg__content a',
+        '.v2-inspector__link',
+        '.v2-root button.v2-approval__result-link',
+        '.v2-root button.v2-chat__new-pod-copy',
+        '.v2-root .v2-chat__new-pod-error button',
+        '.v2-chat__composer-input-wrap:focus-within',
+      ]) {
+        expect(selectorRuleBody(v2, selector)).toContain('var(--v2-accent');
+      }
+    });
   });
 
   test('an uploaded avatar photo is not overlaid by the initials-plate highlight', () => {
