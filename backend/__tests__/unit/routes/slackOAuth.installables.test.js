@@ -145,9 +145,9 @@ describe('Slack installable OAuth routes', () => {
       .get(`/api/webhooks/slack/oauth/callback?state=${integration.config.connectCode}&code=slack-code`);
 
     expect(response.status).toBe(302);
-    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
     expect(slackOAuth.exchangeCode).not.toHaveBeenCalled();
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(response.headers.location).toBe(`${TEST_PUBLIC_APP_URL}/v2/connectors?slack=error&code=invalid_state`);
   });
 
   test('stores only a secret reference in a pending bind after a claimed callback', async () => {
