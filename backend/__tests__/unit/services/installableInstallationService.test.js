@@ -99,6 +99,7 @@ describe('installable connector projection', () => {
     const { userId, podId } = ids();
     const otherPodId = new mongoose.Types.ObjectId().toString();
     await install({ installableId: 'telegram', installedBy: userId, podId });
+    const before = await InstallableInstallation.findOne({ installableId: 'telegram' });
 
     await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
       .rejects.toMatchObject({
@@ -110,6 +111,12 @@ describe('installable connector projection', () => {
 
     const integration = await Integration.findOne({ type: 'telegram' });
     expect(String(integration.podId)).toBe(podId);
+    const after = await InstallableInstallation.findById(before._id);
+    expect(after).toMatchObject({
+      status: 'active',
+      claimId: before.claimId,
+      claimedAt: before.claimedAt,
+    });
   });
 
   it('survives repeated component failures and claims the same projection on retry', async () => {
