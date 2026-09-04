@@ -92,10 +92,12 @@ What it does, in order — this is `installableInstallService.install()`:
    non-uninstalled state: a **unique partial index filtered to `status: { $in: ['installing',
    'activating', 'uninstalling', 'active', 'error'] }`**. The service never reads-then-writes. It runs one
    `findOneAndUpdate` with `upsert: true` whose filter is the key plus **one of**: no row;
-   `status: 'error'`; or `status: { $in: ['installing', 'activating'] }` with `claimedAt <
-   now − INSTALL_LOCK_TTL_MS`
-   — and whose update sets `status: 'installing'`, **`claimId: randomUUID()` — a fresh
-   generation on every claim and every takeover**, `installedBy`, `installableVersion`,
+   `status: 'error'`; `status: { $in: ['installing', 'activating'] }` with `claimedAt <
+   now − INSTALL_LOCK_TTL_MS`; or stale `status: 'uninstalling'` with the same predicate.
+   — and whose update claims `installing` for a new/error parent, retains `activating` to resume
+   its split write, and retains `uninstalling` until its terminal teardown completes; every path
+   writes **`claimId: randomUUID()` — a fresh generation on every claim and every takeover**,
+   `installedBy`, `installableVersion`,
    `installSource: 'ui'`, `grantedScopes = installable.requires` (**descriptive only in Phase 1**
    — it records what the manifest declared at install time, mirroring ADR-001's "declared,
    permissive enforcement"; nothing reads it for authorization, and no route may start to
@@ -226,7 +228,8 @@ generation cannot revive a connector after revocation. A fresh concurrent delete
 `uninstalling`, never a false disconnected success; the reconciler deactivates a stale
 `uninstalling` projection before it completes the parent. Nothing is deleted; no row → 404.
 Uninstalling an `installing` row is allowed and is the human escape hatch for a stuck lock in
-addition to the lease. Re-install mints a new Integration row — Vera's
+addition to the lease. Install also takes over a stale `uninstalling` row, completes its terminal
+teardown, and then claims a new parent. Re-install mints a new Integration row — Vera's
 ruling on the design spec stands (the binding row is the unit; relayMap and gates are never
 reused).
 

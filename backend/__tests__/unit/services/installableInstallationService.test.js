@@ -279,6 +279,33 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('finishes a stale revocation before re-installing a new parent and projection', async () => {
+    const { userId, podId } = ids();
+    const first = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const oldIntegration = await Integration.findById(first.integration._id);
+    const oldCode = oldIntegration.config.connectCode;
+    const stale = await InstallableInstallation.findById(first.installation._id);
+    stale.status = 'uninstalling';
+    stale.claimId = 'dead-uninstall-owner';
+    stale.claimedAt = new Date(Date.now() - 61_000);
+    await stale.save();
+
+    const replacement = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const retired = await InstallableInstallation.findById(first.installation._id);
+    const deactivated = await Integration.findById(first.integration._id);
+
+    expect(replacement.httpStatus).toBe(200);
+    expect(String(replacement.installation._id)).not.toBe(String(first.installation._id));
+    expect(String(replacement.integration._id)).not.toBe(String(first.integration._id));
+    expect(retired.status).toBe('uninstalled');
+    expect(deactivated.isActive).toBe(false);
+    expect(deactivated.config.connectCode).toBeUndefined();
+    expect(deactivated.revokedAt).toBeInstanceOf(Date);
+    expect(replacement.integration.isActive).toBe(true);
+    expect(replacement.integration.config.connectCode).toMatch(/^[a-f0-9]{32}$/);
+    expect(replacement.integration.config.connectCode).not.toBe(oldCode);
+  });
+
   it('keeps a failed revocation recoverable until its projection is inactive', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });

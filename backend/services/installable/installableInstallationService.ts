@@ -66,7 +66,7 @@ export interface InstallResult {
 interface ClaimResult {
   installation: IInstallableInstallation;
   ownsClaim: boolean;
-  claimedState: 'installing' | 'activating' | 'active';
+  claimedState: 'installing' | 'activating' | 'uninstalling' | 'active';
 }
 
 interface InstallArgs {
@@ -94,9 +94,14 @@ const asObjectId = (value: string, field: string): Types.ObjectId => {
   return new Types.ObjectId(value);
 };
 
-const statusForClaim = (status: InstallationStatus | undefined): 'installing' | 'activating' => (
-  status === 'activating' ? 'activating' : 'installing'
-);
+const statusForClaim = (
+  status: InstallationStatus | undefined,
+): ClaimResult['claimedState'] => {
+  if (status === 'active') return 'active';
+  if (status === 'activating') return 'activating';
+  if (status === 'uninstalling') return 'uninstalling';
+  return 'installing';
+};
 
 const isStale = (claimedAt: Date | undefined, now: Date): boolean => (
   !claimedAt || claimedAt.getTime() <= now.getTime() - INSTALL_LOCK_TTL_MS
@@ -177,6 +182,7 @@ const claimInstallation = async (
         $or: [
           { status: 'error' },
           { status: { $in: ['installing', 'activating'] }, claimedAt: { $lte: staleBefore } },
+          { status: 'uninstalling', claimedAt: { $lte: staleBefore } },
           { status: { $exists: false } },
         ],
       },
@@ -192,7 +198,13 @@ const claimInstallation = async (
               $cond: [
                 { $eq: ['$status', 'activating'] },
                 'activating',
-                'installing',
+                {
+                  $cond: [
+                    { $eq: ['$status', 'uninstalling'] },
+                    'uninstalling',
+                    'installing',
+                  ],
+                },
               ],
             },
             claimId,
@@ -222,7 +234,9 @@ const claimInstallation = async (
     if ((
       winner.status === 'error'
       || (
-        (winner.status === 'installing' || winner.status === 'activating')
+        (winner.status === 'installing'
+          || winner.status === 'activating'
+          || winner.status === 'uninstalling')
         && isStale(winner.claimedAt, now)
       )
     ) && !retried) {
@@ -233,7 +247,7 @@ const claimInstallation = async (
     return {
       installation: winner,
       ownsClaim: false,
-      claimedState: winner.status === 'active' ? 'active' : statusForClaim(winner.status),
+      claimedState: statusForClaim(winner.status),
     };
   }
 };
@@ -412,11 +426,67 @@ const finishActivation = async (
   return throwIfLockLost(completed);
 };
 
-export const install = async ({
+const unprojectInstallation = async (
+  installation: IInstallableInstallation,
+  installable: IInstallable | null,
+  installedBy: Types.ObjectId,
+  claimId: string,
+): Promise<void> => {
+  if (installable) {
+    for (const component of installable.components) {
+      const projector = getProjector(component.type);
+      if (!projector) continue;
+      const installedComponent = installation.components.find(
+        (entry) => entry.componentName === component.name,
+      );
+      const ids = installedComponent?.projectionIds
+        ? Object.fromEntries(installedComponent.projectionIds.entries()) as ProjectionIds
+        : {};
+      await projector.unproject(component, {
+        installation,
+        installable,
+        installedBy,
+        claimId,
+      }, ids);
+    }
+    return;
+  }
+
+  // The parent is the authority. A retired manifest must not make a user
+  // unable to deactivate its projected channel row.
+  await Integration.findOneAndUpdate(
+    { installationId: String(installation._id) },
+    {
+      $set: {
+        isActive: false,
+        installationClaimId: claimId,
+        revokedAt: new Date(),
+      },
+      $unset: {
+        'config.connectCode': 1,
+        'config.connectCodeExpiresAt': 1,
+      },
+    },
+  );
+};
+
+const finishUninstall = async (
+  installation: IInstallableInstallation,
+  claimId: string,
+): Promise<IInstallableInstallation> => {
+  const uninstalled = await InstallableInstallation.findOneAndUpdate(
+    { _id: installation._id, status: 'uninstalling', claimId },
+    { $set: { status: 'uninstalled', errorMessage: null } },
+    { new: true },
+  ) as IInstallableInstallation | null;
+  return throwIfLockLost(uninstalled);
+};
+
+const installAttempt = async ({
   installableId,
   installedBy,
   podId,
-}: InstallArgs): Promise<InstallResult> => {
+}: InstallArgs, recoveredStaleUninstall = false): Promise<InstallResult> => {
   const normalizedId = String(installableId || '').toLowerCase();
   const installable = await Installable.findOne({
     installableId: normalizedId,
@@ -433,6 +503,16 @@ export const install = async ({
   let installation = claim.installation;
   const claimId = installation.claimId;
   if (!claimId) throw new InstallLockLostError();
+
+  if (claim.claimedState === 'uninstalling') {
+    // A stale revocation has an intentionally terminal projection. Complete
+    // that teardown first, then claim a new parent so re-install never
+    // resurrects the old connector or its redeemed code.
+    await unprojectInstallation(installation, installable, installerId, claimId);
+    await finishUninstall(installation, claimId);
+    if (recoveredStaleUninstall) throw new InstallLockLostError();
+    return installAttempt({ installableId, installedBy, podId }, true);
+  }
 
   if (claim.claimedState === 'installing') {
     installation = await projectComponents(
@@ -451,6 +531,8 @@ export const install = async ({
   installation = await finishActivation(installation, claimId);
   return { installation, integration, httpStatus: 200, state: 'active' };
 };
+
+export const install = (args: InstallArgs): Promise<InstallResult> => installAttempt(args);
 
 const claimUninstall = async (
   installation: IInstallableInstallation,
@@ -519,48 +601,8 @@ export const uninstall = async ({
   if (!claimId) throw new InstallLockLostError();
 
   const installable = await Installable.findOne({ installableId: normalizedId }) as IInstallable | null;
-  if (installable) {
-    for (const component of installable.components) {
-      const projector = getProjector(component.type);
-      if (!projector) continue;
-      const installedComponent = installation.components.find(
-        (entry) => entry.componentName === component.name,
-      );
-      const ids = installedComponent?.projectionIds
-        ? Object.fromEntries(installedComponent.projectionIds.entries()) as ProjectionIds
-        : {};
-      await projector.unproject(component, {
-        installation: claim.installation,
-        installable,
-        installedBy: targetId,
-        claimId,
-      }, ids);
-    }
-  } else {
-    // The parent is the authority. A retired manifest must not make a user
-    // unable to deactivate its projected channel row.
-    await Integration.findOneAndUpdate(
-      { installationId: String(installation._id) },
-      {
-        $set: {
-          isActive: false,
-          installationClaimId: claimId,
-          revokedAt: new Date(),
-        },
-        $unset: {
-          'config.connectCode': 1,
-          'config.connectCodeExpiresAt': 1,
-        },
-      },
-    );
-  }
-
-  const uninstalled = await InstallableInstallation.findOneAndUpdate(
-    { _id: claim.installation._id, status: 'uninstalling', claimId },
-    { $set: { status: 'uninstalled', errorMessage: null } },
-    { new: true },
-  ) as IInstallableInstallation | null;
-  return throwIfLockLost(uninstalled);
+  await unprojectInstallation(claim.installation, installable, targetId, claimId);
+  return finishUninstall(claim.installation, claimId);
 };
 
 module.exports = {
