@@ -127,8 +127,8 @@ const slackCallbackRedirect = (res: Res, state: 'pending' | 'error', code?: stri
 
 // Mongoose's Integration toJSON transform is the normal guard. Keep this
 // small route-bound backstop too: tests, lean queries, and a future service
-// refactor must not accidentally turn an opaque ConnectorSecret ref into API
-// data merely by bypassing document serialization.
+// refactor must not accidentally turn an opaque ConnectorSecret ref or the
+// browser-bound OAuth nonce into API data by bypassing document serialization.
 const publicIntegration = (integration: unknown): unknown => {
   if (!integration || typeof integration !== 'object') return integration;
   const raw = typeof (integration as { toJSON?: () => unknown }).toJSON === 'function'
@@ -138,6 +138,7 @@ const publicIntegration = (integration: unknown): unknown => {
   const result = raw as { config?: Record<string, unknown> };
   if (!result.config) return result;
   delete result.config.botTokenRef;
+  delete result.config.oauthStateNonce;
   const pending = result.config.pendingBind;
   if (pending && typeof pending === 'object') delete (pending as Record<string, unknown>).botTokenRef;
   return result;

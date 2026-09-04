@@ -220,7 +220,7 @@ describe('Slack installable OAuth routes', () => {
     expect(writesBeforeReplay).toBe(2);
   });
 
-  test('confirms only the owner binding and never serializes the secret reference', async () => {
+  test('confirms only the owner binding and never serializes secret material', async () => {
     const pending = {
       teamId: 'T1', teamName: 'Example', slackUserId: 'U1', slackUserName: 'sam',
       chatId: 'D1', botTokenRef: 'secret-ref', expiresAt: new Date(Date.now() + 60_000),
@@ -234,7 +234,9 @@ describe('Slack installable OAuth routes', () => {
     Integration.findOneAndUpdate.mockResolvedValue({
       ...integration,
       status: 'connected',
-      config: { ...pending, botTokenRef: 'secret-ref', chatType: 'im' },
+      // Plain-object return deliberately bypasses Integration.toJSON(), as a
+      // lean query would. The route backstop must still strip both values.
+      config: { ...pending, botTokenRef: 'secret-ref', oauthStateNonce: 'nonce-never-return', chatType: 'im' },
     });
     connectorSecrets.get.mockResolvedValue('xoxb-secret');
     SlackApi.mockImplementationOnce(() => ({ postMessage: jest.fn().mockResolvedValue({ ok: true, ts: '1.1' }) }));
@@ -248,6 +250,7 @@ describe('Slack installable OAuth routes', () => {
       expect.anything(),
     );
     expect(JSON.stringify(response.body)).not.toContain('secret-ref');
+    expect(JSON.stringify(response.body)).not.toContain('nonce-never-return');
     expect(SlackApi.mock.results[0].value.postMessage).toHaveBeenCalledWith('D1', '[Launch] connected');
   });
 
