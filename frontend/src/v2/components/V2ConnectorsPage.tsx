@@ -36,6 +36,7 @@ interface Connector {
 
 interface InstallResponse {
   status?: 'active' | 'installing' | 'activating' | 'uninstalling';
+  boundPodId?: string;
 }
 
 interface InstallErrorResponse {
@@ -79,6 +80,15 @@ const installErrorResponse = (error: unknown): { status?: number; data?: Install
 const podName = (c: Connector): string => (
   typeof c.podId === 'object' && c.podId ? (c.podId.name || 'Untitled pod') : 'Untitled pod'
 );
+
+const boundPodName = (boundPodId: string | undefined, connectors: Connector[], pods: V2Pod[]): string => {
+  const existing = connectors.find((connector) => {
+    const podId = typeof connector.podId === 'object' ? connector.podId?._id : connector.podId;
+    return String(podId) === String(boundPodId);
+  });
+  const boundPod = pods.find((pod) => String(pod._id) === String(boundPodId));
+  return existing ? podName(existing) : (boundPod?.name || 'another pod');
+};
 
 // Codes are 32 hex now (128-bit) — grouped in 4s, wrapping; legacy short
 // codes flow through the same grouping (spec §2.3 step 2).
@@ -160,10 +170,18 @@ const V2ConnectorsPage: React.FC = () => {
     if (!newPodId || creating) return;
     setCreating(true);
     setError(null);
+    const installInProgressMessage = (boundPodId?: string): string => (
+      boundPodId
+        ? t('connectors.installInProgressForPod', {
+          defaultValue: 'Still setting up for {{pod}} — try again in a moment.',
+          pod: boundPodName(boundPodId, connectors, pods),
+        })
+        : t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' })
+    );
     try {
       const result = await api.post<InstallResponse>('/api/installables/telegram/install', { podId: newPodId });
       if (result.status && result.status !== 'active') {
-        setError(t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' }));
+        setError(installInProgressMessage(result.boundPodId));
         return;
       }
       setAdding(false);
@@ -171,16 +189,11 @@ const V2ConnectorsPage: React.FC = () => {
     } catch (error) {
       const response = installErrorResponse(error);
       if (response.status === 409 && response.data?.code === 'install_in_progress') {
-        setError(t('connectors.installInProgress', { defaultValue: 'Still setting up — try again in a moment.' }));
+        setError(installInProgressMessage(response.data.boundPodId));
       } else if (response.status === 409 && response.data?.code === 'already_installed') {
-        const existing = connectors.find((connector) => {
-          const podId = typeof connector.podId === 'object' ? connector.podId?._id : connector.podId;
-          return String(podId) === String(response.data?.boundPodId);
-        });
-        const boundPod = pods.find((pod) => String(pod._id) === String(response.data?.boundPodId));
         setError(t('connectors.alreadyBound', {
           defaultValue: 'Your Telegram channel is bound to {{pod}}. Disconnect it to bind a different pod.',
-          pod: existing ? podName(existing) : (boundPod?.name || 'another pod'),
+          pod: boundPodName(response.data.boundPodId, connectors, pods),
         }));
       } else {
         setError(t('connectors.createError', { defaultValue: 'Could not create the connector.' }));

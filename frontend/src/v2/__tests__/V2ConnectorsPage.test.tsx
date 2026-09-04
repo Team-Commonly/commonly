@@ -180,6 +180,18 @@ describe('V2ConnectorsPage', () => {
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
+  it('names the pending pod returned with a 202 install response', async () => {
+    mockGets([]);
+    axios.post.mockResolvedValue({ data: { status: 'installing', boundPodId: 'p1' } });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
   it('keeps the add form open when the server reports an install lock', async () => {
     mockGets([]);
     axios.post.mockRejectedValue({ response: { status: 409, data: { code: 'install_in_progress' } } });
@@ -189,6 +201,20 @@ describe('V2ConnectorsPage', () => {
     fireEvent.click(screen.getByText('New Telegram connector'));
 
     expect(await screen.findByText('Still setting up — try again in a moment.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
+  });
+
+  it('names the pending pod when the server reports an install lock', async () => {
+    mockGets([]);
+    axios.post.mockRejectedValue({
+      response: { status: 409, data: { code: 'install_in_progress', boundPodId: 'p1' } },
+    });
+    renderPage();
+    await screen.findByText(/Link a channel/);
+    fireEvent.click(screen.getByRole('button', { name: /Telegram/ }));
+    fireEvent.click(screen.getByText('New Telegram connector'));
+
+    expect(await screen.findByText('Still setting up for Rewire Live Demo — try again in a moment.')).toBeInTheDocument();
     expect(screen.getByLabelText('Pod to bridge')).toBeInTheDocument();
   });
 
