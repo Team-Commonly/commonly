@@ -88,7 +88,7 @@
       "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
     },
     "moduleNameMapper": {
-      "^@fontsource-variable/inter$": "<rootDir>/src/__mocks__/fileMock.js",
+      "^@fontsource-variable/(inter|bricolage-grotesque)$": "<rootDir>/src/__mocks__/fileMock.js",
       "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
       "^d3$": "<rootDir>/src/__mocks__/d3.js",
       "\\.(css|less|scss|sass)$": "<rootDir>/src/__mocks__/fileMock.js",
