@@ -40,10 +40,12 @@ export class InstallableProjectionError extends Error {
 
 export class InstallInProgressError extends Error {
   code = 'install_in_progress';
+  boundPodId?: string;
 
-  constructor() {
-    super('This install is still in progress; try disconnecting again shortly.');
+  constructor(boundPodId?: string) {
+    super('This install is still in progress; try again shortly.');
     this.name = 'InstallInProgressError';
+    this.boundPodId = boundPodId;
   }
 }
 
@@ -72,6 +74,7 @@ export interface InstallResult {
   integration: unknown | null;
   httpStatus: 200 | 202;
   state: 'active' | 'installing' | 'activating' | 'uninstalling';
+  boundPodId?: string;
 }
 
 interface ClaimResult {
@@ -182,6 +185,15 @@ const resultForExisting = async (
     }
     return { installation, integration, httpStatus: 200, state: 'active' };
   }
+  // While a claim is fresh, its parent records the only durable target. An
+  // Integration may be an inactive projection left by an earlier attempt, so
+  // it must not decide this in-flight install's destination. A differently
+  // targeted caller needs the pending pod, not a success-shaped 202 that
+  // later surfaces a connector somewhere else.
+  const boundPodId = installationBoundPodId(installation);
+  if (boundPodId && boundPodId !== String(requestedPodId)) {
+    throw new InstallInProgressError(boundPodId);
+  }
   return {
     installation,
     integration,
@@ -191,6 +203,7 @@ const resultForExisting = async (
       : installation.status === 'uninstalling'
         ? 'uninstalling'
         : 'installing',
+    boundPodId: boundPodId || undefined,
   };
 };
 

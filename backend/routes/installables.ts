@@ -45,7 +45,12 @@ const sendInstallError = (error: Error, res: Res): void => {
     return;
   }
   if (error instanceof InstallInProgressError) {
-    res.status(409).json({ code: 'install_in_progress', error: error.message });
+    const { boundPodId } = error as Error & { boundPodId?: string };
+    res.status(409).json({
+      code: 'install_in_progress',
+      error: error.message,
+      ...(boundPodId ? { boundPodId } : {}),
+    });
     return;
   }
   if (error instanceof InstallableAlreadyInstalledError) {
@@ -108,6 +113,7 @@ router.post('/:installableId/install', writeIntegrationsRateLimit, auth, async (
       status: result.state,
       installation: result.installation,
       integration: result.integration,
+      ...(result.boundPodId ? { boundPodId: result.boundPodId } : {}),
     });
   } catch (error) {
     return sendInstallError(error as Error, res);

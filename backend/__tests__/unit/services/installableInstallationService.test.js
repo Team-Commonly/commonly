@@ -160,8 +160,11 @@ describe('installable connector projection', () => {
       claimedAt: new Date(),
     });
 
-    const waiting = await install({ installableId: 'telegram', installedBy: userId, podId: otherPodId });
-    expect(waiting).toMatchObject({ httpStatus: 202, state: 'installing' });
+    const waiting = await install({ installableId: 'telegram', installedBy: userId, podId });
+    expect(waiting).toMatchObject({ httpStatus: 202, state: 'installing', boundPodId: podId });
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId: otherPodId }))
+      .rejects.toMatchObject({ code: 'install_in_progress', boundPodId: podId });
 
     const after = await InstallableInstallation.findById(parent._id);
     expect(after).toMatchObject({
