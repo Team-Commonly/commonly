@@ -56,6 +56,13 @@ const ADD_PLATFORMS: { type: string; enabled: boolean }[] = [
 
 const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 
+// The route is keyed by the installable identity, which is the connector
+// provider type in this Phase 1 projection. Do not pin this to Telegram: a
+// future installable-backed provider must revoke its own parent.
+export const installableLifecyclePath = (type: string): string => (
+  `/api/installables/${encodeURIComponent(type)}/install`
+);
+
 const podName = (c: Connector): string => (
   typeof c.podId === 'object' && c.podId ? (c.podId.name || 'Untitled pod') : 'Untitled pod'
 );
@@ -183,7 +190,7 @@ const V2ConnectorsPage: React.FC = () => {
     setBusyId(c._id);
     try {
       if (c.installationId) {
-        await api.del('/api/installables/telegram/install');
+        await api.del(installableLifecyclePath(c.type));
       } else {
         // The installable verb owns lifecycle for new Telegram bindings. Keep
         // older direct integrations disconnectable while their migration is

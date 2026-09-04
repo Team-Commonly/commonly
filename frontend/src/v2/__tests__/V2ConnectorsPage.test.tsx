@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2ConnectorsPage from '../components/V2ConnectorsPage';
+import V2ConnectorsPage, { installableLifecyclePath } from '../components/V2ConnectorsPage';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('axios', () => {
@@ -179,6 +179,10 @@ describe('V2ConnectorsPage', () => {
       '/api/installables/telegram/install',
       expect.anything(),
     ));
+  });
+
+  it('derives the installable lifecycle target from the connector row type', () => {
+    expect(installableLifecyclePath('slack')).toBe('/api/installables/slack/install');
   });
 
   it('keeps a legacy Telegram connector disconnectable through the legacy route', async () => {
