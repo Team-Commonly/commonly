@@ -14,8 +14,7 @@ import V2ResetPassword from './components/V2ResetPassword';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import DiscordCallback from '../components/DiscordCallback';
-import V2BillingPanel from './components/V2BillingPanel';
-import V2DevicesPanel from './components/V2DevicesPanel';
+import V2SettingsPage from './components/V2SettingsPage';
 import V2AgentProfile from './agents/V2AgentProfile';
 import UserProfile from '../components/UserProfile';
 import AgentsHub from '../components/agents/AgentsHub';
@@ -289,21 +288,15 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', 'Plan and billing, profile, avatar, app management, and API token settings.', (
-                    <>
-                      <V2BillingPanel />
-                      <V2DevicesPanel />
-                      <UserProfile />
-                    </>
-                  ))}
+                  element={feature('Settings', undefined, <V2SettingsPage />, false, false)}
                 />
                 <Route
                   path="settings/devices"
-                  element={feature('Devices', 'Review and revoke CLI device tokens.', <V2DevicesPanel />)}
+                  element={<Navigate to="/v2/settings" replace />}
                 />
                 <Route
                   path="profile"
-                  element={feature('Profile', 'Profile, avatar, app management, and API token settings.', <UserProfile />)}
+                  element={<Navigate to="/v2/settings" replace />}
                 />
                 <Route
                   path="profile/:id"
