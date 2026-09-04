@@ -63,6 +63,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
   const settingsPage = read('../components/V2SettingsPage.tsx');
+  const avatar = read('../components/V2Avatar.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -435,6 +436,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<AppsManagement variant="settings" />');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(avatar).toContain("borderRadius: 'inherit'");
     expect(v2).toContain('.v2-settings .apps-management--settings .MuiCard-root');
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
