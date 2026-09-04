@@ -112,12 +112,25 @@ ships, and this would be it.
 
 Decision for Phase 1: **application-level envelope encryption, referenced from the row.**
 `ConnectorSecret { _id, integrationId, provider, ciphertext, iv, tag, keyId, createdAt }` stored
-with AES-256-GCM under `CONNECTOR_SECRET_KEY` (32 bytes, supplied through the existing `api-keys`
-ExternalSecret like every other key); the Integration row carries `config.botTokenRef` (the
+with AES-256-GCM under the active key of a ring (`CONNECTOR_SECRET_KEYS`, supplied through the
+existing `api-keys` ExternalSecret like every other key; rotation below); the Integration row carries `config.botTokenRef` (the
 ConnectorSecret id), never the material. One module, `services/connectorSecrets.ts`, with
 `put(integrationId, provider, material) → ref` and `get(ref) → material`, is the whole surface.
 Read only by `slackBridgeService` at send time; never returned by any route (`stripServerOwnedConfig`
-already strips server-owned keys; `botTokenRef` joins that list). Uninstall's unproject calls
+already strips server-owned keys; `botTokenRef` joins that list).
+
+**Key rotation is designed in, not deferred** (Vera, 2026-09-04: a `keyId` with no re-wrap path
+means the first key change stops every workspace relaying, silently). The env carries a key ring,
+`CONNECTOR_SECRET_KEYS = "<keyId>:<base64 32 bytes>,<keyId>:<…>"`, and `CONNECTOR_SECRET_ACTIVE_KEY`
+names the one `put` encrypts with; `get` decrypts with the record's own `keyId`. Rotation is:
+add the new key to the ring, flip the active id, run `scripts/rewrap-connector-secrets.ts`
+(decrypt with the old id, encrypt with the active, one document at a time, idempotent, logs a
+count that reaches zero), then remove the old key. A record whose `keyId` is not on the ring is a
+**loud** failure: `get` throws `ConnectorSecretKeyMissing`, the bridge logs it with the
+integration and team, and the reconciler marks the component `stale` so the page shows
+"Connection error — reconnect" rather than a quiet silence. Test: encrypt under `k1`, rotate to
+`k2`, re-wrap, remove `k1`, `get` still returns the material; drop `k2` from the ring, `get`
+throws the typed error and the row goes `stale`. Uninstall's unproject calls
 `revoke(ref)` (deletes the ConnectorSecret; `auth.revoke` at Slack is best-effort, logged, never
 blocking). ESO-per-workspace or a KMS envelope can replace the module later without touching a
 caller — the ref is the contract.
@@ -152,9 +165,14 @@ Socket Mode path and are not read by this design.
   live-relay rows. This is the one change to #1527's code that Slack forces; it is additive.
 - **Ack fast, dedupe, expect retries.** Slack retries any event not acknowledged within 3 s and
   marks retries with `X-Slack-Retry-Num`; the events route acknowledges immediately and processes
-  after the response, and dedupes on `event_id` (a small TTL set, or a unique index on
-  `config.messageBuffer.externalId` is not enough — dedupe is at the event, before relay). Telegram
-  has no equivalent; this is new verification surface for Vera.
+  after the response, and dedupes on `event_id` **in a shared store, not in process memory**
+  (Vera, 2026-09-04: a rollout runs two backend processes for ~40 s, and the scheduler's own
+  comment says so — a per-process set lets the retry land on the other replica). The store is a
+  `SlackEventReceipt { eventId (unique), teamId, receivedAt }` collection with a TTL index of 24 h;
+  the handler **inserts before it relays** and treats a duplicate-key error as "already handled"
+  and acks. Dedupe is at the event, before relay — a unique index on
+  `config.messageBuffer.externalId` is not enough. Telegram has no equivalent; this is new
+  verification surface.
 
 ### 2d. The #1527 invariants, checked one by one
 
@@ -291,7 +309,14 @@ be `im` for inbound relay, mirroring #1289.
    no inbound was ever authored as the victim.
 4. Inbound `message.im` for the bound team+channel → one pod post authored as `linkedUserId`;
    `channel_type: 'channel'` → dropped; unsigned or stale-timestamp request → 401; a retried event
-   (same `event_id`, `X-Slack-Retry-Num: 1`) → no second post.
+   (same `event_id`, `X-Slack-Retry-Num: 1`) → no second post, **asserted through a second process
+   or a second app instance sharing the DB, not the same handler** — the receipt row is what
+   dedupes, and a fresh `SlackEventReceipt` unique index is exercised against real Mongo.
+4b. **Key ring.** Secret written under `k1`; ring rotated to `k2` and re-wrapped; `k1` removed;
+   `get` returns the material. `k2` removed from the ring: `get` throws
+   `ConnectorSecretKeyMissing`, the bridge logs integration + team, the reconciler marks the
+   component `stale`, the page shows the error state. Nothing relays in that state and nothing is
+   silently dropped.
 5. Dispatcher: a post in the gate pod → one `chat.postMessage` with the workspace token to the
    bound DM, `[PodName]` prefixed; two users with Slack installs on the same pod → two sends;
    a Telegram install and a Slack install on the same pod → one send each, each with its own
@@ -308,7 +333,7 @@ be `im` for inbound relay, mirroring #1289.
 
 | Piece | Owner | Size |
 |---|---|---|
-| `connectorSecrets` module + `CONNECTOR_SECRET_KEY` wiring + tests (D6) | Kai | S |
+| `connectorSecrets` module (key ring, re-wrap script, typed missing-key failure) + tests (D6) | Kai | S–M |
 | Slack manifest + seeder entry; dispatcher type generalisation; reconciler on the scheduler (5 min) | Kai | S |
 | `authorize-url` (nonce cookie), OAuth callback (pending bind), confirm/reject routes, events + commands routes with signature/ack/dedupe | Kai | M |
 | `slackBridgeService` (outbound, inbound, thread router) + shared escalation helper | Kai | M |
