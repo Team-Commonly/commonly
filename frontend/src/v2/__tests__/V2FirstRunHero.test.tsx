@@ -71,7 +71,7 @@ jest.mock('../components/V2NavRail', () => () => (
   </nav>
 ));
 jest.mock('../components/V2PodsSidebar', () => () => <aside>Pods</aside>);
-jest.mock('../components/V2PodInspector', () => () => <aside>Inspector</aside>);
+jest.mock('../components/V2Inspector', () => () => <aside>Inspector</aside>);
 jest.mock('../components/V2InviteModal', () => () => null);
 jest.mock('../components/V2PodChat', () => ({ firstRunVisible }: { firstRunVisible?: boolean }) => (
   <main data-testid="pod-chat">
