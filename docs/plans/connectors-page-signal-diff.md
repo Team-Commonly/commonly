@@ -9,7 +9,7 @@ This is the diff between what the page draws today and what the artboard draws, 
 | | today (#1531 + #1538) | artboard | call |
 |---|---|---|---|
 | Frame | one column, `max-width: 720px`, two sections ("Your channels", "Add a channel") | one content card, `grid-template-columns: minmax(0,1fr) 400px`, gap 40; list left, aside right | **change.** Page head (display 32 "Connectors" + muted sentence), then the list, then the connect control, aside on the right |
-| Rows | stacked cards with a 34px platform tile in the provider's tint, 14px bold name, green/orange/red dot, controls inside the card | one bordered container (radius 4, `#e4e7ec` dividers); each row a grid `160px minmax(0,1fr) 200px 120px`, gap 16, padding 16px 18px; dot + display 18 name, two-line middle, mono when, one action | **change.** Platform tiles and tint go from the rows; the name in display face is the mark. Tint tokens stay in both token files (the invariants test pins them) — nothing consumes them on this page any more, so the pin moves to `--v2-accent` on the dot (see §5) |
+| Rows | stacked cards with a 34px platform tile in the provider's tint, 14px bold name, green/orange/red dot, controls inside the card | one bordered container (radius 4, `#e4e7ec` dividers); each row a grid `200px minmax(0,1fr) 200px 120px`, gap 16, padding 16px 18px; dot + display 18 name, two-line middle, mono when, one action | **change.** Platform tiles and tint go from the rows. Each row opens with the provider's **glyph at 20px in ink** (`PlatformGlyph`, `currentColor`, no tile, no tint — Sam, 2026-09-04, added to the artboard) before the display-face name; the state dot stays the only cobalt on the row. Not-yet rows draw the glyph in placeholder `#98a2b3`. Tint tokens stay in both token files (the invariants test pins them) — nothing consumes them on this page any more, so the pin moves to `--v2-accent` on the dot (see §5) |
 | Dot colours | `--v2-success` green, `--v2-warning`, `--v2-danger` | cobalt solid, cobalt pulsing, hollow `#98a2b3`, dashed `#98a2b3`, idle `#e4e7ec` | **change** to the state grammar (§2). No green, no orange, no red anywhere on the page |
 | Actions | Manage (cobalt text link), Copy command (cobalt fill), Authorize in Slack, Confirm, This is not me, New code, Disconnect (red text) | one action per row, right-aligned, 32px: bordered secondary or ink primary | **change.** One action per row; everything else moves to the aside for the selected row (§3). Ink fills the action that is the user's next step; bordered for Manage; no cobalt fills, no red text |
 | Relay toggle + Attention/Mirror | inline under every connected Telegram/Slack row | not on the row | **move** to the aside's *What the channel sees* card for the selected row. Same PATCH calls, same tests |
@@ -22,7 +22,7 @@ This is the diff between what the page draws today and what the artboard draws, 
 
 ## 2. State table — same states, the artboard's marks
 
-Rows are one line each. `dot` is the 8px mark before the name. `line 1` and `line 2` are the middle column (line 2 is mono 12 muted). `when` is mono 12 muted. `action` is the one control on the row; ink = the next step, bordered = secondary.
+Rows are one line each. `dot` is the 8px mark before the name; between the dot and the name sits the provider glyph, 20px, ink (`currentColor`), placeholder grey on the not-yet row — it is recognition, not state, so it never changes colour with the row. The name column is 200px (widened from the first artboard's 160px so glyph + `Discord · WhatsApp` sit on one line). `line 1` and `line 2` are the middle column (line 2 is mono 12 muted). `when` is mono 12 muted. `action` is the one control on the row; ink = the next step, bordered = secondary.
 
 | state (unchanged) | dot | line 1 | line 2 | when | action |
 |---|---|---|---|---|---|
@@ -70,9 +70,10 @@ The connect form (after *Connect a channel*) also opens in the aside when a row 
 
 A restyle re-pins, never deletes. Class names below are the proposal; Kai's names win, the pins do not move. Replace the connectors block with:
 
-1. `.v2-connector-row` is `display: grid` with `grid-template-columns: 160px minmax(0, 1fr) 200px 120px`.
+1. `.v2-connector-row` is `display: grid` with `grid-template-columns: 200px minmax(0, 1fr) 200px 120px`.
 2. `.v2-connectors` (the content grid) contains `minmax(0, 1fr) 400px`.
 3. `.v2-connector-row__dot--live` contains `var(--v2-accent)`; `.v2-connector-row__dot--idle` contains `var(--v2-border-soft)`; no rule under `.v2-connector` contains `var(--v2-success)`, `var(--v2-warning)` or `var(--v2-danger)`.
+3b. The row glyph rule sets `width: 20px; height: 20px` and `color: var(--v2-ink)` (not-yet: `var(--v2-text-placeholder)`); no glyph rule contains `var(--v2-accent)` or a `--v2-platform-*` token — the glyph is never the state mark.
 4. Every `background` under `.v2-connector` that is a fill is `var(--v2-ink)` or the command block; no `var(--v2-accent)` background except `.v2-connector-code__copy`.
 5. `@media (max-width: 760px)` contains `.v2-connector-row { grid-template-columns: minmax(0, 1fr) auto }` and `.v2-connectors { grid-template-columns: minmax(0, 1fr) }`.
 6. The platform tint tokens stay pinned in both token files (the existing test) — the page no longer consumes them; they are kept for the front door.
