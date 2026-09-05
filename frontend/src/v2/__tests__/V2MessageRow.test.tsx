@@ -1,13 +1,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2MessageBubble from '../components/V2MessageBubble';
+import V2MessageRow from '../components/V2MessageRow';
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer' } }),
 }));
 
-describe('V2MessageBubble', () => {
+describe('V2MessageRow', () => {
   const previousApiUrl = process.env.REACT_APP_API_URL;
 
   afterEach(() => {
@@ -19,7 +19,7 @@ describe('V2MessageBubble', () => {
 
     render(
       <MemoryRouter>
-        <V2MessageBubble
+        <V2MessageRow
           message={{
             id: '1',
             pod_id: 'pod-1',
@@ -50,7 +50,7 @@ describe('V2MessageBubble', () => {
   it('renders no reactions row when a message has no reactions — the trigger lives in the cluster', () => {
     render(
       <MemoryRouter>
-        <V2MessageBubble
+        <V2MessageRow
           message={{
             id: '42',
             pod_id: 'pod-1',
@@ -73,7 +73,7 @@ describe('V2MessageBubble', () => {
   it('keeps the reactions row in flow when chips exist', () => {
     render(
       <MemoryRouter>
-        <V2MessageBubble
+        <V2MessageRow
           message={{
             id: '43',
             pod_id: 'pod-1',
@@ -96,7 +96,7 @@ describe('V2MessageBubble', () => {
   it('marks a system card with its action state', () => {
     render(
       <MemoryRouter>
-        <V2MessageBubble
+        <V2MessageRow
           message={{
             id: '44',
             pod_id: 'pod-1',

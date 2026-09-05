@@ -8,7 +8,7 @@
  * won, and clicking ANY agent's byline or member row rendered the same seat's
  * profile (Sam, 2026-08-26: "clicking any agent's profile goes to fable").
  *
- * Producers (V2PodChat author map) and consumers (V2Inspector agent view)
+ * Producers (V2Thread author map) and consumers (V2Inspector agent view)
  * MUST both import this — the collision existed precisely because each side
  * derived its own key.
  */

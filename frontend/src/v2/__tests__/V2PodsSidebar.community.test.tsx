@@ -41,6 +41,7 @@ const renderSidebar = (pods, selectedPodId = 'sharpen') => render(
   <MemoryRouter initialEntries={['/v2/pods/sharpen']}>
     <V2PodsSidebar
       selectedPodId={selectedPodId}
+      attentionItems={[{ id: 'decision-1', kind: 'decision', title: 'Choose workspace', podId: 'sharpen' }]}
       podsState={{
         pods,
         loading: false,
@@ -64,9 +65,6 @@ describe('V2PodsSidebar workspace groups', () => {
           _id: 'telegram', type: 'telegram', status: 'connected', podId: { _id: 'sharpen', name: 'Sharpen' },
         }]);
       }
-      if (url === '/api/activity/decision-queue') {
-        return Promise.resolve({ items: [{ id: 'decision-1', podId: 'sharpen' }] });
-      }
       return Promise.resolve([]);
     });
     await act(async () => { await i18n.changeLanguage('en'); });
@@ -85,7 +83,7 @@ describe('V2PodsSidebar workspace groups', () => {
 
     const rooms = screen.getByRole('heading', { name: 'rooms' }).closest('section');
     const direct = screen.getByRole('heading', { name: 'direct' }).closest('section');
-    expect(within(rooms).getByRole('button', { name: 'Sharpen' })).toBeInTheDocument();
+    expect(within(rooms).getByRole('button', { name: /^Sharpen/ })).toBeInTheDocument();
     expect(within(rooms).getByRole('button', { name: 'Agent Admin' })).toBeInTheDocument();
     expect(within(rooms).getByRole('button', { name: 'Study Group' })).toBeInTheDocument();
     expect(within(rooms).getByRole('button', { name: 'Project Chat' })).toBeInTheDocument();
