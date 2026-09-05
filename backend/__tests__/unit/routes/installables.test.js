@@ -76,7 +76,7 @@ describe('installable connector routes', () => {
     expect(installationService.install).not.toHaveBeenCalled();
   });
 
-  it('derives the install target from auth and accepts only the selected pod', async () => {
+  it('derives the install target from auth and redacts pause administrators', async () => {
     Pod.findById.mockResolvedValue({
       _id: podId,
       createdBy: { toString: () => 'someone-else' },
@@ -86,7 +86,16 @@ describe('installable connector routes', () => {
       httpStatus: 200,
       state: 'active',
       installation: { _id: 'install-1' },
-      integration: { _id: 'integration-1' },
+      integration: {
+        _id: 'integration-1',
+        config: {
+          adminPause: {
+            reason: 'Safety review in progress.',
+            at: '2026-09-05T08:48:00.000Z',
+            adminId: 'admin-private-id',
+          },
+        },
+      },
     });
 
     const res = await request(app)
@@ -100,6 +109,11 @@ describe('installable connector routes', () => {
       installedBy: '64b64c48c4f37a6b2f34c111',
       podId,
     });
+    expect(res.body.integration.config.adminPause).toEqual({
+      reason: 'Safety review in progress.',
+      at: '2026-09-05T08:48:00.000Z',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('admin-private-id');
   });
 
   it('returns typed 409 when activation loses its projection', async () => {
