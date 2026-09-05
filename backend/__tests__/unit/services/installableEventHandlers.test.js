@@ -98,6 +98,35 @@ describe('installable event dispatcher', () => {
     expect(String(relay.mock.calls[0][0].integration.podId)).toBe(podA);
   });
 
+  it('forwards a server-composed decision card without changing the chat content', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId);
+    await install({ installableId: 'telegram', installedBy: ownerId, podId });
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = relay;
+    const card = {
+      title: 'Choose a train',
+      question: 'Which rollout should ship?',
+      options: [{ label: 'Canary' }, { label: 'Fast lane', recommended: true }],
+      context: 'Private workspace detail',
+    };
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'Choose a train\n\nWhich rollout should ship?',
+      podMessageId: 'message-card',
+      card,
+    });
+
+    expect(relay).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Choose a train\n\nWhich rollout should ship?',
+      card,
+    }));
+  });
+
   it('relays each same-pod connector to its own selected Telegram chat', async () => {
     const podId = freshId();
     const firstOwner = freshId();

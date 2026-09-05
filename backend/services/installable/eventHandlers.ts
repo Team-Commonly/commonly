@@ -1,4 +1,5 @@
 import type { IIntegration } from '../../models/Integration';
+import type { DecisionRelayCard } from '../decisionCardRelay';
 import { Types } from 'mongoose';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -16,6 +17,7 @@ export interface ChatMessageEventPayload {
   displayName: string;
   content: string;
   podMessageId?: string | null;
+  card?: DecisionRelayCard;
 }
 
 export type InternalEventHandler = (
