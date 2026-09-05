@@ -575,7 +575,7 @@ body.modern-ui.v2-canvas {
 
 .v2-rail {
   height: 100%;
-  padding: 18px 10px;
+  padding: 6px 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -640,7 +640,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
   font-size: 17px;
   padding: 0;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
   color: var(--v2-text-primary);
   letter-spacing: -0.02em;
   height: 32px;
@@ -651,8 +651,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-rail__brand-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
   color: #fff;
@@ -669,22 +669,25 @@ body.modern-ui.v2-canvas {
   gap: 4px;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 0;
 }
 
-.v2-rail__item {
+.v2-root button.v2-rail__item {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0;
-  min-height: 44px;
+  width: 32px;
+  min-height: 32px;
+  height: 32px;
+  align-self: center;
   padding: 0;
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
   color: #374151;
-  width: 100%;
+  background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
 }
@@ -707,14 +710,14 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
-.v2-rail__item:hover {
+.v2-root button.v2-rail__item:hover {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }
 
-.v2-rail__item--active {
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+.v2-root button.v2-rail__item--active {
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-weight: 600;
 }
 

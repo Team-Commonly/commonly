@@ -121,6 +121,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(lastRuleBody(v2, '.v2-shell')).toContain('padding: 14px');
   });
 
+  test('the compact rail uses the artboard’s 32px square marks inside the 56px column', () => {
+    const rail = ruleBody(v2, '.v2-rail');
+    const brand = ruleBody(v2, '.v2-rail__brand-icon');
+    const item = ruleBody(v2, '.v2-root button.v2-rail__item');
+    const active = ruleBody(v2, '.v2-root button.v2-rail__item--active');
+    expect(rail).toContain('padding: 6px 10px');
+    expect(brand).toContain('width: 32px');
+    expect(brand).toContain('height: 32px');
+    expect(item).toContain('width: 32px');
+    expect(item).toContain('height: 32px');
+    expect(item).toContain('border-radius: var(--v2-radius)');
+    expect(active).toContain('background: var(--v2-ink)');
+  });
+
   test('sidebar is the artboard’s three-list grammar, not the retired search/filter surface', () => {
     const labels = lastRuleBody(v2, '.v2-pods__group-label');
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
