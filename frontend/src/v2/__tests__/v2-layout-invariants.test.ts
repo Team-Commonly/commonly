@@ -1130,6 +1130,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connector-row__detail')).toContain('white-space: nowrap');
     expect(ruleBody(v2, '.v2-connector-row__dot--live, .v2-connector-row__dot--pending')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-connector-row__dot--idle')).toContain('var(--v2-border-soft)');
+    expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('width: 4px');
+    expect(ruleBody(v2, '.v2-connector-gate__mark')).toContain('var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-connector-gate__switch')).toContain('accent-color: var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-connector-gate__tag')).toContain('var(--v2-font-mono)');
     const connectorCss = v2.slice(v2.indexOf('/* ── Connectors'), v2.indexOf('/* Activity queue'));
     expect(connectorCss).not.toContain('var(--v2-success)');
     expect(connectorCss).not.toContain('var(--v2-warning)');
