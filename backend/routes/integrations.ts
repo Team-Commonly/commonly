@@ -513,8 +513,6 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       createdBy?: { toString: () => string };
       podId?: unknown;
       config?: { toObject?: () => Record<string, unknown> };
-      set: (update: Record<string, unknown>) => void;
-      save: () => Promise<unknown>;
     } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
     const currentConfig = integration.config?.toObject ? integration.config.toObject() : (integration.config || {}) as Record<string, unknown>;
@@ -610,10 +608,9 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     if (autoStatusTypes.includes(integration.type || '') && config) {
       update.status = (update.status as string | undefined) || (isManifestComplete(integration.type || '', nextConfig) ? 'connected' : 'pending');
     }
-    // Persist the document we just authorised. This deliberately avoids a
-    // second route-derived database selector at the write boundary.
-    integration.set(update);
-    const updated = await integration.save();
+    // The selector is the canonical ObjectId parsed at the route boundary;
+    // the access check above authorises that exact document before this write.
+    const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
     return res.json(updated);
   } catch (error) {
     console.error('Error updating integration:', error);
