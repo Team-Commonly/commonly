@@ -5618,19 +5618,8 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-@media (max-width: 1279px) {
-  .v2-root {
-    --v2-rail-w: 72px;
-    --v2-pods-w: 248px;
-    --v2-inspector-w: 300px;
-    min-width: 0;
-  }
-}
-
 @media (max-width: 1023px) {
   .v2-root {
-    --v2-rail-w: 64px;
-    --v2-pods-w: 236px;
     min-width: 0;
   }
 

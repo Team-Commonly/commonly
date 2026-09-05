@@ -145,6 +145,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(lastRuleBody(v2, '.v2-shell')).toContain('padding: 14px');
   });
 
+  test('the workspace keeps each artboard column width declared exactly once', () => {
+    // cssVariable() intentionally reads the first match, so it would miss a
+    // later media override. Only the chat track may contract before phone.
+    for (const name of ['--v2-rail-w', '--v2-pods-w', '--v2-inspector-w']) {
+      expect(v2.match(new RegExp(`${name}\\s*:`, 'g')) || []).toHaveLength(1);
+    }
+  });
+
   test('the compact rail uses the artboard’s 32px square marks inside the 56px column', () => {
     const rail = ruleBody(v2, '.v2-rail');
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
