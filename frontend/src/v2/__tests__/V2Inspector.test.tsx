@@ -100,7 +100,7 @@ describe('V2Inspector', () => {
 
   test('uses the settled-workspace empty copy when no agent is working', async () => {
     mockGet.mockImplementation(() => Promise.resolve({ items: [], tasks: [] }));
-    renderInspector({ detail: { ...detail, agents: [] } as any });
+    renderInspector({ detail: { ...detail, agents: [] } as any, attentionItems: [] });
 
     expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
