@@ -15,7 +15,19 @@ jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../services/installable/installableCatalogService', () => ({
   catalogFor: jest.fn(),
   providerReadiness: jest.fn(() => ({ available: true })),
-  publicIntegration: jest.fn((integration) => integration),
+  publicIntegration: jest.fn((integration) => {
+    if (!integration?.config?.adminPause) return integration;
+    return {
+      ...integration,
+      config: {
+        ...integration.config,
+        adminPause: {
+          reason: integration.config.adminPause.reason,
+          at: integration.config.adminPause.at,
+        },
+      },
+    };
+  }),
 }));
 jest.mock('../../../services/installable/installableInstallationService', () => ({
   install: jest.fn(),

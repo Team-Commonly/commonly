@@ -42,7 +42,16 @@ describe('installable catalog service', () => {
     Integration.find.mockReturnValue(lean([{
       installationId,
       type: 'telegram',
-      config: { botTokenRef: 'secret-ref', oauthStateNonce: 'nonce', chatTitle: 'Ops' },
+      config: {
+        botTokenRef: 'secret-ref',
+        oauthStateNonce: 'nonce',
+        chatTitle: 'Ops',
+        adminPause: {
+          reason: 'Safety review in progress.',
+          at: '2026-09-05T08:48:00.000Z',
+          adminId: 'admin-private-id',
+        },
+      },
     }]));
 
     const catalog = await catalogFor(userId);
@@ -61,7 +70,13 @@ describe('installable catalog service', () => {
         },
         integration: expect.objectContaining({
           installationId,
-          config: { chatTitle: 'Ops' },
+          config: {
+            chatTitle: 'Ops',
+            adminPause: {
+              reason: 'Safety review in progress.',
+              at: '2026-09-05T08:48:00.000Z',
+            },
+          },
         }),
       }),
       expect.objectContaining({
@@ -73,7 +88,7 @@ describe('installable catalog service', () => {
       }),
     ]);
     expect(InstallableInstallation.find).toHaveBeenCalledWith(expect.objectContaining({ targetId: userId }));
-    expect(JSON.stringify(catalog)).not.toMatch(/SLACK_|CONNECTOR_SECRET|private-claim|secret-ref|nonce/);
+    expect(JSON.stringify(catalog)).not.toMatch(/SLACK_|CONNECTOR_SECRET|private-claim|secret-ref|nonce|adminId|admin-private-id/);
   });
 
   it('does not read projections when the caller has no live parent', async () => {
