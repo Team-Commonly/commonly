@@ -181,6 +181,10 @@ const handleSummaryCommand = async (chat: any, integration: any) => {
     );
     return;
   }
+  if (!integration.podId) {
+    await telegramService.sendMessage(botToken, chatId, 'This connector has no active pod. Choose one in Commonly first.');
+    return;
+  }
 
   const latest = await Integration.findById(integration._id).lean();
   const buffer = latest?.config?.messageBuffer || [];
@@ -252,6 +256,10 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
     );
     return;
   }
+  if (!integration.podId) {
+    await telegramService.sendMessage(botToken, chatId, 'This connector has no active pod. Choose one in Commonly first.');
+    return;
+  }
 
   const latestSummary = await Summary.findOne({
     type: 'chats',
@@ -321,6 +329,7 @@ const handleModeCommand = async (chat: any, integration: any, arg?: string) => {
 const handleStatusCommand = async (chat: any, integration: any) => {
   const chatId = chat?.id?.toString();
   if (!integration) return sendToChat(chatId, NOT_LINKED);
+  if (!integration.podId) return sendToChat(chatId, 'This connector has no active pod. Choose one in Commonly first.');
   const pod = await Pod.findById(integration.podId).lean();
   const mode = integration.config?.relayAllAgentMessages === true ? 'mirror' : 'attention';
   const mutedUntil = integration.config?.relayMutedUntil;
@@ -425,6 +434,7 @@ router.post('/', async (req: any, res: any) => {
       type: 'telegram',
       isActive: true,
       'config.chatId': chatId,
+      'config.adminPause': { $exists: false },
     });
 
     if (command === SUMMARY_COMMAND) {

@@ -37,6 +37,7 @@ export interface RelayMapEntry {
 interface TelegramIntegrationDoc {
   _id: unknown;
   podId: unknown;
+  scope?: 'pod' | 'user';
   type?: string;
   isActive?: boolean;
   config?: {
@@ -47,6 +48,8 @@ interface TelegramIntegrationDoc {
     leadAgentUsername?: string;
     relayMap?: RelayMapEntry[];
     relayAllAgentMessages?: boolean;
+    gates?: Record<string, { enabled?: boolean }>;
+    adminPause?: { reason?: string; at?: Date | string; adminId?: string };
   };
 }
 
@@ -90,6 +93,7 @@ const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationD
       // Same gate as inbound: a code redeemed into a group must not stream the
       // pod's escalations to that group (connector-verify F2, 2026-08-26).
       'config.chatType': 'private',
+      'config.adminPause': { $exists: false },
     }).lean();
   } catch (error) {
     // Fail CLOSED (no relay) but never silently: `null` is also what a pod with
@@ -106,11 +110,14 @@ const isRelayableIntegration = (
   integration: TelegramIntegrationDoc,
   podId: string,
 ): boolean => (
-  String(integration.podId) === String(podId)
+  (integration.scope === 'user'
+    ? integration.config?.gates?.[String(podId)]?.enabled === true
+    : String(integration.podId) === String(podId))
   && (integration.type === undefined || integration.type === 'telegram')
   && integration.isActive !== false
   && integration.config?.liveRelay === true
   && integration.config?.chatType === 'private'
+  && !integration.config?.adminPause
   && Boolean(integration.config?.chatId)
 );
 
@@ -137,7 +144,7 @@ export const relayAgentMessageToTelegram = async (opts: {
     // mute means mute; /status shows it, and it self-expires.
     const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
     if (mutedUntil && new Date(mutedUntil) > new Date()) return;
-    if (!shouldEscalate({ content, agentUsername, integration })) return;
+    if (!shouldEscalate({ content, agentUsername, integration, podId })) return;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = integration.config?.chatId;
@@ -184,6 +191,13 @@ export const relayTelegramMessageToPod = async (opts: {
   const rawText = (telegramMessage.text || telegramMessage.caption || '').trim();
   if (!rawText) return { relayed: false };
   if (rawText.startsWith('/')) return { relayed: false }; // commands keep legacy handling
+  if (!integration.podId) {
+    // `podId` is optional for user-scoped rows, but inbound has one active
+    // destination. Never stringify null into a query or author into a pod the
+    // connector cannot name.
+    console.warn('[tg-bridge] inbound dropped — connector has no active pod');
+    return { relayed: false };
+  }
 
   const podId = String(integration.podId);
   const linkedUserId = integration.config?.linkedUserId;
@@ -347,6 +361,7 @@ export const relayTelegramMessageToPod = async (opts: {
 module.exports = {
   shouldEscalate,
   routeReplyContent,
+  isRelayableIntegration,
   relayAgentMessageToTelegram,
   relayTelegramMessageToPod,
 };

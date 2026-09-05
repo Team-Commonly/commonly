@@ -8,7 +8,7 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.user = { id: 'user-1' };
+  req.user = { id: req.header('x-test-user') || 'user-1' };
   next();
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
@@ -126,6 +126,126 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.config.liveRelay).toBe(false);
     expect(update.config.linkedUserId).toBeUndefined();
+  });
+});
+
+describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
+  const currentPodId = '64b64c1f7e5b8f0a12345670';
+  const allowedPodId = '64b64c1f7e5b8f0a12345671';
+  const forbiddenPodId = '64b64c1f7e5b8f0a12345672';
+
+  const userScopedIntegration = () => ({
+    _id: 'integration-user',
+    scope: 'user',
+    type: 'telegram',
+    podId: currentPodId,
+    createdBy: { toString: () => 'user-1' },
+    config: {
+      linkedUserId: 'user-1',
+      gates: { [currentPodId]: { enabled: true, since: new Date() } },
+      toObject() {
+        return {
+          linkedUserId: 'user-1',
+          gates: { [currentPodId]: { enabled: true, since: new Date() } },
+        };
+      },
+    },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Integration.findById.mockResolvedValue(userScopedIntegration());
+    Integration.findByIdAndUpdate.mockResolvedValue({ _id: 'integration-user' });
+  });
+
+  it('refuses a pod creator or admin who is not the linked owner', async () => {
+    const podCreator = await request(app)
+      .patch('/api/integrations/integration-user')
+      .set('x-test-user', 'pod-creator')
+      .send({ config: { liveRelay: false } });
+    expect(podCreator.status).toBe(403);
+
+    const admin = await request(app)
+      .patch('/api/integrations/integration-user')
+      .set('x-test-user', 'instance-admin')
+      .send({ config: { gates: {} } });
+    expect(admin.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('checks every requested gate before writing any of them', async () => {
+    Pod.findById
+      .mockResolvedValueOnce({ _id: allowedPodId, createdBy: 'user-1', members: [] })
+      .mockResolvedValueOnce({ _id: forbiddenPodId, createdBy: 'someone-else', members: [] });
+
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({
+        config: {
+          gates: {
+            [allowedPodId]: { enabled: true, since: new Date().toISOString() },
+            [forbiddenPodId]: { enabled: true, since: new Date().toISOString() },
+          },
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('allows the linked owner to write gates for pods they belong to', async () => {
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ config: { gates: { [allowedPodId]: { enabled: true, since: new Date().toISOString() } } } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.config.gates[allowedPodId]).toMatchObject({ enabled: true });
+  });
+
+  it.each(['a.b', '$ne'])('refuses an unsafe gate key before any membership lookup or write', async (key) => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ config: { gates: { [key]: { enabled: true } } } });
+
+    expect(res.status).toBe(400);
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversized gate body before any membership lookup or write', async () => {
+    const gates = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [
+      index.toString(16).padStart(24, '0'), { enabled: true },
+    ]));
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ config: { gates } });
+
+    expect(res.status).toBe(400);
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a syntactically valid gate key whose pod does not exist', async () => {
+    Pod.findById.mockResolvedValue(null);
+    const missingPodId = '64b64c1f7e5b8f0a12345673';
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ config: { gates: { [missingPodId]: { enabled: true } } } });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses client writes to the administrator pause projection', async () => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ config: { adminPause: { reason: 'not owner controlled' } } });
+
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 });
 

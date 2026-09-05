@@ -4,7 +4,9 @@ jest.mock('../../../models/Integration', () => ({
 }));
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 
-const { shouldEscalate, routeReplyContent } = require('../../../services/telegramBridgeService');
+const {
+  shouldEscalate, routeReplyContent, isRelayableIntegration, relayTelegramMessageToPod,
+} = require('../../../services/telegramBridgeService');
 
 describe('telegramBridgeService — escalation gate', () => {
   const integration = (config = {}) => ({ _id: 'i1', podId: 'p1', config });
@@ -50,6 +52,26 @@ describe('telegramBridgeService — escalation gate', () => {
       integration: integration({ relayAllAgentMessages: true }),
     })).toBe(true);
   });
+
+  it('overlays a gate mode and lead on the connector defaults for that pod', () => {
+    const gated = integration({
+      relayAllAgentMessages: true,
+      leadAgentUsername: 'default-lead',
+      gates: {
+        'pod-a': { enabled: true, mode: 'attention', lead: 'pod-lead' },
+        'pod-b': { enabled: true, mode: 'mirror' },
+      },
+    });
+    expect(shouldEscalate({
+      content: 'ordinary progress', agentUsername: 'worker', integration: gated, podId: 'pod-a',
+    })).toBe(false);
+    expect(shouldEscalate({
+      content: 'ordinary progress', agentUsername: 'pod-lead', integration: gated, podId: 'pod-a',
+    })).toBe(true);
+    expect(shouldEscalate({
+      content: 'ordinary progress', agentUsername: 'worker', integration: gated, podId: 'pod-b',
+    })).toBe(true);
+  });
 });
 
 describe('telegramBridgeService — quote-reply routing', () => {
@@ -92,5 +114,42 @@ describe('telegramBridgeService — quote-reply routing', () => {
     const out = routeReplyContent({ content: 'plain message', replyToTgMessageId: null, relayMap });
     expect(out.routedAgent).toBeNull();
     expect(out.content).toBe('plain message');
+  });
+});
+
+describe('telegramBridgeService — user-scope outbound gate', () => {
+  const userScoped = {
+    _id: 'i1',
+    scope: 'user',
+    podId: 'active-pod',
+    type: 'telegram',
+    isActive: true,
+    config: {
+      liveRelay: true,
+      chatType: 'private',
+      chatId: 'chat-1',
+      gates: { 'other-pod': { enabled: true } },
+    },
+  };
+
+  it('allows an enabled gate rather than only the selected pod', () => {
+    expect(isRelayableIntegration(userScoped, 'other-pod')).toBe(true);
+  });
+
+  it('refuses a disabled or absent gate', () => {
+    expect(isRelayableIntegration({
+      ...userScoped,
+      config: { ...userScoped.config, gates: { 'other-pod': { enabled: false } } },
+    }, 'other-pod')).toBe(false);
+    expect(isRelayableIntegration(userScoped, 'missing-pod')).toBe(false);
+  });
+
+  it('drops inbound rather than stringifying a user connector without an active pod', async () => {
+    const result = await relayTelegramMessageToPod({
+      integration: { ...userScoped, podId: undefined },
+      telegramMessage: { text: 'hello from the phone' },
+    });
+
+    expect(result).toEqual({ relayed: false });
   });
 });

@@ -140,6 +140,33 @@ describe('Telegram webhook routes', () => {
     );
   });
 
+  it.each(['/summary', '/pod_summary', '/status'])('fails closed for %s when a user connector has no active pod', async (command) => {
+    const integration = {
+      _id: 'integration-no-pod',
+      scope: 'user',
+      config: { chatId: '42', chatType: 'private', messageBuffer: [{ content: 'hello' }] },
+    };
+    Integration.findOne.mockResolvedValue(integration);
+
+    const res = await request(app)
+      .post('/api/webhooks/telegram')
+      .send({
+        message: {
+          text: command,
+          chat: { id: 42, type: 'private' },
+          from: { id: 7, first_name: 'Sam' },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(IntegrationSummaryService.createSummary).not.toHaveBeenCalled();
+    expect(Summary.findOne).not.toHaveBeenCalled();
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(telegramService.sendMessage).toHaveBeenCalledWith(
+      'bot-token', '42', expect.stringContaining('no active pod'),
+    );
+  });
+
   it('buffers non-command messages via provider', async () => {
     const integration = {
       _id: 'integration-1',
@@ -262,6 +289,18 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(until).toBeGreaterThan(Date.now());
   });
 
+  it('/unmute only clears the owner mute and cannot clear an admin pause', async () => {
+    const res = await post('/unmute');
+
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+      'integration-1',
+      { $unset: { 'config.relayMutedUntil': '' } },
+    );
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.$unset['config.adminPause']).toBeUndefined();
+  });
+
   it('/help answers without an integration lookup dependency', async () => {
     Integration.findOne = jest.fn().mockResolvedValue(null);
     const res = await post('/help');
@@ -329,6 +368,66 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
       expect(res.status).toBe(200);
       expect(Integration.findOne).not.toHaveBeenCalled();
       expect(bridge.relayTelegramMessageToPod).not.toHaveBeenCalled();
+    });
+
+    it('acks an update for a paused connector and posts nothing, then relays after resume', async () => {
+      const duplicate = Object.assign(new Error('duplicate'), { code: 11000 });
+      WebhookDelivery.create
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(duplicate)
+        .mockResolvedValueOnce({});
+      const pausedIntegration = {
+        _id: 'integration-paused', type: 'telegram', podId: 'pod-1', isActive: true,
+        config: {
+          chatId: '42', chatType: 'private', liveRelay: true, linkedUserId: 'user-1',
+          adminPause: { reason: 'Safety review', at: new Date(), adminId: 'admin-1' },
+        },
+      };
+      const resumedIntegration = {
+        ...pausedIntegration,
+        config: { ...pausedIntegration.config },
+      };
+      delete resumedIntegration.config.adminPause;
+      let paused = true;
+      // The paused projection is intentionally invisible to this query. That
+      // preserves Telegram's 200 acknowledgement and receipt semantics while
+      // ensuring no bridge/pod write happens before a later resume.
+      Integration.findOne = jest.fn().mockImplementation((query) => (
+        query['config.adminPause']?.$exists === false && paused
+          ? Promise.resolve(null)
+          : Promise.resolve(resumedIntegration)
+      ));
+      bridge.relayTelegramMessageToPod.mockResolvedValue({ relayed: true });
+      delete process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED;
+      process.env.TELEGRAM_SECRET_TOKEN = 'pause-secret';
+
+      const first = await request(app)
+        .post('/api/webhooks/telegram')
+        .set('x-telegram-bot-api-secret-token', 'pause-secret')
+        .send(liveUpdate(33));
+      const second = await request(app)
+        .post('/api/webhooks/telegram')
+        .set('x-telegram-bot-api-secret-token', 'pause-secret')
+        .send(liveUpdate(33));
+      paused = false; // admin resume clears the child projection.
+      const resumed = await request(app)
+        .post('/api/webhooks/telegram')
+        .set('x-telegram-bot-api-secret-token', 'pause-secret')
+        .send(liveUpdate(34));
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(resumed.status).toBe(200);
+      expect(WebhookDelivery.create).toHaveBeenCalledWith(expect.objectContaining({
+        provider: 'telegram', deliveryId: '33',
+      }));
+      expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
+        'config.adminPause': { $exists: false },
+      }));
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalledTimes(1);
+      expect(bridge.relayTelegramMessageToPod).toHaveBeenCalledWith(expect.objectContaining({
+        integration: resumedIntegration,
+      }));
     });
 
     it('releases the claim when processing throws, so redelivery retries', async () => {

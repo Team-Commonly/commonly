@@ -47,6 +47,9 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
+  // An administrator's pause is projected from the parent installation. An
+  // owner's normal config write must never lift that stop.
+  'adminPause',
 ];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
@@ -63,6 +66,11 @@ const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string,
 // literal). Accepted: true/false and the legacy string forms 'true'/'false';
 // everything else is a 400, never a silent cast.
 const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
+// Gate names become Mongo subdocument keys. They are accepted only in the
+// canonical ObjectId form before a request can turn one into a dotted update
+// path; this also gives every caller the same bounded membership-check cost.
+const MAX_GATES_PER_WRITE = 100;
+const isObjectIdKey = (value: string): boolean => /^[a-f\d]{24}$/i.test(value);
 const readRelayFlags = (config: Record<string, unknown>): { next: Record<string, unknown>; invalid?: string } => {
   const next = { ...config };
   for (const k of RELAY_FLAG_KEYS) {
@@ -485,11 +493,57 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
     const { config, status, isActive } = (req.body || {}) as { config?: Record<string, unknown>; status?: string; isActive?: boolean };
-    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { toObject?: () => Record<string, unknown> } } | null;
+    const integration = await Integration.findById(id) as {
+      type?: string;
+      scope?: string;
+      createdBy?: { toString: () => string };
+      podId?: unknown;
+      config?: { toObject?: () => Record<string, unknown> };
+    } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
-    const canUpdate = await canDeleteIntegration(integration, req.user?.id || '');
-    if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
     const currentConfig = integration.config?.toObject ? integration.config.toObject() : (integration.config || {}) as Record<string, unknown>;
+    const requesterId = req.user?.id || '';
+    if (integration.scope === 'user') {
+      // A user-scoped connector is a private attention surface. A pod creator
+      // or instance admin must not turn on a gate (or live relay) for someone
+      // else, so its entire PATCH surface belongs to its linked owner alone.
+      if (
+        integration.createdBy?.toString() !== requesterId
+        || String(currentConfig.linkedUserId || '') !== requesterId
+      ) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      if (config && Object.prototype.hasOwnProperty.call(config, 'adminPause')) {
+        return res.status(400).json({ message: 'adminPause is managed by an administrator' });
+      }
+      const requestedGates = config?.gates;
+      if (requestedGates !== undefined) {
+        if (!requestedGates || Array.isArray(requestedGates) || typeof requestedGates !== 'object') {
+          return res.status(400).json({ message: 'gates must be an object keyed by pod id' });
+        }
+        const gatePodIds = Object.keys(requestedGates as Record<string, unknown>);
+        if (gatePodIds.length > MAX_GATES_PER_WRITE) {
+          return res.status(400).json({ message: `gates may contain at most ${MAX_GATES_PER_WRITE} pod ids` });
+        }
+        // Validate every key before it is interpolated into `config.gates.*`
+        // or reaches the membership lookup. A Mongo key is syntax, not data:
+        // dots and dollar prefixes have different semantics from a bad value.
+        if (gatePodIds.some((gatePodId) => !isObjectIdKey(gatePodId))) {
+          return res.status(400).json({ message: 'every gate key must be a valid pod id' });
+        }
+        // Check every requested key before constructing the update. This keeps
+        // a mixed valid/invalid PATCH atomic: no valid gate is written first.
+        for (const gatePodId of gatePodIds) {
+          const gatePod = await Pod.findById(gatePodId);
+          if (!gatePod || !isPodMember(gatePod, requesterId)) {
+            return res.status(403).json({ message: 'Access denied' });
+          }
+        }
+      }
+    } else {
+      const canUpdate = await canDeleteIntegration(integration, requesterId);
+      if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
+    }
     // Bridge attribution guard: config.linkedUserId is the identity every
     // inbound live-relay message is AUTHORED as (pod row, socket payload,
     // agent wake). It is derived from the authenticated caller when liveRelay

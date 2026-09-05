@@ -7,7 +7,9 @@ const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
 const connectorSecrets = require('../../../services/connectorSecrets');
 const SlackApi = require('../../../services/slackApi');
-const { relayAgentMessageToSlack, routeSlackReplyContent } = require('../../../services/slackBridgeService');
+const {
+  relayAgentMessageToSlack, relaySlackMessageToPod, routeSlackReplyContent, isRelayableIntegration,
+} = require('../../../services/slackBridgeService');
 
 const integration = {
   _id: 'integration-1',
@@ -64,5 +66,27 @@ describe('Slack installable bridge', () => {
 
     expect(connectorSecrets.get).not.toHaveBeenCalled();
     expect(SlackApi).not.toHaveBeenCalled();
+  });
+
+  test('uses an enabled user gate instead of the selected pod only', () => {
+    expect(isRelayableIntegration({
+      ...integration,
+      scope: 'user',
+      config: { ...integration.config, gates: { 'second-pod': { enabled: true } } },
+    }, 'second-pod')).toBe(true);
+  });
+
+  test('drops inbound rather than stringifying a user connector without an active pod', async () => {
+    const result = await relaySlackMessageToPod({
+      integration: {
+        ...integration,
+        scope: 'user',
+        podId: undefined,
+        config: { ...integration.config, gates: { 'pod-1': { enabled: true } } },
+      },
+      event: { text: 'hello', user: 'U1' },
+    });
+
+    expect(result).toEqual({ relayed: false });
   });
 });

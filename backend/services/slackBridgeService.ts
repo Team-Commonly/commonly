@@ -16,6 +16,7 @@ interface SlackIntegrationDoc {
   _id: unknown;
   installationId?: string;
   podId: unknown;
+  scope?: 'pod' | 'user';
   type?: string;
   isActive?: boolean;
   status?: string;
@@ -28,8 +29,10 @@ interface SlackIntegrationDoc {
     slackUserId?: string;
     liveRelay?: boolean;
     relayAllAgentMessages?: boolean;
+    gates?: Record<string, { enabled?: boolean }>;
     leadAgentUsername?: string;
     relayMutedUntil?: Date | string;
+    adminPause?: { reason?: string; at?: Date | string; adminId?: string };
     relayMap?: Array<{
       externalMessageId?: string;
       tgMessageId?: string;
@@ -41,12 +44,15 @@ interface SlackIntegrationDoc {
 }
 
 const isRelayableIntegration = (integration: SlackIntegrationDoc, podId: string): boolean => (
-  String(integration.podId) === String(podId)
+  (integration.scope === 'user'
+    ? integration.config?.gates?.[String(podId)]?.enabled === true
+    : String(integration.podId) === String(podId))
   && integration.type === 'slack'
   && integration.isActive === true
   && integration.status !== 'error'
   && integration.config?.liveRelay === true
   && integration.config?.chatType === 'im'
+  && !integration.config?.adminPause
   && Boolean(integration.config?.teamId)
   && Boolean(integration.config?.chatId)
   && Boolean(integration.config?.botTokenRef)
@@ -63,6 +69,7 @@ const findLiveIntegration = async (podId: string): Promise<SlackIntegrationDoc |
     'config.teamId': { $exists: true, $ne: null },
     'config.chatId': { $exists: true, $ne: null },
     'config.botTokenRef': { $exists: true, $ne: null },
+    'config.adminPause': { $exists: false },
   }).lean()
 );
 
@@ -84,7 +91,7 @@ export const relayAgentMessageToSlack = async (opts: {
     if (!integration || !isRelayableIntegration(integration, podId)) return;
     const mutedUntil = integration.config?.relayMutedUntil;
     if (mutedUntil && new Date(mutedUntil) > new Date()) return;
-    if (!shouldEscalate({ content, agentUsername, integration })) return;
+    if (!shouldEscalate({ content, agentUsername, integration, podId })) return;
 
     const [pod, token] = await Promise.all([
       Pod.findById(podId).select('name').lean(),
@@ -154,6 +161,13 @@ export const relaySlackMessageToPod = async (opts: {
   const { integration, event } = opts;
   const rawText = String(event.text || '').trim();
   if (!rawText || rawText.startsWith('/')) return { relayed: false };
+  if (!integration.podId) {
+    // A user-scoped connector may have gates without an active inbound
+    // destination. Fail closed rather than querying/authoring under
+    // `String(undefined)`.
+    console.warn('[slack-bridge] inbound dropped — connector has no active pod');
+    return { relayed: false };
+  }
   const config = integration.config || {};
   if (
     !isRelayableIntegration(integration, String(integration.podId))

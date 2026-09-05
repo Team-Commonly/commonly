@@ -26,6 +26,10 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
     this.message = 'This install is still in progress; try again shortly.';
     this.boundPodId = boundPodId;
   },
+  InstallationPausedError: function InstallationPausedError(reason) {
+    this.message = 'This connector is paused by an administrator.';
+    this.reason = reason;
+  },
 }));
 
 const Pod = require('../../../models/Pod');
@@ -185,5 +189,43 @@ describe('installable connector routes', () => {
 
     expect(res.status).toBe(202);
     expect(res.body.status).toBe('uninstalling');
+  });
+
+  it('returns the paused refusal for install without claiming a replacement', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+    installationService.install.mockRejectedValue(
+      new installationService.InstallationPausedError('Safety review in progress.'),
+    );
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'installation_paused',
+      reason: 'Safety review in progress.',
+    });
+  });
+
+  it('returns the paused refusal for uninstall instead of a successful no-op', async () => {
+    installationService.uninstall.mockRejectedValue(
+      new installationService.InstallationPausedError('Safety review in progress.'),
+    );
+
+    const res = await request(app)
+      .delete('/api/installables/telegram/install')
+      .set(auth);
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'installation_paused',
+      reason: 'Safety review in progress.',
+    });
   });
 });
