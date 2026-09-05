@@ -61,7 +61,26 @@ The third row is the one the table exists for: the human's words are already in 
 
 **D6 — A ruling from the workspace closes the card in the channel.** When `chooseDecision` succeeds, the service asks the bridges to confirm wherever the card was shown: `Integration.find({ 'config.cards.podMessageId': row.messageId, isActive: true })` → for each, send `✓ Ruled by {by}: {value}` as a reply to that card and set the entry's `closedAt`. Marking, not pulling, is what keeps D4 reachable from every chat after the ruling: a reply from another member that lands after the winner's confirmation still finds its entry and hears *Already ruled* (D9), whether it arrives a second or a day later. The reconciler's five-minute sweep sets `closedAt` on any entry whose row is **not `pending`** — `ruled`, or missing altogether (a purged decision, a deleted pod) — so a confirmation that failed to send, or a row that vanished, cannot leave a card looking open (Vera, 63950); and it **removes** entries whose `closedAt` is older than seven days, which bounds `cards` to open forks plus a week of closed ones. A reply to a card older than that falls through to `relayMap` and is ordinary chat, which is honest: the thread link in the workspace is the record by then. Without this a phone shows an open card for a fork that was ruled at a desk ten minutes earlier, and the next "2" from the phone meets D4 without warning. Fire-and-forget, like every relay; a failed confirmation is a log line, never a failed ruling.
 
-**D7 — The ledger records the round trip.** ADR-029 D6: the card's relay writes `{ channel, event: 'decision_request', verdict: 'interrupt', reason: 'card', at }`; a ruling from the channel stamps `reachedHumanAt` and `ruledVia: 'telegram' | 'slack'` on the same entry; a ruling from the workspace stamps `ruledVia: 'workspace'`. The DecisionRequest row itself does not gain a channel field — the ledger is where "which surface answered" lives.
+**D7 — The ledger records the round trip, and this is where it lives.** ADR-029 D6 names the ledger and ADR-028 leaves its storage open (§Ratification points), so nothing owns a verdict today: `AttentionItem` is a human's queue keyed by recipient, `AuditLog` is admin actions, `Activity` is the feed. None of them is a per-channel record of what the bridge decided. PR 1 creates the owner (Kai, 63958) — **one model, one service, born with the shape ADR-029 D6 needs and the single writer this note needs:**
+
+```ts
+// backend/models/ChannelVerdict.ts
+{
+  integrationId: ObjectId,            // the channel binding (the Integration row)
+  installationId?: ObjectId,          // its parent, when installable-backed
+  podId: ObjectId,                    // the workspace the event came from
+  provider: 'telegram' | 'slack',
+  event: { kind: 'decision_request' | 'chat.message', podMessageId: string, decisionId?: ObjectId },
+  verdict: 'interrupt' | 'digest' | 'hold',
+  reason: string,                     // 'card' | 'marker' | 'mirror' | 'lead' | 'question' | 'muted' | 'paused' | 'gate_off' | …
+  at: Date,
+  reachedHumanAt?: Date,
+  ruledVia?: 'telegram' | 'slack' | 'workspace',
+}
+// indexes: { integrationId, at }, { podId, at }, { 'event.podMessageId' }
+```
+
+`backend/services/channelVerdictService.ts` exposes `record(entry)` and `markReachedHuman({ podMessageId, integrationId?, ruledVia })`. PR 1 writes exactly one kind of entry — `verdict: 'interrupt', reason: 'card'` from both bridges when a card is sent — and `'hold'` with `reason: 'muted' | 'paused' | 'gate_off'` when a card is not sent to a member (D9), so the day's ledger shows a fork that reached two phones and skipped a third. PR 2 stamps `reachedHumanAt` + `ruledVia` from the channel; PR 3 stamps `ruledVia: 'workspace'`. The `decisionId` is filled lazily on first lookup (§1: the row does not exist when the card relays). The verdict enum carries all three values so ADR-029's own build adds *writers* for ordinary relays, not a second model; the D6 surface (the day's ledger per channel) reads this collection and nothing else. The DecisionRequest row itself does not gain a channel field — the ledger is where "which surface answered" lives. Fire-and-forget, like the relay: a failed ledger write is a log line, never a failed card.
 
 **D8 — Under the delegate, the card is the delegate's message.** When ADR-029 D5's chokepoint lands (only the delegate posts to the channel), the card is relayed by the delegate with D3 attribution — `{asker} needs a ruling · {title}` already names the asker on line one, so nothing else changes. The confirmation lines (D3, D4, D6) stay the bridge's own voice. The asker is addressable from the channel (`@{asker}`) for a follow-up question that is not a ruling.
 
