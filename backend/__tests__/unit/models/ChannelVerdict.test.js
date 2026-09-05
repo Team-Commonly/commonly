@@ -36,6 +36,7 @@ describe('ChannelVerdict', () => {
       [{ integrationId: 1, at: -1 }, expect.any(Object)],
       [{ podId: 1, at: -1 }, expect.any(Object)],
       [{ 'event.podMessageId': 1 }, expect.any(Object)],
+      [{ expiresAt: 1 }, expect.objectContaining({ expireAfterSeconds: 0 })],
     ]));
   });
 
@@ -49,6 +50,7 @@ describe('ChannelVerdict', () => {
       },
       reachedHumanAt: new Date(),
       ruledVia: 'slack',
+      expiresAt: new Date(Date.now() + (90 * 24 * 60 * 60 * 1000)),
     }));
     await expect(verdict.validate()).resolves.toBeUndefined();
   });

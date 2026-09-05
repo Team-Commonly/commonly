@@ -8,6 +8,8 @@ import type {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ChannelVerdict = require('../models/ChannelVerdict');
 
+export const CHANNEL_VERDICT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
 export interface RecordChannelVerdict {
   integrationId: unknown;
   installationId?: unknown;
@@ -32,6 +34,23 @@ export interface MarkReachedHuman {
   ruledVia: Extract<ChannelVerdictRuledVia, 'telegram' | 'slack'>;
 }
 
+export interface MarkRuled {
+  podMessageId: string;
+  ruledVia: ChannelVerdictRuledVia;
+}
+
+const matchedCount = (result: { matchedCount?: number; n?: number } | null | undefined): number => (
+  Number(result?.matchedCount ?? result?.n ?? 0)
+);
+
+const expiryAfter = (at: Date): Date => new Date(at.getTime() + CHANNEL_VERDICT_RETENTION_MS);
+
+const isOpenDecisionCard = (entry: RecordChannelVerdict): boolean => (
+  entry.event.kind === 'decision_request'
+  && entry.verdict === 'interrupt'
+  && entry.reason === 'card'
+);
+
 /**
  * Writes are observational. A bridge has already sent (or deliberately held)
  * the card before this is called, so a ledger failure must never change relay
@@ -40,6 +59,7 @@ export interface MarkReachedHuman {
  */
 export const record = async (entry: RecordChannelVerdict): Promise<void> => {
   try {
+    const at = entry.at || new Date();
     await ChannelVerdict.updateOne(
       {
         integrationId: entry.integrationId,
@@ -54,7 +74,11 @@ export const record = async (entry: RecordChannelVerdict): Promise<void> => {
           event: entry.event,
           verdict: entry.verdict,
           reason: entry.reason,
-          at: entry.at || new Date(),
+          at,
+          // A card does not become a historical fact until it is ruled. The
+          // same model also records completed relays and holds, which expire
+          // a quarter after their original event time.
+          ...(!isOpenDecisionCard(entry) ? { expiresAt: expiryAfter(at) } : {}),
         },
       },
       { upsert: true },
@@ -71,16 +95,49 @@ export const record = async (entry: RecordChannelVerdict): Promise<void> => {
  */
 export const markReachedHuman = async (entry: MarkReachedHuman): Promise<void> => {
   try {
-    await ChannelVerdict.updateOne(
+    const now = new Date();
+    const reached = await ChannelVerdict.updateOne(
       {
         integrationId: entry.integrationId,
         'event.podMessageId': entry.podMessageId,
       },
       {
-        $set: { reachedHumanAt: new Date(), ruledVia: entry.ruledVia },
+        $set: { reachedHumanAt: now, ruledVia: entry.ruledVia },
       },
+    );
+    if (!matchedCount(reached)) {
+      console.warn('[channel-verdict] reach stamp matched no channel:', entry.podMessageId);
+      return;
+    }
+
+    // This is a fork-level fact, unlike reachedHumanAt: every gated recipient
+    // sees how the decision settled, but only the replying channel records
+    // that its own human performed the action.
+    await ChannelVerdict.updateMany(
+      { 'event.podMessageId': entry.podMessageId },
+      { $set: { ruledVia: entry.ruledVia, expiresAt: expiryAfter(now) } },
     );
   } catch (error) {
     console.warn('[channel-verdict] reach stamp failed:', (error as Error).message);
+  }
+};
+
+/**
+ * A workspace ruling settles every channel copy without claiming that any
+ * channel human was reached. PR 3 calls this path; its counterpart above is
+ * deliberately narrower for a Telegram or Slack ruling.
+ */
+export const markRuled = async (entry: MarkRuled): Promise<void> => {
+  try {
+    const now = new Date();
+    const ruled = await ChannelVerdict.updateMany(
+      { 'event.podMessageId': entry.podMessageId },
+      { $set: { ruledVia: entry.ruledVia, expiresAt: expiryAfter(now) } },
+    );
+    if (!matchedCount(ruled)) {
+      console.warn('[channel-verdict] ruling stamp matched no channels:', entry.podMessageId);
+    }
+  } catch (error) {
+    console.warn('[channel-verdict] ruling stamp failed:', (error as Error).message);
   }
 };
