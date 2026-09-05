@@ -127,6 +127,15 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     expect(update.config.liveRelay).toBe(false);
     expect(update.config.linkedUserId).toBeUndefined();
   });
+
+  it('does not let a pod-scoped connector move its installation-owned pod', async () => {
+    const res = await request(app)
+      .patch('/api/integrations/integration-1')
+      .send({ podId: '64b64c1f7e5b8f0a12345671' });
+
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
@@ -204,6 +213,42 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.config.gates[allowedPodId]).toMatchObject({ enabled: true });
   });
+
+  it('allows the linked owner to select a member pod as the active inbound destination', async () => {
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ podId: allowedPodId });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.podId).toBe(allowedPodId);
+  });
+
+  it('refuses selecting an active pod the linked owner is no longer a member of', async () => {
+    Pod.findById.mockResolvedValue({ _id: forbiddenPodId, createdBy: 'someone-else', members: [] });
+
+    const res = await request(app)
+      .patch('/api/integrations/integration-user')
+      .send({ podId: forbiddenPodId });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(['not-an-object-id', '64b64c1f7e5b8f0a1234567.', '$ne'])(
+    'refuses an unsafe active pod id %p before membership lookup or write',
+    async (podId) => {
+      const res = await request(app)
+        .patch('/api/integrations/integration-user')
+        .send({ podId });
+
+      expect(res.status).toBe(400);
+      expect(Pod.findById).not.toHaveBeenCalled();
+      expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['a.b', '$ne'])('refuses an unsafe gate key before any membership lookup or write', async (key) => {
     const res = await request(app)

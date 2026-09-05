@@ -239,6 +239,7 @@ export const relaySlackMessageToPod = async (opts: {
   const pod = await PodModel.findById(podId).select('type createdBy members').lean();
   if (!pod || !isPodMember(pod, linkedUserId)) {
     console.warn('[slack-bridge] inbound dropped — linked user is no longer a pod member');
+    await replyNoActivePod(integration);
     return { relayed: false };
   }
   const linkedUser = await User.findById(linkedUserId).select('username profilePicture').lean();

@@ -124,5 +124,10 @@ describe('Slack installable bridge', () => {
     })).resolves.toEqual({ relayed: false });
 
     expect(User.findById).not.toHaveBeenCalled();
+    expect(connectorSecrets.get).toHaveBeenCalledWith('secret-ref');
+    const api = SlackApi.mock.results[0].value;
+    expect(api.postMessage).toHaveBeenCalledWith(
+      'D1', 'This connector has no active pod. Choose one in Commonly first.',
+    );
   });
 });

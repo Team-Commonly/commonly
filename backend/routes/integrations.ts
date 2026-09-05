@@ -492,7 +492,12 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
 router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const { config, status, isActive } = (req.body || {}) as { config?: Record<string, unknown>; status?: string; isActive?: boolean };
+    const { config, status, isActive, podId } = (req.body || {}) as {
+      config?: Record<string, unknown>;
+      status?: string;
+      isActive?: boolean;
+      podId?: unknown;
+    };
     const integration = await Integration.findById(id) as {
       type?: string;
       scope?: string;
@@ -515,6 +520,19 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
       }
       if (config && Object.prototype.hasOwnProperty.call(config, 'adminPause')) {
         return res.status(400).json({ message: 'adminPause is managed by an administrator' });
+      }
+      // A user connector has one active inbound destination. Selecting it is
+      // an owner action, and it must be a pod that owner can still write to;
+      // otherwise a browser could redirect private inbound messages into a
+      // pod it merely knows the id of.
+      if (podId !== undefined) {
+        if (typeof podId !== 'string' || !isObjectIdKey(podId)) {
+          return res.status(400).json({ message: 'podId must be a valid pod id' });
+        }
+        const activePod = await Pod.findById(podId);
+        if (!activePod || !isPodMember(activePod, requesterId)) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
       }
       const requestedGates = config?.gates;
       if (requestedGates !== undefined) {
@@ -541,6 +559,11 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
         }
       }
     } else {
+      // A pod-scoped integration is anchored by its installation. Only a
+      // user-scoped connector exposes a movable personal inbound destination.
+      if (podId !== undefined) {
+        return res.status(400).json({ message: 'podId is only managed on user-scoped connectors' });
+      }
       const canUpdate = await canDeleteIntegration(integration, requesterId);
       if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
     }
@@ -569,6 +592,7 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     validateManifestIfComplete(integration.type || '', nextConfig);
     const update: Record<string, unknown> = {};
     if (config) update.config = nextConfig;
+    if (podId !== undefined) update.podId = podId;
     if (typeof status === 'string') update.status = status;
     if (typeof isActive === 'boolean') update.isActive = isActive;
     const autoStatusTypes = ['groupme', 'telegram', 'slack', 'x', 'instagram'];
