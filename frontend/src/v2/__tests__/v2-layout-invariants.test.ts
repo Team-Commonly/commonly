@@ -94,6 +94,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const avatar = read('../components/V2Avatar.tsx');
   const billingPanel = read('../components/V2BillingPanel.tsx');
   const appsManagement = read('../../components/AppsManagement.tsx');
+  const podModel = read('../../../../backend/models/Pod.ts');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -169,6 +170,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain('export const isRoomPod');
     expect(podsSidebar).toContain('pods.filter(isRoomPod)');
     expect(podsSidebar).not.toContain('pods.filter((pod) => !isDirectPod(pod))');
+  });
+
+  test('every stored pod type has exactly one reviewed sidebar group', () => {
+    const entriesFor = (source: string, setName: string): string[] => {
+      const match = source.match(new RegExp(`const ${setName} = new Set\\(\\[([\\s\\S]*?)\\]\\);`));
+      return Array.from(match?.[1].matchAll(/'([^']+)'/g) || [], ([, entry]) => entry);
+    };
+    const schemaTypes = Array.from(
+      podModel.match(/type:\s*\{[\s\S]*?enum:\s*\[([^\]]+)\],[\s\S]*?default:\s*'chat'/)?.[1].matchAll(/'([^']+)'/g) || [],
+      ([, entry]) => entry,
+    );
+    const sidebarTypes = [
+      ...entriesFor(podsSidebar, 'ROOM_POD_TYPES'),
+      ...entriesFor(podsSidebar, 'DM_POD_TYPES'),
+    ];
+
+    expect(new Set(sidebarTypes).size).toBe(sidebarTypes.length);
+    expect(sidebarTypes.sort()).toEqual(schemaTypes.sort());
   });
 
   test('channels read the existing connector binding endpoint and retain their room target', () => {
