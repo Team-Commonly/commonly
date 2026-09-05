@@ -47,7 +47,24 @@ app.use('/api/integrations', integrationRoutes);
 const integrationId = '64b64c1f7e5b8f0a12345674';
 const userScopedIntegrationId = '64b64c1f7e5b8f0a12345675';
 
-const telegramIntegration = () => ({
+const persistedIntegration = (document) => ({
+  ...document,
+  set(update) { Object.assign(this, update); },
+  save: jest.fn().mockImplementation(function save() {
+    // PATCH now persists the previously-authorised document. Keep the legacy
+    // spy as an observable snapshot so the route assertions stay focused on
+    // the exact fields that would be persisted.
+    Integration.findByIdAndUpdate(this._id, {
+      config: this.config,
+      podId: this.podId,
+      status: this.status,
+      isActive: this.isActive,
+    }, { new: true });
+    return Promise.resolve(this);
+  }),
+});
+
+const telegramIntegration = () => persistedIntegration({
   _id: 'integration-1',
   type: 'telegram',
   podId: 'pod-1',
@@ -160,7 +177,7 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
   const allowedPodId = '64b64c1f7e5b8f0a12345671';
   const forbiddenPodId = '64b64c1f7e5b8f0a12345672';
 
-  const userScopedIntegration = () => ({
+  const userScopedIntegration = () => persistedIntegration({
     _id: 'integration-user',
     scope: 'user',
     type: 'telegram',
