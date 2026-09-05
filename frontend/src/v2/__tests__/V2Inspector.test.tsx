@@ -72,6 +72,13 @@ describe('V2Inspector', () => {
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
+  test('uses the short lowercase room name in the single-line agents label', () => {
+    renderInspector({ detail: { ...detail, pod: { ...detail.pod, name: 'Sharpen · decision loop' } } as any });
+
+    expect(screen.getByRole('heading', { name: 'agents in sharpen' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /decision loop/i })).not.toBeInTheDocument();
+  });
+
   test('links attention, board, profile, invite, and manage exits without legacy tabs', async () => {
     const onOpenInvite = jest.fn();
     renderInspector({ onOpenInvite });

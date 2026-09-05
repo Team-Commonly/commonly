@@ -34,6 +34,12 @@ const labelForAgent = (agent: V2Agent): string => (
   agent.profile?.displayName || agent.displayName || agent.agentName
 );
 
+// Pods often carry a longer descriptive title, while the compact inspector
+// heading uses the room's short leading name (for example, “Sharpen”).
+const shortRoomName = (name: string): string => (
+  name.trim().split(/\s*[·—–:|]\s*/)[0].trim() || name.trim()
+);
+
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
   const candidate = (value || '').toLowerCase();
   return candidate === (agent.agentName || '').toLowerCase()
@@ -125,7 +131,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, attentionItems = [], 
 
         <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-agents">
           <h2 id="workspace-inspector-agents" className="v2-workspace-inspector__label">
-            {t('inspector.workspace.agentsIn', { pod: pod.name.toLowerCase() })}
+            {t('inspector.workspace.agentsIn', { pod: shortRoomName(pod.name).toLowerCase() })}
           </h2>
           <div className="v2-workspace-inspector__rows">
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}

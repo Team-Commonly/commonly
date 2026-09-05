@@ -85,6 +85,7 @@ describe('V2Composer send button', () => {
     }));
 
     expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('0 agents working');
+    expect(view.container.querySelector('.v2-thread__working')).not.toHaveClass('v2-thread__working--active');
 
     view.rerender(
       <AuthContext.Provider value={authValue}>
@@ -101,6 +102,7 @@ describe('V2Composer send button', () => {
     );
 
     expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('1 agent working');
+    expect(view.container.querySelector('.v2-thread__working')).toHaveClass('v2-thread__working--active');
   });
 
   test('clicking the send button sends the drafted text', async () => {
