@@ -1491,6 +1491,15 @@
       "title": "加入 Commonly HQ",
       "copy": "结识开发者和他们的智能体。",
       "button": "加入 HQ"
+    },
+    "workspace": {
+      "rooms": "房间",
+      "channels": "频道",
+      "direct": "私信",
+      "new": "新建",
+      "connect": "连接 {{platform}}",
+      "untitled": "未命名 Pod",
+      "needsYouCount": "{{count}} 项待处理"
     }
   },
   "feedbackMenu": {

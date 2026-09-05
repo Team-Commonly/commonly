@@ -133,9 +133,9 @@ body.modern-ui.v2-canvas {
   --v2-shadow-pending: none; /* the one chrome-card shadow: a PENDING decision or approval only */
 
   /* Layout */
-  --v2-rail-w: 76px;
-  --v2-pods-w: 272px;
-  --v2-inspector-w: 336px;
+  --v2-rail-w: 56px;
+  --v2-pods-w: 232px;
+  --v2-inspector-w: 300px;
 
   /* Keep production's scoped V2 layer in step with design-system/tokens.css.
      The typing cadence belongs to the minimal mark; pulse/spin retain their
@@ -9798,4 +9798,206 @@ body.modern-ui.v2-canvas {
 }
 @media (max-width: 640px) {
   .v2-activity__reply { flex-basis: 100%; }
+}
+
+/* ---------- Workspace sidebar (TASK-129 PR 1) ----------
+   The workspace artboard is a ground-colour grid, not three inset cards.
+   These rules intentionally follow the retired sidebar rules above while the
+   chat and inspector receive their own structural passes in PRs 2 and 3. */
+
+.v2-shell {
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.v2-shell .v2-pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.v2-shell .v2-pane--main {
+  margin: 0;
+  height: 100%;
+}
+
+.v2-pods {
+  position: relative;
+  height: 100%;
+  padding: 6px 12px;
+  background: var(--v2-shell-bg);
+}
+
+.v2-pods__list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.v2-pods__group {
+  min-width: 0;
+}
+
+.v2-pods__group-label {
+  margin: 0 0 6px;
+  padding: 0;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  text-transform: lowercase;
+}
+
+.v2-pods__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-root button.v2-pods__row,
+.v2-root button.v2-pods__channel,
+.v2-root button.v2-pods__new-line,
+.v2-root button.v2-pods__connect-line {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 500 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-pods__row {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-radius: 4px;
+}
+
+.v2-root button.v2-pods__row:hover,
+.v2-root button.v2-pods__channel:hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-pods__row--selected,
+.v2-root button.v2-pods__row--selected:hover {
+  background: var(--v2-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.v2-pods__row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-pods__attention-count {
+  margin-left: auto;
+  color: #fff;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.v2-pods__direct-avatar.v2-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 8px;
+}
+
+.v2-root button.v2-pods__channel {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 4px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-pods__channel:disabled {
+  cursor: default;
+}
+
+.v2-pods__channel-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border: 1px solid var(--v2-border-strong);
+  background: transparent;
+}
+
+.v2-pods__channel-dot--live {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+}
+
+.v2-root button.v2-pods__new-line,
+.v2-root button.v2-pods__connect-line {
+  min-height: 32px;
+  padding: 7px 12px;
+  color: var(--v2-accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-pods__new-line { margin-top: 2px; }
+
+.v2-pods__create {
+  margin: 4px 0 0;
+  padding: 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+}
+
+.v2-pods__create-input {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.v2-root button.v2-pods__create-cancel,
+.v2-root button.v2-pods__create-submit {
+  min-height: 30px;
+  padding: 6px 9px;
+}
+
+.v2-pods__empty {
+  padding: 28px 12px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .v2-shell,
+  .v2-shell--no-inspector,
+  .v2-shell--feature {
+    gap: 0;
+    padding: 0;
+  }
+
+  .v2-shell .v2-pane {
+    height: 100vh;
+  }
+
+  .v2-pods-aside {
+    width: min(86vw, 320px);
+  }
+
+  .v2-pods__mobile-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+  }
 }
