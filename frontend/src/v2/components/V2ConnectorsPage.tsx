@@ -582,7 +582,7 @@ const V2ConnectorsPage: React.FC = () => {
         detail: relay
           ? (mirror
             ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-            : t('connectors.rowAttention', { defaultValue: 'attention mode · escalations reach the channel' }))
+            : t('connectors.rowAttention', { defaultValue: 'attention · escalations reach the channel' }))
           : t('connectors.rowRelayOff', { defaultValue: 'relay off · messages stay in the pod' }),
         dot: relay ? 'live' : 'idle',
         line: `${title} · linked to ${podNameById(activePodId, connector)}`,

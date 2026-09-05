@@ -39,7 +39,7 @@ Rows are one line each. `dot` is the 8px mark before the name; between the dot a
 
 Rules under the table:
 
-- **{lead}** is `config.leadAgentUsername`; when unset the line reads `attention mode · escalations reach the channel`. Nobody invents an agent name.
+- **{lead}** is `config.leadAgentUsername`; when unset the line reads `attention · escalations reach the channel` (meta wraps to a second line and never ellipsises — lily-shen, 2026-09-05). Nobody invents an agent name.
 - **when** uses the row's `createdAt` (exists) with the word *started* for pending rows. `connected {rel}` needs `connectedAt`, which no row carries; until Kai stamps it at the Telegram enable and the Slack Confirm (two writes, same PR or a follow-on), connected rows read `added {rel}` from `createdAt`. `updatedAt` is not used — every relay touches it.
 - **Selected row** ground `#f2f4f7`, name weight unchanged (display is already heavy). Default selection: the first row whose action is ink (needs the user), else the first connected row. Manage on an already-selected row deselects nothing; it just keeps the aside on that row.
 - **iMessage** is on the artboard as a sample provider. It is not in the provider enum; it does not render.
