@@ -346,6 +346,11 @@ IntegrationSchema.set('toJSON', {
     if (pending && typeof pending === 'object') {
       delete (pending as Record<string, unknown>).botTokenRef;
     }
+    const adminPause = returned.config.adminPause;
+    if (adminPause && typeof adminPause === 'object') {
+      const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
+      returned.config.adminPause = { reason, at };
+    }
     return returned;
   },
 });
