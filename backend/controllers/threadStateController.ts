@@ -150,7 +150,8 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
 
 /**
  * The render path's question: my state for every thread in this pod, in one
- * query, with `collapsed` ALREADY RESOLVED — @ux-lead's ruling (56996).
+ * query, with `collapsed` ALREADY RESOLVED — docs/design/threading-surface-ruling.md,
+ * § "One state record, two booleans" (@ux-lead, pod 56996).
  *
  * The client never sees absence and never learns the threading cutoff. Both
  * used to be its job: notice that a root has no row, then compare that root's
@@ -162,7 +163,7 @@ export async function unfollowThread(req: Req, res: Res): Promise<void> {
  * VALUE — `null` means "defer to participation", which the wake path computes
  * against live authorship (threadWakeScopeService). Collapsing it to a boolean
  * here would either lie or force this endpoint to recompute participation on
- * the read path. Flagged to @ux-lead, whose 56996 assumed following was
+ * the read path. Flagged to @ux-lead, whose ruling (pod 56996) assumed following was
  * already effective; it is not, and the asymmetry is intentional rather than
  * an oversight to be tidied.
  */

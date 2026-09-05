@@ -12,7 +12,8 @@ import { shortTimeSince } from '../utils/shortTime';
  * reply bodies and no names, so the card is a door and not a preview.
  *
  * `collapsed` is a prop, never derived here. It arrives already resolved from
- * the payload (#1145, @ux-lead 56996): a client that computed it would need
+ * the payload (docs/design/threading-surface-ruling.md § "One state record, two
+ * booleans"; shipped #1145, @ux-lead pod 56996): a client that computed it would need
  * the threading cutoff, which is the migration detail that ruling removed from
  * the wire. If you find yourself wanting a date comparison in this file, the
  * bug is upstream.
