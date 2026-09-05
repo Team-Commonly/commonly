@@ -39,7 +39,7 @@ jest.mock('../../context/AuthContext', () => ({
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../components/V2PodsSidebar', () => () => null);
 jest.mock('../components/V2PodChat', () => () => null);
-jest.mock('../components/V2PodInspector', () => () => null);
+jest.mock('../components/V2Inspector', () => () => null);
 jest.mock('../components/V2InviteModal', () => () => null);
 jest.mock('../components/V2FirstRunHero', () => () => null);
 

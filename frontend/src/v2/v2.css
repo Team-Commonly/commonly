@@ -554,6 +554,10 @@ body.modern-ui.v2-canvas {
   background: var(--v2-shell-bg);
 }
 
+.v2-inspector-backdrop {
+  display: none;
+}
+
 /* Mobile pods-drawer affordances — hidden on desktop, where the pods sidebar
    is a permanent grid column. The <=760px media query (bottom of file) turns
    these on and converts .v2-pods-aside into a slide-over overlay. Declared
@@ -5722,7 +5726,8 @@ body.modern-ui.v2-canvas {
     transform: translateX(0);
   }
 
-  .v2-mobile-backdrop {
+  .v2-mobile-backdrop,
+  .v2-inspector-backdrop {
     display: block;
     position: fixed;
     inset: 0;
@@ -10003,4 +10008,226 @@ body.modern-ui.v2-canvas {
     right: 6px;
     z-index: 1;
   }
+
+  /* The inspector is a bottom sheet on phones, not a narrow desktop drawer. */
+  .v2-pane--inspector {
+    top: auto;
+    left: 0;
+    width: 100%;
+    max-height: min(78dvh, 680px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
 }
+
+/* ---------- Workspace inspector (TASK-129 PR 2) ----------
+   Three factual cards replace the old tabbed inspector. The route keeps the
+   same invite, agent-profile, board, and attachment exits without retaining
+   a second, legacy inspector surface. */
+
+.v2-workspace-inspector {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  background: var(--v2-shell-bg);
+}
+
+/* The new inspector is a card stack on the shell ground, not a second pane
+   delineated by a desktop divider. Its cards provide the only borders. */
+.v2-pane--inspector {
+  border-left: 0;
+}
+
+.v2-workspace-inspector__card {
+  min-width: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+  padding: 12px;
+}
+
+.v2-workspace-inspector__label {
+  margin: 0 0 10px;
+  color: var(--v2-text-muted);
+  font: 500 11px/14px var(--v2-font-mono);
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.v2-workspace-inspector__rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2-root button.v2-workspace-inspector__agent,
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task,
+.v2-root button.v2-workspace-inspector__board-counts {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+}
+
+.v2-root button.v2-workspace-inspector__agent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.v2-root button.v2-workspace-inspector__agent:hover,
+.v2-root button.v2-workspace-inspector__attention:hover,
+.v2-root button.v2-workspace-inspector__task:hover,
+.v2-root button.v2-workspace-inspector__board-counts:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-workspace-inspector__avatar.v2-avatar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 10px;
+}
+
+.v2-workspace-inspector__agent-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-workspace-inspector__agent-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__agent-status {
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__state {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--v2-text-muted);
+}
+
+.v2-workspace-inspector__state--needs-you { background: var(--v2-accent); }
+.v2-workspace-inspector__state--working {
+  background: var(--v2-accent);
+  animation: v2-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 4px;
+  font: 400 13px/18px var(--v2-font);
+}
+
+.v2-workspace-inspector__attention > span:first-child,
+.v2-workspace-inspector__task > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__actor,
+.v2-workspace-inspector__task-meta {
+  flex-shrink: 0;
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+
+.v2-workspace-inspector__task-meta { color: var(--v2-text-muted); }
+
+.v2-root button.v2-workspace-inspector__board-counts {
+  margin: 0 0 6px;
+  padding: 0 4px 7px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-workspace-inspector__empty {
+  margin: 0;
+  padding: 4px;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-workspace-inspector__foot {
+  display: flex;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.v2-root .v2-workspace-inspector__foot button {
+  min-height: auto;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
+}
+
+.v2-root button.v2-workspace-inspector__foot button:hover { color: var(--v2-text-primary); }
+
+.v2-root button.v2-workspace-inspector__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-workspace-inspector__close:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+@media (max-width: 760px) {
+  .v2-workspace-inspector { padding: 12px 14px 0; }
+  .v2-workspace-inspector__foot { padding-inline: 0; }
+  .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
+}
+
+/* The new factual inspector keeps CJK metadata at the established readable
+   floor. These rows are the artboard's compact mono labels, not body prose. */
+.v2-root:lang(zh) .v2-workspace-inspector__empty { line-height: 1.6; }
+.v2-root:lang(zh) .v2-workspace-inspector__actor,
+.v2-root:lang(zh) .v2-workspace-inspector__task-meta,
+.v2-root:lang(zh) .v2-workspace-inspector__foot button { font-size: 12px; }
