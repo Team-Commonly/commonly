@@ -78,8 +78,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { pods, loading } = podsState;
   const attention = useV2PodAttention();
 
-  // A desktop preference must not leak into the phone sheet. On phones the
-  // sheet starts closed and opens only through the header or bottom control.
+  // A desktop preference must not leak into the phone sheet. This initializer
+  // prevents its first rendered frame from flashing open; the media listener
+  // below handles later viewport changes. On phones the sheet opens only
+  // through the header or bottom control.
   const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(() => (
     isPhoneViewport() ? true : readInspectorCollapsed()
   ));
