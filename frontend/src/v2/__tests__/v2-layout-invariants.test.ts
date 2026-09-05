@@ -794,6 +794,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(time).toContain('font: 500 11px/16px var(--v2-font-mono)');
     expect(actions).toContain('border-radius: 4px');
     expect(actions).toContain('box-shadow: none');
+    // These scoped rules only take effect when the chat mounts the thread
+    // surface class; without it the legacy 30px circular avatar rules win.
+    expect(thread).toContain('className="v2-chat v2-thread"');
 
     const phoneStart = v2.lastIndexOf(
       '@media (max-width: 760px)',
