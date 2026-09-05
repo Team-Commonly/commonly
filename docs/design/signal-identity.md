@@ -69,7 +69,8 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 3. **One system, two volumes.** Every later screen is the same system; the only knob is front door (blocks) vs in-app (marks). A screen that needs a new colour or radius is wrong, not the system.
 4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1440 and 390 screenshots of the real screen beside it.
 5. **Survey what is left.** Periodically screenshot every live route at 1440 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
-6. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
+6. **A screen ships whole, never in slices.** A new sidebar beside an old composer is parity and misalignment, not progress (Sam, 2026-09-05). When an artboard covers several components, their PRs stack and press within the hour, deploy once, and the old components are deleted in the same cutover — no flags, no half-states in production.
+7. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
 
 ## 7. Adding a screen
 
@@ -81,4 +82,5 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 ## History
 
 - 2026-09-03 — direction chosen (C · Signal). Tokens landed in #1530; Activity rebuilt to its artboard in #1522.
+- 2026-09-05 — Active goal: the workspace is the preview. Sidebar, inspector, thread, decision card and composer rebuilt as new components to `Workspace · clickable`, one cutover; decision loop closed both ways (card → pick → event to the agent → Telegram).
 - 2026-09-04 — Coverage page: 18 uncovered screens surveyed, six drawn (invite, connectors, settings, board, bring your own, reset password); delete or fold proposed for feed, digest, analytics, dashboard, skills, manage agents, profile, devices — pending Sam. Chat + inspector restyle in progress.
