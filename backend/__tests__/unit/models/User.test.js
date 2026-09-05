@@ -106,6 +106,52 @@ describe('User Model Tests', () => {
     await expect(secondUser.save()).rejects.toThrow();
   });
 
+  it('indexes account labels for case-insensitive display-name collision checks', () => {
+    const matchingIndexes = User.schema.indexes().filter(([, options]) => (
+      options.collation?.locale === 'en' && options.collation?.strength === 2
+    ));
+
+    const indexedFields = matchingIndexes.map(([keys]) => Object.keys(keys)[0]);
+    expect(indexedFields).toEqual(expect.arrayContaining([
+      'username',
+      'displayName',
+      'botMetadata.displayName',
+    ]));
+  });
+
+  it('matches account labels case-insensitively while excluding the current user', async () => {
+    const owner = await User.create({
+      username: 'LilyHandle',
+      displayName: 'Lily',
+      email: 'lily@example.com',
+      password: 'Password123!',
+    });
+    const other = await User.create({
+      username: 'other',
+      email: 'other@example.com',
+      password: 'Password123!',
+    });
+    const collisionQuery = {
+      $or: [
+        { username: 'lilyhandle' },
+        { displayName: 'lilyhandle' },
+        { 'botMetadata.displayName': 'lilyhandle' },
+      ],
+    };
+
+    const selfExcluded = await User.findOne({
+      _id: { $ne: owner._id },
+      ...collisionQuery,
+    }).collation({ locale: 'en', strength: 2 });
+    const otherExcluded = await User.findOne({
+      _id: { $ne: other._id },
+      ...collisionQuery,
+    }).collation({ locale: 'en', strength: 2 });
+
+    expect(selfExcluded).toBeNull();
+    expect(otherExcluded?._id.toString()).toBe(owner._id.toString());
+  });
+
   it('should hash the password before saving', async () => {
     const password = 'Password123!';
     const user = new User({

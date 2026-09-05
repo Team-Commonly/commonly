@@ -83,7 +83,23 @@ test('updateProfile sends auth header and updates user', async () => {
     await global.testAuth.updateProfile({ foo: 'bar' });
   });
   expect(axios.put).toHaveBeenCalledWith('/api/users/profile', { foo: 'bar' }, {
-    headers: { Authorization: 'Bearer tok', 'Content-Type': 'multipart/form-data' }
+    headers: { Authorization: 'Bearer tok' }
   });
   expect(global.testAuth.currentUser).toEqual({ name: 'Updated' });
+});
+
+test('updateProfile retains multipart support for a file payload', async () => {
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  const profile = new FormData();
+  profile.append('profilePicture', new Blob(['avatar']), 'avatar.png');
+  axios.put.mockResolvedValueOnce({ data: { name: 'Updated' } });
+
+  await act(async () => {
+    await global.testAuth.updateProfile(profile);
+  });
+
+  expect(axios.put).toHaveBeenCalledWith('/api/users/profile', profile, {
+    headers: { Authorization: 'Bearer tok', 'Content-Type': 'multipart/form-data' }
+  });
 });

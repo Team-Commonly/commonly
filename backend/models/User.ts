@@ -72,6 +72,9 @@ export interface IContactEntry {
 
 export interface IUser extends Document {
   username: string;
+  // Human-facing identity label. Usernames remain the stable, routable handle;
+  // bots continue to own their display label under botMetadata.
+  displayName?: string;
   email: string;
   password?: string;
   authProviders: IAuthProvider[];
@@ -191,6 +194,7 @@ export interface IUserModel extends Model<IUser> {}
 
 const userSchema = new Schema<IUser>({
   username: { type: String, required: true, unique: true },
+  displayName: { type: String, trim: true },
   email: { type: String, required: true, unique: true },
   // Password is only required for accounts with no linked OAuth identity —
   // OAuth-created accounts authenticate via provider and have no password.
@@ -388,6 +392,13 @@ const userSchema = new Schema<IUser>({
 
 // OAuth callback looks users up by (provider, providerId) on every social login.
 userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 });
+// Settings lets humans choose a display label, while chat renders one label
+// per author. These collation indexes back the self-excluding collision check
+// in userController without making the labels themselves globally unique.
+const accountLabelCollation = { locale: 'en', strength: 2 };
+userSchema.index({ username: 1 }, { collation: accountLabelCollation });
+userSchema.index({ displayName: 1 }, { collation: accountLabelCollation });
+userSchema.index({ 'botMetadata.displayName': 1 }, { collation: accountLabelCollation });
 // A single index supports authentication by digest and the account's device
 // list. Existing users simply have no array entries, so this is additive.
 userSchema.index({ 'deviceTokens.tokenHash': 1 });

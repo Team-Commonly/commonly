@@ -5,7 +5,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 
 const User = require('../../../models/User');
 const userController = require('../../../controllers/userController');
-const { resolveAgentDisplayLabel } = require('../../../services/agentIdentityService');
+const { resolveAgentDisplayLabel, syncUserToPostgreSQL } = require('../../../services/agentIdentityService');
 
 const mockUserDoc = (fields) => ({
   ...fields,
@@ -14,6 +14,13 @@ const mockUserDoc = (fields) => ({
   followedThreads: [],
   toObject: () => fields,
 });
+
+const mockDisplayNameLookup = (result) => {
+  const select = jest.fn().mockResolvedValue(result);
+  const collation = jest.fn().mockReturnValue({ select });
+  User.findOne = jest.fn().mockReturnValue({ collation });
+  return { select, collation };
+};
 
 describe('User Controller', () => {
   afterEach(() => {
@@ -74,6 +81,91 @@ describe('User Controller', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         _id: 'u1',
         profilePicture: '/api/uploads/newpic.png',
+      }));
+    });
+
+    it('updates a human display name without changing the routable username', async () => {
+      const updatedUser = mockUserDoc({
+        _id: 'u1', username: 'lily', displayName: 'Lily Shen', email: 'lily@example.com', verified: true,
+      });
+      User.findByIdAndUpdate = jest
+        .fn()
+        .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
+      mockDisplayNameLookup(null);
+      const req = {
+        user: { id: 'u1' },
+        body: { displayName: 'Lily Shen' },
+      };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(User.findByIdAndUpdate).toHaveBeenCalledWith(
+        'u1',
+        { $set: { displayName: 'Lily Shen' } },
+        { new: true },
+      );
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        displayName: 'Lily Shen', email: 'lily@example.com',
+      }));
+    });
+
+    it('rejects a case-insensitive display name collision with another account', async () => {
+      const collision = mockDisplayNameLookup({ _id: 'u2' });
+      const req = { user: { id: 'u1' }, body: { displayName: 'LiLy' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        _id: { $ne: 'u1' },
+        $or: [
+          { username: 'LiLy' },
+          { displayName: 'LiLy' },
+          { 'botMetadata.displayName': 'LiLy' },
+        ],
+      });
+      expect(collision.collation).toHaveBeenCalledWith({ locale: 'en', strength: 2 });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ error: 'That name belongs to someone else here' });
+      expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('excludes the current account when checking a display name collision', async () => {
+      const lookup = mockDisplayNameLookup(null);
+      const updatedUser = mockUserDoc({ _id: 'u1', username: 'lily', displayName: 'Lily' });
+      User.findByIdAndUpdate = jest
+        .fn()
+        .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
+      const req = { user: { id: 'u1' }, body: { displayName: 'Lily' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith(expect.objectContaining({ _id: { $ne: 'u1' } }));
+      expect(lookup.select).toHaveBeenCalledWith('_id');
+      expect(User.findByIdAndUpdate).toHaveBeenCalledWith(
+        'u1',
+        { $set: { displayName: 'Lily' } },
+        { new: true },
+      );
+    });
+
+    it('does not report a display-name save as complete when the chat mirror is unavailable', async () => {
+      const updatedUser = mockUserDoc({ _id: 'u1', username: 'lily', displayName: 'Lily Shen' });
+      User.findByIdAndUpdate = jest
+        .fn()
+        .mockReturnValue({ select: jest.fn().mockResolvedValueOnce(updatedUser) });
+      mockDisplayNameLookup(null);
+      syncUserToPostgreSQL.mockResolvedValueOnce(false);
+      const req = { user: { id: 'u1' }, body: { displayName: 'Lily Shen' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        error: expect.stringContaining('chat is catching up'),
       }));
     });
   });
