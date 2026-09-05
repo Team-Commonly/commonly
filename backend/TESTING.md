@@ -80,6 +80,55 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 
 - **Tier 0 tests don't cross-import `mongoServer` / `pgDb`.** The real-services branch doesn't export them. Use the helpers; if you need direct access, add a narrow helper in `testUtils.js` that works in both tiers.
 - **Real PG needs `pgcrypto` for `gen_random_uuid()`.** `setupPgDb` creates the extension for Tier 1 — don't call `gen_random_uuid()` in a test that only runs under Tier 0 unless you're also registering the pg-mem function.
+- **pg-mem applies SELF-REFERENTIAL FK actions to the primary-key index and not to the row storage, so the answer depends on your query plan.** The DDL is accepted in every case. Measured on pg-mem 2.9.1 and pinned in `__tests__/unit/models/pgMemFkActionFidelity.test.js`:
+
+  | constraint | pg-mem |
+  |---|---|
+  | cross-table `ON DELETE CASCADE` | fires — matches Postgres |
+  | cross-table `ON DELETE SET NULL` | fires — matches Postgres |
+  | self-referential `ON DELETE CASCADE` | **contradicts itself** — the row is gone via the PK index, still present to a scan |
+  | self-referential `ON DELETE SET NULL` | **contradicts itself** — the FK reads `NULL` via the PK index, unchanged to a scan |
+  | `ON DELETE SET DEFAULT` | sets **NULL**, not the column default |
+  | insert violating the FK | rejected |
+  | delete violating the default `NO ACTION` | rejected |
+
+  "Contradicts itself" is literal — one table, one transaction, two answers for the same row. Given `m(id INT PRIMARY KEY, p INT REFERENCES m(id) ON DELETE SET NULL)` seeded `(1,NULL),(2,1),(3,2)` and `DELETE FROM m WHERE id = 1`:
+
+  ```
+  SELECT * FROM m ORDER BY id      → [{id:2,p:1},{id:3,p:2}]   -- action NOT applied
+  SELECT * FROM m WHERE id = 2     → [{id:2,p:null}]           -- action applied
+  SELECT * FROM m WHERE p = 1      → [{id:2,p:1}]              -- matches the stale value
+  SELECT * FROM m WHERE p IS NULL  → []                        -- and not the applied one
+  ```
+
+  Under `CASCADE` the same split deletes row 2 from the PK index while `SELECT *` and `count(*)` still report two rows. A plan served by the PK index sees the action; a plan that scans sees the pre-delete value. In these examples `p` carries no index, so predicates on the FK column read stale — but that is a property of the index, not of the column's role in the FK (@sprint-review). Add `CREATE INDEX m_p_idx ON m(p)` and the same two predicates go fresh:
+
+  ```
+  no index     WHERE p = 1      -> [{id:2, p:1}]      WHERE p IS NULL -> []
+  with index   WHERE p = 1      -> []                 WHERE p IS NULL -> [{id:2, p:null}]
+  ```
+
+  So the FK column is not condemned to staleness; it is simply the column nobody indexes. Which makes the whole divergence sharper and more dangerous than "self-referential FKs are broken": **adding an index changes query results**, so a schema tuning change can silently fix or break a test that never mentioned the index. Indexing is a workaround at the *read* level while the constraint itself did nothing either way — so a stale-passing test can start reading fresh because of a commit about performance.
+
+  CASCADE plus an FK index is the extreme (@sprint-review): after the same delete, `WHERE id = 2`, `WHERE p = 1` and `WHERE p IS NULL` all return `[]`, while `SELECT *` returns the row and `count(*)` reports it. The row is invisible to every indexed path and present on every scan at the same instant. The scan count there tracks chain length, so quote it with the fixture: a two-row `(1,NULL),(2,1)` gives 1, and the three-row chain `(1,NULL),(2,1),(3,2)` gives 2, because row 3 is stranded as well. Nothing cascades in either case — what varies is only how much is left behind.
+
+  The variable is isolated by disabling the index in place — same predicate, same rows, nothing else changed:
+
+  ```
+  WHERE id = 10      (pk index) -> parent_id = null
+  WHERE id + 0 = 10  (no index) -> parent_id = 1
+  ```
+
+  The line is index *eligibility*, not equality: `>=` and `IN` are index-served too and agree with the first reading.
+
+  **This is worse than the "pg-mem ignores them" reading it replaces** (which is what an earlier version of this rule and the first draft of that suite both said). Ignoring is at least consistent: every read agrees, and a test that passes does so for one knowable reason. Here the *shape of the assertion query* picks the answer — `expect(rows(db, 'SELECT * FROM m'))` and `expect(rows(db, 'SELECT * FROM m WHERE id = 2'))` disagree about whether the constraint fired, and both look like a real result. A green Tier 0 constraint test is therefore not evidence even of pg-mem's own behaviour, let alone Postgres's.
+
+  `messages` has both shapes. `messages.pod_id → pods(id)` and `thread_user_state.thread_root_id → messages(id)` are cross-table and genuinely covered at Tier 0. `messages.reply_to_message_id` and `messages.thread_root_id` point back at `messages(id)`, so **a Tier 0 test that deletes a message and asserts what became of its descendants is asserting nothing** — it reports whichever answer its own `SELECT` happened to reach. One such test was written, passed, and was deleted rather than kept (`__tests__/unit/models/retentionReRoot.test.js` records it).
+
+  The general rule: **pg-mem proves SQL *shape*; only Tier 1 proves the database's *behaviour*.** A constraint whose effect you are asserting belongs in `__tests__/service/`. Split it the way `retentionReRoot.test.js` (repair, given a constructed orphaned state) and `__tests__/service/threading.retention.test.js` (that Postgres produces that state at all) do — a claim about our code at Tier 0, a claim about the database at Tier 1.
+
+  `pgMemFkActionFidelity.test.js` asserts the *dependency's* current behaviour on purpose. If a pg-mem bump starts honouring these, that suite goes red — the signal to delete it and this rule, not to relax the assertion.
+
 - **FK ordering matters under real PG.** `pod_members.pod_id` and `messages.pod_id` reference `pods(id) ON DELETE CASCADE`. Tests that insert raw rows must insert into `pods` first. `clearPgDb()` uses `TRUNCATE … CASCADE` to sidestep this on teardown.
 - **Timeouts.** Real Mongo operations are slower than in-memory. `jest.setTimeout(30000)` is set globally in `__tests__/setup.js`; avoid hardcoded shorter timeouts in Tier 1 tests.
 - **New test file, which tier?** Put it under `__tests__/service/` if it exercises real query semantics (Mongo index behavior, regex, ObjectId coercion, PG ILIKE, transactions). Put it under `__tests__/unit/` or similar if a mocked DB is sufficient.
