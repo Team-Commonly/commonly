@@ -388,6 +388,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(workspaceInspector).toContain("'inspector.workspace.agentsIn'");
     expect(workspaceInspector).toContain("'inspector.workspace.needsYou'");
     expect(workspaceInspector).toContain("'inspector.workspace.boardToday'");
+    expect(workspaceInspector).toContain('shortRoomName(pod.name).toLowerCase()');
     expect(workspaceInspector).toContain('v2-workspace-inspector__state--${state.kind}');
     expect(workspaceInspector).not.toContain('v2-inspector__tabs');
     expect(workspaceInspector).not.toContain('v2-inspector__progress');
@@ -403,6 +404,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const avatar = ruleBody(v2, '.v2-workspace-inspector__avatar.v2-avatar');
     expect(avatar).toContain('border: 0');
     expect(avatar).toContain('box-shadow: none');
+    const label = ruleBody(v2, '.v2-workspace-inspector__label');
+    expect(label).toContain('font: 500 11px/14px var(--v2-font-mono)');
+    expect(label).toContain('white-space: nowrap');
+    expect(label).toContain('text-overflow: clip');
     const foot = selectorRuleBody(v2, '.v2-root .v2-workspace-inspector__foot button');
     expect(foot).toContain('var(--v2-font-mono)');
     const close = selectorRuleBody(v2, '.v2-root button.v2-workspace-inspector__close');
@@ -776,6 +781,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 22px/28px var(--v2-font-display)');
     expect(ruleBody(v2, '.v2-thread__working')).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-thread__working::before')).toContain('color: var(--v2-text-muted)');
+    expect(ruleBody(v2, '.v2-thread__working--active::before')).toContain('color: var(--v2-accent)');
+    expect(thread).toContain("onlineAgentCount > 0 ? ' v2-thread__working--active' : ''");
   });
 
   test('the phone workspace is an edge-to-edge thread with reachable drawers and a real tab bar', () => {

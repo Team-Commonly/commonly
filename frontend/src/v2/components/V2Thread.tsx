@@ -919,6 +919,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const onlineAgentCount = agents.filter((agent) => (
     !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
   )).length;
+  const workingClass = onlineAgentCount > 0 ? ' v2-thread__working--active' : '';
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
 
   return (
@@ -932,11 +933,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 <h1>{pod.name}</h1>
                 {pod.description && <p>{pod.description}</p>}
               </div>
-              <span className="v2-thread__working v2-thread__working--mobile">
+              <span className={`v2-thread__working v2-thread__working--mobile${workingClass}`}>
                 {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
               </span>
             </div>
-            <span className="v2-thread__working v2-thread__working--desktop">
+            <span className={`v2-thread__working v2-thread__working--desktop${workingClass}`}>
               {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
             </span>
             {onToggleInspector && (

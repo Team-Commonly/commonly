@@ -10043,11 +10043,15 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-workspace-inspector__label {
+  display: block;
   margin: 0 0 10px;
+  overflow: hidden;
   color: var(--v2-text-muted);
   font: 500 11px/14px var(--v2-font-mono);
   letter-spacing: 0.02em;
+  text-overflow: clip;
   text-transform: lowercase;
+  white-space: nowrap;
 }
 
 .v2-workspace-inspector__rows {
@@ -10392,7 +10396,9 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
-.v2-thread__working::before { content: '●'; color: var(--v2-accent); }
+.v2-thread__working::before { content: '●'; color: var(--v2-text-muted); }
+
+.v2-thread__working--active::before { color: var(--v2-accent); }
 
 .v2-thread__working--mobile { display: none; }
 

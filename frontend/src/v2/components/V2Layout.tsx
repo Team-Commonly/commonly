@@ -21,6 +21,11 @@ interface V2LayoutProps {
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
 const LAST_POD_KEY = 'v2:lastPodId';
 const INVITE_BLOCKED_POD_TYPES = new Set(['agent-room', 'agent-dm']);
+const PHONE_MEDIA_QUERY = '(max-width: 760px)';
+
+const isPhoneViewport = (): boolean => (
+  typeof window !== 'undefined' && !!window.matchMedia?.(PHONE_MEDIA_QUERY).matches
+);
 
 const readInspectorCollapsed = (): boolean => {
   try {
@@ -73,7 +78,11 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { pods, loading } = podsState;
   const attention = useV2PodAttention();
 
-  const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
+  // A desktop preference must not leak into the phone sheet. On phones the
+  // sheet starts closed and opens only through the header or bottom control.
+  const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(() => (
+    isPhoneViewport() ? true : readInspectorCollapsed()
+  ));
   // Invite modal lives here (not in V2Inspector) so the chat header
   // invite icon and the inspector "+ Invite" button can both open it. The
   // modal itself is V2InviteModal — this component just owns open/close.
@@ -88,6 +97,16 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // instead of a grid column; this owns its open/closed state. Desktop ignores
   // it entirely (the sidebar is always a visible column there).
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const phoneViewport = window.matchMedia(PHONE_MEDIA_QUERY);
+    const closeInspectorOnPhone = () => {
+      if (phoneViewport.matches) setInspectorCollapsed(true);
+    };
+    closeInspectorOnPhone();
+    phoneViewport.addEventListener('change', closeInspectorOnPhone);
+    return () => phoneViewport.removeEventListener('change', closeInspectorOnPhone);
+  }, []);
   // Assume visible until the ownership-status probe resolves. This prevents
   // the empty-state stack from flashing while the shell-level first-run modal
   // decides whether it should open; an established/dismissed user flips it off

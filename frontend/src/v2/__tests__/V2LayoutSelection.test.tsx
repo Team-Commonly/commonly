@@ -1,6 +1,6 @@
 /* eslint-disable react/display-name */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
   MemoryRouter, Route, Routes, useLocation,
 } from 'react-router-dom';
@@ -38,8 +38,10 @@ jest.mock('../../context/AuthContext', () => ({
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../components/V2PodsSidebar', () => () => null);
-jest.mock('../components/V2Thread', () => () => null);
-jest.mock('../components/V2Inspector', () => () => null);
+jest.mock('../components/V2Thread', () => ({ onToggleInspector }: { onToggleInspector?: () => void }) => (
+  <button type="button" onClick={onToggleInspector}>toggle inspector</button>
+));
+jest.mock('../components/V2Inspector', () => () => <aside data-testid="workspace-inspector" />);
 jest.mock('../components/V2InviteModal', () => () => null);
 jest.mock('../components/V2FirstRunHero', () => () => null);
 
@@ -71,6 +73,8 @@ const newerWorkspacePod: V2Pod = {
   createdAt: '2026-07-22T00:00:00.000Z',
 };
 
+const originalMatchMedia = window.matchMedia;
+
 const renderAutoLayout = () => render(
   <MemoryRouter initialEntries={['/v2']}>
     <Routes>
@@ -89,6 +93,38 @@ describe('V2Layout default pod selection', () => {
 
   afterEach(() => {
     localStorage.clear();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    });
+  });
+
+  test('a phone starts with its inspector sheet closed even when desktop left it open', () => {
+    const phoneViewport = {
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: jest.fn(() => phoneViewport),
+    });
+    localStorage.setItem('v2.inspectorCollapsed', '0');
+
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/workspace']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('workspace-inspector')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'toggle inspector' }));
+    expect(screen.getByTestId('workspace-inspector')).toBeInTheDocument();
+    expect(phoneViewport.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
   });
 
   test('lands a new user in their oldest own workspace instead of auto-joined HQ', async () => {
