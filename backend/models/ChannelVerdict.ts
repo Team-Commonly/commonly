@@ -33,6 +33,7 @@ export interface IChannelVerdict extends Document {
   at: Date;
   reachedHumanAt?: Date;
   ruledVia?: ChannelVerdictRuledVia;
+  expiresAt?: Date;
 }
 
 const channelVerdictEventSchema = new Schema(
@@ -58,6 +59,10 @@ const channelVerdictSchema = new Schema<IChannelVerdict>(
     at: { type: Date, required: true, default: Date.now },
     reachedHumanAt: { type: Date },
     ruledVia: { type: String, enum: CHANNEL_VERDICT_RULED_VIA },
+    // Open decision cards stay addressable until the card itself is settled.
+    // All other rows set this at record time; the two settlement paths set it
+    // for every copy of a decision card.
+    expiresAt: { type: Date },
   },
   { collection: 'channel_verdicts' },
 );
@@ -65,6 +70,10 @@ const channelVerdictSchema = new Schema<IChannelVerdict>(
 channelVerdictSchema.index({ integrationId: 1, at: -1 });
 channelVerdictSchema.index({ podId: 1, at: -1 });
 channelVerdictSchema.index({ 'event.podMessageId': 1 });
+// Finished facts remain visible for one quarter. An open decision card has no
+// expiry until its ruling path sets one, so the ledger cannot forget the
+// channel receipt before the decision itself can finish.
+channelVerdictSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 // A connector can retry a relay after a transient failure. Its ledger fact is
 // still one fact per channel and workspace message, even if competing workers
 // race the retry; the service upserts on this same key.

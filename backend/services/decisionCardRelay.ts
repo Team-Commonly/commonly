@@ -1,5 +1,5 @@
 /**
- * A decision card is a relay-only view of an already-persisted decision
+ * A decision card is a relay-only view of a server-validated decision
  * request. It crosses the outbound dispatch seam, but deliberately never
  * becomes part of the workspace message payload.
  */
