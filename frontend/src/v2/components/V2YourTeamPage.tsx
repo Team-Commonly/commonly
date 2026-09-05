@@ -121,11 +121,6 @@ const V2YourTeamPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuth();
-  // Hosted (cloud) agents require an entitlement the open-registration tier
-  // doesn't have. Until the user payload carries an explicit `entitlements`
-  // flag we proxy on role==='admin' (see followups). Entitled users get the
-  // cloud catalog as their primary hire path; everyone else is routed to the
-  // BYO flow, which works for any account.
   const entitledFromUser = useMemo(() => {
     const entitlements = (user as { entitlements?: { cloudAgents?: boolean } } | null)?.entitlements;
     return Boolean(entitlements?.cloudAgents) || user?.role === 'admin';

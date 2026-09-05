@@ -14,7 +14,10 @@ body {
   box-sizing: border-box;
 }
 
-img {
+/* These legacy V1 element styles must never cross into the light v2 canvas.
+   V2App stamps body.v2-canvas before the page renders; keeping the boundary
+   here means new bare controls do not inherit the V1 dark/blue chrome. */
+body.modern-ui:not(.v2-canvas) img {
   max-width: 100%;
   height: auto;
 }
@@ -122,8 +125,8 @@ body.modern-ui .MuiChip-root {
   flex-direction: column;
 }
 
-/* Styling for Forms */
-form {
+/* Styling for V1 Forms */
+body.modern-ui:not(.v2-canvas) form {
   background: #111827;
   padding: 20px;
   max-width: 400px;
@@ -141,7 +144,7 @@ form {
   box-shadow: none;
 }
 
-input {
+body.modern-ui:not(.v2-canvas) input {
   width: 100%;
   padding: 12px;
   margin: 10px 0;
@@ -153,13 +156,13 @@ input {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-input:focus {
+body.modern-ui:not(.v2-canvas) input:focus {
   outline: none;
   border-color: #60a5fa;
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
 }
 
-button {
+body.modern-ui:not(.v2-canvas) button {
   background-color: #2563eb;
   color: #f8fafc;
   padding: 12px 20px;
@@ -171,12 +174,12 @@ button {
   transition: background-color 0.2s, transform 0.1s;
 }
 
-button:hover {
+body.modern-ui:not(.v2-canvas) button:hover {
   background-color: #1d4ed8;
   transform: translateY(-1px);
 }
 
-button:active {
+body.modern-ui:not(.v2-canvas) button:active {
   transform: translateY(1px);
 }
 

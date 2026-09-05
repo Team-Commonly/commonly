@@ -71,7 +71,7 @@ describe('AppsManagement ingest tokens', () => {
     });
   });
 
-  it('drops the duplicate page heading when rendered inside Settings', async () => {
+  it('uses the flat Settings treatment without the legacy heading icons or tips card', async () => {
     const { container } = render(
       <AuthContext.Provider value={{ user: { role: 'member' } }}>
         <AppsManagement variant="settings" />
@@ -81,5 +81,11 @@ describe('AppsManagement ingest tokens', () => {
     await screen.findByText('Commonly Apps');
     expect(screen.queryByRole('heading', { name: 'Connections & Developer Apps' })).not.toBeInTheDocument();
     expect(container.querySelector('.apps-management--settings')).toBeInTheDocument();
+    expect(container.querySelectorAll('.apps-management--settings .MuiCard-root')).toHaveLength(0);
+    expect(container.querySelectorAll('.apps-management__section')).toHaveLength(2);
+    expect(screen.getByText(/Developer tips: webhook secrets/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Developer Tips' })).not.toBeInTheDocument();
+    expect(screen.getByText('Commonly Apps').parentElement?.querySelector('svg')).not.toBeInTheDocument();
+    expect(screen.getByText('Existing Integrations').parentElement?.querySelector('svg')).not.toBeInTheDocument();
   });
 });

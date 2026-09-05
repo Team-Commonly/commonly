@@ -41,6 +41,41 @@ const agentConnectionReadLimit = rateLimit({
   }),
 });
 
+// Profile writes change the label that every chat message renders. Keep a
+// coarse ingress cap ahead of auth (the CodeQL-recognized shape) before doing
+// JWT work; the per-user cap below is the durable write protection.
+const profileWriteIngressLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: { ip?: string }) => req.ip ? ipKeyGenerator(req.ip) : 'anon',
+  handler: (_req: unknown, res: any) => res.status(429).json({
+    msg: 'rate limit exceeded: too many profile writes from this address',
+  }),
+});
+
+// Auth has established the durable identity by this point, so this is the
+// quota that prevents any one account from repeatedly changing its chat label.
+const profileWriteUserLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: {
+    userId?: unknown;
+    user?: { id?: unknown; _id?: unknown };
+    ip?: string;
+  }) => {
+    const userId = req.userId || req.user?.id || req.user?._id;
+    if (userId) return `profile-write:${String(userId)}`;
+    return req.ip ? ipKeyGenerator(req.ip) : 'anon';
+  },
+  handler: (_req: unknown, res: any) => res.status(429).json({
+    msg: 'rate limit exceeded: 30 profile writes per 15 minutes',
+  }),
+});
+
 router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: any, res: any) => {
   try {
     const userId = req.userId || req.user?.id || req.user?._id;
@@ -126,7 +161,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
 });
 
 router.get('/profile', auth, getCurrentProfile);
-router.put('/profile', auth, updateProfile);
+router.put('/profile', profileWriteIngressLimit, auth, profileWriteUserLimit, updateProfile);
 router.get('/:id/public-activity', auth, getUserPublicActivity);
 router.get('/:id', auth, getUserById);
 router.post('/:id/follow', auth, followUser);

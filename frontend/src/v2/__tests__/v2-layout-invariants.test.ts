@@ -52,6 +52,22 @@ const cssVariable = (css: string, name: string): string | undefined => (
   new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
 );
 
+// App.css is shared by legacy V1 and v2. A leading element selector in V1
+// styles crosses that boundary unless it is rooted beneath the legacy canvas.
+// Keep html/body as the two deliberate document-level exceptions.
+const bareElementSelectors = (css: string): string[] => {
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const selectorGroups = Array.from(withoutComments.matchAll(/([^{}]+)\{/g), ([, selector]) => selector.trim());
+
+  return selectorGroups
+    .filter((selector) => !selector.startsWith('@'))
+    .flatMap((selector) => selector.split(',').map((part) => part.trim()))
+    .filter((selector) => {
+      const element = /^([a-z][\w-]*)\b/i.exec(selector)?.[1].toLowerCase();
+      return Boolean(element && !['html', 'body'].includes(element));
+    });
+};
+
 describe('v2 layout invariants (CSS rule presence)', () => {
   const v2 = read('../v2.css');
   const tokens = read('../../../design-system/tokens.css');
@@ -62,8 +78,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const activityPage = read('../components/V2ActivityPage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
+  const appStyles = read('../../App.css');
   const settingsPage = read('../components/V2SettingsPage.tsx');
   const avatar = read('../components/V2Avatar.tsx');
+  const billingPanel = read('../components/V2BillingPanel.tsx');
+  const appsManagement = read('../../components/AppsManagement.tsx');
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     const rule = ruleBody(v2, '.v2-team-card__name');
@@ -425,25 +444,89 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // a happy path cannot prove the old page stops being reachable. The
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
-    expect(settingsPage).toContain('<SettingsSection label="account">');
-    expect(settingsPage).toContain('<SettingsSection label="plan">');
-    expect(settingsPage).toContain('<SettingsSection label="devices">');
-    expect(settingsPage).toContain('<SettingsSection label="api token">');
-    expect(settingsPage).toContain('<SettingsSection label="connected apps">');
-    expect(settingsPage).toContain('<SettingsSection label="language">');
+    expect(settingsPage).toContain('<SettingsSection id="account" title="Account">');
+    expect(settingsPage).toContain('<SettingsSection id="plan" title="Plan">');
+    expect(settingsPage).toContain('<SettingsSection id="devices" title="Devices">');
+    expect(settingsPage).toContain('<SettingsSection id="api-token" title="API token">');
+    expect(settingsPage).toContain('<SettingsSection id="connected-apps" title="Connected apps">');
+    expect(settingsPage).toContain('<SettingsSection id="language" title="Language">');
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('<AppsManagement variant="settings" />');
+    expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
+    expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
-    expect(v2).toContain('.v2-settings .apps-management--settings .MuiCard-root');
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toContain('path="profile/:id"');
     expect(v2App).toContain('<UserProfile />');
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
+  });
+
+  test('Settings section labels navigate to their own anchored sections', () => {
+    expect(settingsPage).toContain('className="v2-settings__nav"');
+    expect(settingsPage).toContain('className={`v2-settings__nav-link${activeSection === id');
+    expect(settingsPage).toContain('href={`#${settingsSectionId(id)}`}');
+    expect(ruleBody(v2, '.v2-settings__section')).toContain('scroll-margin-top: 24px');
+    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link--active')).toContain('background: var(--v2-bg-subtle)');
+    expect(ruleBody(v2, '.v2-settings__nav')).toContain('position: sticky');
+  });
+
+  test('Settings saves a display name while keeping the handle read-only and exposing the email change affordance', () => {
+    expect(settingsPage).toContain('className="v2-settings__account-fields"');
+    expect(settingsPage).toContain('await updateProfile({ displayName: nextName });');
+    expect(settingsPage).toContain('value={accountUsername} readOnly aria-readonly="true"');
+    expect(settingsPage).toContain('className="v2-settings__email-control"');
+    expect(settingsPage).toContain('id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)}');
+    expect(settingsPage).toContain('type="button">Change</button>');
+    expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
+    expect(settingsPage).not.toContain('v2-settings__nav-note');
+    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
+    expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');
+    const accountForm = ruleBody(v2, '.v2-settings form.v2-settings__account');
+    expect(accountForm).toContain('padding: 0');
+    expect(accountForm).toContain('background: transparent');
+    expect(accountForm).toContain('box-shadow: none');
+  });
+
+  test('App.css keeps every V1 element selector out of the v2 canvas', () => {
+    // This catches both a new `select { ... }` rule and a comma-list escape
+    // such as `textarea, form { ... }`, neither of which a named allowlist
+    // would see. The original dark form, blue button, and focus-ring leaks
+    // were all this same selector-shape failure.
+    expect(bareElementSelectors(appStyles)).toEqual([]);
+    expect(bareElementSelectors('select { color: red; }')).toEqual(['select']);
+    expect(bareElementSelectors('textarea, form { color: red; }')).toEqual(['textarea', 'form']);
+  });
+
+  test('Settings renders the account’s real plan with its appropriate billing action', () => {
+    expect(billingPanel).toContain('currentUser?.entitlements');
+    expect(billingPanel).toContain("isPro ? '/api/billing/portal' : '/api/billing/checkout'");
+    expect(billingPanel).toContain("t(isPro ? 'billing.tier.pro' : 'billing.tier.free')");
+    expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
+    expect(billingPanel).not.toContain('free in beta');
+    expect(billingPanel).not.toContain('included during beta');
+    const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
+    expect(badge).toContain('background: #ffffff');
+    expect(badge).toContain('font-family: var(--v2-font-mono)');
+    expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).toContain('background: var(--v2-accent)');
+  });
+
+  test('Settings flattens connected apps and folds Developer Tips under the form', () => {
+    expect(appsManagement).toContain("const isSettingsVariant = variant === 'settings'");
+    expect(appsManagement).toContain('{!isSettingsVariant && <WebhookIcon color="primary" />}');
+    expect(appsManagement).toContain('{!isSettingsVariant && <SettingsIcon color="primary" />}');
+    expect(appsManagement).toContain('className="apps-management__developer-tips"');
+    expect(appsManagement).toContain('{!isSettingsVariant && (');
+    expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
+    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
   test('the Community offer stays visible below the independently scrolling pod list', () => {

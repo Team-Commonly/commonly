@@ -72,4 +72,28 @@ describe('User Routes Integration Tests', () => {
     const updated = await User.findById(user._id);
     expect(updated.profilePicture).toBe('/api/uploads/newpic.jpg');
   });
+
+  it('should save the account display name without changing its username or email', async () => {
+    const user = new User({
+      username: 'testuser',
+      email: 'test@example.com',
+      password: 'Password123!',
+      verified: true,
+    });
+    await user.save();
+    const token = generateTestToken(user._id);
+
+    const res = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ displayName: 'Test User' })
+      .expect(200);
+
+    expect(res.body.displayName).toBe('Test User');
+    expect(res.body.email).toBe('test@example.com');
+
+    const updated = await User.findById(user._id);
+    expect(updated.displayName).toBe('Test User');
+    expect(updated.verified).toBe(true);
+  });
 });

@@ -23,7 +23,7 @@ interface AuthContextValue {
   register: (formData: unknown) => Promise<unknown>;
   login: (email: string, password: string) => Promise<unknown>;
   logout: () => void;
-  updateProfile: (formData: FormData) => Promise<unknown>;
+  updateProfile: (profile: FormData | Record<string, string>) => Promise<unknown>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -147,11 +147,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setCurrentUser(null);
   };
 
-  const updateProfile = async (formData: FormData): Promise<unknown> => {
+  const updateProfile = async (profile: FormData | Record<string, string>): Promise<unknown> => {
     try {
       setLoading(true);
-      const res = await axios.put<User>('/api/users/profile', formData, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (profile instanceof FormData) headers['Content-Type'] = 'multipart/form-data';
+      const res = await axios.put<User>('/api/users/profile', profile, {
+        headers,
       });
       setCurrentUser(res.data);
       setError(null);

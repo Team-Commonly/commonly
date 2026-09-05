@@ -98,7 +98,24 @@ interface AppsManagementProps {
   variant?: 'default' | 'settings';
 }
 
+interface AppSurfaceProps {
+  children: React.ReactNode;
+  className?: string;
+  outlined?: boolean;
+  settings: boolean;
+  spaceAfter?: boolean;
+}
+
+// Keep this component at module scope: defining it inside AppsManagement
+// would replace the component type after every keystroke and remount the form.
+const AppSurface: React.FC<AppSurfaceProps> = ({ children, className, outlined = false, settings, spaceAfter = false }) => (
+  settings
+    ? <Box className={className}>{children}</Box>
+    : <Card className={className} variant={outlined ? 'outlined' : undefined} sx={spaceAfter ? { mb: 3 } : undefined}>{children}</Card>
+);
+
 const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) => {
+  const isSettingsVariant = variant === 'settings';
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -339,15 +356,15 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
 
   if (loading) {
     return (
-      <Box className={variant === 'settings' ? 'apps-management apps-management--settings' : 'apps-management'} display="flex" justifyContent="center" alignItems="center" minHeight={200}>
+      <Box className={isSettingsVariant ? 'apps-management apps-management--settings' : 'apps-management'} display="flex" justifyContent="center" alignItems="center" minHeight={200}>
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box className={variant === 'settings' ? 'apps-management apps-management--settings' : 'apps-management'}>
-      {variant !== 'settings' && (
+    <Box className={isSettingsVariant ? 'apps-management apps-management--settings' : 'apps-management'}>
+      {!isSettingsVariant && (
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box>
             <Typography variant="h5">Connections & Developer Apps</Typography>
@@ -372,11 +389,11 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
       )}
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={7}>
-          <Card sx={{ mb: 3 }}>
+        <Grid item xs={12} md={isSettingsVariant ? 12 : 7}>
+          <AppSurface className="apps-management__section" settings={isSettingsVariant} spaceAfter>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2} gap={1}>
-                <WebhookIcon color="primary" />
+                {!isSettingsVariant && <WebhookIcon color="primary" />}
                 <Typography variant="h6">Commonly Apps</Typography>
               </Box>
               <Typography variant="body2" color="text.secondary" mb={2}>
@@ -419,6 +436,12 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
                   Refresh apps
                 </Button>
               </Stack>
+
+              {isSettingsVariant && (
+                <Typography className="apps-management__developer-tips" variant="body2" color="text.secondary">
+                  Developer tips: webhook secrets use HMAC SHA-256; send installation tokens as Authorization: Bearer &lt;token&gt;; scopes and events are comma separated.
+                </Typography>
+              )}
 
               {appSecrets && (
                 <Paper sx={{ mt: 3, p: 2, bgcolor: 'grey.50' }}>
@@ -543,13 +566,13 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
                 </Paper>
               )}
             </CardContent>
-          </Card>
+          </AppSurface>
 
-          <Card>
+          <AppSurface className="apps-management__section" settings={isSettingsVariant}>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
-                <SettingsIcon color="primary" />
-                <Typography variant="h6" sx={{ ml: 1 }}>
+                {!isSettingsVariant && <SettingsIcon color="primary" />}
+                <Typography variant="h6" sx={{ ml: isSettingsVariant ? 0 : 1 }}>
                   Existing Integrations
                 </Typography>
               </Box>
@@ -559,7 +582,7 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
                 <Grid container spacing={2}>
                   {integrations.map((integration) => (
                     <Grid item xs={12} md={6} key={integration._id}>
-                      <Card variant="outlined" sx={{ height: '100%' }}>
+                      <AppSurface className="apps-management__integration" settings={isSettingsVariant} outlined>
                         <CardContent>
                           <Box display="flex" alignItems="center" mb={1}>
                             <Typography variant="subtitle1" sx={{ mr: 1 }}>
@@ -613,31 +636,33 @@ const AppsManagement: React.FC<AppsManagementProps> = ({ variant = 'default' }) 
                             Delete
                           </Button>
                         </CardActions>
-                      </Card>
+                      </AppSurface>
                     </Grid>
                   ))}
                 </Grid>
               )}
             </CardContent>
-          </Card>
+          </AppSurface>
         </Grid>
 
-        <Grid item xs={12} md={5}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Developer Tips
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                - Webhook secret: HMAC SHA-256 of request body.<br />
-                - Installation token: send as `Authorization: Bearer &lt;token&gt;`.<br />
-                - Ingest tokens: issue per-integration keys for external providers.<br />
-                - Scopes: comma separated (e.g., messages:read, pods:read).<br />
-                - Events: comma separated (e.g., message.created).<br />
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+        {!isSettingsVariant && (
+          <Grid item xs={12} md={5}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Developer Tips
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  - Webhook secret: HMAC SHA-256 of request body.<br />
+                  - Installation token: send as `Authorization: Bearer &lt;token&gt;`.<br />
+                  - Ingest tokens: issue per-integration keys for external providers.<br />
+                  - Scopes: comma separated (e.g., messages:read, pods:read).<br />
+                  - Events: comma separated (e.g., message.created).<br />
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
       </Grid>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>

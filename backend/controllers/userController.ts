@@ -36,6 +36,16 @@ const PRIVATE_USER_FIELDS = [
   'banReason',
 ];
 
+const isValidAccountLabel = (value: unknown) => typeof value === 'string'
+  && value.trim().length > 0
+  && value.trim().length <= 80;
+
+// The chat author slot renders a single human label. Match its identity rule
+// with an indexed, case-insensitive lookup so two accounts cannot save labels
+// that appear identical there. `strength: 2` keeps accent distinctions while
+// folding case (for example, `Lily` and `lIlY`).
+const ACCOUNT_LABEL_COLLATION = { locale: 'en', strength: 2 };
+
 /**
  * Serialize a user for a response.
  *
@@ -64,11 +74,11 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
   // Agent User rows keep their durable seat username for authentication and
   // routing (for example, `vale`). The social surface must use the same
   // curated identity label as the rest of the product (for example, `Vale`).
-  // Humans intentionally retain their username: their display label is not a
-  // separate identity field.
+  // Human usernames stay routable while the optional display name is the
+  // presentation label chosen in Settings.
   const displayName = userDoc.isBot
     ? AgentIdentityService.resolveAgentDisplayLabel(userDoc, userDoc.username)
-    : userDoc.username;
+    : userDoc.displayName || userDoc.username;
 
   return {
     ...plain,
@@ -97,11 +107,34 @@ exports.getCurrentProfile = async (req: any, res: any) => {
 // Update user profile
 exports.updateProfile = async (req: any, res: any) => {
   try {
-    const { username, bio, profilePicture } = req.body;
+    const { username, displayName, bio, profilePicture } = req.body;
+
+    if (displayName !== undefined) {
+      if (!isValidAccountLabel(displayName)) {
+        return res.status(400).json({ error: 'Name must be between 1 and 80 characters.' });
+      }
+
+      const normalizedDisplayName = displayName.trim();
+      const nameOwner = await User.findOne({
+        _id: { $ne: req.user.id },
+        $or: [
+          { username: normalizedDisplayName },
+          { displayName: normalizedDisplayName },
+          { 'botMetadata.displayName': normalizedDisplayName },
+        ],
+      })
+        .collation(ACCOUNT_LABEL_COLLATION)
+        .select('_id');
+
+      if (nameOwner) {
+        return res.status(400).json({ error: 'That name belongs to someone else here' });
+      }
+    }
 
     // Build user object
     const userFields: any = {};
     if (username) userFields.username = username;
+    if (displayName !== undefined) userFields.displayName = displayName.trim();
     if (bio) userFields.bio = bio;
     if (profilePicture !== undefined) {
       userFields.profilePicture = normalizeAvatarUrl(profilePicture);
@@ -113,7 +146,16 @@ exports.updateProfile = async (req: any, res: any) => {
       { $set: userFields },
       { new: true },
     ).select('-password');
-    await AgentIdentityService.syncUserToPostgreSQL(user);
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+    const synced = await AgentIdentityService.syncUserToPostgreSQL(user);
+    // A name save changes the display column that PostgreSQL chat joins read.
+    // Do not claim success when that mirror failed: a retry of the same Save
+    // re-runs the idempotent update and brings the render path into sync.
+    if (displayName !== undefined && synced === false) {
+      return res.status(503).json({
+        error: 'Your name was saved, but chat is catching up. Please save again in a moment.',
+      });
+    }
 
     res.json(toSocialProfile(user, req.user.id));
   } catch (err: any) {
