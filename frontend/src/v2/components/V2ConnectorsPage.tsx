@@ -379,10 +379,16 @@ const V2ConnectorsPage: React.FC = () => {
 
   // The PATCH merges `config` one level deep, so `gates` is written whole:
   // every pod's gate travels with the one that changed, `since` included.
+  // The server validates every key against membership and refuses the whole
+  // body on the first miss, so a gate for a pod the owner has since left
+  // (not yet pruned by the reconciler) is dropped here rather than sent —
+  // otherwise every toggle would 403 for up to one sweep (Vera, 63997).
   const writeGate = (connector: Connector, podId: string, next: ConnectorGate) => {
     const current = connector.config?.gates || {};
+    const memberOf = new Set(pods.map((pod) => String(pod._id)));
     const gates: Record<string, ConnectorGate> = {};
     Object.entries(current).forEach(([key, gate]) => {
+      if (!memberOf.has(String(key))) return;
       gates[key] = {
         enabled: gate.enabled === true,
         ...(gate.mode ? { mode: gate.mode } : {}),

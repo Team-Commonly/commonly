@@ -605,6 +605,33 @@ describe('V2ConnectorsPage', () => {
       ));
     });
 
+    it('drops a gate for a pod the owner has left before writing the map', async () => {
+      mockCatalog([entry({
+        installableId: 'slack',
+        label: 'Slack',
+        installation: { status: 'active', updatedAt: new Date().toISOString(), components: [] },
+        integration: liveIntegration({
+          config: { chatTitle: 'Rewire crew', liveRelay: true, gates: {
+            p1: { enabled: true, since: '2026-09-01T00:00:00.000Z' },
+            pLeft: { enabled: true, since: '2026-08-01T00:00:00.000Z' },
+          } },
+        }),
+      })]);
+      axios.patch.mockResolvedValue({ data: {} });
+      renderPage();
+
+      await screen.findByText('Pods that reach this channel');
+      fireEvent.click(screen.getByRole('switch', { name: 'Relay Ops' }));
+      await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+        '/api/integrations/i-live',
+        { config: { gates: {
+          p1: { enabled: true, since: '2026-09-01T00:00:00.000Z' },
+          p2: { enabled: true, since: expect.any(String) },
+        } } },
+        expect.anything(),
+      ));
+    });
+
     it('keeps mode and lead overrides behind the pod name and makes another pod active', async () => {
       mockCatalog([entry({
         installableId: 'slack',
