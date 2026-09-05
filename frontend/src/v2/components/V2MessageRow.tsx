@@ -5,6 +5,8 @@ import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import V2ApprovalCard from './V2ApprovalCard';
+import V2DecisionCard, { type V2DecisionCardData } from './V2DecisionCard';
+import V2MessageActions, { type V2RenderedReaction } from './V2MessageActions';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
 import { useAuth } from '../../context/AuthContext';
@@ -70,8 +72,13 @@ const messageMarkdownComponents = {
   // and `.v2-msg__content pre`. Mentions inside code are NOT transformed.
 };
 
-interface V2MessageBubbleProps {
+interface V2MessageRowProps {
   message: V2Message;
+  // DecisionRequest data is deliberately joined by the thread container,
+  // not parsed from the agent's prose. The message is the durable timeline
+  // anchor; the queue owns the choices and resolution state.
+  decision?: V2DecisionCardData;
+  onDecisionRuled?: (decisionId: string, ruling: { value: string; by?: string }) => void;
   isLead?: boolean;
   // Map of agent-user username → per-installation displayName, so messages
   // authored by an installed agent render as "Engineer (Nova)" instead of the
@@ -83,7 +90,7 @@ interface V2MessageBubbleProps {
   // `message.user.username`, so we gate click behavior on a known set.
   agentAuthorKeys?: Set<string>;
   // Clicking the author avatar / name opens the inspector to that member's
-  // detail sub-page. Passed in by V2PodChat; only fires for agent authors.
+  // detail sub-page. Passed in by V2Thread; only fires for agent authors.
   onAuthorClick?: (author: string) => void;
   /**
    * The root this bubble is being rendered UNDER, when it sits inside an
@@ -303,13 +310,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
-// Sprint B5: shared picker palette. 6 emojis chosen to span the common
-// reaction intents: agree / love / fire / brain / eyes / launch. Keep
-// small so the popover stays compact and doesn't overflow narrow chat
-// columns in mobile shells.
-const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];
-
-const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -347,6 +348,17 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
   const time = formatRelativeTime(message.created_at);
+
+  if (decision) {
+    return (
+      <div className="v2-message-row v2-message-row--decision">
+        <V2DecisionCard
+          decision={{ ...decision, actorName: decision.actorName || author }}
+          onRuled={onDecisionRuled}
+        />
+      </div>
+    );
+  }
 
   // ADR-020 D3: payload-driven components render from structure, not
   // content regex — the first message class where `payload` is the truth
@@ -437,7 +449,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   const hasLive = Array.isArray(liveReactions);
   const reactMessageId = String(message.id || '');
   const canInteract = !!(hasLive && reactMessageId && /^\d+$/.test(reactMessageId));
-  const renderList = hasLive
+  const renderList: V2RenderedReaction[] = hasLive
     ? liveReactions!
     : reactions.map((r) => ({ emoji: r.emoji, count: r.count, mine: false }));
   const toggleReaction = async (emoji: string, mine: boolean) => {
@@ -470,7 +482,7 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
 
   return (
     <div
-      className={`v2-msg${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
+      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
       onClick={onBubbleTap}
     >
       {grouped ? (
@@ -499,90 +511,17 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
           seed={message.user_id || undefined}
         />
       )}
-      {/* One hover cluster for every row variant (Sam's taste rulings
-          2026-08-23): Reply, Thread, and the reaction trigger live together
-          in a floating pill at the message's top-right — visible on hover
-          or keyboard focus, never in the head's text flow (the inline text
-          buttons crowded the head and shifted layout), and identical for
-          headed and grouped rows. The reaction picker anchors here too, so
-          the trigger sits with its siblings instead of orphaned at the far
-          edge of an empty reactions band. */}
-      {(onReply || onThread || canInteract) && (
-        /* stopPropagation: on touch, the bubble's own tap toggles reveal —
-           without this, tapping any action would immediately re-hide the
-           cluster (and close the picker it just opened). */
-        <div
-          className="v2-msg__actions"
-          role="toolbar"
-          aria-label="Message actions"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {onReply && (
-            <button
-              type="button"
-              className="v2-msg__action"
-              aria-label={`Reply to ${author}`}
-              title={`Reply to ${author}`}
-              onClick={() => onReply(message)}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polyline points="9 17 4 12 9 7" />
-                <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-              </svg>
-            </button>
-          )}
-          {onThread && (
-            <button
-              type="button"
-              className="v2-msg__action"
-              aria-label={`${t('podChat.thread.startThread')} from ${author}`}
-              title={t('podChat.thread.startThread')}
-              onClick={() => onThread(message)}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-            </button>
-          )}
-          {canInteract && (
-            <span className="v2-msg__action-wrap">
-              <button
-                type="button"
-                className="v2-msg__action"
-                aria-label="Add reaction"
-                title="Add reaction"
-                onClick={() => setPickerOpen((v) => !v)}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                  <line x1="9" y1="9" x2="9.01" y2="9" />
-                  <line x1="15" y1="9" x2="15.01" y2="9" />
-                </svg>
-              </button>
-              {pickerOpen && (
-                <span className="v2-msg__reaction-picker" role="menu">
-                  {REACTION_PALETTE.map((e) => {
-                    const existing = renderList.find((x) => x.emoji === e);
-                    const mine = !!existing?.mine;
-                    return (
-                      <button
-                        key={e}
-                        type="button"
-                        role="menuitem"
-                        className={`v2-msg__reaction-picker-item${mine ? ' v2-msg__reaction-picker-item--mine' : ''}`}
-                        onClick={() => toggleReaction(e, mine)}
-                      >
-                        {e}
-                      </button>
-                    );
-                  })}
-                </span>
-              )}
-            </span>
-          )}
-        </div>
-      )}
+      <V2MessageActions
+        message={message}
+        author={author}
+        onReply={onReply}
+        onThread={onThread}
+        canInteract={canInteract}
+        pickerOpen={pickerOpen}
+        reactions={renderList}
+        onTogglePicker={() => setPickerOpen((open) => !open)}
+        onToggleReaction={toggleReaction}
+      />
       <div className="v2-msg__body">
         {!grouped && (
         <div className="v2-msg__head">
@@ -713,4 +652,4 @@ const V2MessageBubble: React.FC<V2MessageBubbleProps> = ({ message, isLead, agen
   );
 };
 
-export default V2MessageBubble;
+export default V2MessageRow;

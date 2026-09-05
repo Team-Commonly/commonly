@@ -7,7 +7,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2PodChat from '../components/V2PodChat';
+import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('../../context/SocketContext', () => ({
@@ -72,14 +72,14 @@ const mockStates = (agents) => {
 const renderChat = (detail) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
-      <V2PodChat detail={detail} />
+      <V2Thread detail={detail} />
     </MemoryRouter>
   </AuthContext.Provider>,
 );
 
 afterEach(() => jest.clearAllMocks());
 
-describe('V2PodChat mention-state honesty (#891 surface 1)', () => {
+describe('V2Composer mention-state honesty (#891 surface 1)', () => {
   test('mentioning a never-connected agent warns the OWNER with the fix command', async () => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run sam-agent',

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
-import V2PodChat from './V2PodChat';
+import V2Thread from './V2Thread';
 import V2Inspector from './V2Inspector';
 import V2InviteModal, { type V2InviteTab } from './V2InviteModal';
 import V2FirstRunHero from './V2FirstRunHero';
@@ -164,7 +164,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   // The inspector is a separate column only when expanded. When collapsed,
   // it's not rendered at all and the chat extends to the right edge — the
-  // entry point is the avatar group in the chat header (see V2PodChat).
+  // entry point is the working-count control in the thread header (see V2Thread).
   const showInspector = Boolean(selectedPodId && !inspectorCollapsed);
   const shellClass = ['v2-shell', !showInspector ? 'v2-shell--no-inspector' : ''].filter(Boolean).join(' ');
 
@@ -185,7 +185,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         mobileOpen={mobileNavOpen}
         onMobileClose={closeMobileNav}
       />
-      <V2PodChat
+      <V2Thread
         detail={detail}
         podsState={podsState}
         firstRunVisible={firstRunVisible}

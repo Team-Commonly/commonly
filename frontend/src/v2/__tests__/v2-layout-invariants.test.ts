@@ -83,9 +83,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const tokens = read('../../../design-system/tokens.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const landing = read('../landing/v2-landing.css');
-  const podChat = read('../components/V2PodChat.tsx');
+  const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
   const workspaceInspector = read('../components/V2Inspector.tsx');
+  const thread = read('../components/V2Thread.tsx');
+  const threadMessages = read('../components/V2ThreadMessages.tsx');
+  const messageRow = read('../components/V2MessageRow.tsx');
+  const composer = read('../components/V2Composer.tsx');
+  const decisionCard = read('../components/V2DecisionCard.tsx');
   const v2Layout = read('../components/V2Layout.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
@@ -219,12 +224,23 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
     // Consecutive same-author messages within the grouping window drop the
-    // header row; the ghost cell must match the .v2-msg grid's 38px avatar
+    // header row; the ghost cell must match the artboard's 28px avatar
     // column or grouped text mis-aligns with headed text by exactly the
     // avatar width — a defect jsdom cannot see.
-    expect(ruleBody(v2, '.v2-msg')).toContain('grid-template-columns: 38px');
-    expect(ruleBody(v2, '.v2-msg__avatar-ghost')).toContain('width: 38px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg')).toContain('grid-template-columns: 28px');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__avatar-ghost')).toContain('width: 28px');
     expect(v2).toContain('.v2-msg--grouped');
+  });
+
+  test('the workspace route uses the small replacement components, never the retired chat or bubble files', () => {
+    expect(fs.existsSync(path.join(__dirname, '../components/V2PodChat.tsx'))).toBe(false);
+    expect(fs.existsSync(path.join(__dirname, '../components/V2MessageBubble.tsx'))).toBe(false);
+    expect(thread).toContain("import V2ThreadMessages from './V2ThreadMessages'");
+    expect(threadMessages).toContain("import V2MessageRow from './V2MessageRow'");
+    expect(thread).toContain("import V2Composer");
+    expect(messageRow).toContain("import V2DecisionCard");
+    expect(composer).toContain('const V2Composer');
+    expect(decisionCard).toContain('const V2DecisionCard');
   });
 
   test('direct-agent liveness stays above the composer as a stable, readable row', () => {
@@ -436,7 +452,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // of rows and recreates the v1 island.
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: 0');
-    expect(ruleBody(v2, '.v2-chat__composer > *')).toContain('margin-inline: 0');
+    expect(ruleBody(v2, '.v2-composer')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(v2, '.v2-composer__posts-as')).toContain('font: 500 11px/16px var(--v2-font-mono)');
     // Nothing in the column may escape the shared edge (Sam, 2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
@@ -723,12 +740,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
 
-  test('the chat heartbeat subtitle is guarded by an installed agent', () => {
-    // A zero-agent pod has nobody expected to heartbeat; showing "No recent"
-    // there was a false failure state. Pin both the predicate and its render
-    // guard so a later copy-only edit cannot restore the dangling separator.
-    expect(podChat).toContain('const liveState = agents.length > 0');
-    expect(podChat).toContain('{liveState && <span className="v2-chat__goal-meta"> · {liveState}</span>}');
+  test('the thread header is the artboard’s name, muted description, and working count', () => {
+    expect(podChat).toContain('className="v2-thread__header"');
+    expect(podChat).toContain('podChat.header.agentsWorking');
+    expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(v2, '.v2-thread__working')).toContain('font: 500 11px/16px var(--v2-font-mono)');
   });
 
   test('Activity cards have shrinkable desktop and mobile layout guards', () => {
@@ -935,6 +951,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         expect(rule).toContain('var(--v2-ink)');
         expect(rule).not.toContain('var(--v2-accent)');
       }
+    });
+
+    test('the pending human decision is the one cobalt action surface', () => {
+      const card = ruleBody(v2, '.v2-decision-card');
+      const recommended = selectorRuleBody(v2, '.v2-root button.v2-decision-card__choice--recommended');
+      expect(card).toContain('box-shadow: 0 0 0 2px var(--v2-accent)');
+      expect(recommended).toContain('background: var(--v2-accent)');
+      expect(recommended).not.toContain('var(--v2-ink)');
     });
 
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {

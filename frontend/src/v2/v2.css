@@ -7240,7 +7240,7 @@ body.modern-ui.v2-canvas {
 
   /* No hover on touch — but always-on clusters over every message are
      chrome over content (Sam, 2026-08-23). A tap on the message toggles
-     .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
+     .v2-msg--reveal (V2MessageRow.onBubbleTap, gated to hoverless
      devices); only then does the cluster appear, at the 44px floor (craft
      baseline rule 9). Absolute positioning preserved — a static third
      child would break the avatar|body grid. */
@@ -9511,6 +9511,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-pods__title,
 .v2-root:lang(zh) .v2-chat__title,
+.v2-root:lang(zh) .v2-thread__title h1,
 .v2-root:lang(zh) .v2-first-run__title,
 .v2-root:lang(zh) .v2-chat__new-pod-title,
 .v2-root:lang(zh) button.v2-inspector__tab,
@@ -10231,3 +10232,300 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-workspace-inspector__actor,
 .v2-root:lang(zh) .v2-workspace-inspector__task-meta,
 .v2-root:lang(zh) .v2-workspace-inspector__foot button { font-size: 12px; }
+
+/* ---------- Workspace decision card (TASK-129 PR 3) ----------
+   A DecisionRequest is an in-thread fork, not prose the human must parse.
+   The cobalt 2px ring is reserved for this unresolved, human-owned choice. */
+.v2-decision-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 14px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 6px;
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
+}
+
+.v2-decision-card--ruled { box-shadow: none; }
+
+.v2-decision-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-decision-card__head h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font: 600 14px/20px var(--v2-font);
+}
+
+.v2-decision-card__agent {
+  flex-shrink: 0;
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+
+.v2-decision-card__question {
+  margin: 0;
+  color: var(--v2-text-secondary);
+  font: 400 13px/19px var(--v2-font);
+}
+
+.v2-decision-card__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.v2-decision-card__option { display: inline-flex; align-items: center; gap: 5px; }
+
+.v2-root button.v2-decision-card__choice,
+.v2-root button.v2-decision-card__other,
+.v2-root button.v2-decision-card__other-form button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 500 12px/18px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__choice--recommended {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+}
+
+.v2-root button.v2-decision-card__choice:hover:not(:disabled),
+.v2-root button.v2-decision-card__other:hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root button.v2-decision-card__choice--recommended:hover:not(:disabled) { background: var(--v2-accent-strong); }
+
+.v2-decision-card__option > span {
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__other { border-style: dashed; }
+
+.v2-decision-card__other-form {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+}
+
+.v2-decision-card__other-form input {
+  min-width: 0;
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+}
+
+.v2-decision-card__settled,
+.v2-decision-card__error { margin: 0; font: 500 12px/18px var(--v2-font); }
+.v2-decision-card__settled { color: var(--v2-text-secondary); }
+.v2-decision-card__error { color: #b91c1c; }
+
+/* ---------- Workspace thread and composer (TASK-129 PR 3) ---------- */
+
+.v2-thread__header {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+}
+
+.v2-thread__header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v2-thread__title {
+  min-width: 0;
+  flex: 1;
+}
+
+.v2-thread__title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font: 600 16px/20px var(--v2-font);
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-thread__title p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-thread__working {
+  flex: 0 0 auto;
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
+
+.v2-thread__working::before { content: '●'; color: var(--v2-accent); }
+
+.v2-root button.v2-thread__working {
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.v2-root button.v2-thread__working:hover,
+.v2-root button.v2-thread__working--active { background: var(--v2-surface-hover); }
+
+.v2-thread .v2-msg {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.v2-thread .v2-msg--grouped { padding: 2px 0; }
+.v2-thread .v2-msg__avatar-ghost { width: 28px; }
+.v2-thread .v2-avatar { width: 28px; height: 28px; border-radius: 4px; }
+.v2-thread .v2-msg__head { height: 18px; gap: 6px; }
+.v2-thread .v2-msg__author,
+.v2-thread .v2-msg__author-btn { font-size: 13px; font-weight: 600; }
+.v2-thread .v2-msg__time { font-family: var(--v2-font-mono); font-size: 11px; }
+
+.v2-message-row--decision { padding: 8px 0; }
+
+.v2-composer {
+  flex: 0 0 auto;
+  margin: 10px 14px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-composer__target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-root button.v2-composer__target button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.v2-composer__field { position: relative; }
+
+.v2-root .v2-composer__field > textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 12px 6px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-composer__file { display: none; }
+
+.v2-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 8px 6px 10px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-root button.v2-composer__attach {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-composer__attach:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-composer__posts-as {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-root button.v2-composer__send {
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 1px solid var(--v2-ink);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: 600 12px/18px var(--v2-font);
+}
+
+.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
+.v2-root button.v2-composer__send:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.v2-composer__error {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #b91c1c;
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-composer__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 8px;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+@media (max-width: 760px) {
+  .v2-thread__header { padding: 10px 14px; }
+  .v2-thread__working { display: none; }
+  .v2-composer { margin: 8px 14px 14px; }
+}

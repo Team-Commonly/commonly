@@ -6,7 +6,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2PodChat from '../components/V2PodChat';
+import V2Thread from '../components/V2Thread';
 import { AuthContext } from '../../context/AuthContext';
 
 jest.mock('../../context/SocketContext', () => ({
@@ -15,7 +15,11 @@ jest.mock('../../context/SocketContext', () => ({
 
 // Composer behavior does not depend on avatar rendering. Keep this test
 // isolated from the external DiceBear package graph used by V2Avatar.
-jest.mock('../components/V2Avatar', () => () => <span data-testid="avatar" />);
+jest.mock('../components/V2Avatar', () => {
+  const MockAvatar = () => <span data-testid="avatar" />;
+  MockAvatar.displayName = 'MockAvatar';
+  return MockAvatar;
+});
 jest.mock('../utils/avatars', () => ({ initialsFor: (name: string) => name.slice(0, 2) }));
 
 // jsdom has no scrollIntoView; the component auto-scrolls on mount.
@@ -69,32 +73,34 @@ const makeDetail = (overrides = {}) => ({
 const renderChat = (detail) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
-      <V2PodChat detail={detail} />
+      <V2Thread detail={detail} />
     </MemoryRouter>
   </AuthContext.Provider>,
 );
 
-describe('V2PodChat composer send button', () => {
-  test('only shows a no-heartbeat state when the pod has an installed agent', () => {
+describe('V2Composer send button', () => {
+  test('uses the artboard’s compact working count in the thread header', () => {
     const view = renderChat(makeDetail({
       pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
     }));
 
-    // A human-only pod is not waiting on anyone to heartbeat.
-    expect(view.container.querySelector('.v2-chat__goal-meta')).toBeNull();
+    expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('0 agents working');
 
     view.rerender(
       <AuthContext.Provider value={authValue}>
         <MemoryRouter>
-          <V2PodChat detail={makeDetail({
+          <V2Thread detail={makeDetail({
             pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
-            agents: [{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }],
+            agents: [{
+              agentName: 'scout', instanceId: 'default', displayName: 'Scout',
+              lastHeartbeatAt: new Date().toISOString(),
+            }],
           })} />
         </MemoryRouter>
       </AuthContext.Provider>,
     );
 
-    expect(view.container.querySelector('.v2-chat__goal-meta')).toHaveTextContent('No recent heartbeats');
+    expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('1 agent working');
   });
 
   test('clicking the send button sends the drafted text', async () => {
@@ -150,16 +156,16 @@ describe('V2PodChat composer send button', () => {
     rerender(
       <AuthContext.Provider value={authValue}>
         <MemoryRouter>
-          <V2PodChat detail={{ ...detail, sendError: 'Replies are temporarily unavailable. Please try again shortly.' }} />
+          <V2Thread detail={{ ...detail, sendError: 'Replies are temporarily unavailable. Please try again shortly.' }} />
         </MemoryRouter>
       </AuthContext.Provider>,
     );
 
     const sendError = screen.getByText('Replies are temporarily unavailable. Please try again shortly.');
-    expect(sendError.closest('.v2-chat__composer')).not.toBeNull();
+    expect(sendError.closest('.v2-composer')).not.toBeNull();
     expect(sendError.closest('.v2-chat__messages')).toBeNull();
     expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
-    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-chat__reply-chip')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__target')).not.toBeNull();
   });
 
   // W-T 4/4, constraint 4 (docs/design/threading-surface-ruling.md; ux-lead

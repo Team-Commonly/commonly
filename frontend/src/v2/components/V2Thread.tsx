@@ -3,7 +3,10 @@ import React, {
 } from 'react';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
-import V2MessageBubble from './V2MessageBubble';
+import V2Composer, { type V2ComposerWarning } from './V2Composer';
+import { type V2DecisionCardData } from './V2DecisionCard';
+import V2ThreadMessages from './V2ThreadMessages';
+import V2ThreadStarter from './V2ThreadStarter';
 import {
   UseV2PodDetailResult,
   V2Agent,
@@ -12,20 +15,16 @@ import { useV2Api } from '../hooks/useV2Api';
 import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
-import { initialsFor } from '../utils/avatars';
-import { isGroupedWithPrevious } from '../utils/messageGrouping';
-import { Trans, useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { V2InviteTab } from './V2InviteModal';
 
-import V2ThreadCard from './V2ThreadCard';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { buildThreadView } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 
-const PLAN_MODE_KEY = 'v2.podMode';
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
+const AGENT_INVITE_TAB: V2InviteTab = 'agent';
 // A sent direct message is durable in the room, but it is not a reply. Give
 // the person a clear, bounded wait state instead of leaving the composer to
 // imply that the agent is working. Two minutes is long enough for a normal
@@ -37,15 +36,6 @@ const STARTER_PROMPT_KEYS = [
   'podChat.starters.help',
   'podChat.starters.firstQuestion',
 ] as const;
-const CLOSE_MARK = '×';
-const COMMAND_KEY = '⌘';
-const ENTER_KEY = '↵';
-
-type PodMode = 'plan' | 'execute';
-
-const podMarkFor = (name: string, type: string | undefined, dmLabel: string): string => (
-  type === 'agent-room' ? dmLabel : initialsFor(name).slice(0, 2)
-);
 
 const normalizeAgentSegment = (value: string | undefined): string =>
   (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
@@ -124,7 +114,6 @@ interface AgentStateRow {
   isOwner: boolean;
   fixCommand?: string;
 }
-const REACH_NEEDS_WARNING = new Set<AgentReachState>(['gone-dark', 'never-connected']);
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
 interface DirectAgentIdentity {
@@ -147,6 +136,12 @@ interface TypingAgentEntry {
   instanceId?: string;
   displayName: string;
   avatar?: string;
+}
+
+interface ThreadDecision extends V2DecisionCardData {
+  kind: 'decision';
+  podId: string;
+  messageId: string;
 }
 
 const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) => {
@@ -179,30 +174,7 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
   );
 };
 
-const modeCopy = (mode: PodMode, t: TFunction) => (
-  mode === 'plan'
-    ? t('podChat.mode.planDescription')
-    : t('podChat.mode.executeDescription')
-);
-
-const readMode = (podId: string): PodMode => {
-  try {
-    const raw = localStorage.getItem(`${PLAN_MODE_KEY}.${podId}`);
-    return raw === 'execute' ? 'execute' : 'plan';
-  } catch {
-    return 'plan';
-  }
-};
-
-const writeMode = (podId: string, mode: PodMode) => {
-  try {
-    localStorage.setItem(`${PLAN_MODE_KEY}.${podId}`, mode);
-  } catch {
-    // localStorage unavailable; revert to default on next render.
-  }
-};
-
-interface V2PodChatProps {
+interface V2ThreadProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
   // V2Layout owns the shell-level first-run modal. This flag reserves the
@@ -220,7 +192,7 @@ interface V2PodChatProps {
   // path and a single modal instance handles both surfaces.
   onOpenInvite?: (initialTab?: V2InviteTab) => void;
   // Click on an in-message file pill routes here. Passed straight through
-  // to V2MessageBubble → FilePill so the click opens the inspector
+  // to V2MessageRow → FilePill so the click opens the inspector
   // artifact preview instead of window.open()'ing a raw file in a new tab.
   onOpenFile?: (fileName: string) => void;
   // Opens the mobile pods drawer (<=760px). The hamburger in the chat header
@@ -229,15 +201,8 @@ interface V2PodChatProps {
   onOpenMobileNav?: () => void;
 }
 
-const Icon = ({ d }: { d: string }) => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
-
-const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
-  const { t, i18n } = useTranslation();
-  const numberFormatter = new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en');
+const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
+  const { t } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
@@ -260,7 +225,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   } | null>(null);
   const [awaitingAgentReply, setAwaitingAgentReply] = useState<AwaitingAgentReply | null>(null);
   const deliveryHintShownPodsRef = useRef<Set<string>>(new Set());
-  const [mode, setMode] = useState<PodMode>(pod ? readMode(pod._id) : 'plan');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -330,6 +294,45 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // Best-effort — a failed read renders nothing rather than something wrong,
   // and 60s refresh keeps the states honest without hammering the endpoint.
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
+  const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
+
+  // A DecisionRequest posts an ordinary message for its timeline position and
+  // materializes its typed choices in the attention queue. Join those two
+  // durable records by messageId; never infer a card from agent prose.
+  useEffect(() => {
+    const podId = pod?._id;
+    if (!podId) {
+      setDecisions([]);
+      return undefined;
+    }
+    let active = true;
+    const load = async () => {
+      try {
+        const data = await api.get<{ items?: ThreadDecision[] }>('/api/activity/decision-queue');
+        if (!active) return;
+        setDecisions((data?.items || []).filter((item) => (
+          item.kind === 'decision'
+          && item.podId === podId
+          && typeof item.messageId === 'string'
+          && item.messageId.length > 0
+          && Array.isArray(item.options)
+          && item.options.length > 0
+        )));
+      } catch {
+        // A queue read is additive decoration: preserve a working thread when
+        // attention is temporarily unavailable rather than inventing cards.
+        if (active) setDecisions([]);
+      }
+    };
+    void load();
+    const timer = window.setInterval(load, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [api, pod?._id]);
+
+  const decisionByMessageId = useMemo(() => new Map(
+    decisions.map((decision) => [String(decision.messageId), decision]),
+  ), [decisions]);
+
   useEffect(() => {
     const podId = pod?._id;
     if (!podId) return undefined;
@@ -432,10 +435,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     }, remaining);
     return () => clearTimeout(timeout);
   }, [awaitingAgentReply, pod?._id, messages, directAgent?.username]);
-
-  useEffect(() => {
-    if (pod) setMode(readMode(pod._id));
-  }, [pod?._id]);
 
   useEffect(() => {
     setAgentDeliveryHint(null);
@@ -556,7 +555,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // Map of agent-user username → per-installation displayName. Mirrors
   // backend AgentIdentityService.buildAgentUsername: '<agentName>' when
   // instanceId is 'default' or matches the agentName, else
-  // '<agentName>-<instanceId>'. Lets V2MessageBubble render "Engineer (Nova)"
+  // '<agentName>-<instanceId>'. Lets V2MessageRow render "Engineer (Nova)"
   // instead of the raw User row username "openclaw-nova".
   //
   // Note: the backend payload key is `name` (per buildAgentInstallationPayload
@@ -713,17 +712,22 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // #891 surface 1, send-time half: which mentioned agents in the current
   // draft cannot hear it? Dependency-keyed explanation for everyone; the fix
   // command only ever arrives for owners (the endpoint enforces the split).
-  const unreachableMentioned = useMemo(() => {
-    if (!draft.includes('@')) return [] as AgentStateRow[];
+  const unreachableMentioned = useMemo<V2ComposerWarning[]>(() => {
+    if (!draft.includes('@')) return [];
     const tokens: string[] = draft.match(/@([a-z0-9][\w-]*)/gi) || [];
     const seen = new Set<string>();
-    const rows: AgentStateRow[] = [];
+    const rows: V2ComposerWarning[] = [];
     tokens.forEach((token) => {
       const handle = token.slice(1).toLowerCase();
       const state = agentStateByHandle.get(handle);
-      if (!state || !REACH_NEEDS_WARNING.has(state.state) || seen.has(handle)) return;
+      const warningState = state?.state;
+      if (
+        !state
+        || (warningState !== 'gone-dark' && warningState !== 'never-connected')
+        || seen.has(handle)
+      ) return;
       seen.add(handle);
-      rows.push({ ...state, agentName: handle });
+      rows.push({ agentName: handle, state: warningState, fixCommand: state.fixCommand });
     });
     return rows;
   }, [draft, agentStateByHandle]);
@@ -854,38 +858,6 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [mentionOpen]);
-
-  // Avatar row shows active members only — humans (member.isBot=false)
-  // plus currently-installed agents. pod.members[] retains stale bot
-  // User rows for identity continuity (ADR-001 §3), so reading it raw
-  // surfaces uninstalled agents in the avatar count. Mirrors the
-  // V2Inspector filter so the chat-header "+N" agrees with the
-  // Members tab count. MUST live above the `if (!pod)` early return —
-  // hooks run on every render or React fires #310 on pod-state changes.
-  const activeMemberAgentUsernames = React.useMemo(() => {
-    const set = new Set<string>();
-    (agents || []).forEach((a) => {
-      const rawName = ((a as { name?: string; agentName?: string }).name || a.agentName || '').toLowerCase();
-      const inst = (a.instanceId || '').toLowerCase();
-      const username = !inst || inst === 'default' || inst === rawName ? rawName : `${rawName}-${inst}`;
-      if (username) set.add(username);
-    });
-    return set;
-  }, [agents]);
-  const effectiveMembers = React.useMemo(() => {
-    // `isBot` is documented as unreliable on the wire (V2Inspector
-    // 804-807). A member whose `isBot` is falsy but whose username
-    // matches an active agent would be counted twice without this
-    // secondary guard.
-    const humans = (members || []).filter((m) => {
-      if (m.isBot) return false;
-      return !activeMemberAgentUsernames.has((m.username || '').toLowerCase());
-    });
-    const activeAgentMembers = (members || []).filter((m) => (
-      activeMemberAgentUsernames.has((m.username || '').toLowerCase())
-    ));
-    return [...humans, ...activeAgentMembers];
-  }, [members, activeMemberAgentUsernames]);
 
   // Mobile-only hamburger: opens the pods slide-over drawer. CSS hides it on
   // desktop (>=761px) where the sidebar is a permanent column. Without it a
@@ -1126,224 +1098,71 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     }
   };
 
-  const handleSetMode = (next: PodMode) => {
-    setMode(next);
-    writeMode(pod._id, next);
-  };
-
-  // visibleMembers / memberCountExtra are plain consts derived from the
-  // effectiveMembers useMemo that lives above the `if (!pod)` early
-  // return — hooks must run on every render to satisfy the rules of
-  // hooks (otherwise React #310 fires on pod-state transitions). Plain
-  // consts can live here.
-  const visibleMembers = effectiveMembers.slice(0, 3);
-  const memberCountExtra = Math.max(0, effectiveMembers.length - visibleMembers.length);
   const onlineAgentCount = agents.filter((agent) => (
     !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
   )).length;
-  // A no-heartbeat state has meaning only when this pod has an installed
-  // agent. Human-only pods otherwise read as broken despite having nobody
-  // expected to check in.
-  const liveState = agents.length > 0
-    ? onlineAgentCount > 0
-      ? t('podChat.heartbeat.recent', {
-        count: onlineAgentCount,
-        formattedCount: numberFormatter.format(onlineAgentCount),
-      })
-      : t('podChat.heartbeat.none')
-    : null;
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
 
   return (
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat">
-        <header className="v2-chat__header">
-          <div className="v2-chat__header-row">
+        <header className="v2-thread__header">
+          <div className="v2-thread__header-row">
             {mobileNavButton}
-            <div className="v2-chat__title">
-              <span className="v2-chat__title-mark">{podMarkFor(pod.name, pod.type, t('podChat.dmMark'))}</span>
-              <span className="v2-chat__title-text">{pod.name}</span>
+            <div className="v2-thread__title">
+              <h1>{pod.name}</h1>
+              {pod.description && <p>{pod.description}</p>}
             </div>
-
             {onToggleInspector ? (
               <button
                 type="button"
-                className={`v2-chat__avatars v2-chat__avatars--button${inspectorCollapsed ? '' : ' v2-chat__avatars--active'}`}
+                className={`v2-thread__working${inspectorCollapsed ? '' : ' v2-thread__working--active'}`}
                 onClick={onToggleInspector}
                 title={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
                 aria-label={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
                 aria-pressed={!inspectorCollapsed}
               >
-                {visibleMembers.map((m) => (
-                  <V2Avatar key={m._id || m.username} name={m.username} src={m.profilePicture || undefined} size="md" />
-                ))}
-                {memberCountExtra > 0 && (
-                  <span className="v2-chat__avatars-more">+{memberCountExtra}</span>
-                )}
+                {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
               </button>
             ) : (
-              <div className="v2-chat__avatars">
-                {visibleMembers.map((m) => (
-                  <V2Avatar key={m._id || m.username} name={m.username} src={m.profilePicture || undefined} size="md" />
-                ))}
-                {memberCountExtra > 0 && (
-                  <span className="v2-chat__avatars-more">+{memberCountExtra}</span>
-                )}
-              </div>
+              <span className="v2-thread__working">{t('podChat.header.agentsWorking', { count: onlineAgentCount })}</span>
             )}
-
-            {/* Plan / Execute mode toggle — hidden until the pod-mode workflow
-                ships end-to-end. Currently the toggle persists `mode` to the
-                pod but no downstream surface uses it for behavior, so the
-                control reads as broken — clicks land but nothing changes for
-                the user. Re-enable when the mode actually drives behavior
-                (agent autonomy gating, suggestion ranking, etc.). */}
-            {false && (
-              <div className={`v2-chat__mode-toggle v2-chat__mode-toggle--header v2-chat__mode-toggle--${mode}`} role="group" aria-label={t('podChat.mode.preference')}>
-                <button
-                  type="button"
-                  className={`v2-chat__mode-option${mode === 'plan' ? ' v2-chat__mode-option--active' : ''}`}
-                  onClick={() => handleSetMode('plan')}
-                  aria-pressed={mode === 'plan'}
-                  title={modeCopy('plan', t)}
-                >
-                  <Icon d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                  {t('podChat.mode.plan')}
-                </button>
-                <button
-                  type="button"
-                  className={`v2-chat__mode-option${mode === 'execute' ? ' v2-chat__mode-option--active' : ''}`}
-                  onClick={() => handleSetMode('execute')}
-                  aria-pressed={mode === 'execute'}
-                  title={modeCopy('execute', t)}
-                >
-                  <Icon d="M5 3l14 9-14 9V3z" />
-                  {t('podChat.mode.execute')}
-                </button>
-              </div>
-            )}
-
-            {onOpenInvite && (
-              <button
-                type="button"
-                className="v2-chat__icon-btn"
-                onClick={() => onOpenInvite()}
-                title={t('podChat.invite')}
-                aria-label={t('podChat.invite')}
-              >
-                <Icon d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M17 11h6" />
-              </button>
-            )}
-
           </div>
-
-          {pod.description && (
-            <div className="v2-chat__goal">
-              {pod.description}
-              {liveState && <span className="v2-chat__goal-meta"> · {liveState}</span>}
-            </div>
-          )}
         </header>
 
         <V2CatchUpStrip podId={pod._id} />
 
-        <div className="v2-chat__messages" ref={messagesContainerRef}>
-          {hasMore && (
-            <div className="v2-chat__older">
-              <button
-                type="button"
-                className="v2-chat__older-btn"
-                onClick={handleLoadOlder}
-                disabled={loadingOlder}
-              >
-                {loadingOlder ? t('podChat.loadingOlder') : t('podChat.loadOlder')}
-              </button>
-            </div>
-          )}
-              {error && (
-                <div className="v2-chat__error">
-                  {error}
-                </div>
-              )}
-              {loading && messages.length === 0 && (
-                <div className="v2-empty"><span className="v2-spinner" /></div>
-              )}
-              {starterPanelVisible && pod && (
-                <section className="v2-chat__new-pod" aria-label={t('podChat.newPod.label')}>
-                  <div className="v2-chat__new-pod-head">
-                    <div>
-                      <div className="v2-chat__new-pod-title">{t('podChat.newPod.title')}</div>
-                      <div className="v2-chat__new-pod-text">{t('podChat.newPod.text')}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="v2-chat__new-pod-dismiss"
-                      aria-label={t('podChat.newPod.dismiss')}
-                      onClick={() => clearJustCreatedPod(pod._id)}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="v2-chat__new-pod-actions">
-                    <div className="v2-chat__new-pod-action v2-chat__new-pod-action--invite">
-                      <div className="v2-chat__new-pod-action-title">{t('podChat.newPod.inviteTitle')}</div>
-                      <div className="v2-chat__new-pod-action-text">{t('podChat.newPod.inviteText')}</div>
-                      {starterInviteLoading && (
-                        <div className="v2-chat__new-pod-status">{t('podChat.newPod.preparingInvite')}</div>
-                      )}
-                      {starterInviteUrl && (
-                        <div className="v2-invite-link-row">
-                          <input
-                            type="text"
-                            className="v2-invite-link"
-                            aria-label={t('podChat.newPod.inviteLinkLabel')}
-                            readOnly
-                            value={starterInviteUrl}
-                            onFocus={(event) => event.currentTarget.select()}
-                          />
-                          <button
-                            type="button"
-                            className="v2-chat__new-pod-copy"
-                            onClick={() => { void handleStarterInviteCopy(); }}
-                          >
-                            {starterInviteCopied ? t('common.copied') : t('common.copy')}
-                          </button>
-                        </div>
-                      )}
-                      {starterInviteError && (
-                        <div className="v2-chat__new-pod-error">
-                          <span>{starterInviteError}</span>
-                          <button
-                            type="button"
-                            onClick={() => { void generateStarterInvite(pod._id); }}
-                          >
-                            {t('podChat.newPod.tryAgain')}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      className="v2-chat__new-pod-action"
-                      onClick={() => onOpenInvite?.('agent')}
-                    >
-                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.addAgentTitle')}</span>
-                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.addAgentText')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="v2-chat__new-pod-action"
-                      onClick={() => composerInputRef.current?.focus()}
-                    >
-                      <span className="v2-chat__new-pod-action-title">{t('podChat.newPod.messageTitle')}</span>
-                      <span className="v2-chat__new-pod-action-text">{t('podChat.newPod.messageText')}</span>
-                    </button>
-                  </div>
-                </section>
-              )}
-              {!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 && (
+        <V2ThreadMessages
+          messages={messages}
+          threadView={threadView}
+          threadState={threadState}
+          decisionByMessageId={decisionByMessageId}
+          agentDisplayNames={agentDisplayNames}
+          agentAuthorKeys={agentAuthorKeys}
+          onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
+          onOpenFile={onOpenFile}
+          onReply={isReadOnly ? undefined : aimAtMessage}
+          onThread={isReadOnly ? undefined : aimAtMessageThread}
+          onAimAtThread={aimAtThread}
+          hasMore={hasMore}
+          loadingOlder={loadingOlder}
+          onLoadOlder={() => { void handleLoadOlder(); }}
+          loading={loading}
+          error={error}
+          starterPanel={starterPanelVisible ? (
+            <V2ThreadStarter
+              inviteUrl={starterInviteUrl}
+              inviteLoading={starterInviteLoading}
+              inviteError={starterInviteError}
+              inviteCopied={starterInviteCopied}
+              onDismiss={() => clearJustCreatedPod(pod._id)}
+              onCopyInvite={() => { void handleStarterInviteCopy(); }}
+              onRetryInvite={() => { void generateStarterInvite(pod._id); }}
+              onOpenInvite={() => onOpenInvite?.(AGENT_INVITE_TAB)}
+              onFocusComposer={() => composerInputRef.current?.focus()}
+            />
+          ) : undefined}
+          emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
                 <div className="v2-empty">
                   {isBotToBot && botPair ? (
                     <>
@@ -1379,101 +1198,11 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                     </>
                   )}
                 </div>
-              )}
-              {threadView.map((item, i, view) => {
-                if (item.kind === 'message') {
-                  const m = item.message;
-                  const prev = view[i - 1];
-                  return (
-                    <React.Fragment key={m.id}>
-                      <V2MessageBubble
-                        message={m}
-                        agentDisplayNames={agentDisplayNames}
-                        agentAuthorKeys={agentAuthorKeys}
-                        onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-                        onOpenFile={onOpenFile}
-                        onReply={isReadOnly ? undefined : aimAtMessage}
-                        onThread={isReadOnly ? undefined : aimAtMessageThread}
-                        grouped={isGroupedWithPrevious(
-                          m,
-                          prev && prev.kind === 'message' ? prev.message : undefined,
-                        )}
-                      />
-                      {agentDeliveryHint?.messageId === m.id && (
-                        <div className="v2-chat__delivery-hint" role="status">
-                          <Trans
-                            i18nKey="podChat.deliveryHint"
-                            values={{ handle: agentDeliveryHint.mentionHandle }}
-                            components={{ handle: <strong /> }}
-                          />
-                        </div>
-                      )}
-                    </React.Fragment>
-                  );
-                }
-
-                const st = threadState.byRoot.get(item.rootId);
-                // No state row means the server does not consider this a
-                // thread. Render the replies flat rather than inventing a
-                // collapsed card around them — absence is not "collapsed".
-                const collapsed = st ? st.collapsed : false;
-                return (
-                  // One block, not loose siblings: the conversation column
-                  // centers direct children, and a bare card + rail escaped
-                  // it (measured left-anchored at 24px vs the column's 186px).
-                  <div className="v2-thread-block" key={`thread-${item.rootId}`}>
-                    <V2ThreadCard
-                      replyCount={item.replyCount}
-                      participants={item.participants}
-                      lastActivityAt={item.lastActivityAt}
-                      collapsed={collapsed}
-                      following={st ? st.following : null}
-                      onToggleCollapsed={() => threadState.toggleCollapsed(item.rootId)}
-                      onToggleFollowing={() => threadState.toggleFollowing(item.rootId)}
-                      onReplyInThread={isReadOnly ? undefined : () => aimAtThread(
-                        item.rootId,
-                        String(messages.find((x) => String(x.id) === item.rootId)?.content || ''),
-                      )}
-                    />
-                    {!collapsed && (
-                      <div className="v2-thread-replies">
-                        {item.replies.map((r, ri) => (
-                          <V2MessageBubble
-                            key={r.id}
-                            message={r}
-                            agentDisplayNames={agentDisplayNames}
-                            agentAuthorKeys={agentAuthorKeys}
-                            onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
-                            onOpenFile={onOpenFile}
-                            onReply={isReadOnly ? undefined : aimAtMessage}
-                            onThread={isReadOnly ? undefined : aimAtMessageThread}
-                            grouped={isGroupedWithPrevious(r, item.replies[ri - 1])}
-                            // Only the rail passes this. The same message
-                            // rendered flat keeps its quote, which is the
-                            // half of constraint 5 that is easy to lose.
-                            insideThreadRoot={item.rootId}
-                          />
-                        ))}
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            className="v2-thread-replies__aim"
-                            aria-label={t('podChat.thread.replyFromExpandedThread')}
-                            onClick={() => aimAtThread(
-                              item.rootId,
-                              String(messages.find((x) => String(x.id) === item.rootId)?.content || ''),
-                            )}
-                          >
-                            {t('podChat.thread.replyInThread')}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
+          ) : undefined}
+          agentDeliveryHint={agentDeliveryHint}
+          messagesContainerRef={messagesContainerRef}
+          messagesEndRef={messagesEndRef}
+        />
 
             <TypingIndicator agents={typingAgents} />
 
@@ -1533,171 +1262,63 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
                     : t('podChat.agentRoomLiveness.waiting', { agentName: awaitingAgentReply.agentName })}
                 </div>
               )}
-            <div className="v2-chat__composer">
-              {threadTarget && (
-                <div className="v2-chat__reply-chip v2-chat__reply-chip--thread" role="status">
-                  <span className="v2-chat__reply-chip-label">
-                    {t('podChat.thread.replyingInThread')}{' '}
-                    {threadTarget.preview.replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 40)}
-                  </span>
-                  <button
-                    type="button"
-                    className="v2-chat__reply-chip-cancel"
-                    aria-label={t('podChat.cancelReply')}
-                    onClick={() => setThreadTarget(null)}
-                  >
-                    {CLOSE_MARK}
-                  </button>
-                </div>
-              )}
-              {replyTarget && (
-                <div className="v2-chat__reply-chip" role="status">
-                  <span className="v2-chat__reply-chip-label">
-                    <Trans
-                      i18nKey="podChat.replyingTo"
-                      values={{ author: replyTarget.user?.username || t('podChat.messageFallback') }}
-                      components={{ author: <strong /> }}
-                    />{' '}
-                    {String(replyTarget.content || '').replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 80)}
-                  </span>
-                  <button
-                    type="button"
-                    className="v2-chat__reply-chip-cancel"
-                    aria-label={t('podChat.cancelReply')}
-                    onClick={() => setReplyTarget(null)}
-                  >
-                    {CLOSE_MARK}
-                  </button>
-                </div>
-              )}
-              <div className="v2-chat__composer-input-wrap">
-                <textarea
-                  ref={composerInputRef}
-                  className="v2-chat__composer-input"
-                  placeholder={t('podChat.composer.placeholder', { podName: pod.name })}
-                  value={draft}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setDraft(next);
-                    updateMentionState(next, e.target.selectionStart);
-                  }}
-                  onClick={(e) => updateMentionState(
-                    (e.target as HTMLTextAreaElement).value,
-                    (e.target as HTMLTextAreaElement).selectionStart,
-                  )}
-                  onKeyUp={(e) => updateMentionState(
-                    (e.target as HTMLTextAreaElement).value,
-                    (e.target as HTMLTextAreaElement).selectionStart,
-                  )}
-                  onKeyDown={(e) => {
-                    if (mentionOpen && filteredMentions.length > 0) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        setMentionIndex((p) => (p + 1) % filteredMentions.length);
-                        return;
-                      }
-                      if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        setMentionIndex((p) => (p - 1 + filteredMentions.length) % filteredMentions.length);
-                        return;
-                      }
-                      if (e.key === 'Escape') {
-                        e.preventDefault();
-                        setMentionOpen(false);
-                        return;
-                      }
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        const sel = filteredMentions[mentionIndex];
-                        if (sel) handleMentionSelect(sel);
-                        return;
-                      }
+              <V2Composer
+                podName={pod.name}
+                authorName={currentUser?.username || t('common.you')}
+                draft={draft}
+                sending={sending}
+                uploading={uploading}
+                composerError={composerError}
+                sendError={sendError}
+                replyTarget={replyTarget}
+                threadTarget={threadTarget}
+                mentionOpen={mentionOpen}
+                mentionIndex={mentionIndex}
+                mentions={filteredMentions}
+                warnings={unreachableMentioned}
+                inputRef={composerInputRef}
+                fileInputRef={fileInputRef}
+                mentionDropdownRef={mentionDropdownRef}
+                onDraftChange={(next, cursor) => {
+                  setDraft(next);
+                  updateMentionState(next, cursor);
+                }}
+                onDraftPointer={updateMentionState}
+                onKeyDown={(event) => {
+                  if (mentionOpen && filteredMentions.length > 0) {
+                    if (event.key === 'ArrowDown') {
+                      event.preventDefault();
+                      setMentionIndex((index) => (index + 1) % filteredMentions.length);
+                      return;
                     }
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
+                    if (event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      setMentionIndex((index) => (index - 1 + filteredMentions.length) % filteredMentions.length);
+                      return;
                     }
-                  }}
-                  rows={2}
-                />
-                {mentionOpen && filteredMentions.length > 0 && (
-                  <div className="v2-mention-dropdown" ref={mentionDropdownRef} role="listbox">
-                    {filteredMentions.map((item, idx) => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        className={`v2-mention-item${idx === mentionIndex ? ' v2-mention-item--active' : ''}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handleMentionSelect(item)}
-                        role="option"
-                        aria-selected={idx === mentionIndex}
-                      >
-                        <V2Avatar name={item.label} src={item.avatar || undefined} size="sm" />
-                        <span className="v2-mention-item__text">
-                          <span className="v2-mention-item__label">@{item.value || item.label}</span>
-                          <span className="v2-mention-item__sub">{item.subtitle}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="v2-chat__composer-actions">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,.pdf,.md,.txt,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip"
-                    style={{ display: 'none' }}
-                    onChange={(e) => handleAttachFile(e.target.files?.[0] || null)}
-                  />
-                  <button
-                    type="button"
-                    className="v2-chat__composer-icon-btn"
-                    title={uploading ? t('podChat.composer.uploading') : t('podChat.composer.attachFile')}
-                    aria-label={t('podChat.composer.attachFile')}
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                  >
-                    <Icon d="M21 11l-9 9a5 5 0 01-7-7l9-9a3 3 0 014 4l-9 9a1 1 0 01-2-2l8-8" />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className={`v2-chat__send v2-chat__send--${mode}`}
-                  onClick={() => handleSend()}
-                  disabled={sending || !draft.trim()}
-                  title={sending ? t('podChat.composer.sending') : t('podChat.composer.send')}
-                  aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.send')}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M2.5 11.4 21.2 3.1c.6-.3 1.2.3.9.9L13.8 22.7c-.3.6-1.2.6-1.4-.1l-2.7-7.4-7.4-2.7c-.7-.2-.7-1.1.2-1.1z" />
-                  </svg>
-                </button>
-              </div>
-              {(composerError || sendError) && (
-                <div className="v2-chat__composer-footer">
-                  <span className="v2-chat__composer-error">{composerError || sendError}</span>
-                </div>
-              )}
-              {unreachableMentioned.length > 0 && (
-                <div className="v2-chat__composer-footer" data-testid="mention-state-warning">
-                  {unreachableMentioned.map((row) => (
-                    <span key={row.agentName} className="v2-chat__composer-hint">
-                      {row.state === 'never-connected'
-                        ? (row.fixCommand
-                          ? t('podChat.mentionState.neverOwner', { handle: row.agentName, command: row.fixCommand })
-                          : t('podChat.mentionState.neverPeer', { handle: row.agentName }))
-                        : (row.fixCommand
-                          ? t('podChat.mentionState.darkOwner', { handle: row.agentName, command: row.fixCommand })
-                          : t('podChat.mentionState.darkPeer', { handle: row.agentName }))}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="v2-chat__composer-hint">
-                <span><kbd>@</kbd> {t('podChat.composer.mentionAgent')}</span>
-                <span><kbd>{COMMAND_KEY}</kbd><kbd>{ENTER_KEY}</kbd> {t('podChat.composer.toSend')}</span>
-              </div>
-            </div>
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      setMentionOpen(false);
+                      return;
+                    }
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      const selection = filteredMentions[mentionIndex];
+                      if (selection) handleMentionSelect(selection);
+                      return;
+                    }
+                  }
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleSend();
+                  }
+                }}
+                onMentionSelect={handleMentionSelect}
+                onSend={() => { void handleSend(); }}
+                onAttach={(file) => { void handleAttachFile(file); }}
+                onCancelReply={() => setReplyTarget(null)}
+                onCancelThread={() => setThreadTarget(null)}
+              />
             </>
             )}
       </div>
@@ -1705,4 +1326,4 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   );
 };
 
-export default V2PodChat;
+export default V2Thread;

@@ -3,6 +3,7 @@
     "brandName": "Commonly",
     "brandWordmark": "commonly",
     "agent": "Agent",
+    "you": "you",
     "close": "Close",
     "copy": "Copy",
     "copied": "Copied!",
@@ -439,6 +440,10 @@
       "recent_other": "{{formattedCount}} recent heartbeats",
       "none": "No recent heartbeats"
     },
+    "header": {
+      "agentsWorking_one": "{{count}} agent working",
+      "agentsWorking_other": "{{count}} agents working"
+    },
     "team": {
       "view": "View pod team",
       "hide": "Hide pod team"
@@ -467,7 +472,9 @@
       "uploading": "Uploading…",
       "attachFile": "Attach file",
       "sending": "Sending…",
-      "send": "Send message",
+      "send": "Send",
+      "sendAria": "Send message",
+      "postsAs": "posts as {{name}}",
       "mentionAgent": "mention an agent",
       "toSend": "to send"
     },
