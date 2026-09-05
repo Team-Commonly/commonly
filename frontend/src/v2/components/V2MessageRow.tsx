@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import V2Avatar from './V2Avatar';
 import V2GithubPrCard, { parseGithubPrUrls } from './V2GithubPrCard';
 import V2ApprovalCard from './V2ApprovalCard';
-import V2DecisionCard, { type V2DecisionCardData } from './V2DecisionCard';
+import V2DecisionCard, { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2MessageActions, { type V2RenderedReaction } from './V2MessageActions';
 import { V2Message } from '../hooks/useV2PodDetail';
 import { formatRelativeTime } from '../utils/grouping';
@@ -78,7 +78,11 @@ interface V2MessageRowProps {
   // not parsed from the agent's prose. The message is the durable timeline
   // anchor; the queue owns the choices and resolution state.
   decision?: V2DecisionCardData;
-  onDecisionRuled?: (decisionId: string, ruling: { value: string; by?: string }) => void;
+  onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
+  // A decision's durable ruling is an ordinary human reply. This marker only
+  // supplies the small transcript label; it never turns arbitrary prose into
+  // a decision result.
+  isDecisionRuling?: boolean;
   isLead?: boolean;
   // Map of agent-user username → per-installation displayName, so messages
   // authored by an installed agent render as "Engineer (Nova)" instead of the
@@ -310,7 +314,7 @@ const parseAgentDmEvent = (content: string | undefined): { headline: string; tar
   return { headline: match[1], targetPodId: match[2] };
 };
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -482,6 +486,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
 
   return (
     <div
+      data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
       className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}`}
       onClick={onBubbleTap}
     >
@@ -534,6 +539,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
           )}
           {isLead && <span className="v2-msg__lead-badge">{t('podChat.leadBadge')}</span>}
           {time && <span className="v2-msg__time">{time}</span>}
+          {isDecisionRuling && <span className="v2-msg__ruled">· {t('activity.decision.ruledShort')}</span>}
         </div>
         )}
         {(() => {

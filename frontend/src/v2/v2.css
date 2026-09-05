@@ -10340,10 +10340,17 @@ body.modern-ui.v2-canvas {
 .v2-decision-card__settled { color: var(--v2-text-secondary); }
 .v2-decision-card__error { color: #b91c1c; }
 
+.v2-msg__ruled {
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
 /* ---------- Workspace thread and composer (TASK-129 PR 3) ---------- */
 
 .v2-thread__header {
   flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 64px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
@@ -10361,21 +10368,29 @@ body.modern-ui.v2-canvas {
   flex: 1;
 }
 
+.v2-thread__title-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
 .v2-thread__title h1 {
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-primary);
-  font: 600 16px/20px var(--v2-font);
+  font: 700 22px/28px var(--v2-font);
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .v2-thread__title p {
-  margin: 2px 0 0;
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
   color: var(--v2-text-muted);
-  font: 400 12px/16px var(--v2-font);
+  font: 400 14px/20px var(--v2-font);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -10389,16 +10404,23 @@ body.modern-ui.v2-canvas {
 
 .v2-thread__working::before { content: '●'; color: var(--v2-accent); }
 
-.v2-root button.v2-thread__working {
-  min-height: 28px;
-  padding: 4px 6px;
-  border: 0;
+.v2-thread__working--mobile { display: none; }
+
+.v2-root button.v2-thread__inspector-toggle {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--v2-border);
   border-radius: 4px;
-  background: transparent;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
 }
 
-.v2-root button.v2-thread__working:hover,
-.v2-root button.v2-thread__working--active { background: var(--v2-surface-hover); }
+.v2-root button.v2-thread__inspector-toggle:hover,
+.v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
 
 .v2-thread .v2-msg {
   grid-template-columns: 28px minmax(0, 1fr);
@@ -10413,6 +10435,7 @@ body.modern-ui.v2-canvas {
 .v2-thread .v2-msg__author,
 .v2-thread .v2-msg__author-btn { font-size: 13px; font-weight: 600; }
 .v2-thread .v2-msg__time { font-family: var(--v2-font-mono); font-size: 11px; }
+.v2-thread .v2-msg__avatar-btn { border-radius: 4px; }
 
 .v2-message-row--decision { padding: 8px 0; }
 
@@ -10528,7 +10551,131 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
-  .v2-thread__header { padding: 10px 14px; }
-  .v2-thread__working { display: none; }
-  .v2-composer { margin: 8px 14px 14px; }
+  .v2-thread__header {
+    min-height: 66px;
+    padding: 8px 14px;
+  }
+
+  .v2-thread__header-row { align-items: center; gap: 8px; }
+  .v2-thread__title-line { display: block; }
+  .v2-thread__title h1 { font-size: 20px; line-height: 24px; }
+  .v2-thread__title p { display: none; }
+  .v2-thread__working--desktop { display: none; }
+  .v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }
+
+  .v2-thread .v2-msg__author,
+  .v2-thread .v2-msg__author-btn { font-size: 15px; }
+  .v2-thread .v2-msg__time,
+  .v2-thread .v2-msg__ruled { font-size: 12px; }
+  .v2-thread .v2-msg__content { font-size: 15px; line-height: 22px; }
+
+  .v2-composer { margin: 8px 16px 62px; border: 0; background: transparent; }
+  .v2-composer__field { display: flex; align-items: stretch; gap: 12px; }
+  .v2-root .v2-composer__field > textarea {
+    min-height: 44px;
+    height: 44px;
+    flex: 1;
+    padding: 11px 12px;
+    resize: none;
+    border: 1px solid var(--v2-border);
+    border-radius: 4px;
+    background: var(--v2-surface);
+    line-height: 20px;
+  }
+  .v2-composer__actions { min-height: 0; padding: 0; border: 0; }
+  .v2-root button.v2-composer__attach,
+  .v2-composer__posts-as { display: none; }
+  .v2-root button.v2-composer__send {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
+     while the transcript, composer, and tab bar share the white canvas. */
+  .v2-shell,
+  .v2-shell--no-inspector,
+  .v2-shell--feature {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+    gap: 0;
+    background: #fff;
+  }
+  .v2-pane--rail { display: none; }
+  .v2-pane--main { background: #fff; }
+
+  /* The inspector becomes the artboard's bottom sheet; its header toggle is
+     intentionally always present so the sheet cannot become unreachable. */
+  .v2-pane--inspector {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(76dvh, 620px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
+
+  .v2-chat__mobile-nav-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+  }
+  .v2-chat__mobile-nav-btn svg { width: 16px; height: 16px; }
+
+  .v2-mobile-tabs {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    height: 54px;
+    padding: 5px 14px;
+    border-top: 1px solid var(--v2-border);
+    background: #fff;
+  }
+  .v2-root button.v2-mobile-tabs__item {
+    position: relative;
+    display: grid;
+    width: 44px;
+    height: 32px;
+    justify-self: center;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--v2-text-secondary);
+  }
+  .v2-root button.v2-mobile-tabs__item svg { width: 18px; height: 18px; }
+  .v2-root button.v2-mobile-tabs__item--active { background: var(--v2-ink); color: var(--v2-on-ink); }
+  .v2-root button.v2-mobile-tabs__item:hover:not(:disabled) { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+  .v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+  .v2-mobile-tabs__badge {
+    position: absolute;
+    top: -4px;
+    right: -2px;
+    display: grid;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    place-items: center;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: var(--v2-accent);
+    color: #fff;
+    font: 700 10px/1 var(--v2-font-mono);
+  }
+}
+
+.v2-mobile-tabs { display: none; }
+
+@media (max-width: 760px) {
+  .v2-mobile-tabs { display: grid; }
 }

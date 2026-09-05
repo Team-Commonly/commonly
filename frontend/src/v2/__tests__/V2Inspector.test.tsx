@@ -33,7 +33,14 @@ const detail = {
 
 const renderInspector = (props: Partial<React.ComponentProps<typeof V2Inspector>> = {}) => render(
   <MemoryRouter>
-    <V2Inspector detail={detail as any} onOpenInvite={jest.fn()} {...props} />
+    <V2Inspector
+      detail={detail as any}
+      attentionItems={[{
+        id: 'decision-1', kind: 'decision', title: 'Slack default mode', actorName: 'Wren', podId: 'pod-1', messageId: 'message-7',
+      }]}
+      onOpenInvite={jest.fn()}
+      {...props}
+    />
   </MemoryRouter>,
 );
 
@@ -41,11 +48,6 @@ describe('V2Inspector', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGet.mockImplementation((url: string) => {
-      if (url === '/api/activity/decision-queue') {
-        return Promise.resolve({ items: [{
-          id: 'decision-1', kind: 'decision', title: 'Slack default mode', actorName: 'Wren', podId: 'pod-1', messageId: 'message-7',
-        }] });
-      }
       if (url === '/api/v1/tasks/pod-1') {
         return Promise.resolve({ tasks: [
           { taskId: 'TASK-131', title: 'Build the card', status: 'in_progress', assignee: 'kai' },
@@ -90,11 +92,8 @@ describe('V2Inspector', () => {
   });
 
   test('does not render a stale attention item from another pod', async () => {
-    mockGet.mockImplementation((url: string) => {
-      if (url === '/api/activity/decision-queue') return Promise.resolve({ items: [{ id: 'other', kind: 'decision', title: 'Other pod', podId: 'pod-2' }] });
-      return Promise.resolve({ tasks: [] });
-    });
-    renderInspector();
+    mockGet.mockResolvedValue({ tasks: [] });
+    renderInspector({ attentionItems: [{ id: 'other', kind: 'decision', title: 'Other pod', podId: 'pod-2' }] });
     await waitFor(() => expect(screen.getByText('Nothing. Wren is working.')).toBeInTheDocument());
     expect(screen.queryByText('Other pod')).not.toBeInTheDocument();
   });

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
+import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import { useAuth } from '../../context/AuthContext';
 
 interface Connector {
@@ -13,14 +14,10 @@ interface Connector {
   podId?: { _id: string; name?: string } | string | null;
 }
 
-interface AttentionItem {
-  id: string;
-  podId: string | null;
-}
-
 interface V2PodsSidebarProps {
   selectedPodId: string | null;
   podsState?: UseV2PodsResult;
+  attentionItems?: V2AttentionItem[];
   // The drawer only exists below 760px. Desktop always shows this column.
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -85,7 +82,7 @@ const directMemberFor = (pod: V2Pod, currentUserId?: string): V2PodMember | unde
 );
 
 const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
-  selectedPodId, podsState, mobileOpen = false, onMobileClose,
+  selectedPodId, podsState, attentionItems = [], mobileOpen = false, onMobileClose,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -96,7 +93,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     pods, loading, error, createPod,
   } = podsState || ownPodsState;
   const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([]);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newPodName, setNewPodName] = useState('');
@@ -112,20 +108,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
       })
       .catch(() => {
         if (active) setConnectors([]);
-      });
-    return () => { active = false; };
-  }, [api]);
-
-  // TASK-129 deliberately has one attention source. PR 2 receives this same
-  // collection for the inspector's rows; the sidebar only derives its count.
-  useEffect(() => {
-    let active = true;
-    api.get<{ items?: AttentionItem[] }>('/api/activity/decision-queue')
-      .then((data) => {
-        if (active) setAttentionItems(Array.isArray(data?.items) ? data.items : []);
-      })
-      .catch(() => {
-        if (active) setAttentionItems([]);
       });
     return () => { active = false; };
   }, [api]);

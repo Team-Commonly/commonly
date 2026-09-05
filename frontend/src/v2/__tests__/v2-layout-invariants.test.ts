@@ -85,6 +85,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
+  const podAttention = read('../hooks/useV2PodAttention.ts');
   const workspaceInspector = read('../components/V2Inspector.tsx');
   const thread = read('../components/V2Thread.tsx');
   const threadMessages = read('../components/V2ThreadMessages.tsx');
@@ -92,6 +93,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const composer = read('../components/V2Composer.tsx');
   const decisionCard = read('../components/V2DecisionCard.tsx');
   const v2Layout = read('../components/V2Layout.tsx');
+  const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
   const v2App = read('../V2App.tsx');
@@ -179,10 +181,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
   });
 
-  test('the selected-room count is derived from the decision queue, not a second unread path', () => {
-    expect(podsSidebar).toContain("'/api/activity/decision-queue'");
+  test('the selected-room count, inspector rows, and phone badge derive from one attention collection', () => {
+    expect(podAttention).toContain("'/api/activity/decision-queue'");
+    expect(v2Layout).toContain('useV2PodAttention()');
+    expect(v2Layout).toContain('attentionItems={attention.items}');
+    expect(v2Layout).toContain('needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}');
     expect(podsSidebar).toContain('attentionCountByPod');
     expect(podsSidebar).toContain('selected && attentionCount > 0');
+    expect(workspaceInspector).toContain('attentionItems.filter');
     expect(podsSidebar).not.toContain('useV2Unread');
   });
 
@@ -743,8 +749,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the thread header is the artboard’s name, muted description, and working count', () => {
     expect(podChat).toContain('className="v2-thread__header"');
     expect(podChat).toContain('podChat.header.agentsWorking');
+    expect(podChat).toContain('v2-thread__inspector-toggle');
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 22px/28px var(--v2-font)');
     expect(ruleBody(v2, '.v2-thread__working')).toContain('font: 500 11px/16px var(--v2-font-mono)');
+  });
+
+  test('the phone workspace is an edge-to-edge thread with reachable drawers and a real tab bar', () => {
+    expect(v2).toContain('.v2-pane--rail { display: none; }');
+    expect(v2).toContain('.v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }');
+    expect(v2).toContain('.v2-mobile-tabs__badge');
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item')).toContain('width: 44px');
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item')).toContain('height: 32px');
+    expect(mobileTabs).toContain('onOpenInspector');
+    expect(mobileTabs).toContain("navigate('/v2/settings')");
+    expect(v2Layout).toContain('<V2MobileTabs');
   });
 
   test('Activity cards have shrinkable desktop and mobile layout guards', () => {
@@ -780,8 +799,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('starter prompts wrap within the mobile chat pane', () => {
-    // At 390px the rail leaves a narrow main pane. Both the row and each chip
-    // need explicit shrink/wrap rules or the longest prompt creates horizontal
+    // On the edge-to-edge phone thread, both the row and each chip need
+    // explicit shrink/wrap rules or the longest prompt creates horizontal
     // overflow and pushes the composer action off-screen.
     const row = ruleBody(v2, '.v2-chat__starter-prompts');
     const chip = ruleBody(v2, '.v2-root button.v2-chat__starter-prompt');
@@ -965,6 +984,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(ordinaryChoice).not.toContain('background: var(--v2-accent)');
       expect(other).toContain('color: var(--v2-accent-text)');
       expect(other).not.toContain('background: var(--v2-accent)');
+    });
+
+    test('a ruled in-thread decision drops back to a muted transcript label, not a second card', () => {
+      expect(thread).toContain('settledDecisionByMessageId');
+      expect(threadMessages).toContain('isDecisionRuling={Boolean(settledRuling)}');
+      expect(messageRow).toContain("t('activity.decision.ruledShort')");
+      const ruled = ruleBody(v2, '.v2-msg__ruled');
+      expect(ruled).toContain('color: var(--v2-text-muted)');
+      expect(ruled).toContain('var(--v2-font-mono)');
     });
 
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {

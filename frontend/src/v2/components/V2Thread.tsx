@@ -1,10 +1,12 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
+import MenuIcon from '@mui/icons-material/Menu';
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
-import { type V2DecisionCardData } from './V2DecisionCard';
+import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2ThreadMessages from './V2ThreadMessages';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
@@ -141,9 +143,12 @@ interface V2ThreadProps {
   // is the primary way back to the pod list on phones, where the sidebar is
   // an overlay rather than a visible column. Hidden via CSS on desktop.
   onOpenMobileNav?: () => void;
+  // A ruling changes the one workspace attention collection owned by
+  // V2Layout, so its sidebar, inspector, and phone badge refresh together.
+  onDecisionSettled?: () => void;
 }
 
-const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav }) => {
+const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav, onDecisionSettled }) => {
   const { t } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
@@ -230,6 +235,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // and 60s refresh keeps the states honest without hammering the endpoint.
   const [agentStates, setAgentStates] = useState<AgentStateRow[]>([]);
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
+  const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
 
   // A DecisionRequest posts an ordinary message for its timeline position and
   // materializes its typed choices in the attention queue. Join those two
@@ -267,6 +273,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const decisionByMessageId = useMemo(() => new Map(
     decisions.map((decision) => [String(decision.messageId), decision]),
   ), [decisions]);
+
+  useEffect(() => {
+    setSettledDecisionByMessageId(new Map());
+  }, [pod?._id]);
+
+  const handleDecisionRuled = useCallback((decisionId: string, ruling: V2DecisionRuling) => {
+    const source = decisions.find((decision) => decision.id === decisionId);
+    if (!source) return;
+    setSettledDecisionByMessageId((current) => {
+      const next = new Map(current);
+      next.set(String(source.messageId), ruling);
+      return next;
+    });
+    onDecisionSettled?.();
+  }, [decisions, onDecisionSettled]);
 
   useEffect(() => {
     const podId = pod?._id;
@@ -669,9 +690,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       title={t('podChat.mobile.showPods')}
       aria-label={t('podChat.mobile.showPodsList')}
     >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M3 6h18M3 12h18M3 18h18" />
-      </svg>
+      <MenuIcon fontSize="small" aria-hidden="true" />
     </button>
   ) : null;
 
@@ -909,22 +928,28 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           <div className="v2-thread__header-row">
             {mobileNavButton}
             <div className="v2-thread__title">
-              <h1>{pod.name}</h1>
-              {pod.description && <p>{pod.description}</p>}
+              <div className="v2-thread__title-line">
+                <h1>{pod.name}</h1>
+                {pod.description && <p>{pod.description}</p>}
+              </div>
+              <span className="v2-thread__working v2-thread__working--mobile">
+                {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
+              </span>
             </div>
-            {onToggleInspector ? (
+            <span className="v2-thread__working v2-thread__working--desktop">
+              {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
+            </span>
+            {onToggleInspector && (
               <button
                 type="button"
-                className={`v2-thread__working${inspectorCollapsed ? '' : ' v2-thread__working--active'}`}
+                className={`v2-thread__inspector-toggle${inspectorCollapsed ? '' : ' v2-thread__inspector-toggle--active'}`}
                 onClick={onToggleInspector}
                 title={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
                 aria-label={inspectorCollapsed ? t('podChat.team.view') : t('podChat.team.hide')}
                 aria-pressed={!inspectorCollapsed}
               >
-                {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
+                <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
               </button>
-            ) : (
-              <span className="v2-thread__working">{t('podChat.header.agentsWorking', { count: onlineAgentCount })}</span>
             )}
           </div>
         </header>
@@ -936,12 +961,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           threadView={threadView}
           threadState={threadState}
           decisionByMessageId={decisionByMessageId}
+          settledDecisionByMessageId={settledDecisionByMessageId}
           agentDisplayNames={agentDisplayNames}
           agentAuthorKeys={agentAuthorKeys}
           onAuthorClick={onOpenMember ? handleAuthorClick : undefined}
           onOpenFile={onOpenFile}
           onReply={isReadOnly ? undefined : aimAtMessage}
           onThread={isReadOnly ? undefined : aimAtMessageThread}
+          onDecisionRuled={handleDecisionRuled}
           onAimAtThread={aimAtThread}
           hasMore={hasMore}
           loadingOlder={loadingOlder}
