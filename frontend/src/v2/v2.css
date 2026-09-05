@@ -10312,7 +10312,10 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font);
 }
 
-.v2-root button.v2-decision-card__other { border-style: dashed; }
+.v2-root button.v2-decision-card__other {
+  border-style: dashed;
+  color: var(--v2-accent-text);
+}
 
 .v2-decision-card__other-form {
   display: flex;
