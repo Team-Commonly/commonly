@@ -974,15 +974,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
     test('the pending human decision is the sole cobalt-filled action exception: one primary choice, bordered alternatives, and a text-only Other action', () => {
       const card = ruleBody(v2, '.v2-decision-card');
-      const recommended = selectorRuleBody(v2, '.v2-root button.v2-decision-card__choice--recommended');
+      const primary = selectorRuleBody(v2, '.v2-root button.v2-decision-card__choice--primary');
       const ordinaryChoice = selectorRuleBody(v2, '.v2-root button.v2-decision-card__choice,');
       const other = ruleBody(v2, '.v2-root button.v2-decision-card__other');
       expect(card).toContain('box-shadow: 0 0 0 2px var(--v2-accent)');
-      expect(recommended).toContain('background: var(--v2-accent)');
-      expect(recommended).not.toContain('var(--v2-ink)');
+      expect(primary).toContain('background: var(--v2-accent)');
+      expect(primary).not.toContain('var(--v2-ink)');
       expect(ordinaryChoice).toContain('border: 1px solid var(--v2-border)');
       expect(ordinaryChoice).not.toContain('background: var(--v2-accent)');
       expect(other).toContain('color: var(--v2-accent-text)');
+      expect(other).toContain('border: 0');
       expect(other).not.toContain('background: var(--v2-accent)');
     });
 

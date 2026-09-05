@@ -14,8 +14,8 @@ const decision = {
   detail: 'Which implementation should ship?',
   actorName: 'Sprint impl',
   options: [
-    { label: 'Ship the rebuilt workspace', recommended: true, description: 'The full artboard cutover.' },
-    { label: 'Keep the legacy chat', description: 'Do not ship the new workspace.' },
+    { label: 'Ship the rebuilt workspace', description: 'The full artboard cutover.' },
+    { label: 'Keep the legacy chat', recommended: true, description: 'Do not ship the new workspace.' },
   ],
 };
 
@@ -31,7 +31,8 @@ describe('V2DecisionCard', () => {
     expect(screen.getByText('Choose the workspace cutover')).toBeInTheDocument();
     expect(screen.getByText('Which implementation should ship?')).toBeInTheDocument();
     expect(screen.getByText('Sprint impl')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ship the rebuilt workspace' })).toHaveClass('v2-decision-card__choice--recommended');
+    expect(screen.getByRole('button', { name: 'Ship the rebuilt workspace' })).toHaveClass('v2-decision-card__choice--primary');
+    expect(screen.getByRole('button', { name: 'Keep the legacy chat' })).not.toHaveClass('v2-decision-card__choice--primary');
 
     fireEvent.click(screen.getByRole('button', { name: 'Ship the rebuilt workspace' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(

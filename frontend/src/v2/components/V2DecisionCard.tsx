@@ -82,8 +82,10 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
     }
   };
 
-  const options = [...decision.options]
-    .sort((left, right) => Number(Boolean(right.recommended)) - Number(Boolean(left.recommended)));
+  // Option order is part of the asking agent's fork. The artboard gives the
+  // first rendered option the one cobalt action treatment; do not silently
+  // reorder the alternatives around the legacy `recommended` hint.
+  const options = decision.options;
 
   return (
     <article className={`v2-decision-card${ruling ? ' v2-decision-card--ruled' : ''}`} data-testid="decision-card">
@@ -98,11 +100,11 @@ const V2DecisionCard: React.FC<V2DecisionCardProps> = ({ decision, onRuled }) =>
         </p>
       ) : (
         <div className="v2-decision-card__options">
-          {options.map((option) => (
+          {options.map((option, index) => (
             <div className="v2-decision-card__option" key={option.label}>
               <button
                 type="button"
-                className={option.recommended ? 'v2-decision-card__choice v2-decision-card__choice--recommended' : 'v2-decision-card__choice'}
+                className={index === 0 ? 'v2-decision-card__choice v2-decision-card__choice--primary' : 'v2-decision-card__choice'}
                 onClick={() => { void choose(option.label); }}
                 disabled={saving}
               >

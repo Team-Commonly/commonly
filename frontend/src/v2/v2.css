@@ -10297,7 +10297,7 @@ body.modern-ui.v2-canvas {
   font: 500 12px/18px var(--v2-font);
 }
 
-.v2-root button.v2-decision-card__choice--recommended {
+.v2-root button.v2-decision-card__choice--primary {
   border-color: var(--v2-accent);
   background: var(--v2-accent);
   color: var(--v2-on-ink);
@@ -10305,7 +10305,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-decision-card__choice:hover:not(:disabled),
 .v2-root button.v2-decision-card__other:hover:not(:disabled) { background: var(--v2-surface-hover); }
-.v2-root button.v2-decision-card__choice--recommended:hover:not(:disabled) { background: var(--v2-accent-strong); }
+.v2-root button.v2-decision-card__choice--primary:hover:not(:disabled) { background: var(--v2-accent-strong); }
 
 .v2-decision-card__option > span {
   color: var(--v2-text-muted);
@@ -10313,7 +10313,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-decision-card__other {
-  border-style: dashed;
+  border: 0;
+  background: transparent;
   color: var(--v2-accent-text);
 }
 
