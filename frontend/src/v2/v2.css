@@ -9824,7 +9824,7 @@ body.modern-ui.v2-canvas {
 .v2-pods {
   position: relative;
   height: 100%;
-  padding: 6px 12px;
+  padding: 6px 0;
   background: var(--v2-shell-bg);
 }
 
@@ -9843,7 +9843,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__group-label {
   margin: 0 0 6px;
-  padding: 0;
+  padding: 0 12px;
   color: var(--v2-text-muted);
   font-family: var(--v2-font-mono);
   font-size: 11px;
@@ -9955,7 +9955,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-pods__new-line { margin-top: 2px; }
 
 .v2-pods__create {
-  margin: 4px 0 0;
+  margin: 4px 12px 0;
   padding: 8px;
   border: 1px solid var(--v2-border);
   border-radius: 4px;

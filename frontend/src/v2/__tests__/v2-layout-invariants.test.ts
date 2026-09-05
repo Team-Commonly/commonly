@@ -132,6 +132,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selected).toContain('background: var(--v2-accent)');
     expect(selected).toContain('color: #fff');
     expect(ruleBody(v2, '.v2-root button.v2-pods__row')).toContain('border-radius: 4px');
+    // The selection is the full 232px sidebar block; 12px is inside its row,
+    // not a list inset that would shrink the cobalt slab.
+    expect(lastRuleBody(v2, '.v2-pods')).toContain('padding: 6px 0');
+    expect(labels).toContain('padding: 0 12px');
     expect(channelDot).toContain('width: 8px');
     expect(liveChannelDot).toContain('background: var(--v2-accent)');
     expect(directAvatar).toContain('width: 20px');
@@ -158,6 +162,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).toContain('attentionCountByPod');
     expect(podsSidebar).toContain('selected && attentionCount > 0');
     expect(podsSidebar).not.toContain('useV2Unread');
+  });
+
+  test('room types are an explicit reviewed mapping, not a complement of direct types', () => {
+    expect(podsSidebar).toContain('const ROOM_POD_TYPES');
+    expect(podsSidebar).toContain('export const isRoomPod');
+    expect(podsSidebar).toContain('pods.filter(isRoomPod)');
+    expect(podsSidebar).not.toContain('pods.filter((pod) => !isDirectPod(pod))');
   });
 
   test('channels read the existing connector binding endpoint and retain their room target', () => {

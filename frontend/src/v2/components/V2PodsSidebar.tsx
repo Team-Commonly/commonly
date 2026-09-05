@@ -27,6 +27,17 @@ interface V2PodsSidebarProps {
 }
 
 const DM_POD_TYPES = new Set(['agent-room', 'agent-dm']);
+// A new stored type must be deliberately placed in the workspace grammar.
+// Do not turn this into "not direct": that would silently surface any future
+// type as a room before product has decided how it belongs in the sidebar.
+const ROOM_POD_TYPES = new Set([
+  'chat',
+  'study',
+  'games',
+  'agent-ensemble',
+  'agent-admin',
+  'team',
+]);
 
 const connectorLabel = (type: string): string => ({
   telegram: 'Telegram',
@@ -57,10 +68,14 @@ const isHumanPair = (pod: V2Pod): boolean => {
 };
 
 // The stored types stay unchanged. The workspace grammar puts agent DMs and
-// human two-person chat under direct; every other member pod remains a room.
-// Keeping this predicate named makes a new Pod type an explicit review point.
+// human two-person chat under direct. See ROOM_POD_TYPES for the explicitly
+// reviewed room types; unknown types do not silently join a list.
 export const isDirectPod = (pod: V2Pod): boolean => (
   DM_POD_TYPES.has(String(pod.type || '')) || isHumanPair(pod)
+);
+
+export const isRoomPod = (pod: V2Pod): boolean => (
+  ROOM_POD_TYPES.has(String(pod.type || '')) && !isHumanPair(pod)
 );
 
 const directMemberFor = (pod: V2Pod, currentUserId?: string): V2PodMember | undefined => (
@@ -116,7 +131,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   }, [api]);
 
   const { rooms, direct } = useMemo(() => {
-    const roomPods = pods.filter((pod) => !isDirectPod(pod));
+    const roomPods = pods.filter(isRoomPod);
     const directPods = pods.filter(isDirectPod);
     return { rooms: sortPods(roomPods), direct: sortPods(directPods) };
   }, [pods]);

@@ -80,6 +80,7 @@ describe('V2PodsSidebar workspace groups', () => {
       pod('agent-room', 'Build Agent', 'agent-room', [human('me'), agent('builder')]),
       pod('human-dm', 'Design Partner', 'chat', [human('me'), human('designer')]),
       pod('room-chat', 'Project Chat', 'chat', [human('me'), human('one'), human('two')]),
+      pod('future-type', 'Unreviewed Type', 'future-type', [human('me'), human('other')]),
     ]);
 
     const rooms = screen.getByRole('heading', { name: 'rooms' }).closest('section');
@@ -90,6 +91,7 @@ describe('V2PodsSidebar workspace groups', () => {
     expect(within(rooms).getByRole('button', { name: 'Project Chat' })).toBeInTheDocument();
     expect(within(direct).getByRole('button', { name: 'Build Agent' })).toBeInTheDocument();
     expect(within(direct).getByRole('button', { name: 'Design Partner' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Unreviewed Type' })).not.toBeInTheDocument();
 
     expect(await screen.findByRole('button', { name: 'Telegram · Sharpen' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Connect Slack' })).toBeInTheDocument();
