@@ -5,6 +5,8 @@ const Integration = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const isPodMember = require('../utils/isPodMember');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { shouldEscalate } = require('./connectorRelayPolicy');
@@ -57,6 +59,35 @@ const isRelayableIntegration = (integration: SlackIntegrationDoc, podId: string)
   && Boolean(integration.config?.chatId)
   && Boolean(integration.config?.botTokenRef)
 );
+
+// The enabled gate is only the pod → connector subscription. Inbound follows
+// the owner's active pod selection and validates membership at receive time.
+const isInboundRelayableIntegration = (integration: SlackIntegrationDoc, podId: string): boolean => (
+  String(integration.podId) === String(podId)
+  && integration.type === 'slack'
+  && integration.isActive === true
+  && integration.status !== 'error'
+  && integration.config?.liveRelay === true
+  && integration.config?.chatType === 'im'
+  && !integration.config?.adminPause
+  && Boolean(integration.config?.teamId)
+  && Boolean(integration.config?.chatId)
+  && Boolean(integration.config?.botTokenRef)
+);
+
+const NO_ACTIVE_POD_REPLY = 'This connector has no active pod. Choose one in Commonly first.';
+
+const replyNoActivePod = async (integration: SlackIntegrationDoc): Promise<void> => {
+  const chatId = integration.config?.chatId;
+  const botTokenRef = integration.config?.botTokenRef;
+  if (!chatId || !botTokenRef) return;
+  try {
+    const token = await connectorSecrets.get(String(botTokenRef));
+    await new SlackApi(token).postMessage(String(chatId), NO_ACTIVE_POD_REPLY);
+  } catch (error) {
+    console.warn('[slack-bridge] could not send no-active-pod reply:', (error as Error).message);
+  }
+};
 
 const findLiveIntegration = async (podId: string): Promise<SlackIntegrationDoc | null> => (
   Integration.findOne({
@@ -166,11 +197,12 @@ export const relaySlackMessageToPod = async (opts: {
     // destination. Fail closed rather than querying/authoring under
     // `String(undefined)`.
     console.warn('[slack-bridge] inbound dropped — connector has no active pod');
+    await replyNoActivePod(integration);
     return { relayed: false };
   }
   const config = integration.config || {};
   if (
-    !isRelayableIntegration(integration, String(integration.podId))
+    !isInboundRelayableIntegration(integration, String(integration.podId))
     || !config.linkedUserId
     || !config.slackUserId
     || event.user !== config.slackUserId
@@ -204,12 +236,14 @@ export const relaySlackMessageToPod = async (opts: {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const socketConfig = require('../config/socket');
 
-  const [linkedUser, pod] = await Promise.all([
-    User.findById(linkedUserId).select('username profilePicture').lean(),
-    PodModel.findById(podId).select('type').lean(),
-  ]);
-  if (!linkedUser || !pod) {
-    console.warn('[slack-bridge] inbound dropped — linked user or pod missing');
+  const pod = await PodModel.findById(podId).select('type createdBy members').lean();
+  if (!pod || !isPodMember(pod, linkedUserId)) {
+    console.warn('[slack-bridge] inbound dropped — linked user is no longer a pod member');
+    return { relayed: false };
+  }
+  const linkedUser = await User.findById(linkedUserId).select('username profilePicture').lean();
+  if (!linkedUser) {
+    console.warn('[slack-bridge] inbound dropped — linked user missing');
     return { relayed: false };
   }
   try {
@@ -275,4 +309,5 @@ module.exports = {
   relaySlackMessageToPod,
   routeSlackReplyContent,
   isRelayableIntegration,
+  isInboundRelayableIntegration,
 };

@@ -4,8 +4,13 @@ jest.mock('../../../models/Integration', () => ({
 }));
 jest.mock('../../../services/telegramService', () => ({ sendMessage: jest.fn() }));
 
+const telegramSend = require('../../../services/telegramService');
 const {
-  shouldEscalate, routeReplyContent, isRelayableIntegration, relayTelegramMessageToPod,
+  shouldEscalate,
+  routeReplyContent,
+  isRelayableIntegration,
+  isInboundRelayableIntegration,
+  relayTelegramMessageToPod,
 } = require('../../../services/telegramBridgeService');
 
 describe('telegramBridgeService — escalation gate', () => {
@@ -144,12 +149,30 @@ describe('telegramBridgeService — user-scope outbound gate', () => {
     expect(isRelayableIntegration(userScoped, 'missing-pod')).toBe(false);
   });
 
-  it('drops inbound rather than stringifying a user connector without an active pod', async () => {
-    const result = await relayTelegramMessageToPod({
-      integration: { ...userScoped, podId: undefined },
-      telegramMessage: { text: 'hello from the phone' },
-    });
+  it('keeps inbound on the active pod when its outbound gate is disabled', () => {
+    expect(isInboundRelayableIntegration({
+      ...userScoped,
+      config: { ...userScoped.config, gates: { 'active-pod': { enabled: false } } },
+    }, 'active-pod')).toBe(true);
+  });
 
-    expect(result).toEqual({ relayed: false });
+  it('answers once in the linked chat when a user connector has no active pod', async () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    try {
+      const result = await relayTelegramMessageToPod({
+        integration: { ...userScoped, podId: undefined },
+        telegramMessage: { text: 'hello from the phone' },
+      });
+
+      expect(result).toEqual({ relayed: false });
+      expect(telegramSend.sendMessage).toHaveBeenCalledTimes(1);
+      expect(telegramSend.sendMessage).toHaveBeenCalledWith(
+        'bot-token', 'chat-1', 'This connector has no active pod. Choose one in Commonly first.',
+      );
+    } finally {
+      if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    }
   });
 });

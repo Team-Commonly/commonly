@@ -42,7 +42,9 @@ describe('relayTelegramMessageToPod — who the pod row is attributed to', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     User.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ username: 'sam', profilePicture: null }) }) });
-    Pod.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ type: 'chat' }) }) });
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ type: 'chat', members: ['user-1'] }) }),
+    });
     PGPod.findById.mockResolvedValue({ id: 'pod-1' });
     PGMessage.create.mockResolvedValue({ id: 'm1', content: 'x' });
     PGMessage.findById.mockResolvedValue({ id: 'm1', content: 'x' });
@@ -98,6 +100,19 @@ describe('relayTelegramMessageToPod — who the pod row is attributed to', () =>
     await relayTelegramMessageToPod({ integration, telegramMessage: messageFromSomeoneElse });
     expect(PGPod.findById).not.toHaveBeenCalled();
     expect(User.findById).not.toHaveBeenCalled();
+  });
+
+  it('refuses an active pod after the linked user leaves it', async () => {
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ type: 'chat', members: [] }) }),
+    });
+
+    await expect(relayTelegramMessageToPod({
+      integration: withChatType('private'), telegramMessage: messageFromSomeoneElse,
+    })).resolves.toEqual({ relayed: false });
+
+    expect(User.findById).not.toHaveBeenCalled();
+    expect(PGMessage.create).not.toHaveBeenCalled();
   });
 });
 

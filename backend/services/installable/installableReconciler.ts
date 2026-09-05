@@ -123,9 +123,10 @@ const sweepOrphanedGates = async (): Promise<number> => {
   const rows = await Integration.find({
     scope: 'user',
     'config.gates': { $exists: true },
-  }).select('_id createdBy config.gates').lean() as Array<{
+  }).select('_id createdBy podId config.gates').lean() as Array<{
     _id: unknown;
     createdBy?: unknown;
+    podId?: unknown;
     config?: { gates?: Record<string, unknown> };
   }>;
   let pruned = 0;
@@ -135,7 +136,10 @@ const sweepOrphanedGates = async (): Promise<number> => {
     const unset: Record<string, 1> = {};
     for (const podId of Object.keys(gates)) {
       const pod = await Pod.findById(podId).select('createdBy members').lean();
-      if (!pod || !isPodMember(pod, row.createdBy)) unset[`config.gates.${podId}`] = 1;
+      if (!pod || !isPodMember(pod, row.createdBy)) {
+        unset[`config.gates.${podId}`] = 1;
+        if (String(row.podId) === podId) unset.podId = 1;
+      }
     }
     if (!Object.keys(unset).length) continue;
     const result = await Integration.updateOne({ _id: row._id }, { $unset: unset });

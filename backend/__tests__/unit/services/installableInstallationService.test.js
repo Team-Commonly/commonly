@@ -22,6 +22,8 @@ const {
 const { sweep } = require('../../../services/installable/installableReconciler');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
+const telegramService = require('../../../services/telegramService');
+const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -640,6 +642,46 @@ describe('installable connector projection', () => {
     const resumedSweep = await sweep(new Date());
     expect(resumedSweep.clearedPauseProjections).toBe(1);
     expect((await Integration.findById(installed.integration._id)).config.adminPause).toBeUndefined();
+  });
+
+  it('clears the active pod with its orphaned gate and tells the linked chat why', async () => {
+    const { userId, podId } = ids();
+    await Pod.create({
+      _id: podId,
+      name: 'Departed pod',
+      type: 'team',
+      createdBy: new mongoose.Types.ObjectId(),
+      members: [userId],
+    });
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.chatId': 'chat-1', 'config.chatType': 'private' } },
+    );
+    await Pod.updateOne({ _id: podId }, { $pull: { members: userId } });
+
+    const reconciled = await sweep(new Date());
+    const projection = await Integration.findById(installed.integration._id).lean();
+    expect(reconciled.prunedGates).toBe(1);
+    expect(projection.config.gates?.[podId]).toBeUndefined();
+    expect(projection.podId).toBeUndefined();
+
+    const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    const send = jest.spyOn(telegramService, 'sendMessage').mockResolvedValue({ messageId: 'reply-1' });
+    try {
+      await expect(relayTelegramMessageToPod({
+        integration: projection,
+        telegramMessage: { text: 'where did the pod go?' },
+      })).resolves.toEqual({ relayed: false });
+      expect(send).toHaveBeenCalledWith(
+        'bot-token', 'chat-1', 'This connector has no active pod. Choose one in Commonly first.',
+      );
+    } finally {
+      send.mockRestore();
+      if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = previousToken;
+    }
   });
 
   it('expires a pending Slack bind, revokes its encrypted token, and leaves a retryable active card', async () => {
