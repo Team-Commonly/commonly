@@ -154,59 +154,36 @@ describe('config.js', () => {
     expect(getToken('dev')).toBe('cm_dev');
   });
 
-  test('getToken("https://...") prefers the ACTIVE instance when several keys share the URL', () => {
-    // Real config shape on 2026-08-29: `dev` (saved in July, stale token) and
-    // `default` (fresh login) both at api.commonly.me. `.find` returned `dev`
-    // and `commonly agent detach` / `agent wake` got HTTP 401 from a token
-    // the user had already replaced.
-    saveInstance({
-      key: 'dev', url: 'https://api.commonly.me', token: 'cm_stale',
-      userId: 'u1', username: 'sam',
-    });
-    saveInstance({
-      key: 'default', url: 'https://api.commonly.me', token: 'cm_fresh',
-      userId: 'u1', username: 'sam',
-    });
-    // saveInstance sets active = last saved key ('default')
-    expect(getToken('https://api.commonly.me')).toBe('cm_fresh');
-  });
+  describe.each([
+    ['old then new', ['old', 'new']],
+    ['new then old', ['new', 'old']],
+  ])('matching URL selection (%s insertion order)', (_order, keys) => {
+    test.each([
+      ['old', 'cm_old'],
+      ['new', 'cm_new'],
+      ['local', 'cm_new'],
+    ])('active key %s selects %s', (activeKey, expectedToken) => {
+      for (const key of keys) {
+        saveInstance({
+          key, url: 'https://api.commonly.me', token: `cm_${key}`,
+          userId: 'u1', username: 'sam',
+        });
+      }
+      expect(getToken(null)).toBe(`cm_${keys.at(-1)}`);
+      saveInstance({
+        key: 'local', url: 'http://localhost:5000', token: 'cm_local',
+        userId: 'u1', username: 'sam',
+      });
+      // Distinct persisted times keep active preference and recency independent
+      // of both the wall clock and stable-sort insertion order.
+      const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+      cfg.instances.old.savedAt = '2026-07-10T05:10:00.000Z';
+      cfg.instances.new.savedAt = '2026-08-26T22:40:12.000Z';
+      fs.writeFileSync(configFile, JSON.stringify(cfg));
+      setActive(activeKey);
 
-  test('prefers an explicitly-active match over a NEWER one', () => {
-    // Discriminates the `active` branch from the savedAt sort: the active
-    // key is the OLDER save, so only the active preference can pick it.
-    // (The test above is satisfied by savedAt alone — sprint-review mutated
-    // `active` to null and it stayed green.)
-    saveInstance({
-      key: 'old', url: 'https://api.commonly.me', token: 'cm_old',
-      userId: 'u1', username: 'sam',
+      expect(getToken('https://api.commonly.me')).toBe(expectedToken);
     });
-    saveInstance({
-      key: 'new', url: 'https://api.commonly.me', token: 'cm_new',
-      userId: 'u1', username: 'sam',
-    });
-    setActive('old');
-    expect(getToken('https://api.commonly.me')).toBe('cm_old');
-  });
-
-  test('getToken("https://...") falls back to the most recently saved match when none is active', () => {
-    saveInstance({
-      key: 'old', url: 'https://api.commonly.me', token: 'cm_old',
-      userId: 'u1', username: 'sam',
-    });
-    saveInstance({
-      key: 'new', url: 'https://api.commonly.me', token: 'cm_new',
-      userId: 'u1', username: 'sam',
-    });
-    // Point `active` somewhere that does NOT share the URL.
-    saveInstance({
-      key: 'local', url: 'http://localhost:5000', token: 'cm_local',
-      userId: 'u1', username: 'sam',
-    });
-    const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    cfg.instances.old.savedAt = '2026-07-10T05:10:00Z';
-    cfg.instances.new.savedAt = '2026-08-26T22:40:12Z';
-    fs.writeFileSync(configFile, JSON.stringify(cfg));
-    expect(getToken('https://api.commonly.me')).toBe('cm_new');
   });
 
   test('resolveInstanceUrl matches saved URL case-insensitively (and preserves unknown URL case)', () => {
