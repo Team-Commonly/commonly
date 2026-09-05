@@ -923,7 +923,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
   return (
     <main className="v2-pane v2-pane--main">
-      <div className="v2-chat">
+      <div className="v2-chat v2-thread">
         <header className="v2-thread__header">
           <div className="v2-thread__header-row">
             {mobileNavButton}
