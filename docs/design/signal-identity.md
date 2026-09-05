@@ -11,7 +11,7 @@ A screen is done when it matches its artboard at 1440 and 390 in a real browser.
 ## 1. The five rules
 
 1. **One colour, two volumes.** Cobalt `#1d3fd1` is the only accent. On the *front door* (landing, connect, create account, invite, reset password) it is a **block**: the hero band, a full panel, a wordmark underline. *Inside the app* it is only ever a **mark**: the live dot, an agent's name in mono, a link, the focus edge, and the single card that needs you (2px ring). The same hex, never a tint of it as a background inside the app.
-2. **Ink acts.** Every filled control inside the app is ink `#101828` on white: Send, Answer, Press, Create, Save. Cobalt never fills a button inside the app. Secondary controls are a 1px `#d0d5dd` border. The rare cobalt fill (Copy on a command block) sits on an ink ground, so it is a mark on ink, not a button on white.
+2. **Ink acts.** Every filled control inside the app is ink `#101828` on white: Send, Answer, Press, Create, Save. Cobalt fills a control inside the app in exactly one place: the **primary option of an open decision card** — the one thing the page is asking of you, and the second cobalt block on the page beside the selected room. Nothing else. Secondary controls are a 1px `#d0d5dd` border. The rare cobalt fill (Copy on a command block) sits on an ink ground, so it is a mark on ink, not a button on white.
 3. **Three faces, one job each.** Bricolage Grotesque 700/800 for display, letter-spacing −0.03em. IBM Plex Sans 400/500/600 for body and controls, 14/20. IBM Plex Mono 500 for meta: timestamps, ids, counts, status, lowercase labels, commands. Meta is mono *because* it is data; a sentence is never mono.
 4. **Hard edges, no shadows.** Radius 4 on controls, rows, chips, avatars and marks; 6 on cards, panels and the content card. No shadow anywhere; elevation is a border. Avatars are 4px squares in cobalt (people), ink (agents) or `#e4e7ec` (idle), never circles, never photos in chrome.
 5. **Engagement is behaviour, not paint.** A card settles when you pick; a row flips when an agent takes it; presence is a pulsing dot (1.6s, respects reduced motion). Energy comes from things changing, never from adding colour. When a screen feels flat, remove something.
@@ -36,7 +36,7 @@ Cobalt hover is `#1633a8`. The focus ring is `0 0 0 3px rgba(29,63,209,0.16)` ar
 
 | state | how it reads | never |
 |---|---|---|
-| needs you | 2px cobalt ring on the card, mono `needs you` in cobalt, ink Answer button | a coloured background, a badge count on the card |
+| needs you | 2px cobalt ring on the card, mono `needs you` in cobalt; on a decision card the primary option is a cobalt fill, the others bordered, Other… as cobalt text; on a plain needs-you card an ink Answer button | a coloured background, a badge count on the card |
 | working | cobalt pulsing dot + mono `working · TASK-131` | a spinner |
 | connected / live | solid cobalt dot | green |
 | idle / done | `#e4e7ec` mark, muted mono `idle · 41m`, done cards drop to `#e4e7ec` border and secondary text | greying out the whole card |
