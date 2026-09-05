@@ -30,6 +30,7 @@ const { hash, randomSecret } = require('../utils/secret');
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
+import { Types } from 'mongoose';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -489,9 +490,12 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
   }
 });
 
-router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
+router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid integration id' });
+    }
     const { config, status, isActive, podId } = (req.body || {}) as {
       config?: Record<string, unknown>;
       status?: string;

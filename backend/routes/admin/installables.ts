@@ -5,6 +5,8 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const express = require('express');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const rateLimit = require('express-rate-limit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const auth = require('../../middleware/auth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const adminAuth = require('../../middleware/adminAuth');
@@ -13,6 +15,8 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 import { Types } from 'mongoose';
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 
 interface AuthReq {
   user?: { id?: string };
@@ -21,6 +25,20 @@ interface AuthReq {
 }
 
 const router: ReturnType<typeof express.Router> = express.Router();
+
+// Admin pause/resume is a mutating control plane. It gets its own bucket so
+// an operator's connector setup cannot consume the protection on this path.
+const adminInstallablesRateLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
+    res.status(429).json({ error: 'rate_limited' });
+  },
+});
 
 const requiredReason = (body: unknown): string | null => {
   const reason = (body as { reason?: unknown } | null)?.reason;
@@ -56,7 +74,12 @@ const auditEntry = (action: 'pause' | 'resume', installation: {
  * Pause is parent-first: a crash after the first write has already stopped
  * outbound dispatch. The reconciler repairs a child which was not stamped.
  */
-router.post('/:installableId/installations/:installationId/pause', auth, adminAuth, async (req: AuthReq, res: any) => {
+router.post(
+  '/:installableId/installations/:installationId/pause',
+  adminInstallablesRateLimit,
+  auth,
+  adminAuth,
+  async (req: AuthReq, res: any) => {
   const reason = requiredReason(req.body);
   if (!reason) return res.status(400).json({ error: 'reason is required' });
   const filter = installationFilter(req, 'active');
@@ -95,13 +118,19 @@ router.post('/:installableId/installations/:installationId/pause', auth, adminAu
     console.error('[admin/installables] pause failed:', (error as Error).message);
     return res.status(500).json({ error: 'Could not pause installation' });
   }
-});
+  },
+);
 
 /**
  * Resume is children-first. If parent completion fails, the parent remains
  * paused and the reconciler re-stamps children on its next pass.
  */
-router.post('/:installableId/installations/:installationId/resume', auth, adminAuth, async (req: AuthReq, res: any) => {
+router.post(
+  '/:installableId/installations/:installationId/resume',
+  adminInstallablesRateLimit,
+  auth,
+  adminAuth,
+  async (req: AuthReq, res: any) => {
   const reason = requiredReason(req.body);
   if (!reason) return res.status(400).json({ error: 'reason is required' });
   const filter = installationFilter(req, 'paused');
@@ -138,6 +167,7 @@ router.post('/:installableId/installations/:installationId/resume', auth, adminA
     console.error('[admin/installables] resume failed:', (error as Error).message);
     return res.status(500).json({ error: 'Could not resume installation' });
   }
-});
+  },
+);
 
 module.exports = router;
