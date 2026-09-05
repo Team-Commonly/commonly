@@ -3,24 +3,30 @@ import React, {
 } from 'react';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
-import V2Composer, { type V2ComposerWarning } from './V2Composer';
+import V2Composer from './V2Composer';
 import { type V2DecisionCardData } from './V2DecisionCard';
 import V2ThreadMessages from './V2ThreadMessages';
 import V2ThreadStarter from './V2ThreadStarter';
 import {
   UseV2PodDetailResult,
-  V2Agent,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
-import { UseV2PodsResult, V2PodMember } from '../hooks/useV2Pods';
+import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import type { V2InviteTab } from './V2InviteModal';
 
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
+import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { buildThreadView } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
+import {
+  buildAgentUsername,
+  isOpaqueInstanceToken,
+  normalizeAgentSegment,
+  slugifyAgentHandle,
+} from '../utils/threadAgentIdentity';
 
 const AGENT_DELIVERY_HINT_KEY = 'v2.agentDeliveryHint';
 const JUST_CREATED_POD_KEY = 'v2.justCreated';
@@ -36,70 +42,6 @@ const STARTER_PROMPT_KEYS = [
   'podChat.starters.help',
   'podChat.starters.firstQuestion',
 ] as const;
-
-const normalizeAgentSegment = (value: string | undefined): string =>
-  (value || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
-
-// Per-user agents carry OPAQUE instance tokens (the u+sha10 convention, plus
-// the legacy long form) — machine keys, never identities. A moltbot's
-// instanceId ("aria") is the opposite: the human-chosen name, with agentName
-// as the runtime label we must never surface. So handle preference is:
-// human-meaningful instanceId wins; opaque token falls back to the
-// displayName slug (the backend mention map indexes displaySlug for every
-// installation), then agentName. That's how Scout gets @scout while
-// agentName stays 'guide' — and both handles land.
-const isOpaqueInstanceToken = (value: string | undefined): boolean =>
-  /^u[a-f0-9]{10}([a-f0-9]{14})?$/.test((value || '').toLowerCase());
-
-// Mirrors the backend mention map's slugify (agentMentionService) — keep the
-// two identical or a typed handle can render but not resolve.
-const slugifyHandle = (value: string | undefined): string => (value || '')
-  .toString()
-  .trim()
-  .toLowerCase()
-  .replace(/[^a-z0-9-]/g, '-')
-  .replace(/-+/g, '-')
-  .replace(/^-+|-+$/g, '');
-
-// Mirrors backend AgentIdentityService.buildAgentUsername — instance suffix
-// elides when default/empty/equal to base name. Used to wire a mention back
-// to the agent's User row username.
-const buildAgentUsername = (agentName: string | undefined, instanceId: string | undefined): string => {
-  const base = normalizeAgentSegment(agentName);
-  const inst = normalizeAgentSegment(instanceId);
-  if (!inst || inst === 'default' || inst === base) return base || 'agent';
-  return `${base}-${inst}`;
-};
-
-// Find an "active" @-mention context in the textarea: the closest @ to the
-// left of the cursor that's at start-of-string or preceded by whitespace/
-// quotation, with no whitespace between it and the cursor. Mirrors v1
-// ChatRoom.getMentionContext so behavior matches.
-const getMentionContext = (text: string, cursor: number | null): { start: number; query: string } | null => {
-  if (!text || cursor == null) return null;
-  const atIndex = text.lastIndexOf('@', cursor - 1);
-  if (atIndex < 0) return null;
-  const beforeChar = text[atIndex - 1];
-  if (beforeChar && !/\s|[([{"'`]/.test(beforeChar)) return null;
-  const between = text.slice(atIndex + 1, cursor);
-  if (/\s/.test(between)) return null;
-  return { start: atIndex, query: between };
-};
-
-interface MentionItem {
-  id: string;
-  label: string;
-  labelLower: string;
-  subtitle: string;
-  avatar?: string | null;
-  isAgent: boolean;
-  // Value inserted after `@`. For agents, prefer instanceId so mentions land
-  // on the right instance ("@nova" not "@openclaw").
-  value: string;
-  // #891 surface 1: reachability shown at compose time, so nobody offers a
-  // mention that can't land without saying so.
-  reach?: AgentReachState;
-}
 
 // #891 surface 1 — per-agent reachability from /api/pods/:podId/agent-states.
 // Only the states the kernel can derive HONESTLY for the agent's runtime
@@ -283,13 +225,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     [messages, threadState.byRoot],
   );
 
-  // @-mention dropdown state. mentionStart is the index of the `@` in the
-  // textarea so we know the slice to replace on select.
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState('');
-  const [mentionStart, setMentionStart] = useState(-1);
-  const [mentionIndex, setMentionIndex] = useState(0);
-
   // #891 surface 1: agent reachability at the moment of composing a mention.
   // Best-effort — a failed read renders nothing rather than something wrong,
   // and 60s refresh keeps the states honest without hammering the endpoint.
@@ -369,6 +304,24 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     });
     return map;
   }, [agentStates]);
+
+  const {
+    mentionOpen,
+    setMentionOpen,
+    mentionIndex,
+    setMentionIndex,
+    filteredMentions,
+    warnings: mentionWarnings,
+    updateMentionState,
+    selectMention,
+  } = useV2ThreadMentions({
+    members,
+    agents,
+    agentStateByHandle,
+    draft,
+    setDraft,
+    inputRef: composerInputRef,
+  });
 
   // Agent rooms are exactly one human and one agent. Resolve that one agent
   // through the same installation data that powers mentions, then attach the
@@ -617,160 +570,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     [agentKeyByAuthorString],
   );
 
-  // Build the @-mention list. members[] is User rows (humans + agent users);
-  // agents[] is AgentInstallation rows that carry the instanceId. We want
-  // @nova in the dropdown, not @openclaw-nova — so for any member that has
-  // a matching installation, promote it to the agent shape (instance handle,
-  // role subtitle). Agents that aren't (yet) members are appended at the end.
-  const mentionableItems: MentionItem[] = useMemo(() => {
-    const items: MentionItem[] = [];
-    const seen = new Set<string>();
-
-    const agentByUsername = new Map<string, V2Agent>();
-    (agents || []).forEach((a) => {
-      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
-      if (!rawName) return;
-      agentByUsername.set(buildAgentUsername(rawName, a.instanceId), a);
-    });
-
-    const itemFromAgent = (a: V2Agent, fallbackAvatar: string | null = null): MentionItem | null => {
-      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
-      if (!rawName) return null;
-      const username = buildAgentUsername(rawName, a.instanceId);
-      const display = a.displayName || a.profile?.displayName || rawName;
-      const instance = (a.instanceId || 'default').toLowerCase();
-      // Handle preference: a human-chosen instanceId ("aria") IS the
-      // identity and stays the handle — agentName there is the runtime label
-      // we never surface. An OPAQUE per-user token (guide/u3f9c2a1b7d) is a
-      // machine key and must never be the handle; fall back to the persona's
-      // displayName slug (@scout — the mention map indexes displaySlug),
-      // then the bare agentName (single-install rule).
-      const mentionValue = instance && instance !== 'default' && instance !== rawName.toLowerCase()
-        && !isOpaqueInstanceToken(instance)
-        ? instance
-        : (slugifyHandle(display) || rawName.toLowerCase());
-      const avatar = a.profile?.avatarUrl || a.profile?.iconUrl || a.iconUrl || fallbackAvatar;
-      // Compose-time honesty (#891 surface 1): a mention that can't land says
-      // so in the picker itself — certainty-matched copy (never-connected is
-      // structural and flat; gone-dark is inferred and hedged).
-      const reach = agentStateByHandle.get(mentionValue)?.state
-        || agentStateByHandle.get(rawName.toLowerCase())?.state;
-      const subtitle = reach === 'never-connected'
-        ? t('podChat.mentionState.typeaheadNever', { handle: mentionValue })
-        : reach === 'gone-dark'
-          ? t('podChat.mentionState.typeaheadDark', { handle: mentionValue })
-          : t('podChat.mentions.agentSubtitle', { handle: mentionValue });
-      return {
-        id: username,
-        label: display,
-        labelLower: `${display} ${rawName} ${username} ${mentionValue}`.toLowerCase(),
-        subtitle,
-        avatar,
-        isAgent: true,
-        value: mentionValue,
-        reach,
-      };
-    };
-
-    (members || []).forEach((m: V2PodMember) => {
-      const username = m.username || '';
-      if (!username) return;
-      const key = username.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      const agentMatch = agentByUsername.get(key);
-      if (agentMatch) {
-        const item = itemFromAgent(agentMatch, m.profilePicture || null);
-        if (item) items.push(item);
-        return;
-      }
-      items.push({
-        id: m._id || username,
-        label: username,
-        labelLower: username.toLowerCase(),
-        subtitle: t('podChat.mentions.member'),
-        avatar: m.profilePicture || null,
-        isAgent: false,
-        value: username,
-      });
-    });
-
-    (agents || []).forEach((a: V2Agent) => {
-      const rawName = (a as { name?: string; agentName?: string }).name || a.agentName || '';
-      if (!rawName) return;
-      const username = buildAgentUsername(rawName, a.instanceId);
-      const key = username.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      const item = itemFromAgent(a);
-      if (item) items.push(item);
-    });
-
-    return items;
-  }, [members, agents, t, agentStateByHandle]);
-
-  // #891 surface 1, send-time half: which mentioned agents in the current
-  // draft cannot hear it? Dependency-keyed explanation for everyone; the fix
-  // command only ever arrives for owners (the endpoint enforces the split).
-  const unreachableMentioned = useMemo<V2ComposerWarning[]>(() => {
-    if (!draft.includes('@')) return [];
-    const tokens: string[] = draft.match(/@([a-z0-9][\w-]*)/gi) || [];
-    const seen = new Set<string>();
-    const rows: V2ComposerWarning[] = [];
-    tokens.forEach((token) => {
-      const handle = token.slice(1).toLowerCase();
-      const state = agentStateByHandle.get(handle);
-      const warningState = state?.state;
-      if (
-        !state
-        || (warningState !== 'gone-dark' && warningState !== 'never-connected')
-        || seen.has(handle)
-      ) return;
-      seen.add(handle);
-      rows.push({ agentName: handle, state: warningState, fixCommand: state.fixCommand });
-    });
-    return rows;
-  }, [draft, agentStateByHandle]);
-
-  const filteredMentions: MentionItem[] = useMemo(() => {
-    if (!mentionOpen) return [];
-    const q = mentionQuery.trim().toLowerCase();
-    return mentionableItems.filter((item) => item.labelLower.includes(q)).slice(0, 8);
-  }, [mentionOpen, mentionQuery, mentionableItems]);
-
-  const updateMentionState = useCallback((nextValue: string, cursorPosition: number | null) => {
-    const ctx = getMentionContext(nextValue, cursorPosition);
-    if (!ctx) {
-      setMentionOpen(false);
-      setMentionQuery('');
-      setMentionStart(-1);
-      return;
-    }
-    setMentionOpen(true);
-    setMentionQuery(ctx.query);
-    setMentionStart(ctx.start);
-    setMentionIndex(0);
-  }, []);
-
-  const handleMentionSelect = useCallback((item: MentionItem) => {
-    const input = composerInputRef.current;
-    if (!input) return;
-    const cursor = input.selectionStart ?? draft.length;
-    const start = mentionStart >= 0 ? mentionStart : draft.lastIndexOf('@', cursor);
-    if (start < 0) return;
-    const insert = `@${item.value || item.label}`;
-    const next = `${draft.slice(0, start)}${insert} ${draft.slice(cursor)}`;
-    setDraft(next);
-    setMentionOpen(false);
-    setMentionQuery('');
-    setMentionStart(-1);
-    requestAnimationFrame(() => {
-      const nextCursor = start + insert.length + 1;
-      input.focus();
-      input.setSelectionRange(nextCursor, nextCursor);
-    });
-  }, [draft, mentionStart]);
-
   // Clear typing indicators on pod change so we never carry indicators from
   // another room into the current view.
   useEffect(() => {
@@ -981,7 +780,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           && exampleAgent.instanceId.toLowerCase() !== 'default'
           && !isOpaqueInstanceToken(exampleAgent.instanceId)
           ? exampleAgent.instanceId
-          : (slugifyHandle(exampleAgent?.displayName || exampleAgent?.profile?.displayName)
+          : (slugifyAgentHandle(exampleAgent?.displayName || exampleAgent?.profile?.displayName)
             || exampleAgent?.agentName);
         const mentionHandle = normalizeAgentSegment(rawMentionHandle);
         if (
@@ -1275,7 +1074,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 mentionOpen={mentionOpen}
                 mentionIndex={mentionIndex}
                 mentions={filteredMentions}
-                warnings={unreachableMentioned}
+                warnings={mentionWarnings}
                 inputRef={composerInputRef}
                 fileInputRef={fileInputRef}
                 mentionDropdownRef={mentionDropdownRef}
@@ -1304,7 +1103,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                     if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();
                       const selection = filteredMentions[mentionIndex];
-                      if (selection) handleMentionSelect(selection);
+                      if (selection) selectMention(selection);
                       return;
                     }
                   }
@@ -1313,7 +1112,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                     void handleSend();
                   }
                 }}
-                onMentionSelect={handleMentionSelect}
+                onMentionSelect={selectMention}
                 onSend={() => { void handleSend(); }}
                 onAttach={(file) => { void handleAttachFile(file); }}
                 onCancelReply={() => setReplyTarget(null)}
