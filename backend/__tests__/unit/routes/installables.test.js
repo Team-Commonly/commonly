@@ -9,6 +9,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
+  listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
@@ -50,6 +51,7 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
 }));
 
 const Pod = require('../../../models/Pod');
+const integrationRateLimit = require('../../../middleware/integrationRateLimit');
 const catalogService = require('../../../services/installable/installableCatalogService');
 const installationService = require('../../../services/installable/installableInstallationService');
 const installableRoutes = require('../../../routes/installables');
@@ -72,6 +74,14 @@ describe('installable connector routes', () => {
 
     expect(res.status).toBe(401);
     expect(catalogService.catalogFor).not.toHaveBeenCalled();
+  });
+
+  it('mounts the catalog limiter before auth', () => {
+    const catalogRoute = installableRoutes.stack.find((layer) => layer.route
+      && layer.route.path === '/'
+      && layer.route.methods.get);
+    const catalogHandles = catalogRoute.route.stack.map((layer) => layer.handle);
+    expect(catalogHandles[0]).toBe(integrationRateLimit.listIntegrationsRateLimit);
   });
 
   it('returns readiness enums and only the caller\'s safe parent/projection fields', async () => {

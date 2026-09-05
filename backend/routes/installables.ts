@@ -33,7 +33,7 @@ const {
   exchangeCode,
 } = require('../services/slackOAuthService');
 import { Types } from 'mongoose';
-import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
+import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 // eslint-disable-next-line global-require
 const {
   InstallLockLostError,
@@ -137,7 +137,7 @@ const slackCallbackRedirect = (res: Res, state: 'pending' | 'error', code?: stri
  * The authenticated, user-scoped connector catalog. It intentionally sits
  * beside (rather than replaces) the legacy integration manifest catalog.
  */
-router.get('/', auth, async (req: AuthReq, res: Res) => {
+router.get('/', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   const userId = requesterId(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   try {
