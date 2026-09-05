@@ -9663,7 +9663,8 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__details { display: flex; min-width: 0; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
 .v2-connector-row__details strong { overflow: hidden; color: var(--v2-ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
-.v2-connector-row__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Meta wraps to a second line; it never ellipsises (lily-shen, 64026). */
+.v2-connector-row__detail { overflow-wrap: anywhere; }
 .v2-connector-row__when { padding-right: 16px; }
 .v2-root button.v2-connector-row__action,
 .v2-root a.v2-connector-row__action {
@@ -9744,6 +9745,28 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-connector-code__copy { min-height: 30px; padding: 5px 9px; border: 1px solid var(--v2-accent); border-radius: var(--v2-radius-sm); background: var(--v2-accent); color: var(--v2-on-ink); font: 600 12px/16px var(--v2-font); cursor: pointer; }
 .v2-connectors__error { padding: 10px 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-ink); font-size: 13px; }
 
+.v2-connector-aside__note { margin-top: 12px !important; color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
+/* D4 gate list: one row per pod the user is in. The switch is the gate
+   (pod → me); the active tag marks where typed messages land (me → pod). */
+.v2-connector-gates { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--v2-border-soft); }
+.v2-connector-gates__title { margin: 0 0 6px !important; color: var(--v2-text-tertiary) !important; font-family: var(--v2-font-mono); font-size: 11px !important; line-height: 16px !important; text-transform: lowercase; }
+.v2-connector-gates__empty { color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
+.v2-connector-gate { border-bottom: 1px solid var(--v2-border-soft); }
+.v2-connector-gate:last-child { border-bottom: none; }
+.v2-connector-gate__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 36px; }
+.v2-root button.v2-connector-gate__name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 0; border: none; background: transparent; color: var(--v2-ink); font: 500 13px/18px var(--v2-font); text-align: left; cursor: pointer; }
+.v2-connector-gate__mark { width: 4px; height: 4px; flex: none; background: var(--v2-ink); }
+.v2-connector-gate__pod { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-connector-gate__tag { flex: none; color: var(--v2-ink); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; }
+.v2-connector-gate__since { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.v2-connector-gate__since--off { color: var(--v2-text-placeholder); }
+/* The gate switch is the system's checkbox — the bordered square the Relay
+   line already uses, ink when on. No pill: the system has hard edges only. */
+.v2-connector-gate__switch { width: 16px; height: 16px; margin: 0; accent-color: var(--v2-ink); cursor: pointer; }
+.v2-connector-gate__switch:disabled { cursor: progress; opacity: 0.65; }
+.v2-connector-gate__more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 12px 12px; }
+.v2-connector-gate__lead { min-height: 30px; padding: 0 8px; font-size: 12px; }
+
 @media (max-width: 760px) {
   .v2-connectors { min-height: 0; gap: 24px; margin: -12px -18px 0; }
   .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
@@ -9759,6 +9782,7 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-connector-row__action, .v2-root a.v2-connector-row__action { grid-column: 2; grid-row: 1; z-index: 1; }
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
+  .v2-connector-gate__more { padding-left: 0; }
 }
 
 /* Activity queue: reply-in-place on mention rows (Sam, 2026-09-01). The
