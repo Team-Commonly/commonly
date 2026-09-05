@@ -859,7 +859,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
   // plus currently-installed agents. pod.members[] retains stale bot
   // User rows for identity continuity (ADR-001 §3), so reading it raw
   // surfaces uninstalled agents in the avatar count. Mirrors the
-  // V2PodInspector filter so the chat-header "+N" agrees with the
+  // V2Inspector filter so the chat-header "+N" agrees with the
   // Members tab count. MUST live above the `if (!pod)` early return —
   // hooks run on every render or React fires #310 on pod-state changes.
   const activeMemberAgentUsernames = React.useMemo(() => {
@@ -873,7 +873,7 @@ const V2PodChat: React.FC<V2PodChatProps> = ({ detail, firstRunVisible = false, 
     return set;
   }, [agents]);
   const effectiveMembers = React.useMemo(() => {
-    // `isBot` is documented as unreliable on the wire (V2PodInspector
+    // `isBot` is documented as unreliable on the wire (V2Inspector
     // 804-807). A member whose `isBot` is falsy but whose username
     // matches an active agent would be counted twice without this
     // secondary guard.

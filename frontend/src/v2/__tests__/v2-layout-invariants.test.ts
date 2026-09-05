@@ -85,6 +85,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2PodChat.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
+  const workspaceInspector = read('../components/V2Inspector.tsx');
+  const v2Layout = read('../components/V2Layout.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
   const v2App = read('../V2App.tsx');
@@ -332,6 +334,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
   });
 
+  test('workspace inspector is the small three-card replacement, with a phone sheet rather than legacy tabs', () => {
+    // TASK-129 replaces the 86KB tabbed inspector in the same cutover as the
+    // artboard cards. Keeping the old component anywhere in the route would
+    // turn this back into a skin over two competing inspector models.
+    expect(fs.existsSync(path.join(__dirname, '../components/V2PodInspector.tsx'))).toBe(false);
+    expect(workspaceInspector).toContain('className="v2-workspace-inspector__card"');
+    expect(workspaceInspector).toContain("'inspector.workspace.agentsIn'");
+    expect(workspaceInspector).toContain("'inspector.workspace.needsYou'");
+    expect(workspaceInspector).toContain("'inspector.workspace.boardToday'");
+    expect(workspaceInspector).toContain('v2-workspace-inspector__state--${state.kind}');
+    expect(workspaceInspector).not.toContain('v2-inspector__tabs');
+    expect(workspaceInspector).not.toContain('v2-inspector__progress');
+
+    const card = ruleBody(v2, '.v2-workspace-inspector__card');
+    expect(card).toContain('border: 1px solid var(--v2-border)');
+    expect(card).toContain('border-radius: 6px');
+    expect(ruleBody(v2, '.v2-workspace-inspector__state--needs-you')).toContain('background: var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-workspace-inspector__state--working')).toContain('animation: v2-pulse');
+
+    const phoneSheetStart = v2.lastIndexOf('/* The inspector is a bottom sheet on phones');
+    const phoneSheet = v2.slice(phoneSheetStart, v2.indexOf('/* ---------- Workspace inspector', phoneSheetStart));
+    expect(phoneSheetStart).toBeGreaterThan(-1);
+    expect(phoneSheet).toContain('top: auto');
+    expect(phoneSheet).toContain('width: 100%');
+    expect(v2Layout).toContain('className="v2-inspector-backdrop"');
+  });
+
   test('v2 claims the page canvas — the V1 dark body cannot show through', () => {
     // App.tsx stamps `modern-ui` (V1 dark gradient) on <body> unconditionally;
     // .v2-root paints only its own box. Without this override the V1 dark
@@ -422,7 +451,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-bottom');
   });
 
-  test('motion timing is tokenized and all three existing V2 animations consume it', () => {
+  test('motion timing is tokenized and all three active V2 animations consume it', () => {
     expect(tokens).toContain('--motion-stagger:    0.18s');
     expect(tokens).toContain('--motion-breath:     1.2s');
     expect(tokens).toContain('--motion-ease-breath: ease-in-out');
@@ -446,7 +475,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
 
     expect(ruleBody(v2, '.v2-chat__typing-dots > span')).toContain('var(--motion-breath)');
-    expect(ruleBody(v2, '.v2-inspector__now-pulse')).toContain('var(--motion-pulse)');
+    expect(ruleBody(v2, '.v2-workspace-inspector__state--working')).toContain('var(--motion-pulse)');
     expect(ruleBody(v2, '.v2-spinner')).toContain('var(--motion-spin)');
   });
 
@@ -638,11 +667,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-board__detail-updates li')).toContain('border-left: 3px solid var(--v2-border)');
   });
 
-  test('the inspector activity pulse uses semantic tokens, not raw color literals', () => {
-    const pulse = ruleBody(v2, '.v2-inspector__now-pulse');
-    expect(pulse).toContain('var(--v2-success-ring-strong)');
-    expect(v2.slice(v2.indexOf('@keyframes v2-now-pulse'), v2.indexOf('.v2-inspector__now-meta')))
-      .toContain('var(--v2-success-ring)');
+  test('the workspace inspector working dot is cobalt and uses the semantic pulse timing', () => {
+    const pulse = ruleBody(v2, '.v2-workspace-inspector__state--working');
+    expect(pulse).toContain('background: var(--v2-accent)');
+    expect(pulse).toContain('animation: v2-pulse var(--motion-pulse) var(--motion-ease-state) infinite');
   });
 
   test('v2 focus treatment reuses the shared focus-ring token', () => {
@@ -887,12 +915,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       '.v2-root button.v2-chat__mode-option--active',
       '.v2-root button.v2-first-run__hello',
       '.v2-syscard__cta',
-      '.v2-inspector__action--primary',
-      '.v2-root a.v2-inspector__btn--primary',
       '.v2-root button.v2-approval__btn--approve',
     ];
 
-    test('all eight filled controls use ink, never cobalt', () => {
+    test('all six ordinary filled controls use ink, never cobalt', () => {
       for (const selector of filledControls) {
         const rule = selectorRuleBody(v2, selector);
         expect(rule).toContain('var(--v2-ink)');
@@ -900,11 +926,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('chat and inspector surfaces do not paint with accent-soft', () => {
+    test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {
       const prefixes = [
         '.v2-chat',
         '.v2-msg',
-        '.v2-inspector',
+        '.v2-workspace-inspector',
         '.v2-approval',
         '.v2-syscard',
         '.v2-thread-card',
@@ -919,11 +945,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(offenders).toEqual([]);
     });
 
-    test('hover under chat and inspector changes fill only, never accent color, border, or shadow', () => {
+    test('hover under chat and workspace inspector changes fill only, never accent color, border, or shadow', () => {
       const prefixes = [
         '.v2-chat',
         '.v2-msg',
-        '.v2-inspector',
+        '.v2-workspace-inspector',
         '.v2-approval',
         '.v2-syscard',
         '.v2-thread-card',
@@ -948,7 +974,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         '.v2-thread-card--addressed .v2-thread-card__count',
         '.v2-msg__mention',
         '.v2-msg__content a',
-        '.v2-inspector__link',
+        '.v2-workspace-inspector__state--needs-you',
         '.v2-root button.v2-approval__result-link',
         '.v2-root button.v2-chat__new-pod-copy',
         '.v2-root .v2-chat__new-pod-error button',
@@ -1079,10 +1105,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(lhStart).toBeGreaterThan(-1);
     const lhBlock = v2.slice(lhStart, v2.indexOf('}', lhStart));
     expect(lhBlock).toContain('line-height: 1.6');
-    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint', '.v2-inspector__pod-meta']) {
+    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint']) {
       expect(lhBlock).toContain(`.v2-root:lang(zh) ${sel}`);
     }
-    const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-chat__composer-hint,\n.v2-root:lang(zh) button.v2-inspector__tab');
+    expect(ruleBody(v2, '.v2-root:lang(zh) .v2-workspace-inspector__empty')).toContain('line-height: 1.6');
+    const floorStart = v2.indexOf('.v2-root:lang(zh) .v2-workspace-inspector__actor,\n.v2-root:lang(zh) .v2-workspace-inspector__task-meta');
     expect(floorStart).toBeGreaterThan(-1);
     expect(v2.slice(floorStart, v2.indexOf('}', floorStart))).toContain('font-size: 12px');
   });

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2PodChat from './V2PodChat';
-import V2PodInspector from './V2PodInspector';
+import V2Inspector from './V2Inspector';
 import V2InviteModal, { type V2InviteTab } from './V2InviteModal';
 import V2FirstRunHero from './V2FirstRunHero';
 import { useV2Pods } from '../hooks/useV2Pods';
@@ -15,11 +15,6 @@ import { useAuth } from '../../context/AuthContext';
 interface V2LayoutProps {
   selectionMode?: 'auto' | 'param';
 }
-
-export type InspectorView =
-  | { kind: 'overview' }
-  | { kind: 'member'; agentKey: string }
-  | { kind: 'artifact'; artifactId: string };
 
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
 const LAST_POD_KEY = 'v2:lastPodId';
@@ -76,8 +71,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { pods, loading } = podsState;
 
   const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
-  const [inspectorView, setInspectorView] = useState<InspectorView>({ kind: 'overview' });
-  // Invite modal lives here (not in V2PodInspector) so the chat header
+  // Invite modal lives here (not in V2Inspector) so the chat header
   // invite icon and the inspector "+ Invite" button can both open it. The
   // modal itself is V2InviteModal — this component just owns open/close.
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -102,53 +96,25 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       writeInspectorCollapsed(next);
-      // Always reset to overview when re-opening, so the user lands in a
-      // predictable place rather than the last sub-page.
-      if (!next) setInspectorView({ kind: 'overview' });
       return next;
     });
   }, []);
-  const openInspectorMember = useCallback((agentKey: string) => {
-    if (!agentKey) return;
-    setInspectorView({ kind: 'member', agentKey });
+  const openInspector = useCallback(() => {
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
   }, []);
-  const openInspectorArtifact = useCallback((artifactId: string) => {
-    if (!artifactId) return;
-    setInspectorView({ kind: 'artifact', artifactId });
-    setInspectorCollapsed(false);
-    writeInspectorCollapsed(false);
-  }, []);
-  // Open inspector by ObjectStore filename — used when a chat file pill is
-  // clicked. The inspector resolves the filename → artifactId via its own
-  // `podFiles` state and routes to the artifact sub-page. Goes through a
-  // pending-state pattern (vs. an imperative ref) so the resolution stays
-  // declarative and survives re-mounts.
-  const [pendingOpenFileName, setPendingOpenFileName] = useState<string | null>(null);
-  const openInspectorByFileName = useCallback((fileName: string) => {
+  // File pills stay useful without an artifact sub-page in the compact
+  // inspector: mint the same authorized ObjectStore URL and open it directly.
+  const openFile = useCallback((fileName: string) => {
     if (!fileName) return;
-    // Mobile: the inspector pane is `display:none` below 760px (v2.css media
-    // query), so routing the click into the artifact view would render
-    // nothing. Bypass the inspector entirely and open the file via signed
-    // URL in a new tab — same behavior the inspector's "Open" button uses.
-    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches) {
-      void getSignedAttachmentUrl(`/api/uploads/${fileName}`).then((signed) => {
-        if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
-      });
-      return;
-    }
-    setPendingOpenFileName(fileName);
-    setInspectorCollapsed(false);
-    writeInspectorCollapsed(false);
+    void getSignedAttachmentUrl(`/api/uploads/${fileName}`).then((signed) => {
+      if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
+    });
   }, []);
-  const clearPendingOpenFileName = useCallback(() => setPendingOpenFileName(null), []);
-  const resetInspectorView = useCallback(() => setInspectorView({ kind: 'overview' }), []);
 
-  // When pod changes, drop any stale sub-page state and close the mobile
-  // drawer (in case navigation came from somewhere other than a drawer tap).
+  // Close the mobile drawer when navigation came from somewhere other than a
+  // drawer tap.
   useEffect(() => {
-    setInspectorView({ kind: 'overview' });
     setMobileNavOpen(false);
     if (paramPodId) writeLastPodId(paramPodId);
   }, [paramPodId]);
@@ -225,24 +191,25 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         firstRunVisible={firstRunVisible}
         inspectorCollapsed={inspectorCollapsed}
         onToggleInspector={selectedPodId ? toggleInspector : undefined}
-        onOpenMember={openInspectorMember}
+        onOpenMember={openInspector}
         onOpenInvite={inviteEnabled ? openInvite : undefined}
-        onOpenFile={openInspectorByFileName}
+        onOpenFile={openFile}
         onOpenMobileNav={openMobileNav}
       />
       {selectedPodId && !inspectorCollapsed && (
-        <V2PodInspector
-          detail={detail}
-          podsState={podsState}
-          view={inspectorView}
-          onClose={toggleInspector}
-          onOpenMember={openInspectorMember}
-          onOpenArtifact={openInspectorArtifact}
-          onBack={resetInspectorView}
-          onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
-          pendingOpenFileName={pendingOpenFileName}
-          onPendingOpenFileNameConsumed={clearPendingOpenFileName}
-        />
+        <>
+          <button
+            type="button"
+            className="v2-inspector-backdrop"
+            aria-label="Close inspector"
+            onClick={toggleInspector}
+          />
+          <V2Inspector
+            detail={detail}
+            onClose={toggleInspector}
+            onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
+          />
+        </>
       )}
       <V2FirstRunHero onVisibilityChange={setFirstRunVisible} />
       {inviteEnabled && detail.pod && (
