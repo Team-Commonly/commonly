@@ -129,6 +129,13 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, onClose, onOpenInvite
     return t('inspector.workspace.agentStatus.idle');
   };
 
+  const workingAgents = agents
+    .filter((agent) => agentState(agent, attention, tasks).kind === 'working')
+    .map(labelForAgent);
+  const emptyAttentionCopy = workingAgents.length > 0
+    ? t('inspector.workspace.nothingWorking', { agents: workingAgents.join(' and '), count: workingAgents.length })
+    : t('inspector.workspace.nothingOpen');
+
   return (
     <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
@@ -176,7 +183,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, onClose, onOpenInvite
         <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-needs-you">
           <h2 id="workspace-inspector-needs-you" className="v2-workspace-inspector__label">{t('inspector.workspace.needsYou')}</h2>
           <div className="v2-workspace-inspector__rows">
-            {attention.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.nothingOpen')}</p>}
+            {attention.length === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
             {attention.map((item) => (
               <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
                 <span>{item.title}</span>
