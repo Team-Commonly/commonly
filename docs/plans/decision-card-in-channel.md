@@ -47,6 +47,16 @@ Rules: the title and question are never trimmed; each description is trimmed to 
 
 **D4 — A late second reply changes nothing, and says so.** A second reply to a ruled card gets `409` from the verb. The bridge answers in the channel, as a reply to the card: `Already ruled {rel} by {by}: {value}. To change it, the agent asks again — say so in the workspace:` + the thread link. The second reply's text **is** posted into the pod as an ordinary threaded reply under the ask (so the words are not lost and the asker sees them), but the ruling is a recorded fact (ADR-028) and does not move. A reply while the two-minute lock is held by another tab answers `Someone is ruling this right now — try again in a moment.` and posts nothing.
 
+**The verb has three more outcomes, and a throw is a code, not a failure** (Vera, 63928). The bridge switches on `status`/`code` and never falls back to "post the text as an ordinary message" — that fallback is exactly what double-posts to the asker in the third case:
+
+| outcome | what already happened in the workspace | channel answer | bridge posts |
+|---|---|---|---|
+| `403` *Only human pod members can rule* — the owner left the pod after the card was sent | nothing | `You're no longer in {pod}, so this ruling can't be recorded. Open it in Commonly:` + link | nothing |
+| `503 ruling_not_posted` — the threaded reply could not be written; the lock is released, the card stays open | nothing | `Couldn't record that — nothing was saved. Try again in a moment.` | nothing; the same reply retried rules normally |
+| `409 ruling_finalize_conflict` — the reply **is** posted and has woken the asker, but the row did not flip to `ruled` | one threaded reply, one wake | `Your ruling reached the workspace, but the card didn't close. Open it in Commonly to confirm:` + link | **nothing** — a second post here is the double-post |
+
+The third row is the one the table exists for: the human's words are already in the thread, so the only honest channel line is *it reached, confirm there*, and the workspace card (still `pending`) is where the row gets closed — by the same verb, which will post a second reply only if a human rules again, which is today's behaviour and not this note's to change.
+
 **D5 — A bare number resolves the one open card.** People do not quote-reply on a phone. A message that is *only* an integer (`^\s*\d{1,2}\s*$`), sent to a chat that has **exactly one** pending card in its `relayMap` window, is treated as a reply to that card (D3). With two or more pending, the bridge answers `Which one? Reply to the card you mean.` and posts nothing. With none, the number is an ordinary message and relays as today. Anything longer than a bare number never resolves a card without a quote-reply — free-text rulings need the quote so a passing sentence is never read as a ruling.
 
 **D6 — A ruling from the workspace closes the card in the channel.** When `chooseDecision` succeeds, the service asks the bridges to confirm wherever the card was shown: `Integration.find({ 'config.relayMap.podMessageId': row.messageId, isActive: true })` → for each, send `✓ Ruled by {by}: {value}` as a reply to that card. Without this a phone shows an open card for a fork that was ruled at a desk ten minutes earlier, and the next "2" from the phone meets D4 without warning. Fire-and-forget, like every relay; a failed confirmation is a log line, never a failed ruling.
@@ -67,6 +77,9 @@ Rules: the title and question are never trimmed; each description is trimmed to 
 | `ship it, but behind the flag` as a quote-reply | pending card | ruling = that text | `✓ Ruled: ship it, but behind the flag` |
 | any reply to a ruled card | ruled card | the text lands as a threaded reply under the ask; ruling unchanged | `Already ruled {rel} by {by}: {value}. …` |
 | a reply while another tab holds the lock | — | nothing | `Someone is ruling this right now — try again in a moment.` |
+| a reply after the owner left the pod | — | nothing (`403`) | `You're no longer in {pod}, so this ruling can't be recorded. …` + link |
+| a reply when the threaded write fails | — | nothing (`503 ruling_not_posted`, lock released) | `Couldn't record that — nothing was saved. Try again in a moment.` |
+| a reply when the reply posts but the row does not flip | the ruling reply is in the thread and woke the asker (`409 ruling_finalize_conflict`) | `Your ruling reached the workspace, but the card didn't close. …` + link — and **no** further post |
 | `/mute` then a card is asked | — | card not sent; the ask is in the workspace | nothing until `/unmute` |
 | admin pause, then a reply | — | acknowledged and dropped (D8 Phase 2 seed 10) | nothing |
 
@@ -127,6 +140,9 @@ PR 1 alone is already a product change — forks reach the phone in attention mo
 9. **Lock.** Hold the `rulingLock` with a live token, reply `2` → `Someone is ruling…`, nothing written; after expiry the same reply rules.
 9b. **A reply is not an authorization.** (a) A Telegram update whose `chat.type` is `group`, on a chat that somehow matches a live row → dropped before lookup, `chooseDecision` never called. (b) A Slack event with `event.user !== slackUserId` in the DM that received the card → dropped before lookup. (c) A quote-reply in chat B to a `message_id` that exists only in chat A's `relayMap` → no hit, ordinary message, nothing ruled. (d) The caller recorded on the ruling is `config.linkedUserId`, never the sender name. (e) Two replies to the same card delivered concurrently (two webhook requests in flight) → exactly one `ruling`, one `✓ Ruled`, one `Already ruled` or `Someone is ruling…`; the verb's CAS is the only arbiter and the bridge holds no state of its own.
 10. **Slack twin.** Seeds 3, 4, 6 with `thread_ts`; a top-level bare number follows seed 7; `event.user !== slackUserId` is dropped before any lookup.
+12. **Owner left the pod.** Card sent, owner removed from the pod, reply `2` → verb answers 403; nothing written, no unthreaded post; channel line names the pod and links the thread.
+13. **Write fails.** Make `PGMessage.create` throw once → `503 ruling_not_posted`; the row is `pending` with no lock; nothing posted; the channel says nothing was saved; the same reply sent again rules normally (one ruling, one wake).
+14. **Finalize conflict.** Make the final `findOneAndUpdate` return null → the thread holds exactly **one** human reply, the asker woke exactly once, the row is still `pending`, and the bridge posted **nothing else** — the channel line says it reached and links the thread. A bridge that posts the text as an ordinary message here fails this seed.
 11. **Ledger.** After 3: one entry `{ event: 'decision_request', verdict: 'interrupt', reachedHumanAt, ruledVia: 'telegram' }`; after 8: `ruledVia: 'workspace'`.
 
 ## 7. Not decided here
