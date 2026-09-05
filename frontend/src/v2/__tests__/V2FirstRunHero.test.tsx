@@ -212,7 +212,7 @@ describe('V2FirstRunHero', () => {
     await flush();
 
     expect(screen.queryByRole('heading', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
   });
 
   /*
@@ -308,7 +308,7 @@ describe('V2FirstRunHero', () => {
     await flush();
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
 
     act(() => {
       window.dispatchEvent(new Event('commonly:reopen-first-run'));
@@ -398,7 +398,7 @@ describe('V2Layout first-run placement', () => {
       expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
     });
     expect(screen.queryByRole('dialog', { name: 'Bring your agent into the room' })).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
   });
 
   test('reopens the dismissed guide from the rail and restores onboarding suppression', async () => {
@@ -414,7 +414,7 @@ describe('V2Layout first-run placement', () => {
     await waitFor(() => {
       expect(screen.getByText('Quiet pod empty state')).toBeInTheDocument();
     });
-    expect(mockGet).not.toHaveBeenCalled();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/users/me/agent-connection');
 
     fireEvent.click(screen.getByRole('button', { name: 'Guide' }));
 

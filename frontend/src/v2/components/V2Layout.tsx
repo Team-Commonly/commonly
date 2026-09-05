@@ -7,8 +7,10 @@ import V2Thread from './V2Thread';
 import V2Inspector from './V2Inspector';
 import V2InviteModal, { type V2InviteTab } from './V2InviteModal';
 import V2FirstRunHero from './V2FirstRunHero';
+import V2MobileTabs from './V2MobileTabs';
 import { useV2Pods } from '../hooks/useV2Pods';
 import { useV2PodDetail } from '../hooks/useV2PodDetail';
+import { useV2PodAttention } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
 
@@ -69,6 +71,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { currentUser } = useAuth();
   const podsState = useV2Pods();
   const { pods, loading } = podsState;
+  const attention = useV2PodAttention();
 
   const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(readInspectorCollapsed());
   // Invite modal lives here (not in V2Inspector) so the chat header
@@ -182,6 +185,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       <V2PodsSidebar
         selectedPodId={selectedPodId}
         podsState={podsState}
+        attentionItems={attention.items}
         mobileOpen={mobileNavOpen}
         onMobileClose={closeMobileNav}
       />
@@ -195,6 +199,12 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openFile}
         onOpenMobileNav={openMobileNav}
+        onDecisionSettled={attention.refresh}
+      />
+      <V2MobileTabs
+        podId={selectedPodId}
+        needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}
+        onOpenInspector={openInspector}
       />
       {selectedPodId && !inspectorCollapsed && (
         <>
@@ -206,6 +216,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           />
           <V2Inspector
             detail={detail}
+            attentionItems={attention.items}
             onClose={toggleInspector}
             onOpenInvite={inviteEnabled ? () => openInvite() : undefined}
           />

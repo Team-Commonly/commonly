@@ -71,13 +71,16 @@ describe('V2Thread decision cards', () => {
       }
       return Promise.resolve({ data: {} });
     });
-    mockPost.mockResolvedValue({ data: { decision: { ruling: { value: 'Ship the rebuilt workspace', by: 'Lily' } } } });
+    mockPost.mockResolvedValue({ data: { decision: { ruling: {
+      value: 'Ship the rebuilt workspace', by: 'Lily', messageId: 'ruling-42', at: '2026-09-05T12:01:00.000Z',
+    } } } });
   });
 
   test('replaces the decision request prose at its durable message position with a live card', async () => {
+    const onDecisionSettled = jest.fn();
     render(
       <AuthContext.Provider value={auth}>
-        <MemoryRouter><V2Thread detail={detail} /></MemoryRouter>
+        <MemoryRouter><V2Thread detail={detail} onDecisionSettled={onDecisionSettled} /></MemoryRouter>
       </AuthContext.Provider>,
     );
 
@@ -91,6 +94,11 @@ describe('V2Thread decision cards', () => {
       { value: 'Ship the rebuilt workspace' },
       expect.anything(),
     ));
-    expect(await screen.findByRole('status')).toHaveTextContent('Lily ruled: Ship the rebuilt workspace');
+    const ruling = await screen.findByTestId('decision-ruling-row');
+    expect(ruling).toHaveTextContent('Lily');
+    expect(ruling).toHaveTextContent('ruled');
+    expect(ruling).toHaveTextContent('Ship the rebuilt workspace');
+    expect(screen.queryByTestId('decision-card')).not.toBeInTheDocument();
+    expect(onDecisionSettled).toHaveBeenCalledTimes(1);
   });
 });

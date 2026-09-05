@@ -110,6 +110,7 @@
       "otherPlaceholder": "Write your ruling…",
       "sendOther": "Send ruling",
       "ruled": "✓ {{by}} ruled: {{value}}",
+      "ruledShort": "ruled",
       "actionFailed": "That ruling could not be saved. Try again."
     },
     "mention": {
