@@ -73,6 +73,7 @@ const finishEvent = async (eventId: string, teamId: string, event: any): Promise
       'config.chatId': channelId,
       'config.chatType': 'im',
       'config.liveRelay': true,
+      'config.adminPause': { $exists: false },
       status: { $ne: 'error' },
     }).lean();
     if (integration) await relaySlackMessageToPod({ integration, event });
@@ -133,6 +134,7 @@ router.post('/commands', slackWebhookRateLimit, signed, async (req: any, res: an
     'config.chatId': channelId,
     'config.chatType': 'im',
     'config.slackUserId': slackUserId,
+    'config.adminPause': { $exists: false },
     status: { $ne: 'error' },
   });
   if (!integration) {

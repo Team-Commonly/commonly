@@ -32,6 +32,11 @@ export const webhookProjector: ComponentProjector = {
     if (!context.podId) {
       throw new Error('Webhook projection requires a pod target');
     }
+    const now = new Date();
+    const initialGate = {
+      enabled: true,
+      since: now,
+    };
 
     // Projection never mints a code. A partially projected row must remain
     // impossible for the unauthenticated enable route to redeem.
@@ -41,6 +46,7 @@ export const webhookProjector: ComponentProjector = {
         $setOnInsert: {
           installationId,
           podId: context.podId,
+          scope: 'user',
           type: provider,
           status: 'pending',
           createdBy: context.installedBy,
@@ -49,6 +55,7 @@ export const webhookProjector: ComponentProjector = {
             liveRelay: true,
             relayAllAgentMessages: true,
             linkedUserId: String(context.installedBy),
+            gates: { [String(context.podId)]: initialGate },
           },
         },
       },

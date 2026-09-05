@@ -6,9 +6,13 @@ const InstallableInstallation = require('../../models/InstallableInstallation');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const Pod = require('../../models/Pod');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const ConnectorSecret = require('../../models/ConnectorSecret');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const connectorSecrets = require('../connectorSecrets');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const isPodMember = require('../../utils/isPodMember');
 
 const ORPHAN_SECRET_GRACE_MS = 10 * 60_000;
 
@@ -55,10 +59,22 @@ const sweepStaleLocks = async (now: Date): Promise<{ completed: number; errored:
   return { completed, errored };
 };
 
-const sweepActiveInstallations = async (): Promise<number> => {
+const sweepActiveInstallations = async (): Promise<{ staleComponents: number; clearedPauseProjections: number }> => {
   const active = await InstallableInstallation.find({ status: 'active' }).lean() as IInstallableInstallation[];
   let staleComponents = 0;
+  let clearedPauseProjections = 0;
   for (const installation of active) {
+    // Resume clears children before it flips the parent active. If the second
+    // write crashes, active is never reached; this branch only clears stale
+    // projection flags left by an otherwise completed resume.
+    const cleared = await Integration.updateMany(
+      {
+        installationId: installationIdFor(installation),
+        'config.adminPause': { $exists: true },
+      },
+      { $unset: { 'config.adminPause': 1 } },
+    );
+    clearedPauseProjections += cleared.modifiedCount || 0;
     const integration = await Integration.findOne({ installationId: installationIdFor(installation) }).lean();
     if (integration) continue;
     const result = await InstallableInstallation.updateOne(
@@ -67,7 +83,69 @@ const sweepActiveInstallations = async (): Promise<number> => {
     );
     staleComponents += result.modifiedCount || 0;
   }
-  return staleComponents;
+  return { staleComponents, clearedPauseProjections };
+};
+
+const pauseProjection = (installation: IInstallableInstallation) => ({
+  reason: installation.adminPause?.reason || installation.errorMessage || 'Paused by an administrator.',
+  at: installation.adminPause?.at || installation.updatedAt,
+  adminId: installation.adminPause?.adminId || 'system',
+});
+
+// Pause writes the parent first and the child second. Re-apply the parent
+// projection until each child agrees, so a failed child write heals toward the
+// stopped state instead of accidentally restoring an inbound relay.
+const sweepPausedInstallations = async (): Promise<number> => {
+  const paused = await InstallableInstallation.find({ status: 'paused' }).lean() as IInstallableInstallation[];
+  let restamped = 0;
+  for (const installation of paused) {
+    const pause = pauseProjection(installation);
+    const result = await Integration.updateMany(
+      {
+        installationId: installationIdFor(installation),
+        $or: [
+          { 'config.adminPause': { $exists: false } },
+          { 'config.adminPause.reason': { $ne: pause.reason } },
+          { 'config.adminPause.at': { $ne: pause.at } },
+          { 'config.adminPause.adminId': { $ne: pause.adminId } },
+        ],
+      },
+      { $set: { 'config.adminPause': pause } },
+    );
+    restamped += result.modifiedCount || 0;
+  }
+  return restamped;
+};
+
+// Membership is authoritative on outbound selection, but prune obsolete keys
+// here as well so the owner's gate list does not promise a pod they left.
+const sweepOrphanedGates = async (): Promise<number> => {
+  const rows = await Integration.find({
+    scope: 'user',
+    'config.gates': { $exists: true },
+  }).select('_id createdBy podId config.gates').lean() as Array<{
+    _id: unknown;
+    createdBy?: unknown;
+    podId?: unknown;
+    config?: { gates?: Record<string, unknown> };
+  }>;
+  let pruned = 0;
+  for (const row of rows) {
+    const gates = row.config?.gates;
+    if (!gates || typeof gates !== 'object') continue;
+    const unset: Record<string, 1> = {};
+    for (const podId of Object.keys(gates)) {
+      const pod = await Pod.findById(podId).select('createdBy members').lean();
+      if (!pod || !isPodMember(pod, row.createdBy)) {
+        unset[`config.gates.${podId}`] = 1;
+        if (String(row.podId) === podId) unset.podId = 1;
+      }
+    }
+    if (!Object.keys(unset).length) continue;
+    const result = await Integration.updateOne({ _id: row._id }, { $unset: unset });
+    pruned += result.modifiedCount || 0;
+  }
+  return pruned;
 };
 
 const sweepUninstalledInstallations = async (): Promise<number> => {
@@ -217,6 +295,9 @@ export const sweep = async (now: Date = new Date()): Promise<{
   completed: number;
   errored: number;
   staleComponents: number;
+  clearedPauseProjections: number;
+  restampedPauses: number;
+  prunedGates: number;
   uninstallsCompleted: number;
   deactivated: number;
   expiredSlackBinds: number;
@@ -224,7 +305,9 @@ export const sweep = async (now: Date = new Date()): Promise<{
   unavailableSlackSecretKeys: number;
 }> => {
   const locks = await sweepStaleLocks(now);
-  const staleComponents = await sweepActiveInstallations();
+  const active = await sweepActiveInstallations();
+  const restampedPauses = await sweepPausedInstallations();
+  const prunedGates = await sweepOrphanedGates();
   const uninstallsCompleted = await sweepStaleUninstalls(now);
   const deactivated = await sweepUninstalledInstallations();
   const expiredSlackBinds = await sweepExpiredSlackBinds(now);
@@ -232,7 +315,10 @@ export const sweep = async (now: Date = new Date()): Promise<{
   const unavailableSlackSecretKeys = await sweepUnavailableSlackSecretKeys();
   const result = {
     ...locks,
-    staleComponents,
+    staleComponents: active.staleComponents,
+    clearedPauseProjections: active.clearedPauseProjections,
+    restampedPauses,
+    prunedGates,
     uninstallsCompleted,
     deactivated,
     expiredSlackBinds,

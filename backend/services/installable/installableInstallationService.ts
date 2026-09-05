@@ -60,6 +60,19 @@ export class InstallableAlreadyInstalledError extends Error {
   }
 }
 
+/** A paused parent is a hard administrative stop, never a retryable lock. */
+export class InstallationPausedError extends Error {
+  code = 'installation_paused';
+  reason: string;
+
+  constructor(reason?: string) {
+    const resolvedReason = reason || 'Paused by an administrator.';
+    super(resolvedReason);
+    this.name = 'InstallationPausedError';
+    this.reason = resolvedReason;
+  }
+}
+
 export class InstallableNotFoundError extends Error {
   code = 'installable_not_found';
 
@@ -80,7 +93,7 @@ export interface InstallResult {
 interface ClaimResult {
   installation: IInstallableInstallation;
   ownsClaim: boolean;
-  claimedState: 'installing' | 'activating' | 'uninstalling' | 'active';
+  claimedState: 'installing' | 'activating' | 'uninstalling' | 'active' | 'paused';
 }
 
 interface InstallArgs {
@@ -100,6 +113,7 @@ const liveClaimStatuses: InstallationStatus[] = [
   'activating',
   'uninstalling',
   'active',
+  'paused',
   'error',
 ];
 
@@ -114,6 +128,7 @@ const statusForClaim = (
   if (status === 'active') return 'active';
   if (status === 'activating') return 'activating';
   if (status === 'uninstalling') return 'uninstalling';
+  if (status === 'paused') return 'paused';
   return 'installing';
 };
 
@@ -169,6 +184,12 @@ const resultForExisting = async (
   installation: IInstallableInstallation,
   requestedPodId: Types.ObjectId,
 ): Promise<InstallResult> => {
+  // A duplicate-key loser reaches this helper with ownsClaim:false. Paused is
+  // deliberately part of the live unique index, so this is the one place an
+  // owner install must become the explicit 409 rather than a fake transient.
+  if (installation.status === 'paused') {
+    throw new InstallationPausedError(installation.errorMessage);
+  }
   const integration = await integrationFor(installation);
   if (installation.status === 'active') {
     // A live Integration is a real channel binding. Every non-active state is
@@ -543,6 +564,9 @@ const installAttempt = async ({
   if (!claim.ownsClaim) return resultForExisting(claim.installation, targetPodId);
 
   let installation = claim.installation;
+  if (claim.claimedState === 'paused') {
+    throw new InstallationPausedError(installation.errorMessage);
+  }
   const claimId = installation.claimId;
   if (!claimId) throw new InstallLockLostError();
 
@@ -637,7 +661,15 @@ export const uninstall = async ({
   if (!installation) throw new InstallableNotFoundError();
 
   const claim = await claimUninstall(installation);
-  if (!claim.ownsClaim) return claim.installation;
+  if (!claim.ownsClaim) {
+    // claimUninstall returns a paused winner unchanged because its claim
+    // filter intentionally admits only active/error and stale transients.
+    // Returning it as 200 would make an administrative stop a silent no-op.
+    if (claim.installation.status === 'paused') {
+      throw new InstallationPausedError(claim.installation.errorMessage);
+    }
+    return claim.installation;
+  }
   const claimId = claim.installation.claimId;
   if (!claimId) throw new InstallLockLostError();
 
@@ -652,6 +684,7 @@ module.exports = {
   InstallableProjectionError,
   InstallInProgressError,
   InstallableAlreadyInstalledError,
+  InstallationPausedError,
   InstallableNotFoundError,
   install,
   uninstall,

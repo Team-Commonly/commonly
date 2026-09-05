@@ -4,6 +4,8 @@ import { Types } from 'mongoose';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const Pod = require('../../models/Pod');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const telegramBridgeService = require('../telegramBridgeService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const slackBridgeService = require('../slackBridgeService');
@@ -37,18 +39,41 @@ const activeHandlersForPod = async (podId: string): Promise<Array<{
   integration: IIntegration;
   handler: string;
 }>> => {
-  // Selection lives here, before any handler invocation. The $lookup keeps the
-  // event path O(1) and proves the target pod's connector is the only one
-  // eligible; individual bridges remain defensive, not authoritative.
+  // Selection starts from the pod's current membership. A user-scoped
+  // connector is private to its owner, so a stale gate can never relay after
+  // that owner leaves even before the reconciler prunes the key. Legacy rows
+  // retain their pod-scoped selection until they are explicitly migrated.
   if (!Types.ObjectId.isValid(podId)) return [];
+  const pod = await Pod.findById(podId).select('createdBy members').lean() as {
+    createdBy?: unknown;
+    members?: unknown[];
+  } | null;
+  if (!pod) return [];
+  const memberIds = Array.from(new Set([
+    pod.createdBy,
+    ...(pod.members || []),
+  ].filter(Boolean).map((id) => String(id)))).map((id) => new Types.ObjectId(id));
+  if (!memberIds.length) return [];
+  const gateEnabledPath = `config.gates.${String(podId)}.enabled`;
   return Integration.aggregate([
     {
       $match: {
         type: { $in: ['telegram', 'slack'] },
         isActive: true,
         status: { $ne: 'error' },
-        podId: new Types.ObjectId(podId),
         'config.liveRelay': true,
+        'config.adminPause': { $exists: false },
+        $or: [
+          {
+            scope: { $ne: 'user' },
+            podId: new Types.ObjectId(podId),
+          },
+          {
+            scope: 'user',
+            createdBy: { $in: memberIds },
+            [gateEnabledPath]: true,
+          },
+        ],
       },
     },
     {

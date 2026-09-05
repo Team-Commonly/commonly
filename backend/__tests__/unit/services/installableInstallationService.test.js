@@ -1,10 +1,15 @@
 // @ts-nocheck
 
+// testUtils imports jsonwebtoken, whose Node 26-incompatible SlowBuffer
+// dependency is irrelevant to this Mongo-backed service suite.
+jest.mock('jsonwebtoken', () => ({}));
+
 const mongoose = require('mongoose');
 
 const Installable = require('../../../models/Installable');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
 const Integration = require('../../../models/Integration');
+const Pod = require('../../../models/Pod');
 const ConnectorSecret = require('../../../models/ConnectorSecret');
 const {
   install,
@@ -12,10 +17,13 @@ const {
   InstallLockLostError,
   InstallableAlreadyInstalledError,
   InstallableProjectionError,
+  InstallationPausedError,
 } = require('../../../services/installable/installableInstallationService');
 const { sweep } = require('../../../services/installable/installableReconciler');
 const { TELEGRAM_CONNECTOR, SLACK_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { put } = require('../../../services/connectorSecrets');
+const telegramService = require('../../../services/telegramService');
+const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -58,7 +66,7 @@ describe('installable connector projection', () => {
     process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
   });
 
-  it('projects Telegram once, mints last, and shares one Integration between components', async () => {
+  it('projects a fresh connector as user-scoped, mints last, and shares one Integration between components', async () => {
     const { userId, podId } = ids();
 
     const result = await install({ installableId: 'telegram', installedBy: userId, podId });
@@ -78,9 +86,11 @@ describe('installable connector projection', () => {
     expect(String(integration.podId)).toBe(podId);
     expect(String(result.installation.boundPodId)).toBe(podId);
     expect(integration.createdBy.toString()).toBe(userId);
+    expect(integration.scope).toBe('user');
     expect(integration.config.linkedUserId).toBe(userId);
     expect(integration.config.liveRelay).toBe(true);
     expect(integration.config.relayAllAgentMessages).toBe(true);
+    expect(integration.config.gates.get(podId)).toMatchObject({ enabled: true, since: expect.any(Date) });
     expect(integration.config.connectCode).toMatch(/^[a-f0-9]{32}$/);
     expect(integration.config.connectCodeExpiresAt).toBeInstanceOf(Date);
 
@@ -406,6 +416,61 @@ describe('installable connector projection', () => {
     expect(replacementAfterSecondUninstall.isActive).toBe(false);
   });
 
+  it('refuses install and uninstall while an administrator has paused the parent without writing either row', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const pausedAt = new Date();
+    await InstallableInstallation.updateOne(
+      { _id: installed.installation._id },
+      {
+        $set: {
+          status: 'paused',
+          errorMessage: 'Safety review in progress.',
+          adminPause: { reason: 'Safety review in progress.', at: pausedAt, adminId: 'admin' },
+        },
+      },
+    );
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.adminPause': { reason: 'Safety review in progress.', at: pausedAt, adminId: 'admin' } } },
+    );
+    const beforeParent = await InstallableInstallation.findById(installed.installation._id).lean();
+    const beforeIntegration = await Integration.findById(installed.integration._id).lean();
+
+    await expect(install({ installableId: 'telegram', installedBy: userId, podId }))
+      .rejects.toMatchObject({ code: 'installation_paused', reason: 'Safety review in progress.' });
+    await expect(uninstall({ installableId: 'telegram', installedBy: userId }))
+      .rejects.toBeInstanceOf(InstallationPausedError);
+
+    expect(await InstallableInstallation.countDocuments({ installableId: 'telegram', targetId: userId })).toBe(1);
+    expect(await Integration.countDocuments({ installationId: String(installed.installation._id) })).toBe(1);
+    expect(await InstallableInstallation.findById(installed.installation._id).lean()).toMatchObject({
+      status: beforeParent.status,
+      claimId: beforeParent.claimId,
+      claimedAt: beforeParent.claimedAt,
+      errorMessage: beforeParent.errorMessage,
+    });
+    expect(await Integration.findById(installed.integration._id).lean()).toMatchObject({
+      isActive: beforeIntegration.isActive,
+      config: expect.objectContaining({ adminPause: beforeIntegration.config.adminPause }),
+    });
+  });
+
+  it('keeps a paused parent in the live unique set', async () => {
+    const { userId, podId } = ids();
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await InstallableInstallation.updateOne(
+      { _id: installed.installation._id },
+      { $set: { status: 'paused', errorMessage: 'Paused.' } },
+    );
+
+    await expect(InstallableInstallation.create({
+      installableId: 'telegram', installableVersion: '1.0.0', targetType: 'user',
+      targetId: new mongoose.Types.ObjectId(userId), scope: 'user',
+      installedBy: new mongoose.Types.ObjectId(userId), installSource: 'direct', status: 'paused',
+    })).rejects.toMatchObject({ code: 11000 });
+  });
+
   it('revokes Slack’s envelope secret when the installation is uninstalled', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'slack', installedBy: userId, podId });
@@ -543,6 +608,80 @@ describe('installable connector projection', () => {
     const parent = await InstallableInstallation.findById(installed.installation._id);
     expect(reconciled.staleComponents).toBe(1);
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+  });
+
+  it('reconciles pause projections and prunes gates when the owner leaves a pod', async () => {
+    const { userId, podId } = ids();
+    await Pod.create({ _id: podId, name: 'Current pod', type: 'team', createdBy: userId, members: [] });
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    const stalePodId = new mongoose.Types.ObjectId().toString();
+    const pausedAt = new Date();
+    await InstallableInstallation.updateOne(
+      { _id: installed.installation._id },
+      { $set: { status: 'paused', errorMessage: 'Reviewing', adminPause: { reason: 'Reviewing', at: pausedAt, adminId: 'admin' } } },
+    );
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      {
+        $unset: { 'config.adminPause': 1 },
+        $set: { [`config.gates.${stalePodId}`]: { enabled: true, since: new Date() } },
+      },
+    );
+
+    const pausedSweep = await sweep(new Date());
+    const pausedProjection = await Integration.findById(installed.integration._id);
+    expect(pausedSweep.restampedPauses).toBe(1);
+    expect(pausedSweep.prunedGates).toBe(1);
+    expect(pausedProjection.config.adminPause).toMatchObject({ reason: 'Reviewing', adminId: 'admin' });
+    expect(pausedProjection.config.gates.get(stalePodId)).toBeUndefined();
+
+    await InstallableInstallation.updateOne(
+      { _id: installed.installation._id },
+      { $set: { status: 'active' }, $unset: { adminPause: 1 } },
+    );
+    const resumedSweep = await sweep(new Date());
+    expect(resumedSweep.clearedPauseProjections).toBe(1);
+    expect((await Integration.findById(installed.integration._id)).config.adminPause).toBeUndefined();
+  });
+
+  it('clears the active pod with its orphaned gate and tells the linked chat why', async () => {
+    const { userId, podId } = ids();
+    await Pod.create({
+      _id: podId,
+      name: 'Departed pod',
+      type: 'team',
+      createdBy: new mongoose.Types.ObjectId(),
+      members: [userId],
+    });
+    const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      { $set: { 'config.chatId': 'chat-1', 'config.chatType': 'private' } },
+    );
+    await Pod.updateOne({ _id: podId }, { $pull: { members: userId } });
+
+    const reconciled = await sweep(new Date());
+    const projection = await Integration.findById(installed.integration._id).lean();
+    expect(reconciled.prunedGates).toBe(1);
+    expect(projection.config.gates?.[podId]).toBeUndefined();
+    expect(projection.podId).toBeUndefined();
+
+    const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    const send = jest.spyOn(telegramService, 'sendMessage').mockResolvedValue({ messageId: 'reply-1' });
+    try {
+      await expect(relayTelegramMessageToPod({
+        integration: projection,
+        telegramMessage: { text: 'where did the pod go?' },
+      })).resolves.toEqual({ relayed: false });
+      expect(send).toHaveBeenCalledWith(
+        'bot-token', 'chat-1', 'This connector has no active pod. Choose one in Commonly first.',
+      );
+    } finally {
+      send.mockRestore();
+      if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = previousToken;
+    }
   });
 
   it('expires a pending Slack bind, revokes its encrypted token, and leaves a retryable active card', async () => {
