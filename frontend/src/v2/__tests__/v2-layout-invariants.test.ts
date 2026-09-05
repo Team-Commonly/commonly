@@ -62,6 +62,19 @@ const cssVariable = (css: string, name: string): string | undefined => (
   new RegExp(`${name}\\s*:\\s*([^;]+);`).exec(css)?.[1].trim()
 );
 
+const activeAccentBackgroundSelectors = (css: string, classNames: Set<string>): string[] => (
+  [...new Set(Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g)).flatMap(([, rawSelector, body]) => {
+    if (!/background\s*:\s*var\(--v2-accent\)/.test(body)) return [];
+    return rawSelector
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split(',')
+      .map((selector) => selector.trim().replace(/:hover(?::[^\s.{]+)?/g, ''))
+      .filter((selector) => Array.from(classNames).some((className) => (
+        new RegExp(`\\.${className}(?![\\w-])`).test(selector)
+      )));
+  }))].sort()
+);
+
 // App.css is shared by legacy V1 and v2. A leading element selector in V1
 // styles crosses that boundary unless it is rooted beneath the legacy canvas.
 // Keep html/body as the two deliberate document-level exceptions.
@@ -92,6 +105,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const messageRow = read('../components/V2MessageRow.tsx');
   const composer = read('../components/V2Composer.tsx');
   const decisionCard = read('../components/V2DecisionCard.tsx');
+  const navRail = read('../components/V2NavRail.tsx');
+  const threadCard = read('../components/V2ThreadCard.tsx');
   const v2Layout = read('../components/V2Layout.tsx');
   const mobileTabs = read('../components/V2MobileTabs.tsx');
   const podBoard = read('../components/V2PodBoard.tsx');
@@ -751,7 +766,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podChat).toContain('podChat.header.agentsWorking');
     expect(podChat).toContain('v2-thread__inspector-toggle');
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 22px/28px var(--v2-font)');
+    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 22px/28px var(--v2-font-display)');
     expect(ruleBody(v2, '.v2-thread__working')).toContain('font: 500 11px/16px var(--v2-font-mono)');
   });
 
@@ -764,6 +779,46 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(mobileTabs).toContain('onOpenInspector');
     expect(mobileTabs).toContain("navigate('/v2/settings')");
     expect(v2Layout).toContain('<V2MobileTabs');
+  });
+
+  test('workspace thread rows retain the artboard grammar at desktop and phone widths', () => {
+    const title = ruleBody(v2, '.v2-thread__title h1');
+    const avatarRule = ruleBody(v2, '.v2-thread .v2-avatar');
+    const time = ruleBody(v2, '.v2-thread .v2-msg__time');
+    const actions = ruleBody(v2, '.v2-thread .v2-msg__actions');
+    expect(title).toContain('var(--v2-font-display)');
+    expect(avatarRule).toContain('width: 28px');
+    expect(avatarRule).toContain('border-radius: 4px');
+    expect(avatarRule).toContain('border: 0');
+    expect(avatarRule).toContain('box-shadow: none');
+    expect(time).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    expect(actions).toContain('border-radius: 4px');
+    expect(actions).toContain('box-shadow: none');
+
+    const phoneStart = v2.lastIndexOf(
+      '@media (max-width: 760px)',
+      v2.lastIndexOf('/* The workspace is edge-to-edge on a phone'),
+    );
+    const phone = v2.slice(phoneStart);
+    expect(phone).toContain('.v2-decision-card__options { align-items: stretch; flex-direction: column; }');
+    expect(phone).toContain('.v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }');
+    expect(phone).toContain('.v2-root button.v2-chat__mobile-nav-btn');
+    expect(phone).toContain('border: 1px solid var(--v2-border)');
+  });
+
+  test('phone drawer and inspector sheet are mutually exclusive overlays', () => {
+    // Both panels are fixed overlays at 390px. Leaving the sheet open while
+    // mounting the drawer puts the latter underneath an inert hit target.
+    const mobileNavOpener = v2Layout.slice(
+      v2Layout.indexOf('const openMobileNav = useCallback(() => {'),
+      v2Layout.indexOf('const closeMobileNav', v2Layout.indexOf('const openMobileNav = useCallback(() => {')),
+    );
+    const inspectorOpener = v2Layout.slice(
+      v2Layout.indexOf('const openInspector = useCallback(() => {'),
+      v2Layout.indexOf('// File pills', v2Layout.indexOf('const openInspector = useCallback(() => {')),
+    );
+    expect(mobileNavOpener).toContain('setInspectorCollapsed(true);');
+    expect(inspectorOpener).toContain('setMobileNavOpen(false);');
   });
 
   test('Activity cards have shrinkable desktop and mobile layout guards', () => {
@@ -985,6 +1040,37 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(other).toContain('color: var(--v2-accent-text)');
       expect(other).toContain('border: 0');
       expect(other).not.toContain('background: var(--v2-accent)');
+    });
+
+    test('workspace cobalt backgrounds are a reviewed role allowlist: two blocks and five marks', () => {
+      // A class used by the route that gains an accent background joins this
+      // set automatically, so a seventh/extra fill fails instead of hiding in
+      // stale stylesheet rules. Inspector state classes are generated from the
+      // state kind, hence the two explicit additions below.
+      const workspaceSource = [
+        navRail,
+        podsSidebar,
+        thread,
+        threadCard,
+        workspaceInspector,
+        decisionCard,
+        composer,
+        messageRow,
+      ].join('\n');
+      const activeClasses = new Set(Array.from(workspaceSource.matchAll(/\bv2-[\w-]+/g), ([className]) => className));
+      activeClasses.add('v2-workspace-inspector__state--needs-you');
+      activeClasses.add('v2-workspace-inspector__state--working');
+
+      const cobalt = activeAccentBackgroundSelectors(v2, activeClasses);
+      expect(cobalt).toEqual([
+        '.v2-pods__channel-dot--live',
+        '.v2-rail__brand-icon',
+        '.v2-root button.v2-decision-card__choice--primary',
+        '.v2-root button.v2-pods__row--selected',
+        '.v2-thread-card__dot',
+        '.v2-workspace-inspector__state--needs-you',
+        '.v2-workspace-inspector__state--working',
+      ]);
     });
 
     test('a ruled in-thread decision drops back to a muted transcript label, not a second card', () => {

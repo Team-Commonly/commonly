@@ -1021,7 +1021,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-pods__create-submit {
-  background: var(--v2-accent);
+  background: var(--v2-ink);
   color: #fff;
 }
 
@@ -10380,7 +10380,7 @@ body.modern-ui.v2-canvas {
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-primary);
-  font: 700 22px/28px var(--v2-font);
+  font: 700 22px/28px var(--v2-font-display);
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10431,12 +10431,19 @@ body.modern-ui.v2-canvas {
 
 .v2-thread .v2-msg--grouped { padding: 2px 0; }
 .v2-thread .v2-msg__avatar-ghost { width: 28px; }
-.v2-thread .v2-avatar { width: 28px; height: 28px; border-radius: 4px; }
+.v2-thread .v2-avatar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+}
 .v2-thread .v2-msg__head { height: 18px; gap: 6px; }
 .v2-thread .v2-msg__author,
 .v2-thread .v2-msg__author-btn { font-size: 13px; font-weight: 600; }
-.v2-thread .v2-msg__time { font-family: var(--v2-font-mono); font-size: 11px; }
+.v2-thread .v2-msg__time { font: 500 11px/16px var(--v2-font-mono); }
 .v2-thread .v2-msg__avatar-btn { border-radius: 4px; }
+.v2-thread .v2-msg__actions { border-radius: 4px; box-shadow: none; }
 
 .v2-message-row--decision { padding: 8px 0; }
 
@@ -10559,7 +10566,7 @@ body.modern-ui.v2-canvas {
 
   .v2-thread__header-row { align-items: center; gap: 8px; }
   .v2-thread__title-line { display: block; }
-  .v2-thread__title h1 { font-size: 20px; line-height: 24px; }
+  .v2-thread__title h1 { font: 700 20px/24px var(--v2-font-display); }
   .v2-thread__title p { display: none; }
   .v2-thread__working--desktop { display: none; }
   .v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }
@@ -10569,6 +10576,13 @@ body.modern-ui.v2-canvas {
   .v2-thread .v2-msg__time,
   .v2-thread .v2-msg__ruled { font-size: 12px; }
   .v2-thread .v2-msg__content { font-size: 15px; line-height: 22px; }
+
+  /* The phone artboard makes every decision option a full-width, 44px row;
+     Other remains a centred text escape hatch beneath them. */
+  .v2-decision-card__options { align-items: stretch; flex-direction: column; }
+  .v2-decision-card__option { width: 100%; }
+  .v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }
+  .v2-root button.v2-decision-card__other { align-self: center; min-height: 30px; }
 
   .v2-composer { margin: 8px 16px 62px; border: 0; background: transparent; }
   .v2-composer__field { display: flex; align-items: stretch; gap: 12px; }
@@ -10621,10 +10635,17 @@ body.modern-ui.v2-canvas {
     box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
   }
 
-  .v2-chat__mobile-nav-btn {
+  .v2-root button.v2-chat__mobile-nav-btn {
+    display: inline-grid;
     width: 28px;
     height: 28px;
+    flex: 0 0 28px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--v2-border);
     border-radius: 4px;
+    background: var(--v2-surface);
+    color: var(--v2-text-secondary);
   }
   .v2-chat__mobile-nav-btn svg { width: 16px; height: 16px; }
 

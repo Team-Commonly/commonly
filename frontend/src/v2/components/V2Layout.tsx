@@ -93,16 +93,24 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // decides whether it should open; an established/dismissed user flips it off
   // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
-  const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
+  const openMobileNav = useCallback(() => {
+    // The phone has two overlays: rooms drawer and inspector sheet. Opening
+    // one must close the other, otherwise the drawer is mounted behind an
+    // already-open sheet and has no usable hit target.
+    setInspectorCollapsed(true);
+    setMobileNavOpen(true);
+  }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       writeInspectorCollapsed(next);
+      if (!next) setMobileNavOpen(false);
       return next;
     });
   }, []);
   const openInspector = useCallback(() => {
+    setMobileNavOpen(false);
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
   }, []);
