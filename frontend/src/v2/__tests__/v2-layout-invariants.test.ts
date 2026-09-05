@@ -352,6 +352,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(card).toContain('border-radius: 6px');
     expect(ruleBody(v2, '.v2-workspace-inspector__state--needs-you')).toContain('background: var(--v2-accent)');
     expect(ruleBody(v2, '.v2-workspace-inspector__state--working')).toContain('animation: v2-pulse');
+    const stateDot = ruleBody(v2, '.v2-workspace-inspector__state');
+    expect(stateDot).toContain('width: 8px');
+    expect(stateDot).toContain('height: 8px');
+    const avatar = ruleBody(v2, '.v2-workspace-inspector__avatar.v2-avatar');
+    expect(avatar).toContain('border: 0');
+    expect(avatar).toContain('box-shadow: none');
+    const foot = selectorRuleBody(v2, '.v2-root .v2-workspace-inspector__foot button');
+    expect(foot).toContain('var(--v2-font-mono)');
+    const close = selectorRuleBody(v2, '.v2-root button.v2-workspace-inspector__close');
+    expect(close).toContain('display: none');
+    expect(v2).toContain('.v2-root button.v2-workspace-inspector__close { display: inline-grid; }');
 
     const phoneSheetStart = v2.lastIndexOf('/* The inspector is a bottom sheet on phones');
     const phoneSheet = v2.slice(phoneSheetStart, v2.indexOf('/* ---------- Workspace inspector', phoneSheetStart));

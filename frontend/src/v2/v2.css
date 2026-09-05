@@ -10082,7 +10082,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-workspace-inspector__agent {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 6px;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
   align-items: center;
   gap: 8px;
   padding: 6px 4px;
@@ -10098,7 +10098,9 @@ body.modern-ui.v2-canvas {
 .v2-workspace-inspector__avatar.v2-avatar {
   width: 28px;
   height: 28px;
+  border: 0;
   border-radius: 4px;
+  box-shadow: none;
   font-size: 10px;
 }
 
@@ -10126,8 +10128,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-workspace-inspector__state {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 0;
   background: var(--v2-text-muted);
 }
@@ -10186,7 +10188,7 @@ body.modern-ui.v2-canvas {
   padding: 0 12px 12px;
 }
 
-.v2-root button.v2-workspace-inspector__foot button {
+.v2-root .v2-workspace-inspector__foot button {
   min-height: auto;
   padding: 2px 0;
   border: 0;
@@ -10204,7 +10206,7 @@ body.modern-ui.v2-canvas {
   top: 6px;
   right: 6px;
   z-index: 1;
-  display: inline-grid;
+  display: none;
   width: 28px;
   height: 28px;
   place-items: center;
@@ -10220,6 +10222,7 @@ body.modern-ui.v2-canvas {
 @media (max-width: 760px) {
   .v2-workspace-inspector { padding: 12px 14px 0; }
   .v2-workspace-inspector__foot { padding-inline: 0; }
+  .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
 }
 
 /* The new factual inspector keeps CJK metadata at the established readable

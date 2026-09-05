@@ -95,7 +95,14 @@ describe('V2Inspector', () => {
       return Promise.resolve({ tasks: [] });
     });
     renderInspector();
-    await waitFor(() => expect(screen.getByText('nothing open')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Nothing. Wren is working.')).toBeInTheDocument());
     expect(screen.queryByText('Other pod')).not.toBeInTheDocument();
+  });
+
+  test('uses the settled-workspace empty copy when no agent is working', async () => {
+    mockGet.mockImplementation(() => Promise.resolve({ items: [], tasks: [] }));
+    renderInspector({ detail: { ...detail, agents: [] } as any });
+
+    expect(await screen.findByText('Nothing open.')).toBeInTheDocument();
   });
 });
