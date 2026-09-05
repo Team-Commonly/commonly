@@ -8,7 +8,6 @@ const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
-// eslint-disable-next-line global-require
 const InstallableInstallation = require('../models/InstallableInstallation');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
@@ -18,6 +17,12 @@ const { randomSecret } = require('../utils/secret');
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const connectorSecrets = require('../services/connectorSecrets');
+// eslint-disable-next-line global-require
+const {
+  catalogFor,
+  providerReadiness,
+  publicIntegration,
+} = require('../services/installable/installableCatalogService');
 // eslint-disable-next-line global-require
 const SlackApi = require('../services/slackApi');
 // eslint-disable-next-line global-require
@@ -126,29 +131,22 @@ const slackCallbackRedirect = (res: Res, state: 'pending' | 'error', code?: stri
   return res.redirect(302, `${publicAppUrl()}/v2/connectors?${query.toString()}`);
 };
 
-// Mongoose's Integration toJSON transform is the normal guard. Keep this
-// small route-bound backstop too: tests, lean queries, and a future service
-// refactor must not accidentally turn an opaque ConnectorSecret ref or the
-// browser-bound OAuth nonce into API data by bypassing document serialization.
-const publicIntegration = (integration: unknown): unknown => {
-  if (!integration || typeof integration !== 'object') return integration;
-  const raw = typeof (integration as { toJSON?: () => unknown }).toJSON === 'function'
-    ? (integration as { toJSON: () => unknown }).toJSON()
-    : JSON.parse(JSON.stringify(integration));
-  if (!raw || typeof raw !== 'object') return raw;
-  const result = raw as { config?: Record<string, unknown> };
-  if (!result.config) return result;
-  delete result.config.botTokenRef;
-  delete result.config.oauthStateNonce;
-  const pending = result.config.pendingBind;
-  if (pending && typeof pending === 'object') delete (pending as Record<string, unknown>).botTokenRef;
-  const adminPause = result.config.adminPause;
-  if (adminPause && typeof adminPause === 'object') {
-    const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
-    result.config.adminPause = { reason, at };
+/**
+ * GET /api/installables
+ *
+ * The authenticated, user-scoped connector catalog. It intentionally sits
+ * beside (rather than replaces) the legacy integration manifest catalog.
+ */
+router.get('/', auth, async (req: AuthReq, res: Res) => {
+  const userId = requesterId(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    return res.json(await catalogFor(String(userId)));
+  } catch (error) {
+    console.error('[installable] catalog read failed:', (error as Error).message);
+    return res.status(500).json({ error: 'Could not load connector catalog' });
   }
-  return result;
-};
+});
 
 /**
  * POST /api/installables/slack/authorize-url
@@ -522,13 +520,19 @@ router.post('/:installableId/install', writeIntegrationsRateLimit, auth, async (
   const userId = requesterId(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+  const installableId = String(req.params?.installableId || '');
+  const readiness = providerReadiness(installableId);
+  if (readiness && !readiness.available) {
+    return res.status(422).json({ code: 'provider_not_configured' });
+  }
+
   try {
     const pod = await Pod.findById(podId);
     if (!pod || !isPodMember(pod, userId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
     const result = await install({
-      installableId: String(req.params?.installableId || ''),
+      installableId,
       installedBy: String(userId),
       podId,
     });

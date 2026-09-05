@@ -12,6 +12,11 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
 }));
 
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../services/installable/installableCatalogService', () => ({
+  catalogFor: jest.fn(),
+  providerReadiness: jest.fn(() => ({ available: true })),
+  publicIntegration: jest.fn((integration) => integration),
+}));
 jest.mock('../../../services/installable/installableInstallationService', () => ({
   install: jest.fn(),
   uninstall: jest.fn(),
@@ -33,6 +38,7 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
 }));
 
 const Pod = require('../../../models/Pod');
+const catalogService = require('../../../services/installable/installableCatalogService');
 const installationService = require('../../../services/installable/installableInstallationService');
 const installableRoutes = require('../../../routes/installables');
 
@@ -46,6 +52,39 @@ const podId = '64b64c48c4f37a6b2f34c222';
 describe('installable connector routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    catalogService.providerReadiness.mockReturnValue({ available: true });
+  });
+
+  it('requires auth for the user-scoped catalog', async () => {
+    const res = await request(app).get('/api/installables');
+
+    expect(res.status).toBe(401);
+    expect(catalogService.catalogFor).not.toHaveBeenCalled();
+  });
+
+  it('returns readiness enums and only the caller\'s safe parent/projection fields', async () => {
+    const installationId = '64b64c48c4f37a6b2f34c444';
+    catalogService.catalogFor.mockResolvedValue({ installables: [{ installationId }] });
+
+    const res = await request(app).get('/api/installables').set(auth);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ installables: [{ installationId }] });
+    expect(catalogService.catalogFor).toHaveBeenCalledWith('64b64c48c4f37a6b2f34c111');
+  });
+
+  it('refuses an unavailable provider before reading a pod or claiming a parent', async () => {
+    catalogService.providerReadiness.mockReturnValue({ available: false, reason: 'not_configured' });
+
+    const res = await request(app)
+      .post('/api/installables/slack/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ code: 'provider_not_configured' });
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(installationService.install).not.toHaveBeenCalled();
   });
 
   it('rejects a non-member before any install row is claimed', async () => {
