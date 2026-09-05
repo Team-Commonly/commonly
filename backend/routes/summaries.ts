@@ -2,6 +2,12 @@
 const express = require('express');
 // eslint-disable-next-line global-require
 const summarizerService = require('../services/summarizerService');
+// The `|| ...` is not defensive noise: several suites mock
+// `services/summarizerService` wholesale, and a destructure of an absent
+// export yields `undefined` — which would then match every error that carries
+// no `code` and restore the exact unconditional-503 behaviour this replaces.
+// eslint-disable-next-line global-require
+const SUMMARY_UNAVAILABLE = require('../services/summarizerService').SUMMARY_UNAVAILABLE || 'summary_unavailable';
 // eslint-disable-next-line global-require
 const Summary = require('../models/Summary');
 // eslint-disable-next-line global-require
@@ -257,10 +263,23 @@ router.get('/all-posts', summariesReadRateLimit, auth, async (_req: AuthReq, res
     const allPostsSummary = await summarizerService.summarizeAllPosts();
     res.json(allPostsSummary);
   } catch (error) {
-    // Fail closed: the summarizer no longer fabricates filler when the LLM is
-    // unavailable, so this is a service-unavailable, not a server bug.
-    console.error('All posts summary unavailable:', (error as Error).message);
-    res.status(503).json({ error: 'summary_unavailable' });
+    // Fail closed, and say WHICH failure. #1501 stopped the summarizer
+    // fabricating filler and made this a 503 — but unconditionally, so a
+    // defect inside `summarizeAllPosts` (a Mongo error, a TypeError in the
+    // post mapping) reported as a transient outage and told the caller to
+    // retry an endpoint that is permanently broken. 503 now means only what
+    // the sentence above claims: the LLM is unavailable, or the rate-limit
+    // cooldown is armed. Both are tagged at the throw site with
+    // `code: 'summary_unavailable'`. Anything else is a server bug. TASK-099
+    // site 4, follow-up to #1501.
+    const code = (error as { code?: string })?.code;
+    if (code === SUMMARY_UNAVAILABLE) {
+      console.error('All posts summary unavailable:', (error as Error).message);
+      res.status(503).json({ error: 'summary_unavailable' });
+      return;
+    }
+    console.error('Error generating all posts summary:', error);
+    res.status(500).json({ error: 'Failed to generate all posts summary' });
   }
 });
 

@@ -65,22 +65,46 @@ export { shouldEscalate };
 // Prefix an inbound Telegram quote-reply with the @mention of the agent whose
 // relayed line was quoted, so the normal mention pipeline routes it. Pure —
 // unit-tested without any I/O.
+//
+// TASK-099 site 7. This is the class's non-catch member: no exception is
+// thrown, so a catch-keyed sweep cannot find it. It used to answer
+// `{ content, routedAgent: null }` for two conditions that are not the same
+// fact — "this was not a quote-reply" and "this WAS a quote-reply and the
+// relayMap did not contain it" — and the second is the failure. The map is
+// capped at RELAY_MAP_CAP entries and Telegram scrollback outlives it, so a
+// human long-pressing an older relayed line expresses routing intent that
+// silently degrades into an unaddressed broadcast: nothing wakes, and the
+// return value is byte-identical to the ordinary no-reply success.
+//
+// `replyStatus` is the discriminator. It changes no routing: an unmatched
+// reply still relays, exactly as before. What changes is that the caller can
+// now see it happened and says so in the log.
+export type ReplyRouteStatus = 'not-a-reply' | 'routed' | 'unmatched';
+
 export const routeReplyContent = (opts: {
   content: string;
   replyToTgMessageId?: string | null;
   relayMap?: RelayMapEntry[];
-}): { content: string; routedAgent: string | null } => {
+}): { content: string; routedAgent: string | null; replyStatus: ReplyRouteStatus } => {
   const { content, replyToTgMessageId, relayMap } = opts;
-  if (!replyToTgMessageId || !Array.isArray(relayMap)) {
-    return { content, routedAgent: null };
+  if (!replyToTgMessageId) {
+    return { content, routedAgent: null, replyStatus: 'not-a-reply' };
+  }
+  // A reply with no usable map is still a reply that failed to route — an
+  // integration whose relayMap was never written looks identical, from here,
+  // to one whose entry aged out.
+  if (!Array.isArray(relayMap)) {
+    return { content, routedAgent: null, replyStatus: 'unmatched' };
   }
   const hit = relayMap.find((e) => String(e.tgMessageId) === String(replyToTgMessageId));
-  if (!hit || !hit.agentUsername) return { content, routedAgent: null };
+  if (!hit || !hit.agentUsername) {
+    return { content, routedAgent: null, replyStatus: 'unmatched' };
+  }
   const mention = `@${hit.agentUsername}`;
   if (content.toLowerCase().includes(mention.toLowerCase())) {
-    return { content, routedAgent: hit.agentUsername };
+    return { content, routedAgent: hit.agentUsername, replyStatus: 'routed' };
   }
-  return { content: `${mention} ${content}`, routedAgent: hit.agentUsername };
+  return { content: `${mention} ${content}`, routedAgent: hit.agentUsername, replyStatus: 'routed' };
 };
 
 const findLiveIntegration = async (podId: unknown): Promise<TelegramIntegrationDoc | null> => {
@@ -217,7 +241,7 @@ export const relayTelegramMessageToPod = async (opts: {
     reply_to_message_id?: number;
     reply_to_message?: { message_id?: number };
   };
-}): Promise<{ relayed: boolean; routedAgent?: string | null }> => {
+}): Promise<{ relayed: boolean; routedAgent?: string | null; replyStatus?: ReplyRouteStatus }> => {
   const { integration, telegramMessage } = opts;
   const rawText = (telegramMessage.text || telegramMessage.caption || '').trim();
   if (!rawText) return { relayed: false };
@@ -283,11 +307,23 @@ export const relayTelegramMessageToPod = async (opts: {
   const replyToTgMessageId = telegramMessage.reply_to_message?.message_id
     ?? telegramMessage.reply_to_message_id
     ?? null;
-  const { content: routedText, routedAgent } = routeReplyContent({
+  const { content: routedText, routedAgent, replyStatus } = routeReplyContent({
     content: rawText,
     replyToTgMessageId: replyToTgMessageId != null ? String(replyToTgMessageId) : null,
     relayMap: integration.config?.relayMap,
   });
+  if (replyStatus === 'unmatched') {
+    // Loud, because the pod row itself will carry no trace: it lands with no
+    // mention and reads exactly like a message nobody was replying to.
+    const mapSize = Array.isArray(integration.config?.relayMap)
+      ? integration.config.relayMap.length
+      : 'absent';
+    console.warn(
+      '[tg-bridge] quote-reply did not route — '
+      + `tgMessageId=${replyToTgMessageId} not in relayMap `
+      + `(entries=${mapSize}, cap=${RELAY_MAP_CAP}); relaying unaddressed`,
+    );
+  }
 
   const senderName = [
     telegramMessage.from?.first_name,
@@ -390,7 +426,7 @@ export const relayTelegramMessageToPod = async (opts: {
     console.warn('[tg-bridge] socket emit failed:', (socketErr as Error).message);
   }
 
-  return { relayed: true, routedAgent };
+  return { relayed: true, routedAgent, replyStatus };
 };
 
 module.exports = {
