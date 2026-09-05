@@ -493,16 +493,20 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
 router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    if (!Types.ObjectId.isValid(id)) {
+    if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid integration id' });
     }
+    // Parse the route segment exactly once. Subsequent reads and writes use
+    // this canonical BSON value rather than carrying the request string into
+    // a database selector.
+    const integrationId = new Types.ObjectId(id);
     const { config, status, isActive, podId } = (req.body || {}) as {
       config?: Record<string, unknown>;
       status?: string;
       isActive?: boolean;
       podId?: unknown;
     };
-    const integration = await Integration.findById(id) as {
+    const integration = await Integration.findById(integrationId) as {
       _id?: unknown;
       type?: string;
       scope?: string;
@@ -604,10 +608,9 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     if (autoStatusTypes.includes(integration.type || '') && config) {
       update.status = (update.status as string | undefined) || (isManifestComplete(integration.type || '', nextConfig) ? 'connected' : 'pending');
     }
-    // Update the identity that Mongo returned after the access check, not the
-    // route parameter. This keeps the write anchored to the document we just
-    // authorised and avoids carrying a request value into the query object.
-    const updated = await Integration.findByIdAndUpdate(integration._id, update, { new: true });
+    // The selector is the canonical ObjectId parsed at the route boundary;
+    // the access check above authorises that exact document before this write.
+    const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
     return res.json(updated);
   } catch (error) {
     console.error('Error updating integration:', error);
