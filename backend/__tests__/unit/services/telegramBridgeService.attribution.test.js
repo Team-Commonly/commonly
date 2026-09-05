@@ -15,6 +15,7 @@ jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const PGMessage = require('../../../models/pg/Message');
+const telegramSend = require('../../../services/telegramService');
 const PGPod = require('../../../models/pg/Pod');
 const { deliverMessageToAgents } = require('../../../services/messageAgentDeliveryService');
 const { relayTelegramMessageToPod } = require('../../../services/telegramBridgeService');
@@ -42,7 +43,9 @@ describe('relayTelegramMessageToPod — who the pod row is attributed to', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     User.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ username: 'sam', profilePicture: null }) }) });
-    Pod.findById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ type: 'chat' }) }) });
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ type: 'chat', members: ['user-1'] }) }),
+    });
     PGPod.findById.mockResolvedValue({ id: 'pod-1' });
     PGMessage.create.mockResolvedValue({ id: 'm1', content: 'x' });
     PGMessage.findById.mockResolvedValue({ id: 'm1', content: 'x' });
@@ -98,6 +101,29 @@ describe('relayTelegramMessageToPod — who the pod row is attributed to', () =>
     await relayTelegramMessageToPod({ integration, telegramMessage: messageFromSomeoneElse });
     expect(PGPod.findById).not.toHaveBeenCalled();
     expect(User.findById).not.toHaveBeenCalled();
+  });
+
+  it('refuses an active pod after the linked user leaves it', async () => {
+    const originalToken = process.env.TELEGRAM_BOT_TOKEN;
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ type: 'chat', members: [] }) }),
+    });
+
+    try {
+      await expect(relayTelegramMessageToPod({
+        integration: withChatType('private'), telegramMessage: messageFromSomeoneElse,
+      })).resolves.toEqual({ relayed: false });
+
+      expect(User.findById).not.toHaveBeenCalled();
+      expect(PGMessage.create).not.toHaveBeenCalled();
+      expect(telegramSend.sendMessage).toHaveBeenCalledWith(
+        'bot-token', '42', 'This connector has no active pod. Choose one in Commonly first.',
+      );
+    } finally {
+      if (originalToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+      else process.env.TELEGRAM_BOT_TOKEN = originalToken;
+    }
   });
 });
 

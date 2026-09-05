@@ -64,4 +64,50 @@ describe('installable Slack webhook signature and acknowledgement', () => {
     }));
     expect(receipts.markDone).toHaveBeenCalledWith('Ev1');
   });
+
+  test('acks a paused connector event, records its receipt, and relays again after resume', async () => {
+    receipts.claim
+      .mockResolvedValueOnce('claimed')
+      .mockResolvedValueOnce('duplicate')
+      .mockResolvedValueOnce('claimed');
+    receipts.markDone.mockResolvedValue(undefined);
+    const pausedIntegration = {
+      _id: 'integration-paused', type: 'slack', isActive: true, status: 'connected',
+      config: {
+        teamId: 'T1', chatId: 'D1', chatType: 'im', liveRelay: true,
+        adminPause: { reason: 'Safety review', at: new Date(), adminId: 'admin-1' },
+      },
+    };
+    const resumedIntegration = { ...pausedIntegration, config: { ...pausedIntegration.config } };
+    delete resumedIntegration.config.adminPause;
+    let paused = true;
+    Integration.findOne.mockImplementation((query) => ({
+      lean: jest.fn().mockResolvedValue(
+        query['config.adminPause']?.$exists === false && paused ? null : resumedIntegration,
+      ),
+    }));
+    const bridge = require('../../../services/slackBridgeService');
+    bridge.relaySlackMessageToPod.mockResolvedValue({ relayed: true });
+
+    const first = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(eventBody)).send(eventBody);
+    paused = false; // admin resume clears config.adminPause on the projection.
+    const resumedBody = { ...eventBody, event_id: 'Ev2' };
+    const resumed = await request(app).post('/api/webhooks/slack/events').set(signatureHeaders(resumedBody)).send(resumedBody);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(resumed.status).toBe(200);
+    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      'config.adminPause': { $exists: false },
+    }));
+    expect(receipts.markDone).toHaveBeenCalledWith('Ev1');
+    expect(receipts.markDone).toHaveBeenCalledWith('Ev2');
+    expect(bridge.relaySlackMessageToPod).toHaveBeenCalledTimes(1);
+    expect(bridge.relaySlackMessageToPod).toHaveBeenCalledWith(expect.objectContaining({
+      integration: resumedIntegration,
+    }));
+  });
 });

@@ -11,6 +11,21 @@ export type IntegrationType =
   | 'instagram';
 
 export type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'pending';
+export type IntegrationScope = 'pod' | 'user';
+
+export interface IIntegrationGate {
+  enabled: boolean;
+  mode?: 'attention' | 'mirror';
+  lead?: string;
+  since: Date;
+}
+
+/** Server-owned projection of an administrator's parent-level pause. */
+export interface IIntegrationAdminPause {
+  reason: string;
+  at: Date;
+  adminId: string;
+}
 
 export interface IIngestToken {
   tokenHash: string;
@@ -36,7 +51,13 @@ export interface IIntegration extends Document {
   installationClaimId?: string;
   /** Terminal tombstone: a revoked projection can never be activated again. */
   revokedAt?: Date;
-  podId: Types.ObjectId;
+  /**
+   * Legacy pod-scoped rows require a pod. User-scoped connector rows retain
+   * their currently selected pod here for bare-message routing, but their
+   * outbound subscriptions live in config.gates.
+   */
+  podId?: Types.ObjectId;
+  scope: IntegrationScope;
   type: IntegrationType;
   status: IntegrationStatus;
   config: {
@@ -97,6 +118,8 @@ export interface IIntegration extends Document {
     leadAgentUsername?: string;
     relayAllAgentMessages?: boolean;
     relayMutedUntil?: Date;
+    gates?: Record<string, IIntegrationGate>;
+    adminPause?: IIntegrationAdminPause;
     /** Opaque ConnectorSecret id; credentials never live on the Integration. */
     botTokenRef?: string;
     /** Slack's workspace identity and the bound one-to-one DM. */
@@ -136,7 +159,19 @@ const IntegrationSchema = new Schema<IIntegration>(
     installationId: { type: String, unique: true, sparse: true },
     installationClaimId: { type: String },
     revokedAt: { type: Date },
-    podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
+    podId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Pod',
+      required(this: IIntegration) {
+        return this.scope === 'pod';
+      },
+    },
+    scope: {
+      type: String,
+      enum: ['pod', 'user'],
+      default: 'pod',
+      required: true,
+    },
     type: {
       type: String,
       required: true,
@@ -211,6 +246,23 @@ const IntegrationSchema = new Schema<IIntegration>(
       leadAgentUsername: String,
       relayAllAgentMessages: { type: Boolean, default: false },
       relayMutedUntil: Date,
+      gates: {
+        type: Map,
+        of: new Schema<IIntegrationGate>({
+          enabled: { type: Boolean, required: true },
+          mode: { type: String, enum: ['attention', 'mirror'] },
+          lead: String,
+          since: { type: Date, required: true },
+        }, { _id: false }),
+      },
+      adminPause: {
+        type: new Schema<IIntegrationAdminPause>({
+          reason: { type: String, required: true },
+          at: { type: Date, required: true },
+          adminId: { type: String, required: true },
+        }, { _id: false }),
+        default: undefined,
+      },
       // Connector secrets live in ConnectorSecret; routes must never accept
       // this reference from clients (see SERVER_OWNED_CONFIG_KEYS).
       botTokenRef: String,
@@ -293,6 +345,11 @@ IntegrationSchema.set('toJSON', {
     const pending = returned.config.pendingBind;
     if (pending && typeof pending === 'object') {
       delete (pending as Record<string, unknown>).botTokenRef;
+    }
+    const adminPause = returned.config.adminPause;
+    if (adminPause && typeof adminPause === 'object') {
+      const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
+      returned.config.adminPause = { reason, at };
     }
     return returned;
   },

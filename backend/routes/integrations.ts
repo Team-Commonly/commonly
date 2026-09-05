@@ -30,6 +30,7 @@ const { hash, randomSecret } = require('../utils/secret');
 const { mintConnectCode } = require('../services/telegramConnectCode');
 // eslint-disable-next-line global-require
 const isPodMember = require('../utils/isPodMember');
+import { Types } from 'mongoose';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -47,6 +48,9 @@ const SERVER_OWNED_CONFIG_KEYS = [
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
+  // An administrator's pause is projected from the parent installation. An
+  // owner's normal config write must never lift that stop.
+  'adminPause',
 ];
 const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...config };
@@ -63,6 +67,11 @@ const stripServerOwnedConfig = (config: Record<string, unknown>): Record<string,
 // literal). Accepted: true/false and the legacy string forms 'true'/'false';
 // everything else is a 400, never a silent cast.
 const RELAY_FLAG_KEYS = ['liveRelay', 'relayAllAgentMessages'];
+// Gate names become Mongo subdocument keys. They are accepted only in the
+// canonical ObjectId form before a request can turn one into a dotted update
+// path; this also gives every caller the same bounded membership-check cost.
+const MAX_GATES_PER_WRITE = 100;
+const isObjectIdKey = (value: string): boolean => /^[a-f\d]{24}$/i.test(value);
 const readRelayFlags = (config: Record<string, unknown>): { next: Record<string, unknown>; invalid?: string } => {
   const next = { ...config };
   for (const k of RELAY_FLAG_KEYS) {
@@ -481,15 +490,92 @@ router.post('/:id/connect-code', writeIntegrationsRateLimit, auth, async (req: A
   }
 });
 
-router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
+router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { id } = req.params || {};
-    const { config, status, isActive } = (req.body || {}) as { config?: Record<string, unknown>; status?: string; isActive?: boolean };
-    const integration = await Integration.findById(id) as { type?: string; createdBy?: { toString: () => string }; podId?: unknown; config?: { toObject?: () => Record<string, unknown> } } | null;
+    if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid integration id' });
+    }
+    // Parse the route segment exactly once. Subsequent reads and writes use
+    // this canonical BSON value rather than carrying the request string into
+    // a database selector.
+    const integrationId = new Types.ObjectId(id);
+    const { config, status, isActive, podId } = (req.body || {}) as {
+      config?: Record<string, unknown>;
+      status?: string;
+      isActive?: boolean;
+      podId?: unknown;
+    };
+    const integration = await Integration.findById(integrationId) as {
+      _id?: unknown;
+      type?: string;
+      scope?: string;
+      createdBy?: { toString: () => string };
+      podId?: unknown;
+      config?: { toObject?: () => Record<string, unknown> };
+    } | null;
     if (!integration) return res.status(404).json({ message: 'Integration not found' });
-    const canUpdate = await canDeleteIntegration(integration, req.user?.id || '');
-    if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
     const currentConfig = integration.config?.toObject ? integration.config.toObject() : (integration.config || {}) as Record<string, unknown>;
+    const requesterId = req.user?.id || '';
+    if (integration.scope === 'user') {
+      // A user-scoped connector is a private attention surface. A pod creator
+      // or instance admin must not turn on a gate (or live relay) for someone
+      // else, so its entire PATCH surface belongs to its linked owner alone.
+      if (
+        integration.createdBy?.toString() !== requesterId
+        || String(currentConfig.linkedUserId || '') !== requesterId
+      ) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      if (config && Object.prototype.hasOwnProperty.call(config, 'adminPause')) {
+        return res.status(400).json({ message: 'adminPause is managed by an administrator' });
+      }
+      // A user connector has one active inbound destination. Selecting it is
+      // an owner action, and it must be a pod that owner can still write to;
+      // otherwise a browser could redirect private inbound messages into a
+      // pod it merely knows the id of.
+      if (podId !== undefined) {
+        if (typeof podId !== 'string' || !isObjectIdKey(podId)) {
+          return res.status(400).json({ message: 'podId must be a valid pod id' });
+        }
+        const activePod = await Pod.findById(podId);
+        if (!activePod || !isPodMember(activePod, requesterId)) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+      const requestedGates = config?.gates;
+      if (requestedGates !== undefined) {
+        if (!requestedGates || Array.isArray(requestedGates) || typeof requestedGates !== 'object') {
+          return res.status(400).json({ message: 'gates must be an object keyed by pod id' });
+        }
+        const gatePodIds = Object.keys(requestedGates as Record<string, unknown>);
+        if (gatePodIds.length > MAX_GATES_PER_WRITE) {
+          return res.status(400).json({ message: `gates may contain at most ${MAX_GATES_PER_WRITE} pod ids` });
+        }
+        // Validate every key before it is interpolated into `config.gates.*`
+        // or reaches the membership lookup. A Mongo key is syntax, not data:
+        // dots and dollar prefixes have different semantics from a bad value.
+        if (gatePodIds.some((gatePodId) => !isObjectIdKey(gatePodId))) {
+          return res.status(400).json({ message: 'every gate key must be a valid pod id' });
+        }
+        // Check every requested key before constructing the update. This keeps
+        // a mixed valid/invalid PATCH atomic: no valid gate is written first.
+        for (const gatePodId of gatePodIds) {
+          const gatePod = await Pod.findById(gatePodId);
+          if (!gatePod || !isPodMember(gatePod, requesterId)) {
+            return res.status(403).json({ message: 'Access denied' });
+          }
+        }
+      }
+    } else {
+      // A pod-scoped integration is anchored by its installation. Only a
+      // user-scoped connector exposes a movable personal inbound destination.
+      if (podId !== undefined) {
+        return res.status(400).json({ message: 'podId is only managed on user-scoped connectors' });
+      }
+      const canUpdate = await canDeleteIntegration(integration, requesterId);
+      if (!canUpdate) return res.status(403).json({ message: 'Access denied' });
+    }
     // Bridge attribution guard: config.linkedUserId is the identity every
     // inbound live-relay message is AUTHORED as (pod row, socket payload,
     // agent wake). It is derived from the authenticated caller when liveRelay
@@ -515,13 +601,16 @@ router.patch('/:id', auth, async (req: AuthReq, res: Res) => {
     validateManifestIfComplete(integration.type || '', nextConfig);
     const update: Record<string, unknown> = {};
     if (config) update.config = nextConfig;
+    if (podId !== undefined) update.podId = podId;
     if (typeof status === 'string') update.status = status;
     if (typeof isActive === 'boolean') update.isActive = isActive;
     const autoStatusTypes = ['groupme', 'telegram', 'slack', 'x', 'instagram'];
     if (autoStatusTypes.includes(integration.type || '') && config) {
       update.status = (update.status as string | undefined) || (isManifestComplete(integration.type || '', nextConfig) ? 'connected' : 'pending');
     }
-    const updated = await Integration.findByIdAndUpdate(id, update, { new: true });
+    // The selector is the canonical ObjectId parsed at the route boundary;
+    // the access check above authorises that exact document before this write.
+    const updated = await Integration.findByIdAndUpdate(integrationId, update, { new: true });
     return res.json(updated);
   } catch (error) {
     console.error('Error updating integration:', error);

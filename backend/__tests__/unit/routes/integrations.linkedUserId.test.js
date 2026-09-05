@@ -8,10 +8,14 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.user = { id: 'user-1' };
+  req.user = { id: req.header('x-test-user') || 'user-1' };
   next();
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
+jest.mock('../../../middleware/integrationRateLimit', () => ({
+  writeIntegrationsRateLimit: (_req, _res, next) => next(),
+  listIntegrationsRateLimit: (_req, _res, next) => next(),
+}));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/DiscordIntegration', () => function DiscordIntegration(data) {
@@ -40,6 +44,9 @@ const app = express();
 app.use(express.json());
 app.use('/api/integrations', integrationRoutes);
 
+const integrationId = '64b64c1f7e5b8f0a12345674';
+const userScopedIntegrationId = '64b64c1f7e5b8f0a12345675';
+
 const telegramIntegration = () => ({
   _id: 'integration-1',
   type: 'telegram',
@@ -62,9 +69,19 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     Integration.findByIdAndUpdate.mockResolvedValue({ _id: 'integration-1' });
   });
 
+  it('rejects an invalid integration id before any database access', async () => {
+    const res = await request(app)
+      .patch('/api/integrations/$ne')
+      .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(400);
+    expect(Integration.findById).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('rejects a client-supplied linkedUserId naming someone else', async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: true, linkedUserId: 'VICTIM-USER-ID' } });
 
     expect(res.status).toBe(400);
@@ -73,7 +90,7 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
   it('derives linkedUserId from the caller when liveRelay flips on', async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: true } });
 
     expect(res.status).toBe(200);
@@ -84,7 +101,7 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
   it("derives linkedUserId when liveRelay arrives as the string 'true' (#1293)", async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: 'true' } });
 
     expect(res.status).toBe(200);
@@ -101,7 +118,7 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
     'refuses liveRelay %p with 400 instead of letting Mongoose cast it',
     async (value) => {
       const res = await request(app)
-        .patch('/api/integrations/integration-1')
+        .patch(`/api/integrations/${integrationId}`)
         .send({ config: { liveRelay: value } });
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/liveRelay must be true or false/);
@@ -111,7 +128,7 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
   it.each([1, '1', 'yes'])('refuses relayAllAgentMessages %p the same way', async (value) => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { relayAllAgentMessages: value } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -119,13 +136,178 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
   it('does not stamp linkedUserId when liveRelay is switched off', async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: false } });
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
     expect(update.config.liveRelay).toBe(false);
     expect(update.config.linkedUserId).toBeUndefined();
+  });
+
+  it('does not let a pod-scoped connector move its installation-owned pod', async () => {
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ podId: '64b64c1f7e5b8f0a12345671' });
+
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
+  const currentPodId = '64b64c1f7e5b8f0a12345670';
+  const allowedPodId = '64b64c1f7e5b8f0a12345671';
+  const forbiddenPodId = '64b64c1f7e5b8f0a12345672';
+
+  const userScopedIntegration = () => ({
+    _id: 'integration-user',
+    scope: 'user',
+    type: 'telegram',
+    podId: currentPodId,
+    createdBy: { toString: () => 'user-1' },
+    config: {
+      linkedUserId: 'user-1',
+      gates: { [currentPodId]: { enabled: true, since: new Date() } },
+      toObject() {
+        return {
+          linkedUserId: 'user-1',
+          gates: { [currentPodId]: { enabled: true, since: new Date() } },
+        };
+      },
+    },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Integration.findById.mockResolvedValue(userScopedIntegration());
+    Integration.findByIdAndUpdate.mockResolvedValue({ _id: 'integration-user' });
+  });
+
+  it('refuses a pod creator or admin who is not the linked owner', async () => {
+    const podCreator = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .set('x-test-user', 'pod-creator')
+      .send({ config: { liveRelay: false } });
+    expect(podCreator.status).toBe(403);
+
+    const admin = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .set('x-test-user', 'instance-admin')
+      .send({ config: { gates: {} } });
+    expect(admin.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('checks every requested gate before writing any of them', async () => {
+    Pod.findById
+      .mockResolvedValueOnce({ _id: allowedPodId, createdBy: 'user-1', members: [] })
+      .mockResolvedValueOnce({ _id: forbiddenPodId, createdBy: 'someone-else', members: [] });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({
+        config: {
+          gates: {
+            [allowedPodId]: { enabled: true, since: new Date().toISOString() },
+            [forbiddenPodId]: { enabled: true, since: new Date().toISOString() },
+          },
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('allows the linked owner to write gates for pods they belong to', async () => {
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { gates: { [allowedPodId]: { enabled: true, since: new Date().toISOString() } } } });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.config.gates[allowedPodId]).toMatchObject({ enabled: true });
+  });
+
+  it('allows the linked owner to select a member pod as the active inbound destination', async () => {
+    Pod.findById.mockResolvedValue({ _id: allowedPodId, createdBy: 'user-1', members: [] });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ podId: allowedPodId });
+
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.podId).toBe(allowedPodId);
+  });
+
+  it('refuses selecting an active pod the linked owner is no longer a member of', async () => {
+    Pod.findById.mockResolvedValue({ _id: forbiddenPodId, createdBy: 'someone-else', members: [] });
+
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ podId: forbiddenPodId });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(['not-an-object-id', '64b64c1f7e5b8f0a1234567.', '$ne'])(
+    'refuses an unsafe active pod id %p before membership lookup or write',
+    async (podId) => {
+      const res = await request(app)
+        .patch(`/api/integrations/${userScopedIntegrationId}`)
+        .send({ podId });
+
+      expect(res.status).toBe(400);
+      expect(Pod.findById).not.toHaveBeenCalled();
+      expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['a.b', '$ne'])('refuses an unsafe gate key before any membership lookup or write', async (key) => {
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { gates: { [key]: { enabled: true } } } });
+
+    expect(res.status).toBe(400);
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversized gate body before any membership lookup or write', async () => {
+    const gates = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [
+      index.toString(16).padStart(24, '0'), { enabled: true },
+    ]));
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { gates } });
+
+    expect(res.status).toBe(400);
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a syntactically valid gate key whose pod does not exist', async () => {
+    Pod.findById.mockResolvedValue(null);
+    const missingPodId = '64b64c1f7e5b8f0a12345673';
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { gates: { [missingPodId]: { enabled: true } } } });
+
+    expect(res.status).toBe(403);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses client writes to the administrator pause projection', async () => {
+    const res = await request(app)
+      .patch(`/api/integrations/${userScopedIntegrationId}`)
+      .send({ config: { adminPause: { reason: 'not owner controlled' } } });
+
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -198,7 +380,7 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
 
   it('refuses to flip liveRelay on when the bound chat is not private', async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: true } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -206,7 +388,7 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
 
   it("refuses the same flip when liveRelay arrives as the string 'true' (#1293)", async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: 'true' } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -214,7 +396,7 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
 
   it.each([1, '1', 'yes'])('refuses the flip when liveRelay is %p on a group', async (value) => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { liveRelay: value } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
@@ -222,7 +404,7 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
 
   it('ignores client-supplied chatId on PATCH', async () => {
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${integrationId}`)
       .send({ config: { chatId: '777', leadAgentUsername: 'theo' } });
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];

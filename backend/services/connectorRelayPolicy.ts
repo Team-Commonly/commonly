@@ -6,6 +6,11 @@ export interface RelayPolicyIntegration {
   config?: {
     relayAllAgentMessages?: boolean;
     leadAgentUsername?: string;
+    gates?: Record<string, {
+      enabled?: boolean;
+      mode?: 'attention' | 'mirror';
+      lead?: string;
+    }>;
   };
 }
 
@@ -16,12 +21,22 @@ export const shouldEscalate = (opts: {
   content: string;
   agentUsername: string;
   integration: RelayPolicyIntegration;
+  podId?: string;
 }): boolean => {
-  const { content, agentUsername, integration } = opts;
+  const {
+    content, agentUsername, integration, podId,
+  } = opts;
   const cfg = integration.config || {};
-  if (cfg.relayAllAgentMessages) return true;
-  if (cfg.leadAgentUsername
-    && agentUsername.toLowerCase() === String(cfg.leadAgentUsername).toLowerCase()) {
+  const gate = podId ? cfg.gates?.[String(podId)] : undefined;
+  const relayAllAgentMessages = gate?.mode === 'mirror'
+    ? true
+    : gate?.mode === 'attention'
+      ? false
+      : cfg.relayAllAgentMessages;
+  const leadAgentUsername = gate?.lead ?? cfg.leadAgentUsername;
+  if (relayAllAgentMessages) return true;
+  if (leadAgentUsername
+    && agentUsername.toLowerCase() === String(leadAgentUsername).toLowerCase()) {
     return true;
   }
   return ESCALATION_MARKERS.test(content) || QUESTION_AT_HUMAN.test(content);

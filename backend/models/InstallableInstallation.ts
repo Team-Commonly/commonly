@@ -85,6 +85,21 @@ export interface IComponentInstallation {
   updatedAt: Date;
 }
 
+export interface IInstallationAdminPause {
+  reason: string;
+  at: Date;
+  adminId: string;
+}
+
+export interface IInstallationPauseAudit {
+  action: 'pause' | 'resume';
+  installationId: string;
+  ownerId: string;
+  adminId: string;
+  reason: string;
+  at: Date;
+}
+
 export interface IInstallableInstallation extends Document {
   // Which Installable is installed
   installableId: string; // FK (logical) → Installable.installableId
@@ -121,6 +136,9 @@ export interface IInstallableInstallation extends Document {
   claimedAt?: Date;
   errorMessage?: string;
   staleSince?: Date;
+  /** Canonical pause state; Integration.config.adminPause is its projection. */
+  adminPause?: IInstallationAdminPause;
+  pauseAudit: IInstallationPauseAudit[];
 
   createdAt: Date;
   updatedAt: Date;
@@ -213,6 +231,22 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
     claimedAt: { type: Date },
     errorMessage: { type: String },
     staleSince: { type: Date },
+    adminPause: {
+      reason: { type: String },
+      at: { type: Date },
+      adminId: { type: String },
+    },
+    pauseAudit: {
+      type: [new Schema<IInstallationPauseAudit>({
+        action: { type: String, enum: ['pause', 'resume'], required: true },
+        installationId: { type: String, required: true },
+        ownerId: { type: String, required: true },
+        adminId: { type: String, required: true },
+        reason: { type: String, required: true },
+        at: { type: Date, required: true },
+      }, { _id: false })],
+      default: [],
+    },
   },
   { timestamps: true },
 );
@@ -232,7 +266,7 @@ InstallableInstallationSchema.index(
     unique: true,
     name: 'installable_live_target_unique',
     partialFilterExpression: {
-      status: { $in: ['installing', 'activating', 'uninstalling', 'active', 'error'] },
+      status: { $in: ['installing', 'activating', 'uninstalling', 'active', 'paused', 'error'] },
     },
   },
 );

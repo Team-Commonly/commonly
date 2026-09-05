@@ -36,6 +36,7 @@ const {
   InstallableNotFoundError,
   InstallableProjectionError,
   InstallInProgressError,
+  InstallationPausedError,
   install,
   uninstall,
 } = require('../services/installable/installableInstallationService');
@@ -141,6 +142,11 @@ const publicIntegration = (integration: unknown): unknown => {
   delete result.config.oauthStateNonce;
   const pending = result.config.pendingBind;
   if (pending && typeof pending === 'object') delete (pending as Record<string, unknown>).botTokenRef;
+  const adminPause = result.config.adminPause;
+  if (adminPause && typeof adminPause === 'object') {
+    const { reason, at } = adminPause as { reason?: unknown; at?: unknown };
+    result.config.adminPause = { reason, at };
+  }
   return result;
 };
 
@@ -458,6 +464,15 @@ const sendInstallError = (error: Error, res: Res): void => {
       code: 'install_in_progress',
       error: error.message,
       ...(boundPodId ? { boundPodId } : {}),
+    });
+    return;
+  }
+  if (error instanceof InstallationPausedError) {
+    const { reason } = error as Error & { reason?: string };
+    res.status(409).json({
+      code: 'installation_paused',
+      error: error.message,
+      reason,
     });
     return;
   }

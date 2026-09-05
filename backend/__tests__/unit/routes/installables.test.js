@@ -26,6 +26,10 @@ jest.mock('../../../services/installable/installableInstallationService', () => 
     this.message = 'This install is still in progress; try again shortly.';
     this.boundPodId = boundPodId;
   },
+  InstallationPausedError: function InstallationPausedError(reason) {
+    this.message = 'This connector is paused by an administrator.';
+    this.reason = reason;
+  },
 }));
 
 const Pod = require('../../../models/Pod');
@@ -72,7 +76,7 @@ describe('installable connector routes', () => {
     expect(installationService.install).not.toHaveBeenCalled();
   });
 
-  it('derives the install target from auth and accepts only the selected pod', async () => {
+  it('derives the install target from auth and redacts pause administrators', async () => {
     Pod.findById.mockResolvedValue({
       _id: podId,
       createdBy: { toString: () => 'someone-else' },
@@ -82,7 +86,16 @@ describe('installable connector routes', () => {
       httpStatus: 200,
       state: 'active',
       installation: { _id: 'install-1' },
-      integration: { _id: 'integration-1' },
+      integration: {
+        _id: 'integration-1',
+        config: {
+          adminPause: {
+            reason: 'Safety review in progress.',
+            at: '2026-09-05T08:48:00.000Z',
+            adminId: 'admin-private-id',
+          },
+        },
+      },
     });
 
     const res = await request(app)
@@ -96,6 +109,11 @@ describe('installable connector routes', () => {
       installedBy: '64b64c48c4f37a6b2f34c111',
       podId,
     });
+    expect(res.body.integration.config.adminPause).toEqual({
+      reason: 'Safety review in progress.',
+      at: '2026-09-05T08:48:00.000Z',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('admin-private-id');
   });
 
   it('returns typed 409 when activation loses its projection', async () => {
@@ -185,5 +203,43 @@ describe('installable connector routes', () => {
 
     expect(res.status).toBe(202);
     expect(res.body.status).toBe('uninstalling');
+  });
+
+  it('returns the paused refusal for install without claiming a replacement', async () => {
+    Pod.findById.mockResolvedValue({
+      _id: podId,
+      createdBy: { toString: () => 'someone-else' },
+      members: ['64b64c48c4f37a6b2f34c111'],
+    });
+    installationService.install.mockRejectedValue(
+      new installationService.InstallationPausedError('Safety review in progress.'),
+    );
+
+    const res = await request(app)
+      .post('/api/installables/telegram/install')
+      .set(auth)
+      .send({ podId });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'installation_paused',
+      reason: 'Safety review in progress.',
+    });
+  });
+
+  it('returns the paused refusal for uninstall instead of a successful no-op', async () => {
+    installationService.uninstall.mockRejectedValue(
+      new installationService.InstallationPausedError('Safety review in progress.'),
+    );
+
+    const res = await request(app)
+      .delete('/api/installables/telegram/install')
+      .set(auth);
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      code: 'installation_paused',
+      reason: 'Safety review in progress.',
+    });
   });
 });
