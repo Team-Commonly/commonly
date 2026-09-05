@@ -837,6 +837,12 @@ export const performRun = ({
     // suppress a genuine reply (#757).
     const snapshotMessages = async () => {
       try {
+        // READ limit, not a claim. Since #1166 this is the only `limit: 10`
+        // left in the file, and the one it is easy to mistake it for — the
+        // events fetch — was reduced to 1 precisely because fetching an
+        // event CLAIMS it. This endpoint claims nothing: it returns pod
+        // messages so the echo check can see what is already there, and
+        // asking for ten costs ten rows.
         const { messages = [] } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
