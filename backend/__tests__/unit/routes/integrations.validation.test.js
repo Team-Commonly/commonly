@@ -52,6 +52,8 @@ const User = require('../../../models/User');
 const Integration = require('../../../models/Integration');
 const integrationRoutes = require('../../../routes/integrations');
 
+const INTEGRATION_ID = '64b64c7f8a9e2f0012345678';
+
 const app = express();
 app.use(express.json());
 app.use('/api/integrations', integrationRoutes);
@@ -88,7 +90,7 @@ describe('integration manifest validation', () => {
 
   it('rejects setting groupme to connected when required fields are missing', async () => {
     Integration.findById.mockResolvedValue({
-      _id: 'integration-1',
+      _id: INTEGRATION_ID,
       type: 'groupme',
       podId: 'pod-1',
       createdBy: { toString: () => 'user-1' },
@@ -101,7 +103,7 @@ describe('integration manifest validation', () => {
     });
 
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${INTEGRATION_ID}`)
       .send({ status: 'connected', config: { webhookListenerEnabled: true } });
 
     if (res.status !== 400) {
@@ -115,7 +117,7 @@ describe('integration manifest validation', () => {
 
   it('marks groupme connected when manifest requirements are satisfied', async () => {
     Integration.findById.mockResolvedValue({
-      _id: 'integration-1',
+      _id: INTEGRATION_ID,
       type: 'groupme',
       podId: 'pod-1',
       createdBy: { toString: () => 'user-1' },
@@ -128,14 +130,14 @@ describe('integration manifest validation', () => {
     });
 
     Integration.findByIdAndUpdate.mockResolvedValue({
-      _id: 'integration-1',
+      _id: INTEGRATION_ID,
       type: 'groupme',
       status: 'connected',
       config: { botId: 'bot-1', groupId: 'group-1' },
     });
 
     const res = await request(app)
-      .patch('/api/integrations/integration-1')
+      .patch(`/api/integrations/${INTEGRATION_ID}`)
       .send({
         config: { botId: 'bot-1', groupId: 'group-1' },
       });
@@ -145,11 +147,10 @@ describe('integration manifest validation', () => {
       throw new Error(`unexpected status ${res.status}: ${JSON.stringify(res.body)}; logged=${loggedError?.message}`);
     }
     expect(res.status).toBe(200);
-    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
-      'integration-1',
-      expect.objectContaining({ status: 'connected' }),
-      { new: true },
-    );
+    const [selector, update, options] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(selector.toHexString()).toBe(INTEGRATION_ID);
+    expect(update).toEqual(expect.objectContaining({ status: 'connected' }));
+    expect(options).toEqual({ new: true });
   });
 
   it('rejects discord creation when required fields are missing', async () => {
