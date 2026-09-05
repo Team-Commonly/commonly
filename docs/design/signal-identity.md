@@ -11,7 +11,7 @@ A screen is done when it matches its artboard at 1440 and 390 in a real browser.
 ## 1. The five rules
 
 1. **One colour, two volumes.** Cobalt `#1d3fd1` is the only accent. On the *front door* (landing, connect, create account, invite, reset password) it is a **block**: the hero band, a full panel, a wordmark underline. *Inside the app* it is only ever a **mark**: the live dot, an agent's name in mono, a link, the focus edge, and the single card that needs you (2px ring). The same hex, never a tint of it as a background inside the app.
-2. **Ink acts.** Every filled control inside the app is ink `#101828` on white: Send, Answer, Press, Create, Save. Cobalt never fills a button inside the app. Secondary controls are a 1px `#d0d5dd` border. The rare cobalt fill (Copy on a command block) sits on an ink ground, so it is a mark on ink, not a button on white.
+2. **Ink acts.** Every filled control inside the app is ink `#101828` on white: Send, Answer, Press, Create, Save. Cobalt fills a control inside the app in exactly one place: the **primary option of an open decision card** — the one thing the page is asking of you, and the second cobalt block on the page beside the selected room. Nothing else. Secondary controls are a 1px `#d0d5dd` border. The rare cobalt fill (Copy on a command block) sits on an ink ground, so it is a mark on ink, not a button on white.
 3. **Three faces, one job each.** Bricolage Grotesque 700/800 for display, letter-spacing −0.03em. IBM Plex Sans 400/500/600 for body and controls, 14/20. IBM Plex Mono 500 for meta: timestamps, ids, counts, status, lowercase labels, commands. Meta is mono *because* it is data; a sentence is never mono.
 4. **Hard edges, no shadows.** Radius 4 on controls, rows, chips, avatars and marks; 6 on cards, panels and the content card. No shadow anywhere; elevation is a border. Avatars are 4px squares in cobalt (people), ink (agents) or `#e4e7ec` (idle), never circles, never photos in chrome.
 5. **Engagement is behaviour, not paint.** A card settles when you pick; a row flips when an agent takes it; presence is a pulsing dot (1.6s, respects reduced motion). Energy comes from things changing, never from adding colour. When a screen feels flat, remove something.
@@ -36,7 +36,7 @@ Cobalt hover is `#1633a8`. The focus ring is `0 0 0 3px rgba(29,63,209,0.16)` ar
 
 | state | how it reads | never |
 |---|---|---|
-| needs you | 2px cobalt ring on the card, mono `needs you` in cobalt, ink Answer button | a coloured background, a badge count on the card |
+| needs you | 2px cobalt ring on the card, mono `needs you` in cobalt; on a decision card the primary option is a cobalt fill, the others bordered, Other… as cobalt text; on a plain needs-you card an ink Answer button | a coloured background, a badge count on the card |
 | working | cobalt pulsing dot + mono `working · TASK-131` | a spinner |
 | connected / live | solid cobalt dot | green |
 | idle / done | `#e4e7ec` mark, muted mono `idle · 41m`, done cards drop to `#e4e7ec` border and secondary text | greying out the whole card |
@@ -69,7 +69,8 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 3. **One system, two volumes.** Every later screen is the same system; the only knob is front door (blocks) vs in-app (marks). A screen that needs a new colour or radius is wrong, not the system.
 4. **Canvas first, code second.** No component work starts before the artboard exists and Sam has looked at it. The artboard is the spec; the PR carries 1440 and 390 screenshots of the real screen beside it.
 5. **Survey what is left.** Periodically screenshot every live route at 1440 and 390 into one sheet (the *Coverage* page shows the shape); each uncovered screen gets a call — draw, fold into a drawn screen, or delete — and Sam rules on the deletes.
-6. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
+6. **A screen ships whole, never in slices.** A new sidebar beside an old composer is parity and misalignment, not progress (Sam, 2026-09-05). When an artboard covers several components, their PRs stack and press within the hour, deploy once, and the old components are deleted in the same cutover — no flags, no half-states in production.
+7. **Pin the load-bearing CSS.** Layout rules a browser could silently break are pinned in `frontend/src/v2/__tests__/v2-layout-invariants.test.ts`; a restyle re-pins, never deletes.
 
 ## 7. Adding a screen
 
@@ -81,4 +82,5 @@ Real copy on every artboard, final draft, in the product's voice: short declarat
 ## History
 
 - 2026-09-03 — direction chosen (C · Signal). Tokens landed in #1530; Activity rebuilt to its artboard in #1522.
+- 2026-09-05 — Active goal: the workspace is the preview. Sidebar, inspector, thread, decision card and composer rebuilt as new components to `Workspace · clickable`, one cutover; decision loop closed both ways (card → pick → event to the agent → Telegram).
 - 2026-09-04 — Coverage page: 18 uncovered screens surveyed, six drawn (invite, connectors, settings, board, bring your own, reset password); delete or fold proposed for feed, digest, analytics, dashboard, skills, manage agents, profile, devices — pending Sam. Chat + inspector restyle in progress.
