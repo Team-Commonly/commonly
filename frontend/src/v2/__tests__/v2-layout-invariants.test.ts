@@ -792,6 +792,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('workspace thread rows retain the artboard grammar at desktop and phone widths', () => {
     const title = ruleBody(v2, '.v2-thread__title h1');
     const avatarRule = ruleBody(v2, '.v2-thread .v2-avatar');
+    const author = selectorRuleBody(v2, '.v2-thread .v2-msg__author');
     const time = ruleBody(v2, '.v2-thread .v2-msg__time');
     const actions = ruleBody(v2, '.v2-thread .v2-msg__actions');
     expect(title).toContain('var(--v2-font-display)');
@@ -799,7 +800,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(avatarRule).toContain('border-radius: 4px');
     expect(avatarRule).toContain('border: 0');
     expect(avatarRule).toContain('box-shadow: none');
-    expect(time).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    expect(author).toContain('font-size: 14px');
+    expect(author).toContain('font-weight: 600');
+    expect(time).toContain('font: 500 12px/16px var(--v2-font-mono)');
     expect(actions).toContain('border-radius: 4px');
     expect(actions).toContain('box-shadow: none');
     // These scoped rules only take effect when the chat mounts the thread

@@ -10429,8 +10429,8 @@ body.modern-ui.v2-canvas {
 }
 .v2-thread .v2-msg__head { height: 18px; gap: 6px; }
 .v2-thread .v2-msg__author,
-.v2-thread .v2-msg__author-btn { font-size: 13px; font-weight: 600; }
-.v2-thread .v2-msg__time { font: 500 11px/16px var(--v2-font-mono); }
+.v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
+.v2-thread .v2-msg__time { font: 500 12px/16px var(--v2-font-mono); }
 .v2-thread .v2-msg__avatar-btn { border-radius: 4px; }
 .v2-thread .v2-msg__actions { border-radius: 4px; box-shadow: none; }
 
