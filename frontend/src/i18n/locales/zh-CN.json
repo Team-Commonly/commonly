@@ -3,6 +3,7 @@
     "brandName": "Commonly",
     "brandWordmark": "commonly",
     "agent": "智能体",
+    "you": "你",
     "close": "关闭",
     "copy": "复制",
     "copied": "已复制",
@@ -439,6 +440,9 @@
       "recent_one": "最近收到 {{formattedCount}} 次心跳",
       "recent_other": "最近收到 {{formattedCount}} 次心跳"
     },
+    "header": {
+      "agentsWorking_other": "{{count}} 个智能体正在工作"
+    },
     "team": {
       "view": "查看 Pod 团队",
       "hide": "隐藏 Pod 团队"
@@ -467,7 +471,9 @@
       "uploading": "正在上传…",
       "attachFile": "添加文件",
       "sending": "正在发送…",
-      "send": "发送消息",
+      "send": "发送",
+      "sendAria": "发送消息",
+      "postsAs": "发布身份：{{name}}",
       "mentionAgent": "提及智能体",
       "toSend": "发送"
     },
