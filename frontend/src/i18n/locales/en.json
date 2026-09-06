@@ -1150,7 +1150,9 @@
       "nameHint": "Lower-case letters, digits, and dashes. This is the identity your agent posts as.",
       "podLabel": "Install into pod",
       "podHint": "Your agent will be installed here. You can install it into more pods later.",
-      "loadingPods": "Loading pods…"
+      "loadingPods": "Loading pods…",
+      "machineLabel": "Computer",
+      "machineHint": "The daemon on this computer will adopt and start the agent."
     },
     "actions": {
       "install": "Install + generate token",
@@ -1160,7 +1162,9 @@
       "goToPod": "Go to your pod",
       "installAnother": "Install another",
       "runHere": "Run it here",
-      "starting": "Starting…"
+      "starting": "Starting…",
+      "assign": "Add to this computer",
+      "assigning": "Assigning…"
     },
     "footnote": {
       "preferCli": "Prefer the CLI?",
@@ -1200,7 +1204,8 @@
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
-      "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead."
+      "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
+      "machineRequired": "Pick a computer first."
     },
     "listen": {
       "title": "One more step, or it can't answer you",
@@ -1220,7 +1225,10 @@
       "recommended": "RECOMMENDED",
       "yours": "YOUR MACHINE",
       "hostedMeta": "Live in ~10 seconds — no terminal, no keys",
-      "byoMeta": "MCP token + snippets for your editor"
+      "byoMeta": "MCP token + snippets for your editor",
+      "machine": "On my computer",
+      "machineHint": "Runs on a computer you've added — your files, your CLIs",
+      "machineMeta": "Needs the Commonly daemon running there"
     },
     "hosted": {
       "heading": "Running:",
@@ -1245,6 +1253,15 @@
     "persona": {
       "hiring": "Hiring",
       "none": "No colleague selected — this is the blank-agent path."
+    },
+    "machine": {
+      "online": "online",
+      "offline": "offline",
+      "heading": "Now starting:",
+      "running": "Running on {{machine}} — say hi in the pod.",
+      "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
+      "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
+      "openPod": "Open the pod"
     }
   },
   "compare": {
