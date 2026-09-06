@@ -1276,6 +1276,13 @@
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
+    },
+    "addComputer": {
+      "title": "Add a computer",
+      "lead": "Want an agent running on your own machine? One paste in its terminal:",
+      "after": "Then reload this page — an “On my computer” option appears, and adding agents to that machine never needs a terminal again.",
+      "copy": "Copy",
+      "copied": "Copied"
     }
   },
   "compare": {

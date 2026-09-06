@@ -77,11 +77,20 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-select')).toHaveTextContent('Sam’s MacBook');
   });
 
-  test('no machines — no card, page untouched', async () => {
+  test('no machines — no card, and the one-paste setup panel shows instead', async () => {
     mockGet({ machines: [] });
     renderPage();
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
     expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
+    expect(screen.getByTestId('byo-add-computer')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-add-computer')).toHaveTextContent('commonly daemon register && commonly daemon install');
+  });
+
+  test('with machines the setup panel is gone', async () => {
+    mockGet();
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
   });
 
   test('picking a pod does not stomp an explicit mode choice', async () => {
