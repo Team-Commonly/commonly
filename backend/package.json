@@ -29,6 +29,7 @@
     "migrate:task-priority": "ts-node scripts/migrate-task-priority.ts",
     "migrate:task-source-ref-identity": "ts-node scripts/migrate-task-source-ref-identity.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
+    "audit:replied-attention-stamps": "ts-node scripts/audit-replied-attention-stamps.ts",
     "sweep:done-task-handoffs": "ts-node scripts/sweep-done-task-handoffs.ts",
     "sweep:leftover-runtime-tokens": "ts-node scripts/sweep-leftover-runtime-tokens.ts",
     "sweep:stale-digest": "ts-node scripts/sweep-stale-digest.ts",
