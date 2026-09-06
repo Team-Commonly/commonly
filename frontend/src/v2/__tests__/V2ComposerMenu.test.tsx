@@ -84,10 +84,17 @@ describe('V2Composer (direction C)', () => {
   test('a thread target is an inline tag inside the row with its own cancel', () => {
     const { props } = renderComposer({ threadTarget: { id: '7', preview: 'Replacement is #1569' } });
     const tag = screen.getByRole('status');
-    expect(tag).toHaveClass('v2-composer__tag');
-    expect(tag).toHaveTextContent('Replying in thread');
+    expect(tag).toHaveClass('v2-composer__aim');
+    expect(tag).toHaveTextContent('↳ replying in thread');
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Reply in thread');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel reply' }));
     expect(props.onCancelThread).toHaveBeenCalledTimes(1);
+  });
+
+  test('aiming at a person reads ↳ replying to <author> and the placeholder follows', () => {
+    renderComposer({ replyTarget: { id: '3', content: 'hi', user: { username: 'vera' } } });
+    expect(screen.getByRole('status')).toHaveTextContent('↳ replying to vera');
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', 'Reply to vera');
   });
 
   test('uploading shows a mono status beside the field', () => {

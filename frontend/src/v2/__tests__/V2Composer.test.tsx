@@ -70,6 +70,10 @@ const makeDetail = (overrides = {}) => ({
   ...overrides,
 });
 
+// The placeholder changes once the composer is aimed (direction C), so tests
+// reach the field by its class rather than its placeholder.
+const composerInput = () => document.querySelector('.v2-composer textarea');
+
 const renderChat = (detail) => render(
   <AuthContext.Provider value={authValue}>
     <MemoryRouter>
@@ -101,7 +105,7 @@ describe('V2Composer send button', () => {
     const detail = makeDetail();
     renderChat(detail);
 
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'hello team' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -117,7 +121,7 @@ describe('V2Composer send button', () => {
   test('there is no Send until the draft has text', () => {
     renderChat(makeDetail());
     expect(screen.queryByRole('button', { name: /send message/i })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), { target: { value: 'hello' } });
+    fireEvent.change(composerInput(), { target: { value: 'hello' } });
     expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument();
   });
 
@@ -137,7 +141,7 @@ describe('V2Composer send button', () => {
     const { rerender } = renderChat(detail);
 
     fireEvent.click(screen.getByRole('button', { name: /reply to teammate/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'I am checking it now.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -160,7 +164,7 @@ describe('V2Composer send button', () => {
     const sendError = screen.getByText('Replies are temporarily unavailable. Please try again shortly.');
     expect(sendError.closest('.v2-composer')).not.toBeNull();
     expect(sendError.closest('.v2-chat__messages')).toBeNull();
-    expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
+    expect(composerInput()).toHaveValue('I am checking it now.');
     expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__tag')).not.toBeNull();
   });
 
@@ -202,7 +206,7 @@ describe('V2Composer send button', () => {
 
     fireEvent.click(replyFromExpandedThread());
     expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Joining the thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -219,7 +223,7 @@ describe('V2Composer send button', () => {
     // reply edge is gone.
     fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
     fireEvent.click(replyFromExpandedThread());
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'thread wins' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -231,12 +235,27 @@ describe('V2Composer send button', () => {
     // wins, the thread root is gone.
     fireEvent.click(replyFromExpandedThread());
     fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'reply wins' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
     await waitFor(() => {
       expect(detail.sendMessage).toHaveBeenLastCalledWith('reply wins', 'text', 'm2', undefined);
+    });
+  });
+
+  test('Escape in the field un-aims (reply or thread) and keeps the draft; the send goes out plain', async () => {
+    const detail = makeDetail({ messages: threadMessages() });
+    renderChat(detail);
+    fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
+    expect(document.activeElement).toBe(composerInput());
+    fireEvent.change(composerInput(), { target: { value: 'kept draft' } });
+    fireEvent.keyDown(composerInput(), { key: 'Escape' });
+    expect(document.querySelector('.v2-composer__aim')).toBeNull();
+    expect(composerInput()).toHaveValue('kept draft');
+    fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenLastCalledWith('kept draft', 'text', undefined, undefined);
     });
   });
 
@@ -283,6 +302,21 @@ describe('V2Composer send button', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
   };
 
+  test('an image upload goes out as the upload manifest, not a bare URL, when the server returns a file key', async () => {
+    const axios = require('axios');
+    axios.post.mockImplementation((url) => (String(url).includes('/api/uploads')
+      ? Promise.resolve({ data: { kind: 'image', url: '/api/uploads/k1.png', fileName: 'k1.png', originalName: 'walk.png', size: 1234 } })
+      : Promise.resolve({ data: {} })));
+    const detail = makeDetail();
+    const { container } = renderChat(detail);
+    const input = container.querySelector('input[type=file]');
+    fireEvent.change(input, { target: { files: [new File(['x'], 'walk.png', { type: 'image/png' })] } });
+    await waitFor(() => {
+      expect(detail.sendMessage).toHaveBeenCalledWith('[[upload:k1.png|walk.png|1234|image]]', 'image', undefined, undefined);
+    });
+    axios.post.mockImplementation(() => Promise.resolve({ data: {} }));
+  });
+
   test('an image upload carries the REPLY edge when aimed at a person', async () => {
     // @ux-lead 57473. #1150 wired the thread root on this line and left the
     // reply edge hardcoded undefined, so the chip read "Replying to {name}"
@@ -316,7 +350,7 @@ describe('V2Composer send button', () => {
     await waitFor(() => {
       expect(screen.queryByText(/replying in thread/i)).not.toBeInTheDocument();
     });
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'unaimed' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -331,7 +365,7 @@ describe('V2Composer send button', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /thread from teammate/i }));
     expect(screen.getByText(/replying in thread/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Starting a thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -346,7 +380,7 @@ describe('V2Composer send button', () => {
     renderChat(detail);
 
     fireEvent.click(screen.getByRole('button', { name: /thread from other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Still in the first thread.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -361,7 +395,7 @@ describe('V2Composer send button', () => {
     renderChat(detail);
 
     fireEvent.click(screen.getByRole('button', { name: /^reply in thread$/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Joining through the card.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -376,7 +410,7 @@ describe('V2Composer send button', () => {
     renderChat(detail);
 
     fireEvent.click(screen.getByRole('button', { name: /reply to other/i }));
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+    fireEvent.change(composerInput(), {
       target: { value: 'Replying to a person.' },
     });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));

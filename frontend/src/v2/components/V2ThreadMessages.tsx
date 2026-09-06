@@ -30,6 +30,8 @@ interface V2ThreadMessagesProps {
   edgeRef?: React.RefObject<HTMLDivElement | null>;
   // Jump-to-latest pill: messages that arrived while the reader was scrolled up.
   jumpCount?: number;
+  // Mount the pill once the reader is a viewport up, even before arrivals.
+  showJump?: boolean;
   onJump?: () => void;
   loading: boolean;
   error: string | null;
@@ -64,6 +66,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onLoadOlder,
   edgeRef,
   jumpCount = 0,
+  showJump = false,
   onJump,
   loading,
   error,
@@ -209,11 +212,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         );
       })}
       <div ref={messagesEndRef} />
-      {onJump && jumpCount > 0 && (
+      {onJump && (showJump || jumpCount > 0) && (
         <div className="v2-thread__jump-wrap">
           <button type="button" className="v2-thread__jump" onClick={onJump}>
             {t('podChat.history.jumpToLatest')}
-            <span className="v2-thread__jump-count">· {jumpCount}</span>
+            {jumpCount > 0 && <span className="v2-thread__jump-count">· {jumpCount}</span>}
           </button>
         </div>
       )}

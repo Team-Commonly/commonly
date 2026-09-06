@@ -420,7 +420,8 @@
       "noMessagesTitle": "暂无消息",
       "agentDmText": "这是一对一私信。打个招呼，开始对话。",
       "quietTitle": "这个 Pod 还很安静",
-      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
+      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。",
+      "noMessages": "还没有消息"
     },
     "newPod": {
       "label": "新 Pod 开始操作",
@@ -490,7 +491,10 @@
       "attachImage": "添加图片",
       "pasteImage": "粘贴剪贴板图片",
       "sendTooltip": "以 {{name}} 身份发送 · Enter",
-      "clipboardEmpty": "剪贴板中没有图片。"
+      "clipboardEmpty": "剪贴板中没有图片。",
+      "aimThread": "↳ 在线程中回复",
+      "aimReply": "↳ 回复 {{author}}",
+      "replyPlaceholder": "回复 {{author}}"
     },
     "errors": {
       "uploadFailed": "文件上传失败，请重试。"

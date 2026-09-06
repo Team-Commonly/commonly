@@ -420,7 +420,8 @@
       "noMessagesTitle": "No messages yet",
       "agentDmText": "This is a private 1:1 conversation. Say hello to get started.",
       "quietTitle": "This pod is quiet",
-      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply."
+      "quietText": "Use @ to mention an agent or teammate—everyone in the member list can see and reply.",
+      "noMessages": "no messages yet"
     },
     "newPod": {
       "label": "New Pod starter actions",
@@ -491,7 +492,10 @@
       "attachImage": "Attach image",
       "pasteImage": "Paste image from clipboard",
       "sendTooltip": "Send as {{name}} · Enter",
-      "clipboardEmpty": "No image on the clipboard."
+      "clipboardEmpty": "No image on the clipboard.",
+      "aimThread": "↳ replying in thread",
+      "aimReply": "↳ replying to {{author}}",
+      "replyPlaceholder": "Reply to {{author}}"
     },
     "errors": {
       "uploadFailed": "Failed to upload file. Please try again."

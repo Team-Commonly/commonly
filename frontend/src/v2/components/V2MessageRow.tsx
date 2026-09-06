@@ -175,11 +175,21 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // image send posted as bare content (`/api/uploads/<key>.png`).
 const IMAGE_URL_RE = /^(?:https?:\/\/.+|\/api\/uploads\/[^\s]+)\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
 
+// Code spans and fences are quoted grammar, not attachments: mask them while
+// the directives are pulled out, then put them back verbatim.
+const CODE_RE = /```[\s\S]*?```|`[^`\n]*`/g;
+const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
+  const spans: string[] = [];
+  const masked = content.replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
+  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
+};
+
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
+  const { masked, restore } = maskCode(content);
   // Real uploads first — they carry a fileName and resolve to a signed URL on
   // click. Then static file tokens (demo fixtures, no backend reference).
-  let working = content.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize, rawKind) => {
+  let working = masked.replace(UPLOAD_TOKEN_RE, (_match, rawFileName, rawOriginal, rawSize, rawKind) => {
     const fileName = String(rawFileName).trim();
     const name = String(rawOriginal).trim();
     const dot = name.lastIndexOf('.');
@@ -195,7 +205,7 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
     files.push({ name, ext, size: rawSize ? String(rawSize).trim() : undefined });
     return '';
   });
-  return { stripped: working.trim(), files };
+  return { stripped: restore(working).trim(), files };
 };
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {

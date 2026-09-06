@@ -209,13 +209,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
 
   // Setting one composer target clears the other. Two chips would be two
   // meanings for one send, and the resolver rejects a message carrying both.
+  // Aiming puts the cursor in the field so Esc (un-aim) and typing both land.
   const aimAtThread = useCallback((rootId: string, preview: string) => {
     setReplyTarget(null);
     setThreadTarget({ id: rootId, preview });
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessage = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     setThreadTarget(null);
     setReplyTarget(m);
+    composerInputRef.current?.focus();
   }, []);
   const aimAtMessageThread = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     // The action is available on every visible message, including replies.
@@ -507,18 +510,23 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // is mine); otherwise they count up in the Jump-to-latest pill.
   const atBottomRef = useRef(true);
   const [jumpCount, setJumpCount] = useState(0);
+  // The pill mounts once the reader is a viewport up; `· N` only with arrivals.
+  const [scrolledUp, setScrolledUp] = useState(false);
   const edgeRef = useRef<HTMLDivElement | null>(null);
   const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     atBottomRef.current = true;
     setJumpCount(0);
+    setScrolledUp(false);
   }, []);
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return undefined;
     const onScroll = () => {
-      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const near = distance < 80;
       atBottomRef.current = near;
+      setScrolledUp(distance > el.clientHeight);
       if (near) setJumpCount(0);
     };
     onScroll();
@@ -571,6 +579,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     el.addEventListener('paste', onPaste);
     return () => el.removeEventListener('paste', onPaste);
   }, [pod?._id]);
+
+  useEffect(() => {
+    if (!loading && pod && messages.length === 0) composerInputRef.current?.focus();
+  }, [loading, pod?._id, messages.length]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -1086,6 +1098,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           onLoadOlder={() => { void handleLoadOlder(); }}
           edgeRef={edgeRef}
           jumpCount={jumpCount}
+          showJump={scrolledUp}
           onJump={jumpToLatest}
           loading={loading}
           error={error}
@@ -1130,12 +1143,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       <div className="v2-empty__text">{t('podChat.empty.agentDmText')}</div>
                     </>
                   ) : (
-                    <>
-                      <div className="v2-empty__title">{t('podChat.empty.quietTitle')}</div>
-                      <div className="v2-empty__text">
-                        {t('podChat.empty.quietText')}
-                      </div>
-                    </>
+                    // Direction C: an empty pod is one mono line and a focused composer.
+                    <span className="v2-thread__empty-line">{t('podChat.empty.noMessages')}</span>
                   )}
                 </div>
           ) : undefined}
@@ -1247,6 +1256,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                       if (selection) selectMention(selection);
                       return;
                     }
+                  }
+                  // Esc with no mention menu open un-aims the composer (the aim
+                  // chip's keyboard cancel); the draft itself is kept.
+                  if (event.key === 'Escape' && (replyTarget || threadTarget)) {
+                    event.preventDefault();
+                    setReplyTarget(null);
+                    setThreadTarget(null);
+                    return;
                   }
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();

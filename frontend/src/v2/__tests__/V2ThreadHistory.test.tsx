@@ -69,8 +69,12 @@ describe('V2ThreadMessages history edge and jump pill (direction C)', () => {
 
   test('the jump pill appears only with arrivals while scrolled up and carries the count', () => {
     const onJump = jest.fn();
-    const { rerender } = renderThread({ jumpCount: 0, onJump });
+    renderThread({ jumpCount: 0, onJump });
     expect(screen.queryByRole('button', { name: /Jump to latest/ })).not.toBeInTheDocument();
+    // A viewport up with no arrivals: the pill mounts without a count.
+    const { unmount } = renderThread({ jumpCount: 0, showJump: true, onJump });
+    expect(screen.getByRole('button', { name: /Jump to latest/ })).not.toHaveTextContent('·');
+    unmount();
     renderThread({ jumpCount: 3, onJump });
     const pill = screen.getByRole('button', { name: /Jump to latest/ });
     expect(pill).toHaveTextContent('· 3');

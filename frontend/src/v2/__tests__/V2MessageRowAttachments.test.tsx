@@ -61,6 +61,13 @@ describe('V2MessageRow attachments (direction C)', () => {
     expect(screen.queryByRole('button', { name: /^Open .*\.png/ })).not.toBeInTheDocument();
   });
 
+  test('a directive quoted in backticks or a fence stays text — no chip, no thumbnail', () => {
+    renderRow(message('The grammar is `[[upload:abc.png|abc.png|12|image]]` and fenced:\n```\n[[upload:def.md|def.md|3|document]]\n```'));
+    expect(document.querySelector('.v2-msg__thumb')).toBeNull();
+    expect(document.querySelector('.v2-msg__chip')).toBeNull();
+    expect(document.querySelector('.v2-msg__content')).toHaveTextContent('[[upload:abc.png|abc.png|12|image]]');
+  });
+
   test('a legacy image message becomes one thumbnail, not a bare link', () => {
     renderRow(message('/api/uploads/avatar.png', { message_type: 'image' }));
     const thumb = screen.getByRole('button', { name: 'Open image' });

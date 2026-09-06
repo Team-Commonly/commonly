@@ -10849,6 +10849,13 @@ body.modern-ui.v2-canvas {
 .v2-root .v2-composer__menu > button:hover,
 .v2-root .v2-composer__menu > button:focus-visible { background: var(--v2-surface-hover); outline: none; }
 
+.v2-thread__empty-line {
+  display: block;
+  padding: 12px 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
 .v2-composer__tag {
   display: inline-flex;
   flex: 0 0 auto;
@@ -10861,6 +10868,7 @@ body.modern-ui.v2-canvas {
   background: var(--v2-accent-soft, #e8ecfb);
   color: var(--v2-accent-text);
   font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -10880,6 +10888,8 @@ body.modern-ui.v2-canvas {
 .v2-composer__field { position: relative; min-width: 0; flex: 1; }
 
 .v2-composer__file { display: none; }
+
+.v2-root .v2-composer__field > textarea::placeholder { color: var(--v2-text-placeholder); }
 
 /* The row carries the focus state on its border; the field itself draws none. */
 .v2-root .v2-composer__field > textarea:focus,
@@ -11130,13 +11140,14 @@ body.modern-ui.v2-canvas {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  height: 28px;
+  padding: 0 12px;
   transform: translateX(-50%);
-  border: 1px solid var(--v2-border);
-  border-radius: 999px;
+  border: 1px solid #dde0e6;
+  border-radius: 14px;
   background: var(--v2-surface);
   color: var(--v2-text-primary);
-  font: 500 12px/16px var(--v2-font);
+  font: 600 13px/26px var(--v2-font);
   white-space: nowrap;
 }
 

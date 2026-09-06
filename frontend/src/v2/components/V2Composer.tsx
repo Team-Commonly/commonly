@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import type { V2Message } from '../hooks/useV2PodDetail';
 
@@ -127,10 +127,12 @@ const V2Composer: React.FC<V2ComposerProps> = ({
     else openFileInput('image/*');
   };
 
+  // The aim chip (direction C): `↳ replying in thread` / `↳ replying to <author>`,
+  // mono lowercase, inside the row before the placeholder.
   const target = threadTarget
-    ? { label: `↳ ${t('podChat.thread.replyingInThread')} ${threadTarget.preview.replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 32)}`, cancel: onCancelThread }
+    ? { label: t('podChat.composer.aimThread'), cancel: onCancelThread }
     : replyTarget
-      ? { label: null, cancel: onCancelReply }
+      ? { label: t('podChat.composer.aimReply', { author: replyTarget.user?.username || t('podChat.messageFallback') }), cancel: onCancelReply }
       : null;
 
   return (
@@ -156,21 +158,15 @@ const V2Composer: React.FC<V2ComposerProps> = ({
           )}
         </div>
         {target && (
-          <span className="v2-composer__tag" role="status">
-            {target.label ? target.label : (
-              <Trans
-                i18nKey="podChat.replyingTo"
-                values={{ author: replyTarget?.user?.username || t('podChat.messageFallback') }}
-                components={{ author: <strong /> }}
-              />
-            )}
-            <button type="button" className="v2-composer__tag-cancel" aria-label={t('podChat.cancelReply')} onClick={target.cancel}>×</button>
+          <span className="v2-composer__aim v2-composer__tag" role="status">
+            {target.label}
+            <button type="button" className="v2-composer__aim-cancel v2-composer__tag-cancel" aria-label={t('podChat.cancelReply')} onClick={target.cancel}>×</button>
           </span>
         )}
         <div className="v2-composer__field">
           <textarea
             ref={inputRef}
-            placeholder={t('podChat.composer.placeholder', { podName })}
+            placeholder={threadTarget ? t('podChat.thread.replyInThread') : replyTarget ? t('podChat.composer.replyPlaceholder', { author: replyTarget.user?.username || t('podChat.messageFallback') }) : t('podChat.composer.placeholder', { podName })}
             value={draft}
             rows={1}
             onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}

@@ -839,7 +839,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(threadMessages).not.toContain('v2-chat__older-btn');
     expect(thread).toContain('new IntersectionObserver');
     expect(thread).toContain('atBottomRef');
-    expect(ruleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border-radius: 999px');
+    // ux-lead gate on #1579: the pill is a 28px r14 white chip on #dde0e6, sans
+    // 600 13px — the same family as the aim chip, not a 999px capsule.
+    const jump = ruleBody(v2, '.v2-root button.v2-thread__jump');
+    expect(jump).toContain('height: 28px');
+    expect(jump).toContain('border-radius: 14px');
+    expect(jump).toContain('border: 1px solid #dde0e6');
+    expect(jump).toContain('font: 600 13px/26px var(--v2-font)');
     expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
   });
 
