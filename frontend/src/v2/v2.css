@@ -11126,23 +11126,27 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-thread__edge-line { cursor: pointer; }
 .v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
 
+/* The wrap is the scroller's last child and STICKS to its bottom edge: a
+   0-height wrap with an absolute pill resolved `bottom: 12px` against a box
+   at the end of the transcript, ~1100px below the viewport when the pill
+   mounts a viewport up (ux-lead gate on #1579). Sticky needs real height. */
 .v2-thread__jump-wrap {
-  position: relative;
-  height: 0;
-  overflow: visible;
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  height: 28px;
+  pointer-events: none;
 }
 
 .v2-root button.v2-thread__jump {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 28px;
   padding: 0 12px;
-  transform: translateX(-50%);
+  pointer-events: auto;
   border: 1px solid #dde0e6;
   border-radius: 14px;
   background: var(--v2-surface);

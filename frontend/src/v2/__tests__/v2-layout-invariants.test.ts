@@ -841,7 +841,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(thread).toContain('atBottomRef');
     // ux-lead gate on #1579: the pill is a 28px r14 white chip on #dde0e6, sans
     // 600 13px — the same family as the aim chip, not a 999px capsule.
+    // The wrap sticks to the scroller's bottom edge with real height; the
+    // pill centres by flow. An absolute pill inside a 0-height last child
+    // sat ~1100px below the viewport (ux-lead gate on #1579). Rect
+    // containment is a browser-tier check (setupTests stubs
+    // getBoundingClientRect to zeros), so it lives in the walk, not here.
+    const wrap = ruleBody(v2, '.v2-thread__jump-wrap');
+    expect(wrap).toContain('position: sticky');
+    expect(wrap).toContain('bottom: 12px');
+    expect(wrap).not.toContain('height: 0');
     const jump = ruleBody(v2, '.v2-root button.v2-thread__jump');
+    expect(jump).not.toContain('position: absolute');
     expect(jump).toContain('height: 28px');
     expect(jump).toContain('border-radius: 14px');
     expect(jump).toContain('border: 1px solid #dde0e6');
