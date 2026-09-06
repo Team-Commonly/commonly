@@ -127,6 +127,37 @@ describe('V2Layout default pod selection', () => {
     expect(phoneViewport.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
   });
 
+  test.each([
+    [390, null, false],
+    [1199, null, false],
+    [1200, null, true],
+    [1440, null, true],
+    [1440, '1', false],
+    [1199, '0', true],
+  ])('inspector visibility at %ipx with stored preference %s is %s', (width, preference, visible) => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: jest.fn((query: string) => ({
+        matches: query === '(max-width: 760px)' ? Number(width) <= 760 : Number(width) >= 1200,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      })),
+    });
+    if (preference !== null) localStorage.setItem('v2.inspectorCollapsed', String(preference));
+
+    render(
+      <MemoryRouter initialEntries={['/v2/pods/workspace']}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('workspace-inspector') !== null).toBe(visible);
+    expect(localStorage.getItem('v2.inspectorCollapsed')).toBe(preference);
+  });
+
   test('lands a new user in their oldest own workspace instead of auto-joined HQ', async () => {
     renderAutoLayout();
 

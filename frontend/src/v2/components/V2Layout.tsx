@@ -30,13 +30,13 @@ const isPhoneViewport = (): boolean => (
 const readInspectorCollapsed = (): boolean => {
   try {
     const v = localStorage.getItem(INSPECTOR_PREF_KEY);
-    // Default to collapsed — pod chat reads better when the third column is
-    // out of the way until you ask for it. See user feedback 2026-04-30.
-    if (v === null) return true;
-    return v === '1';
+    if (v !== null) return v === '1';
   } catch {
-    return true;
+    // Unavailable storage uses the same default as a fresh session.
   }
+  // The artboard opens the desktop inspector by default; narrower viewports
+  // keep it closed until requested. Explicit preferences take precedence.
+  return !(typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1200px)').matches);
 };
 
 const writeInspectorCollapsed = (next: boolean) => {
