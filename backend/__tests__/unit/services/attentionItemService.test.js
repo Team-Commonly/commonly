@@ -9,6 +9,15 @@ jest.mock('../../../models/AttentionItem', () => ({ updateOne: mockUpdateOne, up
 jest.mock('../../../models/Pod', () => ({ findById: mockPodFindById, find: mockPodFind }));
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({ find: mockUserFind, findById: mockUserFindById }));
+const mockMongoMessageFindById = jest.fn();
+const mockMongoMessageExists = jest.fn();
+jest.mock('../../../models/Message', () => ({ findById: mockMongoMessageFindById, exists: mockMongoMessageExists }));
+const mockPgMessageFindById = jest.fn();
+const mockPgMessageHasMessageByUserAfter = jest.fn();
+jest.mock('../../../models/pg/Message', () => ({
+  findById: mockPgMessageFindById,
+  hasMessageByUserAfter: mockPgMessageHasMessageByUserAfter,
+}));
 
 const chain = (value) => ({ select: () => ({ lean: async () => value }) });
 const AttentionItemService = require('../../../services/attentionItemService');
@@ -124,6 +133,63 @@ describe('attentionItemService', () => {
   it('does not let projection-resolution storage turn a completed source into a failure', async () => {
     mockUpdateMany.mockRejectedValueOnce(new Error('mongo unavailable'));
     await expect(AttentionItemService.resolve('approval', 'a-1')).resolves.toBeUndefined();
+  });
+
+  it('resolves only this recipient\'s older mentions in this pod when they post a reply', async () => {
+    const result = await AttentionItemService.resolveMentionAttentionForReply({
+      recipientUserId: 'sam',
+      podId: 'pod-1',
+      repliedAt: new Date('2026-09-06T08:00:00.000Z'),
+    });
+
+    expect(result).toBe(1);
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientUserId: 'sam',
+        podId: 'pod-1',
+        kind: 'mention',
+        status: 'open',
+        $or: [
+          { sourceCreatedAt: { $lt: new Date('2026-09-06T08:00:00.000Z') } },
+          { sourceCreatedAt: { $exists: false }, createdAt: { $lt: new Date('2026-09-06T08:00:00.000Z') } },
+        ],
+      }),
+      { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'replied' }) },
+    );
+  });
+
+  it('stamps explicit acknowledgement differently from a reply', async () => {
+    await AttentionItemService.acknowledgeMention('507f191e810c19729de860ea', '507f191e810c19729de860eb');
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'mention', status: 'open' }),
+      { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'acknowledged' }) },
+    );
+  });
+
+  it('sweeps legacy mentions only when the recipient really posted after the source, with the replied stamp', async () => {
+    const row = {
+      _id: 'attention-1',
+      recipientUserId: 'sam',
+      podId: 'pod-1',
+      kind: 'mention',
+      source: { type: 'message', id: '42' },
+      createdAt: new Date('2026-09-05T10:00:00.000Z'),
+    };
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [row] }) });
+    mockPgMessageFindById.mockResolvedValue({ createdAt: new Date('2026-09-05T09:00:00.000Z') });
+    mockPgMessageHasMessageByUserAfter.mockResolvedValue(true);
+
+    const result = await AttentionItemService.sweepResolvedMentionAttention({ apply: true });
+
+    expect(result).toEqual({ scanned: 1, eligible: 1, resolved: 1, unavailable: 0 });
+    expect(mockPgMessageHasMessageByUserAfter).toHaveBeenCalledWith(
+      'pod-1', 'sam', new Date('2026-09-05T09:00:00.000Z'),
+    );
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'attention-1', kind: 'mention', status: 'open' },
+      { $set: expect.objectContaining({ status: 'resolved', resolvedBy: 'replied', sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z') }) },
+    );
   });
 
   it('materializes a blocked board row once for each current human recipient', async () => {

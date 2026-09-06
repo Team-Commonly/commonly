@@ -18,6 +18,7 @@ import {
   CASCADE_DEFAULTS,
   CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
+  DECISION_FORK_FRAME,
   MENTION_EVENT_TYPES,
   classifyTrigger,
   createCascadeGovernor,
@@ -27,7 +28,25 @@ import {
   resolveCascadeSettings,
   splitForChat,
   deliverChatReply,
+  frameDecisionForkRule,
 } from '../src/lib/enforcement.js';
+
+describe('decision-fork prompt rule', () => {
+  // Three prose asks from the workspace artboard review. They are real forks
+  // phrased as ordinary @-questions; each must enter the model prompt with
+  // the durable-card instruction rather than relying on advisory tool text.
+  test.each([
+    'Is the decision card primary option cobalt or ink?',
+    'Is the rail brand mark cobalt or ink?',
+    'Does accent fill mean any cobalt background or only a ground-covering block?',
+  ])('frames prose fork: %s', (proseAsk) => {
+    const prompt = frameDecisionForkRule(proseAsk);
+    expect(prompt).toContain(DECISION_FORK_FRAME);
+    expect(prompt).toContain('commonly_request_decision');
+    expect(prompt).toContain('do not post a prose @ask');
+    expect(prompt).toContain(proseAsk);
+  });
+});
 
 describe('classifyTrigger', () => {
   const event = (payload) => ({ type: 'chat.mention', payload });

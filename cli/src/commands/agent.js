@@ -50,6 +50,7 @@ import {
   createClaimHandicap,
   createClaimKeeper,
   deliverChatReply,
+  frameDecisionForkRule,
   peerHoldsFrame,
   resolveCascadeSettings,
 } from '../lib/enforcement.js';
@@ -694,6 +695,18 @@ const extractPrompt = (event) => {
       'Only post a concise pod update if a human needs it; otherwise return NO_REPLY.',
     ].join('\n');
   }
+  if (event.type === 'decision.ruled') {
+    if (!p.decisionId || !p.pick || !p.ruledAt) return null;
+    const ruler = p.ruledBy?.username || 'A human';
+    return [
+      '[Decision ruled]',
+      `${ruler} chose: ${String(p.pick)}`,
+      `Decision: ${String(p.decisionId)}`,
+      `Ruled at: ${String(p.ruledAt)}`,
+      '',
+      'Continue with this ruling. Post a concise update only if it materially helps the pod; otherwise return NO_REPLY.',
+    ].join('\n');
+  }
   return null;
 };
 
@@ -1050,7 +1063,7 @@ export const performRun = ({
     const memoryLongTerm = await readLongTerm(client, { onError });
 
     log(`[${event.type}] spawning ${adapter.name}`);
-    const result = await adapter.spawn(prompt, {
+    const result = await adapter.spawn(frameDecisionForkRule(prompt), {
       sessionId,
       cwd: agentCwd,
       env: process.env,

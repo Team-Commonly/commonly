@@ -10,9 +10,13 @@ const isPodMember = require('../utils/isPodMember');
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { shouldEscalate } = require('./connectorRelayPolicy');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const channelVerdictService = require('./channelVerdictService');
+import type { DecisionRelayCard } from './decisionCardRelay';
 
 const RELAY_MAP_CAP = 100;
-const OUTBOUND_TEXT_CAP = 2_800;
+const OUTBOUND_TEXT_CAP = 900;
+const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
 interface SlackIntegrationDoc {
   _id: unknown;
@@ -59,6 +63,52 @@ const isRelayableIntegration = (integration: SlackIntegrationDoc, podId: string)
   && Boolean(integration.config?.chatId)
   && Boolean(integration.config?.botTokenRef)
 );
+
+const truncateWithEllipsis = (value: string, limit: number): string => {
+  if (value.length <= limit) return value;
+  if (limit <= 1) return '…'.slice(0, limit);
+  return `${value.slice(0, limit - 1)}…`;
+};
+
+// Slack mrkdwn treats these as control characters: escaping keeps agent-authored
+// card fields from creating links, mentions, or other markup in a human's DM.
+const escapeSlackMrkdwn = (raw: string): string => String(raw)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+
+export const renderSlackDecisionCard = (opts: {
+  card: DecisionRelayCard;
+  displayName: string;
+  agentUsername: string;
+  link: string;
+}): string => {
+  const { card, displayName, agentUsername, link } = opts;
+  const footer = `\n\nReply to this message with a number, or write your ruling.\nopen in Commonly → ${link}`;
+  const optionLines = card.options.map((option, index) => (
+    `\n${index + 1}. *${escapeSlackMrkdwn(option.label)}*${option.recommended ? ' ★ recommended' : ''}`
+  ));
+  const title = escapeSlackMrkdwn(card.title);
+  const question = escapeSlackMrkdwn(card.question);
+  const agent = escapeSlackMrkdwn(displayName || agentUsername);
+  const header = `*${agent} needs a ruling · ${title}*\n${question}\n`;
+  let remaining = CARD_OUTBOUND_TEXT_CAP - header.length - footer.length
+    - optionLines.reduce((sum, line) => sum + line.length, 0);
+  const descriptions = card.options.map((option) => (
+    option.description ? escapeSlackMrkdwn(truncateWithEllipsis(option.description, 100)) : ''
+  ));
+  const descriptionLines = descriptions.map((description, index) => {
+    if (!description || remaining <= 4) return '';
+    const nonEmptyRemaining = descriptions.slice(index).filter(Boolean).length;
+    const allowance = Math.max(0, Math.floor(remaining / Math.max(1, nonEmptyRemaining)) - 4);
+    if (!allowance) return '';
+    const fitted = truncateWithEllipsis(description, allowance);
+    const line = `\n   ${fitted}`;
+    remaining -= line.length;
+    return line;
+  });
+  return header + optionLines.map((line, index) => `${line}${descriptionLines[index]}`).join('') + footer;
+};
 
 // The enabled gate is only the pod → connector subscription. Inbound follows
 // the owner's active pod selection and validates membership at receive time.
@@ -112,6 +162,7 @@ export const relayAgentMessageToSlack = async (opts: {
   displayName: string;
   content: string;
   podMessageId?: string | null;
+  card?: DecisionRelayCard;
   integration?: SlackIntegrationDoc;
 }): Promise<void> => {
   const {
@@ -119,17 +170,58 @@ export const relayAgentMessageToSlack = async (opts: {
   } = opts;
   try {
     const integration = opts.integration ?? await findLiveIntegration(podId);
-    if (!integration || !isRelayableIntegration(integration, podId)) return;
+    if (!integration) return;
+    const cardHoldReason = opts.card
+      ? (integration.config?.adminPause
+        ? 'paused'
+        : integration.scope === 'user' && integration.config?.gates?.[podId]?.enabled !== true
+          ? 'gate_off'
+          : null)
+      : null;
+    if (cardHoldReason) {
+      if (podMessageId) {
+        await channelVerdictService.record({
+          integrationId: integration._id,
+          ...(integration.installationId ? { installationId: integration.installationId } : {}),
+          podId,
+          provider: 'slack',
+          event: { kind: 'decision_request', podMessageId },
+          verdict: 'hold',
+          reason: cardHoldReason,
+        });
+      }
+      return;
+    }
+    if (!isRelayableIntegration(integration, podId)) return;
     const mutedUntil = integration.config?.relayMutedUntil;
-    if (mutedUntil && new Date(mutedUntil) > new Date()) return;
-    if (!shouldEscalate({ content, agentUsername, integration, podId })) return;
+    if (mutedUntil && new Date(mutedUntil) > new Date()) {
+      if (opts.card && podMessageId) {
+        await channelVerdictService.record({
+          integrationId: integration._id,
+          ...(integration.installationId ? { installationId: integration.installationId } : {}),
+          podId,
+          provider: 'slack',
+          event: { kind: 'decision_request', podMessageId },
+          verdict: 'hold',
+          reason: 'muted',
+        });
+      }
+      return;
+    }
+    if (!opts.card && !shouldEscalate({ content, agentUsername, integration, podId })) return;
 
     const [pod, token] = await Promise.all([
       Pod.findById(podId).select('name').lean(),
       connectorSecrets.get(String(integration.config!.botTokenRef)),
     ]);
     const podName = String(pod?.name || 'Commonly');
-    const text = `[${podName}] ${displayName || agentUsername}: ${String(content).slice(0, OUTBOUND_TEXT_CAP)}`;
+    const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+    const link = opts.card && podMessageId
+      ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
+      : `${base}/v2/pods/${podId}`;
+    const text = opts.card
+      ? renderSlackDecisionCard({ card: opts.card, displayName, agentUsername, link })
+      : `[${podName}] ${displayName || agentUsername}: ${String(content).slice(0, OUTBOUND_TEXT_CAP)}`;
     const result = await new SlackApi(token).postMessage(String(integration.config!.chatId), text);
     if (!result.ok || !result.ts) {
       throw new Error(`chat.postMessage failed: ${String(result.error || 'unknown error')}`);
@@ -144,6 +236,17 @@ export const relayAgentMessageToSlack = async (opts: {
         },
       },
     });
+    if (opts.card && podMessageId) {
+      await channelVerdictService.record({
+        integrationId: integration._id,
+        ...(integration.installationId ? { installationId: integration.installationId } : {}),
+        podId,
+        provider: 'slack',
+        event: { kind: 'decision_request', podMessageId },
+        verdict: 'interrupt',
+        reason: 'card',
+      });
+    }
   } catch (error) {
     const config = opts.integration?.config;
     console.warn(
@@ -309,6 +412,7 @@ module.exports = {
   relayAgentMessageToSlack,
   relaySlackMessageToPod,
   routeSlackReplyContent,
+  renderSlackDecisionCard,
   isRelayableIntegration,
   isInboundRelayableIntegration,
 };

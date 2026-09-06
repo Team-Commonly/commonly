@@ -1,3 +1,5 @@
+import type { DecisionRelayCard } from './decisionCardRelay';
+
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
 // eslint-disable-next-line global-require
@@ -164,6 +166,9 @@ interface PostMessageOptions {
   // sanitizeAgentContent by design — content stays the sanitized fallback
   // text; payload is server-composed, never model prose.
   payload?: unknown;
+  // Relay-only structured data composed by a trusted server workflow. It is
+  // not persisted on the pod message or exposed to arbitrary runtime output.
+  relayCard?: DecisionRelayCard | null;
   instanceId?: string;
   displayName?: string;
   replyToMessageId?: string | null;
@@ -182,6 +187,7 @@ interface PostTargetOptions {
   messageType?: string;
   metadata?: MetadataDoc;
   payload?: unknown;
+  relayCard?: DecisionRelayCard | null;
   agentUser: AgentUserDoc;
   displayName?: string;
   replyToMessageId?: string | null;
@@ -969,6 +975,7 @@ class AgentMessageService {
       metadata = {},
       messageType = 'text',
       payload = null,
+      relayCard = null,
       instanceId = 'default',
       displayName,
       replyToMessageId = null,
@@ -1506,6 +1513,7 @@ class AgentMessageService {
       messageType,
       metadata,
       payload,
+      relayCard,
       agentUser,
       displayName,
       replyToMessageId,
@@ -1565,8 +1573,20 @@ class AgentMessageService {
 
   static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
     const {
-      agentName, instanceId = 'default', podId, content, messageType = 'text',
-      metadata = {}, payload = null, agentUser, displayName, replyToMessageId = null, threadRootId = null, skipDeliveryUpdate = false, skipSummaryPersistence = false,
+      agentName,
+      instanceId = 'default',
+      podId,
+      content,
+      messageType = 'text',
+      metadata = {},
+      payload = null,
+      relayCard = null,
+      agentUser,
+      displayName,
+      replyToMessageId = null,
+      threadRootId = null,
+      skipDeliveryUpdate = false,
+      skipSummaryPersistence = false,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1792,6 +1812,7 @@ class AgentMessageService {
         displayName: senderDisplayName || bridgeUsername,
         content: String((message as MessageNormalized)?.content ?? ''),
         podMessageId: (message as MessageNormalized)?._id || (message as MessageNormalized)?.id || null,
+        ...(relayCard ? { card: relayCard } : {}),
       });
     } catch (bridgeError) {
       console.warn('[tg-bridge] outbound hook failed:', (bridgeError as Error).message);

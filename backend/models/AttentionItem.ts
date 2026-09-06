@@ -15,8 +15,15 @@ export interface IAttentionItem extends Document {
   messageId?: string;
   threadRootId?: string;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
+  // The authoritative time of a mention source. It lets a later reply close
+  // only attention that predates that reply, instead of treating any message
+  // in the pod as an acknowledgement.
+  sourceCreatedAt?: Date;
   status: 'open' | 'resolved';
   resolvedAt?: Date;
+  // Mention rows resolve only when their recipient replies in the pod or
+  // explicitly acknowledges them. Other attention sources do not use this.
+  resolvedBy?: 'replied' | 'acknowledged';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,8 +49,10 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   messageId: { type: String },
   threadRootId: { type: String },
   options: [optionSchema],
+  sourceCreatedAt: { type: Date },
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },
   resolvedAt: { type: Date },
+  resolvedBy: { type: String, enum: ['replied', 'acknowledged'] },
 }, { timestamps: true });
 
 // A source can notify each recipient once. Retried source writes must not

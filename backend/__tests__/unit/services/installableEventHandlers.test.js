@@ -98,6 +98,38 @@ describe('installable event dispatcher', () => {
     expect(String(relay.mock.calls[0][0].integration.podId)).toBe(podA);
   });
 
+  it('forwards a server-composed decision card without changing the chat content', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId);
+    await install({ installableId: 'telegram', installedBy: ownerId, podId });
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = relay;
+    const card = {
+      title: 'Choose a train',
+      question: 'Which rollout should ship?',
+      options: [
+        { label: 'Canary' },
+        { label: 'Fast lane', recommended: true },
+      ],
+      context: 'Private workspace detail',
+    };
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'Choose a train\n\nWhich rollout should ship?',
+      podMessageId: 'message-card',
+      card,
+    });
+
+    expect(relay).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'Choose a train\n\nWhich rollout should ship?',
+      card,
+    }));
+  });
+
   it('relays each same-pod connector to its own selected Telegram chat', async () => {
     const podId = freshId();
     const firstOwner = freshId();
@@ -142,6 +174,41 @@ describe('installable event dispatcher', () => {
       if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
       else process.env.TELEGRAM_BOT_TOKEN = previousToken;
     }
+  });
+
+  it('fans a decision card to every member connector with an enabled gate', async () => {
+    const podId = freshId();
+    const firstOwner = freshId();
+    const secondOwner = freshId();
+    await createPod(podId, firstOwner, [secondOwner]);
+    const [first, second] = await Promise.all([
+      install({ installableId: 'telegram', installedBy: firstOwner, podId }),
+      install({ installableId: 'telegram', installedBy: secondOwner, podId }),
+    ]);
+    await Integration.updateOne(
+      { _id: second.integration._id },
+      { $set: { [`config.gates.${podId}.enabled`]: true } },
+    );
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = relay;
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'The workspace ask remains plain text.',
+      podMessageId: 'message-card-fanout',
+      card: {
+        title: 'Choose a rollout',
+        question: 'Which path should ship?',
+        options: [{ label: 'Canary' }, { label: 'Fast lane' }],
+      },
+    });
+
+    expect(relay).toHaveBeenCalledTimes(2);
+    expect(new Set(relay.mock.calls.map(([call]) => String(call.integration._id)))).toEqual(
+      new Set([String(first.integration._id), String(second.integration._id)]),
+    );
   });
 
   it('selects a user connector only for an enabled gate whose owner remains a member', async () => {
@@ -189,6 +256,42 @@ describe('installable event dispatcher', () => {
       podId: secondPodId, agentUsername: 'kai', displayName: 'Kai', content: '[ESCALATE] removed',
     });
     expect(relay).toHaveBeenCalledTimes(2);
+  });
+
+  it('still selects a muted, paused, or gate-off card binding so the bridge can record its hold verdict', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId);
+    const installed = await install({ installableId: 'telegram', installedBy: ownerId, podId });
+    await Integration.updateOne(
+      { _id: installed.integration._id },
+      {
+        $set: {
+          [`config.gates.${podId}.enabled`]: false,
+          'config.adminPause': { reason: 'Safety review', at: new Date() },
+        },
+      },
+    );
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['telegram.relay'] = relay;
+
+    await dispatch('chat.message', {
+      podId,
+      agentUsername: 'kai',
+      displayName: 'Kai',
+      content: 'Workspace content stays unchanged',
+      podMessageId: 'message-card-hold',
+      card: {
+        title: 'Choose a rollout',
+        question: 'Which path should ship?',
+        options: [{ label: 'Canary' }, { label: 'Fast lane' }],
+      },
+    });
+
+    expect(relay).toHaveBeenCalledWith(expect.objectContaining({
+      card: expect.objectContaining({ title: 'Choose a rollout' }),
+      integration: expect.objectContaining({ _id: expect.anything() }),
+    }));
   });
 
   it('does not invoke a handler when the event pod has no installation', async () => {

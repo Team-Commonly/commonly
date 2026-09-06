@@ -37,12 +37,27 @@ const MessageSchema = new Schema<IMessage>({
   updatedAt: { type: Date, default: Date.now },
 });
 
+MessageSchema.pre('save', function rememberWhetherThisIsANewPost(next) {
+  (this as any).$locals.wasNewPost = this.isNew;
+  next();
+});
+
 MessageSchema.post('save', async (doc) => {
   // Mongo is the availability fallback for chat writes, so it must materialize
   // the same recipient-owned fact as the normal PostgreSQL writer.
   // eslint-disable-next-line global-require
-  const { recordMentionedUsers } = require('../services/attentionItemService');
+  const {
+    recordMentionedUsers,
+    resolveMentionAttentionForReply,
+  } = require('../services/attentionItemService');
   await recordMentionedUsers(doc);
+  if ((doc as any).$locals?.wasNewPost) {
+    await resolveMentionAttentionForReply({
+      podId: doc.podId,
+      recipientUserId: doc.userId,
+      repliedAt: doc.createdAt,
+    });
+  }
 });
 
 MessageSchema.post('findOneAndDelete', async (doc) => {
