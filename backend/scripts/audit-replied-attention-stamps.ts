@@ -19,19 +19,27 @@ const { auditRepliedMentionAttention } = require('../services/attentionItemServi
 
 type PgPool = { end: () => Promise<void> };
 
-const APPLY = process.argv.includes('--apply');
-const BEFORE_ARG = process.argv.find((arg) => arg.startsWith('--resolved-before='));
+/**
+ * Read the flags out of argv. Exported so the throw below is testable without
+ * a database: an unparsable bound must NOT fall through as `undefined`. It
+ * would widen the audit from the cutover window to every replied stamp ever
+ * written, and under `--apply` that is an unbounded reopen from a typo.
+ */
+export const parseArgs = (argv: string[]): { apply: boolean; resolvedBefore?: Date } => {
+  const apply = argv.includes('--apply');
+  const flag = argv.find((arg) => arg.startsWith('--resolved-before='));
+  if (!flag) return { apply };
+  const raw = flag.split('=').slice(1).join('=');
+  const parsed = new Date(raw);
+  if (!raw.trim() || Number.isNaN(parsed.getTime())) {
+    throw new Error(`--resolved-before is not a date: ${flag}`);
+  }
+  return { apply, resolvedBefore: parsed };
+};
 
 export const main = async (): Promise<void> => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
-  let resolvedBefore: Date | undefined;
-  if (BEFORE_ARG) {
-    const parsed = new Date(BEFORE_ARG.split('=').slice(1).join('='));
-    // An unparsable bound would silently widen the audit to every stamp ever
-    // written, which is the opposite of what the flag was passed to do.
-    if (Number.isNaN(parsed.getTime())) throw new Error(`--resolved-before is not a date: ${BEFORE_ARG}`);
-    resolvedBefore = parsed;
-  }
+  const { apply: APPLY, resolvedBefore } = parseArgs(process.argv);
   // The audit reads legacy PostgreSQL mention sources as well as Mongo ones.
   // Close that pool like the sweep does so the one-shot process exits after
   // printing its measured result.
