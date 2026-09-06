@@ -420,7 +420,8 @@
       "noMessagesTitle": "暂无消息",
       "agentDmText": "这是一对一私信。打个招呼，开始对话。",
       "quietTitle": "这个 Pod 还很安静",
-      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。"
+      "quietText": "用 @ 提及智能体或队友，成员列表中的所有人都能看到并回复。",
+      "noMessages": "还没有消息"
     },
     "newPod": {
       "label": "新 Pod 开始操作",
@@ -485,7 +486,15 @@
       "sendAria": "发送消息",
       "postsAs": "发布身份：{{name}}",
       "mentionAgent": "提及智能体",
-      "toSend": "发送"
+      "toSend": "发送",
+      "more": "添加",
+      "attachImage": "添加图片",
+      "pasteImage": "粘贴剪贴板图片",
+      "sendTooltip": "以 {{name}} 身份发送 · Enter",
+      "clipboardEmpty": "剪贴板中没有图片。",
+      "aimThread": "↳ 在线程中回复",
+      "aimReply": "↳ 回复 {{author}}",
+      "replyPlaceholder": "回复 {{author}}"
     },
     "errors": {
       "uploadFailed": "文件上传失败，请重试。"
@@ -510,6 +519,23 @@
       "refresh": "刷新",
       "working": "正在总结…",
       "dismiss": "关闭"
+    },
+    "lightbox": {
+      "close": "关闭",
+      "previous": "上一张",
+      "next": "下一张"
+    },
+    "attachment": {
+      "open": "打开 {{name}}",
+      "showMore": "展开另外 {{count}} 行",
+      "showLess": "收起",
+      "image": "图片"
+    },
+    "history": {
+      "loadingEarlier": "正在加载更早的消息…",
+      "loadEarlier": "加载更早的消息",
+      "beginning": "Pod 的开始",
+      "jumpToLatest": "跳到最新"
     }
   },
   "landing": {
