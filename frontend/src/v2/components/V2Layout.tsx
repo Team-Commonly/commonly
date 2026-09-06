@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2Thread from './V2Thread';
@@ -13,6 +12,7 @@ import { useV2PodDetail } from '../hooks/useV2PodDetail';
 import { useV2PodAttention, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { useAuth } from '../../context/AuthContext';
+import { recordPodVisit } from '../lib/podRecency';
 
 interface V2LayoutProps {
   selectionMode?: 'auto' | 'param';
@@ -70,7 +70,6 @@ const createdAtTime = (createdAt?: string): number => {
 };
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
-  const { t } = useTranslation();
   const { podId: paramPodId } = useParams<{ podId: string }>();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -78,6 +77,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   const { pods, loading } = podsState;
   const attention = useV2PodAttention();
 
+  // Direction C on the phone: the pods list is a page and a pod is the next
+  // page. There is no drawer. `phone` tracks the viewport so `/v2` renders the
+  // list instead of redirecting into the last pod.
+  const [phone, setPhone] = useState<boolean>(() => isPhoneViewport());
   // A desktop preference must not leak into the phone sheet. This initializer
   // prevents its first rendered frame from flashing open; the media listener
   // below handles later viewport changes. On phones the sheet opens only
@@ -95,43 +98,30 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     setInviteOpen(true);
   }, []);
   const closeInvite = useCallback(() => setInviteOpen(false), []);
-  // Mobile (<=760px) pods drawer. The sidebar is a fixed slide-over on phones
-  // instead of a grid column; this owns its open/closed state. Desktop ignores
-  // it entirely (the sidebar is always a visible column there).
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => {
     if (!window.matchMedia) return undefined;
     const phoneViewport = window.matchMedia(PHONE_MEDIA_QUERY);
-    const closeInspectorOnPhone = () => {
+    const onChange = () => {
+      setPhone(phoneViewport.matches);
       if (phoneViewport.matches) setInspectorCollapsed(true);
     };
-    closeInspectorOnPhone();
-    phoneViewport.addEventListener('change', closeInspectorOnPhone);
-    return () => phoneViewport.removeEventListener('change', closeInspectorOnPhone);
+    onChange();
+    phoneViewport.addEventListener('change', onChange);
+    return () => phoneViewport.removeEventListener('change', onChange);
   }, []);
   // Assume visible until the ownership-status probe resolves. This prevents
   // the empty-state stack from flashing while the shell-level first-run modal
   // decides whether it should open; an established/dismissed user flips it off
   // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
-  const openMobileNav = useCallback(() => {
-    // The phone has two overlays: rooms drawer and inspector sheet. Opening
-    // one must close the other, otherwise the drawer is mounted behind an
-    // already-open sheet and has no usable hit target.
-    setInspectorCollapsed(true);
-    setMobileNavOpen(true);
-  }, []);
-  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const toggleInspector = useCallback(() => {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       writeInspectorCollapsed(next);
-      if (!next) setMobileNavOpen(false);
       return next;
     });
   }, []);
   const openInspector = useCallback(() => {
-    setMobileNavOpen(false);
     setInspectorCollapsed(false);
     writeInspectorCollapsed(false);
   }, []);
@@ -143,18 +133,22 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
       if (signed) window.open(signed, '_blank', 'noopener,noreferrer');
     });
   }, []);
+  // Back from a pod on the phone returns to the list page.
+  const backToPods = useCallback(() => navigate('/v2'), [navigate]);
 
-  // Close the mobile drawer when navigation came from somewhere other than a
-  // drawer tap.
+  // Every opened pod is remembered twice: the last one for the next automatic
+  // desktop selection, and the visit log that orders the sidebar's Recent.
   useEffect(() => {
-    setMobileNavOpen(false);
-    if (paramPodId) writeLastPodId(paramPodId);
+    if (!paramPodId) return;
+    writeLastPodId(paramPodId);
+    recordPodVisit(paramPodId);
   }, [paramPodId]);
 
-  // Resume the last valid room. A new user without history lands in their
-  // self-created invite-only workspace rather than the auto-joined HQ.
+  // Desktop only: resume the last valid pod. A new user without history lands
+  // in their self-created invite-only workspace rather than the auto-joined HQ.
+  // The phone never redirects: `/v2` is the pods list page there.
   useEffect(() => {
-    if (selectionMode !== 'auto' || paramPodId || loading) return;
+    if (selectionMode !== 'auto' || paramPodId || loading || phone) return;
     if (pods.length === 0) return;
 
     const lastPodId = readLastPodId();
@@ -168,14 +162,14 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     const destination = lastPod || ownWorkspace || pods[0];
 
     navigate(`/v2/pods/${destination._id}`, { replace: true });
-  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id]);
+  }, [selectionMode, paramPodId, pods, loading, navigate, currentUser?._id, phone]);
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
   // Agent-room creation happens outside this pod-list hook. After navigation,
   // refresh the membership list once if that newly selected room is not in it
-  // yet, so it immediately appears in both All and DMs instead of waiting for
-  // a later full-shell refresh.
+  // yet, so it immediately appears in the sidebar instead of waiting for a
+  // later full-shell refresh.
   const refreshedMissingPodRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPodId || loading || pods.some((pod) => pod._id === selectedPodId)) {
@@ -194,30 +188,39 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     && !INVITE_BLOCKED_POD_TYPES.has(String(detail.pod.type)),
   );
 
+
+  // Phone, no pod selected: the pods list IS the page.
+  if (phone && !selectedPodId) {
+    return (
+      <div className="v2-shell v2-shell--list">
+        <V2PodsSidebar
+          selectedPodId={null}
+          podsState={podsState}
+          attentionCountByPod={attention.countByPod}
+          variant="page"
+        />
+        <V2MobileTabs needsYouCount={attention.count ?? 0} />
+        <V2FirstRunHero onVisibilityChange={setFirstRunVisible} />
+      </div>
+    );
+  }
+
   // The inspector is a separate column only when expanded. When collapsed,
   // it's not rendered at all and the chat extends to the right edge — the
-  // entry point is the working-count control in the thread header (see V2Thread).
+  // entry point is the toggle in the pod header (see V2Thread).
   const showInspector = Boolean(selectedPodId && !inspectorCollapsed);
   const shellClass = ['v2-shell', !showInspector ? 'v2-shell--no-inspector' : ''].filter(Boolean).join(' ');
 
   return (
     <div className={shellClass}>
-      <V2NavRail onPodsMobileNav={openMobileNav} needsYouCount={attention.count} />
-      {mobileNavOpen && (
-        <button
-          type="button"
-          className="v2-mobile-backdrop"
-          aria-label={t('common.closePodsList')}
-          onClick={closeMobileNav}
+      <V2NavRail needsYouCount={attention.count} />
+      {!phone && (
+        <V2PodsSidebar
+          selectedPodId={selectedPodId}
+          podsState={podsState}
+          attentionCountByPod={attention.countByPod}
         />
       )}
-      <V2PodsSidebar
-        selectedPodId={selectedPodId}
-        podsState={podsState}
-        attentionCountByPod={attention.countByPod}
-        mobileOpen={mobileNavOpen}
-        onMobileClose={closeMobileNav}
-      />
       <V2Thread
         detail={detail}
         podsState={podsState}
@@ -227,14 +230,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
         onOpenMember={openInspector}
         onOpenInvite={inviteEnabled ? openInvite : undefined}
         onOpenFile={openFile}
-        onOpenMobileNav={openMobileNav}
+        onBack={phone ? backToPods : undefined}
         onDecisionSettled={notifyAttentionChanged}
       />
-      <V2MobileTabs
-        podId={selectedPodId}
-        needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}
-        onOpenInspector={openInspector}
-      />
+      <V2MobileTabs needsYouCount={attention.count ?? 0} />
       {selectedPodId && !inspectorCollapsed && (
         <>
           <button
