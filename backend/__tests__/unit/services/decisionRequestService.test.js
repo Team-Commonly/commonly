@@ -81,8 +81,18 @@ describe('DecisionRequestService', () => {
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
       agentName: 'release-agent', instanceId: 'seat-1', podId: 'pod-1', threadRootId: '612',
       metadata: { source: 'decision-request' },
+      relayCard: {
+        title: 'Choose the release train',
+        question: 'Which rollout should I run?',
+        options: [
+          { label: 'Canary', description: 'Small cohort.', recommended: true },
+          { label: 'Fast lane', description: 'Ship once green.' },
+        ],
+        context: 'The branch is green.',
+      },
     }));
     expect(mockPostMessage.mock.calls[0][0].content).toContain('Choose the release train');
+    expect(mockPostMessage.mock.calls[0][0].payload).toBeUndefined();
     expect(mockDecision.create).toHaveBeenCalledWith(expect.objectContaining({
       agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1', decisionClass: 'implementation',
       messageId: '700', status: 'pending',
