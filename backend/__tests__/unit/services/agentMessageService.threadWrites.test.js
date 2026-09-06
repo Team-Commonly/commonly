@@ -18,6 +18,7 @@ const DMService = require('../../../services/dmService');
 const PGMessage = require('../../../models/pg/Message');
 const File = require('../../../models/File');
 const threadRootResolver = require('../../../services/threadRootResolver');
+const mockDispatch = jest.fn();
 
 jest.mock('../../../models/Message');
 jest.mock('../../../models/Summary', () => ({
@@ -88,6 +89,9 @@ jest.mock('../../../services/threadRootResolver', () => {
   }
   return { resolveThreadRoot: jest.fn(), ThreadRootError };
 });
+jest.mock('../../../services/installable/eventHandlers', () => ({
+  dispatch: (...args) => mockDispatch(...args),
+}));
 
 const POD = '6a0da39bae757028b39f87a6';
 let emitted;
@@ -163,6 +167,39 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
     expect(PGMessage.create).toHaveBeenCalledWith(
       POD, 'agent-user-1', 'plain broadcast', 'text', null, null, null,
     );
+  });
+
+  it('forwards a relay-only decision card to the outbound dispatcher without persisting it', async () => {
+    const card = {
+      title: 'Choose a train',
+      question: 'Which rollout should ship?',
+      options: [{ label: 'Canary' }, { label: 'Fast lane' }],
+    };
+    const content = 'Choose a train\n\nWhich rollout should ship?';
+    PGMessage.create.mockResolvedValueOnce({
+      id: '57602',
+      content,
+      message_type: 'text',
+      created_at: new Date('2026-08-23T00:00:00Z'),
+      thread_root_id: null,
+    });
+
+    await AgentMessageService.postMessage({
+      agentName: 'sprint-review',
+      instanceId: 'default',
+      podId: POD,
+      content,
+      relayCard: card,
+    });
+
+    expect(PGMessage.create).toHaveBeenCalledWith(
+      POD, 'agent-user-1', content, 'text', null, null, null,
+    );
+    expect(mockDispatch).toHaveBeenCalledWith('chat.message', expect.objectContaining({
+      podId: POD,
+      content,
+      card,
+    }));
   });
 
   it('a ThreadRootError propagates — never swallowed into the Mongo fallback', async () => {

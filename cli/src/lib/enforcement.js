@@ -28,6 +28,20 @@ export const CLAIMABLE_EVENT_TYPES = new Set([
   'dm.message',
 ]);
 
+// A decision card is the durable path for a real human choice. This lives in
+// wrapper enforcement, rather than only in the MCP tool description, because
+// a task-shaped prompt can otherwise make an agent phrase the same fork as a
+// prose @ask. The rule is framing, not a classifier: the agent still judges
+// whether the work genuinely cannot continue without a human ruling.
+export const DECISION_FORK_FRAME = [
+  '[Decision forks]',
+  'If you are blocked on a genuine fork that needs a human choice, call commonly_request_decision; do not post a prose @ask.',
+  'Use it only when you cannot safely continue before a ruling. Give 2–4 concrete options and mark one recommendation.',
+  'Use ordinary pod messages for status, factual questions, and coordination that do not require a human choice.',
+].join('\n');
+
+export const frameDecisionForkRule = (prompt) => `${DECISION_FORK_FRAME}\n\n${prompt}`;
+
 // ── trigger classification ──────────────────────────────────────────────────
 
 /**

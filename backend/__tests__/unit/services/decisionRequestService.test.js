@@ -31,6 +31,16 @@ jest.mock('../../../services/pgPodSyncService', () => ({ syncPodFromMongo: (...a
 const mockDeliver = jest.fn();
 jest.mock('../../../services/messageAgentDeliveryService', () => ({ deliverMessageToAgents: (...args) => mockDeliver(...args) }));
 
+const mockEnqueue = jest.fn();
+jest.mock('../../../services/agentEventService', () => ({ enqueue: (...args) => mockEnqueue(...args) }));
+
+const mockRecordDecision = jest.fn();
+const mockResolveAttention = jest.fn();
+jest.mock('../../../services/attentionItemService', () => ({
+  recordDecision: (...args) => mockRecordDecision(...args),
+  resolve: (...args) => mockResolveAttention(...args),
+}));
+
 const mockEmit = jest.fn();
 const mockTo = jest.fn(() => ({ emit: mockEmit }));
 jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => ({ to: mockTo })) }));
@@ -73,6 +83,9 @@ describe('DecisionRequestService', () => {
     mockPGMessage.create.mockResolvedValue({ id: '901' });
     mockPGMessage.findById.mockResolvedValue({ id: '901', userId: { username: 'Sam' } });
     mockDeliver.mockResolvedValue({});
+    mockEnqueue.mockResolvedValue({ _id: 'event-1' });
+    mockRecordDecision.mockResolvedValue(undefined);
+    mockResolveAttention.mockResolvedValue(undefined);
   });
 
   test('derives the asking agent from runtime input and posts a replyable source before queue visibility', async () => {
@@ -81,8 +94,18 @@ describe('DecisionRequestService', () => {
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
       agentName: 'release-agent', instanceId: 'seat-1', podId: 'pod-1', threadRootId: '612',
       metadata: { source: 'decision-request' },
+      relayCard: {
+        title: 'Choose the release train',
+        question: 'Which rollout should I run?',
+        options: [
+          { label: 'Canary', description: 'Small cohort.', recommended: true },
+          { label: 'Fast lane', description: 'Ship once green.' },
+        ],
+        context: 'The branch is green.',
+      },
     }));
     expect(mockPostMessage.mock.calls[0][0].content).toContain('Choose the release train');
+    expect(mockPostMessage.mock.calls[0][0].payload).toBeUndefined();
     expect(mockDecision.create).toHaveBeenCalledWith(expect.objectContaining({
       agentUserId: 'agent-user-1', agentName: 'release-agent', instanceId: 'seat-1', decisionClass: 'implementation',
       messageId: '700', status: 'pending',
@@ -114,14 +137,24 @@ describe('DecisionRequestService', () => {
       .rejects.toMatchObject({ status: 400, code: 'invalid_decision_class' });
   });
 
-  test('one human member posts an exact threaded ruling and wakes the asking agent', async () => {
+  test('one human member posts an exact threaded ruling and queues one typed wake for the asking agent', async () => {
     const row = pending();
     mockDecision.findById.mockResolvedValue(row);
     mockUser.findById.mockReturnValue(userChain({ _id: 'human-1', username: 'Sam', isBot: false }));
     mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1'], type: 'team' }));
     mockDecision.findOneAndUpdate
       .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
-      .mockResolvedValueOnce({ ...row, status: 'ruled', ruling: { value: 'Hold for customer evidence', byUsername: 'Sam', messageId: '901' } });
+      .mockResolvedValueOnce({
+        ...row,
+        status: 'ruled',
+        ruling: {
+          value: 'Hold for customer evidence',
+          byUserId: 'human-1',
+          byUsername: 'Sam',
+          at: new Date('2026-09-06T08:00:00.000Z'),
+          messageId: '901',
+        },
+      });
 
     const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-1', value: 'Hold for customer evidence' });
 
@@ -133,7 +166,9 @@ describe('DecisionRequestService', () => {
       podId: 'pod-1', replyToMessageId: '700', threadRootId: '612',
     });
     expect(mockDeliver).toHaveBeenCalledWith(expect.objectContaining({
-      podId: 'pod-1', userId: 'human-1', replyToMessageId: '700',
+      podId: 'pod-1', podType: 'team', userId: 'human-1', replyToMessageId: '700',
+      suppressImplicitReply: true,
+      suppressImplicitReplyTarget: { agentName: 'release-agent', instanceId: 'seat-1' },
     }));
     expect(mockTo).toHaveBeenCalledWith('pod_pod-1');
     expect(mockEmit).toHaveBeenCalledWith('newMessage', expect.objectContaining({
@@ -142,6 +177,70 @@ describe('DecisionRequestService', () => {
     expect(mockDecision.findOneAndUpdate).toHaveBeenCalledTimes(2);
     expect(mockDecision.findOneAndUpdate.mock.calls[1][1].$set.ruling.value)
       .toBe('Hold for customer evidence');
+    expect(mockEnqueue).toHaveBeenCalledWith({
+      agentName: 'release-agent',
+      instanceId: 'seat-1',
+      podId: 'pod-1',
+      type: 'decision.ruled',
+      payload: {
+        decisionId: 'decision-1',
+        pick: 'Hold for customer evidence',
+        ruledBy: { userId: 'human-1', username: 'Sam' },
+        ruledAt: '2026-09-06T08:00:00.000Z',
+        rulingMessageId: '901',
+        podId: 'pod-1',
+      },
+    });
+    expect(mockEnqueue.mock.invocationCallOrder[0])
+      .toBeGreaterThan(mockDecision.findOneAndUpdate.mock.invocationCallOrder[1]);
+    expect(mockResolveAttention).toHaveBeenCalledWith('decision_request', 'decision-1');
+  });
+
+  test('falls back to the ordinary implicit-reply wake when the typed queue is unavailable', async () => {
+    const row = pending();
+    mockDecision.findById.mockResolvedValue(row);
+    mockUser.findById.mockReturnValue(userChain({ _id: 'human-1', username: 'Sam', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1'], type: 'team' }));
+    mockDecision.findOneAndUpdate
+      .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
+      .mockResolvedValueOnce({
+        ...row,
+        status: 'ruled',
+        ruling: {
+          value: 'Canary', byUserId: 'human-1', byUsername: 'Sam',
+          at: new Date('2026-09-06T08:00:00.000Z'), messageId: '901',
+        },
+      });
+    mockEnqueue.mockRejectedValueOnce(new Error('queue unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-1', value: 'Canary' }))
+      .resolves.toMatchObject({ status: 200, body: { ok: true } });
+
+    expect(mockDeliver).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod-1', podType: 'team', userId: 'human-1', replyToMessageId: '700',
+    }));
+    expect(mockDeliver.mock.calls[0][0]).not.toHaveProperty('suppressImplicitReply');
+    warn.mockRestore();
+  });
+
+  test('keeps the ordinary reply wake when finalization races after the visible reply', async () => {
+    const row = pending();
+    mockDecision.findById.mockResolvedValue(row);
+    mockUser.findById.mockReturnValue(userChain({ _id: 'human-1', username: 'Sam', isBot: false }));
+    mockPod.findById.mockImplementation(() => podChain({ createdBy: 'human-1', members: ['human-1'], type: 'team' }));
+    mockDecision.findOneAndUpdate
+      .mockResolvedValueOnce({ ...row, rulingLock: { token: 'lock' } })
+      .mockResolvedValueOnce(null);
+
+    await expect(chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-1', value: 'Canary' }))
+      .rejects.toMatchObject({ status: 409, code: 'ruling_finalize_conflict' });
+
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(mockDeliver).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod-1', podType: 'team', userId: 'human-1', replyToMessageId: '700',
+    }));
+    expect(mockDeliver.mock.calls[0][0]).not.toHaveProperty('suppressImplicitReply');
   });
 
   test('a second tab sees the standing ruling and cannot create another wake', async () => {
@@ -150,6 +249,7 @@ describe('DecisionRequestService', () => {
     const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: 'human-2', value: 'Fast lane' });
     expect(result).toMatchObject({ status: 409, body: { decision: { ruling: { value: 'Canary', by: 'Sam' } } } });
     expect(mockPGMessage.create).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   test('refuses a bot caller before it reads pod membership or claims the decision', async () => {

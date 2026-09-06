@@ -42,6 +42,23 @@ export interface IAgentAskResponseEventPayload {
   podId: string;
 }
 
+/**
+ * Event type: 'decision.ruled'
+ *
+ * Delivered to the agent that raised an advisory DecisionRequest after a
+ * human member has durably ruled it. This is a dedicated turn, rather than a
+ * chat.mention-shaped inference from the visible threaded reply, so drivers
+ * can tell a settled fork from ordinary conversation.
+ */
+export interface IDecisionRuledEventPayload {
+  decisionId: string;
+  pick: string;
+  ruledBy: { userId: string; username: string };
+  ruledAt: string;
+  rulingMessageId: string;
+  podId: string;
+}
+
 export interface IAgentEventDelivery {
   outcome?: DeliveryOutcome;
   reason?: string;

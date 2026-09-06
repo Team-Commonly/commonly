@@ -4,12 +4,27 @@ jest.mock('../../../config/db-pg', () => ({
   },
 }));
 
+const mockRecordMentionedUsers = jest.fn();
+const mockResolveMentionAttentionForReply = jest.fn();
+const mockResolveAttention = jest.fn();
+const mockResolveManyAttention = jest.fn();
+jest.mock('../../../services/attentionItemService', () => ({
+  recordMentionedUsers: (...args) => mockRecordMentionedUsers(...args),
+  resolveMentionAttentionForReply: (...args) => mockResolveMentionAttentionForReply(...args),
+  resolve: (...args) => mockResolveAttention(...args),
+  resolveMany: (...args) => mockResolveManyAttention(...args),
+}));
+
 const { pool } = require('../../../config/db-pg');
 const Message = require('../../../models/pg/Message');
 
 describe('PG Message model', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRecordMentionedUsers.mockResolvedValue(undefined);
+    mockResolveMentionAttentionForReply.mockResolvedValue(0);
+    mockResolveAttention.mockResolvedValue(undefined);
+    mockResolveManyAttention.mockResolvedValue(undefined);
   });
 
   it('create inserts message and updates pod timestamp', async () => {
@@ -46,6 +61,23 @@ describe('PG Message model', () => {
       user_id: 'u',
       content: 'c',
       message_type: 'text',
+    });
+  });
+
+  it('resolves only the posting recipient\'s older mention attention after the write commits', async () => {
+    const createdAt = new Date('2026-09-06T08:00:00.000Z');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: '2', pod_id: 'pod-1', user_id: 'sam', content: 'answered', message_type: 'text', created_at: createdAt,
+        }],
+      })
+      .mockResolvedValueOnce({});
+
+    await Message.create('pod-1', 'sam', 'answered', 'text');
+
+    expect(mockResolveMentionAttentionForReply).toHaveBeenCalledWith({
+      podId: 'pod-1', recipientUserId: 'sam', repliedAt: createdAt,
     });
   });
 
@@ -102,6 +134,17 @@ describe('PG Message model', () => {
     expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['1']);
     expect(msg).toHaveProperty('id', '1');
     expect(msg).toHaveProperty('messageType');
+  });
+
+  it('checks for a later post without paging the pod history', async () => {
+    const after = new Date('2026-09-06T08:00:00.000Z');
+    pool.query.mockResolvedValueOnce({ rows: [{ found: 1 }] });
+
+    await expect(Message.hasMessageByUserAfter('pod-1', 'user-1', after)).resolves.toBe(true);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('created_at > $3'),
+      ['pod-1', 'user-1', after],
+    );
   });
 
   it('update runs update query', async () => {

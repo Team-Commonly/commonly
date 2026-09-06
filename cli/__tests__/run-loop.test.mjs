@@ -822,6 +822,44 @@ describe('performRun', () => {
     );
   });
 
+  test('decision.ruled spawns a turn with the durable pick, rather than dropping it as an unknown event', async () => {
+    const events = [makeEvent({
+      _id: 'evt-decision-ruled',
+      type: 'decision.ruled',
+      payload: {
+        decisionId: 'decision-123',
+        pick: 'Hold for customer evidence',
+        ruledBy: { userId: 'human-1', username: 'Sam' },
+        ruledAt: '2026-09-06T08:00:00.000Z',
+      },
+    })];
+    const mockGet = jest.fn().mockResolvedValue({ events });
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter,
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0]).toContain('[Decision ruled]');
+    expect(spawn.mock.calls[0][0]).toContain('Sam chose: Hold for customer evidence');
+    expect(spawn.mock.calls[0][0]).toContain('Decision: decision-123');
+    expect(spawn.mock.calls[0][0]).toContain('commonly_request_decision');
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/agents/runtime/events/evt-decision-ruled/ack',
+      { result: { outcome: 'no_action' } },
+    );
+  });
+
   test('chat event with no podId → no spawn, no message, acked as no_action', async () => {
     const events = [makeEvent({ _id: 'evt-nopod', podId: null })];
     const mockGet = jest.fn().mockResolvedValue({ events });

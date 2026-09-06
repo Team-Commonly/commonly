@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const Pod = require('../../../models/Pod');
 const Message = require('../../../models/Message');
+const attentionItemService = require('../../../services/attentionItemService');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -13,6 +14,7 @@ describe('Message Model Tests', () => {
   // Setup test user and pod for references
   let testUser;
   let testPod;
+  let resolveMentionAttentionForReply;
 
   // Setup and teardown for MongoDB
   beforeAll(async () => {
@@ -24,6 +26,9 @@ describe('Message Model Tests', () => {
   });
 
   beforeEach(async () => {
+    resolveMentionAttentionForReply = jest
+      .spyOn(attentionItemService, 'resolveMentionAttentionForReply')
+      .mockResolvedValue(0);
     // Create a test user and pod for each test
     testUser = new User({
       username: 'testuser',
@@ -42,6 +47,7 @@ describe('Message Model Tests', () => {
   });
 
   afterEach(async () => {
+    resolveMentionAttentionForReply.mockRestore();
     await clearMongoDb();
   });
 
@@ -110,6 +116,24 @@ describe('Message Model Tests', () => {
 
     const savedMessage = await message.save();
     expect(savedMessage.messageType).toBe('text');
+  });
+
+  it('resolves only the posting recipient\'s older mention attention on a new fallback message', async () => {
+    const message = await new Message({
+      podId: testPod._id,
+      userId: testUser._id,
+      content: 'Answering the earlier request',
+    }).save();
+
+    expect(resolveMentionAttentionForReply).toHaveBeenCalledWith({
+      podId: testPod._id,
+      recipientUserId: testUser._id,
+      repliedAt: message.createdAt,
+    });
+
+    message.content = 'Edited answer';
+    await message.save();
+    expect(resolveMentionAttentionForReply).toHaveBeenCalledTimes(1);
   });
 
   it('should handle references to Pod and User correctly', async () => {

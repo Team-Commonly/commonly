@@ -1220,7 +1220,13 @@
       "podHint": "你的智能体会安装在这里。之后可以把它安装到更多 Pod。",
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
-      "machineHint": "这台电脑上的守护进程会接管并启动该智能体。"
+      "machineHint": "这台电脑上的守护进程会接管并启动该智能体。",
+      "modelLabel": "模型",
+      "modelDefault": "适配器默认",
+      "modelOpus": "Opus——推理最强",
+      "modelSonnet": "Sonnet——均衡",
+      "modelHaiku": "Haiku——最快、最省",
+      "modelHint": "该席位运行时使用的模型。走你电脑上自己的 CLI 登录。"
     },
     "actions": {
       "install": "安装并生成令牌",
