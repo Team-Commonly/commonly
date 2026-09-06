@@ -99,6 +99,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
   const podAttention = read('../hooks/useV2PodAttention.ts');
+  const podHeaderMeta = read('../hooks/useV2PodHeaderMeta.ts');
   const workspaceInspector = read('../components/V2Inspector.tsx');
   const thread = read('../components/V2Thread.tsx');
   const threadMessages = read('../components/V2ThreadMessages.tsx');
@@ -135,13 +136,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(rule).not.toContain('white-space: nowrap');
   });
 
-  test('the workspace grid owns the measured 56 / 232 / fluid / 300 geometry', () => {
-    // The artboard at 1440 has 14px page padding and three 12px gaps. Those
-    // values leave the 788px chat track measured by UX; a 76px rail cannot.
+  test('the workspace grid owns the measured 56 / 260 / fluid / 272 geometry', () => {
+    // Direction C (walk-1 ruling a, 2026-09-06): 14px page padding and three
+    // 14px gaps leave the 782px chat track the artboard measured.
     expect(cssVariable(v2, '--v2-rail-w')).toBe('56px');
-    expect(cssVariable(v2, '--v2-pods-w')).toBe('232px');
-    expect(cssVariable(v2, '--v2-inspector-w')).toBe('300px');
-    expect(lastRuleBody(v2, '.v2-shell')).toContain('gap: 12px');
+    expect(cssVariable(v2, '--v2-pods-w')).toBe('260px');
+    expect(cssVariable(v2, '--v2-inspector-w')).toBe('272px');
+    expect(lastRuleBody(v2, '.v2-shell')).toContain('gap: 14px');
     expect(lastRuleBody(v2, '.v2-shell')).toContain('padding: 14px');
   });
 
@@ -167,41 +168,43 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(active).toContain('background: var(--v2-ink)');
   });
 
-  test('sidebar is the artboard’s three-list grammar, not the retired search/filter surface', () => {
-    const labels = lastRuleBody(v2, '.v2-pods__group-label');
-    const sublabels = ruleBody(v2, '.v2-pods__subgroup-label');
-    const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
-    const channelDot = ruleBody(v2, '.v2-pods__channel-dot');
-    const liveChannelDot = ruleBody(v2, '.v2-pods__channel-dot--live');
-    const directAvatar = ruleBody(v2, '.v2-pods__direct-avatar.v2-avatar');
+  test('sidebar is direction C: a white panel with search, Pinned / Recent / Everything, and rows that carry mark, pill and time', () => {
+    // Walk-1 rulings (2026-09-06): the six 11px mono labels are gone; two
+    // 12px semibold section heads plus a folded inventory replace them.
+    const panel = lastRuleBody(v2, '.v2-pods');
+    const head = ruleBody(v2, '.v2-root button.v2-pods__section-head');
+    const row = ruleBody(v2, '.v2-root button.v2-pods__row');
+    const mark = ruleBody(v2, '.v2-pods__row-mark');
+    const meta = ruleBody(v2, '.v2-pods__row-meta');
+    const pill = ruleBody(v2, '.v2-pods__row-pill');
+    const search = lastRuleBody(v2, '.v2-pods__search');
 
-    expect(labels).toContain('font-family: var(--v2-font-mono)');
-    expect(labels).toContain('font-size: 11px');
-    expect(sublabels).toContain('padding: 0 24px');
-    expect(sublabels).toContain('margin: 0 0 6px');
-    expect(sublabels).toContain('color: var(--v2-text-placeholder)');
-    expect(sublabels).toContain('font-family: var(--v2-font-mono)');
-    expect(selected).toContain('background: var(--v2-accent)');
-    expect(selected).toContain('color: #fff');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__row')).toContain('border-radius: 4px');
-    // The selection is the full 232px sidebar block; 12px is inside its row,
-    // not a list inset that would shrink the cobalt slab.
-    expect(lastRuleBody(v2, '.v2-pods')).toContain('padding: 6px 0');
-    expect(labels).toContain('padding: 0 12px');
-    expect(lastRuleBody(v2, '.v2-pods__rows')).toContain('gap: 4px');
-    expect(channelDot).toContain('width: 8px');
-    expect(liveChannelDot).toContain('background: var(--v2-accent)');
-    expect(directAvatar).toContain('width: 20px');
-    expect(directAvatar).toContain('height: 20px');
-    expect(podsSidebar).toContain("'podsSidebar.workspace.pods'");
-    expect(podsSidebar).toContain("'podsSidebar.workspace.channels'");
-    expect(podsSidebar).toContain("'podsSidebar.workspace.direct'");
-    expect(podsSidebar).not.toContain('v2-pods__search');
+    expect(panel).toContain('border: 1px solid var(--v2-border)');
+    expect(panel).toContain('background: var(--v2-surface)');
+    expect(head).toContain('font: 600 12px/16px var(--v2-font)');
+    expect(search).toContain('height: 32px');
+    expect(row).toContain('grid-template-columns: 22px minmax(0, 1fr) auto');
+    expect(row).toContain('min-height: 34px');
+    // The selected block runs edge to edge: no radius, no inset.
+    expect(row).toContain('border-radius: 0');
+    expect(mark).toContain('width: 22px');
+    expect(mark).toContain('height: 22px');
+    expect(meta).toContain('font: 400 11px/16px var(--v2-font-mono)');
+    expect(pill).toContain('background: var(--v2-ink)');
+    expect(podsSidebar).toContain("'podsSidebar.workspace.recent'");
+    expect(podsSidebar).toContain("'podsSidebar.workspace.everything'");
+    expect(podsSidebar).toContain('v2-pods__search');
+    expect(podsSidebar).toContain('RECENT_LIMIT');
+    expect(podsSidebar).not.toContain("'podsSidebar.workspace.pods'");
+    expect(podsSidebar).not.toContain("'podsSidebar.workspace.channels'");
     expect(podsSidebar).not.toContain('v2-pods__filter');
     expect(podsSidebar).not.toContain('v2-pods__community');
+    expect(podsSidebar).not.toContain('v2-pods__subgroup-label');
+    expect(v2).not.toContain('.v2-pods__subgroup-label');
+    expect(v2).not.toContain('.v2-pods__channel-dot');
   });
 
-  test('the selected room keeps the sidebar’s one cobalt block treatment', () => {
+  test('the selected pod keeps the sidebar’s one cobalt block treatment', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     expect(selected).toContain('background: var(--v2-accent)');
     expect(selected).toContain('font-weight: 600');
@@ -210,25 +213,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
   });
 
-  test('the selected-room count, inspector rows, and phone badge derive from one attention collection', () => {
+  test('row pills, inspector rows, and the phone tab count derive from one attention collection', () => {
     expect(podAttention).toContain("'/api/activity/decision-queue'");
     expect(v2Layout).toContain('useV2PodAttention()');
     expect(v2Layout).toContain('attentionItems={attention.items}');
-    expect(v2Layout).toContain('needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}');
+    expect(v2Layout).toContain('needsYouCount={needsYouTotal}');
     expect(podsSidebar).toContain('attentionCountByPod');
-    expect(podsSidebar).toContain('selected && attentionCount > 0');
+    expect(podsSidebar).toContain('count > 0');
     expect(workspaceInspector).toContain('attentionItems.filter');
     expect(podsSidebar).not.toContain('useV2Unread');
   });
 
-  test('room types are an explicit reviewed mapping, not a complement of direct types', () => {
+  test('pod kinds are an explicit reviewed mapping, not a complement of direct types', () => {
     expect(podsSidebar).toContain('const ROOM_POD_TYPES');
     expect(podsSidebar).toContain('const ROOM_POD_TYPE_LABELS');
     expect(podsSidebar).toContain('communityListed === true');
-    expect(podsSidebar).toContain("? 'pinned'");
-    expect(podsSidebar).toContain("? 'community'");
+    expect(podsSidebar).toContain('export const podKind');
     expect(podsSidebar).toContain('export const isRoomPod');
-    expect(podsSidebar).toContain('pods.filter(isRoomPod)');
+    expect(podsSidebar).toContain('podKind(pod) !== null');
     expect(podsSidebar).not.toContain('pods.filter((pod) => !isDirectPod(pod))');
   });
 
@@ -252,15 +254,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(mappedRoomTypes.sort()).toEqual(roomTypes.sort());
   });
 
-  test('channels read the existing connector binding endpoint and retain their room target', () => {
-    expect(podsSidebar).toContain("'/api/integrations/user/all'");
-    expect(podsSidebar).toContain('connector.podId');
-    expect(podsSidebar).toContain("navigate('/v2/connectors')");
+  test('bound channels left the sidebar for the pod header meta, read from the same binding endpoint', () => {
+    expect(podHeaderMeta).toContain("'/api/integrations/user/all'");
+    expect(podHeaderMeta).toContain("row.status === 'connected'");
+    expect(thread).toContain('v2-pod-header__channel');
+    expect(podsSidebar).not.toContain('/api/integrations');
   });
 
-  test('the compact sidebar preserves the existing mobile drawer contract', () => {
-    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-pods-aside \{[\s\S]*?transform: translateX\(-100%\)/);
-    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-pods__mobile-close \{[\s\S]*?position: absolute/);
+  test('on the phone the pods list is a page and a pod is the next page — no drawer', () => {
+    expect(v2Layout).toContain('phone && !selectedPodId');
+    expect(v2Layout).toContain('variant="page"');
+    expect(v2Layout).not.toContain('mobileNavOpen');
+    expect(v2).toContain('.v2-shell--list');
+    expect(v2).toContain('.v2-pods-aside:not(.v2-pods-aside--page) { display: none; }');
+    expect(thread).toContain('v2-thread__back');
+    expect(thread).not.toContain('v2-chat__mobile-nav-btn');
   });
 
   test('grouped messages keep the avatar column so text never shifts (craft audit rule 3)', () => {
@@ -786,26 +794,27 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
 
-  test('the thread header is the artboard’s name, muted description, and working count', () => {
-    expect(podChat).toContain('className="v2-thread__header"');
-    expect(podChat).toContain('podChat.header.agentsWorking');
+  test('the pod header is 50px: sans 15/600 name, inline description, mono meta — the working count moved to the inspector', () => {
+    // Walk-1 ruling (b) reverses the Main artboard's Bricolage 22px: a pod is
+    // a conversation, not a page. The display face stays on page titles.
+    expect(podChat).toContain('className="v2-thread__header v2-pod-header"');
+    expect(podChat).toContain('podChat.header.boardOpen');
     expect(podChat).toContain('v2-thread__inspector-toggle');
+    expect(podChat).not.toContain('podChat.header.agentsWorking');
+    expect(ruleBody(v2, '.v2-thread__header')).toContain('min-height: 50px');
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 700 22px/28px var(--v2-font-display)');
-    expect(ruleBody(v2, '.v2-thread__working')).toContain('font: 500 11px/16px var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-thread__working::before')).toContain('color: var(--v2-text-muted)');
-    expect(ruleBody(v2, '.v2-thread__working--active::before')).toContain('color: var(--v2-accent)');
-    expect(thread).toContain("onlineAgentCount > 0 ? ' v2-thread__working--active' : ''");
+    expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 600 15px/20px var(--v2-font)');
+    expect(ruleBody(v2, '.v2-pod-header__meta')).toContain('font: 400 11px/16px var(--v2-font-mono)');
+    expect(v2).not.toContain('.v2-thread__working');
   });
 
-  test('the phone workspace is an edge-to-edge thread with reachable drawers and a real tab bar', () => {
+  test('the phone workspace is an edge-to-edge thread with a labelled tab bar carrying one count', () => {
     expect(v2).toContain('.v2-pane--rail { display: none; }');
-    expect(v2).toContain('.v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }');
-    expect(v2).toContain('.v2-mobile-tabs__badge');
-    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item')).toContain('width: 44px');
-    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item')).toContain('height: 32px');
-    expect(mobileTabs).toContain('onOpenInspector');
-    expect(mobileTabs).toContain("navigate('/v2/settings')");
+    expect(v2).toContain('.v2-mobile-tabs__label');
+    expect(mobileTabs).toContain('needsYouCount');
+    expect(mobileTabs).toContain("path: '/v2/activity'");
+    expect(mobileTabs).toContain("path: '/v2/settings'");
+    expect(mobileTabs).not.toContain('onOpenInspector');
     expect(v2Layout).toContain('<V2MobileTabs');
   });
 
@@ -815,7 +824,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const author = selectorRuleBody(v2, '.v2-thread .v2-msg__author');
     const time = ruleBody(v2, '.v2-thread .v2-msg__time');
     const actions = ruleBody(v2, '.v2-thread .v2-msg__actions');
-    expect(title).toContain('var(--v2-font-display)');
+    expect(title).toContain('var(--v2-font)');
+    expect(title).not.toContain('var(--v2-font-display)');
     expect(avatarRule).toContain('width: 28px');
     expect(avatarRule).toContain('border-radius: 4px');
     expect(avatarRule).toContain('border: 0');
@@ -836,23 +846,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const phone = v2.slice(phoneStart);
     expect(phone).toContain('.v2-decision-card__options { align-items: stretch; flex-direction: column; }');
     expect(phone).toContain('.v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }');
-    expect(phone).toContain('.v2-root button.v2-chat__mobile-nav-btn');
+    expect(phone).toContain('.v2-root button.v2-thread__back');
     expect(phone).toContain('border: 1px solid var(--v2-border)');
   });
 
-  test('phone drawer and inspector sheet are mutually exclusive overlays', () => {
-    // Both panels are fixed overlays at 390px. Leaving the sheet open while
-    // mounting the drawer puts the latter underneath an inert hit target.
-    const mobileNavOpener = v2Layout.slice(
-      v2Layout.indexOf('const openMobileNav = useCallback(() => {'),
-      v2Layout.indexOf('const closeMobileNav', v2Layout.indexOf('const openMobileNav = useCallback(() => {')),
+  test('the phone list page hides the rail and the desktop sidebar column, never both list and pod at once', () => {
+    // The list is a route state, not an overlay: V2Layout returns early with
+    // the page variant and no thread, so nothing can sit under an inert sheet.
+    const listBranch = v2Layout.slice(
+      v2Layout.indexOf('if (phone && !selectedPodId) {'),
+      v2Layout.indexOf('// The inspector is a separate column'),
     );
-    const inspectorOpener = v2Layout.slice(
-      v2Layout.indexOf('const openInspector = useCallback(() => {'),
-      v2Layout.indexOf('// File pills', v2Layout.indexOf('const openInspector = useCallback(() => {')),
-    );
-    expect(mobileNavOpener).toContain('setInspectorCollapsed(true);');
-    expect(inspectorOpener).toContain('setMobileNavOpen(false);');
+    expect(listBranch).toContain('variant="page"');
+    expect(listBranch).not.toContain('<V2Thread');
+    expect(listBranch).not.toContain('<V2NavRail');
+    expect(v2Layout).toContain('{!phone && (');
   });
 
   test('Activity cards have shrinkable desktop and mobile layout guards', () => {
@@ -1096,8 +1104,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       activeClasses.add('v2-workspace-inspector__state--working');
 
       const cobalt = activeAccentBackgroundSelectors(v2, activeClasses);
+      // Direction C removed the sidebar channel rows (walk-1 miss 8): the
+      // live-channel dot is no longer a cobalt background in the shell.
       expect(cobalt).toEqual([
-        '.v2-pods__channel-dot--live',
         '.v2-rail__brand-icon',
         '.v2-root button.v2-decision-card__choice--primary',
         '.v2-root button.v2-pods__row--selected',

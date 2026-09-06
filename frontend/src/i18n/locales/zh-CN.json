@@ -18,7 +18,9 @@
       "activity": "动态",
       "community": "社区",
       "settings": "设置",
-      "connectors": "连接器"
+      "connectors": "连接器",
+      "needsYou": "待处理",
+      "team": "团队"
     },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
@@ -442,7 +444,13 @@
       "recent_other": "最近收到 {{formattedCount}} 次心跳"
     },
     "header": {
-      "agentsWorking_other": "{{count}} 个智能体正在工作"
+      "agentsWorking_other": "{{count}} 个智能体正在工作",
+      "members_one": "{{count}} 名成员",
+      "members_other": "{{count}} 名成员",
+      "agents_one": "{{count}} 个智能体",
+      "agents_other": "{{count}} 个智能体",
+      "boardOpen": "看板 {{count}} 项待办",
+      "backToPods": "返回 Pod 列表"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -1564,7 +1572,13 @@
       "new": "新建",
       "connect": "连接 {{platform}}",
       "untitled": "未命名 Pod",
-      "needsYouCount": "{{count}} 项待处理"
+      "needsYouCount": "{{count}} 项待处理",
+      "listTitle": "Pod",
+      "search": "搜索 Pod",
+      "noMatch": "没有匹配的 Pod",
+      "pinnedTitle": "置顶",
+      "recent": "最近",
+      "everything": "全部"
     }
   },
   "feedbackMenu": {

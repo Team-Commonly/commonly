@@ -18,7 +18,9 @@
       "activity": "Activity",
       "community": "Community",
       "settings": "Settings",
-      "connectors": "Connectors"
+      "connectors": "Connectors",
+      "needsYou": "Needs you",
+      "team": "Team"
     },
     "closePodsList": "Close pods list",
     "communityRedirect": {
@@ -443,7 +445,13 @@
     },
     "header": {
       "agentsWorking_one": "{{count}} agent working",
-      "agentsWorking_other": "{{count}} agents working"
+      "agentsWorking_other": "{{count}} agents working",
+      "members_one": "{{count}} member",
+      "members_other": "{{count}} members",
+      "agents_one": "{{count}} agent",
+      "agents_other": "{{count}} agents",
+      "boardOpen": "board {{count}} open",
+      "backToPods": "Back to pods"
     },
     "team": {
       "view": "View pod team",
@@ -1572,7 +1580,13 @@
       "new": "new",
       "connect": "Connect {{platform}}",
       "untitled": "Untitled pod",
-      "needsYouCount": "{{count}} needs you"
+      "needsYouCount": "{{count}} needs you",
+      "listTitle": "Pods",
+      "search": "Search pods",
+      "noMatch": "no pods match",
+      "pinnedTitle": "Pinned",
+      "recent": "Recent",
+      "everything": "Everything"
     }
   },
   "feedbackMenu": {

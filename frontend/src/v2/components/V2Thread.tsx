@@ -1,7 +1,8 @@
 import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
-import MenuIcon from '@mui/icons-material/Menu';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import V2Avatar from './V2Avatar';
 import V2CatchUpStrip from './V2CatchUpStrip';
@@ -13,6 +14,7 @@ import {
   UseV2PodDetailResult,
 } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -139,22 +141,24 @@ interface V2ThreadProps {
   // to V2MessageRow → FilePill so the click opens the inspector
   // artifact preview instead of window.open()'ing a raw file in a new tab.
   onOpenFile?: (fileName: string) => void;
-  // Opens the mobile pods drawer (<=760px). The hamburger in the chat header
-  // is the primary way back to the pod list on phones, where the sidebar is
-  // an overlay rather than a visible column. Hidden via CSS on desktop.
-  onOpenMobileNav?: () => void;
+  // Phone only (<=760px): the pods list is a page and a pod is the next page,
+  // so the header carries a back control instead of a drawer hamburger.
+  // Hidden via CSS on desktop, where the sidebar is a visible column.
+  onBack?: () => void;
   // A ruling changes the one workspace attention collection owned by
   // V2Layout, so its sidebar, inspector, and phone badge refresh together.
   onDecisionSettled?: () => void;
 }
 
-const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onOpenMobileNav, onDecisionSettled }) => {
+const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onBack, onDecisionSettled }) => {
   const { t } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
     hasMore, loadingOlder, loadOlder,
   } = detail;
   const api = useV2Api();
+  const navigate = useNavigate();
+  const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
   const [draft, setDraft] = useState('');
@@ -679,18 +683,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [mentionOpen]);
 
-  // Mobile-only hamburger: opens the pods slide-over drawer. CSS hides it on
-  // desktop (>=761px) where the sidebar is a permanent column. Without it a
-  // phone user who lands in a pod chat has no way back to the pod list.
-  const mobileNavButton = onOpenMobileNav ? (
+  // Phone-only back control: returns to the pods list page. CSS hides it on
+  // desktop (>=761px) where the sidebar is a permanent column.
+  const mobileNavButton = onBack ? (
     <button
       type="button"
-      className="v2-chat__mobile-nav-btn"
-      onClick={onOpenMobileNav}
-      title={t('podChat.mobile.showPods')}
-      aria-label={t('podChat.mobile.showPodsList')}
+      className="v2-thread__back"
+      onClick={onBack}
+      title={t('podChat.header.backToPods')}
+      aria-label={t('podChat.header.backToPods')}
     >
-      <MenuIcon fontSize="small" aria-hidden="true" />
+      <ArrowBackIcon fontSize="small" aria-hidden="true" />
     </button>
   ) : null;
 
@@ -916,16 +919,29 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }
   };
 
-  const onlineAgentCount = agents.filter((agent) => (
-    !!agent.lastHeartbeatAt && Date.now() - new Date(agent.lastHeartbeatAt).getTime() < 10 * 60 * 1000
-  )).length;
-  const workingClass = onlineAgentCount > 0 ? ' v2-thread__working--active' : '';
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
+  // Header meta (direction C): members · agents · board N open · bound
+  // channels. The agents-working count left the header for the inspector.
+  const humanMemberCount = (members || []).filter((member) => !member?.isBot).length;
+  const metaParts: React.ReactNode[] = [
+    <span key="members">{t('podChat.header.members', { count: humanMemberCount })}</span>,
+    <span key="agents">{t('podChat.header.agents', { count: agents.length })}</span>,
+  ];
+  if (headerMeta.boardOpen !== null) {
+    metaParts.push(
+      <button key="board" type="button" className="v2-pod-header__board" onClick={() => navigate(`/v2/pods/${pod._id}/board`)}>
+        {t('podChat.header.boardOpen', { count: headerMeta.boardOpen })}
+      </button>,
+    );
+  }
+  headerMeta.channels.forEach((channel) => {
+    metaParts.push(<span key={`channel-${channel}`} className="v2-pod-header__channel">{channel}</span>);
+  });
 
   return (
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat v2-thread">
-        <header className="v2-thread__header">
+        <header className="v2-thread__header v2-pod-header">
           <div className="v2-thread__header-row">
             {mobileNavButton}
             <div className="v2-thread__title">
@@ -933,12 +949,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 <h1>{pod.name}</h1>
                 {pod.description && <p>{pod.description}</p>}
               </div>
-              <span className={`v2-thread__working v2-thread__working--mobile${workingClass}`}>
-                {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
-              </span>
             </div>
-            <span className={`v2-thread__working v2-thread__working--desktop${workingClass}`}>
-              {t('podChat.header.agentsWorking', { count: onlineAgentCount })}
+            <span className="v2-pod-header__meta">
+              {metaParts.map((part, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 && <span className="v2-pod-header__sep" aria-hidden="true">·</span>}
+                  {part}
+                </React.Fragment>
+              ))}
             </span>
             {onToggleInspector && (
               <button
