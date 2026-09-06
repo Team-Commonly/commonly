@@ -59,6 +59,15 @@ const rules = (): Array<{ selector: string; body: string }> => {
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .trim()
       .replace(/\s+/g, ' ');
+    // An at-rule that CONTAINS rules is not itself a rule. Without this the
+    // block's body slice runs only to the first inner rule's `}`, so that
+    // rule's declarations get attributed to the `@media` prelude — every
+    // media block's first child was keyed to its at-rule (@ux-lead, #1580).
+    // `@font-face` is a declaration block, so it stays a rule.
+    if (/^@(media|supports|container|layer|keyframes|-webkit-keyframes)\b/.test(selector)) {
+      i = open + 1;
+      continue;
+    }
     out.push({ selector, body: CSS.slice(open + 1, close) });
     i = close + 1;
   }
@@ -203,6 +212,17 @@ describe('v2 type floors (ruling h)', () => {
     // If substitution regressed, those rules would silently drop out of scope.
     expect(CSS).toMatch(/--v2-fs-label:\s*11px/);
     expect(CSS).toContain('font-size: var(--v2-fs-label)');
+  });
+
+  test('a rule inside an @media block is keyed to its own selector', () => {
+    // The at-rule prelude is not a rule. Keyed to it, a media block's FIRST
+    // child had its declarations attributed to `@media (...)` and could never
+    // be allowlisted or fixed by name (@ux-lead, #1580).
+    const selectors = rules().map((rule) => rule.selector);
+    expect(selectors.filter((selector) => selector.startsWith('@'))).toEqual([]);
+    // `.v2-verification-banner` is the first child of a `@media (max-width: 480px)`
+    // block, which is exactly the position that was mis-keyed.
+    expect(selectors).toContain('.v2-verification-banner');
   });
 
   test('the scan is measuring something — the sheet parses into many rules', () => {
