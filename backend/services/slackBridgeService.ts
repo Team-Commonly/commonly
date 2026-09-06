@@ -13,6 +13,8 @@ const { shouldEscalate } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
+import { resolveDecisionCardReply } from './decisionCardReply';
+import type { ChannelCardEntry } from './decisionCardReply';
 
 const RELAY_MAP_CAP = 100;
 const OUTBOUND_TEXT_CAP = 900;
@@ -46,6 +48,7 @@ interface SlackIntegrationDoc {
       podMessageId?: string | null;
       podId?: string;
     }>;
+    cards?: ChannelCardEntry[];
   };
 }
 
@@ -234,6 +237,9 @@ export const relayAgentMessageToSlack = async (opts: {
           }],
           $slice: -RELAY_MAP_CAP,
         },
+        ...(opts.card && podMessageId ? {
+          'config.cards': { podMessageId, externalMessageId: String(result.ts), sentAt: new Date() },
+        } : {}),
       },
     });
     if (opts.card && podMessageId) {
@@ -295,7 +301,7 @@ export const relaySlackMessageToPod = async (opts: {
   const { integration, event } = opts;
   const rawText = String(event.text || '').trim();
   if (!rawText || rawText.startsWith('/')) return { relayed: false };
-  if (!integration.podId) {
+  if (!integration.podId && !integration.config?.cards?.length) {
     // A user-scoped connector may have gates without an active inbound
     // destination. Fail closed rather than querying/authoring under
     // `String(undefined)`.
@@ -316,12 +322,37 @@ export const relaySlackMessageToPod = async (opts: {
     );
     return { relayed: false };
   }
+  const cardReply = await resolveDecisionCardReply({
+    integrationId: integration._id,
+    linkedUserId: String(config.linkedUserId),
+    cards: config.cards,
+    provider: 'slack',
+    text: rawText,
+    replyToExternalId: event.thread_ts,
+  });
+  if (cardReply.confirmation) {
+    try {
+      const token = await connectorSecrets.get(String(config.botTokenRef));
+      const sent = await new SlackApi(token).postMessage(
+        String(config.chatId), escapeSlackMrkdwn(cardReply.confirmation), undefined, cardReply.externalMessageId,
+      );
+      if (!sent.ok) console.warn('[slack-bridge] card confirmation was not sent');
+    } catch (error) {
+      console.warn('[slack-bridge] card confirmation failed:', (error as Error).message);
+    }
+  }
+  if (cardReply.handled && !cardReply.lateReply) return { relayed: false };
+  if (!cardReply.lateReply && !integration.podId) {
+    await replyNoActivePod(integration);
+    return { relayed: false };
+  }
   const { content: routedText, routedAgent } = routeSlackReplyContent({
     content: rawText,
     threadTs: event.thread_ts,
-    relayMap: config.relayMap,
+    relayMap: cardReply.lateReply ? [] : config.relayMap,
   });
-  const podId = String(integration.podId);
+  const podId = cardReply.lateReply?.podId || String(integration.podId);
+  const replyToMessageId = cardReply.lateReply?.messageId || null;
   const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
   const content = senderName
@@ -361,7 +392,13 @@ export const relaySlackMessageToPod = async (opts: {
   } catch (error) {
     console.warn('[slack-bridge] PG pod backfill skipped:', (error as Error).message);
   }
-  const created = await PGMessage.create(podId, linkedUserId, content, 'text', null, null, null);
+  let threadRootId: number | null = null;
+  if (cardReply.lateReply?.threadRootId) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    threadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId: cardReply.lateReply.threadRootId });
+  }
+  const created = await PGMessage.create(podId, linkedUserId, content, 'text', replyToMessageId, null, threadRootId);
   let message: Record<string, unknown> = created;
   try {
     const populated = created?.id ? await PGMessage.findById(created.id) : null;
@@ -378,7 +415,7 @@ export const relaySlackMessageToPod = async (opts: {
       message,
       userId: linkedUserId,
       requestUser: { username: linkedUser.username },
-      replyToMessageId: null,
+      replyToMessageId,
     });
   } catch (error) {
     console.error('[slack-bridge] agent delivery failed after pod write:', (error as Error).message);
@@ -397,8 +434,8 @@ export const relaySlackMessageToPod = async (opts: {
         username: linkedUser.username,
         profile_picture: linkedUser.profilePicture,
         createdAt: (message as { created_at?: unknown }).created_at || new Date(),
-        replyTo: null,
-        thread_root_id: null,
+        replyTo: replyToMessageId,
+        thread_root_id: (message as { thread_root_id?: unknown }).thread_root_id ?? threadRootId ?? replyToMessageId,
         payload: null,
       });
     }

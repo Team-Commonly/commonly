@@ -95,8 +95,8 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
-    expect(update.config.liveRelay).toBe(true);
-    expect(update.config.linkedUserId).toBe('user-1');
+    expect(update['config.liveRelay']).toBe(true);
+    expect(update['config.linkedUserId']).toBe('user-1');
   });
 
   it("derives linkedUserId when liveRelay arrives as the string 'true' (#1293)", async () => {
@@ -106,8 +106,8 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
-    expect(update.config.liveRelay).toBe(true);
-    expect(update.config.linkedUserId).toBe('user-1');
+    expect(update['config.liveRelay']).toBe(true);
+    expect(update['config.linkedUserId']).toBe('user-1');
   });
 
   // Mongoose's Boolean cast is wider than the two literals above: 1, '1' and
@@ -141,8 +141,8 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
-    expect(update.config.liveRelay).toBe(false);
-    expect(update.config.linkedUserId).toBeUndefined();
+    expect(update['config.liveRelay']).toBe(false);
+    expect(update['config.linkedUserId']).toBeUndefined();
   });
 
   it('does not let a pod-scoped connector move its installation-owned pod', async () => {
@@ -150,6 +150,25 @@ describe('PATCH /api/integrations/:id — linkedUserId guard', () => {
       .patch(`/api/integrations/${integrationId}`)
       .send({ podId: '64b64c1f7e5b8f0a12345671' });
 
+    expect(res.status).toBe(400);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('cannot overwrite durable cards, including a stale snapshot from before a send', async () => {
+    const existing = telegramIntegration();
+    existing.config.toObject = () => ({ cards: [], chatId: '42', chatType: 'private' });
+    Integration.findById.mockResolvedValue(existing);
+    const res = await request(app).patch(`/api/integrations/${integrationId}`).send({
+      config: { cards: [{ podMessageId: 'forged', tgMessageId: '1' }], leadAgentUsername: 'kai' },
+    });
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate.mock.calls[0][1]).toEqual({
+      'config.leadAgentUsername': 'kai', status: 'connected',
+    });
+  });
+
+  it.each(['cards.0.podMessageId', '$cards'])('rejects config path injection %s', async (key) => {
+    const res = await request(app).patch(`/api/integrations/${integrationId}`).send({ config: { [key]: 'forged' } });
     expect(res.status).toBe(400);
     expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
   });
@@ -228,7 +247,7 @@ describe('PATCH /api/integrations/:id — user-scoped connector gates', () => {
 
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
-    expect(update.config.gates[allowedPodId]).toMatchObject({ enabled: true });
+    expect(update['config.gates'][allowedPodId]).toMatchObject({ enabled: true });
   });
 
   it('allows the linked owner to select a member pod as the active inbound destination', async () => {
@@ -354,6 +373,7 @@ describe('POST /api/integrations — create-path guards', () => {
         type: 'telegram',
         config: {
           connectCode: 'chosen', chatId: '999', chatType: 'private', liveRelay: true, 
+          cards: [{ podMessageId: 'forged', tgMessageId: '1' }],
         },
       });
     expect(res.status).toBe(201);
@@ -363,6 +383,7 @@ describe('POST /api/integrations — create-path guards', () => {
     expect(config.chatId).toBeUndefined();
     expect(config.chatType).toBeUndefined();
     expect(config.linkedUserId).toBe('user-1');
+    expect(config.cards).toBeUndefined();
   });
 });
 
@@ -408,8 +429,9 @@ describe('PATCH /api/integrations/:id — live relay on a group chat', () => {
       .send({ config: { chatId: '777', leadAgentUsername: 'theo' } });
     expect(res.status).toBe(200);
     const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
-    expect(update.config.chatId).toBe('42');
-    expect(update.config.leadAgentUsername).toBe('theo');
+    expect(update.config).toBeUndefined();
+    expect(update['config.chatId']).toBeUndefined();
+    expect(update['config.leadAgentUsername']).toBe('theo');
   });
 });
 

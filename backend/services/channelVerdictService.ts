@@ -32,6 +32,7 @@ export interface MarkReachedHuman {
   integrationId: unknown;
   podMessageId: string;
   ruledVia: Extract<ChannelVerdictRuledVia, 'telegram' | 'slack'>;
+  decisionId?: string;
 }
 
 export interface MarkRuled {
@@ -115,7 +116,11 @@ export const markReachedHuman = async (entry: MarkReachedHuman): Promise<void> =
     // that its own human performed the action.
     await ChannelVerdict.updateMany(
       { 'event.podMessageId': entry.podMessageId },
-      { $set: { ruledVia: entry.ruledVia, expiresAt: expiryAfter(now) } },
+      { $set: {
+        ruledVia: entry.ruledVia,
+        expiresAt: expiryAfter(now),
+        ...(entry.decisionId ? { 'event.decisionId': entry.decisionId } : {}),
+      } },
     );
   } catch (error) {
     console.warn('[channel-verdict] reach stamp failed:', (error as Error).message);
