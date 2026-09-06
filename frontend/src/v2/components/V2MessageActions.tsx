@@ -74,14 +74,17 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
       aria-label={t('podChat.strip.label')}
       onClick={(event) => event.stopPropagation()}
     >
-      {canInteract && (
-        <span className="v2-msg__action-wrap">
+      {/* React is the first of the four icons whenever the strip renders; it
+          is disabled, not absent, when this row cannot take a reaction yet
+          (no live reactions, or a non-numeric id) — ux-lead 64476 (5). */}
+      <span className="v2-msg__action-wrap">
           <button
             type="button"
             className="v2-msg__action"
             aria-label={t('podChat.strip.react')}
             title={t('podChat.strip.react')}
             onClick={onTogglePicker}
+            disabled={!canInteract}
           >
             <Icon d="M8 14s1.5 2 4 2 4-2 4-2" extra={<><circle cx="12" cy="12" r="10" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></>} />
           </button>
@@ -104,8 +107,7 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
               })}
             </span>
           )}
-        </span>
-      )}
+      </span>
       {onReply && (
         <button
           type="button"

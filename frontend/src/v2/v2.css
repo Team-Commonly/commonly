@@ -8462,21 +8462,7 @@ body.modern-ui.v2-canvas {
 
 /* This is deliberately outside the expand button: it must aim the composer
    without toggling the rail, and nested controls are invalid HTML. */
-.v2-root button.v2-thread-card__reply {
-  min-height: 44px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: #7b8494;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
 
-.v2-root button.v2-thread-card__reply:hover {
-  background: var(--v2-surface-hover);
-}
 
 .v2-thread-card__count {
   font-weight: 500;
@@ -8512,25 +8498,8 @@ body.modern-ui.v2-canvas {
   color: #7b8494;
 }
 
-.v2-thread-card__chevron {
-  transform: rotate(180deg);
-  transition: transform 300ms ease;
-  line-height: 1;
-}
 
-.v2-root button.v2-thread-card__follow {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  color: #7b8494; /* tertiary — the null "Follow" and the false "Muted" */
-  padding: 4px 6px;
-}
 
-.v2-root button.v2-thread-card__follow--on {
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-}
 
 /* Expanded replies hang off a left rail at the thread block's own edge.
    The rail used to aim at the root avatar's centre (margin-left 14, rev 2);
@@ -8624,12 +8593,17 @@ body.modern-ui.v2-canvas {
     flex-wrap: wrap;
   }
 
+  /* Reply in thread / Follow / Collapse left the chip for the band's foot
+     (ux-lead 64476 (3)); the 44px touch floor follows them. */
+  .v2-root .v2-thread-replies__foot button {
+    min-height: 44px;
+  }
+
   /* The block's 50px attachment indent is expensive at 390 — tighten it,
      but keep the rail on the block edge (aligned with the card), and the
      inner padding tightens with it. */
-  .v2-thread-block {
+  .v2-thread-block__inner {
     margin-left: 24px;
-    width: calc(100% - 24px); /* same indent+width=100% invariant as desktop */
   }
 
   .v2-thread-replies {
@@ -9407,7 +9381,6 @@ body.modern-ui.v2-canvas {
 
 @media (prefers-reduced-motion: reduce) {
   .v2-root button.v2-thread-card__main,
-  .v2-thread-card__chevron,
   .v2-thread-replies {
     transition: none;
   }
@@ -11206,7 +11179,6 @@ body.modern-ui.v2-canvas {
 .v2-thread .v2-msg--grouped:hover .v2-msg__gutter-time { visibility: visible; }
 
 /* Two-tone avatars inside the transcript: agents cobalt, humans tint. */
-.v2-thread .v2-msg--agent .v2-avatar:not(.v2-avatar--photo) { background: var(--v2-accent); color: #fff; }
 
 /* Quote: 2px rule, two lines, jumps to the source. */
 .v2-thread .v2-msg__quote {
@@ -11310,12 +11282,16 @@ body.modern-ui.v2-canvas {
 .v2-thread .v2-thread-card__faces > * + * { margin-left: -4px; }
 .v2-thread .v2-thread-card__count { color: var(--v2-accent-text); font-weight: 600; }
 .v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
-.v2-thread .v2-thread-card__chevron { color: var(--v2-text-muted); font-size: 12px; transform: none; }
-.v2-root .v2-thread button.v2-thread-card__reply { min-height: 28px; padding: 0 6px; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
 
-/* Expanded thread: one band, 2px rule at the text column, indented 24px replies. */
-.v2-thread .v2-thread-block { margin-left: 38px; width: calc(100% - 38px); margin-bottom: 10px; }
+/* Expanded thread: the ROOT and its replies share one band (ux-lead 64476
+   (2)); the chip / rule / replies sit at the text column (28px avatar + 8px
+   gap = 36px). */
+.v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
+.v2-thread .v2-thread-block__inner { margin-left: 36px; }
 .v2-thread .v2-thread-block--open { background: #f9fafb; border-radius: 4px; padding: 0 8px 6px 0; }
+.v2-thread .v2-thread-block--open > .v2-msg:hover,
+.v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
+.v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
 .v2-thread .v2-thread-replies { margin: 6px 0 0; padding-left: 14px; border-left: 2px solid var(--v2-border); }
 .v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
 .v2-thread .v2-thread-replies .v2-msg:hover { background: transparent; }
@@ -11338,16 +11314,44 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 .v2-root button.v2-thread-replies__more { display: block; margin: 2px 0 4px; }
+.v2-root button.v2-thread-replies__follow {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+.v2-root button.v2-thread-replies__follow--on { color: var(--v2-accent-text); }
+
+/* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
+.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
+
+/* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
+   #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
+.v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 11px/1 var(--v2-font); letter-spacing: 0.02em; }
+.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: #fff; }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font-size: 9px; }
+.v2-thread .v2-thread-card__faces .v2-avatar--flat { font-size: 7px; }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
 
 /* Jump pill: white, #dde0e6 border, r14, ink 13/600, cobalt count (walk-3 miss 58). */
 /* Composer aim chip (walk-3 miss 59). */
 .v2-composer__aim { background: var(--v2-accent-soft, #e8ecfb); color: var(--v2-accent-text); }
 
-@media (max-width: 760px) {
+/* The reveal is gated on capability in the row — `matchMedia('(hover: none)')`,
+   with no width term and no `(pointer: coarse)` — so its placement matches that
+   query EXACTLY (sprint-review 64468 + 64485). A comma'd `(pointer: coarse)`
+   would style stylus/hybrid machines where `isHoverless()` is false and the
+   reveal never fires: a dead rule. This block sits AFTER the `.v2-thread
+   .v2-msg__strip` rules it overrides (11229) for the same reason the double
+   pod-header meta needed source order, not specificity. */
+@media (hover: none) {
   /* Long-press reveals the strip inline under the body. */
   .v2-thread .v2-msg { -webkit-touch-callout: none; }
-  /* The row is a 38px | 1fr grid and the strip precedes the body in DOM: left
+  /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
      to auto-place, a static strip takes the body's cell and the body drops
      into the avatar column (one word per line — 390 walk). Pin it. */
   .v2-thread .v2-msg--reveal { background: #f9fafb; row-gap: 6px; }
@@ -11361,8 +11365,11 @@ body.modern-ui.v2-canvas {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+@media (max-width: 760px) {
+  /* Sizing is a width question, not a capability one. */
   .v2-root .v2-thread button.v2-msg__action { width: 28px; height: 28px; }
-  .v2-thread .v2-thread-block { margin-left: 0; width: 100%; }
   .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
   .v2-thread .v2-msg__gutter-time { display: none; }
 }

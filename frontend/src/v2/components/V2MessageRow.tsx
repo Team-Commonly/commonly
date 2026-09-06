@@ -557,6 +557,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
             name={author}
             src={message.user?.profile_picture || undefined}
             size={insideThreadRoot ? 'sm' : 'md'}
+            tone="flat"
             kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
             seed={message.user_id || undefined}
           />
@@ -566,6 +567,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, decision, onDecisi
           name={author}
           src={message.user?.profile_picture || undefined}
           size={insideThreadRoot ? 'sm' : 'md'}
+          tone="flat"
           kind={typeof message.user?.isBot === 'boolean' ? (message.user.isBot ? 'agent' : 'human') : undefined}
           seed={message.user_id || undefined}
         />

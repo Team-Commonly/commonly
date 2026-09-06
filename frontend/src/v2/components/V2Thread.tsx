@@ -589,14 +589,33 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // row and marks it landed. If the row is not in the loaded window yet, the
   // previous pages load until it is (the `after` cursor is kernel row k4).
   const landedHashRef = useRef<string | null>(null);
+  // A target that is loaded but not rendered (collapsed thread, `N more
+  // replies` fold) is REVEALED, not fetched: the transcript opens the thread
+  // and bumps `revealTick` so this effect runs again against the new DOM.
+  const [revealRequest, setRevealRequest] = useState<string | null>(null);
+  const [revealTick, setRevealTick] = useState(0);
+  const revealTriedRef = useRef<string | null>(null);
+  const onRevealed = useCallback((messageId: string, found: boolean) => {
+    setRevealRequest(null);
+    if (found) setRevealTick((tick) => tick + 1);
+    else revealTriedRef.current = `miss:${messageId}`;
+  }, []);
   useEffect(() => {
     const hash = location.hash || '';
     const match = hash.match(/^#message-(.+)$/);
     if (!match) { landedHashRef.current = null; return; }
     if (landedHashRef.current === hash) return;
     if (landOnMessage(match[1])) { landedHashRef.current = hash; return; }
+    const target = match[1];
+    const folded = threadView.some((item) => item.kind === 'card'
+      && (item.rootId === target || item.replies.some((reply) => String(reply.id) === target)));
+    if (folded && revealTriedRef.current !== target) {
+      revealTriedRef.current = target;
+      setRevealRequest(target);
+      return;
+    }
     if (hasMore && !loadingOlder && !loading) void handleLoadOlder();
-  }, [location.hash, messages, hasMore, loadingOlder, loading, handleLoadOlder]);
+  }, [location.hash, messages, threadView, revealTick, hasMore, loadingOlder, loading, handleLoadOlder]);
 
   // Reaching the top loads the previous page; the edge line is the sentinel.
   useEffect(() => {
@@ -1121,6 +1140,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           messages={messages}
           threadView={threadView}
           threadState={threadState}
+          revealMessageId={revealRequest}
+          onRevealed={onRevealed}
           decisionByMessageId={decisionByMessageId}
           settledDecisionByMessageId={settledDecisionByMessageId}
           agentDisplayNames={agentDisplayNames}

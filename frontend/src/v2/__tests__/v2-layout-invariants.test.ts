@@ -531,17 +531,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('margin-inline: -10px');
     expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
       .toContain('width: calc(100% + 20px)');
-    // Threads: card + rail travel inside one block-level child, indented
-    // to the message TEXT column like an attachment (38px avatar + 12px
-    // gap), whose bottom margin terminates the rail before the next
-    // outer message.
-    expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-left: 50px');
-    // Indent + width must sum to 100%: the column's `> *` width:100% plus
-    // the 50px indent pushed every thread 50px past the pane's right edge,
-    // making the transcript horizontally swipeable — worst on phones
-    // (Sam, 2026-08-24; measured 350 vs 326 scrollWidth at 390px).
-    expect(ruleBody(v2, '.v2-thread-block')).toContain('width: calc(100% - 50px)');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block \{[\s\S]*?width: calc\(100% - 24px\)/);
+    // Threads (ux-lead 64476 (2)): the ROOT now renders inside the block, so
+    // the block itself is a full-width child like any message and the INDENT
+    // moved to the inner wrap (chip + rail at the text column, 28px avatar +
+    // 8px gap).
+    const block = ruleBody(v2, '.v2-thread-block');
+    expect(block).toContain('width: 100%');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).toContain('margin-left: 36px');
+    // Indent + width must still sum to 100%: an indented child that ALSO
+    // carried width:100% pushed every thread past the pane's right edge and
+    // made the transcript horizontally swipeable (Sam, 2026-08-24; 350 vs
+    // 326 scrollWidth at 390). The inner wrap must never take a width.
+    expect(ruleBody(v2, '.v2-thread .v2-thread-block__inner')).not.toContain('width');
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block__inner \{[\s\S]*?margin-left: 24px/);
     // Belt-and-braces: the transcript itself never scrolls sideways.
     expect(ruleBody(v2, '.v2-chat__messages')).toContain('overflow-x: hidden');
     expect(ruleBody(v2, '.v2-thread-block')).toContain('margin-bottom');
@@ -856,6 +858,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const revealed = ruleBody(v2, '.v2-thread .v2-msg--reveal .v2-msg__strip');
     expect(revealed).toContain('grid-column: 2');
     expect(revealed).toContain('grid-row: 2');
+    // The reveal is gated on capability, so its placement is too — and the
+    // query must MATCH `matchMedia('(hover: none)')` exactly: a comma'd
+    // `(pointer: coarse)` or width term styles machines where the reveal never
+    // fires (sprint-review 64468 + 64485). It must also come after the strip
+    // rules it overrides, since they win on order at equal specificity.
+    const capability = v2.indexOf('@media (hover: none) {');
+    expect(capability).toBeGreaterThan(v2.indexOf('.v2-thread .v2-msg__strip {'));
+    expect(v2.slice(capability, capability + 600)).toContain('.v2-thread .v2-msg--reveal .v2-msg__strip');
+    // ux-lead 64476: root inside the band at the text column; chip-only rest state;
+    // mention wash; flat two-tone transcript avatars.
+    expect(threadMessages).toContain('v2-thread-block__inner');
+    expect(threadMessages).toContain('const collapsed = !openRoots.has(item.rootId)');
+    expect(v2).not.toContain('.v2-thread-card__reply');
+    expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
+    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
+    expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('#f2f4f7');
   });
 
   test('history: a mono edge line that loads on scroll and a Jump-to-latest pill', () => {
@@ -1207,9 +1225,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         '.v2-rail__brand-icon',
         '.v2-root button.v2-decision-card__choice--primary',
         '.v2-root button.v2-pods__row--selected',
-        // Direction C (walk-3 miss 62): an agent's transcript avatar is a cobalt
-        // square with white initials — the mark that says "agent" on a row.
-        '.v2-thread .v2-msg--agent .v2-avatar:not(.v2-avatar--photo)',
+        // Direction C (walk-3 miss 62, ux-lead 64476 (1)): an agent's transcript
+        // avatar is a flat cobalt square with white initials — the mark that
+        // says "agent" on a row. A photo never gets the class.
+        '.v2-thread .v2-avatar--flat-agent',
         '.v2-thread-card__dot',
         '.v2-workspace-inspector__state--needs-you',
         '.v2-workspace-inspector__state--working',
@@ -1325,9 +1344,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(railRow).toContain('grid-template-columns: 24px minmax(0, 1fr)');
     expect(railRow).toContain('gap: 8px');
 
-    // 390 (rev 3): the block's 50px attachment indent tightens to 24px,
-    // the rail stays on the block edge, and the inner padding tightens.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block\s*\{[\s\S]*?margin-left: 24px/);
+    // 390 (rev 4): the inner wrap's text-column indent tightens to 24px,
+    // the rail stays on its edge, and the inner padding tightens.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-block__inner\s*\{[\s\S]*?margin-left: 24px/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies\s*\{[\s\S]*?margin-left: 0[\s\S]*?padding-left: 8px/);
   });
 
@@ -1362,8 +1381,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // message by default (Sam's report, 2026-08-23).
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-msg--reveal \.v2-msg__actions[\s\S]*?opacity: 1/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root button\.v2-msg__action[\s\S]*?height: 44px/);
-    const cardAction = ruleBody(v2, '.v2-root button.v2-thread-card__reply');
-    expect(cardAction).toContain('min-height: 44px');
+    // Reply in thread / Follow / Collapse moved from the chip to the band's
+    // foot (ux-lead 64476 (3)) — the 44px floor moved with them.
+    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies__foot button[\s\S]*?min-height: 44px/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);
   });
 

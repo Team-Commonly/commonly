@@ -511,7 +511,10 @@
       "collapse": "Collapse",
       "replyOne": "reply",
       "replyOther": "replies",
-      "moreReplies": "{{count}} more replies"
+      "moreReplies": "{{count}} more replies",
+      "follow": "Follow",
+      "following": "Following",
+      "muted": "Muted"
     },
     "leadBadge": "Lead",
     "catchup": {

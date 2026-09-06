@@ -510,7 +510,10 @@
       "collapse": "收起",
       "replyOne": "条回复",
       "replyOther": "条回复",
-      "moreReplies": "还有 {{count}} 条回复"
+      "moreReplies": "还有 {{count}} 条回复",
+      "follow": "关注",
+      "following": "已关注",
+      "muted": "已静音"
     },
     "leadBadge": "负责人",
     "catchup": {

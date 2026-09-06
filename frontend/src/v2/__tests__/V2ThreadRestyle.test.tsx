@@ -110,21 +110,23 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(within(strip).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Copy link', 'Copy text']);
   });
 
-  test('an expanded thread is one band with the newest eight, a more line, and a Collapse foot', () => {
+  const renderThread = (props = {}) => {
     const root = msg(20);
     const replies = Array.from({ length: 11 }, (_, i) => msg(21 + i, { thread_root_id: '20' }));
-    const toggleCollapsed = jest.fn();
-    const { container } = render(
+    const setCollapsed = jest.fn();
+    const toggleFollowing = jest.fn();
+    const utils = render(
       <MemoryRouter>
         <V2ThreadMessages
           messages={[root, ...replies]}
           threadView={[{ kind: 'message', message: root }, { kind: 'card', rootId: '20', replyCount: 11, participants: [], lastActivityAt: null, replies }]}
-          threadState={{ byRoot: new Map([['20', { collapsed: false, following: null }]]), toggleCollapsed, toggleFollowing: jest.fn() }}
+          threadState={{ byRoot: new Map([['20', { collapsed: false, following: null }]]), toggleCollapsed: jest.fn(), setCollapsed, toggleFollowing }}
           decisionByMessageId={new Map()}
           settledDecisionByMessageId={new Map()}
           agentDisplayNames={new Map()}
           agentAuthorKeys={new Set()}
           onAimAtThread={jest.fn()}
+          onReply={jest.fn()}
           hasMore={false}
           loadingOlder={false}
           onLoadOlder={jest.fn()}
@@ -132,17 +134,94 @@ describe('direction C threading restyle (PR 2b)', () => {
           error={null}
           messagesContainerRef={React.createRef()}
           messagesEndRef={React.createRef()}
+          {...props}
         />
       </MemoryRouter>,
     );
+    return { ...utils, setCollapsed, toggleFollowing };
+  };
+
+  test('a thread rests as a chip under its root even when the server row says open; the chip opens it and the server is told', () => {
+    const { container, setCollapsed } = renderThread();
+    const block = container.querySelector('.v2-thread-block');
+    expect(block).not.toHaveClass('v2-thread-block--open');
+    // The root renders INSIDE the block — one surface once it opens.
+    expect(block.querySelector('#message-20')).toBeTruthy();
+    expect(container.querySelectorAll('.v2-chat__messages > #message-20')).toHaveLength(0);
+    expect(within(block).getByRole('button', { name: 'Expand thread, 11 replies' })).toBeInTheDocument();
+    expect(block.querySelector('.v2-thread-replies')).toBeNull();
+    fireEvent.click(within(block).getByRole('button', { name: 'Expand thread, 11 replies' }));
+    expect(block).toHaveClass('v2-thread-block--open');
+    expect(setCollapsed).toHaveBeenCalledWith('20', false);
+    expect(within(block).queryByRole('button', { name: /Expand thread/ })).not.toBeInTheDocument();
+  });
+
+  test('open: one band with the root, the newest eight, a more line, and a foot with Collapse · count · Reply in thread · Follow', () => {
+    const { container, setCollapsed, toggleFollowing } = renderThread();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 11 replies' }));
     const block = container.querySelector('.v2-thread-block--open');
-    expect(block).toBeTruthy();
+    expect(block.querySelector('#message-20')).toBeTruthy();
     expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(8);
     fireEvent.click(within(block).getByRole('button', { name: '3 more replies' }));
     expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(11);
     const foot = block.querySelector('.v2-thread-replies__foot');
     expect(foot).toHaveTextContent('11 replies');
+    expect(within(foot).getByRole('button', { name: /reply from expanded thread/i })).toBeInTheDocument();
+    const follow = within(foot).getByRole('button', { name: 'Follow' });
+    expect(follow).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(follow);
+    expect(toggleFollowing).toHaveBeenCalledWith('20');
     fireEvent.click(within(foot).getByRole('button', { name: 'Collapse' }));
-    expect(toggleCollapsed).toHaveBeenCalledWith('20');
+    expect(setCollapsed).toHaveBeenLastCalledWith('20', true);
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+  });
+
+  test('landing on a reply folded behind the chip reveals the whole thread instead of fetching history', () => {
+    const onRevealed = jest.fn();
+    const { container, rerender } = renderThread({ revealMessageId: '22', onRevealed });
+    expect(onRevealed).toHaveBeenCalledWith('22', true);
+    const block = container.querySelector('.v2-thread-block--open');
+    expect(block).toBeTruthy();
+    // 22 is the second-oldest reply — outside the newest-eight window, so the fold must be gone too.
+    expect(block.querySelector('#message-22')).toBeTruthy();
+    expect(block.querySelectorAll('.v2-thread-replies .v2-msg')).toHaveLength(11);
+    onRevealed.mockClear();
+    renderThread({ revealMessageId: '999', onRevealed });
+    expect(onRevealed).toHaveBeenCalledWith('999', false);
+  });
+
+  test('the strip keeps react as its first icon, disabled, when the row cannot take a reaction', () => {
+    render(
+      <V2MessageActions
+        message={msg(6)}
+        author="Vera"
+        onReply={jest.fn()}
+        onThread={jest.fn()}
+        canInteract={false}
+        pickerOpen={false}
+        reactions={[]}
+        onTogglePicker={jest.fn()}
+        onToggleReaction={jest.fn()}
+      />,
+    );
+    const strip = screen.getByRole('toolbar', { name: 'Message actions' });
+    const buttons = within(strip).getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Add reaction', 'Reply to Vera', 'Thread from Vera', 'More']);
+    expect(buttons[0]).toBeDisabled();
+  });
+
+  test('transcript avatars are flat two-tone squares: agent cobalt, human tint, no illustration', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <V2MessageRow message={msg(30, { user: { username: 'sprint-impl', isBot: true } })} />
+        <V2MessageRow message={msg(31, { user: { username: 'sam', isBot: false } })} />
+      </MemoryRouter>,
+    );
+    const agent = container.querySelector('#message-30 .v2-avatar');
+    const human = container.querySelector('#message-31 .v2-avatar');
+    expect(agent).toHaveClass('v2-avatar--flat', 'v2-avatar--flat-agent');
+    expect(human).toHaveClass('v2-avatar--flat', 'v2-avatar--flat-human');
+    expect(agent.querySelector('img')).toBeNull();
+    expect(agent.textContent).toBe('SI');
   });
 });
