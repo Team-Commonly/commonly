@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { requestFirstRunGuide } from '../firstRunGuide';
+import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 
 type ActivityWindow = 'today' | '7d';
 
@@ -92,6 +93,18 @@ const V2ActivityPage: React.FC = () => {
   const [composeError, setComposeError] = useState<string | null>(null);
 
   const [queue, setQueue] = useState<NeedsYouItem[]>([]);
+  const [queueCount, setQueueCount] = useState<number | null>(null);
+  const [queueFailed, setQueueFailed] = useState(false);
+
+  useEffect(() => {
+    const refresh = () => setReloadKey((value) => value + 1);
+    globalThis.window.addEventListener(ATTENTION_CHANGED, refresh);
+    globalThis.window.addEventListener('focus', refresh);
+    return () => {
+      globalThis.window.removeEventListener(ATTENTION_CHANGED, refresh);
+      globalThis.window.removeEventListener('focus', refresh);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -99,9 +112,8 @@ const V2ActivityPage: React.FC = () => {
     setError(null);
     const token = localStorage.getItem('token');
     const headers = { 'x-auth-token': token ?? '' };
-    // The recap paints the room; the decision queue is the reason the page
-    // exists (TASK-083). They load together, but a queue failure must not
-    // blank the recap — degrade to recap.needsYou (mentions + approvals).
+    // Recap and attention are independent facts. A failed queue read must
+    // never substitute recap mentions or pretend the queue is empty.
     Promise.all([
       axios.get<ActivityRecap>('/api/activity/recap', {
         headers,
@@ -110,6 +122,8 @@ const V2ActivityPage: React.FC = () => {
       axios.get<{
         items: Array<NeedsYouItem & { createdAt?: string | null }>;
         composePodId?: string | null;
+        count: number;
+        countsByPod: Record<string, number>;
       }>(
         '/api/activity/decision-queue',
         { headers },
@@ -118,9 +132,6 @@ const V2ActivityPage: React.FC = () => {
       .then(([recapResponse, queueResponse]) => {
         if (!active) return;
         setRecap(recapResponse.data);
-        // A well-formed queue response has an items ARRAY. Anything else —
-        // endpoint failed (null), older server, malformed body — degrades to
-        // recap.needsYou (mentions + approvals) rather than an empty queue.
         const rawItems = queueResponse?.data?.items;
         const availablePods = recapResponse.data.pods || [];
         const setComposeDefault = (candidate = '') => {
@@ -129,11 +140,16 @@ const V2ActivityPage: React.FC = () => {
             current && availablePods.some((pod) => pod.id === current) ? current : fallback
           ));
         };
-        if (!Array.isArray(rawItems)) {
-          setQueue(recapResponse.data.needsYou || []);
+        if (!Array.isArray(rawItems) || typeof queueResponse?.data?.count !== 'number'
+          || (podId !== 'all' && !queueResponse?.data?.countsByPod)) {
+          setQueue([]);
+          setQueueCount(null);
+          setQueueFailed(true);
           setComposeDefault();
           return;
         }
+        setQueueFailed(false);
+        setQueueCount(podId === 'all' ? queueResponse!.data.count : (queueResponse!.data.countsByPod?.[podId] || 0));
         const queueItems = rawItems.map((item) => ({
           ...item,
           detail: item.detail || '',
@@ -184,6 +200,7 @@ const V2ActivityPage: React.FC = () => {
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.success) throw new Error('Approval action failed');
+      notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.approval.actionFailed'));
@@ -204,6 +221,7 @@ const V2ActivityPage: React.FC = () => {
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.ok) throw new Error('Decision ruling failed');
+      notifyAttentionChanged();
       setOtherDecisionId(null);
       setOtherDecisionValue('');
       setReloadKey((value) => value + 1);
@@ -235,6 +253,7 @@ const V2ActivityPage: React.FC = () => {
         { headers: { 'x-auth-token': token ?? '' } },
       );
       setComposeDraft('');
+      notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
       setComposeError(t('activity.compose.actionFailed'));
@@ -266,6 +285,7 @@ const V2ActivityPage: React.FC = () => {
       setRepliedIds((prev) => new Set(prev).add(item.id));
       setReplyDrafts((prev) => ({ ...prev, [item.id]: '' }));
       if (item.attentionItemId) await axios.post(`/api/activity/${item.attentionItemId}/acknowledge`, {}, { headers: { 'x-auth-token': token ?? '' } }).catch(() => null);
+      notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.mention.actionFailed'));
@@ -286,6 +306,7 @@ const V2ActivityPage: React.FC = () => {
         { headers: { 'x-auth-token': token ?? '' } },
       );
       if (!response.data?.success) throw new Error('Mention acknowledgement failed');
+      notifyAttentionChanged();
       setReloadKey((value) => value + 1);
     } catch {
       setActionError(t('activity.mention.actionFailed'));
@@ -295,7 +316,7 @@ const V2ActivityPage: React.FC = () => {
   };
 
   const isDayZero = podId === 'all'
-    && queue.length === 0
+    && queueCount === 0
     && recap?.agents.length === 0
     && recap.board.length === 0;
 
@@ -366,10 +387,10 @@ const V2ActivityPage: React.FC = () => {
           <section className="v2-activity__section" aria-labelledby="activity-needs-you">
             <div className="v2-activity__section-heading">
               <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
-              {!isDayZero && queue.length > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queue.length })}>{queue.length}</span>}
+              {!isDayZero && queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
               <p>{t('activity.needsYou.description')}</p>
             </div>
-            {isDayZero ? (
+            {queueFailed ? <p role="status">{t('activity.loadFailed')}</p> : isDayZero ? (
               <div className="v2-activity__queue">
                 <article className="v2-activity__queue-row v2-activity__queue-row--onboarding">
                   <span className="v2-activity__queue-mark" aria-hidden="true">1</span>
@@ -411,8 +432,10 @@ const V2ActivityPage: React.FC = () => {
               </div>
             ) : queue.length === 0 ? (
               <div className="v2-activity__empty">
-                <strong>{t('activity.needsYou.emptyTitle')}</strong>
-                <span>{t('activity.needsYou.emptyDescription')}</span>
+                {queueCount === 0 ? <>
+                  <strong>{t('activity.needsYou.emptyTitle')}</strong>
+                  <span>{t('activity.needsYou.emptyDescription')}</span>
+                </> : <strong>{t('activity.needsYou.countLabel', { count: queueCount })}</strong>}
               </div>
             ) : (
               <div className="v2-activity__queue">

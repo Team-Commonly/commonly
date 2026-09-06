@@ -5,7 +5,6 @@ import V2Avatar from './V2Avatar';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Api } from '../hooks/useV2Api';
 import { useV2Pinned } from '../hooks/useV2Pinned';
-import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import { useAuth } from '../../context/AuthContext';
 
 interface Connector {
@@ -18,7 +17,7 @@ interface Connector {
 interface V2PodsSidebarProps {
   selectedPodId: string | null;
   podsState?: UseV2PodsResult;
-  attentionItems?: V2AttentionItem[];
+  attentionCountByPod?: Record<string, number>;
   // The drawer only exists below 760px. Desktop always shows this column.
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -122,7 +121,7 @@ const directMemberFor = (pod: V2Pod, currentUserId?: string): V2PodMember | unde
 );
 
 const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
-  selectedPodId, podsState, attentionItems = [], mobileOpen = false, onMobileClose,
+  selectedPodId, podsState, attentionCountByPod = {}, mobileOpen = false, onMobileClose,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -158,12 +157,6 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const directPods = pods.filter(isDirectPod);
     return { podGroups: groupWorkspacePods(roomPods, pinned), direct: sortPods(directPods) };
   }, [pods, pinned]);
-
-  const attentionCountByPod = useMemo(() => attentionItems.reduce<Record<string, number>>((counts, item) => {
-    if (!item.podId) return counts;
-    counts[item.podId] = (counts[item.podId] || 0) + 1;
-    return counts;
-  }, {}), [attentionItems]);
 
   const channels = useMemo(() => connectors.map((connector) => {
     const podId = typeof connector.podId === 'object' ? connector.podId?._id : connector.podId;

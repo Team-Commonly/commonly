@@ -214,6 +214,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podAttention).toContain("'/api/activity/decision-queue'");
     expect(v2Layout).toContain('useV2PodAttention()');
     expect(v2Layout).toContain('attentionItems={attention.items}');
+    expect(v2Layout).toContain('attentionCountByPod={attention.countByPod}');
+    expect(v2Layout).toContain('needsYouCount={attention.count}');
+    expect(v2Layout).toContain('attentionCount={attention.count === null ? null : (attention.countByPod[selectedPodId] || 0)}');
     expect(v2Layout).toContain('needsYouCount={selectedPodId ? (attention.countByPod[selectedPodId] || 0) : 0}');
     expect(podsSidebar).toContain('attentionCountByPod');
     expect(podsSidebar).toContain('selected && attentionCount > 0');

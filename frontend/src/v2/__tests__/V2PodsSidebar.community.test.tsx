@@ -47,7 +47,7 @@ const renderSidebar = (pods, selectedPodId = 'sharpen') => render(
   <MemoryRouter initialEntries={['/v2/pods/sharpen']}>
     <V2PodsSidebar
       selectedPodId={selectedPodId}
-      attentionItems={[{ id: 'decision-1', kind: 'decision', title: 'Choose workspace', podId: 'sharpen' }]}
+      attentionCountByPod={{ sharpen: 91 }}
       podsState={{
         pods,
         loading: false,
@@ -150,7 +150,7 @@ describe('V2PodsSidebar workspace groups', () => {
   test('uses the decision queue count only on the selected room and retains no legacy controls', async () => {
     renderSidebar([pod('sharpen', 'Sharpen', 'team', [human('me'), human('other')])]);
 
-    expect(await screen.findByLabelText('1 needs you')).toHaveTextContent('1');
+    expect(await screen.findByLabelText('91 needs you')).toHaveTextContent('91');
     expect(screen.queryByPlaceholderText('Search pods...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Community' })).not.toBeInTheDocument();

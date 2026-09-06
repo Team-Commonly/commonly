@@ -10,6 +10,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
+// This suite owns the BYO request sequence, not the rail's attention query.
+jest.mock('../components/V2NavRail', () => () => null);
 
 jest.mock('axios', () => {
   const mock = {

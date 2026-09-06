@@ -328,12 +328,13 @@ export const resolveMany = async (sourceType: SourceType, sourceIds: unknown[]):
   }
 };
 
-export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: any[]; count: number; composePodId: string | null }> => {
+export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: any[]; count: number; countsByPod: Record<string, number>; composePodId: string | null }> => {
   // Route callers carry a real Mongo id. Returning an empty queue for a bad
   // value keeps malformed/read-only callers from turning a cast error into a
   // 500 and makes the authorization boundary explicit.
-  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { items: [], count: 0, composePodId: null };
-  const rows = await AttentionItem.find({ recipientUserId, status: 'open' }).sort({ createdAt: -1 }).limit(80).lean();
+  if (!/^[a-f\d]{24}$/i.test(String(recipientUserId))) return { items: [], count: 0, countsByPod: {}, composePodId: null };
+  // Counts include every accessible open item; only the rendered cards are capped.
+  const rows = await AttentionItem.find({ recipientUserId, status: 'open' }).sort({ createdAt: -1 }).lean();
   const podIds = [...new Set(rows.map((row: any) => String(row.podId)))];
   const pods = await Pod.find({ _id: { $in: podIds } }).select('_id name createdBy members').lean();
   const allowed = new Map(pods.filter((pod: any) => isCurrentMember(pod, recipientUserId)).map((pod: any) => [String(pod._id), pod]));
@@ -354,7 +355,12 @@ export const getOpenQueue = async (recipientUserId: unknown): Promise<{ items: a
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
     });
   }
-  return { items: picked, count: valid.length, composePodId: picked.find((row) => row.kind === 'mention')?.podId || null };
+  const countsByPod = valid.reduce((counts: Record<string, number>, row: any) => {
+    const podId = String(row.podId);
+    counts[podId] = (counts[podId] || 0) + 1;
+    return counts;
+  }, {});
+  return { items: picked, count: valid.length, countsByPod, composePodId: picked.find((row) => row.kind === 'mention')?.podId || null };
 };
 
 export const acknowledgeMention = async (recipientUserId: unknown, attentionItemId: string): Promise<{ success: boolean; error?: string }> => {
