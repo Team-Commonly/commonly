@@ -92,7 +92,7 @@ export const resolveDecisionCardReply = async (input: {
       );
     } catch (error) {
       // Settlement has committed. Never turn a projection failure into a
-      // provider retry of the human's ruling; the sweep repairs this mark.
+      // provider retry of the human's ruling; PR 3's sweep will repair this mark.
       console.warn('[decision-card] close stamp failed:', (error as Error).message);
     }
   };
@@ -100,10 +100,17 @@ export const resolveDecisionCardReply = async (input: {
     at?: Date | string; by?: string; byUsername?: string; value?: string;
   }): Promise<CardReplyResult> => {
     await close();
-    const minutes = Math.max(0, Math.floor((Date.now() - new Date(ruling.at || Date.now()).getTime()) / 60_000));
-    const rel = minutes < 1 ? 'just now' : `${minutes}m ago`;
+    const minutes = ruling.at == null ? NaN
+      : Math.max(0, Math.floor((Date.now() - new Date(ruling.at).getTime()) / 60_000));
+    let rel = '';
+    if (Number.isFinite(minutes)) {
+      if (minutes < 1) rel = ' just now';
+      else if (minutes < 60) rel = ` ${minutes}m ago`;
+      else if (minutes < 1440) rel = ` ${Math.floor(minutes / 60)}h ago`;
+      else rel = ` ${Math.floor(minutes / 1440)}d ago`;
+    }
     return {
-      ...answer(`Already ruled ${rel} by ${ruling.by || ruling.byUsername || 'Human'}: ${ruling.value || ''}.`
+      ...answer(`Already ruled${rel} by ${ruling.by || ruling.byUsername || 'Human'}: ${ruling.value || ''}.`
         + ` To change it, the agent asks again — say so in the workspace: ${link}`),
       lateReply: {
         podId, messageId: card.podMessageId, ...(row.threadRootId ? { threadRootId: row.threadRootId } : {}),

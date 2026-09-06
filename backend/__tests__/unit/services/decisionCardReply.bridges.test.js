@@ -175,6 +175,38 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
     expect(confirmation()).toContain('Already ruled');
   });
 
+  test.each([
+    [undefined, ''],
+    [null, ''],
+    [-1, ' just now'],
+    [0, ' just now'],
+    [59, ' just now'],
+    [60, ' 1m ago'],
+    [3599, ' 59m ago'],
+    [3600, ' 1h ago'],
+    [86399, ' 23h ago'],
+    [86400, ' 1d ago'],
+    [172800, ' 2d ago'],
+  ])('standing ruling age %s seconds renders "%s" without changing settlement', async (ageSeconds, relative) => {
+    const now = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    const at = ageSeconds == null ? ageSeconds : new Date(now - ageSeconds * 1000);
+    await Decision.updateOne({ _id: decision._id }, {
+      $set: { status: 'ruled', ruling: { value: 'Later', byUsername: 'sam', ...(at === undefined ? {} : { at }) } },
+    });
+    const original = (await Decision.findById(decision._id).lean()).ruling;
+    const originalLedger = await ledger();
+    await receive('1');
+    const link = `https://commonly.me/v2/pods/${podId}?message=700`;
+    expect(confirmation()).toBe(`Already ruled${relative} by sam: Later.`
+      + ` To change it, the agent asks again — say so in the workspace: ${link}`);
+    expect(choose).not.toHaveBeenCalled();
+    expect((await Decision.findById(decision._id).lean()).ruling).toEqual(original);
+    expect(await ledger()).toEqual(originalLedger);
+    expect((await receipts())[0].closedAt).toEqual(expect.any(Date));
+    expect(messages).toEqual([expect.objectContaining({ podId, replyTo: '700', thread_root_id: '700' })]);
+  });
+
   test('409-lock: no write; after injected clock expires the lease, same reply rules', async () => {
     const now = Date.now();
     await Decision.updateOne({ _id: decision._id }, { $set: { rulingLock: { token: 'other-tab', expiresAt: new Date(now + 120000) } } });
