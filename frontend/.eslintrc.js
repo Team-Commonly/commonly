@@ -62,7 +62,7 @@ module.exports = {
         'src/v2/components/V2AdminUsers.tsx',
         'src/v2/components/V2AgentBYO.tsx',
         'src/v2/components/V2FeedbackMenu.tsx',
-        'src/v2/components/V2PodInspector.tsx',
+        'src/v2/components/V2Inspector.tsx',
         'src/v2/components/V2PodsSidebar.tsx',
         'src/v2/components/V2YourTeamPage.tsx',
       ],

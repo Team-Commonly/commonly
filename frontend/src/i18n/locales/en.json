@@ -957,6 +957,27 @@
       "stat_one": "{{complete}} of {{total}} task complete",
       "stat_other": "{{complete}} of {{total}} tasks complete"
     },
+    "workspace": {
+      "ariaLabel": "Pod inspector",
+      "close": "Close inspector",
+      "agentsIn": "agents in {{pod}}",
+      "noAgents": "no agents yet",
+      "needsYou": "needs you",
+      "nothingOpen": "Nothing open.",
+      "nothingWorking_one": "Nothing. {{agents}} is working.",
+      "nothingWorking_other": "Nothing. {{agents}} are working.",
+      "boardToday": "board · today",
+      "boardCounts": "{{open}} open · {{inProgress}} in progress · {{done}} done",
+      "wip": "wip",
+      "members": "members",
+      "manage": "manage",
+      "agentStatus": {
+        "needsYou": "needs you · {{title}}",
+        "workingTask": "working · {{title}}",
+        "working": "working",
+        "idle": "idle"
+      }
+    },
     "goal": {
       "title": "Goal",
       "empty": "No goal set yet."

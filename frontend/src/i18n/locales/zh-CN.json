@@ -954,6 +954,26 @@
       "stat": "{{total}} 个任务中已完成 {{complete}} 个",
       "stat_other": "{{total}} 个任务中已完成 {{complete}} 个"
     },
+    "workspace": {
+      "ariaLabel": "Pod 检视器",
+      "close": "关闭检视器",
+      "agentsIn": "{{pod}} 中的智能体",
+      "noAgents": "暂无智能体",
+      "needsYou": "需要你处理",
+      "nothingOpen": "没有待处理项。",
+      "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
+      "boardToday": "看板 · 今天",
+      "boardCounts": "{{open}} 开放 · {{inProgress}} 进行中 · {{done}} 完成",
+      "wip": "进行中",
+      "members": "成员",
+      "manage": "管理",
+      "agentStatus": {
+        "needsYou": "需要你处理 · {{title}}",
+        "workingTask": "进行中 · {{title}}",
+        "working": "进行中",
+        "idle": "空闲"
+      }
+    },
     "goal": {
       "title": "目标",
       "empty": "尚未设定目标。"
