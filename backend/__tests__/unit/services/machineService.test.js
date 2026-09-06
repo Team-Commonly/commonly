@@ -63,6 +63,31 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(result.lastSeenAt).toBeInstanceOf(Date);
   });
 
+  it('stores reported agent states wholesale, drops malformed entries, and preserves the last report when the array is absent', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Agent Mac' });
+    const persisted = await Machine.findById(machine.id);
+
+    const reported = await machineService.recordMachineHeartbeat(persisted, [
+      { agentName: 'Wren-Test', state: 'running', restarts: 2 },
+      { agentName: 'kai-test', instanceId: 'ci', state: 'crashed', restarts: -3 },
+      { agentName: '', state: 'running' },
+      { agentName: 'bad-state', state: 'sleeping' },
+    ]);
+    expect(reported.agentStates).toEqual([
+      { agentName: 'wren-test', instanceId: 'default', state: 'running', restarts: 2 },
+      { agentName: 'kai-test', instanceId: 'ci', state: 'crashed', restarts: 0 },
+    ]);
+
+    // A Phase-1 daemon that reports no array must not erase the last report.
+    const unchanged = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id));
+    expect(unchanged.agentStates).toHaveLength(2);
+
+    // An explicit empty array IS a report: nothing is supervised any more.
+    const cleared = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), []);
+    expect(cleared.agentStates).toEqual([]);
+  });
+
   it('returns only the credential-bound machine for daemon status', async () => {
     const ownerUserId = new mongoose.Types.ObjectId();
     const first = await machineService.registerMachine({ ownerUserId, name: 'First Mac' });
