@@ -98,6 +98,57 @@ describe('tick', () => {
     ]);
   });
 
+  test('a declared model lands in the token record environment', async () => {
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model: 'opus' } })],
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { model: 'opus' },
+    }));
+  });
+
+  test('no declared model — no environment key invented', async () => {
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+    });
+    await supervisor.tick();
+    expect(saveToken.mock.calls[0][1]).not.toHaveProperty('environment');
+  });
+
+  test('a model changed server-side updates the record and restarts the seat', async () => {
+    let model = 'opus';
+    const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
+    const { supervisor, children, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', model } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(children).toHaveLength(1);
+    expect(saveToken).not.toHaveBeenCalled();
+
+    model = 'sonnet';
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      environment: { model: 'sonnet' },
+    }));
+    // Restart flows through the exit event (D6): kill now, respawn on exit.
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(children).toHaveLength(1);
+    children[0].child.emit('exit', 0);
+    // desired stays true → exit handler schedules the respawn.
+  });
+
+  test('a row without a model never strips a hand-set environment', async () => {
+    const tokens = { 'wren-test': { agentName: 'wren-test', environment: { model: 'opus' } } };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper' } })],
+      tokens,
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+  });
+
   test('an existing token file skips the mint entirely', async () => {
     const { supervisor, client, children } = makeHarness({
       rows: () => [boundRow()],

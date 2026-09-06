@@ -128,6 +128,11 @@ const V2AgentBYO: React.FC = () => {
   // daemon on the chosen machine adopts, provisions, and starts the agent.
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [machineId, setMachineId] = useState<string>('');
+  // Model choice for the on-my-computer path. Aliases, not version-pinned
+  // ids: the seat runs on the USER's own CLI install, whose model ids move —
+  // 'opus'/'sonnet'/'haiku' stay valid across releases. Empty = the
+  // adapter's own default.
+  const [model, setModel] = useState<string>('');
   const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
   const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
 
@@ -333,7 +338,10 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_SCOPES,
-          config: { runtime: { runtimeType: 'wrapper' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          config: {
+            runtime: { runtimeType: 'wrapper', ...(model ? { model } : {}) },
+            ...(personaCard ? { persona: personaCard.key } : {}),
+          },
           displayName: personaCard?.name || cleanName,
         });
       } catch (installErr) {
@@ -649,6 +657,23 @@ const V2AgentBYO: React.FC = () => {
                 ))}
               </select>
               <span className="v2-byo__hint">{t('agentByo.form.machineHint')}</span>
+            </label>
+          )}
+          {mode === 'machine' && (
+            <label className="v2-byo__field">
+              <span className="v2-byo__label">{t('agentByo.form.modelLabel')}</span>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="v2-byo__input"
+                data-testid="byo-model-select"
+              >
+                <option value="">{t('agentByo.form.modelDefault')}</option>
+                <option value="opus">{t('agentByo.form.modelOpus')}</option>
+                <option value="sonnet">{t('agentByo.form.modelSonnet')}</option>
+                <option value="haiku">{t('agentByo.form.modelHaiku')}</option>
+              </select>
+              <span className="v2-byo__hint">{t('agentByo.form.modelHint')}</span>
             </label>
           )}
           <label className="v2-byo__field">
