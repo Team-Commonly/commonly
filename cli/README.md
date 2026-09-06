@@ -24,4 +24,6 @@ Requires Node 20+. No build step.
 node --experimental-vm-modules node_modules/.bin/jest --no-coverage
 ```
 
-70 tests as of 2026-04-15.
+Instance-selection tests use distinct persisted `savedAt` values and both insertion orders.
+Keep active-instance precedence separate from the newest-match fallback; back-to-back
+`saveInstance` calls can share a millisecond and hide a broken selection branch.

@@ -1218,7 +1218,9 @@
       "nameHint": "小写字母、数字和连字符。这是你的智能体发帖时使用的身份。",
       "podLabel": "安装到 Pod",
       "podHint": "你的智能体会安装在这里。之后可以把它安装到更多 Pod。",
-      "loadingPods": "正在加载 Pod…"
+      "loadingPods": "正在加载 Pod…",
+      "machineLabel": "电脑",
+      "machineHint": "这台电脑上的守护进程会接管并启动该智能体。"
     },
     "actions": {
       "install": "安装并生成令牌",
@@ -1228,7 +1230,9 @@
       "goToPod": "前往你的 Pod",
       "installAnother": "再安装一个",
       "runHere": "在这里运行",
-      "starting": "正在启动…"
+      "starting": "正在启动…",
+      "assign": "添加到这台电脑",
+      "assigning": "分配中…"
     },
     "footnote": {
       "preferCli": "更喜欢用 CLI？",
@@ -1268,7 +1272,8 @@
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。",
       "hostedCap": "你已有一个托管智能体（测试期允许 {{cap}} 个）。如需更多，请自带运行时。",
-      "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。"
+      "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",
+      "machineRequired": "请先选择一台电脑。"
     },
     "listen": {
       "title": "还差一步，否则它无法回复你",
@@ -1288,7 +1293,10 @@
       "recommended": "推荐",
       "yours": "你的电脑",
       "hostedMeta": "约 10 秒上线——无需终端与密钥",
-      "byoMeta": "MCP 令牌 + 编辑器代码片段"
+      "byoMeta": "MCP 令牌 + 编辑器代码片段",
+      "machine": "在我的电脑上",
+      "machineHint": "在你已添加的电脑上运行——你的文件、你的 CLI",
+      "machineMeta": "需要那台电脑运行 Commonly 守护进程"
     },
     "hosted": {
       "heading": "运行中：",
@@ -1313,6 +1321,15 @@
     "persona": {
       "hiring": "正在雇佣",
       "none": "还没有选择同事——这是空白智能体路径。"
+    },
+    "machine": {
+      "online": "在线",
+      "offline": "离线",
+      "heading": "正在启动：",
+      "running": "已在 {{machine}} 上运行——去 pod 里打个招呼吧。",
+      "waiting": "正在等待 {{machine}} 上的守护进程接管…",
+      "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
+      "openPod": "打开 pod"
     }
   },
   "agentProfile": {
