@@ -818,6 +818,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread__header')).toContain('border-bottom: 1px solid var(--v2-border-soft)');
     expect(ruleBody(v2, '.v2-thread__title h1')).toContain('font: 600 15px/20px var(--v2-font)');
     expect(ruleBody(v2, '.v2-pod-header__meta')).toContain('font: 400 11px/16px var(--v2-font-mono)');
+    // Both metas carry the base class; the compact one must out-rank the base
+    // `display: flex` or 1440 shows two metas side by side (ux-lead, 2026-09-06).
+    expect(v2).toContain('.v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }');
+    expect(v2.indexOf('.v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }')).toBeGreaterThan(v2.indexOf('.v2-pod-header__meta {\n  display: flex;'));
     expect(v2).not.toContain('.v2-thread__working');
   });
 

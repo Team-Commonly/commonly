@@ -10782,8 +10782,6 @@ body.modern-ui.v2-canvas {
   min-height: 50px;
 }
 
-.v2-pod-header__meta--compact { display: none; }
-
 .v2-pod-header__meta {
   display: flex;
   flex: 0 0 auto;
@@ -10793,6 +10791,10 @@ body.modern-ui.v2-canvas {
   font: 400 11px/16px var(--v2-font-mono);
   white-space: nowrap;
 }
+
+/* The compact meta is the phone's; both carry the base class, so the
+   compact rule must out-rank the base `display: flex` above it. */
+.v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }
 
 .v2-root button.v2-pod-header__board {
   padding: 0;
@@ -10835,7 +10837,7 @@ body.modern-ui.v2-canvas {
 
   .v2-pod-header .v2-thread__header-row { min-height: 50px; }
   .v2-pod-header__meta { display: none; }
-  .v2-pod-header__meta--compact { display: flex; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; }
 
   .v2-root button.v2-thread__back {
     display: inline-grid;

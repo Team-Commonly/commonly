@@ -83,7 +83,7 @@ const renderSidebar = (pods, selectedPodId = 'sharpen', extra = {}) => render(
   <MemoryRouter initialEntries={['/v2/pods/sharpen']}>
     <V2PodsSidebar
       selectedPodId={selectedPodId}
-      attentionCountByPod={{ sharpen: 2, connectors: 1 }}
+      attentionCountByPod={{ sharpen: 2, connectors: 1, naming: 0, hq: 91 }}
       podsState={{
         pods, loading: false, error: null, createPod: mockCreatePod, patchLastMessage: jest.fn(),
       }}
@@ -149,6 +149,8 @@ describe('V2PodsSidebar — direction C', () => {
     expect(connectors).toHaveClass('v2-pods__row--unread');
     expect(within(connectors).getByLabelText('1 needs you')).toHaveTextContent('1');
     expect(within(connectors).getByText('12m')).toBeInTheDocument();
+    // Above the 12-row queue cap: the pill is the server total, never a list length.
+    expect(within(screen.getByRole('button', { name: /Commonly HQ/ })).getByLabelText('91 needs you')).toHaveTextContent('91');
     const naming = screen.getByRole('button', { name: /Naming huddle/ });
     expect(naming).not.toHaveClass('v2-pods__row--unread');
     expect(within(naming).queryByLabelText(/needs you/)).not.toBeInTheDocument();
