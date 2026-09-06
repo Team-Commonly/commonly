@@ -9659,7 +9659,8 @@ body.modern-ui.v2-canvas {
   .v2-connector-row__dot--pulse { animation: none; }
 }
 .v2-connector-row__details { display: flex; min-width: 0; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
-.v2-connector-row__details strong { overflow: hidden; color: var(--v2-ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+/* Line 1 wraps like meta does; a sentence never ellipsises at 390 (wren, 64144). */
+.v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 /* Meta wraps to a second line; it never ellipsises (lily-shen, 64026). */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
@@ -9754,7 +9755,8 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 36px; }
 .v2-root button.v2-connector-gate__name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 0; border: none; background: transparent; color: var(--v2-ink); font: 500 13px/18px var(--v2-font); text-align: left; cursor: pointer; }
 .v2-connector-gate__mark { width: 4px; height: 4px; flex: none; background: var(--v2-ink); }
-.v2-connector-gate__pod { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long pod name wraps under the mark; it never ellipsises (wren, 64144). */
+.v2-connector-gate__pod { min-width: 0; overflow-wrap: anywhere; }
 .v2-connector-gate__tag { flex: none; color: var(--v2-ink); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; }
 .v2-connector-gate__since { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
 .v2-connector-gate__since--off { color: var(--v2-text-placeholder); }
