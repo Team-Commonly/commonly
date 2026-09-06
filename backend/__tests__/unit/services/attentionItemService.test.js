@@ -215,6 +215,79 @@ describe('attentionItemService', () => {
     expect(mockMongoMessageExists).not.toHaveBeenCalled();
   });
 
+  it('reopens a replied stamp the source contradicts, and keeps the one it corroborates', async () => {
+    const rows = [
+      {
+        _id: 'attention-false', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+        source: { type: 'message', id: '42' }, messageId: '42', threadRootId: '40',
+        sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+      },
+      {
+        _id: 'attention-true', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+        source: { type: 'message', id: '43' }, messageId: '43', threadRootId: '43',
+        sourceCreatedAt: new Date('2026-09-05T09:30:00.000Z'),
+      },
+    ];
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => rows }) });
+    mockPgMessageHasReplyByUserAfter.mockImplementation(async (podId, userId, after, target) => target.messageId === '43');
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toEqual({ scanned: 2, kept: 1, contradicted: 1, reopened: 1, undecidable: 0, unavailable: 0 });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'attention-false', kind: 'mention', status: 'resolved', resolvedBy: 'replied' },
+      { $set: { status: 'open' }, $unset: { resolvedAt: '', resolvedBy: '' } },
+    );
+  });
+
+  it('changes nothing without --apply, and still reports what it would reopen', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-false', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      source: { type: 'message', id: '42' }, messageId: '42',
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+    mockPgMessageHasReplyByUserAfter.mockResolvedValue(false);
+
+    const result = await AttentionItemService.auditRepliedMentionAttention();
+
+    expect(result).toMatchObject({ scanned: 1, contradicted: 1, reopened: 0 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('counts a Mongo-sourced stamp as undecidable rather than reopening it', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [{
+      _id: 'attention-mongo', recipientUserId: 'sam', podId: 'pod-1', kind: 'mention',
+      source: { type: 'message', id: '507f191e810c19729de860ea' },
+      sourceCreatedAt: new Date('2026-09-05T09:00:00.000Z'),
+    }] }) });
+
+    const result = await AttentionItemService.auditRepliedMentionAttention({ apply: true });
+
+    expect(result).toMatchObject({ scanned: 1, kept: 0, contradicted: 0, reopened: 0, undecidable: 1 });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+    expect(mockPgMessageHasReplyByUserAfter).not.toHaveBeenCalled();
+  });
+
+  it('reads only replied stamps, and honours the resolvedBefore bound', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+    const before = new Date('2026-09-06T00:00:00.000Z');
+
+    await AttentionItemService.auditRepliedMentionAttention({ resolvedBefore: before });
+
+    expect(mockFind).toHaveBeenCalledWith({
+      kind: 'mention', status: 'resolved', resolvedBy: 'replied', resolvedAt: { $lt: before },
+    });
+  });
+
+  it('omits the resolvedAt bound entirely when none is given', async () => {
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [] }) });
+
+    await AttentionItemService.auditRepliedMentionAttention();
+
+    expect(mockFind).toHaveBeenCalledWith({ kind: 'mention', status: 'resolved', resolvedBy: 'replied' });
+  });
+
   it('materializes a blocked board row once for each current human recipient', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'owner', members: [{ userId: 'sam' }] }));
     mockUserFind.mockReturnValue(chain([

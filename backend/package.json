@@ -23,6 +23,7 @@
     "bootstrap:clawd-bot": "node scripts/bootstrap-clawd-bot.js",
     "backfill:attention-items": "ts-node scripts/backfill-attention-items.ts",
     "sweep:resolved-mention-attention": "ts-node scripts/sweep-resolved-mention-attention.ts",
+    "audit:replied-attention-stamps": "ts-node scripts/audit-replied-attention-stamps.ts",
     "tsc:check": "tsc --noEmit -p tsconfig.typescheck.json",
     "tsc:check:all": "tsc --noEmit"
   },

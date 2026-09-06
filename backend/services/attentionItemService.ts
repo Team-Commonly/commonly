@@ -236,6 +236,59 @@ export const sweepResolvedMentionAttention = async ({ apply = false }: { apply?:
   return { scanned: rows.length, eligible, resolved, unavailable };
 };
 
+/**
+ * Audit rows already stamped `resolvedBy: 'replied'`. Before the narrow
+ * resolver landed, any post by the recipient in the pod closed every open
+ * mention they held there, so a row can assert a reply that was never
+ * written. This re-reads each row's source with the same evidence the sweep
+ * uses and reopens only the ones the source contradicts.
+ *
+ * Three outcomes, not two. `undecidable` exists because Mongo-fallback
+ * sources persist no reply or thread edges: absence of evidence there is not
+ * evidence the recipient stayed silent, and reopening those would re-raise
+ * attention a user has already dealt with. They are counted and left alone.
+ */
+export const auditRepliedMentionAttention = async (
+  { apply = false, resolvedBefore }: { apply?: boolean; resolvedBefore?: Date } = {},
+) => {
+  const before = validDate(resolvedBefore);
+  const rows = await AttentionItem.find({
+    kind: 'mention',
+    status: 'resolved',
+    resolvedBy: 'replied',
+    ...(before ? { resolvedAt: { $lt: before } } : {}),
+  }).sort({ createdAt: 1 }).lean();
+  let kept = 0;
+  let contradicted = 0;
+  let reopened = 0;
+  let undecidable = 0;
+  let unavailable = 0;
+  for (const row of rows) {
+    try {
+      const sourceId = String(row?.source?.id || '');
+      // Only a PostgreSQL source carries the reply and thread edges this
+      // audit needs; see recipientRepliedAfterMention.
+      if (!/^\d+$/.test(sourceId)) { undecidable += 1; continue; }
+      const sourceCreatedAt = await sourceTimeForMention(row);
+      if (!sourceCreatedAt) { undecidable += 1; continue; }
+      if (await recipientRepliedAfterMention(row, sourceCreatedAt)) { kept += 1; continue; }
+      contradicted += 1;
+      if (!apply) continue;
+      // Repeat the stamp in the filter so a row an operator acknowledged
+      // between the read and the write is not reopened underneath them.
+      const result = await AttentionItem.updateOne(
+        { _id: row._id, kind: 'mention', status: 'resolved', resolvedBy: 'replied' },
+        { $set: { status: 'open' }, $unset: { resolvedAt: '', resolvedBy: '' } },
+      );
+      reopened += Number(result.modifiedCount || 0);
+    } catch (error) {
+      unavailable += 1;
+      console.warn('[attention] replied-stamp audit skipped an unreadable source:', (error as Error).message);
+    }
+  }
+  return { scanned: rows.length, kept, contradicted, reopened, undecidable, unavailable };
+};
+
 export const recordApproval = async (approval: any): Promise<void> => {
   try {
     const podId = approval?.podId;
@@ -381,6 +434,6 @@ export const acknowledgeMention = async (recipientUserId: unknown, attentionItem
   return result.modifiedCount === 1 ? { success: true } : { success: false, error: 'Attention item not found' };
 };
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, recordApproval, recordDecision, recordTaskAttention, resolveTaskAttention, resolve, resolveMany, getOpenQueue, acknowledgeMention, TASK_HANDOFF_RE };
