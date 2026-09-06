@@ -2,7 +2,7 @@
 
 Chosen by Sam on 2026-09-03 from three named directions (Studio, Workshop, Signal) on one canvas, then applied screen by screen. This document is the spec of the *system*; the canvas is the spec of each *screen*:
 
-- Canvas: https://claude.ai/code/artifact/2c6cfbd9-6f18-4da3-91a1-24eea2a635d6 — pages **Workspace in C** (chat + inspector, Activity, Your team, agent profile, phone shell, the delegate), **Front door** (landing at 1440 and 390, connect, create account), **Directions** (the three candidates, for reference), **Coverage** (the survey of every remaining screen and the six drawn from it: invite, connectors, settings, board, bring your own, reset password).
+- Canvas: https://claude.ai/code/artifact/3c07344a-86f2-4296-b3f0-a49a0b451503 — pages **Workspace in C** (chat + inspector, Activity, Your team, agent profile, phone shell, the delegate), **Front door** (landing at 1440 and 390, connect, create account), **Directions** (the three candidates, for reference), **Coverage** (the survey of every remaining screen and the six drawn from it: invite, connectors, settings, board, bring your own, reset password).
 - Tokens: `frontend/src/v2/v2.css` (ships) and `frontend/design-system/tokens.css` (mirror). They move together in one PR.
 - Anchor: `frontend/design-system/README.md` § *Identity: Signal* carries the short form of this page.
 
@@ -51,7 +51,7 @@ Counts live in mono next to the thing they count (`7 open · 2 need you`), never
 - **Page head.** Display 32px + muted 13px meta on one baseline; actions on the right: one ink primary, secondaries bordered. Heights: 36px in heads, 40px in forms, 44–48px on the front door. Padding 0 12–18px, weight 600, size 13–15.
 - **Inputs.** 40px (in-app) or 44px (front door), 1px `#d0d5dd`, radius 4, 12px side padding, 13px 500 label in secondary above, 12px muted hint below. Focus: cobalt border + ring.
 - **Rows and tables.** A bordered container (radius 4) with `#e4e7ec` dividers; each row a CSS grid with named column widths; the name in display 18px, meta in mono 12px, the action right-aligned. No zebra, no header row unless the columns need naming.
-- **Cards in a grid.** `repeat(3, minmax(0,1fr))`, 12px gap, 16px padding, radius 4, 1px border; the one that needs you gets the 2px cobalt ring. Card body: 40px avatar + display 18 name + mono 11 status; 13px secondary copy; mono 11px chips (2px 6px, bordered) for rooms; an action row.
+- **Cards in a grid.** `repeat(3, minmax(0,1fr))`, 12px gap, 16px padding, radius 4, 1px border; the one that needs you gets the 2px cobalt ring. Card body: 40px avatar + display 18 name + mono 11 status; 13px secondary copy; mono 11px chips (2px 6px, bordered) for pods; an action row.
 - **Chat samples and asides.** Panel `#f9fafb`, radius 6, 18px padding; my lines ink on the right; an agent's lines white with a 3px cobalt left border and the name in mono cobalt; a digest line white with a `#e4e7ec` border and the name in muted mono.
 - **Command blocks.** Ink ground, radius 4, mono 14–18 white, the Copy control in cobalt.
 - **Numbered steps.** Mono cobalt `01 02 03` at 28px column, only when the order carries information (a sequence the reader performs). Lists that are not sequences are not numbered.
@@ -59,6 +59,9 @@ Counts live in mono next to the thing they count (`7 open · 2 need you`), never
 - **Phone (390).** The rail becomes a bottom bar; the content card loses its border and goes edge to edge; the inspector is a sheet. See *Workspace · 390* on the canvas; no per-page phone artboards are drawn, the shell rule fixes every page.
 
 ## 5. Copy
+
+The product's nouns are the only nouns: **pod** (never room, channel-as-pod, or space), **agent**, **connector**, **decision**. An artboard is a spec, so a synonym written on it becomes a product term; change a noun only with Sam, deliberately.
+
 
 Real copy on every artboard, final draft, in the product's voice: short declaratives, second person, sentence case, agents by name. No lorem, no "welcome", no marketing filler. Facts that are not known are bracketed, never invented. Names, counts and times on artboards are sample values and say so in the note. Numbers appear only where they change what the reader does.
 
