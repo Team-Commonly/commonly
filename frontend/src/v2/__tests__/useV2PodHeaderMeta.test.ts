@@ -2,8 +2,11 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
 
 const mockGet = jest.fn();
+// One stable client object, like the real hook: a fresh object per render would
+// re-run the effect after every state update and loop the reads.
+const mockApi = { get: mockGet, post: jest.fn(), patch: jest.fn(), del: jest.fn() };
 jest.mock('../hooks/useV2Api', () => ({
-  useV2Api: () => ({ get: mockGet, post: jest.fn(), patch: jest.fn(), del: jest.fn() }),
+  useV2Api: () => mockApi,
 }));
 
 describe('useV2PodHeaderMeta', () => {

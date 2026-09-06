@@ -79,30 +79,22 @@ const renderChat = (detail) => render(
 );
 
 describe('V2Composer send button', () => {
-  test('uses the artboard’s compact working count in the thread header', () => {
+  test('the pod header carries the direction-C meta (members · agents), not a working count', () => {
     const view = renderChat(makeDetail({
       pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
+      members: [{ _id: 'u1', username: 'alice', isBot: false }, { _id: 'u2', username: 'bob', isBot: false }],
+      agents: [{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }],
     }));
 
-    expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('0 agents working');
-    expect(view.container.querySelector('.v2-thread__working')).not.toHaveClass('v2-thread__working--active');
-
-    view.rerender(
-      <AuthContext.Provider value={authValue}>
-        <MemoryRouter>
-          <V2Thread detail={makeDetail({
-            pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
-            agents: [{
-              agentName: 'scout', instanceId: 'default', displayName: 'Scout',
-              lastHeartbeatAt: new Date().toISOString(),
-            }],
-          })} />
-        </MemoryRouter>
-      </AuthContext.Provider>,
-    );
-
-    expect(view.container.querySelector('.v2-thread__working')).toHaveTextContent('1 agent working');
-    expect(view.container.querySelector('.v2-thread__working')).toHaveClass('v2-thread__working--active');
+    const header = view.container.querySelector('.v2-pod-header');
+    expect(header).toBeTruthy();
+    expect(header.querySelector('h1')).toHaveTextContent('My Workspace');
+    expect(header.querySelector('.v2-thread__title p')).toHaveTextContent('Team discussion');
+    const meta = header.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    expect(meta).toHaveTextContent('2 members');
+    expect(meta).toHaveTextContent('1 agent');
+    expect(header.querySelector('.v2-pod-header__meta--compact')).toHaveTextContent('2 · 1 agents');
+    expect(view.container.querySelector('.v2-thread__working')).toBeNull();
   });
 
   test('clicking the send button sends the drafted text', async () => {
