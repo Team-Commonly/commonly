@@ -87,12 +87,33 @@ export const createDaemonSupervisor = ({
     }
   };
 
+  // The server-declared runtime config carries the owner's model choice; the
+  // adapter reads it from the token record's environment (claude: --model).
+  const environmentFor = (row) => (
+    row.runtime?.model ? { model: String(row.runtime.model) } : null
+  );
+
   // Ensure ~/.commonly/tokens/<name>.json exists so `agent run` can boot.
   // The mint refuses to clobber an existing token (409 token_exists); the
   // binding to THIS machine is the owner's explicit takeover choice (D3), so
   // that refusal is answered with rotate:true — loudly.
+  // Returns 'ready' | 'changed' (record updated — the seat must restart to
+  // load it) | false.
   const ensureToken = async (row) => {
-    if (loadToken(row.agentName)) return true;
+    const existing = loadToken(row.agentName);
+    if (existing) {
+      // A model changed in the UI reaches the seat here: update the record,
+      // and let the caller restart the child (`agent run` reads its record
+      // once at boot). A row with NO declared model leaves the record alone —
+      // never strip an operator's hand-set environment.
+      const wanted = environmentFor(row);
+      if (wanted && existing.environment?.model !== wanted.model) {
+        saveToken(row.agentName, { ...existing, environment: { ...(existing.environment || {}), ...wanted } });
+        log(`[${row.agentName}] model changed to ${wanted.model} — restarting the seat to load it`);
+        return 'changed';
+      }
+      return 'ready';
+    }
     const body = { agentName: row.agentName, instanceId: row.instanceId };
     let minted;
     try {
@@ -120,6 +141,7 @@ export const createDaemonSupervisor = ({
       log(`[${row.agentName}] no usable CLI adapter on this machine — install claude or codex, or attach manually`);
       return false;
     }
+    const environment = environmentFor(row);
     saveToken(row.agentName, {
       agentName: row.agentName,
       instanceId: row.instanceId,
@@ -127,9 +149,10 @@ export const createDaemonSupervisor = ({
       instanceUrl: record.instanceUrl,
       podId: row.podIds?.[0] || null,
       adapter,
+      ...(environment ? { environment } : {}),
     });
-    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter})`);
-    return true;
+    log(`[${row.agentName}] provisioned runtime token (adapter: ${adapter}${environment ? `, model: ${environment.model}` : ''})`);
+    return 'ready';
   };
 
   const tick = async () => {
@@ -180,9 +203,14 @@ export const createDaemonSupervisor = ({
         seats.set(key, seat);
       }
       seat.desired = true;
-      if (!seat.child && !seat.backoffTimer) {
-        // eslint-disable-next-line no-await-in-loop
-        if (await ensureToken(row)) startChild(seat);
+      // eslint-disable-next-line no-await-in-loop
+      const ready = await ensureToken(row);
+      if (ready === 'changed' && seat.child) {
+        // desired stays true, so the exit handler respawns with the updated
+        // record — the restart path IS the D6 path, no second spawner.
+        seat.child.kill('SIGTERM');
+      } else if (ready && !seat.child && !seat.backoffTimer) {
+        startChild(seat);
       }
     }
 
