@@ -84,6 +84,35 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
   });
 
+  test('picking a pod does not stomp an explicit mode choice', async () => {
+    // Caught live 2026-09-06: the mount effect re-runs on pod change and
+    // re-asserted the hosted default, flipping "Add to this computer" back
+    // into "Run it here" — my submit went down the hosted path.
+    mockGet();
+    axios.get.mockImplementation((url) => {
+      if (url.startsWith('/api/hosted/availability')) {
+        return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+      }
+      if (url === '/api/pods') {
+        return Promise.resolve({
+          data: [
+            { _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } },
+            { _id: 'p2', name: 'Playground', type: 'team', createdBy: { _id: 'u1' } },
+          ],
+        });
+      }
+      if (url === '/api/machines') return Promise.resolve({ data: { machines: [machineRow], offlineAfterMs: 90000 } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    fireEvent.change(screen.getByRole('combobox', { name: /install into pod/i }), { target: { value: 'p2' } });
+    // The effect refetches on podId change; the mode must survive it.
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeInTheDocument());
+    expect(screen.getByTestId('byo-mode-machine')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('submit installs a wrapper runtime and files the placement request', async () => {
     mockGet();
     axios.post.mockResolvedValue({ data: {} });
