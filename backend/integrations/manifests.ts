@@ -1,7 +1,15 @@
+export interface ProviderReadiness {
+  available: boolean;
+  /** A stable, user-safe enum; never expose configuration keys in API output. */
+  reason?: 'not_configured';
+}
+
 interface IntegrationManifest {
   id: string;
   requiredConfig: string[];
   configSchema: unknown;
+  /** Runtime readiness for an installable provider, not legacy row config. */
+  readiness?: () => ProviderReadiness;
   catalog: {
     label: string;
     provider: string;
@@ -34,6 +42,13 @@ try {
 
 const { buildConfigSchema, validateManifest } = sdk as Required<typeof sdk>;
 
+const hasConfiguration = (...keys: string[]): boolean => keys.every((key) => {
+  const value = process.env[key];
+  return typeof value === 'string' && value.trim().length > 0;
+});
+
+const notConfigured = (): ProviderReadiness => ({ available: false, reason: 'not_configured' });
+
 const manifests: Record<string, IntegrationManifest> = {
   discord: validateManifest({
     id: 'discord',
@@ -52,6 +67,15 @@ const manifests: Record<string, IntegrationManifest> = {
     id: 'slack',
     requiredConfig: ['botToken', 'signingSecret', 'channelId'],
     configSchema: buildConfigSchema(['botToken', 'signingSecret', 'channelId']),
+    readiness: () => (
+      hasConfiguration(
+        'SLACK_CLIENT_ID',
+        'SLACK_CLIENT_SECRET',
+        'SLACK_SIGNING_SECRET',
+        'CONNECTOR_SECRET_KEYS',
+        'CONNECTOR_SECRET_ACTIVE_KEY',
+      ) ? { available: true } : notConfigured()
+    ),
     catalog: {
       label: 'Slack',
       provider: 'slack',
@@ -78,6 +102,12 @@ const manifests: Record<string, IntegrationManifest> = {
     id: 'telegram',
     requiredConfig: ['chatId'],
     configSchema: buildConfigSchema(['chatId']),
+    readiness: () => (
+      hasConfiguration('TELEGRAM_BOT_TOKEN')
+        && (hasConfiguration('TELEGRAM_SECRET_TOKEN') || process.env.TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED === 'true')
+        ? { available: true }
+        : notConfigured()
+    ),
     catalog: {
       label: 'Telegram',
       provider: 'telegram',

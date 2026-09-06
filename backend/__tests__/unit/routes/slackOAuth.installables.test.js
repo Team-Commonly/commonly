@@ -10,6 +10,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
+  listIntegrationsRateLimit: (_req, _res, next) => next(),
 }));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({

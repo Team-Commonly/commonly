@@ -599,7 +599,7 @@ describe('installable connector projection', () => {
     expect((await InstallableInstallation.findById(activating._id)).status).toBe('error');
   });
 
-  it('marks a live parent stale when its projected Integration has been deleted', async () => {
+  it('makes a missing active projection a retriable parent error', async () => {
     const { userId, podId } = ids();
     const installed = await install({ installableId: 'telegram', installedBy: userId, podId });
     await Integration.deleteOne({ _id: installed.integration._id });
@@ -607,7 +607,14 @@ describe('installable connector projection', () => {
     const reconciled = await sweep(new Date());
     const parent = await InstallableInstallation.findById(installed.installation._id);
     expect(reconciled.staleComponents).toBe(1);
+    expect(parent.status).toBe('error');
+    expect(parent.errorMessage).toBe('projection missing');
     expect(parent.components.every((component) => component.status === 'stale')).toBe(true);
+
+    const retried = await install({ installableId: 'telegram', installedBy: userId, podId });
+    expect(String(retried.installation._id)).toBe(String(installed.installation._id));
+    expect(retried.state).toBe('active');
+    expect(await Integration.findById(retried.integration._id)).not.toBeNull();
   });
 
   it('reconciles pause projections and prunes gates when the owner leaves a pod', async () => {

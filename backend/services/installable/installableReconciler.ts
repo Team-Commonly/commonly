@@ -79,7 +79,13 @@ const sweepActiveInstallations = async (): Promise<{ staleComponents: number; cl
     if (integration) continue;
     const result = await InstallableInstallation.updateOne(
       { _id: installation._id, status: 'active' },
-      { $set: { 'components.$[].status': 'stale' } },
+      {
+        $set: {
+          status: 'error',
+          errorMessage: 'projection missing',
+          'components.$[].status': 'stale',
+        },
+      },
     );
     staleComponents += result.modifiedCount || 0;
   }
