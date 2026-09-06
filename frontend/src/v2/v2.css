@@ -6594,6 +6594,34 @@ body.modern-ui.v2-canvas {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* ADR-026 D1: one-paste computer setup, shown only while no machine exists. */
+.v2-byo__add-computer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-md, 8px);
+  background: var(--v2-surface-hover, #f9fafb);
+}
+.v2-byo__add-computer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2-byo__add-computer-row code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface, #fff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--v2-text-primary);
+  overflow-x: auto;
+  white-space: nowrap;
+}
 .v2-byo__cta-row {
   display: flex;
   gap: 12px;

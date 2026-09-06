@@ -1336,6 +1336,13 @@
       "waiting": "正在等待 {{machine}} 上的守护进程接管…",
       "slow": "仍在等待——请确认 {{machine}} 上正在运行 commonly daemon run，恢复后会立即启动该智能体。",
       "openPod": "打开 pod"
+    },
+    "addComputer": {
+      "title": "添加电脑",
+      "lead": "想让智能体在你自己的电脑上运行？在它的终端里粘贴一次：",
+      "after": "然后刷新本页——会出现“在我的电脑上”选项，之后往那台电脑添加智能体再也不需要终端。",
+      "copy": "复制",
+      "copied": "已复制"
     }
   },
   "agentProfile": {
