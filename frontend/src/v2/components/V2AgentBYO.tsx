@@ -45,6 +45,19 @@ type HostedAvailability = {
   configured: boolean;
   caps: { agentsPerUser: number; turnsPerDay: number };
 };
+
+// ADR-026 Phase 2: a machine registered by `commonly daemon register`. The
+// heartbeat's per-agent states are what let this page WATCH the agent come up
+// instead of ending on "now run this command".
+type MachineRow = {
+  id: string;
+  machineId: string;
+  name: string;
+  status: 'online' | 'offline';
+  agentStates?: { agentName: string; instanceId: string; state: string }[];
+};
+const MACHINE_STATUS_POLL_MS = 4000;
+const MACHINE_STATUS_MAX_TICKS = 30;
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
 
 const sanitizeAgentName = (raw: string): string => raw
@@ -107,9 +120,45 @@ const V2AgentBYO: React.FC = () => {
   // the token and hands it to the runtime server-side; nothing secret is
   // ever rendered on this screen.
   const [hosting, setHosting] = useState<HostedAvailability | null>(null);
-  const [mode, setMode] = useState<'hosted' | 'byo'>('byo');
+  const [mode, setMode] = useState<'hosted' | 'byo' | 'machine'>('byo');
   const [hosted, setHosted] = useState<{ agentName: string; podId: string } | null>(null);
   const [hostedState, setHostedState] = useState<'starting' | 'running' | 'slow'>('starting');
+  // ADR-026 Phase 2: "on my computer" — install + placement request; the
+  // daemon on the chosen machine adopts, provisions, and starts the agent.
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [machineId, setMachineId] = useState<string>('');
+  const [placed, setPlaced] = useState<{ agentName: string; machineId: string; machineName: string } | null>(null);
+  const [placedState, setPlacedState] = useState<'waiting' | 'running' | 'slow'>('waiting');
+
+  // Watch the placement come up: the machine heartbeat carries per-agent
+  // supervisor states, so "live" here means the daemon actually spawned it.
+  useEffect(() => {
+    if (!placed) return undefined;
+    let cancelled = false;
+    let ticks = 0;
+    setPlacedState('waiting');
+    const timer = setInterval(async () => {
+      ticks += 1;
+      try {
+        const data = await api.get<{ machines?: MachineRow[] }>('/api/machines');
+        if (cancelled) return;
+        const machine = (data?.machines || []).find((m) => m.machineId === placed.machineId);
+        const seat = machine?.agentStates?.find((s) => s.agentName === placed.agentName);
+        if (seat?.state === 'running') {
+          setPlacedState('running');
+          clearInterval(timer);
+          return;
+        }
+      } catch {
+        // keep polling — a transient status failure is not a stopped daemon
+      }
+      if (ticks >= MACHINE_STATUS_MAX_TICKS) {
+        setPlacedState('slow');
+        clearInterval(timer);
+      }
+    }, MACHINE_STATUS_POLL_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [api, placed]);
 
   // Same shape as the listening check below, against the runtime's own
   // status: the DO reports lastPollAt once its alarm loop has run. ~60s cap,
@@ -195,6 +244,17 @@ const V2AgentBYO: React.FC = () => {
       } catch {
         if (!cancelled) setHosting({ configured: false, caps: { agentsPerUser: 0, turnsPerDay: 0 } });
       }
+      // Third by design — the mode cards degrade gracefully without it.
+      try {
+        const machineList = await api.get<{ machines?: MachineRow[] }>('/api/machines');
+        if (cancelled) return;
+        if (Array.isArray(machineList?.machines) && machineList.machines.length > 0) {
+          setMachines(machineList.machines);
+          setMachineId((prev) => prev || machineList.machines[0].machineId);
+        }
+      } catch {
+        // No daemon machines — the "on my computer" card simply doesn't show.
+      }
     })();
     return () => { cancelled = true; };
   }, [api, podId, currentUser?._id]);
@@ -205,10 +265,12 @@ const V2AgentBYO: React.FC = () => {
   // turns this page from a form into a decision about a teammate.
   const previewName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
   const previewPodName = pods.find((p) => p._id === (hosted?.podId || issued?.podId || podId))?.name || '';
-  const previewStatus: 'draft' | 'starting' | 'live' = hosted
-    ? (hostedState === 'running' ? 'live' : 'starting')
-    : (issued && listenState === 'listening' ? 'live' : 'draft');
-  const previewDisplayName = hosted?.agentName || issued?.agentName || previewName;
+  const previewStatus: 'draft' | 'starting' | 'live' = (() => {
+    if (hosted) return hostedState === 'running' ? 'live' : 'starting';
+    if (placed) return placedState === 'running' ? 'live' : 'starting';
+    return issued && listenState === 'listening' ? 'live' : 'draft';
+  })();
+  const previewDisplayName = hosted?.agentName || placed?.agentName || issued?.agentName || previewName;
 
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
   // answers 403 hosted_cap_reached), then ask the kernel to provision. No
@@ -246,6 +308,47 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
+  // On-my-computer path (ADR-026 Phase 2): install with runtimeType 'wrapper'
+  // + persona, then file the placement request. The daemon on that machine
+  // adopts (D3 CAS), mints the credential server-side (nothing secret renders
+  // here either), and starts the agent — the page watches it come up.
+  const submitMachine = async (cleanName: string) => {
+    if (!machineId) {
+      setError(t('agentByo.errors.machineRequired'));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      try {
+        await api.post('/api/registry/install', {
+          agentName: cleanName,
+          podId,
+          scopes: DEFAULT_SCOPES,
+          config: { runtime: { runtimeType: 'wrapper' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          displayName: personaCard?.name || cleanName,
+        });
+      } catch (installErr) {
+        // Same identity-continuity tolerance as the BYO path below.
+        const msg = (installErr as { response?: { data?: { error?: string } } })
+          ?.response?.data?.error || '';
+        if (!/already installed/i.test(msg)) throw installErr;
+      }
+      await api.post('/api/agent-binding/request', {
+        agentName: cleanName, instanceId: 'default', machineId,
+      });
+      setPlaced({
+        agentName: cleanName,
+        machineId,
+        machineName: machines.find((m) => m.machineId === machineId)?.name || machineId,
+      });
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
+      setError(e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submit = async () => {
     setError(null);
     const cleanName = sanitizeAgentName(name);
@@ -259,6 +362,10 @@ const V2AgentBYO: React.FC = () => {
     }
     if (mode === 'hosted') {
       await submitHosted(cleanName);
+      return;
+    }
+    if (mode === 'machine') {
+      await submitMachine(cleanName);
       return;
     }
     setSubmitting(true);
@@ -473,9 +580,9 @@ const V2AgentBYO: React.FC = () => {
           <span>{t('agentByo.persona.none')}</span>
         </div>
       )}
-      {!issued && !hosted && (
+      {!issued && !hosted && !placed && (
         <div className="v2-byo__form">
-          {hosting?.configured && (
+          {(hosting?.configured || machines.length > 0) && (
             <div className="v2-byo__modes" role="group" aria-label={t('agentByo.mode.label')}>
               <button
                 type="button"
@@ -489,6 +596,20 @@ const V2AgentBYO: React.FC = () => {
                 <span className="v2-byo__hint">{t('agentByo.mode.hostedHint', { turns: hosting.caps.turnsPerDay })}</span>
                 <span className="v2-byo__mode-meta">{t('agentByo.mode.hostedMeta')}</span>
               </button>
+              {machines.length > 0 && (
+                <button
+                  type="button"
+                  className="v2-byo__mode"
+                  aria-pressed={mode === 'machine'}
+                  onClick={() => setMode('machine')}
+                  data-testid="byo-mode-machine"
+                >
+                  <span className="v2-byo__mode-kicker v2-byo__mode-kicker--quiet">{t('agentByo.mode.yours')}</span>
+                  <span className="v2-byo__mode-title">{t('agentByo.mode.machine')}</span>
+                  <span className="v2-byo__hint">{t('agentByo.mode.machineHint')}</span>
+                  <span className="v2-byo__mode-meta">{t('agentByo.mode.machineMeta')}</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="v2-byo__mode"
@@ -502,6 +623,24 @@ const V2AgentBYO: React.FC = () => {
                 <span className="v2-byo__mode-meta">{t('agentByo.mode.byoMeta')}</span>
               </button>
             </div>
+          )}
+          {mode === 'machine' && (
+            <label className="v2-byo__field">
+              <span className="v2-byo__label">{t('agentByo.form.machineLabel')}</span>
+              <select
+                value={machineId}
+                onChange={(e) => setMachineId(e.target.value)}
+                className="v2-byo__input"
+                data-testid="byo-machine-select"
+              >
+                {machines.map((m) => (
+                  <option key={m.machineId} value={m.machineId}>
+                    {m.name} ({t(m.status === 'online' ? 'agentByo.machine.online' : 'agentByo.machine.offline')})
+                  </option>
+                ))}
+              </select>
+              <span className="v2-byo__hint">{t('agentByo.form.machineHint')}</span>
+            </label>
           )}
           <label className="v2-byo__field">
             <span className="v2-byo__label">{t('agentByo.form.nameLabel')}</span>
@@ -539,9 +678,11 @@ const V2AgentBYO: React.FC = () => {
             disabled={submitting || !podId}
             className="v2-byo__submit"
           >
-            {mode === 'hosted'
-              ? (submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere'))
-              : (submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install'))}
+            {(() => {
+              if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
+              if (mode === 'machine') return submitting ? t('agentByo.actions.assigning') : t('agentByo.actions.assign');
+              return submitting ? t('agentByo.actions.issuing') : t('agentByo.actions.install');
+            })()}
           </button>
           <p className="v2-byo__footnote">
             {t('agentByo.footnote.preferCli')} <code>{CLI_INSTALL_COMMAND}</code>, {t('agentByo.footnote.then')}{' '}
@@ -551,6 +692,31 @@ const V2AgentBYO: React.FC = () => {
             {' · '}
             <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
+        </div>
+      )}
+
+      {placed && (
+        <div className="v2-byo__result" data-testid="byo-machine-result">
+          <div className="v2-byo__result-hero">
+            <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running'} />
+            <h2>{t('agentByo.machine.heading')} <code>{placed.agentName}</code></h2>
+          </div>
+          {placedState === 'running' ? (
+            <p data-testid="byo-machine-running">{t('agentByo.machine.running', { machine: placed.machineName })}</p>
+          ) : (
+            <p data-testid={`byo-machine-${placedState}`}>
+              {placedState === 'slow'
+                ? t('agentByo.machine.slow', { machine: placed.machineName })
+                : t('agentByo.machine.waiting', { machine: placed.machineName })}
+            </p>
+          )}
+          <button
+            type="button"
+            className="v2-byo__submit"
+            onClick={() => navigate(podId ? `/v2/pods/${podId}` : '/v2')}
+          >
+            {t('agentByo.machine.openPod')}
+          </button>
         </div>
       )}
 
