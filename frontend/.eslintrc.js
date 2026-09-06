@@ -53,7 +53,7 @@ module.exports = {
         'src/v2/components/V2InviteRedeem.tsx',
         'src/components/RegistrationInviteRequired.tsx',
         'src/components/VerifyEmail.tsx',
-        'src/v2/components/V2PodChat.tsx',
+        'src/v2/components/V2Thread.tsx',
         'src/v2/components/V2FirstRunHero.tsx',
         'src/v2/components/V2InviteModal.tsx',
         // Phase 2 — the v2 shell (#719)
@@ -62,7 +62,7 @@ module.exports = {
         'src/v2/components/V2AdminUsers.tsx',
         'src/v2/components/V2AgentBYO.tsx',
         'src/v2/components/V2FeedbackMenu.tsx',
-        'src/v2/components/V2PodInspector.tsx',
+        'src/v2/components/V2Inspector.tsx',
         'src/v2/components/V2PodsSidebar.tsx',
         'src/v2/components/V2YourTeamPage.tsx',
       ],

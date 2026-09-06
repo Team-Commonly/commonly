@@ -133,9 +133,9 @@ body.modern-ui.v2-canvas {
   --v2-shadow-pending: none; /* the one chrome-card shadow: a PENDING decision or approval only */
 
   /* Layout */
-  --v2-rail-w: 76px;
-  --v2-pods-w: 272px;
-  --v2-inspector-w: 336px;
+  --v2-rail-w: 56px;
+  --v2-pods-w: 232px;
+  --v2-inspector-w: 300px;
 
   /* Keep production's scoped V2 layer in step with design-system/tokens.css.
      The typing cadence belongs to the minimal mark; pulse/spin retain their
@@ -554,6 +554,10 @@ body.modern-ui.v2-canvas {
   background: var(--v2-shell-bg);
 }
 
+.v2-inspector-backdrop {
+  display: none;
+}
+
 /* Mobile pods-drawer affordances — hidden on desktop, where the pods sidebar
    is a permanent grid column. The <=760px media query (bottom of file) turns
    these on and converts .v2-pods-aside into a slide-over overlay. Declared
@@ -575,7 +579,7 @@ body.modern-ui.v2-canvas {
 
 .v2-rail {
   height: 100%;
-  padding: 18px 10px;
+  padding: 6px 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -640,7 +644,7 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
   font-size: 17px;
   padding: 0;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
   color: var(--v2-text-primary);
   letter-spacing: -0.02em;
   height: 32px;
@@ -651,8 +655,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-rail__brand-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent);
   color: #fff;
@@ -669,22 +673,25 @@ body.modern-ui.v2-canvas {
   gap: 4px;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 0;
 }
 
-.v2-rail__item {
+.v2-root button.v2-rail__item {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0;
-  min-height: 44px;
+  width: 32px;
+  min-height: 32px;
+  height: 32px;
+  align-self: center;
   padding: 0;
   border-radius: var(--v2-radius);
   font-size: 14px;
   font-weight: 600;
   color: #374151;
-  width: 100%;
+  background: var(--v2-surface-hover);
   text-align: left;
   transition: background 80ms ease;
 }
@@ -707,14 +714,14 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
-.v2-rail__item:hover {
+.v2-root button.v2-rail__item:hover {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }
 
-.v2-rail__item--active {
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
+.v2-root button.v2-rail__item--active {
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
   font-weight: 600;
 }
 
@@ -1014,7 +1021,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-pods__create-submit {
-  background: var(--v2-accent);
+  background: var(--v2-ink);
   color: #fff;
 }
 
@@ -5611,19 +5618,8 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-primary);
 }
 
-@media (max-width: 1279px) {
-  .v2-root {
-    --v2-rail-w: 72px;
-    --v2-pods-w: 248px;
-    --v2-inspector-w: 300px;
-    min-width: 0;
-  }
-}
-
 @media (max-width: 1023px) {
   .v2-root {
-    --v2-rail-w: 64px;
-    --v2-pods-w: 236px;
     min-width: 0;
   }
 
@@ -5719,7 +5715,8 @@ body.modern-ui.v2-canvas {
     transform: translateX(0);
   }
 
-  .v2-mobile-backdrop {
+  .v2-mobile-backdrop,
+  .v2-inspector-backdrop {
     display: block;
     position: fixed;
     inset: 0;
@@ -7232,7 +7229,7 @@ body.modern-ui.v2-canvas {
 
   /* No hover on touch — but always-on clusters over every message are
      chrome over content (Sam, 2026-08-23). A tap on the message toggles
-     .v2-msg--reveal (V2MessageBubble.onBubbleTap, gated to hoverless
+     .v2-msg--reveal (V2MessageRow.onBubbleTap, gated to hoverless
      devices); only then does the cluster appear, at the 44px floor (craft
      baseline rule 9). Absolute positioning preserved — a static third
      child would break the avatar|body grid. */
@@ -9503,6 +9500,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-pods__title,
 .v2-root:lang(zh) .v2-chat__title,
+.v2-root:lang(zh) .v2-thread__title h1,
 .v2-root:lang(zh) .v2-first-run__title,
 .v2-root:lang(zh) .v2-chat__new-pod-title,
 .v2-root:lang(zh) button.v2-inspector__tab,
@@ -9798,4 +9796,925 @@ body.modern-ui.v2-canvas {
 }
 @media (max-width: 640px) {
   .v2-activity__reply { flex-basis: 100%; }
+}
+
+/* ---------- Workspace sidebar (TASK-129 PR 1) ----------
+   The workspace artboard is a ground-colour grid, not three inset cards.
+   These rules intentionally follow the retired sidebar rules above while the
+   chat and inspector receive their own structural passes in PRs 2 and 3. */
+
+.v2-shell {
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.v2-shell .v2-pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.v2-shell .v2-pane--main {
+  margin: 0;
+  height: 100%;
+}
+
+.v2-pods {
+  position: relative;
+  height: 100%;
+  padding: 6px 0;
+  background: var(--v2-shell-bg);
+}
+
+.v2-pods__list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+.v2-pods__group {
+  min-width: 0;
+}
+
+.v2-pods__group-label {
+  margin: 0 0 6px;
+  padding: 0 12px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  text-transform: lowercase;
+}
+
+.v2-pods__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2-pods__pod-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v2-pods__pod-group {
+  min-width: 0;
+}
+
+.v2-pods__subgroup-label {
+  margin: 0 0 6px;
+  padding: 0 24px;
+  color: var(--v2-text-placeholder);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  text-transform: lowercase;
+}
+
+.v2-root button.v2-pods__row,
+.v2-root button.v2-pods__channel,
+.v2-root button.v2-pods__new-line,
+.v2-root button.v2-pods__connect-line {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 500 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-pods__row {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-radius: 4px;
+}
+
+.v2-root button.v2-pods__row:hover,
+.v2-root button.v2-pods__channel:hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-pods__row--selected,
+.v2-root button.v2-pods__row--selected:hover {
+  background: var(--v2-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.v2-pods__row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-pods__attention-count {
+  margin-left: auto;
+  color: #fff;
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.v2-pods__direct-avatar.v2-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 8px;
+}
+
+.v2-root button.v2-pods__channel {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 4px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-pods__channel:disabled {
+  cursor: default;
+}
+
+.v2-pods__channel-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border: 1px solid var(--v2-border-strong);
+  background: transparent;
+}
+
+.v2-pods__channel-dot--live {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+}
+
+.v2-root button.v2-pods__new-line,
+.v2-root button.v2-pods__connect-line {
+  min-height: 32px;
+  padding: 7px 12px;
+  color: var(--v2-accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-pods__new-line { margin-top: 2px; }
+
+.v2-pods__create {
+  margin: 4px 12px 0;
+  padding: 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+}
+
+.v2-pods__create-input {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.v2-root button.v2-pods__create-cancel,
+.v2-root button.v2-pods__create-submit {
+  min-height: 30px;
+  padding: 6px 9px;
+}
+
+.v2-pods__empty {
+  padding: 28px 12px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .v2-shell,
+  .v2-shell--no-inspector,
+  .v2-shell--feature {
+    gap: 0;
+    padding: 0;
+  }
+
+  .v2-shell .v2-pane {
+    height: 100vh;
+  }
+
+  .v2-pods-aside {
+    width: min(86vw, 320px);
+  }
+
+  .v2-pods__mobile-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+  }
+
+  /* The inspector is a bottom sheet on phones, not a narrow desktop drawer. */
+  .v2-pane--inspector {
+    top: auto;
+    left: 0;
+    width: 100%;
+    max-height: min(78dvh, 680px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
+}
+
+/* ---------- Workspace inspector (TASK-129 PR 2) ----------
+   Three factual cards replace the old tabbed inspector. The route keeps the
+   same invite, agent-profile, board, and attachment exits without retaining
+   a second, legacy inspector surface. */
+
+.v2-workspace-inspector {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  background: var(--v2-shell-bg);
+}
+
+/* The new inspector is a card stack on the shell ground, not a second pane
+   delineated by a desktop divider. Its cards provide the only borders. */
+.v2-pane--inspector {
+  border-left: 0;
+}
+
+.v2-workspace-inspector__card {
+  min-width: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+  padding: 12px;
+}
+
+.v2-workspace-inspector__label {
+  display: block;
+  margin: 0 0 10px;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 500 11px/14px var(--v2-font-mono);
+  letter-spacing: 0.02em;
+  text-overflow: clip;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2-root button.v2-workspace-inspector__agent,
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task,
+.v2-root button.v2-workspace-inspector__board-counts {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+}
+
+.v2-root button.v2-workspace-inspector__agent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.v2-root button.v2-workspace-inspector__agent:hover,
+.v2-root button.v2-workspace-inspector__attention:hover,
+.v2-root button.v2-workspace-inspector__task:hover,
+.v2-root button.v2-workspace-inspector__board-counts:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-workspace-inspector__avatar.v2-avatar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 10px;
+}
+
+.v2-workspace-inspector__agent-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-workspace-inspector__agent-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__agent-status {
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__state {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--v2-text-muted);
+}
+
+.v2-workspace-inspector__state--needs-you { background: var(--v2-accent); }
+.v2-workspace-inspector__state--working {
+  background: var(--v2-accent);
+  animation: v2-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 4px;
+  font: 400 13px/18px var(--v2-font);
+}
+
+.v2-workspace-inspector__attention > span:first-child,
+.v2-workspace-inspector__task > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__actor,
+.v2-workspace-inspector__task-meta {
+  flex-shrink: 0;
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+
+.v2-workspace-inspector__task-meta { color: var(--v2-text-muted); }
+
+.v2-root button.v2-workspace-inspector__board-counts {
+  margin: 0 0 6px;
+  padding: 0 4px 7px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-workspace-inspector__empty {
+  margin: 0;
+  padding: 4px;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-workspace-inspector__foot {
+  display: flex;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.v2-root .v2-workspace-inspector__foot button {
+  min-height: auto;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
+}
+
+.v2-root button.v2-workspace-inspector__foot button:hover { color: var(--v2-text-primary); }
+
+.v2-root button.v2-workspace-inspector__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-workspace-inspector__close:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+@media (max-width: 760px) {
+  .v2-workspace-inspector { padding: 12px 14px 0; }
+  .v2-workspace-inspector__foot { padding-inline: 0; }
+  .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
+}
+
+/* The new factual inspector keeps CJK metadata at the established readable
+   floor. These rows are the artboard's compact mono labels, not body prose. */
+.v2-root:lang(zh) .v2-workspace-inspector__empty { line-height: 1.6; }
+.v2-root:lang(zh) .v2-workspace-inspector__actor,
+.v2-root:lang(zh) .v2-workspace-inspector__task-meta,
+.v2-root:lang(zh) .v2-workspace-inspector__foot button { font-size: 12px; }
+
+/* ---------- Workspace decision card (TASK-129 PR 3) ----------
+   A DecisionRequest is an in-thread fork, not prose the human must parse.
+   The cobalt 2px ring is reserved for this unresolved, human-owned choice. */
+.v2-decision-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 14px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 6px;
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
+}
+
+.v2-decision-card--ruled { box-shadow: none; }
+
+.v2-decision-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-decision-card__head h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font: 600 14px/20px var(--v2-font);
+}
+
+.v2-decision-card__agent {
+  flex-shrink: 0;
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+
+.v2-decision-card__question {
+  margin: 0;
+  color: var(--v2-text-secondary);
+  font: 400 13px/19px var(--v2-font);
+}
+
+.v2-decision-card__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.v2-decision-card__option { display: inline-flex; align-items: center; gap: 5px; }
+
+.v2-root button.v2-decision-card__choice,
+.v2-root button.v2-decision-card__other,
+.v2-root button.v2-decision-card__other-form button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 500 12px/18px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__choice--primary {
+  border-color: var(--v2-accent);
+  background: var(--v2-accent);
+  color: var(--v2-on-ink);
+}
+
+.v2-root button.v2-decision-card__choice:hover:not(:disabled),
+.v2-root button.v2-decision-card__other:hover:not(:disabled) { background: var(--v2-surface-hover); }
+.v2-root button.v2-decision-card__choice--primary:hover:not(:disabled) { background: var(--v2-accent-strong); }
+
+.v2-decision-card__option > span {
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font);
+}
+
+.v2-root button.v2-decision-card__other {
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+}
+
+.v2-decision-card__other-form {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+}
+
+.v2-decision-card__other-form input {
+  min-width: 0;
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+}
+
+.v2-decision-card__settled,
+.v2-decision-card__error { margin: 0; font: 500 12px/18px var(--v2-font); }
+.v2-decision-card__settled { color: var(--v2-text-secondary); }
+.v2-decision-card__error { color: #b91c1c; }
+
+.v2-msg__ruled {
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+/* ---------- Workspace thread and composer (TASK-129 PR 3) ---------- */
+
+.v2-thread__header {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+}
+
+.v2-thread__header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v2-thread__title {
+  min-width: 0;
+  flex: 1;
+}
+
+.v2-thread__title-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.v2-thread__title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font: 700 22px/28px var(--v2-font-display);
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-thread__title p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 400 14px/20px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-thread__working {
+  flex: 0 0 auto;
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
+
+.v2-thread__working::before { content: '●'; color: var(--v2-text-muted); }
+
+.v2-thread__working--active::before { color: var(--v2-accent); }
+
+.v2-thread__working--mobile { display: none; }
+
+.v2-root button.v2-thread__inspector-toggle {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-thread__inspector-toggle:hover,
+.v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-thread .v2-msg {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.v2-thread .v2-msg--grouped { padding: 2px 0; }
+.v2-thread .v2-msg__avatar-ghost { width: 28px; }
+.v2-thread .v2-avatar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+}
+.v2-thread .v2-msg__head { height: 18px; gap: 6px; }
+.v2-thread .v2-msg__author,
+.v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
+.v2-thread .v2-msg__time { font: 500 12px/16px var(--v2-font-mono); }
+.v2-thread .v2-msg__avatar-btn { border-radius: 4px; }
+.v2-thread .v2-msg__actions { border-radius: 4px; box-shadow: none; }
+
+.v2-message-row--decision { padding: 8px 0; }
+
+.v2-composer {
+  flex: 0 0 auto;
+  margin: 10px 14px 14px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-composer__target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-root button.v2-composer__target button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.v2-composer__field { position: relative; }
+
+.v2-root .v2-composer__field > textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 12px 6px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-composer__file { display: none; }
+
+.v2-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 8px 6px 10px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-root button.v2-composer__attach {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-composer__attach:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-composer__posts-as {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-root button.v2-composer__send {
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 1px solid var(--v2-ink);
+  border-radius: 4px;
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+  font: 600 12px/18px var(--v2-font);
+}
+
+.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
+.v2-root button.v2-composer__send:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.v2-composer__error {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #b91c1c;
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-composer__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 8px;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+@media (max-width: 760px) {
+  .v2-thread__header {
+    min-height: 66px;
+    padding: 8px 14px;
+  }
+
+  .v2-thread__header-row { align-items: center; gap: 8px; }
+  .v2-thread__title-line { display: block; }
+  .v2-thread__title h1 { font: 700 20px/24px var(--v2-font-display); }
+  .v2-thread__title p { display: none; }
+  .v2-thread__working--desktop { display: none; }
+  .v2-thread__working--mobile { display: block; color: var(--v2-accent-text); }
+
+  .v2-thread .v2-msg__author,
+  .v2-thread .v2-msg__author-btn { font-size: 15px; }
+  .v2-thread .v2-msg__time,
+  .v2-thread .v2-msg__ruled { font-size: 12px; }
+  .v2-thread .v2-msg__content { font-size: 15px; line-height: 22px; }
+
+  /* The phone artboard makes every decision option a full-width, 44px row;
+     Other remains a centred text escape hatch beneath them. */
+  .v2-decision-card__options { align-items: stretch; flex-direction: column; }
+  .v2-decision-card__option { width: 100%; }
+  .v2-root button.v2-decision-card__choice { width: 100%; min-height: 44px; font-size: 15px; }
+  .v2-root button.v2-decision-card__other { align-self: center; min-height: 30px; }
+
+  .v2-composer { margin: 8px 16px 62px; border: 0; background: transparent; }
+  .v2-composer__field { display: flex; align-items: stretch; gap: 12px; }
+  .v2-root .v2-composer__field > textarea {
+    min-height: 44px;
+    height: 44px;
+    flex: 1;
+    padding: 11px 12px;
+    resize: none;
+    border: 1px solid var(--v2-border);
+    border-radius: 4px;
+    background: var(--v2-surface);
+    line-height: 20px;
+  }
+  .v2-composer__actions { min-height: 0; padding: 0; border: 0; }
+  .v2-root button.v2-composer__attach,
+  .v2-composer__posts-as { display: none; }
+  .v2-root button.v2-composer__send {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  /* The workspace is edge-to-edge on a phone. Rail and pod list are drawers,
+     while the transcript, composer, and tab bar share the white canvas. */
+  .v2-shell,
+  .v2-shell--no-inspector,
+  .v2-shell--feature {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+    gap: 0;
+    background: #fff;
+  }
+  .v2-pane--rail { display: none; }
+  .v2-pane--main { background: #fff; }
+
+  /* The inspector becomes the artboard's bottom sheet; its header toggle is
+     intentionally always present so the sheet cannot become unreachable. */
+  .v2-pane--inspector {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(76dvh, 620px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
+
+  .v2-root button.v2-chat__mobile-nav-btn {
+    display: inline-grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--v2-border);
+    border-radius: 4px;
+    background: var(--v2-surface);
+    color: var(--v2-text-secondary);
+  }
+  .v2-chat__mobile-nav-btn svg { width: 16px; height: 16px; }
+
+  .v2-mobile-tabs {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    height: 54px;
+    padding: 5px 14px;
+    border-top: 1px solid var(--v2-border);
+    background: #fff;
+  }
+  .v2-root button.v2-mobile-tabs__item {
+    position: relative;
+    display: grid;
+    width: 44px;
+    height: 32px;
+    justify-self: center;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--v2-text-secondary);
+  }
+  .v2-root button.v2-mobile-tabs__item svg { width: 18px; height: 18px; }
+  .v2-root button.v2-mobile-tabs__item--active { background: var(--v2-ink); color: var(--v2-on-ink); }
+  .v2-root button.v2-mobile-tabs__item:hover:not(:disabled) { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+  .v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+  .v2-mobile-tabs__badge {
+    position: absolute;
+    top: -4px;
+    right: -2px;
+    display: grid;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    place-items: center;
+    border: 2px solid #fff;
+    border-radius: 999px;
+    background: var(--v2-accent);
+    color: #fff;
+    font: 700 10px/1 var(--v2-font-mono);
+  }
+}
+
+.v2-mobile-tabs { display: none; }
+
+@media (max-width: 760px) {
+  .v2-mobile-tabs { display: grid; }
 }

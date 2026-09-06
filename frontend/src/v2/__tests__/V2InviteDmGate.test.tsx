@@ -37,12 +37,12 @@ jest.mock('../../context/AuthContext', () => ({
 
 jest.mock('../components/V2NavRail', () => () => null);
 jest.mock('../components/V2PodsSidebar', () => () => null);
-jest.mock('../components/V2PodInspector', () => () => null);
+jest.mock('../components/V2Inspector', () => () => null);
 jest.mock('../components/V2InviteModal', () => function MockV2InviteModal({ open, initialTab }) {
   return open ? <div data-testid="invite-modal-tab">{initialTab}</div> : null;
 });
 jest.mock('../components/V2FirstRunHero', () => () => null);
-jest.mock('../components/V2PodChat', () => function MockV2PodChat({ onOpenInvite }) {
+jest.mock('../components/V2Thread', () => function MockV2Thread({ onOpenInvite }) {
   return (
     <div>
       {onOpenInvite && (

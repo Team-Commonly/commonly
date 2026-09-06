@@ -21,6 +21,9 @@ export interface V2Pod {
   type?: string;
   joinPolicy?: string;
   publicRead?: boolean;
+  // Community placement is an explicit admin-owned pod property. It is
+  // distinct from publicRead, which controls anonymous read access only.
+  communityListed?: boolean;
   members?: (V2PodMember | string)[];
   createdBy?: { _id?: string; username?: string };
   createdAt?: string;

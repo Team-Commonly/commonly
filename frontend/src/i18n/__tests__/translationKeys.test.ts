@@ -75,7 +75,9 @@ describe('i18n migration manifest', () => {
     expect(missing).toEqual([]);
   });
 
-  it('keeps the deferred message bubble outside the migrated-file manifest', () => {
+  it('keeps the retired chat and bubble files out of the migrated-file manifest', () => {
+    expect(migratedFiles).not.toContain('src/v2/components/V2PodChat.tsx');
     expect(migratedFiles).not.toContain('src/v2/components/V2MessageBubble.tsx');
+    expect(migratedFiles).toContain('src/v2/components/V2Thread.tsx');
   });
 });

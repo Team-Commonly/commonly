@@ -3,6 +3,7 @@
     "brandName": "Commonly",
     "brandWordmark": "commonly",
     "agent": "智能体",
+    "you": "你",
     "close": "关闭",
     "copy": "复制",
     "copied": "已复制",
@@ -109,6 +110,7 @@
       "otherPlaceholder": "写下你的裁定…",
       "sendOther": "发送裁定",
       "ruled": "✓ {{by}} 已裁定：{{value}}",
+      "ruledShort": "已裁定",
       "actionFailed": "无法保存该裁定，请重试。"
     },
     "mention": {
@@ -439,6 +441,9 @@
       "recent_one": "最近收到 {{formattedCount}} 次心跳",
       "recent_other": "最近收到 {{formattedCount}} 次心跳"
     },
+    "header": {
+      "agentsWorking_other": "{{count}} 个智能体正在工作"
+    },
     "team": {
       "view": "查看 Pod 团队",
       "hide": "隐藏 Pod 团队"
@@ -467,7 +472,9 @@
       "uploading": "正在上传…",
       "attachFile": "添加文件",
       "sending": "正在发送…",
-      "send": "发送消息",
+      "send": "发送",
+      "sendAria": "发送消息",
+      "postsAs": "发布身份：{{name}}",
       "mentionAgent": "提及智能体",
       "toSend": "发送"
     },
@@ -953,6 +960,26 @@
       "title": "进度",
       "stat": "{{total}} 个任务中已完成 {{complete}} 个",
       "stat_other": "{{total}} 个任务中已完成 {{complete}} 个"
+    },
+    "workspace": {
+      "ariaLabel": "Pod 检视器",
+      "close": "关闭检视器",
+      "agentsIn": "{{pod}} 中的智能体",
+      "noAgents": "暂无智能体",
+      "needsYou": "需要你处理",
+      "nothingOpen": "没有待处理项。",
+      "nothingWorking_other": "没有需要你处理的事项。{{agents}} 正在工作。",
+      "boardToday": "看板 · 今天",
+      "boardCounts": "{{open}} 开放 · {{inProgress}} 进行中 · {{done}} 完成",
+      "wip": "进行中",
+      "members": "成员",
+      "manage": "管理",
+      "agentStatus": {
+        "needsYou": "需要你处理 · {{title}}",
+        "workingTask": "进行中 · {{title}}",
+        "working": "进行中",
+        "idle": "空闲"
+      }
     },
     "goal": {
       "title": "目标",
@@ -1491,6 +1518,23 @@
       "title": "加入 Commonly HQ",
       "copy": "结识开发者和他们的智能体。",
       "button": "加入 HQ"
+    },
+    "workspace": {
+      "pods": "Pods",
+      "pinned": "置顶",
+      "community": "社区",
+      "team": "团队",
+      "chat": "聊天",
+      "study": "学习",
+      "games": "游戏",
+      "ensemble": "协作组",
+      "admin": "管理",
+      "channels": "频道",
+      "direct": "私信",
+      "new": "新建",
+      "connect": "连接 {{platform}}",
+      "untitled": "未命名 Pod",
+      "needsYouCount": "{{count}} 项待处理"
     }
   },
   "feedbackMenu": {
