@@ -520,7 +520,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('width: 100%');
     expect(ruleBody(v2, '.v2-chat__messages > *')).toContain('margin-inline: 0');
     expect(ruleBody(v2, '.v2-composer')).toContain('border: 1px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-composer__posts-as')).toContain('font: 500 11px/16px var(--v2-font-mono)');
+    // Direction C: the identity line is gone; the plus and Send sit inside the one bordered row.
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid var(--v2-border)');
     // Nothing in the column may escape the shared edge (Sam, 2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
@@ -805,6 +806,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).toContain('<AddIcon fontSize="small" aria-hidden="true" />');
     expect(podBoard).not.toContain('← {t(\'board.backToChat\')}');
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
+  });
+
+  test('the composer is one line with a 24px plus menu and a 28px ink Send that exists only with text (direction C PR 2a)', () => {
+    expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 42px');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('width: 24px');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border-radius: 4px');
+    expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('max-height: 112px');
+    expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('resize: none');
+    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('width: 28px');
+    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('background: var(--v2-ink)');
+    expect(composer).toContain('{hasText && (');
+    expect(composer).toContain("role=\"menu\"");
+    expect(composer).not.toContain('postsAs');
+    expect(v2).not.toContain('.v2-composer__posts-as');
+  });
+
+  test('attachments: 156×104 thumbnails with a lightbox, text-badge chips, code collapsed past six lines', () => {
+    expect(ruleBody(v2, '.v2-root button.v2-msg__thumb')).toContain('width: 156px');
+    expect(ruleBody(v2, '.v2-root button.v2-msg__thumb')).toContain('height: 104px');
+    expect(ruleBody(v2, '.v2-msg__chip-ext')).toContain('background: var(--v2-surface-tint)');
+    expect(ruleBody(v2, '.v2-msg__chip-ext')).not.toContain('#');
+    expect(v2).toContain('.v2-msg__collapse--closed pre');
+    expect(ruleBody(v2, '.v2-lightbox')).toContain('rgba(16, 24, 40, 0.9)');
+    expect(messageRow).not.toContain('FILE_EXT_COLORS');
+    expect(messageRow).toContain('COLLAPSE_AFTER_LINES = 6');
+    expect(messageRow).toContain('<V2Lightbox');
+  });
+
+  test('history: a mono edge line that loads on scroll and a Jump-to-latest pill', () => {
+    expect(threadMessages).toContain('v2-thread__edge');
+    expect(threadMessages).not.toContain('v2-chat__older-btn');
+    expect(thread).toContain('new IntersectionObserver');
+    expect(thread).toContain('atBottomRef');
+    expect(ruleBody(v2, '.v2-root button.v2-thread__jump')).toContain('border-radius: 999px');
+    expect(lastRuleBody(v2, '.v2-thread__edge-line')).toContain('var(--v2-font-mono)');
   });
 
   test('the pod header is 50px: sans 15/600 name, inline description, mono meta — the working count moved to the inspector', () => {

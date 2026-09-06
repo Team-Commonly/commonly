@@ -502,8 +502,39 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // which reads as "load older is broken". Key on the newest message's id so
   // prepends are ignored.
   const newestMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
-  useEffect(() => {
+  // Direction C history: the reader's position is respected. New messages
+  // pull the view down only when it was already at the bottom (or the message
+  // is mine); otherwise they count up in the Jump-to-latest pill.
+  const atBottomRef = useRef(true);
+  const [jumpCount, setJumpCount] = useState(0);
+  const edgeRef = useRef<HTMLDivElement | null>(null);
+  const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    atBottomRef.current = true;
+    setJumpCount(0);
+  }, []);
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      atBottomRef.current = near;
+      if (near) setJumpCount(0);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [pod?._id]);
+  const newestIsMine = messages.length > 0 && String(messages[messages.length - 1]?.user_id || '') === String(currentUser?._id || '');
+  useEffect(() => {
+    if (!newestMessageId) return;
+    if (atBottomRef.current || newestIsMine) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setJumpCount(0);
+    } else {
+      setJumpCount((count) => count + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newestMessageId]);
 
   // Prepending changes scrollHeight, so without this the viewport jumps. Hold
@@ -523,6 +554,37 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     el.scrollTop = el.scrollHeight - anchor;
     scrollAnchorRef.current = null;
   }, [messages]);
+
+  // Pasting an image into the field attaches it. The handler is defined
+  // later (it needs the upload plumbing), so the effect reads it through a ref
+  // and stays above the early return with the other hooks.
+  const attachFileRef = useRef<((file: File | null) => Promise<void>) | null>(null);
+  useEffect(() => {
+    const el = composerInputRef.current;
+    if (!el) return undefined;
+    const onPaste = (event: ClipboardEvent) => {
+      const file = Array.from(event.clipboardData?.files || []).find((candidate) => candidate.type.startsWith('image/'));
+      if (!file) return;
+      event.preventDefault();
+      void attachFileRef.current?.(file);
+    };
+    el.addEventListener('paste', onPaste);
+    return () => el.removeEventListener('paste', onPaste);
+  }, [pod?._id]);
+
+  // Reaching the top loads the previous page; the edge line is the sentinel.
+  useEffect(() => {
+    const edge = edgeRef.current;
+    const root = messagesContainerRef.current;
+    if (!edge || !root || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (!hasMore || loadingOlder || loading) return;
+      void handleLoadOlder();
+    }, { root, rootMargin: '120px 0px 0px 0px' });
+    observer.observe(edge);
+    return () => observer.disconnect();
+  }, [hasMore, loadingOlder, loading, handleLoadOlder, pod?._id]);
 
   // Removed: Lead-pill computation. The "Lead" label was just `idx === 0`,
   // which made whichever agent installed first (usually auto-installed
@@ -861,6 +923,25 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // draft so the user can add accompanying text and send when ready). Both
   // paths POST to /api/uploads with the active podId so the file shows up in
   // the inspector's Artifacts section.
+  // Paste an image straight into the thread: from the plus menu (clipboard
+  // read) or by pasting into the field.
+  const attachFromClipboard = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((candidate) => candidate.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          const ext = type.split('/')[1] || 'png';
+          await handleAttachFile(new File([blob], `pasted-${Date.now()}.${ext}`, { type }));
+          return;
+        }
+      }
+      setComposerError(t('podChat.composer.clipboardEmpty'));
+    } catch {
+      fileInputRef.current?.click();
+    }
+  };
   const handleAttachFile = async (file: File | null) => {
     if (!file || uploading) return;
     setUploading(true);
@@ -894,8 +975,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         // The rule the ruling states is "a send consumes the target on EVERY
         // path" — written that way precisely because per-path wiring is what
         // keeps going wrong here.
+        // One attachment model (direction C): the image goes out as the same
+        // `[[upload:…|image]]` manifest a file does, so the row renders a
+        // thumbnail and an agent reads it through the attachment tool. The
+        // bare URL remains only for a server that returned no file key.
+        const imageContent = uploaded.fileName
+          ? `[[upload:${uploaded.fileName}|${uploaded.originalName || file.name}|${uploaded.size || file.size}|image]]`
+          : uploaded.url;
         const created = await sendMessage(
-          uploaded.url,
+          imageContent,
           'image',
           replyTarget?.id || undefined,
           threadTarget?.id || undefined,
@@ -918,6 +1006,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+  attachFileRef.current = handleAttachFile;
 
   const starterPrompts = STARTER_PROMPT_KEYS.map((key) => t(key));
   // Header meta (direction C): members · agents · board N open · bound
@@ -995,6 +1084,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
           hasMore={hasMore}
           loadingOlder={loadingOlder}
           onLoadOlder={() => { void handleLoadOlder(); }}
+          edgeRef={edgeRef}
+          jumpCount={jumpCount}
+          onJump={jumpToLatest}
           loading={loading}
           error={error}
           starterPanel={starterPanelVisible ? (
@@ -1164,6 +1256,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                 onMentionSelect={selectMention}
                 onSend={() => { void handleSend(); }}
                 onAttach={(file) => { void handleAttachFile(file); }}
+                onPasteFromClipboard={() => { void attachFromClipboard(); }}
                 onCancelReply={() => setReplyTarget(null)}
                 onCancelThread={() => setThreadTarget(null)}
               />

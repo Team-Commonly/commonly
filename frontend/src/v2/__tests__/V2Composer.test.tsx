@@ -114,9 +114,11 @@ describe('V2Composer send button', () => {
     });
   });
 
-  test('send button is disabled while the draft is empty', () => {
+  test('there is no Send until the draft has text', () => {
     renderChat(makeDetail());
-    expect(screen.getByRole('button', { name: /send message/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /send message/i })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), { target: { value: 'hello' } });
+    expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument();
   });
 
   test('shows send failures by the composer and keeps the reply draft intact', async () => {
@@ -159,7 +161,7 @@ describe('V2Composer send button', () => {
     expect(sendError.closest('.v2-composer')).not.toBeNull();
     expect(sendError.closest('.v2-chat__messages')).toBeNull();
     expect(screen.getByPlaceholderText(/message my workspace/i)).toHaveValue('I am checking it now.');
-    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__target')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /cancel reply/i }).closest('.v2-composer__tag')).not.toBeNull();
   });
 
   // W-T 4/4, constraint 4 (docs/design/threading-surface-ruling.md; ux-lead

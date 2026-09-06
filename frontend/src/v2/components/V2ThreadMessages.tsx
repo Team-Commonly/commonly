@@ -25,6 +25,12 @@ interface V2ThreadMessagesProps {
   hasMore: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  // Direction C history edge: the sentinel V2Thread observes to auto-load the
+  // previous page when the reader reaches the top.
+  edgeRef?: React.RefObject<HTMLDivElement | null>;
+  // Jump-to-latest pill: messages that arrived while the reader was scrolled up.
+  jumpCount?: number;
+  onJump?: () => void;
   loading: boolean;
   error: string | null;
   starterPanel?: React.ReactNode;
@@ -56,6 +62,9 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   hasMore,
   loadingOlder,
   onLoadOlder,
+  edgeRef,
+  jumpCount = 0,
+  onJump,
   loading,
   error,
   starterPanel,
@@ -96,18 +105,17 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
 
   return (
     <div className="v2-chat__messages" ref={messagesContainerRef}>
-      {hasMore && (
-        <div className="v2-chat__older">
-          <button
-            type="button"
-            className="v2-chat__older-btn"
-            onClick={onLoadOlder}
-            disabled={loadingOlder}
-          >
-            {loadingOlder ? t('podChat.loadingOlder') : t('podChat.loadOlder')}
-          </button>
-        </div>
-      )}
+      {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
+          the button form stays reachable by keyboard. */}
+      <div className="v2-thread__edge" ref={edgeRef} data-state={loadingOlder ? 'loading' : hasMore ? 'more' : messages.length > 0 ? 'beginning' : 'empty'}>
+        {loadingOlder ? (
+          <span className="v2-thread__edge-line" role="status">{t('podChat.history.loadingEarlier')}</span>
+        ) : hasMore ? (
+          <button type="button" className="v2-thread__edge-line" onClick={onLoadOlder}>{t('podChat.history.loadEarlier')}</button>
+        ) : messages.length > 0 ? (
+          <span className="v2-thread__edge-line">{t('podChat.history.beginning')}</span>
+        ) : null}
+      </div>
       {error && <div className="v2-chat__error">{error}</div>}
       {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}
@@ -201,6 +209,14 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         );
       })}
       <div ref={messagesEndRef} />
+      {onJump && jumpCount > 0 && (
+        <div className="v2-thread__jump-wrap">
+          <button type="button" className="v2-thread__jump" onClick={onJump}>
+            {t('podChat.history.jumpToLatest')}
+            <span className="v2-thread__jump-count">· {jumpCount}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

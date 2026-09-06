@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import type { V2Message } from '../hooks/useV2PodDetail';
@@ -40,11 +40,22 @@ interface V2ComposerProps {
   onMentionSelect: (item: V2ComposerMention) => void;
   onSend: () => void;
   onAttach: (file: File | null) => void;
+  // Direction C plus menu: attach any file, attach an image, or paste an image
+  // from the clipboard. The first two open the file input with the right
+  // accept; the third reads the clipboard (falls back to the file input when
+  // the browser refuses).
+  onPasteFromClipboard?: () => void;
   onCancelReply: () => void;
   onCancelThread: () => void;
 }
 
-/** The one bounded input surface for a workspace thread. */
+// One line at rest, five lines at most; past that the textarea scrolls.
+const LINE_HEIGHT = 20;
+const MAX_LINES = 5;
+const VERTICAL_PADDING = 12;
+const FILE_ACCEPT = 'image/*,.pdf,.md,.txt,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip';
+
+/** The one bounded input surface for a workspace thread (direction C). */
 const V2Composer: React.FC<V2ComposerProps> = ({
   podName,
   authorName,
@@ -68,93 +79,148 @@ const V2Composer: React.FC<V2ComposerProps> = ({
   onMentionSelect,
   onSend,
   onAttach,
+  onPasteFromClipboard,
   onCancelReply,
   onCancelThread,
 }) => {
   const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [accept, setAccept] = useState(FILE_ACCEPT);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const hasText = draft.trim().length > 0;
+
+  // Grow with the draft up to five lines, then scroll inside the field.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const max = LINE_HEIGHT * MAX_LINES + VERTICAL_PADDING;
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = `${Math.max(next, LINE_HEIGHT + VERTICAL_PADDING)}px`;
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
+  }, [draft, inputRef]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const close = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onEsc = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [menuOpen]);
+
+  const openFileInput = (nextAccept: string) => {
+    setAccept(nextAccept);
+    setMenuOpen(false);
+    // The accept attribute must be on the input before the picker opens.
+    window.setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+
+  const pasteFromClipboard = () => {
+    setMenuOpen(false);
+    if (onPasteFromClipboard) onPasteFromClipboard();
+    else openFileInput('image/*');
+  };
+
+  const target = threadTarget
+    ? { label: `↳ ${t('podChat.thread.replyingInThread')} ${threadTarget.preview.replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 32)}`, cancel: onCancelThread }
+    : replyTarget
+      ? { label: null, cancel: onCancelReply }
+      : null;
+
   return (
-    <div className="v2-composer">
-      {threadTarget && (
-        <div className="v2-composer__target" role="status">
-          <span>{t('podChat.thread.replyingInThread')} {threadTarget.preview.replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 40)}</span>
-          <button type="button" aria-label={t('podChat.cancelReply')} onClick={onCancelThread}>×</button>
-        </div>
-      )}
-      {replyTarget && (
-        <div className="v2-composer__target" role="status">
-          <span>
-            <Trans
-              i18nKey="podChat.replyingTo"
-              values={{ author: replyTarget.user?.username || t('podChat.messageFallback') }}
-              components={{ author: <strong /> }}
-            />{' '}
-            {String(replyTarget.content || '').replace(/\[\[upload:[^\]]*\]\]/g, '📎').slice(0, 80)}
-          </span>
-          <button type="button" aria-label={t('podChat.cancelReply')} onClick={onCancelReply}>×</button>
-        </div>
-      )}
-      <div className="v2-composer__field">
-        <textarea
-          ref={inputRef}
-          placeholder={t('podChat.composer.placeholder', { podName })}
-          value={draft}
-          rows={2}
-          onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}
-          onClick={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onKeyUp={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown}
-        />
-        {mentionOpen && mentions.length > 0 && (
-          <div className="v2-mention-dropdown" ref={mentionDropdownRef} role="listbox">
-            {mentions.map((item, index) => (
-              <button
-                type="button"
-                key={item.id}
-                className={`v2-mention-item${index === mentionIndex ? ' v2-mention-item--active' : ''}`}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onMentionSelect(item)}
-                role="option"
-                aria-selected={index === mentionIndex}
-              >
-                <V2Avatar name={item.label} src={item.avatar || undefined} size="sm" />
-                <span className="v2-mention-item__text">
-                  <span className="v2-mention-item__label">@{item.value || item.label}</span>
-                  <span className="v2-mention-item__sub">{item.subtitle}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,.pdf,.md,.txt,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip"
-          className="v2-composer__file"
-          onChange={(event) => onAttach(event.target.files?.[0] || null)}
-        />
-        <div className="v2-composer__actions">
+    <div className={`v2-composer${hasText ? ' v2-composer--typing' : ''}${uploading ? ' v2-composer--uploading' : ''}`}>
+      <div className="v2-composer__row">
+        <div className="v2-composer__plus-wrap" ref={menuRef}>
           <button
             type="button"
-            className="v2-composer__attach"
-            title={uploading ? t('podChat.composer.uploading') : t('podChat.composer.attachFile')}
-            aria-label={t('podChat.composer.attachFile')}
-            onClick={() => fileInputRef.current?.click()}
+            className="v2-composer__plus"
+            aria-label={t('podChat.composer.more')}
+            title={t('podChat.composer.more')}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
             disabled={uploading}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11l-9 9a5 5 0 01-7-7l9-9a3 3 0 014 4l-9 9a1 1 0 01-2-2l8-8" /></svg>
-          </button>
-          <span className="v2-composer__posts-as">{t('podChat.composer.postsAs', { name: authorName })} · ⌘↵</span>
+          />
+          {menuOpen && (
+            <div className="v2-composer__menu" role="menu" aria-label={t('podChat.composer.more')}>
+              <button type="button" role="menuitem" onClick={() => openFileInput(FILE_ACCEPT)}>{t('podChat.composer.attachFile')}</button>
+              <button type="button" role="menuitem" onClick={() => openFileInput('image/*')}>{t('podChat.composer.attachImage')}</button>
+              <button type="button" role="menuitem" onClick={pasteFromClipboard}>{t('podChat.composer.pasteImage')}</button>
+            </div>
+          )}
+        </div>
+        {target && (
+          <span className="v2-composer__tag" role="status">
+            {target.label ? target.label : (
+              <Trans
+                i18nKey="podChat.replyingTo"
+                values={{ author: replyTarget?.user?.username || t('podChat.messageFallback') }}
+                components={{ author: <strong /> }}
+              />
+            )}
+            <button type="button" className="v2-composer__tag-cancel" aria-label={t('podChat.cancelReply')} onClick={target.cancel}>×</button>
+          </span>
+        )}
+        <div className="v2-composer__field">
+          <textarea
+            ref={inputRef}
+            placeholder={t('podChat.composer.placeholder', { podName })}
+            value={draft}
+            rows={1}
+            onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}
+            onClick={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
+            onKeyUp={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
+            onKeyDown={onKeyDown}
+          />
+          {mentionOpen && mentions.length > 0 && (
+            <div className="v2-mention-dropdown" ref={mentionDropdownRef} role="listbox">
+              {mentions.map((item, index) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`v2-mention-item${index === mentionIndex ? ' v2-mention-item--active' : ''}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => onMentionSelect(item)}
+                  role="option"
+                  aria-selected={index === mentionIndex}
+                >
+                  <V2Avatar name={item.label} src={item.avatar || undefined} size="sm" />
+                  <span className="v2-mention-item__text">
+                    <span className="v2-mention-item__label">@{item.value || item.label}</span>
+                    <span className="v2-mention-item__sub">{item.subtitle}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {uploading && <span className="v2-composer__uploading" role="status">{t('podChat.composer.uploading')}</span>}
+        {hasText && (
           <button
             type="button"
             className="v2-composer__send"
             onClick={onSend}
-            disabled={sending || !draft.trim()}
+            disabled={sending}
             aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.sendAria')}
+            title={t('podChat.composer.sendTooltip', { name: authorName })}
           >
-            {sending ? t('podChat.composer.sending') : t('podChat.composer.send')}
+            <span aria-hidden="true">↵</span>
           </button>
-        </div>
+        )}
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        className="v2-composer__file"
+        onChange={(event) => onAttach(event.target.files?.[0] || null)}
+      />
       {(composerError || sendError) && <p className="v2-composer__error">{composerError || sendError}</p>}
       {warnings.length > 0 && (
         <div className="v2-composer__warnings" data-testid="mention-state-warning">
